@@ -181,6 +181,34 @@ def main():
             print("    Not gated: escaping a non-keyword is identity in Zig, so these are")
             print("    inert, and removing them would break a build against an older Zig.")
 
+    # BUG-525 leg: the fixture that names a BINDING after every word Zig reserves and Zebra does
+    # not must name exactly that set. It is DERIVED (Zig's table minus Zebra's vocabulary); a
+    # static fixture goes stale silently the day Zig adds a keyword or Zebra frees one -- the
+    # way keyword_ident_check's hand list stopped at 6 of 26.
+    fx = REPO / "test" / "bug525_zig_keyword_bindings_test.zbr"
+    if not fx.exists():
+        fail_refuse("%s is missing; it is BUG-525's fixture and this leg's subject." % fx)
+    import zbr_vocab
+    voc = zbr_vocab.vocabulary()
+    voc = voc[0] if isinstance(voc, tuple) else voc
+    voc = set(voc.keys() if isinstance(voc, dict) else voc)
+    if len(voc) < 40:
+        fail_refuse("Zebra's vocabulary came back with %d word(s); the derivation collapsed." % len(voc))
+    want = oracle - voc
+    have = set(re.findall(r"^\s+on Box\.full as (\w+)\s*$", fx.read_text(encoding="utf-8"), re.M))
+    if not have:
+        fail_refuse("found no `on Box.full as <word>` arms in %s; the extractor stopped matching." % fx.name)
+    if "pub" not in want:   # control: the word that was reported must be in the derived set
+        fail_refuse("derived set lacks `pub` -- the derivation itself is broken.")
+    if have != want:
+        rc = 1
+        print("[zig-keywords] FAIL — %s must bind every Zig-only keyword (%d derived):" % (fx.name, len(want)))
+        if want - have: print("    missing: " + " ".join(sorted(want - have)))
+        if have - want: print("    stale:   " + " ".join(sorted(have - want)))
+        print("    Regenerate the fixture's arms from the derived set (and its expected total).")
+    else:
+        print("[zig-keywords] %s binds all %d Zig-only keywords (Zig %s minus Zebra's %d)"
+              % (fx.name, len(want), ver, len(voc)))
     print("              NOT checked: isZigPrimitiveName, the other half of zigSafeName —")
     print("              it is pattern-based for iN/uN and its fixed tail is a closed set.")
     if rc == 0:

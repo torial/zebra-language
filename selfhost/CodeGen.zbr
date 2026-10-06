@@ -11621,8 +11621,10 @@ struct Generator
                         ig.w.emit(bnd)
                         ig.w.emit("| ")
                     else if bnd != "_"
+                        # BUG-525: a binding named like a ZIG keyword (`pub`, `fn`) is escaped
+                        # here too; its uses already were, so `|pub|` met `@"pub"`.
                         ig.w.emit("|")
-                        ig.w.emit(bnd)
+                        ig.w.emit(zigSafeName(bnd))
                         ig.w.emit("| ")
                     # else bnd == "_": Zig 0.16 rejects |_|; omit capture entirely
                 # else nil binding: no capture
@@ -11631,7 +11633,7 @@ struct Generator
             if needs_deref and (cas.binding == nil or cas.binding! != "_")
                 iig.writeIndent()
                 iig.w.emit("const ")
-                iig.w.emit(cas.binding!)
+                iig.w.emit(zigSafeName(cas.binding!))   # BUG-525
                 iig.w.emit(" = _ptr_")
                 iig.w.emit(cas.binding!)
                 iig.w.emit(".*;\n")
@@ -13457,7 +13459,7 @@ struct Generator
                 w.emit(" catch ")
                 if ca2.err_var != nil
                     w.emit("|")
-                    w.emit(ca2.err_var!)
+                    emitName(ca2.err_var!)   # BUG-525: `catch |pub|` met `@"pub"`
                     w.emit("| ")
                 genExpr(ca2.fallback)
                 w.emit(")")

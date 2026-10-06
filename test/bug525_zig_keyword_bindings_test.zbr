@@ -1,0 +1,295 @@
+# BUG-525: a binding named like a ZIG keyword that Zebra does not reserve (pub, fn, switch,
+# error, defer, ...) was emitted bare in two positions -- a branch arm's capture
+# (`on Box.full as pub` -> `|pub|`) and a postfix catch's (`catch |pub|`) -- while every USE was
+# escaped (`@"pub"`), so zig refused code the user never wrote. Reported by the GameEngine
+# session (`if .publisher as pub`). The 26 words are DERIVED: zig's own keyword table minus
+# Zebra's vocabulary (tools/lint_zig_keywords.py + tools/zbr_vocab.py), not a hand list.
+# The total is computed, not recorded: sum(0..25) + 6*26 = 481.
+struct Node
+    var v: int
+
+union Boxed
+    one: ^Node
+    none
+
+union Box
+    full: int
+    empty
+
+def boom(): int throws
+    raise "x"
+
+def take(v: int): int
+    return v + 1
+
+def main()
+    var total = 0
+    var xs = [1, 2, 3]
+    var b0 = Box.full(0)
+    branch b0
+        on Box.full as addrspace
+            total = total + addrspace
+        on Box.empty
+            total = total + 0
+    for addrspace in xs
+        total = total + addrspace
+    var r0 = boom() catch |addrspace| take("${addrspace}".len) * 0
+    total = total + r0
+    var b1 = Box.full(1)
+    branch b1
+        on Box.full as align
+            total = total + align
+        on Box.empty
+            total = total + 0
+    for align in xs
+        total = total + align
+    var r1 = boom() catch |align| take("${align}".len) * 0
+    total = total + r1
+    var b2 = Box.full(2)
+    branch b2
+        on Box.full as allowzero
+            total = total + allowzero
+        on Box.empty
+            total = total + 0
+    for allowzero in xs
+        total = total + allowzero
+    var r2 = boom() catch |allowzero| take("${allowzero}".len) * 0
+    total = total + r2
+    var b3 = Box.full(3)
+    branch b3
+        on Box.full as anyframe
+            total = total + anyframe
+        on Box.empty
+            total = total + 0
+    for anyframe in xs
+        total = total + anyframe
+    var r3 = boom() catch |anyframe| take("${anyframe}".len) * 0
+    total = total + r3
+    var b4 = Box.full(4)
+    branch b4
+        on Box.full as anytype
+            total = total + anytype
+        on Box.empty
+            total = total + 0
+    for anytype in xs
+        total = total + anytype
+    var r4 = boom() catch |anytype| take("${anytype}".len) * 0
+    total = total + r4
+    var b5 = Box.full(5)
+    branch b5
+        on Box.full as asm
+            total = total + asm
+        on Box.empty
+            total = total + 0
+    for asm in xs
+        total = total + asm
+    var r5 = boom() catch |asm| take("${asm}".len) * 0
+    total = total + r5
+    var b6 = Box.full(6)
+    branch b6
+        on Box.full as callconv
+            total = total + callconv
+        on Box.empty
+            total = total + 0
+    for callconv in xs
+        total = total + callconv
+    var r6 = boom() catch |callconv| take("${callconv}".len) * 0
+    total = total + r6
+    var b7 = Box.full(7)
+    branch b7
+        on Box.full as comptime
+            total = total + comptime
+        on Box.empty
+            total = total + 0
+    for comptime in xs
+        total = total + comptime
+    var r7 = boom() catch |comptime| take("${comptime}".len) * 0
+    total = total + r7
+    var b8 = Box.full(8)
+    branch b8
+        on Box.full as defer
+            total = total + defer
+        on Box.empty
+            total = total + 0
+    for defer in xs
+        total = total + defer
+    var r8 = boom() catch |defer| take("${defer}".len) * 0
+    total = total + r8
+    var b9 = Box.full(9)
+    branch b9
+        on Box.full as errdefer
+            total = total + errdefer
+        on Box.empty
+            total = total + 0
+    for errdefer in xs
+        total = total + errdefer
+    var r9 = boom() catch |errdefer| take("${errdefer}".len) * 0
+    total = total + r9
+    var b10 = Box.full(10)
+    branch b10
+        on Box.full as error
+            total = total + error
+        on Box.empty
+            total = total + 0
+    for error in xs
+        total = total + error
+    var r10 = boom() catch |error| take("${error}".len) * 0
+    total = total + r10
+    var b11 = Box.full(11)
+    branch b11
+        on Box.full as fn
+            total = total + fn
+        on Box.empty
+            total = total + 0
+    for fn in xs
+        total = total + fn
+    var r11 = boom() catch |fn| take("${fn}".len) * 0
+    total = total + r11
+    var b12 = Box.full(12)
+    branch b12
+        on Box.full as inline
+            total = total + inline
+        on Box.empty
+            total = total + 0
+    for inline in xs
+        total = total + inline
+    var r12 = boom() catch |inline| take("${inline}".len) * 0
+    total = total + r12
+    var b13 = Box.full(13)
+    branch b13
+        on Box.full as linksection
+            total = total + linksection
+        on Box.empty
+            total = total + 0
+    for linksection in xs
+        total = total + linksection
+    var r13 = boom() catch |linksection| take("${linksection}".len) * 0
+    total = total + r13
+    var b14 = Box.full(14)
+    branch b14
+        on Box.full as noalias
+            total = total + noalias
+        on Box.empty
+            total = total + 0
+    for noalias in xs
+        total = total + noalias
+    var r14 = boom() catch |noalias| take("${noalias}".len) * 0
+    total = total + r14
+    var b15 = Box.full(15)
+    branch b15
+        on Box.full as noinline
+            total = total + noinline
+        on Box.empty
+            total = total + 0
+    for noinline in xs
+        total = total + noinline
+    var r15 = boom() catch |noinline| take("${noinline}".len) * 0
+    total = total + r15
+    var b16 = Box.full(16)
+    branch b16
+        on Box.full as nosuspend
+            total = total + nosuspend
+        on Box.empty
+            total = total + 0
+    for nosuspend in xs
+        total = total + nosuspend
+    var r16 = boom() catch |nosuspend| take("${nosuspend}".len) * 0
+    total = total + r16
+    var b17 = Box.full(17)
+    branch b17
+        on Box.full as opaque
+            total = total + opaque
+        on Box.empty
+            total = total + 0
+    for opaque in xs
+        total = total + opaque
+    var r17 = boom() catch |opaque| take("${opaque}".len) * 0
+    total = total + r17
+    var b18 = Box.full(18)
+    branch b18
+        on Box.full as packed
+            total = total + packed
+        on Box.empty
+            total = total + 0
+    for packed in xs
+        total = total + packed
+    var r18 = boom() catch |packed| take("${packed}".len) * 0
+    total = total + r18
+    var b19 = Box.full(19)
+    branch b19
+        on Box.full as pub
+            total = total + pub
+        on Box.empty
+            total = total + 0
+    for pub in xs
+        total = total + pub
+    var r19 = boom() catch |pub| take("${pub}".len) * 0
+    total = total + r19
+    var b20 = Box.full(20)
+    branch b20
+        on Box.full as resume
+            total = total + resume
+        on Box.empty
+            total = total + 0
+    for resume in xs
+        total = total + resume
+    var r20 = boom() catch |resume| take("${resume}".len) * 0
+    total = total + r20
+    var b21 = Box.full(21)
+    branch b21
+        on Box.full as suspend
+            total = total + suspend
+        on Box.empty
+            total = total + 0
+    for suspend in xs
+        total = total + suspend
+    var r21 = boom() catch |suspend| take("${suspend}".len) * 0
+    total = total + r21
+    var b22 = Box.full(22)
+    branch b22
+        on Box.full as switch
+            total = total + switch
+        on Box.empty
+            total = total + 0
+    for switch in xs
+        total = total + switch
+    var r22 = boom() catch |switch| take("${switch}".len) * 0
+    total = total + r22
+    var b23 = Box.full(23)
+    branch b23
+        on Box.full as threadlocal
+            total = total + threadlocal
+        on Box.empty
+            total = total + 0
+    for threadlocal in xs
+        total = total + threadlocal
+    var r23 = boom() catch |threadlocal| take("${threadlocal}".len) * 0
+    total = total + r23
+    var b24 = Box.full(24)
+    branch b24
+        on Box.full as unreachable
+            total = total + unreachable
+        on Box.empty
+            total = total + 0
+    for unreachable in xs
+        total = total + unreachable
+    var r24 = boom() catch |unreachable| take("${unreachable}".len) * 0
+    total = total + r24
+    var b25 = Box.full(25)
+    branch b25
+        on Box.full as volatile
+            total = total + volatile
+        on Box.empty
+            total = total + 0
+    for volatile in xs
+        total = total + volatile
+    var r25 = boom() catch |volatile| take("${volatile}".len) * 0
+    total = total + r25
+
+    var bx = Boxed.one(Node(v: 19))
+    branch bx
+        on Boxed.one as pub
+            print("boxed pub=${pub.v}")
+        on Boxed.none
+            print("none")
+    print("kwbind total=${total}")

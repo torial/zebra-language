@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-524. Next new bug: BUG-525.**
+**Last bug number generated: BUG-526. Next new bug: BUG-527.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,18 @@
 > measured in.
 
 ---
+
+### BUG-526: a postfix `catch |e|` capture leaks two Zig errors -- unused, it fails "unused capture" (no column); `e.message` passes the front end and fails inside zig -- OPEN (found 2026-10-04)
+- **Repro:** `var r = boom() catch |e| 0` -> `error: unused capture` at the line, no column (Zig's
+  message relayed). `var r = boom() catch |e| take(e.message.len)` -> `type 'anyerror' does not
+  support field access`. `"${e}"` works.
+- **Why:** the branch-arm half of this was closed on 2026-09-16 (TypeChecker refuses an unused
+  `as name` itself, at the arm), but postfix `catch` was not given the same rule; and the
+  capture is bound as a raw Zig `anyerror`, while the METHOD-level `catch |e|` gives `e.message`.
+- **Fix shape:** refuse the unused capture in the front end the way the arm rule does (or emit
+  `_ = e;`), and either give the postfix capture the same error object as the method-level
+  catch or refuse `.message` on it with a Zebra message.
+- **Found by:** writing BUG-525's fixture, which needed a used capture.
 
 ### BUG-520: `sb.toString().len` on a StringBuilder fails inside zig (and the older compiler printed a WRONG length) -- OPEN (found 2026-10-03)
 - **Severity:** Medium (a leak today: `-c` passes, the build fails with `incompatible types: '*const str' and '*const *const [0:0]u8'`; and the N-1 anchor (2026-09-27) compiled the same program and printed **48** for a 3-character string -- wrong output, which is worse)

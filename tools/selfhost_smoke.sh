@@ -2069,6 +2069,7 @@ smoke_run test/bug501_generic_empty_list_test.zbr "bug501_gel: 0 0 0 0 10"
 _zc_saved="${ZEBRA_COMPILER-__unset__}"; unset ZEBRA_COMPILER
 smoke_run test/bug522_zebra_compiler_llvm_path_test.zbr "bug522: zc=set abs=7"
 [ "$_zc_saved" = "__unset__" ] || export ZEBRA_COMPILER="$_zc_saved"
+smoke_run test/bug525_zig_keyword_bindings_test.zbr "kwbind total=481"
 # BUG-461: a name reused inside the scope that declares it is refused (Zig forbids
 # shadowing); sibling scopes may reuse a name.
 smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: error: \`n\` is already declared as a parameter"

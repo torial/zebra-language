@@ -6,6 +6,24 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-525: a binding named like a Zig keyword Zebra does not reserve (`pub`, `fn`, `switch`, ...) was emitted bare in a branch arm or a postfix catch -- FIXED 2026-10-04
+- **Severity:** Medium (a leak: Zebra accepted the program, zig refused code the user never wrote).
+- **Reported by** the GameEngine session (Fable): `if .publisher as pub` emitted `var pub = ...`.
+- **Where:** three CodeGen sites wrote a capture name raw: a branch arm's `|name|`, a boxed
+  (`^T`) arm's rebinding `const name = _ptr_name.*`, and a postfix `catch |name|`. Every USE of
+  the name was already escaped (`@"pub"`), so the two disagreed. `for` loop captures were fine.
+- **Fix:** `zigSafeName` / `emitName` at all three.
+- **Why no gate saw it:** `keyword_ident_check` checks a HAND LIST of 6 words by ABSENCE (a bare
+  word in the output), and that method cannot cover words codegen emits itself (`pub`, `fn`,
+  `switch`...). The real set -- Zig's keyword table minus Zebra's vocabulary -- is **26**.
+- **Fixture:** `test/bug525_zig_keyword_bindings_test.zbr` binds a branch arm, a `for` loop and a
+  postfix catch to each of the 26, plus a boxed arm named `pub`; it must RUN and print the
+  computed total `kwbind total=481` (smoke_run). Red on the unfixed compiler (zig refused the
+  first word, `addrspace`). `lint_zig_keywords` gained a leg: the fixture's arms must name
+  exactly the derived set, so it cannot go stale when Zig adds a keyword or Zebra frees one
+  (red-checked by renaming one arm).
+- **Found alongside:** BUG-526 (postfix-catch capture leaks).
+
 ### BUG-524: on Apple silicon every `zebra x.zbr` spent ~60 s on Zig's self-hosted aarch64 backend before falling back, and a debug `zig build` of the compiler failed -- FIXED 2026-10-04
 - **Severity:** High for Mac users (every compile and run took 67-92 s where LLVM needs 4-6 s; the IDE's Check button takes the same path). A Mac developer's plain `zig build` failed. Release builds (ReleaseSafe, LLVM) were never affected, which is why rc2..rc6's macOS release smoke stayed green: its hello-world fell back and finished inside the job.
 - **Where:** `selfhost/main.zbr`'s run fast path (`-fno-llvm -fno-lld` for user programs and `-c`) and `build.zig`'s `fast-backend` default -- both chose Zig's self-hosted backend on every architecture. It is mature on x86_64 only.
