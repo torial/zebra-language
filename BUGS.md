@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-526. Next new bug: BUG-527.**
+**Last bug number generated: BUG-528. Next new bug: BUG-529.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,30 @@
 > measured in.
 
 ---
+
+### BUG-527: assigning to an interface-typed field INSIDE A METHOD is judged by the enclosing class's SAME-NAMED field -- the interface wrap is skipped and zig refuses it -- OPEN (found 2026-10-05)
+- **Reported by** the GameEngine session (a cousin of BUG-490's call-site case, fixed 93c4f2b).
+- **Repro (two modules):** module A has `interface MinigameListener` and
+  `class ShovelMinigames` with `var listener: MinigameListener?`. Module B (`use A exposing
+  MinigameListener, ShovelMinigames`) has `class WireShovelListener implements
+  MinigameListener` and `class WireShovel` with its OWN field `var listener:
+  WireShovelListener`; in a WireShovel method, `if .minigames as mg` then
+  `mg.listener = .listener` -> zig: expected type '?A.MinigameListener', found
+  '*WireShovelListener' (line, no column).
+- **Isolated by varying one thing at a time:** fails inside the method with ANY value (a
+  field, a local copied from it, a freshly constructed object). Works from `main()` with the
+  same values. Works inside the method once the enclosing class's field is RENAMED (`wl`).
+  So the target `mg.listener` is typed by `WireShovel.listener` -- the BUG-364 shape (another
+  class's field judged by the current class's same-named field), on the interface-conversion
+  path.
+- **Repro files:** to be committed as the fixture when fixed (kept in scratch for now).
+
+### BUG-528: an untyped class field (`var hits = 0`) passes the front end and emits `hits: anytype`, which zig refuses -- OPEN (found 2026-10-05)
+- QUICKSTART says field declarations carry a type. The front end accepts `var hits = 0`
+  in a class body, and codegen emits `hits: anytype = 0,` -> "expected type expression, found
+  'anytype'" from zig, at the line. It should either be refused in the front end ("a field
+  needs a type: `var hits: int = 0`") or infer the type from the initializer. Found while
+  reproducing BUG-527.
 
 ### BUG-526: a postfix `catch |e|` capture leaks two Zig errors -- unused, it fails "unused capture" (no column); `e.message` passes the front end and fails inside zig -- OPEN (found 2026-10-04)
 - **Repro:** `var r = boom() catch |e| 0` -> `error: unused capture` at the line, no column (Zig's

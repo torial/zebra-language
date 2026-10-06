@@ -3729,7 +3729,11 @@ pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList([]const u8) {
             return out;
         }
     }
-    return .empty;
+    // BUG-501 1d: built through _zbr_new like every other container -- a bare `.empty` is a
+    // VALUE and stops compiling the day containers are references. On the flipped runtime
+    // every program calling groups() failed to build; output_sweep caught it through
+    // regex_groups_test (smoke does not run that file), cross-sema's declarations leg names it.
+    return _zbr_new(_ZbrList([]const u8));
 }
 // ── Deep copy-out: `lhs <- rhs` inside `allocate` blocks ────────────────────
 // Detects ArrayList by method presence, not field names, to avoid false-positives
