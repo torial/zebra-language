@@ -351,6 +351,12 @@ is bound and inferred). Any of those is a bounded extension of the same lowering
 
 ## THE WRITTEN MEMORY MODEL — what it would actually contain
 
+**DRAFTED 2026-10-06: `docs/design/memory_model.md`** (status DRAFT, Sean's red pen). Each
+row is tagged as a proposed 1.0 guarantee or current behaviour, with its runtime mechanism
+and its witness; `test/boundary/memory_model_probe.zbr` pins the sharing and ordering rows.
+Writing it corrected four QUICKSTART claims (b5253c3), one of them the gap the
+reference-container switch left: a captured or channel-sent container is now SHARED.
+
 Not formality: today these answers exist only as folklore plus one hazard test, so nobody
 can reason about a concurrent Zebra program without reading the runtime. Roughly two pages
 answering:
