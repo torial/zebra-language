@@ -4700,7 +4700,12 @@ sys.go(def()
 )
 ```
 
-Captured variables are copied into the thread closure at spawn time. Re-declaring with
+A capture copies the **variable** into the thread closure at spawn time. For a value (`int`,
+`float`, `bool`, `str`, a struct, a tuple) that is an independent copy; for a **reference**
+-- a class instance, a `List`, `HashMap` or `Set` -- the thread gets the same object, shared
+with the spawner (since containers became references, 2026-10-06). Shared means visible
+both ways and **unsynchronised**: only a `Chan`, `ThreadPool.wait()` or an `Atomic` orders a
+write before a read. Capture `xs.copy()` for an independent container. Re-declaring with
 the same name (`var ch: Chan(int) = ch`) is the standard idiom.
 
 > **Fixed 2026-08-26 (BUG-246):** an `Atomic(T)` in an UNANNOTATED local used to
@@ -4737,7 +4742,14 @@ while not done
 
 - `Chan(T)` uses page-allocator; do not use inside short-lived `allocate` blocks.
 - Closing an already-closed channel is a no-op.
-- Sending to a closed channel panics at runtime.
+- Sending to a closed channel panics at runtime. A sender already BLOCKED on a full
+  channel when it is closed returns without delivering its value.
+- A capacity of `0` is a rendezvous: `send` returns only after a receiver has taken the
+  value.
+- A class instance or container sent on a channel is the **same object** on the receiving
+  side, not a copy -- send `xs.copy()` (shallow) or a `<<-` deep copy for an independent
+  one. A reference received this way still points into the SENDER's allocator, so do not
+  send one allocated inside an `allocate` block that ends before the receiver is done.
 - `sys.go()` accepts any zero-parameter lambda (with or without captures).
 - Threads are detached — no join mechanism yet; use a channel to signal completion.
 
@@ -4769,17 +4781,20 @@ print(counter.load())     # 8
 - `pool.wait()` blocks until all in-flight tasks finish.
 - **Submit after `wait` is supported** — calling `submit` after `wait` returns queues more
   work; a subsequent `wait` blocks on those new tasks.  The pool is reusable.
-- Workers are spawned at construction; they run until the pool is garbage-collected.
+- Workers are spawned at construction and run until the program exits; there is no
+  shutdown or join (Zebra has no garbage collector).
 - `ThreadPool` uses `page_allocator`; do not use inside short-lived `allocate` blocks.
-- **Task panics are not caught** — if a submitted lambda panics, the worker thread
-  terminates.  Design tasks to not panic (validate inputs before submitting).
+- **A panic in a task ends the whole program**, exactly as a panic anywhere does -- `wait()`
+  never returns. (Corrected 2026-10-06: this note said only the worker thread terminated;
+  a task indexing past the end of a list was run and the process exited with the panic.)
+  Validate inputs before submitting.
 
 **`ThreadPool` vs `sys.go()`:**
 
 | | `ThreadPool(n)` | `sys.go(lambda)` |
 |---|---|---|
 | Worker count | Fixed `n` | Unbounded (new thread per call) |
-| Backpressure | Natural — submit blocks when all workers are busy | None — each call spawns immediately |
+| Backpressure | None — `submit` queues without limit; at most `n` tasks run at once | None — each call spawns immediately |
 | Result collection | Via `Atomic` or `Chan` | Via `Chan` |
 | Best for | CPU-bound parallel work | Fire-and-forget I/O tasks |
 

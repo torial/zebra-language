@@ -1,0 +1,112 @@
+# @boundary runs
+#
+# THE MEMORY-MODEL PROBE -- docs/MEMORY_MODEL.md, drafted 2026-10-06. The .expected beside
+# this file was written from the rules below BEFORE the first run.
+#
+# Rules under test (each is stated in the doc with its mechanism):
+#   R1  a `capture` copies the VARIABLE at spawn: a value (int, struct) is independent in
+#       the thread; a container (List) or class instance is the SAME object, shared.
+#   R2  a container sent on a Chan is the same container on the receiving side.
+#   R3  ordering is established ONLY by: thread spawn, Chan send -> matching recv,
+#       ThreadPool submit -> task start and task end -> wait() returning, Atomic ops.
+#       Every read below is ordered after the write it observes by one of those edges.
+#   R4  ThreadPool(1) runs its tasks one at a time, in submission order.
+#   R5  Atomic read-modify-write ops are atomic: no increment is lost.
+
+class Box
+    var n: int
+    cue init(n: int)
+        .n = n
+
+struct Pt
+    var x: int
+
+def main()
+    # R1 -- mutate AFTER the spawn, then release the thread through a Chan. The struct was
+    # copied at spawn (the thread sees 1); the List was not (the thread sees both items).
+    var p: Pt = Pt(x: 1)
+    var xs: List(int) = List(int)()
+    xs.add(1)
+    var go: Chan(int) = Chan(int)(1)
+    var back: Chan(int) = Chan(int)(2)
+    sys.go(def()
+        capture
+            var p: Pt = p
+            var xs: List(int) = xs
+            var go: Chan(int) = go
+            var back: Chan(int) = back
+        if go.recv() as g
+            back.send(p.x + g - g)
+            back.send(xs.len)
+    )
+    p.x = 99
+    xs.add(2)
+    go.send(0)
+    if back.recv() as tx
+        print(tx)                    # 1   -- the struct is a copy
+    if back.recv() as tl
+        print(tl)                    # 2   -- the List is shared
+    print(p.x)                       # 99
+
+    # R1 -- a class instance captured is shared; the thread's write is seen after the signal.
+    var b: Box = Box(3)
+    var done: Chan(int) = Chan(int)(1)
+    sys.go(def()
+        capture
+            var b: Box = b
+            var done: Chan(int) = done
+        b.n = 7
+        done.send(0)
+    )
+    if done.recv() as d1
+        print(b.n + d1)              # 7
+
+    # R2 -- a List sent on a Chan: the receiver's add is visible to the sender.
+    var ys: List(int) = List(int)()
+    ys.add(10)
+    var lc: Chan(List(int)) = Chan(List(int))(1)
+    var ack: Chan(int) = Chan(int)(1)
+    sys.go(def()
+        capture
+            var lc: Chan(List(int)) = lc
+            var ack: Chan(int) = ack
+        if lc.recv() as got
+            got.add(20)
+            ack.send(got.len)
+    )
+    lc.send(ys)
+    if ack.recv() as al
+        print(al)                    # 2
+    print(ys.len)                    # 2
+    print(ys.at(1))                  # 20
+
+    # R3 + R4 -- one worker, three tasks appending to a shared List; wait() orders the read.
+    var order: List(int) = List(int)()
+    var one: ThreadPool = ThreadPool(1)
+    var i: int = 1
+    while i <= 3
+        var k: int = i
+        one.submit(def()
+            capture
+                var order: List(int) = order
+                var k: int = k
+            order.add(k)
+        )
+        i = i + 1
+    one.wait()
+    print(order.len)                 # 3
+    print("${order.at(0)} ${order.at(1)} ${order.at(2)}")   # 1 2 3
+
+    # R5 -- four workers, forty increments, none lost.
+    var hits: Atomic(int) = Atomic(int)(0)
+    var four: ThreadPool = ThreadPool(4)
+    var j: int = 0
+    while j < 40
+        four.submit(def()
+            capture
+                var hits: Atomic(int) = hits
+            var _: int = hits.add(1)
+        )
+        j = j + 1
+    four.wait()
+    print(hits.load())               # 40
