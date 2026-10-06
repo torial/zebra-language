@@ -765,6 +765,27 @@ fn _zbr_deinit_container(p: anytype) void {
     // ArrayList is unmanaged (deinit takes the allocator); the maps are managed.
     if (comptime @hasField(H, "items")) p.deinit(_allocator) else p.deinit();
 }
+/// `xs.copy()` -- a SHALLOW copy (BUG-501 §6 decision 2, Sean 2026-09-30): a new container
+/// holding the same elements; a nested container is SHARED, not cloned (`<<-` is the deep
+/// copy). A cloned value today, a new heap header under references. The receiver may arrive
+/// by value or by pointer (a mutated parameter).
+pub fn _ZbrCopyOf(comptime C: type) type {
+    const H = if (@typeInfo(C) == .pointer) std.meta.Child(C) else C;
+    return if (_zbr_ref_containers) *H else H;
+}
+pub fn _zbr_copy(c: anytype) _ZbrCopyOf(@TypeOf(c)) {
+    const C = @TypeOf(c);
+    const H = if (comptime @typeInfo(C) == .pointer) std.meta.Child(C) else C;
+    const src: *const H = if (comptime @typeInfo(C) == .pointer) c else &c;
+    // ArrayList is unmanaged (clone takes the allocator); the maps carry their own.
+    const v: H = if (comptime @hasField(H, "items")) (src.clone(_allocator) catch @panic("OOM")) else (src.clone() catch @panic("OOM"));
+    if (comptime _zbr_ref_containers) {
+        const p = _allocator.create(H) catch @panic("OOM");
+        p.* = v;
+        return p;
+    }
+    return v;
+}
 // A list the runtime or an emitted block uses as SCRATCH and never hands to Zebra code
 // (`repeat()`'s builder). It stays a plain value through the flip.
 pub fn _ZbrScratch(comptime T: type) type {

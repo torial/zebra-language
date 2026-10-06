@@ -23,6 +23,8 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`copy()` on List, HashMap and Set** -- a shallow copy: a new container with the same elements; a nested container is shared (`<<-` remains the deep copy). Once containers become references (BUG-501), `var b = a` shares and `a.copy()` is how to get an independent one.
+
 - **Embedding: `_zbr_free(c)`** frees a List or map that Zebra returned to a host's Zig code, in the runtime's allocator. Hosts should use it instead of `.deinit`, which will leak a 24-byte header per container once containers become references (BUG-501).
 
 - **Fixed: a quote right after an interpolation was silently dropped** -- `"${name}'s"` printed `names` (BUG-529). Single-quoted interpolated strings containing `"` now compile.

@@ -573,6 +573,11 @@ bash tools/cross_sema_check.sh  # THE OTHER-OS COMPILE WITNESS, registered as `c
                                 #   error; x86_64-macos links a Mach-O in ~60 s).
                                 #   Blind to: linking and runtime behaviour on any non-host OS,
                                 #   and GENERIC runtime code that no listed program instantiates.
+                                #   RETRIES BUG-302 (2026-10-06): it called zig directly and was
+                                #   the one zig gate without the shared predicate; its first QUICK
+                                #   after `copy()` went red on zig failing to read its own std.
+                                #   The retry count lives in a FILE -- the shell counter in a
+                                #   $(...) subshell always printed 0, caught by its own stub test.
 bash tools/styler_test.sh       # tokenizer unit test (`zig test` on the pure STYLER block
                                 #   extracted verbatim from the libui section). RED-checked:
                                 #   flipping a spec flag fails the matching tests.
@@ -949,7 +954,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
                                 #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
-                                #   23 receivers / 286 methods by SURFACE.md's section counts (5 / 120
+                                #   23 receivers / 289 methods by SURFACE.md's section counts (5 / 120
                                 #   on the day it was written; the SIMD vector/mask table and the
                                 #   Random instance joined 2026-09-18).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
@@ -3196,7 +3201,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **763** <!-- doc-gen: 763 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **764** <!-- doc-gen: 764 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

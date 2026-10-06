@@ -1029,6 +1029,9 @@ items.sort()                         # natural ascending (numeric / lexicographi
 items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
 items.sortBy(def(x) = x.score)     # ONE-argument KEY function: ascending by the key (BUG-422)
 items.reverse()                      # in place (2026-09-10)
+var snap = items.copy()              # a SHALLOW copy: a new list, the same elements (a nested
+                                     # container is shared, not cloned; `<<-` is the deep copy).
+                                     # HashMap and Set have copy() too (BUG-501, 2026-10-06).
 items.reserve(100000)                # pre-size the backing store; count() unchanged (BUG-435, 2026-09-18).
                                      # Worth it when the final size is known and large -- growth by
                                      # doubling briefly holds old+new, which was a 3.5 GB list going OOM.

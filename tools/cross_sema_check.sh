@@ -38,6 +38,25 @@ set -u
 cd "$(dirname "$0")/.."
 REPO=$(pwd)
 . "$REPO/tools/zig_toolchain.sh"
+# BUG-302: zig can fail to read ITS OWN std under concurrent load ("unable to load
+# 'LibCDirs.zig': Unexpected") -- that is not a verdict on our runtime. This gate called zig
+# directly and was the one zig-invoking gate without the shared predicate; the first QUICK
+# after it was written went red on exactly that (2026-10-06), while a standalone re-run passed.
+# Only that failure is retried, three tries, and the count prints every run.
+. "$REPO/tools/zig_build_lib.sh"
+# The count lives in a FILE: zig_sema runs inside $(...), a subshell, so a shell counter
+# would always print 0 -- a fabricated zero, caught by this gate's own retry test.
+RETRY_LOG=$(mktemp)
+zig_sema() {   # runs "$@" in the current dir, retrying ONLY the BUG-302 infra failure
+  local tries=0 out rc
+  while :; do
+    out=$("$@" 2>&1); rc=$?
+    if [ $rc -ne 0 ] && [ $tries -lt 2 ] && zbr_zig_infra_error <(printf '%s' "$out"); then
+      tries=$((tries + 1)); echo x >> "$RETRY_LOG"; continue
+    fi
+    printf '%s' "$out"; return $rc
+  done
+}
 ZEBRA=${ZEBRA:-./zig-out/bin/zebra}; [ -x "$ZEBRA" ] || ZEBRA=./zig-out/bin/zebra.exe
 targets=(); files=()
 while [ $# -gt 0 ]; do
@@ -63,7 +82,7 @@ for f in "${files[@]}"; do
   [ -z "$rt" ] && [ -f "$d/zebra_rt.zig" ] && rt="$d/zebra_rt.zig"
   for t in "${targets[@]}"; do
     libc=(); case "$t" in *-linux-gnu) libc=(-lc) ;; esac
-    if out=$(cd "$d" && zig build-exe -target "$t" "${libc[@]}" -fno-emit-bin "$name.zig" 2>&1); then
+    if out=$(cd "$d" && zig_sema zig build-exe -target "$t" "${libc[@]}" -fno-emit-bin "$name.zig"); then
       echo "PASS: $f ($t sema)"; checked=$((checked + 1))
     else
       echo "FAIL ($t sema): $f"; echo "$out" | head -12; fail=1
@@ -89,13 +108,13 @@ pub const _ZzProbeOuter = struct {
 '; } > "$rd/planted.zig"
 printf 'test { @import("refall_rec.zig").refAllRec(@import("planted.zig"), "planted.", 4); }
 ' > "$rd/control.zig"
-if out=$(cd "$rd" && zig test -target x86_64-linux -fno-emit-bin control.zig 2>&1) || ! grep -q 'CROSS-SEMA PLANTED PROBE' <<< "$out"; then
+if out=$(cd "$rd" && zig_sema zig test -target x86_64-linux -fno-emit-bin control.zig) || ! grep -q 'CROSS-SEMA PLANTED PROBE' <<< "$out"; then
   echo "cross-sema: REFUSING -- the planted nested-method error was NOT reported; the declarations walk is blind"
   echo "$out" | head -8; rm -rf "$tmp"; exit 2
 fi
 for t in "${targets[@]}"; do
   libc=(); case "$t" in *-linux-gnu) libc=(-lc) ;; esac
-  if out=$(cd "$rd" && zig test -target "$t" "${libc[@]}" -fno-emit-bin decls.zig 2>&1); then
+  if out=$(cd "$rd" && zig_sema zig test -target "$t" "${libc[@]}" -fno-emit-bin decls.zig); then
     echo "PASS: runtime declarations ($t sema)"; rtchecked=$((rtchecked + 1))
   else
     echo "FAIL ($t sema): runtime declarations"; echo "$out" | head -12; fail=1
@@ -107,7 +126,7 @@ if [ "$fail" -eq 0 ] && [ "$checked" -eq 0 ]; then
   echo "cross-sema: REFUSING -- no program was analysed"; exit 2
 fi
 if [ "$fail" -eq 0 ]; then
-  echo "cross-sema: PASS -- $checked program x target + $rtchecked runtime-declaration analyses (${#files[@]} programs, ${#targets[@]} targets; planted control caught)"
+  echo "cross-sema: PASS -- $checked program x target + $rtchecked runtime-declaration analyses (${#files[@]} programs, ${#targets[@]} targets; planted control caught); infra-retries=$(wc -l < "$RETRY_LOG" | tr -d ' ')"
 else
   echo "cross-sema: FAILED"
 fi

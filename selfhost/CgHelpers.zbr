@@ -1491,6 +1491,9 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "map" or name == "filter" or name == "reduce"
         return true
+    # copy() builds a NEW container (BUG-501 §6); the receiver is only read.
+    if name == "copy"
+        return true
     # HashMap.keys()/values() snapshot into a new List — receiver stays const.
     if name == "keys" or name == "values"
         return true

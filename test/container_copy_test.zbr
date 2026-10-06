@@ -1,0 +1,45 @@
+# BUG-501 §6 decision 2 (Sean, 2026-09-30): `copy()` is a SHALLOW copy of a List, HashMap
+# or Set -- a new container with the same elements; a NESTED container is shared, not
+# cloned (`<<-` is the deep copy). It must mean the same thing whether containers are
+# values (today) or references (after the switch), so every assertion here holds in both.
+def main()
+    # List: mutating the copy leaves the original alone, both ways round
+    var a = List(int)()
+    a.add(1)
+    a.add(2)
+    a.add(3)
+    var c = a.copy()
+    c.add(4)
+    c.set(0, 9)
+    assert a.count == 3, "adding to the copy must not grow the original"
+    assert a.at(0) == 1, "setting in the copy must not change the original"
+    assert c.count == 4 and c.at(0) == 9, "the copy holds its own changes"
+    a.add(5)
+    assert c.count == 4, "adding to the original must not grow the copy"
+
+    # HashMap
+    var m = HashMap(str, int)()
+    m.set("x", 1)
+    var mc = m.copy()
+    mc.set("x", 7)
+    mc.set("y", 2)
+    assert m.count == 1, "the original map keeps one entry"
+    assert m.fetch("x") == 1, "the original's value is untouched"
+    assert mc.fetch("x") == 7 and mc.count == 2, "the copy holds its own changes"
+
+    # Set
+    var s = Set(int)()
+    s.add(1)
+    var sc = s.copy()
+    sc.add(2)
+    assert s.count == 1 and sc.count == 2, "a set copy is independent"
+
+    # SHALLOW: the inner list is shared, the outer list is not
+    var nested = List(List(int))()
+    nested.add(List(int)())
+    var ncopy = nested.copy()
+    ncopy.at(0).add(9)
+    assert nested.at(0).count == 1, "a shallow copy shares the inner list"
+    ncopy.add(List(int)())
+    assert nested.count == 1, "adding to the outer copy must not grow the original"
+    print("copy: OK")

@@ -1857,7 +1857,7 @@ def strMethodKnown(name: str): bool
 # (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
 # they were the names people reach for, and each was a Zig error until now.
 def listMethodKnown(name: str): bool
-    return name == "reserve" or name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append" or name == "reverse"
+    return name == "reserve" or name == "add" or name == "at" or name == "fetch" or name == "count" or name == "len" or name == "set" or name == "remove" or name == "any" or name == "all" or name == "find" or name == "map" or name == "filter" or name == "reduce" or name == "sort" or name == "sortBy" or name == "contains" or name == "clear" or name == "join" or name == "pop" or name == "toString" or name == "items" or name == "append" or name == "reverse" or name == "copy"
 
 # BUG-369, second half (2026-09-09): HashMap, Set and JsonValue, same derivation --
 # every candidate name probed at three arities through zig, kept if some arity compiled
@@ -1866,10 +1866,10 @@ def listMethodKnown(name: str): bool
 # and List-only names (`at`, `sort`, `join`) that codegen dispatches by name and that
 # compiled to nonsense on these receivers -- refusing them is the point.
 def hashmapMethodKnown(name: str): bool
-    return name == "set" or name == "put" or name == "get" or name == "fetch" or name == "contains" or name == "remove" or name == "keys" or name == "values" or name == "entries" or name == "count" or name == "len" or name == "toString"
+    return name == "set" or name == "put" or name == "get" or name == "fetch" or name == "contains" or name == "remove" or name == "keys" or name == "values" or name == "entries" or name == "count" or name == "len" or name == "toString" or name == "copy"
 
 def setMethodKnown(name: str): bool
-    return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString"
+    return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString" or name == "copy"
 
 def jsonMethodKnown(name: str): bool
     return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "keys" or name == "values" or name == "entries" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
@@ -3902,6 +3902,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return list_elem
                             if lmname == "join"
                                 return Type_.string_
+                            if lmname == "copy"
+                                return Type_.list_(list_elem)
                             if lmname == "reverse" or lmname == "clear" or lmname == "sort" or lmname == "sortBy" or lmname == "add" or lmname == "set" or lmname == "remove" or lmname == "reserve"
                                 return Type_.void_
                             if lmname == "count" or lmname == "len"
@@ -3917,7 +3919,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return lext_ret
                             if not listMethodKnown(lmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'List' has no method '" + lmname + "' (add/at/set/remove/count/contains/find/any/all/map/filter/reduce/sort/sortBy/reverse/clear/join)")
+                                           "'List' has no method '" + lmname + "' (add/at/set/remove/count/contains/find/any/all/map/filter/reduce/sort/sortBy/reverse/clear/join/copy)")
                                 return Type_.unknown_
                         on Type_.chan_ as chan_elem
                             if not chanMethodKnown(mem.member)
@@ -3961,6 +3963,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.bool_
                             if hmname == "keys"
                                 return Type_.list_(hmt.key_t)
+                            if hmname == "copy"
+                                return Type_.hashmap_(hmt)
                             if hmname == "values"
                                 return Type_.list_(hmt.val_t)
                             if hmname == "entries"
@@ -3971,7 +3975,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.list_(Type_.tuple_(TupleType_(ent_elems)))
                             if not hashmapMethodKnown(hmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'HashMap' has no method '" + hmname + "' (set/get/fetch/contains/remove/keys/values/entries/count)")
+                                           "'HashMap' has no method '" + hmname + "' (set/get/fetch/contains/remove/keys/values/entries/count/copy)")
                                 return Type_.unknown_
                         on Type_.set_ as set_elem
                             # §28f: generic Set(T). items() → List(T) snapshot
@@ -3980,6 +3984,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var setmname: str = mem.member
                             if setmname == "items"
                                 return Type_.list_(set_elem)
+                            if setmname == "copy"
+                                return Type_.set_(set_elem)
                             if setmname == "contains"
                                 return Type_.bool_
                             if setmname == "count"

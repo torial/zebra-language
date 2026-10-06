@@ -16361,6 +16361,12 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                    if mname == "copy"
+                        # BUG-501 §6: a shallow copy -- a new map, the same entries.
+                        w.emit("_zbr_copy(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                     if mname == "keys"
                         # §28f: use the preamble helper (StringHashMap/AutoHashMap
                         # have no Zig .keys()/.values() — those are ArrayHashMap-only).
@@ -16409,6 +16415,12 @@ struct Generator
                         w.emit("@as(i64, @intCast(")
                         genExpr(m.object)
                         w.emit(".count()))")
+                        return
+                    if mname == "copy"
+                        # BUG-501 §6: a shallow copy -- a new set, the same elements.
+                        w.emit("_zbr_copy(")
+                        genExpr(m.object)
+                        w.emit(")")
                         return
                     if mname == "items"
                         # items() → List(T) snapshot; reuse the map-keys helper (the
@@ -16511,6 +16523,12 @@ struct Generator
                     if mname == "clear"
                         genListRecv(m.object)
                         w.emit(".clearRetainingCapacity()")
+                        return
+                    if mname == "copy"
+                        # BUG-501 §6: a shallow copy -- a new list, the same elements.
+                        w.emit("_zbr_copy(")
+                        genListRecv(m.object)
+                        w.emit(")")
                         return
                     if mname == "reverse"
                         # 2026-09-10: in-place reverse (str already had one).

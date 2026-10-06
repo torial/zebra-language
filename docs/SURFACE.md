@@ -70,17 +70,17 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `center` `charAt` `chars` `codePointCount` `concat` `contains` `containsIgnoreCase` `count` `decodeBase64` `encodeBase64` `endsWith` `endsWithIgnoreCase` `eqlIgnoreCase` `format` `fromHex` `hash` `indexOf` `indexOfFrom` `indexOfIgnoreCase` `isAlpha` `isAlphanumeric` `isEmpty` `isNumeric` `isPrintable` `isValidUtf8` `join` `lastIndexOf` `len` `lines` `lower` `padLeft` `padRight` `repeat` `replace` `replaceAll` `reverse` `split` `startsWith` `startsWithIgnoreCase` `substring` `toFloat` `toFloat32` `toHex` `toInt` `toIntBase` `toString` `tokenize` `trim` `trimLeft` `trimRight` `tryFloat` `tryInt` `upper`
 
-### List(T) (24)
+### List(T) (25)
 
-`add` `all` `any` `append` `at` `clear` `contains` `count` `fetch` `filter` `find` `items` `join` `len` `map` `pop` `reduce` `remove` `reserve` `reverse` `set` `sort` `sortBy` `toString`
+`add` `all` `any` `append` `at` `clear` `contains` `copy` `count` `fetch` `filter` `find` `items` `join` `len` `map` `pop` `reduce` `remove` `reserve` `reverse` `set` `sort` `sortBy` `toString`
 
-### HashMap(K, V) (12)
+### HashMap(K, V) (13)
 
-`contains` `count` `entries` `fetch` `get` `keys` `len` `put` `remove` `set` `toString` `values`
+`contains` `copy` `count` `entries` `fetch` `get` `keys` `len` `put` `remove` `set` `toString` `values`
 
-### Set(T) (8)
+### Set(T) (9)
 
-`add` `clear` `contains` `count` `items` `len` `remove` `toString`
+`add` `clear` `contains` `copy` `count` `items` `len` `remove` `toString`
 
 ### JsonValue (24)
 
