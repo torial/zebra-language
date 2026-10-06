@@ -85,6 +85,35 @@ The linker bug was NOT reported upstream: the Zig team does not accept LLM-creat
   output_sweep 466 identical, full_sweep / divergence 0 regressions, libui-pin-build (a
   stranger's build from the pin) PASS.
 
+## Was it faster? (measured 2026-10-06, evening, interleaved)
+
+One dual-version tree, the two toolchains run alternately so drift in
+machine load hits both (sampled CPU ranged 0-34% between runs). Three rounds unless noted.
+
+| measurement | 0.16 | 0.17 | |
+|---|---|---|---|
+| `zig build` of the compiler, global AND local cache cold | 34.2 / 30.8 / 29.7 s | 157.4 / 130.2 / 127.1 s | **4x slower, one-time** |
+| `zig build`, global cache WARM, local cache cold (2 rounds) | 13.1 / 12.8 s | 11.0 / 10.3 s | **~18% faster** |
+| `build-exe -fno-emit-bin` of 20 emitted corpus programs, cold | 33.9 / 37.1 / 32.1 s | 27.5 / 26.2 / 24.3 s | **~25% faster** |
+
+So the 4x is **global-cache population** -- compiler_rt and 0.17's new build runner, ~100 s
+more than 0.16 needs -- paid once per fresh machine, CI runner or cleared
+`%LocalAppData%\zig`. Every build after that is faster on 0.17, and the per-program sema
+(what the gates spend most of their time on) is faster still. CI pays the cold cost every
+run unless the runner caches the global dir.
+
+Two instrument facts the harness found the hard way: 0.17's `zig build` no longer accepts
+`--global-cache-dir` (set `ZIG_GLOBAL_CACHE_DIR` instead -- both versions honour it), and
+0.16's `zig build` rejects the `--flag=value` spelling. The first A/B attempt reported 0.17
+builds as FAILED for that reason, not as slow; a harness that had scored a failed build as a
+time would have produced a very fast 0.17.
+
 ## Phase C
 
 Delete each 0.16 branch above once nothing builds with 0.16.
+
+**Blocked, 2026-10-06, on something outside this repo:** the GameEngine cannot build under
+0.17 because raylib-zig 6.0, raylib 6.0's build script and zemscripten all target 0.16
+upstream (engine finding F24). Until raylib-zig ships 0.17 support the engine host stays on
+0.16, so Zebra's emitted code must stay dual-version and Phase C waits. Fable watches
+raylib-zig's devel branch. zig-libui-ng is not a blocker (aede6599 handles 0.17).
