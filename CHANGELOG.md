@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`StringBuilder` is a reference too, since the same change (BUG-501; noted 2026-10-06).**
+  It is spelled through the same runtime name as `List(u8)`, so the switch below reached it:
+  `var b = a`, passing it to a function, or storing it in a struct now shares the builder,
+  where before an `append` through the copy was lost. The entry below lists only the three
+  collections; this was found afterwards, by running the old and new compilers on one program.
 - **SEMANTICS CHANGE: containers are references (BUG-501).** `List`, `HashMap` and `Set` now
   behave like classes: `var b = a` shares the container, a returned field is the field,
   storing a list in another container stores that list, and a struct holding a container

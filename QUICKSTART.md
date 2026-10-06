@@ -323,7 +323,7 @@ def main()
 | `int8…128`      | `i8…i128`            | sized signed integers                |
 | `uint8…128`     | `u8…u128`            | sized unsigned integers              |
 | `float16…128`   | `f16…f128`           | sized floats                         |
-| `StringBuilder` | `std.ArrayList(u8)`  | growable string buffer               |
+| `StringBuilder` | `*std.ArrayList(u8)` | growable string buffer; a reference, like `List` |
 | `void`          | `void`               |                                      |
 
 `str` has exactly one spelling. (`String` was an alias until 2026-09-15; the compiler now refuses it and names `str`.)
@@ -982,7 +982,7 @@ branch e
 ## 10. Collections
 
 **Containers are references (2026-10-06, BUG-501).** Primitives, `str`, structs, tuples,
-enums and unions are values; classes and containers (`List`, `HashMap`, `Set`) are
+enums and unions are values; classes and containers (`List`, `HashMap`, `Set`, `StringBuilder`) are
 references -- the Python / Cobra model. So `var b = a` shares the list (`b.add(x)` is seen
 through `a`), a method returning a field returns that field, `outer.set(k, local)` stores the
 same list, and a struct holding a container copies as a value whose container FIELD is
@@ -2813,7 +2813,8 @@ fields.  `T?`, `List(T)`, sized numerics, and nested `@reflectable` classes are 
    `var X: List(T)` is for **field declarations**.
 
 6. **`StringBuilder` field → use `= StringBuilder()` in `cue init`.**
-   The compiler special-cases `StringBuilder()` to emit `std.ArrayList(u8){}`.
+   The compiler special-cases `StringBuilder()` to allocate an empty builder
+   (`_zbr_new(_ZbrList(u8))`).
 
 7. **Method chaining on struct temporaries** works in `var`-init, `return`,
    and assignment positions (auto-materialised).  Expression-position chains

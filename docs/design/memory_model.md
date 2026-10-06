@@ -59,7 +59,7 @@ over the **value**. Whether the other side then has its own data depends on the 
 | struct, tuple, union | independent copy of the fields; any class instance or container INSIDE it is shared | **G** | `memory_model_probe` R1 (a struct of an `int`); the nested-reference case has none yet |
 | class instance | **shared** — the same object | **G** | `memory_model_probe` R1 (`Box`) |
 | `List`, `HashMap`, `Set` | **shared** — the same container (since 2026-10-06; before that, a half-copy that shared the buffer and not the length) | **G** | `memory_model_probe` R1, R2; red against the pre-switch anchor |
-| `StringBuilder` | **today: a half-copy** (the length is copied, the buffer is shared), which is a hazard in its own right. It becomes a reference in BUG-501's StringBuilder commit; this row then reads "shared" | **C** | none yet; the StringBuilder commit adds it |
+| `StringBuilder` | **shared** -- it became a reference in the same switch, being spelled `_ZbrList(u8)` (found 2026-10-06 after this note was adopted, which first said "still a half-copy"; the pre-switch compiler prints a lost write where this one shares) | **G** | none yet -- owed, §7 |
 | `Chan`, `Atomic`, `ThreadPool` | shared — that is what they are for, and they synchronise themselves | **G** | `chan_thread_test`, `memory_model_probe` |
 
 To give another thread its own container, send or capture `xs.copy()` (shallow) or a `<<-`
@@ -107,4 +107,4 @@ Two pieces of runtime state are per-thread and need no care: the error context (
    written. A future lock-free queue has to keep it.
 2. **Owed:** §5's first row is the strongest promise here, and its only evidence is one run.
    It needs a `smoke_run_fail` fixture (a task that panics; non-zero exit; the line after
-   `wait()` must not print). So does §3's nested-reference struct row.
+   `wait()` must not print). So do §3's nested-reference struct row and its StringBuilder row.

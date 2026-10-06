@@ -436,7 +436,9 @@ the acceptance test for Phase 1.
    - **1d LANDED (2026-10-06).** The runtime definitions flipped; `copy()` (§6 decision 2,
      found MISSING by this note's own §8 probe on its first run, which neither the staging nor
      the engine witness had done) landed first as prep; the probe passed UNEDITED on the
-     flipped tree and moved to `test/boundary/`. StringBuilder (§6 decision 4) follows as its
+     flipped tree and moved to `test/boundary/`. StringBuilder (§6 decision 4) turned out to be DONE by the same commit -- it is spelled
+     `_ZbrList(u8)`, so the switch reached it; found 2026-10-06 by running the pre-switch and
+     current compilers on one program (value copy vs shared). It was planned to follow as its
      own commit in this phase. The boxing / mutable-parameter machinery is deleted in a
      cleanup commit after.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
