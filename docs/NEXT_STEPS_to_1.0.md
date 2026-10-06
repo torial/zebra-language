@@ -898,7 +898,10 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
   runtime-module path and for `_initAllocator`/`_initIo` on the inline path, and
   `runtime_module_check`'s BUG-221 leg runs a depth-2 dep that touches a file. Re-checked
   2026-09-24 (1.0 pre-flight): a three-module chain whose leaf does `File.read` runs on
-  the default, `--no-runtime-module` and `--single-file` shapes. (Was:) selfhost-emitted
+  the default, `--no-runtime-module` and `--single-file` shapes. **That covers modules the
+  build EMITS only: a `--module-path` module, read for types and supplied by a host, is
+  never initialised by main() -- BUG-536 (2026-10-06), a segfault since the containers
+  switch.** (Was:) selfhost-emitted
   dep modules get a simple `_initIo` (local `_io` only); would silently use undefined
   `_io` if a transitive dep gains file I/O.
 - **BUG-180** — bootstrap ctor-default fill (see Compiler hardening). Bootstrap-only.
