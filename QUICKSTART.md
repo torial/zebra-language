@@ -2523,18 +2523,22 @@ map straight onto the C ones:
 
 - The C symbol name **is** the Zebra name — there is no renaming, so a symbol
   that is not a legal Zebra identifier cannot be reached.
-- **No C-string type.**  Zebra's `str` is a slice (pointer + length); C returns
-  a bare pointer, so `extern def f(): str` is an ABI mismatch.  The compiler
-  *rejects* it rather than miscompiling it — "slices have no guaranteed
-  in-memory representation" — so this fails loudly, not silently.  Receive a
-  `char*` as `uint` and convert:
+- **A C string is `^byte`, not `str`.**  Zebra's `str` is a slice (pointer +
+  length) and C's `char*` is a bare pointer, so `str` in an `extern` signature is
+  *refused* (BUG-269), with a message naming `^byte`.  Convert at the boundary:
 
   ```zebra
-  extern def Py_GetVersion(): uint
-  ```
-  ```
-  var p = Py_GetVersion()
-  var version: str = zig"std.mem.span(@as([*:0]const u8, @ptrFromInt(p)))"
+  extern def library_name(): ^byte
+  extern def count_vowels(s: ^byte): int32
+
+  # char* -> str: measures up to the NUL; the bytes still belong to C.
+  def from_c_string(p: ^byte): str
+      return zig"std.mem.span(@as([*:0]const u8, @ptrCast(p)))"
+
+  # str -> char*: a str has no terminator, so append a NUL byte first.
+  def to_c_string(s: str): ^byte
+      var z = s + "${0:c}"
+      return zig"@ptrCast(@constCast(z.ptr))"
   ```
 
   Use the **expression** form, as above — the value comes back out of the escape
@@ -3905,7 +3909,7 @@ class Stream
 | `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
 | `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |
 | `re.split(s)`                     | `[]str`        | The pieces between matches (BUG-416) |
-| `re.groups(s)`                    | `[]str`        | Capture groups: index 0 = full match, 1+ = groups |
+| `re.groups(s)`                    | `[]str`        | The capture groups of the FIRST match, group 1 at index 0 (the whole match is not included); no match gives `[]`. Stops at the first group that took no part in the match (BUG-530) |
 
 ### `DateTime` — date/time
 

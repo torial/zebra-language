@@ -14817,7 +14817,11 @@ struct Generator
     # tokenizer stores them as raw two-char sequences, which Zig interprets
     # correctly when the format string is emitted between double-quotes.
     def escapeLitForFmt(lit: str): str
-        return unescapeDollar(lit).replace("{", "{{").replace("}", "}}")
+        # BUG-529: a SINGLE-quoted interpolated string's segments carry a bare `"`, which
+        # must be escaped for the Zig format literal -- escapePlainStr does it idempotently
+        # (an already-escaped `\"` from a double-quoted string passes through) and also
+        # handles `\$`. Before, `'"${g}'` and `'${g}"q"'` did not compile.
+        return escapePlainStr(lit).replace("{", "{{").replace("}", "}}")
 
     # BUG-385: QUICKSTART §14 documents `"\${"` as the way to write a literal `${`,
     # but the two-char escape was copied into the Zig literal verbatim and Zig has

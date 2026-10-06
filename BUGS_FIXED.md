@@ -6,6 +6,20 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-529: a quote at the start of a non-first interpolation segment was DROPPED -- `"${name}'s"` printed `names` -- and a single-quoted interpolated string with a `"` did not compile -- FIXED 2026-10-05
+- **Severity:** High (SILENT wrong output in ordinary English text -- possessives, quoted values).
+- **Found by** the book agent rewriting ch21 (`print("'${g}'")` printed `'abc`).
+- **Cause:** the lexer emits only the START segment with its opening quote
+  (`src[open..${]`); later segments are bare content. AstBuilder ran every segment
+  through `stripStringQuotes`, which treats a leading `'`/`"` as a quote -- so a segment
+  that BEGAN with one lost it, and a segment that WAS one (`'`) became empty. Second
+  half: `escapeLitForFmt` never escaped a bare `"`, so a single-quoted string's segments
+  (`'"${g}'`, `'${g}"q"'`) reached Zig unescaped -- broken before this too.
+- **Fix:** strip only part 0 (positional, not by guessing from text); format literals go
+  through `escapePlainStr` (idempotent `"` escape, `\$` handled) before brace doubling.
+- **Fixture:** `test/bug529_interp_quote_segments_test.zbr` -- 8 interpolations, each asserted
+  against CONCATENATION (a different code path). Red on the unfixed compiler.
+
 ### BUG-525: a binding named like a Zig keyword Zebra does not reserve (`pub`, `fn`, `switch`, ...) was emitted bare in a branch arm or a postfix catch -- FIXED 2026-10-04
 - **Severity:** Medium (a leak: Zebra accepted the program, zig refused code the user never wrote).
 - **Reported by** the GameEngine session (Fable): `if .publisher as pub` emitted `var pub = ...`.

@@ -1,0 +1,19 @@
+# BUG-529: a quote character at the START of an interpolation segment that is not the first
+# segment was dropped -- `"${name}'s"` printed `names`, `"'${g}'"` printed `'abc` -- silently.
+# The lexer emits only the START segment with its opening quote; AstBuilder stripped "quotes"
+# from every segment. Found by the book agent rewriting ch21.
+# Second half: a SINGLE-quoted interpolated string with a bare `"` in any segment emitted it
+# unescaped into the Zig format literal and did not compile.
+# The oracle is CONCATENATION -- a different code path from interpolation.
+def main()
+    var g = "abc"
+    var n = "Sean"
+    assert "'${g}'" == "'" + g + "'", "quote after an interpolation, end segment"
+    assert "${n}'s book" == n + "'s book", "possessive after an interpolation"
+    assert "${g}'${n}'" == g + "'" + n + "'", "quote at the start of a MIDDLE segment"
+    assert '${g}"quoted"' == g + "\"quoted\"", "single-quoted string, bare double quote after"
+    assert '"${g}"' == "\"" + g + "\"", "single-quoted string, bare double quote in the start segment"
+    assert "${g}\"esc" == g + "\"esc", "escaped double quote still escaped once"
+    assert "{brace} ${g} {x}" == "{brace} " + g + " {x}", "braces still doubled for the format"
+    assert "cost \${g} = ${g}" == "cost $" + "{g} = " + g, "escaped dollar still literal"
+    print("bug529: OK")

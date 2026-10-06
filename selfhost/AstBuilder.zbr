@@ -1193,15 +1193,25 @@ class ASTBuilder
 
             on PNode.expr_string_interp as psi
                 var parts: List(StringPart) = List(StringPart)()
+                # BUG-529: only the START segment carries a quote (the lexer emits it as
+                # src[open..`${`]); every later segment is bare content (segText). Stripping
+                # those too dropped a LEADING quote character: `"${name}'s"` printed `names`
+                # and `"'${g}'"` printed `'abc` -- silently. A start segment, when present, is
+                # always part 0.
+                var part_ix = 0
                 for part in psi.parts
                     branch part
                         on PNode.expr_str as lit
-                            parts.add(StringPart.literal(stripStringQuotes(lit.text)))
+                            if part_ix == 0
+                                parts.add(StringPart.literal(stripStringQuotes(lit.text)))
+                            else
+                                parts.add(StringPart.literal(lit.text))
                         on PNode.expr_format as fspec
                             parts.add(StringPart.format(fspec.text[1..fspec.text.len]))
                         else
                             const part_expr = .buildExpr(part)?
                             parts.add(StringPart.expr_(part_expr))
+                    part_ix = part_ix + 1
                 return Expr.string_interp(ExprStringInterp(zspan(), parts))
 
             on PNode.expr_lambda as pl

@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Fixed: a quote right after an interpolation was silently dropped** -- `"${name}'s"` printed `names` (BUG-529). Single-quoted interpolated strings containing `"` now compile.
+
+- **QUICKSTART corrected:** `re.groups(s)` returns only the groups (the whole match is not element 0), and the FFI limits now teach `^byte` for C strings, not `uint`.
+
 - **Fixed: a branch binding or `catch` capture named like a Zig keyword** (`pub`, `fn`, `switch`, `error`, ... -- 26 words Zig reserves and Zebra does not) no longer fails inside zig (BUG-525).
 
 - **Fixed: on Apple silicon, compiling or running a program took over a minute** (BUG-524): the compiler tried Zig's self-hosted backend, which macOS killed after ~60 s, before falling back to LLVM (4-6 s). The self-hosted backend is now used on x86_64 only, and a debug `zig build` of the compiler works on a Mac.
