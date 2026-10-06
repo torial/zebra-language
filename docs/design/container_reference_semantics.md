@@ -418,6 +418,21 @@ the acceptance test for Phase 1.
      Hazard probe (scratch, to move to test/ at the switch): nested printing, `==`, `in`,
      a clone that copies entry by entry stays independent, the keep pattern, removal by
      descending index, literal temporaries, all three parameter shapes, `allocate` + `<<-`.
+   - **1d prep, part 2 (2026-10-05): `_zbr_free(c)`.** A host that owns a Zebra-returned
+     container must not spell the representation: under references `.deinit` frees the items and
+     leaks the heap header (the GameEngine witness found ten such sites, several calls per
+     frame). `_zbr_free` deinits a value, or deinits and destroys a reference. library-mode's
+     leg 2 pins it with the host's own DebugAllocator: no leak after `_zbr_free`, a leak when
+     nothing is freed, and -- run in the flipped tree -- a leak from `.deinit` alone.
+   - **1d staging result (2026-10-05).** In a worktree off 51f5a70: fixed point after 2 passes,
+     round-trip byte-identical, smoke 660/660, output_sweep 2 of 466 changed. `regex_groups_test`
+     stopped COMPILING: `_regex_groups` returned a bare `.empty` on no match -- hand-written
+     runtime, outside container-spelling's view; cross-sema's declarations leg on the flipped
+     runtime names exactly that one site (fixed on main, d99d54f). `allocate_debug_stats_test`
+     changed in COST only: +1 allocation / +24 B per container (the header), and inside an
+     arena superseded growth buffers are not reclaimed (a 50-int list: peak 656 -> 1024 B).
+     Fable's call: an accepted, documented 1d cost (the engine has no `allocate` block). Engine
+     witness GO: 206/206 sources, emitted statements textually identical, 21 host lines.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

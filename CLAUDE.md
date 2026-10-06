@@ -1186,8 +1186,14 @@ bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-m
                                 #   DebugAllocator calls the library's main and asks whether its
                                 #   allocator survived. NEGATIVE CONTROL: the same host against
                                 #   the OLD prologue must see it replaced, or the gate refuses
-                                #   (exit 2) -- a check that cannot fail is not one. CANNOT SEE:
-                                #   the host's later frees themselves.
+                                #   (exit 2) -- a check that cannot fail is not one.
+                                #   LEG 2 (2026-10-05, BUG-501 1d): a host frees a Zebra-returned
+                                #   list with the runtime's `_zbr_free` and its DebugAllocator must
+                                #   report NO leak; freeing nothing must report one (the control).
+                                #   Run in BOTH representations before the switch landed; under
+                                #   references the real attacker -- `.deinit` alone, what the
+                                #   GameEngine host did -- leaks the 24-byte header and is reported.
+                                #   CANNOT SEE: frees the host performs on paths it does not test.
 python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-smoke`
                                 #   (FAST tier, ~2s). Drives `zebra lsp` through a real
                                 #   JSON-RPC conversation over stdio -- Content-Length

@@ -23,6 +23,8 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Embedding: `_zbr_free(c)`** frees a List or map that Zebra returned to a host's Zig code, in the runtime's allocator. Hosts should use it instead of `.deinit`, which will leak a 24-byte header per container once containers become references (BUG-501).
+
 - **Fixed: a quote right after an interpolation was silently dropped** -- `"${name}'s"` printed `names` (BUG-529). Single-quoted interpolated strings containing `"` now compile.
 
 - **QUICKSTART corrected:** `re.groups(s)` returns only the groups (the whole match is not element 0), and the FFI limits now teach `^byte` for C strings, not `uint`.

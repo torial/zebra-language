@@ -742,6 +742,29 @@ pub fn _zbr_new(comptime C: type) C {
     if (comptime @hasField(C, "items")) return C.empty;
     return C.init(_allocator);
 }
+/// Free a Zebra container a HOST owns -- a List or map returned to hand-written Zig --
+/// whatever the representation (BUG-501). A container VALUE is deinited; a container
+/// REFERENCE (`_zbr_ref_containers`) is deinited and its heap header destroyed. Hosts call
+/// this and never `.deinit` directly: under references `deinit` alone frees the items and
+/// leaks the 24-byte header (found by the GameEngine witness, several per frame).
+/// Pass the value Zebra returned. Everything is freed with the runtime `_allocator`, which is
+/// the host's own once it has called `_initAllocator`.
+pub fn _zbr_free(c: anytype) void {
+    if (comptime @typeInfo(@TypeOf(c)) == .pointer and _zbr_ref_containers) {
+        _zbr_deinit_container(c);
+        _allocator.destroy(c);
+    } else if (comptime @typeInfo(@TypeOf(c)) == .pointer) {
+        _zbr_deinit_container(c); // a pointer to a container VALUE: free its storage only
+    } else {
+        var v = c;
+        _zbr_deinit_container(&v);
+    }
+}
+fn _zbr_deinit_container(p: anytype) void {
+    const H = @TypeOf(p.*);
+    // ArrayList is unmanaged (deinit takes the allocator); the maps are managed.
+    if (comptime @hasField(H, "items")) p.deinit(_allocator) else p.deinit();
+}
 // A list the runtime or an emitted block uses as SCRATCH and never hands to Zebra code
 // (`repeat()`'s builder). It stays a plain value through the flip.
 pub fn _ZbrScratch(comptime T: type) type {

@@ -15,6 +15,9 @@
 # restored, and must see the allocator replaced -- otherwise the check cannot fail and a
 # pass would mean nothing.
 #
+# Leg 2 (2026-10-05, BUG-501 1d): a host frees a Zebra-returned list with `_zbr_free` and its
+# DebugAllocator must report no leak; freeing nothing must report one (the control).
+#
 # CANNOT SEE: frees the host performs later (it asserts the precondition, not the crash),
 # or a runtime that allocates from some other global.
 set -u
@@ -73,8 +76,47 @@ run_host run2.log
 if ! grep -q "host allocator kept: false" run2.log; then
     echo "library-mode: REFUSING -- the negative control did not see the allocator replaced, so the check cannot fail"; tail -3 run2.log; exit 2
 fi
+# --- leg 2: _zbr_free (BUG-501 1d) --------------------------------------------------------
+# A host that owns a Zebra-returned container frees it with `_zbr_free`, whatever the
+# representation -- a value (today) or a reference with a heap header (after the switch).
+# THE REAL ATTACKER: the host's own DebugAllocator, asked whether anything leaked. Freeing a
+# reference with `deinit` alone leaks the header -- the GameEngine witness found exactly that,
+# several times per frame. CONTROL: freeing nothing must be reported as a leak, so a clean
+# result cannot mean the detector saw nothing.
+printf 'def make(): List(int)\n    var xs = List(int)()\n    var i = 0\n    while i < 50\n        xs.add(i)\n        i = i + 1\n    return xs\n\ndef main()\n    print("lib main ran")\n' > libfree.zbr
+if ! "$ZEXE" --library-mode --emit-zig --output-dir outf libfree.zbr >emitf.log 2>&1; then
+    echo "library-mode: REFUSING -- the compiler would not emit the _zbr_free library"; cat emitf.log; exit 2
+fi
+write_free_host() {   # $1 = what the host does with the list: free | none
+    cat > outf/host.zig <<EOF
+const std = @import("std");
+const rt = @import("zebra_rt.zig");
+const lib = @import("libfree.zig");
+pub fn main(init: std.process.Init) !void {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    rt._initAllocator(gpa.allocator());
+    lib.main(init);
+    const xs = lib._zbr_fn_make();
+    std.debug.print("items: {}\n", .{xs.items.len});
+    if (comptime std.mem.eql(u8, "$1", "free")) rt._zbr_free(xs);
+    std.debug.print("leaked: {}\n", .{gpa.deinit() == .leak});
+}
+EOF
+}
+run_free_host() { ( cd outf && zig run host.zig ) > "$1" 2>&1; }
+write_free_host none; run_free_host free_none.log
+if ! grep -q "leaked: true" free_none.log; then
+    echo "library-mode: REFUSING -- with nothing freed the DebugAllocator reported no leak, so it cannot see one"; tail -5 free_none.log; exit 2
+fi
+write_free_host free; run_free_host free_yes.log
+if ! grep -q "items: 50" free_yes.log; then
+    echo "library-mode: REFUSING -- the host did not get the 50-item list back"; tail -5 free_yes.log; exit 2
+fi
+if ! grep -q "leaked: false" free_yes.log; then
+    echo "library-mode: FAIL -- _zbr_free left a leak (representation: see below)"; tail -8 free_yes.log; exit 1
+fi
 if grep -q "host allocator kept: true" run1.log; then
-    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); infra-retries=$INFRA_RETRIES"
+    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); infra-retries=$INFRA_RETRIES"
     exit 0
 fi
 echo "library-mode: FAIL -- the library's main replaced the host's allocator (BUG-485)"; tail -3 run1.log
