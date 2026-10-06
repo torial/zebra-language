@@ -85,10 +85,12 @@ The linker bug was NOT reported upstream: the Zig team does not accept LLM-creat
   output_sweep 466 identical, full_sweep / divergence 0 regressions, libui-pin-build (a
   stranger's build from the pin) PASS.
 
-## Was it faster? (measured 2026-10-06, evening, interleaved)
+## Was it faster? (measured 2026-10-06, ~04:50-05:25, interleaved)
 
 One dual-version tree, the two toolchains run alternately so drift in
 machine load hits both (sampled CPU ranged 0-34% between runs). Three rounds unless noted.
+An earlier harness that passed `--global-cache-dir` measured 0.16 at 39.7-42.0 s cold, not
+30-34 s; the two harnesses disagree and the table carries only the one that ran both versions.
 
 | measurement | 0.16 | 0.17 | |
 |---|---|---|---|
@@ -96,7 +98,8 @@ machine load hits both (sampled CPU ranged 0-34% between runs). Three rounds unl
 | `zig build`, global cache WARM, local cache cold (2 rounds) | 13.1 / 12.8 s | 11.0 / 10.3 s | **~18% faster** |
 | `build-exe -fno-emit-bin` of 20 emitted corpus programs, cold | 33.9 / 37.1 / 32.1 s | 27.5 / 26.2 / 24.3 s | **~25% faster** |
 
-So the 4x is **global-cache population** -- compiler_rt and 0.17's new build runner, ~100 s
+So the 4x is **global-cache population** (what fills it -- compiler_rt, the new build runner? --
+was not measured; the scratch caches were cleaned up first), ~100 s
 more than 0.16 needs -- paid once per fresh machine, CI runner or cleared
 `%LocalAppData%\zig`. Every build after that is faster on 0.17, and the per-program sema
 (what the gates spend most of their time on) is faster still. CI pays the cold cost every
