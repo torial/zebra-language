@@ -1,7 +1,9 @@
 <!-- doc-status: design -->
 # The Zebra memory model — what a concurrent program may rely on
 
-**Status:** DRAFT 2026-10-06, for Sean's red pen. Written because NEXT_STEPS_to_1.0 ("THE
+**Status:** ADOPTED 2026-10-06 (Sean: "I approve the memory_model.md"). Every **G** row
+below binds from 1.0 as part of the stability promise (`docs/design/stability_policy.md`
+§2); **C** rows stay free to change. Drafted the same day. Written because NEXT_STEPS_to_1.0 ("THE
 WRITTEN MEMORY MODEL") lists five questions whose answers existed only as folklore plus one
 hazard test, and because the switch to reference containers (BUG-501 1d, `cfd2bc8`) changed
 the answer to one of them. Every row below names the MECHANISM in the runtime
@@ -10,8 +12,8 @@ go red if it stopped being true, or "none" said out loud.
 
 Each row is tagged:
 
-- **G** — proposed for the 1.0 promise (`docs/design/stability_policy.md`). Sean decides
-  which G rows are frozen.
+- **G** — part of the 1.0 promise (`docs/design/stability_policy.md` §2); all of them,
+  as adopted 2026-10-06.
 - **C** — current behaviour, stated so nobody has to read the runtime, and free to change.
 
 ## 1. Where threads come from
@@ -99,10 +101,10 @@ Two pieces of runtime state are per-thread and need no care: the error context (
 - **An evented runtime** (green threads, `std.Io` async). Out of scope for 1.0.
 - **Relaxed atomics.** `Atomic` is seq-cst only; `zig"..."` reaches Zig's own builtins.
 
-## 7. Open points for the red pen
+## 7. Settled on adoption, and what is still owed
 
-1. Is the §2 "spawn" edge for `pool.submit` worth promising separately from `sys.go`? It
-   holds by the same mutex, but a future lock-free queue would have to keep it.
-2. §5's first row is the strongest promise here, and the only evidence for it is one run.
-   A fixture needs a gate that expects a non-zero exit with a given message (`smoke_run_fail`
-   exists for exactly that).
+1. **Settled:** the §2 spawn edge is promised for `pool.submit` as well as `sys.go`, as
+   written. A future lock-free queue has to keep it.
+2. **Owed:** §5's first row is the strongest promise here, and its only evidence is one run.
+   It needs a `smoke_run_fail` fixture (a task that panics; non-zero exit; the line after
+   `wait()` must not print). So does §3's nested-reference struct row.

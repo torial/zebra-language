@@ -4705,7 +4705,7 @@ A capture copies the **variable** into the thread closure at spawn time. For a v
 -- a class instance, a `List`, `HashMap` or `Set` -- the thread gets the same object, shared
 with the spawner (since containers became references, 2026-10-06). Shared means visible
 both ways and **unsynchronised**: only a `Chan`, `ThreadPool.wait()` or an `Atomic` orders a
-write before a read (`docs/design/memory_model.md`, draft). Capture `xs.copy()` for an independent container. Re-declaring with
+write before a read (`docs/design/memory_model.md`). Capture `xs.copy()` for an independent container. Re-declaring with
 the same name (`var ch: Chan(int) = ch`) is the standard idiom.
 
 > **Fixed 2026-08-26 (BUG-246):** an `Atomic(T)` in an UNANNOTATED local used to

@@ -38,6 +38,12 @@ connections, `Sqlite*`, `CodeEditor`, `Gui`, `HttpRequest`, `Chan(T)`) were clos
 2026-09-15 and are in the derived set. Closing the rest is a pre-1.0 task on the tool,
 not a reason to promise less.
 
+**The memory model's G rows are frozen too** (`docs/design/memory_model.md`, adopted
+2026-10-06): the happens-before edges, what a capture or a channel send shares, the
+allocator rules and "a panic on any thread ends the program". They are behaviour rather
+than names, so `surface-freeze` cannot see them; each row names its own witness, and a G
+row without one is a debt on that note, not a weaker promise. Its C rows are not frozen.
+
 ## 3. What is NOT frozen — say it, so absence reads as a decision
 
 - The **text** of diagnostics (their *presence* and their *position* are frozen: a
