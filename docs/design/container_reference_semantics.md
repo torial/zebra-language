@@ -228,7 +228,7 @@ Settled as recommended: (1) `==` on containers is **structural**; (2) `xs.copy()
 
 ## 8. The intent probe -- written before any code
 
-`docs/design/container_reference_probe.zbr` (+ `.expected`), STAGED here rather than in
+`test/boundary/container_reference_probe.zbr` (+ `.expected`; moved there UNEDITED when 1d landed, 2026-10-06 -- until then it was STAGED in docs/design/ rather than in
 `test/boundary/` because a probe there must pass today (`@boundary-pending` encodes CURRENT
 behaviour, not intent), and this one fails by construction. It moves to `test/boundary/` in
 Phase 1 as the acceptance test, unedited. It states every row of §1's table
@@ -433,6 +433,12 @@ the acceptance test for Phase 1.
      arena superseded growth buffers are not reclaimed (a 50-int list: peak 656 -> 1024 B).
      Fable's call: an accepted, documented 1d cost (the engine has no `allocate` block). Engine
      witness GO: 206/206 sources, emitted statements textually identical, 21 host lines.
+   - **1d LANDED (2026-10-06).** The runtime definitions flipped; `copy()` (§6 decision 2,
+     found MISSING by this note's own §8 probe on its first run, which neither the staging nor
+     the engine witness had done) landed first as prep; the probe passed UNEDITED on the
+     flipped tree and moved to `test/boundary/`. StringBuilder (§6 decision 4) follows as its
+     own commit in this phase. The boxing / mutable-parameter machinery is deleted in a
+     cleanup commit after.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

@@ -135,7 +135,7 @@ pub fn _ZbrBoxOf(comptime T: type) type {
 // BUG-501 1d: which representation a List/HashMap/Set has. false = a value
 // (std.ArrayList); true = a pointer to a heap header. The shims below let codegen emit
 // the same text under both (docs/design/container_reference_semantics.md §9).
-pub const _zbr_ref_containers = false;
+pub const _zbr_ref_containers = true;
 /// The type of a container parameter its function mutates: a pointer to the caller's
 /// value today; the container itself once it is already a reference.
 pub fn _ZbrRefOf(comptime T: type) type {
@@ -727,20 +727,22 @@ pub fn _zbr_HashMap(comptime K: type, comptime V: type) type {
 // definitions and the constructors, not ~60 emit sites. `lint_container_spelling.py`
 // keeps the raw spellings out of the compiler's emitting code.
 pub fn _ZbrList(comptime T: type) type {
-    return std.ArrayList(T);
+    return *std.ArrayList(T);
 }
 pub fn _ZbrMap(comptime V: type) type {
-    return std.StringHashMap(V);
+    return *std.StringHashMap(V);
 }
 pub fn _ZbrAutoMap(comptime K: type, comptime V: type) type {
-    return _zbr_AutoMap(K, V);
+    return *_zbr_AutoMap(K, V);
 }
 // BUG-501 Phase 1a: EVERY construction of a Zebra-visible container goes through here, so
 // the flip to references (1d) changes this one function -- allocate the header, return the
 // pointer -- instead of ~40 emit sites. Today it returns the value it always did.
 pub fn _zbr_new(comptime C: type) C {
-    if (comptime @hasField(C, "items")) return C.empty;
-    return C.init(_allocator);
+    const H = std.meta.Child(C);
+    const p = _allocator.create(H) catch @panic("OOM");
+    p.* = if (comptime @hasField(H, "items")) H.empty else H.init(_allocator);
+    return p;
 }
 /// Free a Zebra container a HOST owns -- a List or map returned to hand-written Zig --
 /// whatever the representation (BUG-501). A container VALUE is deinited; a container

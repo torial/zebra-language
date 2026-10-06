@@ -1,7 +1,7 @@
 === allocate_copyout_deep_test sha1=3f63f860be03 ===
 allocate_copyout_deep: OK
-=== allocate_debug_stats_test sha1=9956bc24539d ===
-[allocate Debug] 4 allocations, 817 bytes requested, 681 bytes peak live
+=== allocate_debug_stats_test sha1=3019fd43db18 ===
+[allocate Debug] 5 allocations, 1057 bytes requested, 1032 bytes peak live
 allocate_debug_stats: OK
 === allocate_slice4_test sha1=331542f1a957 ===
 [allocate Debug] 0 allocations, 0 bytes requested, 0 bytes peak live

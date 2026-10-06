@@ -981,6 +981,14 @@ branch e
 
 ## 10. Collections
 
+**Containers are references (2026-10-06, BUG-501).** Primitives, `str`, structs, tuples,
+enums and unions are values; classes and containers (`List`, `HashMap`, `Set`) are
+references -- the Python / Cobra model. So `var b = a` shares the list (`b.add(x)` is seen
+through `a`), a method returning a field returns that field, `outer.set(k, local)` stores the
+same list, and a struct holding a container copies as a value whose container FIELD is
+shared. When you want an independent container, say so: `a.copy()` is a shallow copy (a
+nested container inside it is still shared; `<<-` is the deep copy).
+
 `==` and `!=` on two collections (`List`, `HashMap`, `Set`) compare their CONTENTS: same
 size, and element-wise equal -- strings by content, nested collections recursively, class
 instances by identity (BUG-506).
@@ -1048,11 +1056,9 @@ items.reserve(100000)                # pre-size the backing store; count() uncha
 #   row.add(2)                       # so does this: row IS grid's first list
 #   for r in grid
 #       r.add(3)                     # and this
-# ONE thing to know: what the parent holds is a box made when the value is STORED.
-# `grid.add(local)` copies `local`'s contents into the box at that moment; a later
-# `local.add(x)` does not reach the parent (the local is a value, the box is not).
-# Take the alias from the parent (`grid.at(i)`) when you want to keep mutating.
-# Storing a box you already hold (`grid.add(other.at(0))`) shares it, not copies it.
+# Since containers became references (2026-10-06), storing one shares it too:
+# `grid.add(local)` puts THAT list in the grid, so a later `local.add(x)` is seen
+# through `grid.at(i)`. Store `local.copy()` when the grid should get its own.
 
 # HashMap — construct with HashMap(K,V)() or a dict literal `{k: v, ...}`:
 var m = HashMap(str, int)()

@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **SEMANTICS CHANGE: containers are references (BUG-501).** `List`, `HashMap` and `Set` now
+  behave like classes: `var b = a` shares the container, a returned field is the field,
+  storing a list in another container stores that list, and a struct holding a container
+  shares it when copied. Before, assignment copied the header but shared the element
+  buffer -- a half-copy whose changes leaked one way and not the other. Use `a.copy()` for
+  an independent container. Embedding hosts free a Zebra-returned container with
+  `_zbr_free`, not `.deinit`. Measured on the corpus before landing: 2 of 466 programs
+  changed output -- one runtime bug the switch exposed (fixed first) and one allocation
+  count (+1 allocation, 24 bytes, per container).
+
 - **`copy()` on List, HashMap and Set** -- a shallow copy: a new container with the same elements; a nested container is shared (`<<-` remains the deep copy). Once containers become references (BUG-501), `var b = a` shares and `a.copy()` is how to get an independent one.
 
 - **Embedding: `_zbr_free(c)`** frees a List or map that Zebra returned to a host's Zig code, in the runtime's allocator. Hosts should use it instead of `.deinit`, which will leak a 24-byte header per container once containers become references (BUG-501).

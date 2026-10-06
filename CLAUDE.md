@@ -2313,7 +2313,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 34 probes / 335 assertions | <!-- doc-gen: 34 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 335 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 35 probes / 362 assertions | <!-- doc-gen: 35 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 362 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 12 opted in; the gate prints the ratio | <!-- doc-gen: 12 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
@@ -2357,6 +2357,18 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-10-06 (closing the overnight: BUG-501 1d -- CONTAINERS ARE REFERENCES -- with
+Fable's written GO, plus its prep `_zbr_free` 7467d75 and `copy()` 7677f0a, BUG-529): 57/57 PASS in
+ONE invocation at JOBS=2, ~72 min, on the switch tree.** smoke 663/663, round-trip byte-identical,
+`boundary` 35/0 -- the design note's §8 acceptance probe moved into test/boundary UNEDITED and
+passes -- `output_sweep` 466 identical against a baseline re-recorded for exactly ONE intended
+change (`allocate_debug_stats_test`: +1 allocation / +24 B per container, the accepted header
+cost), `full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover`, `release-mode`,
+`cross-sema`, `library-mode` (leg 2: `_zbr_free` leaves no leak), `leakgen` 100/0, `gramgen` 0/0,
+`libui-pin-build`, `node-addon`. **The method note:** the staging and the engine witness were both
+green while the switch could not pass its own acceptance test -- the probe called `copy()`, decided
+on 09-30 and never built. Run the acceptance test BEFORE calling a staging complete.
 
 **DAILY tier 2026-10-02 (closing the overnight: BUG-501 Phase 1a `27f54ca` with Fable's GO,
 BUG-504, BUG-516's one-note form, the gate-cache fixes `1b17ec4`): 57/57 PASS in ONE invocation
@@ -3201,7 +3213,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **764** <!-- doc-gen: 764 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **765** <!-- doc-gen: 765 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

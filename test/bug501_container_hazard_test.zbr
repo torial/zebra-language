@@ -1,0 +1,107 @@
+# BUG-501 1d: the hazard probe the switch was staged against. Behaviour that must NOT change
+# when containers become references, plus the one line that must: `var x2 = x1; x2.add(3)`
+# printed `assign 2 3` (a copy) before the switch and prints `assign 3 3` (an alias) after.
+
+class Bag
+    var items: List(int)
+    var tags: HashMap(str, int)
+
+    cue init()
+        .items = List(int)()
+        .tags = HashMap(str, int)()
+
+    # Fable case 2: a clone that copies entry by entry -- must stay independent.
+    def clone(): Bag
+        var b = Bag()
+        for x in .items
+            b.items.add(x)
+        for k, v in .tags
+            b.tags.set(k, v)
+        return b
+
+    # Fable case 3: the keep pattern -- replace the field while iterating the old one.
+    def keepOver(n: int)
+        var keep = List(int)()
+        for x in .items
+            if x > n
+                keep.add(x)
+        .items = keep
+
+def total(xs: List(int)): int
+    var t = 0
+    for x in xs
+        t += x
+    return t
+
+def push(xs: List(int), v: int)
+    xs.add(v)
+
+def handOn(xs: List(int), v: int): int
+    push(xs, v)
+    return total(xs)
+
+def main()
+    # invariant: printing nested containers
+    var grid: List(List(int)) = List(List(int))()
+    grid.add([1, 2])
+    grid.add([3])
+    grid.at(0).add(9)
+    print(grid)
+    print(grid.at(0))
+
+    # invariant: == structural, `in`
+    var a = [1, 2, 3]
+    var b = [1, 2, 3]
+    print("eq ${a == b} ne ${a != b}")
+    print("in ${2 in a} ${7 in a}")
+    var inner = [1, 2, 9]
+    print("nested-in ${inner == grid.at(0)}")
+
+    # Fable case 2
+    var bag = Bag()
+    bag.items.add(1)
+    bag.items.add(5)
+    bag.tags.set("k", 1)
+    var c = bag.clone()
+    c.items.add(7)
+    c.tags.set("j", 2)
+    print("clone ${bag.items.count()} ${c.items.count()} ${bag.tags.count()} ${c.tags.count()}")
+
+    # Fable case 3
+    bag.items.add(8)
+    bag.keepOver(4)
+    print("keep ${bag.items}")
+
+    # Fable case 4: removal during for-in (index loop, the supported way)
+    var rm = [1, 2, 3, 4, 5, 6]
+    var i = rm.count() - 1
+    while i >= 0
+        if rm.at(i) % 2 == 0
+            rm.remove(i)
+        i -= 1
+    print("rm ${rm}")
+
+    # Fable case 5: list-literal temporaries
+    print("lit ${total([4, 5, 6])} ${[7, 8].count()}")
+    var t1 = [1]
+    var t2 = [1]
+    t1.add(2)
+    print("lit-indep ${t1.count()} ${t2.count()}")
+
+    # mutable-param machinery: value -> ptr, ptr -> ptr, ptr -> value
+    var m = [10]
+    push(m, 11)
+    print("param ${handOn(m, 12)} ${m.count()}")
+
+    # the documented change: plain assignment. Today a copy; after the switch an alias.
+    var x1 = [1, 2]
+    var x2 = x1
+    x2.add(3)
+    print("assign ${x1.count()} ${x2.count()}")
+
+    # allocate + <<- copy-out of a container built in the arena
+    var kept = List(int)()
+    allocate Arena()
+        var tmp = [3, 4, 5]
+        kept <<- tmp
+    print("copyout ${kept}")
