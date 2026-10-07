@@ -5,6 +5,11 @@ def main()
     var zopt = sys.getenv("ZEBRA_COMPILER")
     assert zopt != nil, "ZEBRA_COMPILER must be set"
     var zebra: str = zopt!
+    # Scratch in the run's cwd (the repo root under the smoke suite), so it is removed at
+    # the end -- it sat untracked in the repo for weeks before it was (2026-10-07) -- and
+    # cleared first, in case a failed run left one behind.
+    if Dir.exists("sys_process_exit_code_tmp")
+        Dir.deleteAll("sys_process_exit_code_tmp")
     Dir.createAll("sys_process_exit_code_tmp")
     File.write("sys_process_exit_code_tmp/ok.zbr", "def main()\n    print(\"ok-child\")\n")
     File.write("sys_process_exit_code_tmp/bad.zbr", "def main()\n    var x: int = \"no\"\n")
@@ -38,4 +43,6 @@ def main()
     out = out + q.readAvailable() + q.readErrAvailable()
     assert q.exitCode() != 0, "expected non-zero exit for a type error"
     assert out.contains("error"), "expected an error message, got: " + out
+    Dir.deleteAll("sys_process_exit_code_tmp")
+    assert not Dir.exists("sys_process_exit_code_tmp"), "scratch dir was not removed"
     print("sys_process_exit_code_test: ok exit=" + p.exitCode().toString() + "/" + q.exitCode().toString())
