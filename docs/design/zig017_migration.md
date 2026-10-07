@@ -85,6 +85,11 @@ The linker bug was NOT reported upstream: the Zig team does not accept LLM-creat
   output_sweep 466 identical, full_sweep / divergence 0 regressions, libui-pin-build (a
   stranger's build from the pin) PASS.
 
+**A libui_ng app under 0.17, clicked by a person (2026-10-07).** `examples/counter.zbr`,
+scaffolded with `--gui-backend=libui_ng` against the pinned zig-libui-ng (`aede6599`) and
+built with Zig 0.17 (16 min at `-j2`, no warnings). Sean clicked +, -, past zero and Reset,
+resized and closed it: all as expected. No gate can see that; this is the receipt.
+
 ## Was it faster? (measured 2026-10-06, ~04:50-05:25, interleaved)
 
 One dual-version tree, the two toolchains run alternately so drift in
