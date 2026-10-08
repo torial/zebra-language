@@ -1,0 +1,7 @@
+# BUG-540, the other side: a call by name that fills no argument for a parameter without a
+# default -- codegen zero-filled it silently.
+def area(w: int, h: int): int
+    return w * h
+
+def main()
+    print(area(w: 3))

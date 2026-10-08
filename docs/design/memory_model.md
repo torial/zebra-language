@@ -56,10 +56,11 @@ over the **value**. Whether the other side then has its own data depends on the 
 |---|---|---|---|
 | `int`, `float`, `bool`, `byte`, enums | independent copy | **G** | `memory_model_probe` R1 |
 | `str` | the same bytes, and that is safe: `str` is immutable (`[]const u8`) | **G** | none needed — no operation writes into a `str` |
-| struct, tuple, union | independent copy of the fields; any class instance or container INSIDE it is shared | **G** | `memory_model_probe` R1 (a struct of an `int`); the nested-reference case has none yet |
+| struct, tuple, union | independent copy of the fields; any class instance or container INSIDE it is shared | **G** | `memory_model_probe` R1: a struct of an `int`, and a struct holding a `List` captured into a thread (copy / shared; the pre-switch compiler prints 1 / 0) |
 | class instance | **shared** — the same object | **G** | `memory_model_probe` R1 (`Box`) |
 | `List`, `HashMap`, `Set` | **shared** — the same container (since 2026-10-06; before that, a half-copy that shared the buffer and not the length) | **G** | `memory_model_probe` R1, R2; red against the pre-switch anchor |
-| `StringBuilder` | **shared** -- it became a reference in the same switch, being spelled `_ZbrList(u8)` (found 2026-10-06 after this note was adopted, which first said "still a half-copy"; the pre-switch compiler prints a lost write where this one shares) | **G** | none yet -- owed, §7 |
+| `StringBuilder` | **shared** -- it became a reference in the same switch, being spelled `_ZbrList(u8)` (found 2026-10-06 after this note was adopted, which first said "still a half-copy"; the pre-switch compiler prints a lost write where this one shares) | **G** | `memory_model_probe` R1: an alias sees the append, and so does a thread that captured it |
+| `CsvWriter` | **today: an independent copy** -- writes through a copy are lost, and a function cannot write to one it is given (BUG-541); it should become a reference like StringBuilder | **C** | BUG-541's repro |
 | `Chan`, `Atomic`, `ThreadPool` | shared — that is what they are for, and they synchronise themselves | **G** | `chan_thread_test`, `memory_model_probe` |
 
 To give another thread its own container, send or capture `xs.copy()` (shallow) or a `<<-`
@@ -90,7 +91,7 @@ Two pieces of runtime state are per-thread and need no care: the error context (
 
 | rule | tag | witness |
 |---|---|---|
-| A panic on any thread (an assert, an index past the end, an unhandled error) ends the whole program with a non-zero exit. A `ThreadPool.wait()` waiting on the panicking task never returns | **G** | run by hand 2026-10-06 (a task indexing an empty list: exit 1, the line after `wait()` never printed); no fixture |
+| A panic on any thread (an assert, an index past the end, an unhandled error) ends the whole program with a non-zero exit. A `ThreadPool.wait()` waiting on the panicking task never returns | **G** | `test/pool_task_panic_test.zbr` (smoke_run_fail: a task indexing an empty list; a `wait()` that returned would print and exit 0) |
 | An error raised in a task and not caught there ends the program the same way; errors do not cross threads | **C** | none |
 
 ## 6. What this note deliberately does not decide
@@ -105,6 +106,4 @@ Two pieces of runtime state are per-thread and need no care: the error context (
 
 1. **Settled:** the §2 spawn edge is promised for `pool.submit` as well as `sys.go`, as
    written. A future lock-free queue has to keep it.
-2. **Owed:** §5's first row is the strongest promise here, and its only evidence is one run.
-   It needs a `smoke_run_fail` fixture (a task that panics; non-zero exit; the line after
-   `wait()` must not print). So do §3's nested-reference struct row and its StringBuilder row.
+2. **Paid 2026-10-07:** the fixtures this list owed -- §5's panic row (`test/pool_task_panic_test.zbr`), §3's StringBuilder and struct-holding-a-reference rows (`memory_model_probe` R1, red against the pre-switch compiler where it compiles). Every G row now names a witness except the ones marked "none" by nature (`str` immutability, the data-race rule, and the edges read from the code: `close()`, exit-time freeing).

@@ -1,0 +1,33 @@
+# BUG-537: a struct-method call on the RIGHT-HAND SIDE of an assignment did not mark its
+# receiver mutated, so the receiver local was emitted `const` and zig refused the `*Self`
+# call ("expected type '*T', found '*const T'"). Found inside an `if x as y` block (Fable,
+# GameEngine); the block was incidental -- the assignment is what was not scanned. Each
+# position below assigns the call's result to an existing variable.
+struct Pair
+    var a: float
+    var b: float
+
+    def plus(o: Pair): Pair
+        return Pair(a: .a + o.a, b: .b + o.b)
+
+def mk(x: float): Pair
+    return Pair(a: x, b: x)
+
+def main()
+    var top = mk(1.0)
+    var sum = top.plus(mk(2.0))
+    var opt: Pair? = mk(3.0)
+    if opt as got
+        var inner = got.plus(mk(1.0))
+        sum = inner.plus(sum)
+    var i: int = 0
+    while i < 2
+        var step = mk(1.0)
+        sum = step.plus(sum)
+        i = i + 1
+    for k in 0..1
+        var each = mk(0.5)
+        sum = each.plus(sum)
+    var plain = mk(10.0)
+    sum = plain.plus(sum)
+    print("bug537: " + sum.a.toString())

@@ -21,6 +21,10 @@ class Box
 struct Pt
     var x: int
 
+struct Bag
+    var n: int
+    var xs: List(int)
+
 def main()
     # R1 -- mutate AFTER the spawn, then release the thread through a Chan. The struct was
     # copied at spawn (the thread sees 1); the List was not (the thread sees both items).
@@ -110,3 +114,43 @@ def main()
         j = j + 1
     four.wait()
     print(hits.load())               # 40
+
+    # R1 (added 2026-10-07) -- a struct holding a List, captured: the struct's own field is
+    # a copy (the thread sees 1), the List inside it is the same List (the thread sees 1 item
+    # added after the spawn).
+    var bag: Bag = Bag(n: 1, xs: List(int)())
+    var start: Chan(int) = Chan(int)(1)
+    var ret: Chan(int) = Chan(int)(2)
+    sys.go(def()
+        capture
+            var bag: Bag = bag
+            var start: Chan(int) = start
+            var ret: Chan(int) = ret
+        if start.recv() as s
+            ret.send(bag.n + s - s)
+            ret.send(bag.xs.len)
+    )
+    bag.n = 5
+    bag.xs.add(9)
+    start.send(0)
+    if ret.recv() as bn
+        print(bn)                    # 1   -- the struct is a copy
+    if ret.recv() as bl
+        print(bl)                    # 1   -- the List inside it is shared
+
+    # R1 -- a StringBuilder is a reference: an alias sees the append, and so does a thread
+    # that captured it.
+    var sa: StringBuilder = StringBuilder()
+    var sb2: StringBuilder = sa
+    sb2.append("h")
+    print(sa.len())                  # 1
+    var sdone: Chan(int) = Chan(int)(1)
+    sys.go(def()
+        capture
+            var sa: StringBuilder = sa
+            var sdone: Chan(int) = sdone
+        sa.append("i")
+        sdone.send(0)
+    )
+    if sdone.recv() as sd
+        print(sa.toString() + sd.toString().replace("0", ""))   # hi

@@ -1,0 +1,14 @@
+# docs/design/memory_model.md §5 (a G row): a panic on any thread ends the whole program
+# with a non-zero exit, and a ThreadPool.wait() waiting on the panicking task never
+# returns. Registered smoke_run_fail: if the panic killed only the worker and wait()
+# returned, the line below would print and the program would exit 0 -- a FAIL.
+def main()
+    var pool: ThreadPool = ThreadPool(2)
+    var xs: List(int) = List(int)()
+    pool.submit(def()
+        capture
+            var xs: List(int) = xs
+        print(xs.at(5))
+    )
+    pool.wait()
+    print("pool_task_panic_test: wait() returned -- the panic did NOT end the program")

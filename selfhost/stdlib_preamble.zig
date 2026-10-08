@@ -3637,6 +3637,15 @@ pub fn _regex_match(re: Regex, input: []const u8) bool {
     const end = re.matchAt(input, 0, false) catch return false;
     return end != null and end.? == input.len;
 }
+// BUG-532: `re.test(s)` -- the pattern matches somewhere in `s` (an empty match counts),
+// where `re.match(s)` needs all of it. The same scan as `_regex_find`, stopping at the first.
+pub fn _regex_test(re: Regex, input: []const u8) bool {
+    var i: usize = 0;
+    while (i <= input.len) : (i += 1) {
+        if ((re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) != null) return true;
+    }
+    return false;
+}
 pub fn _regex_find(re: Regex, input: []const u8) []const u8 {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {

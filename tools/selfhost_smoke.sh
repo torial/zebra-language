@@ -769,6 +769,10 @@ smoke_tc_fail test/arg_count_test.zbr "too few arguments"
 smoke_run test/bug239_empty_list_literal_test.zbr "bug239_empty_list_literal_test: ok"
 smoke_run test/string_builder_test.zbr "12"   # BUG-351: sb.len() after build() -- non-consuming
 smoke_run test/bug351_sb_build_nonconsuming_test.zbr "bug351: ok"
+smoke_run test/bug520_sb_tostring_len_test.zbr "bug520: 3 3"
+smoke_run test/bug532_regex_test_method_test.zbr "bug532: true false false true"
+smoke_run test/bug538_dot_after_closure_test.zbr "bug538: 11"
+smoke_run test/bug537_assign_rhs_receiver_test.zbr "bug537: 19.5"
 # 2026-09-14: three defects found by test/boundary/trip.zbr on its first run, each pinned
 # alone here and kept IN COMBINATION there.
 smoke_run test/bug424_math_abs_int_test.zbr "bug424: ok"
@@ -1726,6 +1730,8 @@ smoke_run     test/bug271_deferred_method_type_test.zbr "bug271: OK"
 # code — and test/*.zbr is built on `assert`. If that ever broke, a whole corpus would
 # fail silently while every caller reading rc was told it passed.
 smoke_run_fail test/bug259_runtime_exit_code_test.zbr "panic"
+# memory_model.md §5: a panic in a ThreadPool task ends the whole program (wait() never returns).
+smoke_run_fail test/pool_task_panic_test.zbr "index out of range"
 
 # BUG-273: `assert` used to lower to std.debug.assert (= `unreachable`), which named
 # nothing in Debug and printed NOTHING under --release, where it was also UNDEFINED
@@ -2236,6 +2242,12 @@ smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_ass
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 smoke_tc_fail test/bug504_optional_right_operand_col_fail.zbr "bug504_optional_right_operand_col_fail.zbr:5:16: error: 'b' may be nil here"
+
+# BUG-540: a named argument that matches no parameter, or a parameter a named call leaves
+# unfilled with no default, is refused -- codegen dropped / zero-filled them silently.
+smoke_tc_fail test/fail_fixtures/bug540_unknown_named_arg_fail.zbr "bug540_unknown_named_arg_fail.zbr:11:33: error: 'Hit's \`cue init\` has no parameter named \`entity\` -- it takes pos, hitEntity"
+smoke_tc_fail test/fail_fixtures/bug540_missing_named_arg_fail.zbr "no argument for parameter \`h\` of \`area\`, which has no default -- it takes w, h"
+smoke_run test/bug540_named_args_ok_test.zbr "bug540: 3 42 none 7 9 rock 10 12"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

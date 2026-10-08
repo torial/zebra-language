@@ -1,0 +1,29 @@
+# BUG-538: a leading-dot statement on the line after an assigned closure's body was read as
+# a member access continuing the closure (`def(...) ... .count`) and refused at the `=`.
+sig Done()
+
+class Button
+    var onDone: Done?
+
+    cue init()
+        .onDone = nil
+
+class Panel
+    var count: int
+    var button: Button
+
+    cue init()
+        .count = 0
+        var b = Button()
+        .button = b
+        b.onDone = def(): void
+            capture
+                var p: Panel = this
+            p.count = p.count + 1
+        .count = 10
+
+def main()
+    var p = Panel()
+    if p.button.onDone as cb
+        cb()
+    print("bug538: " + p.count.toString())

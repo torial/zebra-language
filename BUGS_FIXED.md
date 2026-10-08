@@ -6,6 +6,62 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-540: a named argument that matched no parameter was silently dropped (its slot zero-filled), and a parameter a named call left unfilled read as zero -- FIXED 2026-10-07
+- **Found by:** Fable, GameEngine (`RaycastResult(..., instance: nil, entity: eid)` against
+  `cue init(..., hitInst, hitEntity)`: a wrong entity id in the world designer's pick).
+- **Cause:** codegen fills each parameter from the argument naming it, else the next
+  positional one, else its default, else `std.mem.zeroes`; the arity check (BUG-142) bails
+  on any named argument and skips constructors, so nothing checked names at all.
+- **Fix:** `checkNamedArgs` (TypeChecker) replays that fill order against the callee's
+  declared parameters -- a class's `cue init` included, a struct built by field name
+  excluded -- and refuses an unknown name (naming the parameters it takes) and an unfilled
+  parameter without a default. The unknown-name error points at the argument's VALUE
+  column (an argument's span is its value's).
+- **Witnesses:** `fail_fixtures/bug540_unknown_named_arg_fail.zbr`,
+  `fail_fixtures/bug540_missing_named_arg_fail.zbr` (smoke_tc_fail, both `-c` rc=0 before),
+  `test/bug540_named_args_ok_test.zbr` (any order, mixed, a defaulted parameter omitted).
+  Fable's engine sweep (797 named calls, both sides) found no other instance.
+
+### BUG-538: a leading-dot statement on the line after an assigned closure's body failed to parse -- FIXED 2026-10-07
+- **Found by:** Fable, GameEngine (three times in a week; worked round in four places).
+- **Cause:** a STATEMENT-body lambda in expression position (`b.onDone = def(): void` +
+  body) returned to `parsePostfix`, whose loop took the next line's `.count` as a member
+  access on the lambda and failed at the `=`. The `var x = def()...` form returned early and
+  never hit it.
+- **Fix:** `parsePostfix` returns a statement-body lambda as soon as it is parsed; nothing
+  can chain onto one. **Witness:** `test/bug538_dot_after_closure_test.zbr` (red before).
+
+### BUG-537: a struct-method call on the right-hand side of an assignment did not keep its receiver `var` -- zig refused the `*Self` call -- FIXED 2026-10-07
+- **Found by:** Fable, GameEngine, inside an `if x as y` block -- which turned out to be
+  incidental: `scanMutationsInto` recorded an assignment's TARGET and never scanned its
+  VALUE, so `sum = inner.plus(sum)` left `inner` `const` anywhere. A `var x = inner.plus()`
+  initialiser was always scanned, which is why the same call one statement earlier worked.
+- **Fix:** the assignment arm also scans the right-hand side (CgHelpers).
+- **Witness:** `test/bug537_assign_rhs_receiver_test.zbr` -- the call in an `if as` block, a
+  `while`, a `for` and at function level, summing to 19.5 (red before).
+
+### BUG-532: `re.test(s)` could not be written, and had no codegen either -- FIXED 2026-10-07
+- **Decided (Sean, 2026-10-06):** `test` parses as a member name after `.` (as `to` already
+  did); the surface is unchanged.
+- **Found on the way:** codegen had no `test` arm, so a parsed call would have reached zig as
+  a bare `.test(` (a Zig keyword). Nothing ever defined what it meant.
+- **Fix:** Parser (the `to` arm takes `test` too), CodeGen (`_regex_test`), and the runtime's
+  `_regex_test`: the pattern matches ANYWHERE in the input, an empty match counting --
+  JavaScript's `RegExp.test`; `match` still needs all of it. QUICKSTART documents both.
+  The meaning was MY default, chosen because it fills the gap QUICKSTART had papered over
+  with `re.find(s) != ""`; easy to revisit before the freeze.
+- **Witness:** `test/bug532_regex_test_method_test.zbr` (`true false false true`; red before).
+
+### BUG-520: `sb.toString().len` / `sb.build().len` failed inside zig -- FIXED 2026-10-07
+- **Cause:** the non-throwing arm emitted `(_allocator.dupe(u8, sb.items) catch "")` --
+  `[]u8` against a string literal's type, which zig could not join for `.len`.
+- **Fix:** `catch @panic("OOM")`, as every other allocation does: one type, and an
+  out-of-memory is no longer a silent empty string. Two sites (the typed StringBuilder arm
+  and the name-based `build` fallback).
+- **Witness:** `test/bug520_sb_tostring_len_test.zbr` ("bug520: 3 3"; red before). The
+  entry's other question -- which change turned the older compiler's wrong `48` into a
+  compile error -- was not chased.
+
 ### BUG-539: a class `static def main` entry and every `zebra test` run never initialised their dependencies -- a dependency's module-level container crashed on first use -- FIXED 2026-10-07
 - **Found** while fixing BUG-536, by asking which OTHER entry points skipped the init sweep.
   Not a regression of the containers switch: the pre-switch anchor (f5afd86) failed both

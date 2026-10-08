@@ -1,0 +1,18 @@
+# BUG-540's positive half: named arguments in any order, a mix of positional and named, and
+# an omitted parameter that HAS a default all still compile and pass the right values.
+class Hit
+    var pos: int
+    var entity: int
+    var tag: str
+    cue init(pos: int, hitEntity: int, tag: str = "none")
+        .pos = pos
+        .entity = hitEntity
+        .tag = tag
+
+def area(w: int, h: int = 2): int
+    return w * h
+
+def main()
+    var a = Hit(hitEntity: 42, pos: 3)
+    var b = Hit(7, hitEntity: 9, tag: "rock")
+    print("bug540: " + a.pos.toString() + " " + a.entity.toString() + " " + a.tag + " " + b.pos.toString() + " " + b.entity.toString() + " " + b.tag + " " + area(w: 5).toString() + " " + area(h: 3, w: 4).toString())

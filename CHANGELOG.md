@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Named arguments are checked (BUG-540).** A name that matches none of the callee's
+  parameters -- for a class, its `cue init`'s, not its fields -- and a parameter without a
+  default that a call by name leaves unfilled are compile errors. Both were silent: the
+  argument was dropped / the parameter read as zero.
+- **`re.test(s)` works (BUG-532):** true when the pattern matches anywhere in `s` (an empty
+  match counts); `re.match(s)` still needs all of it. It was in the surface and could not
+  be written (`test` is a keyword) or compiled.
+- **Fixed:** a leading `.field = x` on the line after an assigned closure's body (BUG-538);
+  a struct-method call on an assignment's right-hand side whose receiver was emitted
+  `const` (BUG-537); `.len` straight off `sb.toString()` / `sb.build()` (BUG-520).
 - **Every entry point initialises every module it imports (BUG-536, BUG-539).** A program
   whose entry is a class `static def main`, every `zebra test` run, and every program using
   a `--module-path` module whose .zig a host supplies, left those dependencies'

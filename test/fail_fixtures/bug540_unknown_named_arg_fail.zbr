@@ -1,0 +1,12 @@
+# BUG-540: a named constructor argument that matches no `cue init` parameter was dropped
+# and its slot zero-filled -- `entity: 42` names a FIELD; the init takes `hitEntity`.
+class Hit
+    var pos: int
+    var entity: int
+    cue init(pos: int, hitEntity: int)
+        .pos = pos
+        .entity = hitEntity
+
+def main()
+    var h = Hit(pos: 3, entity: 42)
+    print(h.entity)

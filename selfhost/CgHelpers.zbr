@@ -1743,6 +1743,12 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet, ic: InferCtx?)
                             out.add(id.name)
                     else
                         pass
+                # BUG-537: the RIGHT-HAND SIDE too. `sum = inner.plus(sum)` calls `plus` on
+                # `inner`, and a struct method taking `*Self` needs `inner` to be `var`; only
+                # the target was recorded, so `inner` was emitted `const` and zig refused the
+                # call. (A `var x = inner.plus(...)` initialiser was always scanned, which is
+                # why the same call one statement earlier worked.)
+                scanMutationsInExpr(a.value, out, ic)
             # The HEADER expressions are scanned too (2026-09-26): `if a.hash() == 2`
             # mutates `a` when `hash` takes a mutable receiver (BUG-453/455), and a call in
             # a condition was invisible here -- only the bodies were walked.

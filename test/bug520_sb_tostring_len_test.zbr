@@ -1,0 +1,10 @@
+# BUG-520: `.len` straight off a StringBuilder's toString()/build() failed inside zig --
+# the emitted `dupe(...) catch ""` had two types zig could not join -- and an older compiler
+# printed a WRONG length (48 for three characters). An out-of-memory panics now, as every
+# other allocation does, instead of quietly becoming an empty string.
+def main()
+    var sb = StringBuilder()
+    sb.append("hey")
+    var n: int = sb.toString().len
+    var m: int = sb.build().len
+    print("bug520: " + n.toString() + " " + m.toString())

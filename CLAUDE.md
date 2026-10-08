@@ -2318,7 +2318,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 36 probes / 372 assertions | <!-- doc-gen: 36 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 372 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 36 probes / 376 assertions | <!-- doc-gen: 36 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 376 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 12 opted in; the gate prints the ratio | <!-- doc-gen: 12 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
@@ -3218,7 +3218,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **768** <!-- doc-gen: 768 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **774** <!-- doc-gen: 774 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

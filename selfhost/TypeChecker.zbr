@@ -5469,6 +5469,104 @@ def runtimeFactoryHint(name: str): str
         return "an allocator comes from `allocate Arena()` (or another named wrapper) -- it is not constructed"
     return ""
 
+# BUG-540: a call with NAMED arguments. Codegen fills each parameter from the argument that
+# names it, else from the next positional one, else from its default -- else from a
+# `std.mem.zeroes` it makes up. So an argument whose name matches no parameter was DROPPED,
+# and a parameter nothing filled read as zero: both silent (the engine's raycast lost an
+# entity id that way). This replays that fill order against the callee's declared
+# parameters -- a class constructor's `cue init` included -- and refuses both. Checked only
+# when the parameter list is known; a struct built by field name is not an init call.
+def checkNamedArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var any_named: bool = false
+    for a0 in call.args
+        if a0.name != nil
+            any_named = true
+    if not any_named
+        return
+    var ps_opt: List(Param)? = nil
+    var what: str = ""
+    var cline: int = line
+    var ccol: int = 0
+    branch call.callee
+        on Expr.ident as cid
+            ccol = cid.span.col
+            if cid.span.line > 0
+                cline = cid.span.line
+            if ctx.hasLocal(cid.name)
+                return
+            if ctx.hasClassAny(cid.name)
+                if namedArgsIsStruct(cid.name, ctx)
+                    return
+                ps_opt = ctx.fnParamListAny(cid.name, "init")
+                what = "'" + cid.name + "'s `cue init`"
+            else
+                ps_opt = ctx.fnParamListAny(ctx.current_class, cid.name)
+                if ps_opt == nil
+                    ps_opt = ctx.fnParamListAny("", cid.name)
+                what = "`" + cid.name + "`"
+        on Expr.member as mem
+            ccol = mem.span.col
+            cline = mem.span.line
+            var recv: Type_ = inferExpr(mem.object, ctx)
+            if recv is Type_.ref_to as rrt
+                recv = rrt
+            if recv is Type_.optional as rot
+                recv = rot
+            if recv is Type_.named as tn
+                ps_opt = ctx.fnParamListAny(tn, mem.member)
+                what = "`" + tn + "." + mem.member + "`"
+            else
+                return
+        else
+            return
+    if ps_opt == nil
+        return
+    var ps: List(Param) = ps_opt!
+    var takes: str = ""
+    for p in ps
+        if takes != ""
+            takes = takes + ", "
+        takes = takes + p.name
+    if takes == ""
+        takes = "no arguments"
+    var positional: int = 0
+    for a1 in call.args
+        if a1.name == nil
+            positional = positional + 1
+        else
+            var known: bool = false
+            for p1 in ps
+                if p1.name == a1.name!
+                    known = true
+            if not known
+                var al: int = cline
+                var ac: int = ccol
+                if a1.span.line > 0
+                    al = a1.span.line
+                    ac = a1.span.col
+                ctx.addErr(file, al, ac, what + " has no parameter named `" + a1.name! + "` -- it takes " + takes)
+    var used: int = 0
+    for p2 in ps
+        var by_name: bool = false
+        for a2 in call.args
+            if a2.name != nil
+                if a2.name! == p2.name
+                    by_name = true
+        if by_name
+            continue
+        if used < positional
+            used = used + 1
+            continue
+        if p2.default_ == nil
+            ctx.addErr(file, cline, ccol, "no argument for parameter `" + p2.name + "` of " + what + ", which has no default -- it takes " + takes)
+
+def namedArgsIsStruct(name: str, ctx: InferCtx): bool
+    if ctx.module_types.classOf(name) as mct
+        return mct.is_struct
+    if ctx.dep_types.classOf(name) as dct
+        return dct.is_struct
+    return false
+
 def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Named args reorder positional slots — skip (parity with checkCallExpr).
     for arg in call.args
@@ -5787,6 +5885,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
+            checkNamedArgs(c, file, line, ctx)    # BUG-540
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
             checkDeprecatedCall(c, ctx)
             if c.callee is Expr.member as cm

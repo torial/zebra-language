@@ -1,0 +1,12 @@
+# BUG-532: `re.test(s)` could not be written -- `test` is a keyword -- while the surface
+# and the checker's "has no method" message offered it; nor did codegen have an arm for it.
+# Decided (Sean, 2026-10-06): `test` parses as a member name after `.`. Meaning: the pattern
+# matches ANYWHERE in the input (JavaScript's RegExp.test); `match` needs all of it.
+def main()
+    var re = Regex.compile("o+")
+    var a: bool = re.test("foo")
+    var b: bool = re.test("bar")
+    var c: bool = re.match("foo")
+    var empty = Regex.compile("x*")
+    var d: bool = empty.test("abc")     # an empty match counts
+    print("bug532: " + a.toString() + " " + b.toString() + " " + c.toString() + " " + d.toString())

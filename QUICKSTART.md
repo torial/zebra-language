@@ -547,6 +547,10 @@ open(path: "data.txt", mode: "w")       # all named
   parser error.
 - Methods on classes use the same syntax; `cue init` constructors also support
   named/default args.
+- A name must be one of the callee's PARAMETERS -- for a class that is its `cue init`'s
+  parameter names, not its field names -- and every parameter without a default must be
+  given, by name or by position. Both are compile errors since BUG-540 (2026-10-07); they
+  used to drop the argument / pass a silent zero.
 - **Struct construction** uses named arg syntax too: `Point(x: 1, y: 2)` — see §6.
 
 ---
@@ -3914,7 +3918,8 @@ class Stream
 | Call                              | Returns        | Notes                              |
 |-----------------------------------|----------------|-------------------------------------|
 | `Regex.compile(pattern)`          | `Regex`        | Compile a pattern (Thompson NFA)    |
-| `re.match(s)`                     | bool           | True only if the pattern matches ALL of `s` (for "contains a match", use `re.find(s) != ""`) |
+| `re.match(s)`                     | bool           | True only if the pattern matches ALL of `s` |
+| `re.test(s)`                      | bool           | True if the pattern matches ANYWHERE in `s` (an empty match counts) -- JavaScript's `RegExp.test` (BUG-532, 2026-10-07) |
 | `re.find(s)`                      | str            | First matching substring            |
 | `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
 | `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |

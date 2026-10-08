@@ -15837,6 +15837,18 @@ struct Generator
                     pass
             branch recv_t
                 on Type_.regex
+                    if mname == "test"
+                        # BUG-532: true when the pattern matches ANYWHERE in the input
+                        # (JavaScript's RegExp.test); `match` requires all of it.
+                        w.emit("_regex_test(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
                     if mname == "match"
                         w.emit("_regex_match(")
                         genExpr(m.object)
@@ -16265,7 +16277,7 @@ struct Generator
                         else
                             w.emit("(_allocator.dupe(u8, ")
                             genExpr(m.object)
-                            w.emit(".items) catch \"\")")
+                            w.emit(".items) catch @panic(\"OOM\"))")   # BUG-520: one type; an OOM is not an empty string
                         return
                     if mname == "len"
                         w.emit("@as(i64, @intCast(")
@@ -17294,7 +17306,7 @@ struct Generator
                 else
                     w.emit("(_allocator.dupe(u8, ")
                     genExpr(m.object)
-                    w.emit(".items) catch \"\")")
+                    w.emit(".items) catch @panic(\"OOM\"))")   # BUG-520: one type; an OOM is not an empty string
                 return
         # List (not StrSet — StrSet.add is a real method).
         # BUG-061: skip uppercase receivers like `Math.add(3,10)` — class-scoped calls.
