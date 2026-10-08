@@ -2590,7 +2590,7 @@ pub const _zbr_ty_InferCtx = struct {
 // zbr:selfhost/TypeChecker.zbr:1550
         caret.appendSlice(_zbr_rt._allocator, "^") catch @panic("OOM");
 // zbr:selfhost/TypeChecker.zbr:1551
-        return _str_concat(_str_concat(_str_concat("\n", src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (_zbr_rt._allocator.dupe(u8, caret.items) catch ""), _zbr_rt._allocator);
+        return _str_concat(_str_concat(_str_concat("\n", src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (_zbr_rt._allocator.dupe(u8, caret.items) catch @panic("OOM")), _zbr_rt._allocator);
     }
 
     // zbr:selfhost/TypeChecker.zbr:1553
@@ -2609,7 +2609,7 @@ pub const _zbr_ty_InferCtx = struct {
             i = (i + 1);
         }
 // zbr:selfhost/TypeChecker.zbr:1560
-        return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
+        return (_zbr_rt._allocator.dupe(u8, sb.items) catch @panic("OOM"));
     }
 
     // zbr:selfhost/TypeChecker.zbr:1562
@@ -2713,7 +2713,7 @@ pub const _zbr_ty_InferCtx = struct {
             i = (i + 1);
         }
 // zbr:selfhost/TypeChecker.zbr:1611
-        return (_zbr_rt._allocator.dupe(u8, sb.items) catch "");
+        return (_zbr_rt._allocator.dupe(u8, sb.items) catch @panic("OOM"));
     }
 
     // zbr:selfhost/TypeChecker.zbr:1614

@@ -368,7 +368,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:196
             b.appendSlice(_zbr_rt._allocator, ")") catch @panic("OOM");
 // zbr:selfhost/CgHelpers.zbr:197
-            return (_zbr_rt._allocator.dupe(u8, b.items) catch "");
+            return (_zbr_rt._allocator.dupe(u8, b.items) catch @panic("OOM"));
         },
         .void_ => {
 // zbr:selfhost/CgHelpers.zbr:199
@@ -396,7 +396,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
 // zbr:selfhost/CgHelpers.zbr:209
             b2.appendSlice(_zbr_rt._allocator, ")") catch @panic("OOM");
 // zbr:selfhost/CgHelpers.zbr:210
-            return (_zbr_rt._allocator.dupe(u8, b2.items) catch "");
+            return (_zbr_rt._allocator.dupe(u8, b2.items) catch @panic("OOM"));
         },
         .alias_applied => |aa3| {
 // zbr:selfhost/CgHelpers.zbr:212

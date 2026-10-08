@@ -1467,7 +1467,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:928
             caret.appendSlice(_zbr_rt._allocator, "^") catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:929
-            return _str_concat(_str_concat(_str_concat(_str_concat(head, "\n", _zbr_rt._allocator), src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (_zbr_rt._allocator.dupe(u8, caret.items) catch ""), _zbr_rt._allocator);
+            return _str_concat(_str_concat(_str_concat(_str_concat(head, "\n", _zbr_rt._allocator), src_line, _zbr_rt._allocator), "\n", _zbr_rt._allocator), (_zbr_rt._allocator.dupe(u8, caret.items) catch @panic("OOM")), _zbr_rt._allocator);
         }
 // zbr:selfhost/Parser.zbr:930
         return head;
