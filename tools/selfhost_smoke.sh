@@ -612,6 +612,9 @@ smoke_test test/hashmap_fetch_chain_test.zbr
 # BUG-368: a test fn that raises nothing (plain `assert`, `pass`) is void, and the
 # harness could not call it. Mixed void/raising, top-level and class-static.
 smoke_test test/bug368_plain_assert_test_fn_test.zbr
+# BUG-539: the `zebra test` entry initialises the file's dependencies (a dep's module-level
+# List/HashMap was `undefined` and the first test touching it crashed).
+smoke_test test/bug539_test_entry_test.zbr
 # 2026-09-15: assert_eq/ne/true/false freed; plain `assert a == b` names both operands on
 # failure, for every primitive kind AND for two sides the checker could not type (decided
 # by type at runtime, as the old helper did). One deliberately failing test pins the text.
@@ -769,6 +772,8 @@ smoke_run test/bug351_sb_build_nonconsuming_test.zbr "bug351: ok"
 # 2026-09-14: three defects found by test/boundary/trip.zbr on its first run, each pinned
 # alone here and kept IN COMBINATION there.
 smoke_run test/bug424_math_abs_int_test.zbr "bug424: ok"
+# BUG-539: a class `static def main` entry initialises its dependencies.
+smoke_run test/bug539_static_main_test.zbr "bug539 static: 2/1"
 smoke_run test/bug425_extend_str_spelling_test.zbr "bug425: ok"
 smoke_run test/bug426_expr_lambda_sig_test.zbr "bug426: ok"
 smoke_run test/defer_freed_words_test.zbr "defer: freed"

@@ -1,0 +1,15 @@
+# BUG-539: the `zebra test` runner's entry must initialise the file's dependencies; it
+# called only the ROOT's _initModuleVars, so a dependency's module-level containers were
+# `undefined` and the first test touching them crashed.
+
+use bug539_dep_mod
+
+class DepInitTests
+    static def test_dep_containers_are_live()
+        bug539_dep_mod.addItem(7)
+        bug539_dep_mod.setName("k", 3)
+        assert bug539_dep_mod.count() == 1
+        assert bug539_dep_mod.nameCount() == 1
+
+def main()
+    print("bug539_test_entry_test: run with 'zebra test'")

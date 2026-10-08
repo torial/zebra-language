@@ -735,10 +735,10 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:408
                             if (self.test_mode) {
 // zbr:selfhost/main.zbr:409
-                                zig_src = (try _zbr_fn_generateFullWithDepsTest(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.strip_contracts, tc_result, self.tag_filter));
+                                zig_src = (try _zbr_fn_generateFullWithDepsTest(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.mp_noted, self.strip_contracts, tc_result, self.tag_filter));
                             } else {
 // zbr:selfhost/main.zbr:411
-                                zig_src = (try _zbr_fn_generateFullWithDeps(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.strip_contracts, tc_result, self.library_mode));
+                                zig_src = (try _zbr_fn_generateFullWithDeps(module, zbr_path, self.preamble_path, self.dep_class_names, self.dep_types, all_deps, self.mp_noted, self.strip_contracts, tc_result, self.library_mode));
                             }
                         }
                     }

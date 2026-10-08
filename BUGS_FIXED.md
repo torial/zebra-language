@@ -6,6 +6,50 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-539: a class `static def main` entry and every `zebra test` run never initialised their dependencies -- a dependency's module-level container crashed on first use -- FIXED 2026-10-07
+- **Found** while fixing BUG-536, by asking which OTHER entry points skipped the init sweep.
+  Not a regression of the containers switch: the pre-switch anchor (f5afd86) failed both
+  shapes with `reached unreachable code`; the switch made it a segfault.
+- **Cause:** BUG-221's fix (initialise every TRANSITIVE dependency from the entry) went into
+  the free `def main` injection only. `generateEntryPoint` (class static main) and
+  `generateTestEntryPoint` (`zebra test`) called the ROOT's `_initModuleVars()` and nothing
+  else, in both runtime shapes.
+- **Fix:** `depInitLines` -- the same lines the free-main injection emits
+  (`_initModuleVars` per module with a shared runtime; `_initAllocator`/`_initIo` inline) --
+  used by both synthesized entries; the free-main injection walks the same list
+  (`entryInitDeps`). Regenerating the compiler moved only `CodeGen.zig` and `main.zig`: the
+  free-main path is byte-identical.
+- **Witnesses:** `test/bug539_static_main_test.zbr` (smoke_run, "bug539 static: 2/1") and
+  `test/bug539_test_entry_test.zbr` (smoke_test), both over `test/bug539_dep_mod.zbr`'s
+  module-level List and HashMap; `runtime_module_check.sh` runs both with
+  `--no-runtime-module` (the inline branch). All watched red on the pre-fix binary.
+
+### BUG-536: a `--module-path` module's module-level container was never initialised -- the program segfaulted on first use after a clean compile -- FIXED 2026-10-07
+- **Found by:** Fable, GameEngine (`zbra/character.zbr`'s module-level `_models`, used from
+  `game/mm/`; engine finding F26). Reproduced with two files before the fix.
+- **Cause:** a module found on `--module-path` is read for types only and its .zig comes from
+  a host, so it is not in the transitive dependency list the entry point initialises
+  (`_entry_deps`) -- although the entry point @imports it.
+- **Fix:** the driver passes the module-path list it already kept for the BUG-516 note
+  (`mp_noted`) to the root generators as an explicit parameter (`rtSetHostDeps`; cleared for
+  a dependency's own generation, so a long-lived process cannot carry one program's list into
+  the next), and every entry point initialises those modules after the emitted ones. Same
+  fix as BUG-539 (one helper, `depInitLines`, for all three entry shapes).
+- **Witness:** `tools/runtime_module_check.sh`, leg "BUG-536" -- the root emitted with
+  `--module-path`, the library emitted separately into the same directory as a host would,
+  built by hand, must print `b536 1`. Watched red on the pre-fix binary (segfault).
+- **Consequence for hosts that map modules by name** (Fable, first engine build under the
+  fix): the entry now `@import`s every `--module-path` module the program reaches, so a
+  root that reached one only THROUGH another module must now have it mapped in its build
+  (zig: `unable to load 'x.zig': FileNotFound` until it is). Plain Zebra builds put every
+  .zig in one directory and see no change. The alternative that adds no new import edges
+  -- each module's `_initModuleVars` initialising the modules it already `use`s -- was not
+  taken; it changes every module's emit and is recorded here as the follow-up if this
+  build-side cost turns out to matter.
+- **Not covered:** a `--library-mode` host that never calls the library's `main()` still
+  initialises nothing (it must call each module's `_initModuleVars()`, which is idempotent);
+  `--single-file` has its own dispatcher and was not exercised with `--module-path`.
+
 ### BUG-529: a quote at the start of a non-first interpolation segment was DROPPED -- `"${name}'s"` printed `names` -- and a single-quoted interpolated string with a `"` did not compile -- FIXED 2026-10-05
 - **Severity:** High (SILENT wrong output in ordinary English text -- possessives, quoted values).
 - **Found by** the book agent rewriting ch21 (`print("'${g}'")` printed `'abc`).

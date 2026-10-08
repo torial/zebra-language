@@ -900,7 +900,7 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
   2026-09-24 (1.0 pre-flight): a three-module chain whose leaf does `File.read` runs on
   the default, `--no-runtime-module` and `--single-file` shapes. **That covers modules the
   build EMITS only: a `--module-path` module, read for types and supplied by a host, is
-  never initialised by main() -- BUG-536 (2026-10-06), a segfault since the containers
+  never initialised by main() -- BUG-536 (2026-10-06, fixed 2026-10-07 with BUG-539: the class-static-main and `zebra test` entries had the same gap), a segfault since the containers
   switch.** (Was:) selfhost-emitted
   dep modules get a simple `_initIo` (local `_io` only); would silently use undefined
   `_io` if a transitive dep gains file I/O.

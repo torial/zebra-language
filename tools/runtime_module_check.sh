@@ -189,6 +189,43 @@ else
     fi
 fi
 
+# BUG-536: a dependency found on --module-path is read for TYPES only; a HOST supplies its
+# .zig. The entry point @imports it but never initialised it, so its module-level List was
+# `undefined` and the first append segfaulted. Arranged as a host does: the root emitted with
+# --module-path, the library emitted separately into the same directory, then built by hand.
+mp="$OUT/b536"; mkdir -p "$mp/lib" "$mp/app/out"
+cp test/bug539_dep_mod.zbr "$mp/lib/" 2>/dev/null || fail "BUG-536: support module missing from test/"
+printf 'use bug539_dep_mod\n\ndef main()\n    bug539_dep_mod.addItem(1)\n    print("b536 " + bug539_dep_mod.count().toString())\n' > "$mp/app/main536.zbr"
+if ! ( cd "$mp/app" && "$ZEBRA" --emit-zig --module-path ../lib --output-dir out main536.zbr >/dev/null 2>&1 ); then
+    fail "BUG-536: the root did not emit with --module-path"
+elif ! ( cd "$mp/lib" && "$ZEBRA" --emit-zig --output-dir ../app/out bug539_dep_mod.zbr >/dev/null 2>&1 ); then
+    fail "BUG-536: the host side (the library's own emit) failed"
+elif ! ( cd "$mp/app/out" && zig build-exe main536.zig -fno-llvm -fno-lld -femit-bin=m536.exe >/dev/null 2>&1 ); then
+    fail "BUG-536: the host-assembled program does not compile"
+else
+    got=$("$mp/app/out/m536.exe" 2>&1)
+    if [ "$got" = "b536 1" ]; then
+        pass "BUG-536: a --module-path dependency supplied by a host is initialised (was: segfault)"
+    else
+        fail "BUG-536: expected 'b536 1', got: $got"
+    fi
+fi
+
+# BUG-539 on the INLINE path: the class-`static main` and `zebra test` entries initialise
+# their dependencies there too (`_initAllocator`/`_initIo` per dependency, not
+# `_initModuleVars`). The smoke suite registers both fixtures on the default shape only.
+got=$("$ZEBRA" --no-runtime-module test/bug539_static_main_test.zbr 2>&1 | tail -1)
+if [ "$got" = "bug539 static: 2/1" ]; then
+    pass "BUG-539: a class static main initialises its dependencies on the INLINE path"
+else
+    fail "BUG-539 inline static main: expected 'bug539 static: 2/1', got: $got"
+fi
+if out=$("$ZEBRA" test --no-runtime-module test/bug539_test_entry_test.zbr 2>&1) && ! printf '%s' "$out" | grep -qF "FAIL:"; then
+    pass "BUG-539: the zebra test entry initialises its dependencies on the INLINE path"
+else
+    fail "BUG-539 inline zebra test: $(printf '%s' "$out" | tail -3)"
+fi
+
 sf="$OUT/sf"; mkdir -p "$sf"
 if "$ZEBRA" --emit-zig --output-dir "$sf" --single-file "$hw/hw.zbr" >/dev/null 2>&1 \
    && [ ! -f "$sf/zebra_rt.zig" ]; then

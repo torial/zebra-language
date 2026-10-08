@@ -1,0 +1,13 @@
+# BUG-539: a class `static def main` entry must initialise its dependencies. It called
+# only the ROOT's _initModuleVars, so bug539_dep_mod's module-level List and HashMap were
+# `undefined` and the first add segfaulted (since the containers switch; before it, a
+# `reached unreachable code` panic).
+
+use bug539_dep_mod
+
+class App
+    static def main()
+        bug539_dep_mod.addItem(1)
+        bug539_dep_mod.addItem(2)
+        bug539_dep_mod.setName("a", 1)
+        print("bug539 static: " + bug539_dep_mod.count().toString() + "/" + bug539_dep_mod.nameCount().toString())

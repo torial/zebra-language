@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Every entry point initialises every module it imports (BUG-536, BUG-539).** A program
+  whose entry is a class `static def main`, every `zebra test` run, and every program using
+  a `--module-path` module whose .zig a host supplies, left those dependencies'
+  module-level containers uninitialised -- a crash on first use (a segfault since containers
+  became references; `reached unreachable code` before). Only a free `def main` did this
+  right (BUG-221). Hosts that embed a `--library-mode` program without calling its `main()`
+  still call each module's `_initModuleVars()` themselves. A host build that maps modules
+  by name must now map every `--module-path` module the program reaches, not only the
+  ones the root names.
 - **`StringBuilder` is a reference too, since the same change (BUG-501; noted 2026-10-06).**
   It is spelled through the same runtime name as `List(u8)`, so the switch below reached it:
   `var b = a`, passing it to a function, or storing it in a struct now shares the builder,

@@ -1,0 +1,18 @@
+# Support module for BUG-539 / BUG-536: module-level containers, initialised only by
+# this module's _initModuleVars(). An entry point that never calls it leaves both
+# `undefined`, and the first add crashes.
+
+var _items = List(int)()
+var _names = HashMap(str, int)()
+
+def addItem(n: int)
+    _items.add(n)
+
+def count(): int
+    return _items.len
+
+def setName(k: str, v: int)
+    _names.set(k, v)
+
+def nameCount(): int
+    return _names.count()

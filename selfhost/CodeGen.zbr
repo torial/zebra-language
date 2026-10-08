@@ -1392,6 +1392,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         sb.append("    if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
     else
         sb.append("    _allocator = _prog_alloc();\n")
+    sb.append(depInitLines("    "))                       # BUG-539
     sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
@@ -1830,6 +1831,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
     sb.append("    _allocator = _prog_alloc();\n")
+    sb.append(depInitLines("    "))                       # BUG-539
     sb.append("    _initModuleVars();\n")
     sb.append("    defer _arena.deinit();\n")
     # AFTER the arena defer: defers run in reverse, and the flush allocates its JSON
@@ -2041,6 +2043,7 @@ var _runtime_module: bool = true
 var _rt_mut_names: str = ""     # must be qualified: `pub var` / `pub threadlocal var`
 var _rt_alias_names: str = ""   # can be aliased: `pub fn` / `pub const`
 var _entry_deps: str = ""          # TRANSITIVE deps, for the entry point's init sweep
+var _host_deps: str = ""           # BUG-536: --module-path deps read for types only (a host supplies their .zig)
 
 def setRuntimeModule(v: bool)
     _runtime_module = v
@@ -2370,6 +2373,42 @@ def rtSetDeps(dep_modules: List(str))
         i = i + 1
     _entry_deps = s
 
+# BUG-536: the modules found on --module-path and read for TYPES only. The build does not
+# emit them -- a host supplies their .zig -- but the entry point @imports them, so it must
+# initialise them like any dependency. Set on EVERY root generation (empty when there are
+# none) and cleared for a dependency, exactly like `_entry_deps`, so a long-lived process
+# (the LSP, the REPL) cannot carry one program's list into the next.
+def rtSetHostDeps(names: List(str))
+    var s: str = " "
+    for nm in names
+        s = s + nm + " "
+    _host_deps = s
+
+# Every module the entry point must initialise: the transitive deps the build emits, then
+# the host-supplied ones. Space-delimited, like `_entry_deps`.
+def entryInitDeps(): str
+    return _entry_deps + _host_deps
+
+# BUG-536 / BUG-539: the dependency half of an entry point's init, for the SYNTHESIZED mains
+# (a class `static def main`, the `zebra test` runner). BUG-221 put this in the free `def
+# main` injection only, so these two entry shapes initialised the ROOT and no dependency --
+# a dependency's module-level container was `undefined` on first use. Same lines as the
+# free-main injection: `_initModuleVars` per module with a shared runtime;
+# `_initAllocator`/`_initIo` per module inline (`_initIo` runs that module's
+# `_initModuleVars`). Single-file has one dispatcher over every module, so nothing here.
+def depInitLines(indent: str): str
+    if _single_file
+        return ""
+    var sb: StringBuilder = StringBuilder()
+    for dep in entryInitDeps().split(" ")
+        if dep != ""
+            if _runtime_module
+                sb.append(indent + "@import(\"" + dep + ".zig\")._initModuleVars();\n")
+            else
+                sb.append(indent + "@import(\"" + dep + ".zig\")._initAllocator(_allocator);\n")
+                sb.append(indent + "@import(\"" + dep + ".zig\")._initIo(_io);\n")
+    return sb.build()
+
 # Assemble the final file.  Off the flag this is the historical shape byte for
 # byte — preamble spliced in, body after it — so the default path is unchanged.
 # On the flag the preamble is gone from the program entirely: the body is
@@ -2404,9 +2443,9 @@ def generateFull(m: Module, file: str, preamble_path: str, strip_contracts: bool
     return generateFullWith(m, file, preamble_path, List(str)(), ModuleTypes(), strip_contracts, library_mode)?
 
 def generateFullWith(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, library_mode: bool): str throws
-    return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)(), strip_contracts, nil, library_mode)?
+    return generateFullWithDeps(m, file, preamble_path, extra_class_names, deps_mt, List(str)(), List(str)(), strip_contracts, nil, library_mode)?
 
-def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str throws
+def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), host_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str throws
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
@@ -2417,6 +2456,7 @@ def generateFullWithDeps(m: Module, file: str, preamble_path: str, extra_class_n
     # _initModuleVars sweep with a shared runtime, and for the _initAllocator/_initIo
     # sweep without one. Set it unconditionally.
     rtSetDeps(all_dep_modules)
+    rtSetHostDeps(host_dep_modules)
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, tc_result, library_mode)
@@ -2736,7 +2776,7 @@ def napiDtsLine(mth: DeclMethod): str
     sb.append(";\n")
     return sb.build()
 
-def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, tag_filter: str?): str throws
+def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_class_names: List(str), deps_mt: ModuleTypes, all_dep_modules: List(str), host_dep_modules: List(str), strip_contracts: bool, tc_result: TcResult?, tag_filter: str?): str throws
     require
         preamble_path.len > 0
     var preamble = File.read(preamble_path)
@@ -2764,6 +2804,7 @@ def generateFullWithDepsTest(m: Module, file: str, preamble_path: str, extra_cla
     # _initModuleVars sweep with a shared runtime, and for the _initAllocator/_initIo
     # sweep without one. Set it unconditionally.
     rtSetDeps(all_dep_modules)
+    rtSetHostDeps(host_dep_modules)
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
     var decls = generateModuleWith(m_no_main, file, extra_class_names, deps_mt, strip_contracts, tc_result, false)
@@ -2865,6 +2906,7 @@ def generateDepWith(m: Module, file: str, preamble_path: str, extra_class_names:
     # A dep is never the entry point. If one happens to contain `def main()`, it must not
     # inherit the ROOT's dep list and emit an init sweep that is not its to run.
     rtSetDeps(List(str)())
+    rtSetHostDeps(List(str)())
     if _runtime_module
         rtScanNames(rtRuntimeText(preamble))
     var decls = generateModuleWith(m, file, extra_class_names, deps_mt, strip_contracts, nil, false)
@@ -6338,7 +6380,7 @@ struct Generator
                 # only, so a dep-of-a-dep never initialised and segfaulted on first
                 # use.  `_rt_deps` is the transitive list, so depth no longer matters.
                 if _runtime_module
-                    for rt_dep in _entry_deps.split(" ")
+                    for rt_dep in entryInitDeps().split(" ")
                         if rt_dep != ""
                             ei.writeIndent()
                             ei.w.emit("@import(\"" + rt_dep + ".zig\")._initModuleVars();\n")
@@ -6355,7 +6397,7 @@ struct Generator
                     # inline path, still reached by --no-runtime-module and the FALLBACK for
                     # --single-file, --target node-addon and every --gui-backend.
                     # `_entry_deps` is the transitive list the driver already computes.
-                    for ei_dep in _entry_deps.split(" ")
+                    for ei_dep in entryInitDeps().split(" ")
                         if ei_dep != ""
                             ei.writeIndent()
                             ei.w.emit("@import(\"" + ei_dep + ".zig\")._initAllocator(_allocator);\n")

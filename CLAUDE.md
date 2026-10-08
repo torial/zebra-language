@@ -1010,6 +1010,11 @@ bash tools/runtime_module_check.sh # THE ONLY GATE THAT RUNS EMITTED OUTPUT: sma
                                 #   section is pub-marked into zebra_rt.zig and scaffolded
                                 #   beside main.zig (BUG-355/357: one runtime, one section
                                 #   per project). Only `--target node-addon` still inlines.
+                                #   2026-10-07 (BUG-536/539): a --module-path dependency a HOST
+                                #   supplies (two dirs, separate emits, built by hand) must be
+                                #   initialised by main(), and a class `static main` and the
+                                #   `zebra test` entry must initialise their deps on the INLINE
+                                #   path too. All three were red on the pre-fix binary.
                                 #   compile_check never runs anything, so it cannot see any of
                                 #   this; and every other gate is happy whichever shape is the
                                 #   default, so this is the only one that would notice a silent
@@ -3213,7 +3218,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **765** <!-- doc-gen: 765 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **768** <!-- doc-gen: 768 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

@@ -406,9 +406,9 @@ class MultiCompiler
                         else
                             zig_src = generateSingleFileCombined(module, zbr_path, preamble_path, sf_dep_bodies, sf_dep_names, dep_class_names, dep_types, strip_contracts, tc_result, library_mode, false, "", nil)?
                     else if test_mode
-                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, tag_filter)?
+                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, mp_noted, strip_contracts, tc_result, tag_filter)?
                     else
-                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, strip_contracts, tc_result, library_mode)?
+                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, mp_noted, strip_contracts, tc_result, library_mode)?
                     # Detect SQLite usage in generated root Zig. The preamble
                     # inlines the `fn _sqlite_open` DEFINITION into every program,
                     # so a plain `contains` false-positives for ALL programs —
