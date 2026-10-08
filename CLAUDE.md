@@ -2363,6 +2363,24 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-08 (closing the evening of 10-07: BUG-536/539 `84a7bfa` -- every entry
+point initialises every module it imports -- then BUG-520/532/537/538/540 and the memory
+model's owed fixtures `344db42`): 56/57 in ONE invocation at JOBS=2, ~2h24m, then the 57th
+green after a fix -- ASSEMBLED.** smoke 673/673, round-trip byte-identical, `boundary` 36/0
+(the memory-model probe's new struct-holding-a-List row is red on the pre-switch compiler),
+`output_sweep` 466 identical from a COLD cache (466 misses: the batch moved every emit),
+`full_sweep` / `divergence` 0 regressions, `release-mode` all checks, `gramgen` 0/0,
+`leakgen` 100/0. **The red was `regen-recover`, and it was right:** the committed `.zig` was
+off its fixed point. `rebuild.sh`'s single regeneration runs the PRE-change binary, so a
+change to what the compiler emits for ITS OWN code (BUG-520's `catch @panic("OOM")` in 31
+StringBuilder calls) only appears on a second pass. Second pass `de31b34`: only those lines
+moved; round-trip clean; `regen-recover` PASS. **Run `rebuild.sh` twice when a change alters
+an emit the compiler's own source uses** -- the round-trip does not catch it (both of its
+compilers are built from the same once-regenerated tree); `regen-recover` does. The FULL that
+gated `84a7bfa` earlier the same evening was 44/46 with two reds re-run green standalone:
+`release-mode` on BUG-302 (Fable's engine builds were sharing the machine) and `full_sweep`
+on a new `zebra test` fixture missing the conventional `main()`.
+
 **DAILY tier 2026-10-06 (closing the overnight: BUG-501 1d -- CONTAINERS ARE REFERENCES -- with
 Fable's written GO, plus its prep `_zbr_free` 7467d75 and `copy()` 7677f0a, BUG-529): 57/57 PASS in
 ONE invocation at JOBS=2, ~72 min, on the switch tree.** smoke 663/663, round-trip byte-identical,
