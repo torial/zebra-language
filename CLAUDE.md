@@ -2363,6 +2363,24 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-09 (closing the overnight: the BUG-501 cleanup `68c0893`, then the leak
+batch + failure locations `0ad017b` -- BUG-517/526/528/533/535/541/544/545): 55/57 in ONE
+invocation at JOBS=2 on the uncommitted tree, the two reds re-run green -- ASSEMBLED.**
+`output_sweep` 466 identical from a COLD cache, `full_sweep` / `divergence` 0 regressions,
+round-trip byte-identical, `boundary` 36/0, `leakgen` / `gramgen` clean. The reds: `smoke`
+684/687, three expectations still spelling the old failure text (`ensure failed in`,
+`Error: boom`, a test verdict) -- updated, standalone **687/687**; and `regen-recover`, which
+builds from the COMMITTED `.zig` and cannot match a change to every `raise`'s emit until it
+is committed -- PASS on `0ad017b`. The cleanup's own FULL was 46/46 in one invocation. Two
+method notes from the night, each of which cost a run: **an emit diff that normalises
+`var`/`const` cannot see a `var` that STAYS `var` while the `&` that satisfied zig
+disappears** -- only a compile can (FULL found `bug342`; three more such shapes followed as
+call sites stopped taking `&`: StringBuilder readers, `List.pop`, CsvWriter); and **a
+background command's 2-hour limit kills the shell, not `gates.sh`** -- the first FULL launch
+orphaned a tier, found by command line (`Get-CimInstance Win32_Process`) and killed; tiers
+are now launched `nohup ... ; echo $? > rc` and waited on by a loop that says whether it
+FINISHED or TIMED OUT.
+
 **DAILY tier 2026-10-08 (closing the evening of 10-07: BUG-536/539 `84a7bfa` -- every entry
 point initialises every module it imports -- then BUG-520/532/537/538/540 and the memory
 model's owed fixtures `344db42`): 56/57 in ONE invocation at JOBS=2, ~2h24m, then the 57th
