@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-546. Next new bug: BUG-547.**
+**Last bug number generated: BUG-547. Next new bug: BUG-548.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,22 @@
 > measured in.
 
 ---
+
+### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
+- **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
+  the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).
+- **Reported by:** Fable, GameEngine, the day 0ad017b put a location into every failure
+  message: the engine's regen passes absolute paths, so its asserts read
+  `assert failed at C:/Projects/GameEngine/zbra/x.zbr:12`. The `// zbr:<file>:<line>`
+  markers have carried the absolute path since they were introduced. The engine strips its
+  root after emission; nothing in the compiler does.
+- **Fix direction:** an explicit `--source-root <dir>`: every location (markers, failure
+  messages, `_error_ctx.at`) is spelled relative to it when the source lies under it. NOT
+  "relative to the cwd" -- that makes the emitted bytes depend on where the command was
+  run, the UNGIT "nothing ambient" failure. `zebra debug` maps markers back to files, so it
+  must resolve a relative marker against the same root (debug-map's gate covers the map).
+  Fixture: the same source emitted from two different cwds with `--source-root` gives
+  byte-identical files.
 
 ### BUG-546: a postfix `catch` on a call that cannot fail passes the front end and fails inside zig -- OPEN (found 2026-10-08)
 - **Severity:** Low-Medium (a leak: the user's fix is to delete the `catch`, but nothing says
