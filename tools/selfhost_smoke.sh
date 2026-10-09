@@ -2025,7 +2025,7 @@ smoke_run test/bug440_intern_thread_race_test.zbr "bug440: OK"
 # BUG-441: a method with `ensure` and a final `return` did not compile; both halves --
 # the passing shapes compile, and a false postcondition still fires.
 smoke_run test/bug441_ensure_method_return_test.zbr "bug441: OK"
-smoke_run_fail test/bug441_ensure_method_fires_fail.zbr "ensure failed in 'bump'"
+smoke_run_fail test/bug441_ensure_method_fires_fail.zbr "ensure failed at test/bug441_ensure_method_fires_fail.zbr:9: in 'bump'"
 # BUG-450: a `use` whose name differs from the file only by case resolved on Windows and
 # failed on Linux. Exact case resolves; a wrong case is refused everywhere, naming the file.
 smoke_run test/bug450_use_case_ok_test.zbr "bug450: OK"
@@ -2090,7 +2090,7 @@ smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: err
 smoke_run test/bug461_sibling_scopes_ok_test.zbr "bug461: OK"
 # BUG-466: an error reaching the end of main prints its message and exits 1; a `?` in a
 # print argument, branch scrutinee, destructure or assert makes its function throwing.
-smoke_run_fail test/bug466_main_propagates_test.zbr "Error: boom"
+smoke_run_fail test/bug466_main_propagates_test.zbr "Error at test/bug466_main_propagates_test.zbr:7: boom"
 smoke_run test/bug466_raise_positions_test.zbr "bug466: OK"
 # BUG-467: a throwing free function's error reaches a method-level catch in every position;
 # an unmarked call outside one is refused in Zebra's words.
@@ -2239,7 +2239,7 @@ smoke_run test/nested_container_ref_test.zbr "nested-ref: OK"
 # the warning tier: @deprecated warns at every call shape, in-module and across `use`, and the program runs (2026-09-24)
 smoke_run test/deprecated_warning_test.zbr "deprecated: OK"
 smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_location: assert failed at"
-smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: custom message here"
+smoke_test_verdicts test/bug386_assert_in_test_fails_fixture.zbr "FAIL: test_assert_fails_with_message: assert failed at test/bug386_assert_in_test_fails_fixture.zbr:10: custom message here"
 smoke_tc_fail test/bug367_for_num_body_checked_fail.zbr "cannot assign to parameter"
 smoke_tc_fail test/bug504_optional_right_operand_col_fail.zbr "bug504_optional_right_operand_col_fail.zbr:5:16: error: 'b' may be nil here"
 
@@ -2248,6 +2248,23 @@ smoke_tc_fail test/bug504_optional_right_operand_col_fail.zbr "bug504_optional_r
 smoke_tc_fail test/fail_fixtures/bug540_unknown_named_arg_fail.zbr "bug540_unknown_named_arg_fail.zbr:11:33: error: 'Hit's \`cue init\` has no parameter named \`entity\` -- it takes pos, hitEntity"
 smoke_tc_fail test/fail_fixtures/bug540_missing_named_arg_fail.zbr "no argument for parameter \`h\` of \`area\`, which has no default -- it takes w, h"
 smoke_run test/bug540_named_args_ok_test.zbr "bug540: 3 42 none 7 9 rock 10 12"
+# 2026-10-09 leak batch: each refusal is asserted WITH its coordinate, and each refusal that
+# names a fix has a positive fixture proving the fix works.
+smoke_tc_fail test/fail_fixtures/bug517_char_str_compare_fail.zbr "bug517_char_str_compare_fail.zbr:6:12: error: cannot compare 'char' with 'str' using >="
+smoke_run test/bug517_char_literal_compare_test.zbr "bug517: 2 2"
+smoke_tc_fail test/fail_fixtures/bug526_unused_catch_capture_fail.zbr "bug526_unused_catch_capture_fail.zbr:7:13: error: unused capture 'e' in this catch"
+smoke_run test/bug526_catch_capture_message_test.zbr "bug526: 10 true 5"
+smoke_tc_fail test/fail_fixtures/bug528_untyped_field_fail.zbr "bug528_untyped_field_fail.zbr:3:9: error: field \`hits\` needs a type: write \`var hits: int = ...\`"
+smoke_tc_fail test/fail_fixtures/bug533_unknown_escape_fail.zbr "bug533_unknown_escape_fail.zbr:3:15: error: unknown escape \`\\w\` in a string"
+smoke_tc_fail test/fail_fixtures/bug535_extern_int_position_fail.zbr "bug535_extern_int_position_fail.zbr:3:8: error: \`int\` is ambiguous in an \`extern\` signature"
+smoke_run test/bug541_csvwriter_reference_test.zbr "bug541: true 10"
+smoke_run test/bug544_str_len_call_test.zbr "bug544: 3 3 6"
+smoke_run test/bug545_list_pop_test.zbr "bug545: 3 3 -1 22 0"
+smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmarked_fail.zbr:4: error: throws call needs '?'"
+# Failure locations (GameEngine, 2026-10-08): ` at <file>:<line>:` in every failure kind.
+smoke_run_fail test/fail_fixtures/assert_msg_location_fail.zbr "assert failed at test/fail_fixtures/assert_msg_location_fail.zbr:4: x must be positive"
+smoke_run_fail test/fail_fixtures/require_location_fail.zbr "require failed at test/fail_fixtures/require_location_fail.zbr:4: in 'half'"
+smoke_run_fail test/fail_fixtures/raise_location_fail.zbr "Error at test/fail_fixtures/raise_location_fail.zbr:4: went wrong"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

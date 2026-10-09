@@ -479,6 +479,16 @@ class Lexer
             if c == c'\n'
                 raise line.toString() + ":1: error: string literal is never closed on this line"
             if c == c'\\'
+                # BUG-533: an escape zig does not know (`\w`, `\d`: regex habits) passed the
+                # front end and failed inside zig ("invalid escape character"). Refused here,
+                # at its column, naming the raw string a regex wants. `\$` is Zebra's own
+                # (BUG-385: codegen drops the backslash); the rest are zig's.
+                var esc: char = peek1()
+                if not (esc == c'n' or esc == c'r' or esc == c't' or esc == c'\\' or esc == c'"' or esc == c'\'' or esc == c'$' or esc == c'x' or esc == c'u')
+                    var esc_end: int = pos + 2
+                    if esc_end > src.len
+                        esc_end = src.len
+                    raise line.toString() + ":" + (pos - lineStart + 1).toString() + ": error: unknown escape `" + src[pos..esc_end] + "` in a string -- the escapes are \\n \\r \\t \\\\ \\\" \\' \\$ \\xNN \\u{N}; for a regex, write a raw string: r\"...\""
                 pos = pos + 2
                 continue
             pos = pos + 1

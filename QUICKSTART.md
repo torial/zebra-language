@@ -560,6 +560,10 @@ open(path: "data.txt", mode: "w")       # all named
 Classes are heap-allocated.  Variables hold a pointer (`*ClassName` in Zig).
 Assigning a class variable copies the pointer, not the object.
 
+A field (class or struct) carries its type: `var hits: int = 0`, not `var hits = 0` --
+the untyped form is a compile error naming the type to write (BUG-528). A `static var`
+may infer its type from its initializer.
+
 ```zebra
 class Counter
     var count: int
@@ -1011,6 +1015,9 @@ var x = items[0]                     # index (bounds-checked in every build) -- 
 var y = items.at(0)                  # method form; kept because a pipeline needs it: xs -> .at(0)
 items[1] = 42                        # in-place element update (idiomatic); items.set(1, 42) is the method form
 items.remove(0)                      # remove by index
+var last = items.pop()?              # remove and return the LAST element; THROWS on an empty
+                                     # list ("pop from an empty list"), so it takes `?` or a
+                                     # catch: `items.pop() catch -1` (BUG-545, 2026-10-09)
 var found = items.any(def(x) = x > 2)  # true if any element matches predicate
 ```
 
@@ -1269,8 +1276,13 @@ var got = someObj.method()?          # propagates if method throws
   optional `|binding|` and typed variant `|e: ErrorType|`. Inside the body a throwing
   call needs no `?` -- its error goes to the catch wherever the call sits (a bare
   statement, a `var` init, a `print` argument; BUG-467).
+- **Postfix `catch |e|`** binds the error: `var n = f() catch |e| e.message.len` reads the
+  raised message, and `"${e}"` the error's name. A capture the fallback never reads is a
+  compile error at the `catch` -- write `catch 0`, or `catch |_| 0` (2026-10-09, BUG-526).
 - **An error that reaches the end of `main` ends the program** like an uncaught
-  exception: `Error: <message>` on stderr, exit status 1 (2026-09-28, BUG-466). So
+  exception: `Error at <file>:<line>: <message>` on stderr -- the line of the `raise` --
+  and exit status 1 (2026-09-28, BUG-466; the location since 2026-10-09). A caught error's
+  `e.message` is the message alone. So
   `print(load(path)?)` in `main` is a complete program; add a method-level `catch` to
   `main` to handle the error yourself instead.
 
@@ -1489,6 +1501,9 @@ var result = sb.build()              # str (drains the builder)
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
 - To include a literal `${` in a string, escape the dollar sign: `"\${"`.
+- The escapes are `\n \r \t \\ \" \' \$ \xNN \u{N}`. Any other backslash pair (`"\w"`, `"\d"`)
+  is a compile error at its column -- for a regex, write a raw string, `r"\w+"`
+  (2026-10-09, BUG-533).
 
 ### String method reference
 
@@ -2589,7 +2604,11 @@ def sqrt(x: float): float
     return g
 ```
 
-- `require` clauses run at function entry; failure panics with a clear message.
+- `require` clauses run at function entry; failure panics with a clear message that names
+  the clause's place -- `require failed at f.zbr:12: in 'sqrt'` -- as `ensure` and
+  `invariant` failures do, and as `assert` does (`assert failed at f.zbr:30: <your message>`
+  for `assert c, "msg"`). Every failure kind spells its location ` at <file>:<line>:`, so one
+  pattern finds it (2026-10-09).
 - `ensure` clauses run at function exit (any successful return path).  The
   `result` keyword inside `ensure` refers to the return value — its type is
   the function's declared return type, so `result.len`, `result.startsWith(…)`,

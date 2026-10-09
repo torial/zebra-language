@@ -917,12 +917,18 @@ class Parser
 
     def errorAt(msg: str): str
         var tok = .peek()
-        var head = .file_name + ":" + tok.line.toString() + ":" + tok.col.toString() + ": error: " + msg
-        var src_line = .sourceLine(tok.line - 1)
+        return .errorAtPos(tok.line, tok.col, msg)
+
+    # A declaration-level refusal raised after the declaration has been read: the next
+    # token is already the NEXT declaration (BUG-535 reported an extern's error at
+    # `def main()` five lines on), so the caller passes the position it saved.
+    def errorAtPos(ln: int, cl: int, msg: str): str
+        var head = .file_name + ":" + ln.toString() + ":" + cl.toString() + ": error: " + msg
+        var src_line = .sourceLine(ln - 1)
         if src_line.len > 0
             var caret = StringBuilder()
             var c = 1
-            while c < tok.col
+            while c < cl
                 caret.append(" ")
                 c = c + 1
             caret.append("^")
@@ -2103,6 +2109,25 @@ class Parser
         if .textIs("=")
             .advance()
             init_expr.add(.parseExpr()?)
+        # BUG-528: an instance field with no type (`var hits = 0`) emitted `hits: anytype`,
+        # which zig refuses. A field carries its type (QUICKSTART §7); say so here, naming
+        # the type when the initializer is a literal. A `static var` infers, and still may.
+        if type_name == "" and not is_static
+            var fz_t: str = "<type>"
+            if init_expr.len > 0
+                branch init_expr.at(0)
+                    on PNode.expr_int
+                        fz_t = "int"
+                    on PNode.expr_float
+                        fz_t = "float"
+                    on PNode.expr_bool
+                        fz_t = "bool"
+                    on PNode.expr_str
+                        fz_t = "str"
+                    else
+                        pass
+            var fz_kw: str = if(is_const, "const", "var")
+            raise .errorAtPos(_dl, _dc + 1, "field `" + name + "` needs a type: write `" + fz_kw + " " + name + ": " + fz_t + " = ...`")
         .skipEol()
         return PNode.field_(PField(name, type_name, is_const, is_static, is_private, is_public, init_expr, _dl, _dc))
 
@@ -2293,7 +2318,7 @@ class Parser
                 var ext_small: str = "int32"
                 if ext_bad == "uint"
                     ext_small = "uint32"
-                raise .errorAt("`" + ext_bad + "` is ambiguous in an `extern` signature (" + ext_where + " of `" + name + "`): Zebra's `" + ext_bad + "` is 64-bit, C's `int` is 32-bit. Write `" + ext_small + "` for C `int`, or `" + ext_sized + "` for C `long long`/`int64_t`.")
+                raise .errorAtPos(line, col, "`" + ext_bad + "` is ambiguous in an `extern` signature (" + ext_where + " of `" + name + "`): Zebra's `" + ext_bad + "` is 64-bit, C's `int` is 32-bit. Write `" + ext_small + "` for C `int`, or `" + ext_sized + "` for C `long long`/`int64_t`.")
             # BUG-269, the same family as the `int` check above and refused the same way.
             # Zebra's `str` is a SLICE (pointer + length), which has no C representation
             # at all — so `extern def f(): str` emitted `extern fn f() []const u8` and
@@ -2322,7 +2347,7 @@ class Parser
                         ext_str = sp.type_name
                         ext_str_where = "parameter `" + sp.name + "`"
             if ext_str != ""
-                raise .errorAt("`" + ext_str + "` is not a C-ABI type in an `extern` signature (" + ext_str_where + " of `" + name + "`): Zebra's `" + ext_str + "` is a slice (pointer + length) and C has no such type. Write `^byte` for a C `char*`, then `zig\"std.mem.span(...)\"` to read it back as a str.")
+                raise .errorAtPos(line, col, "`" + ext_str + "` is not a C-ABI type in an `extern` signature (" + ext_str_where + " of `" + name + "`): Zebra's `" + ext_str + "` is a slice (pointer + length) and C has no such type. Write `^byte` for a C `char*`, then `zig\"std.mem.span(...)\"` to read it back as a str.")
         return PNode.method_(PMethod(name, is_static, is_private, is_public, throws_, params, return_type, stmts, is_profile, is_once, tags, is_export, type_params, is_pure, is_node_export, _dl, _dc, is_extern, is_cue, deprecated))
 
     # -- Block and statements --------------------------------------------------

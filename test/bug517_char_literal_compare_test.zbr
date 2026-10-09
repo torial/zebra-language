@@ -1,0 +1,10 @@
+# BUG-517: the spelling its refusal names -- a char literal -- works on every operator.
+def main()
+    var digits: int = 0
+    var a_count: int = 0
+    for ch in "a1b2a".chars()
+        if ch >= c'0' and ch <= c'9'
+            digits = digits + 1
+        if ch == c'a'
+            a_count = a_count + 1
+    print("bug517: ${digits} ${a_count}")

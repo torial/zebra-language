@@ -802,7 +802,7 @@ pub const _zbr_ty_MultiCompiler = struct {
             },
             else => {
 // zbr:selfhost/main.zbr:476
-                { _zbr_rt._error_ctx = .{ .message = "expected module" }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:476", .message = "expected module" }; return error.ZebraError; }
             },
         }
 // zbr:selfhost/main.zbr:479
@@ -1008,10 +1008,10 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:635
             const near_stem: []const u8 = near[@intCast(0)..@intCast((@as(i64, @intCast(near.len)) - 4))];
 // zbr:selfhost/main.zbr:636
-            { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("`use ", u.path, _zbr_rt._allocator), "`: module not found -- module names are case-sensitive, and the file here is ", _zbr_rt._allocator), near, _zbr_rt._allocator), "; did you mean `use ", _zbr_rt._allocator), near_stem, _zbr_rt._allocator), "`?", _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:636", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("`use ", u.path, _zbr_rt._allocator), "`: module not found -- module names are case-sensitive, and the file here is ", _zbr_rt._allocator), near, _zbr_rt._allocator), "; did you mean `use ", _zbr_rt._allocator), near_stem, _zbr_rt._allocator), "`?", _zbr_rt._allocator) }; return error.ZebraError; }
         }
 // zbr:selfhost/main.zbr:639
-        { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("`use ", u.path, _zbr_rt._allocator), "`: module not found -- no ", _zbr_rt._allocator), dep_name, _zbr_rt._allocator), ".zbr (or .c / .lib / .a / .so / .dylib, lib", _zbr_rt._allocator), dep_name, _zbr_rt._allocator), ".a/.so/.dylib, .zig) ", _zbr_rt._allocator), looked, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:639", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("`use ", u.path, _zbr_rt._allocator), "`: module not found -- no ", _zbr_rt._allocator), dep_name, _zbr_rt._allocator), ".zbr (or .c / .lib / .a / .so / .dylib, lib", _zbr_rt._allocator), dep_name, _zbr_rt._allocator), ".a/.so/.dylib, .zig) ", _zbr_rt._allocator), looked, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/main.zbr:641
@@ -1325,7 +1325,7 @@ pub const _zbr_ty_MultiCompiler = struct {
 // zbr:selfhost/main.zbr:842
             if ((tr.exit_code != 0)) {
 // zbr:selfhost/main.zbr:843
-                { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("zig translate-c failed for ", _zbr_at(parts.items, 1), _zbr_rt._allocator), ":\n", _zbr_rt._allocator), tr.stderr, _zbr_rt._allocator) }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:843", .message = _str_concat(_str_concat(_str_concat("zig translate-c failed for ", _zbr_at(parts.items, 1), _zbr_rt._allocator), ":\n", _zbr_rt._allocator), tr.stderr, _zbr_rt._allocator) }; return error.ZebraError; }
             }
 // zbr:selfhost/main.zbr:844
             if ((!((blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, dst, .{}) catch break :blk_fex false; break :blk_fex true; }) and std.mem.eql(u8, (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, dst, _zbr_rt._allocator, .unlimited) catch @panic("File.read error")), tr.stdout)))) {
@@ -5019,7 +5019,7 @@ pub fn _zbr_fn_runTypecheckMerge(path: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:2686
     if ((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, path, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
 // zbr:selfhost/main.zbr:2687
-        { _zbr_rt._error_ctx = .{ .message = _str_concat("typecheck-merge: file not found: ", path, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:2687", .message = _str_concat("typecheck-merge: file not found: ", path, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/main.zbr:2688
     const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
@@ -5464,13 +5464,13 @@ pub fn _zbr_fn_upFetch(url: []const u8) anyerror![]const u8 {
 // zbr:selfhost/main.zbr:2970
         if ((resp.status != 200)) {
 // zbr:selfhost/main.zbr:2971
-            { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("GET ", url, _zbr_rt._allocator), " -> HTTP ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{resp.status}) catch @panic("OOM")), _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:2971", .message = _str_concat(_str_concat(_str_concat("GET ", url, _zbr_rt._allocator), " -> HTTP ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{resp.status}) catch @panic("OOM")), _zbr_rt._allocator) }; return error.ZebraError; }
         }
 // zbr:selfhost/main.zbr:2972
         return resp.text;
     }
 // zbr:selfhost/main.zbr:2973
-    { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat("GET ", url, _zbr_rt._allocator), " failed (no response)", _zbr_rt._allocator) }; return error.ZebraError; }
+    { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:2973", .message = _str_concat(_str_concat("GET ", url, _zbr_rt._allocator), " failed (no response)", _zbr_rt._allocator) }; return error.ZebraError; }
 }
 
 // zbr:selfhost/main.zbr:2975
@@ -5527,7 +5527,7 @@ pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:3001
     if (std.mem.eql(u8, asset, "")) {
 // zbr:selfhost/main.zbr:3002
-        { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat(_str_concat("no release asset for this platform (", os_, _zbr_rt._allocator), "-", _zbr_rt._allocator), arch, _zbr_rt._allocator), ") in SHA256SUMS.txt", _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:3002", .message = _str_concat(_str_concat(_str_concat(_str_concat("no release asset for this platform (", os_, _zbr_rt._allocator), "-", _zbr_rt._allocator), arch, _zbr_rt._allocator), ") in SHA256SUMS.txt", _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/main.zbr:3004
     const latest: []const u8 = asset[@intCast(6)..@intCast((@as(i64, @intCast(asset.len)) - @as(i64, @intCast(suffix.len))))];
@@ -5561,7 +5561,7 @@ pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:3021
     if (!std.mem.eql(u8, got_sha, want_sha)) {
 // zbr:selfhost/main.zbr:3022
-        { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("checksum mismatch for ", asset, _zbr_rt._allocator), ": expected ", _zbr_rt._allocator), want_sha, _zbr_rt._allocator), ", got ", _zbr_rt._allocator), got_sha, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:3022", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("checksum mismatch for ", asset, _zbr_rt._allocator), ": expected ", _zbr_rt._allocator), want_sha, _zbr_rt._allocator), ", got ", _zbr_rt._allocator), got_sha, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/main.zbr:3023
     const archive: []const u8 = _str_concat(_str_concat(downloads, "/", _zbr_rt._allocator), asset, _zbr_rt._allocator);
@@ -5600,12 +5600,12 @@ pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:3038
     if ((tr.exit_code != 0)) {
 // zbr:selfhost/main.zbr:3039
-        { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("tar failed (exit ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{tr.exit_code}) catch @panic("OOM")), _zbr_rt._allocator), "): ", _zbr_rt._allocator), tr.stderr, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:3039", .message = _str_concat(_str_concat(_str_concat("tar failed (exit ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{tr.exit_code}) catch @panic("OOM")), _zbr_rt._allocator), "): ", _zbr_rt._allocator), tr.stderr, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/main.zbr:3040
     if ((!(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_zbr_rt._io, _str_concat(_str_concat(versions, "/", _zbr_rt._allocator), folder, _zbr_rt._allocator), .{}) catch break :blk_de false; _de_d.close(_zbr_rt._io); break :blk_de true; }))) {
 // zbr:selfhost/main.zbr:3041
-        { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("archive did not unpack to ", versions, _zbr_rt._allocator), "/", _zbr_rt._allocator), folder, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:3041", .message = _str_concat(_str_concat(_str_concat("archive did not unpack to ", versions, _zbr_rt._allocator), "/", _zbr_rt._allocator), folder, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/main.zbr:3042
     (blk_fd: { const _fd_p = archive; std.Io.Dir.cwd().deleteFile(_zbr_rt._io, _fd_p) catch |_fd_err| { if (_fd_err != error.FileNotFound) std.debug.panic("File.delete failed on '{s}': {s}", .{ _fd_p, @errorName(_fd_err) }); }; break :blk_fd {}; });
@@ -5665,7 +5665,7 @@ pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
 // zbr:selfhost/main.zbr:3068
         if ((sr.exit_code != 0)) {
 // zbr:selfhost/main.zbr:3069
-            { _zbr_rt._error_ctx = .{ .message = _str_concat("could not start the swap helper: ", sr.stderr, _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:3069", .message = _str_concat("could not start the swap helper: ", sr.stderr, _zbr_rt._allocator) }; return error.ZebraError; }
         }
 // zbr:selfhost/main.zbr:3070
         _zbr_print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("zebra up: ", installed, _zbr_rt._allocator), " -> ", _zbr_rt._allocator), latest, _zbr_rt._allocator), " will be swapped in as soon as this process exits.", _zbr_rt._allocator)});
@@ -5703,7 +5703,7 @@ pub fn _zbr_fn_runFmt(path: []const u8, check_only: bool, print_only: bool) anye
 // zbr:selfhost/main.zbr:3086
     if ((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, path, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
 // zbr:selfhost/main.zbr:3087
-        { _zbr_rt._error_ctx = .{ .message = _str_concat("fmt: file not found: ", path, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:3087", .message = _str_concat("fmt: file not found: ", path, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/main.zbr:3088
     const original: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));

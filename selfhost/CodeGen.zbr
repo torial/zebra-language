@@ -11784,7 +11784,7 @@ struct Generator
                 writeIndent()
                 w.emit("  } };\n")
                 writeIndent()
-                w.emit("  _error_ctx = .{ .message = ")
+                w.emit("  _error_ctx = .{ .at = \"" + raiseAt(r) + "\", .message = ")
                 genExpr(r.message!)
                 w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_")
                 w.emit(uid.toString())
@@ -11818,7 +11818,7 @@ struct Generator
                 writeIndent()
                 w.emit("  } };\n")
                 writeIndent()
-                w.emit("  _error_ctx = .{ .message = ")
+                w.emit("  _error_ctx = .{ .at = \"" + raiseAt(r) + "\", .message = ")
                 genExpr(r.message!)
                 w.emit(", .details = .{ .ptr = @ptrCast(_rdet_ptr_")
                 w.emit(uid.toString())
@@ -11863,7 +11863,7 @@ struct Generator
                 writeIndent()
                 w.emit("  } };\n")
                 writeIndent()
-                w.emit("  _error_ctx = .{ .message = ")
+                w.emit("  _error_ctx = .{ .at = \"" + raiseAt(r) + "\", .message = ")
                 genExpr(r.message!)
                 w.emit(", .details = .{ .ptr = @ptrCast(_rdet_")
                 w.emit(uid.toString())
@@ -11881,7 +11881,7 @@ struct Generator
                 w.emit("return error.ZebraError; ")
             w.emit("}\n")
         else if r.message != nil
-            w.emit("{ _error_ctx = .{ .message = ")
+            w.emit("{ _error_ctx = .{ .at = \"" + raiseAt(r) + "\", .message = ")
             genExpr(r.message!)
             w.emit(" }; ")
             if try_block_label != nil
@@ -11982,11 +11982,27 @@ struct Generator
             mg.writeIndent()
             mg.w.emit("if (!(")
             mg.genExpr(inv_expr)
-            mg.w.emit(")) std.debug.panic(\"invariant failed in '")
+            mg.w.emit(")) std.debug.panic(\"invariant failed" + failAt(inv_expr) + " in '")
             mg.w.emit(owner)
             mg.w.emit("'\\n\", .{});\n")
         writeIndent()
         w.emit("}\n\n")
+
+    # Where a failure happened, spelled as BUG-273's compared assert spells it (` at
+    # <file>:<line>:`), so one pattern finds the location in every failure kind -- the
+    # GameEngine's panic overlay parses exactly that (2026-10-08). "" when the clause has no
+    # recorded line: an unknown position is left out, never invented.
+    def failAt(e: Expr): str
+        var ln: int = exprSpanLine(e)
+        if ln <= 0
+            return ""
+        return " at " + fwdSlashes(source_file) + ":" + ln.toString() + ":"
+
+    # The `<file>:<line>` of a raise, for `_error_ctx.at` ("" when unknown).
+    def raiseAt(r: StmtRaise): str
+        if r.span.line <= 0
+            return ""
+        return fwdSlashes(source_file) + ":" + r.span.line.toString()
 
     def genRequireChecks(req_list: List(Expr), context: str)
         if strip_contracts
@@ -11995,7 +12011,7 @@ struct Generator
             writeIndent()
             w.emit("if (!(")
             genExpr(req_expr)
-            w.emit(")) std.debug.panic(\"require failed in '")
+            w.emit(")) std.debug.panic(\"require failed" + failAt(req_expr) + " in '")
             w.emit(context)
             w.emit("'\\n\", .{});\n")
 
@@ -12221,7 +12237,7 @@ struct Generator
             ig.writeIndent()
             ig.w.emit("if (_ensure_armed and !(")
             ig.genExpr(ens_expr)
-            ig.w.emit(")) std.debug.panic(\"ensure failed in '")
+            ig.w.emit(")) std.debug.panic(\"ensure failed" + failAt(ens_expr) + " in '")
             ig.w.emit(context)
             ig.w.emit("'\\n\", .{});\n")
         writeIndent()
@@ -12362,7 +12378,10 @@ struct Generator
             genExpr(a.cond)
             w.emit(", ")
             if a.message != nil
+                # the location before the author's text, as below
+                w.emit("_zbr_assert_msg_at(\"" + fwdSlashes(source_file) + ":" + a.span.line.toString() + "\", ")
                 genExpr(a.message!)
+                w.emit(")")
             else
                 w.emit("\"assert failed at ")
                 w.emit(fwdSlashes(source_file))
@@ -12372,11 +12391,13 @@ struct Generator
             w.emit(");\n")
             return
         if a.message != nil
+            # `assert c, "msg"` panicked with the message alone; the location lived only in
+            # the `// zbr:` comment of the emitted Zig (GameEngine, 2026-10-08).
             w.emit("if (!(")
             genExpr(a.cond)
-            w.emit(")) @panic(")
+            w.emit(")) std.debug.panic(\"assert failed at " + fwdSlashes(source_file) + ":" + a.span.line.toString() + ": {s}\", .{")
             genExpr(a.message!)
-            w.emit(");\n")
+            w.emit("});\n")
         else
             # BUG-273: an explicit panic naming file:line, NOT `std.debug.assert`.
             #
@@ -12791,6 +12812,15 @@ struct Generator
                             if m.member == "details"
                                 w.emit("_error_ctx.details")
                                 return
+                # BUG-526: `e.message.len` on a catch variable -- the message is a str (the
+                # checker binds a catch variable as unknown, so the generic arm below took the
+                # List spelling, `.items.len`). Both catch forms set catch_var.
+                if catch_var != "" and m.member == "len"
+                    if m.object is Expr.member as cvm
+                        if cvm.object is Expr.ident as cvm_id
+                            if cvm_id.name == catch_var and cvm.member == "message"
+                                w.emit("@as(i64, @intCast(_zbr_error_msg().len))")
+                                return
                 # List.len → @as(i64, @intCast(.items.len))
                 # HashMap.len/count → @as(i64, @intCast(.count()))
                 # String.len → .len (no .items)
@@ -13112,11 +13142,24 @@ struct Generator
                 genExpr(ca2.expr)
                 in_try_expr = ca2_saved_ite
                 w.emit(" catch ")
-                if ca2.err_var != nil
+                if ca2.err_var != nil and ca2.err_var! != "_"
+                    # BUG-526: `e.message` / `e.details` read the error context, as in a
+                    # method-level catch (catch_var); the Zig capture may then go unread, so
+                    # `_ = @errorName(e)` uses it -- not a bare discard, which zig would call
+                    # pointless when the fallback also reads `e` itself (`"${e}"`).
+                    var ca2_lbl: str = "blk_ca_" + w.nextUid().toString()
                     w.emit("|")
                     emitName(ca2.err_var!)   # BUG-525: `catch |pub|` met `@"pub"`
-                    w.emit("| ")
-                genExpr(ca2.fallback)
+                    w.emit("| " + ca2_lbl + ": { _ = @errorName(")
+                    emitName(ca2.err_var!)
+                    w.emit("); break :" + ca2_lbl + " ")
+                    var ca2_saved_cv: str = catch_var
+                    catch_var = ca2.err_var!
+                    genExpr(ca2.fallback)
+                    catch_var = ca2_saved_cv
+                    w.emit("; }")
+                else
+                    genExpr(ca2.fallback)
                 w.emit(")")
             on Expr.if_expr as ie
                 # BUG-167 (fuzz F8): literal arms are comptime_int/float — a
@@ -15941,7 +15984,7 @@ struct Generator
                             return
                     if cw_nm == "CsvWriter"
                         if mname == "writeRow"
-                            w.emit("_csv_write_row(&")
+                            w.emit("_csv_write_row(")   # BUG-541: the writer is a reference
                             genExpr(m.object)
                             w.emit(", ")
                             if args.len > 0
@@ -15951,7 +15994,7 @@ struct Generator
                             w.emit(")")
                             return
                         if mname == "build"
-                            w.emit("_csv_build(&")
+                            w.emit("_csv_build(")
                             genExpr(m.object)
                             w.emit(")")
                             return
@@ -16103,6 +16146,23 @@ struct Generator
                                     item_ref_type = inner_named
                         else
                             pass
+                    if mname == "pop" and args.len == 0
+                        # BUG-545 (Sean, 2026-10-08): the last element, or a THROW on an empty
+                        # list -- recoverable, as Python's IndexError is. So it is written
+                        # `xs.pop()?` (or caught) like any throws call, and the three cases are
+                        # the ones a throwing free function gets (BUG-467): under `?` / a postfix
+                        # `catch` the operator handles it; in a `try` block the block's catch
+                        # does; unmarked, the §28b refusal names the line. It used to reach
+                        # zig's `ArrayList.pop`, an OPTIONAL, which zig then refused as a T.
+                        if try_block_label == nil and not in_try_expr
+                            recordImplicitTry(source_file + ":" + w.cur_line.toString())
+                            w.emit("try ")
+                        w.emit("_zbr_list_pop(")
+                        genExpr(m.object)
+                        w.emit(")")
+                        if try_block_label != nil and not in_try_expr
+                            emitTryBlockCatch()
+                        return
                     if mname == "reserve"
                         # BUG-435: `xs.reserve(n)` -- capacity for n items up front. Growth
                         # by doubling made a 3.4 GB list OOM an 8 GB machine at its last
@@ -16865,6 +16925,13 @@ struct Generator
                 w.emit(") catch @panic(\"OOM\")")
                 return
         if mname == "len"
+            # BUG-544: `s.len()` on a str is the slice's own length (`len` is on str's
+            # surface); the StringBuilder spelling below reached zig as `s.items`.
+            if isStringWalker(m.object)
+                w.emit("@as(i64, @intCast(")
+                genExpr(m.object)
+                w.emit(".len))")
+                return
             # sb.len() → @as(i64, @intCast(sb.items.len))
             w.emit("@as(i64, @intCast(")
             genExpr(m.object)

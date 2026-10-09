@@ -226,7 +226,9 @@ pub const _Stringable = struct {
 // `if x orelse d as n`: a non-optional value presented as an optional, so the capture
 // form binds it (always). Evaluated once; the type is the value's own.
 pub inline fn _zbr_some(v: anytype) ?@TypeOf(v) { return v; }
-pub const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null };
+// `at`: the `<file>:<line>` of the raise that set this, "" when unknown -- kept out of
+// `message`, which is the user's own text (a caught `e.message` must not change).
+pub const _ZebraErrorCtx = struct { message: []const u8 = "", details: ?_Stringable = null, at: []const u8 = "" };
 pub threadlocal var _error_ctx: _ZebraErrorCtx = .{};
 // Shifts. A BARE `a << b` DOES NOT COMPILE in Zig: the shift amount must coerce to
 // Log2Int(T) -- u6 for a 64-bit operand -- so `a << b` on two i64s is
@@ -3032,13 +3034,21 @@ pub fn _csv_get(t: _CsvTable, row: anytype, col: []const u8) []const u8 {
     for (t.rows[0], 0..) |h, i| { if (std.mem.eql(u8, h, col)) return if (i < row.items.len) row.items[i] else ""; }
     return "";
 }
-pub const _CsvWriter = struct { buf: std.ArrayList(u8) };
+// BUG-541: a CsvWriter is a REFERENCE, as a StringBuilder is (BUG-501 1d, §6 decision 4):
+// a builder is mutable and readers expect an object. As a value, `var b = a; b.writeRow(r)`
+// wrote into a copy `a` never saw, and a `CsvWriter` parameter was `*const` in zig.
+pub const _CsvWriterState = struct { buf: std.ArrayList(u8) };
+pub const _CsvWriter = *_CsvWriterState;
 // BUG-242. `.buf = .{}` predates the Zig 0.16 unmanaged-ArrayList migration: the struct
 // literal no longer fills `capacity`, so this failed to compile with "missing struct
 // field: capacity". Nothing noticed because no program could reach the CsvWriter path at
 // all — the selfhost never emitted a constructor for it.
-pub fn _csv_writer_init() _CsvWriter { return .{ .buf = .empty }; }
-pub fn _csv_write_row(w: *_CsvWriter, row: anytype) void {
+pub fn _csv_writer_init() _CsvWriter {
+    const p = _allocator.create(_CsvWriterState) catch @panic("OOM");
+    p.* = .{ .buf = .empty };
+    return p;
+}
+pub fn _csv_write_row(w: _CsvWriter, row: anytype) void {
     const _pa = std.heap.page_allocator;
     for (row.items, 0..) |field, i| {
         if (i > 0) w.buf.append(_pa, ',') catch {};
@@ -3051,7 +3061,7 @@ pub fn _csv_write_row(w: *_CsvWriter, row: anytype) void {
     }
     w.buf.appendSlice(_pa, "\r\n") catch {};
 }
-pub fn _csv_build(w: *const _CsvWriter) []const u8 { return w.buf.items; }
+pub fn _csv_build(w: _CsvWriter) []const u8 { return w.buf.items; }
 pub const TcpConn = struct { stream: std.Io.net.Stream };
 // BUG-303: is this callback DIRECTLY callable -- a function, or a pointer to one?
 //
@@ -5175,11 +5185,29 @@ pub fn _zbr_cov_flush() void {
 /// `_zbr_exit` so a --coverage run still writes its file.
 pub fn _zbr_uncaught(e: anyerror) noreturn {
     if (e == error.ZebraError and _error_ctx.message.len > 0) {
-        std.debug.print("Error: {s}\n", .{_error_ctx.message});
+        if (_error_ctx.at.len > 0) {
+            std.debug.print("Error at {s}: {s}\n", .{ _error_ctx.at, _error_ctx.message });
+        } else {
+            std.debug.print("Error: {s}\n", .{_error_ctx.message});
+        }
     } else {
         std.debug.print("Error: {s}\n", .{@errorName(e)});
     }
     _zbr_exit(1);
+}
+/// BUG-545: `xs.pop()` -- the last element, or a Zebra error on an empty list (the call is
+/// written `xs.pop()?` or caught, like any throws call).
+pub fn _ZbrPopOf(comptime L: type) type {
+    return @typeInfo(@FieldType(std.meta.Child(L), "items")).pointer.child;
+}
+pub fn _zbr_list_pop(xs: anytype) anyerror!_ZbrPopOf(@TypeOf(xs)) {
+    if (xs.pop()) |v| return v;
+    _error_ctx = .{ .message = "pop from an empty list" };
+    return error.ZebraError;
+}
+/// A `test_*` fn's `assert c, "msg"`: the failure text carries the location first.
+pub fn _zbr_assert_msg_at(loc: []const u8, msg: []const u8) []const u8 {
+    return std.fmt.allocPrint(_allocator, "assert failed at {s}: {s}", .{ loc, msg }) catch msg;
 }
 pub fn _zbr_exit(code: i64) noreturn {
     _zbr_cov_flush();

@@ -1,0 +1,4 @@
+# BUG-533: an escape zig does not know passed the front end and failed inside zig.
+def main()
+    var s = "a\wb"
+    print(s)

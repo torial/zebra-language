@@ -1,0 +1,8 @@
+# BUG-526: a postfix catch capture the fallback never reads reached zig as "unused
+# capture" with no column. Refused at the catch, as an unused branch-arm binding is.
+def boom(): int throws
+    raise "x"
+
+def main()
+    var r = boom() catch |e| 0
+    print(r)

@@ -1,0 +1,8 @@
+# BUG-517: a chars() element (a character) compared with a one-character STRING literal
+# passed the front end and failed inside zig, in the runtime. Refused at the comparison.
+def main()
+    var n: int = 0
+    for ch in "a1b2".chars()
+        if ch >= "0" and ch <= "9"
+            n = n + 1
+    print(n)

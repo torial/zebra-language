@@ -12,7 +12,7 @@
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
 use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
-use AstWalk exposing collectOldNodes, mightUseName, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -2799,6 +2799,23 @@ def compareOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, op: str, ctx: Infer
     ctx.addErr(ctx.file, eln, ecl,
                "cannot compare '" + typeTag(lt) + "' with '" + typeTag(rt) + "' using " + op + " -- convert one side (`.toString()` / `.toInt()`)")
 
+# BUG-517: a `chars()` element is a CHARACTER (a codepoint) and a string literal is a str.
+# `ch >= "0"` passed the front end and failed inside zig, in the runtime ("incompatible
+# types: 'u21' and '*const [1:0]u8'"), on every comparison operator. Zebra has one
+# spelling for a character constant, the char literal, so name it.
+def charStrCompareCheck(lt: Type_, rt: Type_, b: ExprBinary, op: str, ctx: InferCtx)
+    var l_char: bool = lt is Type_.char_
+    var r_char: bool = rt is Type_.char_
+    if not ((l_char and isString(rt)) or (r_char and isString(lt)))
+        return
+    var eln: int = b.span.line
+    var ecl: int = b.span.col
+    if eln == 0
+        eln = exprSpanLine(b.left)
+        ecl = exprSpanCol(b.left)
+    ctx.addErr(ctx.file, eln, ecl,
+               "cannot compare 'char' with 'str' using " + op + " -- a character compares with a char literal (c'0'), or convert it first (`ch.toString()`)")
+
 def isConcatMistake(t: Type_): bool
     if isNumeric(t)
         return true
@@ -3898,7 +3915,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                     ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                                cp_what + ", so ." + lmname + "() on it would not change the parent -- build the inner list first and .add() it, or .set(i, updated) it back (BUG-314)")
                                     return Type_.void_
-                            if lmname == "at" or lmname == "fetch"
+                            if lmname == "at" or lmname == "fetch" or lmname == "pop"
                                 return list_elem
                             if lmname == "join"
                                 return Type_.string_
@@ -4271,17 +4288,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return rt
                 on BinaryOp.eq
                     compareOperandCheck(lt, rt, b, "==", ctx)
+                    charStrCompareCheck(lt, rt, b, "==", ctx)
                     return Type_.bool_
                 on BinaryOp.ne
                     compareOperandCheck(lt, rt, b, "!=", ctx)
+                    charStrCompareCheck(lt, rt, b, "!=", ctx)
                     return Type_.bool_
                 on BinaryOp.lt
+                    charStrCompareCheck(lt, rt, b, "<", ctx)
                     return Type_.bool_
                 on BinaryOp.le
+                    charStrCompareCheck(lt, rt, b, "<=", ctx)
                     return Type_.bool_
                 on BinaryOp.gt
+                    charStrCompareCheck(lt, rt, b, ">", ctx)
                     return Type_.bool_
                 on BinaryOp.ge
+                    charStrCompareCheck(lt, rt, b, ">=", ctx)
                     return Type_.bool_
                 on BinaryOp.and_
                     return Type_.bool_
@@ -6013,6 +6036,13 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.catch_ as ce
             checkCallsInExpr(ce.expr, file, line, ctx)
             checkCallsInExpr(ce.fallback, file, line, ctx)
+            # BUG-526: a capture the fallback never reads (`catch |e| 0`) reached zig as
+            # "unused capture", with a line and no column; refused here, the way an unused
+            # `as` binding in a branch arm is (2026-09-16). `|_|` is "don't care".
+            if ce.err_var as cv
+                if cv != "_" and not mightUseNameInExpr(cv, ce.fallback)
+                    ctx.addErr(file, ce.span.line, ce.span.col,
+                               "unused capture '" + cv + "' in this catch: use it, or write the catch without `|" + cv + "|`")
         on Expr.slice as sx
             # start/stop_ are `^Expr?`: `s[..n]` and `s[n..]` omit one end.
             checkCallsInExpr(sx.object, file, line, ctx)

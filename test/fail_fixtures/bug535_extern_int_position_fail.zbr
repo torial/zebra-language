@@ -1,0 +1,8 @@
+# BUG-535: the extern int-ambiguity refusal must point at the extern (line 3), not at the
+# next declaration (`def main()`, line 7), which is where the parser stood when it raised.
+extern def abs(n: int): int
+
+
+
+def main()
+    print(1)

@@ -1,0 +1,12 @@
+# BUG-541: a CsvWriter is a REFERENCE, as a StringBuilder is: `var b = a` names the same
+# writer, and a CsvWriter parameter can be written. As a value, b's write was lost to a
+# and the parameter was `*const` inside zig.
+def addRow(w: CsvWriter, a: str)
+    w.writeRow([a, "x"])
+
+def main()
+    var a = CsvWriter()
+    var b: CsvWriter = a
+    b.writeRow(["h", "1"])
+    addRow(a, "r")
+    print("bug541: ${a.build() == b.build()} ${a.build().len}")

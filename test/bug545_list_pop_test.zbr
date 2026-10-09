@@ -1,0 +1,17 @@
+# BUG-545 (decided 2026-10-08): pop() returns the last element and THROWS on an empty list,
+# so it is written `xs.pop()?` or caught, like any throws call. It used to reach zig's
+# ArrayList.pop, an optional, which zig refused as an int.
+def drain(xs: List(int)): int throws
+    var total: int = 0
+    while xs.count() > 0
+        total += xs.pop()?
+    return total
+
+def main() throws
+    var xs = [1, 2, 3]
+    var last: int = xs.pop()?
+    var sum = drain(xs)?
+    var empty = List(int)()
+    var fallback: int = empty.pop() catch -1
+    var mlen = empty.pop() catch |e| e.message.len
+    print("bug545: ${last} ${sum} ${fallback} ${mlen} ${xs.count()}")

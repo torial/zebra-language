@@ -60,7 +60,7 @@ over the **value**. Whether the other side then has its own data depends on the 
 | class instance | **shared** — the same object | **G** | `memory_model_probe` R1 (`Box`) |
 | `List`, `HashMap`, `Set` | **shared** — the same container (since 2026-10-06; before that, a half-copy that shared the buffer and not the length) | **G** | `memory_model_probe` R1, R2; red against the pre-switch anchor |
 | `StringBuilder` | **shared** -- it became a reference in the same switch, being spelled `_ZbrList(u8)` (found 2026-10-06 after this note was adopted, which first said "still a half-copy"; the pre-switch compiler prints a lost write where this one shares) | **G** | `memory_model_probe` R1: an alias sees the append, and so does a thread that captured it |
-| `CsvWriter` | **today: an independent copy** -- writes through a copy are lost, and a function cannot write to one it is given (BUG-541); it should become a reference like StringBuilder | **C** | BUG-541's repro |
+| `CsvWriter` | **shared** -- a reference like StringBuilder since 2026-10-09 (BUG-541; before that an independent copy: writes through a copy were lost, and a function could not write to one it was given) | **G** | `bug541_csvwriter_reference_test`: an alias and a parameter both write the one writer |
 | `Chan`, `Atomic`, `ThreadPool` | shared — that is what they are for, and they synchronise themselves | **G** | `chan_thread_test`, `memory_model_probe` |
 
 To give another thread its own container, send or capture `xs.copy()` (shallow) or a `<<-`

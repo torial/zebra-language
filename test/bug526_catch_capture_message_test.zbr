@@ -1,0 +1,14 @@
+# BUG-526: in a postfix `catch |e|`, `e.message` reads the raised message (as in a
+# statement-form catch) -- it failed inside zig on `anyerror` -- and `"${e}"` still works
+# beside it in the same program.
+def boom(): int throws
+    raise "went wrong"
+
+def boomStr(): str throws
+    raise "nope"
+
+def main()
+    var n = boom() catch |e| e.message.len
+    var tag: str = boomStr() catch |e| "caught:${e}"
+    var ok = boom() catch |_| 5
+    print("bug526: ${n} ${tag.startsWith("caught:")} ${ok}")

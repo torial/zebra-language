@@ -1,0 +1,5 @@
+# BUG-545: an unmarked pop() is the §28b refusal at its line, not a zig error.
+def main()
+    var xs = [1, 2]
+    var v: int = xs.pop()
+    print(v)

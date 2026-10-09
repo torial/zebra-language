@@ -1654,6 +1654,15 @@ def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
         # list mutated only by `set` is `const` -- Zig refuses a `var` never mutated.
         if rt is Type_.list_ and method == "set"
             return false
+        # BUG-545: `xs.pop()` emits `_zbr_list_pop(xs)`, which takes the list REFERENCE --
+        # the variable itself never changes, and zig refuses a `var` never mutated.
+        if rt is Type_.list_ and method == "pop"
+            return false
+        # BUG-541: a CsvWriter is a reference; `writeRow` / `build` emit as runtime calls
+        # taking it (`_csv_write_row(w, ..)`), so the local is never itself mutated.
+        if rt is Type_.named as cw_n
+            if cw_n == "CsvWriter"
+                return false
         # By-value handle → `var` only for an explicit in-place mutator.
         if isByValueHandleType(rt)
             return isMutatingMethod(method)

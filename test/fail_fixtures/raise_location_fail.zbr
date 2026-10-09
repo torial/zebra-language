@@ -1,0 +1,10 @@
+# Failure locations: an uncaught raise names WHERE it was raised -- `Error at <file>:<line>:`
+# -- while a CAUGHT error's message stays the user's own text.
+def boom(): int throws
+    raise "went wrong"
+
+def main() throws
+    var mlen = boom() catch |e| e.message.len
+    print("caught message length: ${mlen}")
+    var n = boom()?
+    print(n)

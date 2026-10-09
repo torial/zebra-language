@@ -1,0 +1,10 @@
+# BUG-528: an instance field with no type emitted `hits: anytype`, which zig refused.
+class Counter
+    var hits = 0
+    def bump()
+        .hits += 1
+
+def main()
+    var c = Counter()
+    c.bump()
+    print(c.hits)

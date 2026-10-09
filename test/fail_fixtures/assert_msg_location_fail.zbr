@@ -1,0 +1,8 @@
+# Failure locations (GameEngine, 2026-10-08): an assert with a message names WHERE, spelled
+# as a compared assert already was -- `assert failed at <file>:<line>: <message>`.
+def check(x: int)
+    assert x > 0, "x must be positive"
+
+def main()
+    check(1)
+    check(0)

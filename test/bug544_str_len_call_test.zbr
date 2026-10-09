@@ -1,0 +1,6 @@
+# BUG-544: `s.len()` on a str -- on str's surface -- emitted the List spelling (`s.items`).
+def main()
+    var s: str = "abc"
+    var u: str = "héllo"
+    if s.len() > 2
+        print("bug544: ${s.len()} ${s.len} ${u.len()}")

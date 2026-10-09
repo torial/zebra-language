@@ -58,32 +58,6 @@
   is also what the surface doc should say ("which File calls throw", Fable's question).
   `?` on a non-throwing call should get the same rule if it does not already.
 
-### BUG-545: `List.pop()` is on the List surface and implemented by nothing -- it reaches zig's `ArrayList.pop`, which returns an optional, so `r = xs.pop()` passes the front end and fails inside zig -- OPEN (found 2026-10-08)
-- **Severity:** Medium (a surface member that cannot be used as written).
-- **Found by:** zebra-taocp's Algorithm Q (Vol. 3 §5.2.2), whose subfile stack popped
-  `(l, r)` pairs: `expected type 'i64', found '?i64'`. Worked around there with
-  `xs[xs.count() - 1]` + `xs.remove(...)`, the workaround commented with this number.
-- **Where:** `pop` is in TypeChecker's `listMethodKnown` (so docs/SURFACE.md lists it), and
-  neither the checker nor codegen has an arm for it -- the call is passed through to Zig.
-- **DECIDED (Sean, 2026-10-08):** `pop()` returns the ELEMENT and THROWS on an empty list --
-  recoverable, as Python's IndexError is, rather than a panic. Under §28b that makes every
-  call site `xs.pop()?` (or a `catch`), which is the honest spelling of an operation that
-  can fail. Fixture: pop to empty, the throw caught with its message, and the `?` form.
-
-### BUG-544: `.len()` called as a METHOD on a `str` passes the front end and emits the List spelling -- zig refuses it -- OPEN (found 2026-10-08)
-- **Severity:** Low-Medium (a "Zebra accepts, zig rejects" leak; the fix for the user is a
-  spelling, but the compiler agreed to the wrong one).
-- **Reported by:** Fable, GameEngine (designer.zbr `.nameBuffer.len()`, user_input.zbr
-  `._typed.len()`; engine ledger F34). Reproduced here 2026-10-08.
-- **Repro:** `var s: str = "abc"` then `if s.len() > 2`. `zebra -c` exits 0; a build fails in
-  zig: `no member named 'items' in 'str'` (emitted `s.items.len`). The property form `s.len`
-  is correct.
-- **Fix direction -- CORRECTED the same day:** first written as "refuse `.len()` on a str",
-  but `len` IS on the frozen str surface (docs/SURFACE.md, derived from `strMethodKnown`),
-  so refusing it would retract a published promise. The fix makes the call work: the
-  generic `len` arm emits the slice's `.len` when the receiver is a str. Fixture:
-  `test/bug544_str_len_call_test.zbr` (`s.len()`, `s.len`, a multi-byte string).
-
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).
 - **Mechanism:** `defaultPreamblePath()` (selfhost/main.zbr) tries
@@ -130,19 +104,6 @@
   decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
   output must hold no `NTSTATUS` line (Windows-only leg).
 
-### BUG-541: `CsvWriter` is still a VALUE builder -- writes through a copy are lost, and a `CsvWriter` parameter cannot be written -- OPEN (found 2026-10-07)
-- **Severity:** Medium (silent lost writes; and a leak: `-c` passes, zig refuses).
-- **Repro (2026-10-07):** `var b: CsvWriter = a` then `b.writeRow(r)` -> `a.build()` is `""`,
-  `b.build()` is `"h"`. And `def addRow(w: CsvWriter)` calling `w.writeRow(...)` fails
-  inside zig: `expected type '*zebra_rt._CsvWriter', found '*const zebra_rt._CsvWriter'`.
-- **Where:** the runtime's `_CsvWriter = struct { buf: std.ArrayList(u8) }` is emitted by
-  name, not through `_ZbrList`, so the containers switch (BUG-501 1d) did not reach it --
-  unlike StringBuilder, which it did. Found by the memory model's audit of which builders
-  became references (docs/design/memory_model.md §3).
-- **Fix direction:** make it a reference like StringBuilder (the reasoning of BUG-501 §6
-  decision 4 -- a builder is mutable and readers expect an object): `*_CsvWriter`, built on
-  the heap. Fixture: the alias and the parameter repro, watched red.
-
 ### BUG-530: `re.groups(s)` stops at the first capture group that took no part in the match -- OPEN (found 2026-10-05)
 - `Regex.compile("(a)?(b)").groups("b")` -> `[]`; `"(cat)|(dog)"` on `"dog"` -> `[]`;
   `"(a)(x)?(b)"` on `"ab"` -> `["a"]`. `_regex_groups` breaks out of its loop at the
@@ -155,19 +116,10 @@
   emitted as a raw struct method. The same call inside `print(...)` works. Every Regex
   method. Reported by the book agent; verified.
 
-### BUG-533: an invalid escape (`"\w"`, `" "`) passes the front end and fails inside zig -- OPEN (found 2026-10-05)
-- `var s = "a\wb"` -> zig "invalid escape character: 'w'" at the line. The lexer should
-  refuse an unknown escape with a Zebra message (and suggest `r"..."` for regex).
-  Reported by the book agent; `\w` verified, ` ` not re-run.
-
 ### BUG-534: an `int` argument to a `uint64` extern parameter passes `-c` and fails inside zig -- OPEN (found 2026-10-05)
 - `extern def f(p: ^byte, len: uint64): uint32` called as `f(p, text.len)` -> zig
   "expected type 'u64', found 'i64'"; `var u: uint64 = n` builds fine, and `int` has no
   unsigned conversion method. Reported by the book agent; NOT re-run here (needs a C dep).
-
-### BUG-535: the `extern` int-ambiguity refusal points at the NEXT declaration, not the extern -- OPEN (found 2026-10-05)
-- `extern def abs(n: int): int` on line 3, `def main()` on line 8 -> the (good) message is
-  reported at 8:1. Reported by the book agent; verified.
 
 ### BUG-527: assigning to an interface-typed field INSIDE A METHOD is judged by the enclosing class's SAME-NAMED field -- the interface wrap is skipped and zig refuses it -- OPEN (found 2026-10-05)
 - **Reported by** the GameEngine session (a cousin of BUG-490's call-site case, fixed 93c4f2b).
@@ -186,47 +138,11 @@
   path.
 - **Repro files:** to be committed as the fixture when fixed (kept in scratch for now).
 
-### BUG-528: an untyped class field (`var hits = 0`) passes the front end and emits `hits: anytype`, which zig refuses -- OPEN (found 2026-10-05)
-- QUICKSTART says field declarations carry a type. The front end accepts `var hits = 0`
-  in a class body, and codegen emits `hits: anytype = 0,` -> "expected type expression, found
-  'anytype'" from zig, at the line. It should either be refused in the front end ("a field
-  needs a type: `var hits: int = 0`") or infer the type from the initializer. Found while
-  reproducing BUG-527.
-
-### BUG-526: a postfix `catch |e|` capture leaks two Zig errors -- unused, it fails "unused capture" (no column); `e.message` passes the front end and fails inside zig -- OPEN (found 2026-10-04)
-- **Repro:** `var r = boom() catch |e| 0` -> `error: unused capture` at the line, no column (Zig's
-  message relayed). `var r = boom() catch |e| take(e.message.len)` -> `type 'anyerror' does not
-  support field access`. `"${e}"` works.
-- **Why:** the branch-arm half of this was closed on 2026-09-16 (TypeChecker refuses an unused
-  `as name` itself, at the arm), but postfix `catch` was not given the same rule; and the
-  capture is bound as a raw Zig `anyerror`, while the METHOD-level `catch |e|` gives `e.message`.
-- **Fix shape:** refuse the unused capture in the front end the way the arm rule does (or emit
-  `_ = e;`), and either give the postfix capture the same error object as the method-level
-  catch or refuse `.message` on it with a Zebra message.
-- **Found by:** writing BUG-525's fixture, which needed a used capture.
-
 ### BUG-519: constructing a struct from ANOTHER module by named arguments ignores its field defaults -- `R(k: 3)` is refused "expected 2 argument(s), found 1" -- OPEN (found 2026-10-03)
 - **Severity:** Low-Medium (a front-end refusal, not a leak, but wrong: the same construction works inside the struct's own module, so a default is usable only locally)
 - **Repro:** `fdep.zbr`: `struct R` with `var xs: List(int) = List(int)()` and `var k: int`; root: `use fdep exposing R` then `var r = R(k: 3)`.
 - **Found by:** BUG-501 1c's probes (2026-10-03). It also bounds 1c: since cross-module construction must pass every field, a struct literal never has to fill an omitted field of another module's struct -- the fill uses the module-local struct registry.
 - **Fix direction:** the arity check for a struct constructor should count only fields WITHOUT a default; the dep's struct decl (fields + which have defaults) must reach the root's checker. Then 1c's literal fill needs the dep's container fields too -- extend it with the same data.
-
----
-
-### BUG-517: comparing a `chars()` element with a one-character string literal passes the front end and fails inside zig -- OPEN (found 2026-10-02)
-- **Severity:** Medium (a leak: `-c` exits 0, the build fails in the runtime with `incompatible types: 'u21' and '*const [1:0]u8'` -- a Zig error about code the user never wrote, pointing into zebra_rt.zig)
-- **Repro:**
-  ```zebra
-  def main()
-      var n: int = 0
-      for ch in "a1b2".chars()
-          if ch >= "0" and ch <= "9"
-              n = n + 1
-      print(n)
-  ```
-  `zebra -c` accepts it; `zebra x.zbr` fails in zig. `chars()` yields codepoints (u21); the literal is a string.
-- **Found by:** writing BUG-513's driver code (`keepFailedScratch` compared directory-name characters with "0".."9"); the first regen died in zig. The driver now uses `str.isNumeric()`.
-- **Fix direction:** Zebra already HAS char literals -- `c'0'` -- and the GameEngine's two `chars()` loops (game/tuon/tuon_save.zbr) use them, which is why the engine never met this (Fable, 2026-10-02). So the simplest correct fix is a front-end refusal naming them: `'ch' is a character; compare it with c'0', not "0"`. Lowering a one-character string literal to its codepoint is the friendlier alternative; decide what a codepoint compared with a ONE-character literal means. Either lower the literal to its codepoint (`ch >= "0"` reads naturally, and Python users will write it), or refuse in the front end naming `ch.toString()` / a char literal. Either way the checker must type a `chars()` element and stop the mismatch before codegen. leakgen does not generate `chars()` comparisons -- add the shape to `fuzz/gen.py` with the fix.
 
 ---
 

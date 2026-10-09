@@ -23,6 +23,22 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`List.pop()` works (BUG-545):** it returns the last element and THROWS on an empty
+  list, so it is written `xs.pop()?` or caught (`xs.pop() catch -1`). It was listed and
+  could not be used: the call reached Zig's optional-returning `pop`.
+- **`CsvWriter` is a reference (BUG-541),** as `StringBuilder` is: `var b = a` names the same
+  writer, and a function can write to a `CsvWriter` it is given. Before, a copy's writes were
+  lost and a parameter could not be written.
+- **Failures say where (GameEngine request).** `assert c, "msg"`, `require`, `ensure` and
+  `invariant` failures read `<kind> failed at <file>:<line>: ...`, and an error that ends
+  `main` reads `Error at <file>:<line>: <message>` -- one ` at <file>:<line>:` spelling a
+  tool can parse. A caught error's `e.message` is unchanged.
+- **Refused in Zebra's words instead of failing inside zig:** a `chars()` element compared
+  with a string literal, naming `c'0'` (BUG-517); an unused postfix `catch |e|` capture
+  (BUG-526); an untyped instance field, naming the type (BUG-528); an unknown string escape
+  such as `\w`, naming `r"..."` (BUG-533). The `extern` `int` refusal now points at the
+  extern, not the next declaration (BUG-535).
+- **Fixed:** `e.message` in a postfix `catch |e|` (BUG-526); `s.len()` on a `str` (BUG-544).
 - **Emitted code no longer spells the pre-reference container shims (BUG-501 cleanup).**
   `_ZbrRefOf`, `_zbr_ref(&x)`, `_zbr_cderef`, `_zbr_unboxed` and a container's `_ZbrBoxOf` /
   `_zbr_boxed` were identities once containers became references (2026-10-06); codegen now

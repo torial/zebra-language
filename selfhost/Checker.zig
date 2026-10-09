@@ -1572,7 +1572,7 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: _ZbrList([]const u8), 
 // zbr:selfhost/Checker.zbr:717
     if (_zebra_gt(resolver.errorCount(), 0)) {
 // zbr:selfhost/Checker.zbr:718
-        { _zbr_rt._error_ctx = .{ .message = _str_concat(_str_concat(_str_concat("resolver errors in ", path, _zbr_rt._allocator), ":\n", _zbr_rt._allocator), resolver.allErrorMessages(), _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/Checker.zbr:718", .message = _str_concat(_str_concat(_str_concat("resolver errors in ", path, _zbr_rt._allocator), ":\n", _zbr_rt._allocator), resolver.allErrorMessages(), _zbr_rt._allocator) }; return error.ZebraError; }
     }
 // zbr:selfhost/Checker.zbr:720
     if (_zbr_val(pm_node) == .module_) {

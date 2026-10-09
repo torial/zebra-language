@@ -1,0 +1,9 @@
+# Failure locations: a require that fails names the clause's line.
+def half(n: int): int
+    require
+        n % 2 == 0
+    return n / 2
+
+def main()
+    print(half(4))
+    print(half(3))

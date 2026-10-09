@@ -726,7 +726,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             },
             else => {
 // zbr:selfhost/AstBuilder.zbr:329
-                { _zbr_rt._error_ctx = .{ .message = "buildTopDecl: unexpected PNode variant" }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:329", .message = "buildTopDecl: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
     }
@@ -980,7 +980,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             },
             else => {
 // zbr:selfhost/AstBuilder.zbr:462
-                { _zbr_rt._error_ctx = .{ .message = "buildMember: unexpected PNode variant" }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:462", .message = "buildMember: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
     }
@@ -1599,7 +1599,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             },
             else => {
 // zbr:selfhost/AstBuilder.zbr:841
-                { _zbr_rt._error_ctx = .{ .message = "buildStmt: unexpected PNode variant" }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:841", .message = "buildStmt: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
     }
@@ -2050,12 +2050,12 @@ pub const _zbr_ty_ASTBuilder = struct {
                                 return _zbr_ty_Expr{ .type_check = blk_box_67: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "type_check")) = tc; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_67 _bp; } };
                             } else {
 // zbr:selfhost/AstBuilder.zbr:1112
-                                { _zbr_rt._error_ctx = .{ .message = "buildExpr: `is` member object must be a plain identifier" }; return error.ZebraError; }
+                                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1112", .message = "buildExpr: `is` member object must be a plain identifier" }; return error.ZebraError; }
                             }
                         },
                         else => {
 // zbr:selfhost/AstBuilder.zbr:1114
-                            { _zbr_rt._error_ctx = .{ .message = "buildExpr: `is` RHS must be a plain identifier or Union.variant" }; return error.ZebraError; }
+                            { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1114", .message = "buildExpr: `is` RHS must be a plain identifier or Union.variant" }; return error.ZebraError; }
                         },
                     }
                 }
@@ -2116,7 +2116,7 @@ pub const _zbr_ty_ASTBuilder = struct {
                     },
                     else => {
 // zbr:selfhost/AstBuilder.zbr:1147
-                        { _zbr_rt._error_ctx = .{ .message = "buildExpr: pipeline RHS must be a call expression" }; return error.ZebraError; }
+                        { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1147", .message = "buildExpr: pipeline RHS must be a call expression" }; return error.ZebraError; }
                     },
                 }
             },
@@ -2355,7 +2355,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             },
             else => {
 // zbr:selfhost/AstBuilder.zbr:1279
-                { _zbr_rt._error_ctx = .{ .message = "buildExpr: unexpected PNode variant" }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1279", .message = "buildExpr: unexpected PNode variant" }; return error.ZebraError; }
             },
         }
     }
@@ -2510,7 +2510,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             return _zbr_ty_BinaryOp.shr;
         }
 // zbr:selfhost/AstBuilder.zbr:1356
-        { _zbr_rt._error_ctx = .{ .message = _str_concat("not a compound assignment operator: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1356", .message = _str_concat("not a compound assignment operator: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/AstBuilder.zbr:1358
@@ -2582,7 +2582,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             return _zbr_ty_AssignOp.double_gt_eq;
         }
 // zbr:selfhost/AstBuilder.zbr:1385
-        { _zbr_rt._error_ctx = .{ .message = _str_concat("toAssignOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1385", .message = _str_concat("toAssignOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/AstBuilder.zbr:1387
@@ -2684,7 +2684,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             return _zbr_ty_BinaryOp.shr;
         }
 // zbr:selfhost/AstBuilder.zbr:1430
-        { _zbr_rt._error_ctx = .{ .message = _str_concat("toBinaryOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1430", .message = _str_concat("toBinaryOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/AstBuilder.zbr:1432
@@ -2706,7 +2706,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             return _zbr_ty_UnaryOp.bit_not;
         }
 // zbr:selfhost/AstBuilder.zbr:1442
-        { _zbr_rt._error_ctx = .{ .message = _str_concat("toUnaryOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1442", .message = _str_concat("toUnaryOp: unknown op: ", op, _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/AstBuilder.zbr:1460
