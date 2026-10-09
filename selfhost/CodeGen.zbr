@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, paramNeedsAddrOf, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
@@ -3085,14 +3085,6 @@ def tryChain(e: Expr): CallChain?
 # across every module generated in one process (deps + root).
 var _implicit_try_sites: List(str) = List(str)()
 
-# BUG-312: memo for "does argument #i of callee K reach a mutation, transitively?", keyed
-# "file:K#i" -> 0 in progress, 1 no, 2 yes. The scan and paramNeedsAddrOfTx are mutually
-# recursive; unmemoised, the compiler's own source (thousands of functions, wide call
-# graphs) re-derived the same answers exponentially and the regeneration died with OOM.
-# "in progress" answers NO, which is the fixed point for a cycle (a call chain that loops
-# back adds no mutation site the rest of the chain does not already have).
-var _addr_tx_memo: HashMap(str, int) = HashMap(str, int)()
-
 def recordImplicitTry(site: str)
     _implicit_try_sites.add(site)
 
@@ -3458,7 +3450,6 @@ struct Generator
     var chan_locals          : StrSet   # local/param names with type Chan(T)
     var atomic_locals       : StrSet   # local/param names with type Atomic(T)
     var thread_pool_locals  : StrSet   # local/param names with type ThreadPool(n)
-    var addr_tx_depth       : int      # BUG-312: recursion depth of paramNeedsAddrOfTx
     var ptr_field_bindings   : StrSet   # "bindingName.fieldName" where field is ^T (non-optional)
     var opt_ptr_field_bindings: StrSet  # "bindingName.fieldName" where field is ^T? (optional)
     var for_loop_deref       : StrSet   # "loopVar.field" needing .* in for-loop body (e.g. DictEntry)
@@ -3496,9 +3487,6 @@ struct Generator
     var strip_contracts      : bool     # true when --turbo: suppress require/ensure/invariant emit
     var ensure_armed_active  : bool     # true while emitting a fn body whose ensure emits _ensure_armed
     var ensure_uses_result   : bool     # true while emitting a fn body whose ensure references `result`
-    # BUG-097: param names emitted as *ArrayList in the current method (BUG-091).
-    # genArgListNamed uses this for three-case logic: ptr→ptr (pass), ptr→value (.*), value→ptr (&).
-    var caller_ptr_params    : StrSet
     # BUG-352: the loop variables of the for-in / for-num loops currently being
     # emitted. Shared by reference through `indented()`, pushed on entry and popped on
     # exit, so a loop variable named like a FIELD is the loop variable inside the loop
@@ -3587,7 +3575,6 @@ struct Generator
         .chan_locals           = StrSet()
         .atomic_locals        = StrSet()
         .thread_pool_locals   = StrSet()
-        .addr_tx_depth        = 0
         .ptr_field_bindings    = StrSet()
         .opt_ptr_field_bindings = StrSet()
         .for_loop_deref        = StrSet()
@@ -3616,7 +3603,6 @@ struct Generator
         .strip_contracts       = false
         .ensure_armed_active   = false
         .ensure_uses_result    = false
-        .caller_ptr_params     = StrSet()
         .active_loop_vars      = StrSet()
         .tc_result             = nil
         .method_return_type    = nil
@@ -3679,65 +3665,6 @@ struct Generator
         var g = this except
             indent = indent + 1
         return g
-
-    # BUG-097: true iff e is a bare identifier in caller_ptr_params
-    # (i.e., already emitted as *ArrayList in the current method signature).
-    def argIdentInCpp(e: Expr): bool
-        if e is Expr.ident as ei
-            return caller_ptr_params.contains_(ei.name)
-        # 2026-09-24: an expression that yields a BOXED inner container (`parent.at(0)`,
-        # `m.fetch(k)`, `m.get(k)!`) is a pointer already, the same three-case logic.
-        return exprYieldsBox(e)
-
-    # NESTED CONTAINERS (2026-09-24): does this expression evaluate to a heap box -- the
-    # pointer a List(List(T)) / HashMap(K, List(V)) holds -- rather than a container value?
-    # `.at()` / `.fetch()` on such a parent, `.get(k)!` on such a map, or a local the
-    # generator recorded as bound from one (caller_ptr_params carries those too).
-    def exprYieldsBox(e: Expr): bool
-        if .infer_ctx == nil
-            return false
-        branch e
-            on Expr.ident as bi
-                return caller_ptr_params.contains_(bi.name)
-            on Expr.to_non_nil as nn
-                return exprYieldsOptBox(nn.expr)
-            on Expr.call as bc
-                if bc.callee is Expr.member as bm
-                    if bm.member == "at" or bm.member == "fetch"
-                        var brt: Type_ = inferExpr(bm.object, .infer_ctx!)
-                        branch brt
-                            on Type_.list_ as ble
-                                return bm.member == "at" and isBoxedElemType(ble)
-                            on Type_.hashmap_ as bhm
-                                return bm.member == "fetch" and isBoxedElemType(bhm.val_t)
-                            else
-                                return false
-                return false
-            else
-                return false
-
-    # Emit `e` where a container VALUE is wanted (a return, an assignment into a value
-    # slot): a box, or an optional box, is unboxed; anything else is itself. The copy is
-    # the language's existing shape for by-value returns and stores.
-    def genValueOf(e: Expr)
-        if exprYieldsBox(e) or exprYieldsOptBox(e)
-            w.emit("_zbr_unboxed(")
-            genExpr(e)
-            w.emit(")")
-        else
-            genExpr(e)
-
-    # `m.get(k)` on a map whose values are boxed: an optional box.
-    def exprYieldsOptBox(e: Expr): bool
-        if .infer_ctx == nil
-            return false
-        if e is Expr.call as gc
-            if gc.callee is Expr.member as gm
-                if gm.member == "get"
-                    var grt: Type_ = inferExpr(gm.object, .infer_ctx!)
-                    if grt is Type_.hashmap_ as ghm
-                        return isBoxedElemType(ghm.val_t)
-        return false
 
     def withEnsureCtx(armed: bool, uses_result: bool): Generator
         var g = this except
@@ -4029,7 +3956,6 @@ struct Generator
             atomic_locals         = StrSet()
             thread_pool_locals    = StrSet()
             dynlib_vars            = StrSet()
-            caller_ptr_params = StrSet()
         return g
 
     # BUG-153: true if `nm` is a module-global `var` of type Atomic(T).  A module
@@ -4314,13 +4240,13 @@ struct Generator
                 w.emit("_zbr_HashMap(")
                 genType(gtr.args.at(0))
                 w.emit(", ")
-                genElemType(gtr.args.at(1))
+                genType(gtr.args.at(1))
                 w.emit(")")
                 return
             if key_str
                 w.emit("_ZbrMap(")
                 if gtr.args.len >= 2
-                    genElemType(gtr.args.at(1))
+                    genType(gtr.args.at(1))
                 else
                     w.emit("anytype")
                 w.emit(")")
@@ -4334,7 +4260,7 @@ struct Generator
                     if ai > 0
                         w.emit(", ")
                     if ai == 1
-                        genElemType(gtr.args.at(ai))
+                        genType(gtr.args.at(ai))
                     else
                         genType(gtr.args.at(ai))
                     ai += 1
@@ -4343,7 +4269,7 @@ struct Generator
         if gtr.name == "List"
             w.emit("_ZbrList(")
             if gtr.args.len >= 1
-                genElemType(gtr.args.at(0))
+                genType(gtr.args.at(0))
             else
                 w.emit("[]const u8")
             w.emit(")")
@@ -5862,8 +5788,6 @@ struct Generator
                 var lz: str = genFieldZigType(le)
                 if lz == ""
                     return ""
-                if isBoxedElemType(le)
-                    lz = "*" + lz
                 return "_ZbrList(" + lz + ")"
             on Type_.optional as oi
                 var oz: str = genFieldZigType(oi)
@@ -5881,8 +5805,6 @@ struct Generator
                 var vz: str = genFieldZigType(hm.val_t)
                 if vz == ""
                     return ""
-                if isBoxedElemType(hm.val_t)
-                    vz = "*" + vz
                 if isString(hm.key_t)
                     return "_ZbrMap(" + vz + ")"
                 var kz: str = genFieldZigType(hm.key_t)
@@ -6474,11 +6396,6 @@ struct Generator
                 bg = bg.withMethodReturnType(m.return_type!)
             if is_factory
                 bg = bg.withCurrentClosureRet("_ZbrClosure_${m.name}")
-            # BUG-097: record which params are emitted as *ArrayList so arg-emit
-            # sites can apply three-case logic (ptr→ptr, ptr→value, value→ptr).
-            for pptr in m.params
-                if paramNeedsAddrOfTx(pptr, m.stmts)
-                    bg.caller_ptr_params.add(pptr.name)
             # Track List-tuple and StrSet params for type-aware codegen
             for p2 in m.params
                 if p2.type_ != nil
@@ -7221,212 +7138,10 @@ struct Generator
             first = false
             w.emit(zigSafeName(p.name))
             w.emit(": ")
-            # BUG-091: List(T)/HashMap(K,V) param mutated by body → emit *T
-            # so .append/.put can take *Self and the caller sees changes.
-            if paramNeedsAddrOfTx(p, body)
-                # BUG-501 1d: `*T` today, T itself once containers are references.
-                w.emit("_ZbrRefOf(")
-                genType(p.type_!)
-                w.emit(")")
-            else if p.type_ != nil
+            if p.type_ != nil
                 genType(p.type_!)
             else
                 w.emit("anytype")
-
-    # ── BUG-091: addAddrOfMutations ──────────────────────────────────────────
-    # Walk stmts for any call whose ident-arg corresponds to a mutating-container
-    # param of the callee.  Add those ident names to `out` so the caller-side
-    # var/const decision treats them as mutated.  Without this, `&items` becomes
-    # `*const ArrayList` and Zig rejects the call.
-    #
-    # ORDERING REQUIREMENT: addAddrOfMutationsInExpr's instance-method arm
-    # (`f.helper(out)` where `f` is a local) calls `inferExpr(m.object, infer_ctx)`
-    # to resolve `f` -> "Filler.helper", then looks the params/body up.  This means
-    # `infer_ctx` MUST be seeded BEFORE genStmts runs -- which is currently
-    # guaranteed by genMethod and genInit calling `walkStmts(...)` then
-    # `withInferCtx(...)` on `bg` before invoking `bg.genStmts(...)`.  If a future
-    # refactor reorders genMethod (genStmts before walkStmts), instance-dispatch
-    # mutations will silently fall through to const, producing `&items` against
-    # `*const ArrayList` at the call site.  The static (`Class.method`) and self
-    # (`.method`) shapes do NOT depend on infer_ctx, so they continue to work.
-
-    def addAddrOfMutationsInStmts(stmts: List(Stmt), out: StrSet)
-        for s in stmts
-            branch s
-                on Stmt.if_ as si
-                    addAddrOfMutationsInStmts(si.then_stmts, out)
-                    for ei in si.else_ifs
-                        addAddrOfMutationsInStmts(ei.stmts, out)
-                    if si.else_stmts as se
-                        addAddrOfMutationsInStmts(se, out)
-                on Stmt.while_ as ww
-                    addAddrOfMutationsInStmts(ww.stmts, out)
-                on Stmt.for_in as fi
-                    addAddrOfMutationsInStmts(fi.stmts, out)
-                    if fi.else_ as fe
-                        addAddrOfMutationsInStmts(fe, out)
-                on Stmt.for_num as fnum
-                    addAddrOfMutationsInStmts(fnum.stmts, out)
-                on Stmt.branch_ as br
-                    for cc in br.cases
-                        addAddrOfMutationsInStmts(cc.stmts, out)
-                    if br.else_ as bre
-                        addAddrOfMutationsInStmts(bre, out)
-                on Stmt.try_catch as tc
-                    addAddrOfMutationsInStmts(tc.stmts, out)
-                    for cl in tc.clauses
-                        addAddrOfMutationsInStmts(cl.stmts, out)
-                on Stmt.allocate_ as al2
-                    addAddrOfMutationsInStmts(al2.stmts, out)
-                on Stmt.copy_out as co2
-                    addAddrOfMutationsInExpr(co2.target, out)
-                    addAddrOfMutationsInExpr(co2.value, out)
-                on Stmt.with_ as ww2
-                    addAddrOfMutationsInStmts(ww2.stmts, out)
-                on Stmt.in_scope as si3
-                    addAddrOfMutationsInStmts(si3.stmts, out)
-                on Stmt.var_ as n
-                    if n.init_expr != nil
-                        addAddrOfMutationsInExpr(n.init_expr!, out)
-                on Stmt.return_ as r
-                    if r.value != nil
-                        addAddrOfMutationsInExpr(r.value!, out)
-                on Stmt.expr as e
-                    addAddrOfMutationsInExpr(e, out)
-                on Stmt.assign as a3
-                    addAddrOfMutationsInExpr(a3.target, out)
-                    addAddrOfMutationsInExpr(a3.value, out)
-                on Stmt.print_ as pp
-                    var ppi = 0
-                    while ppi < pp.args.len
-                        addAddrOfMutationsInExpr(pp.args.at(ppi), out)
-                        ppi += 1
-                on Stmt.assert_ as asr
-                    addAddrOfMutationsInExpr(asr.cond, out)
-                else
-                    pass
-
-    def addAddrOfMutationsInExpr(e: Expr, out: StrSet)
-        if e is Expr.call as c
-            addAddrOfMutationsInExpr(c.callee, out)
-            for a in c.args
-                addAddrOfMutationsInExpr(a.value, out)
-            # Resolve the callee to find its params + body.
-            var key: str = ""
-            if c.callee is Expr.ident as id
-                key = id.name
-            else if c.callee is Expr.member as mem
-                branch mem.object
-                    on Expr.this_
-                        if owner != ""
-                            key = "${owner}.${mem.member}"
-                    on Expr.ident as obj_id
-                        if class_names.contains_(obj_id.name)
-                            key = "${obj_id.name}.${mem.member}"
-                        else if .infer_ctx != nil
-                            var rt_a: Type_ = inferExpr(mem.object, .infer_ctx!)
-                            if rt_a is Type_.named as cn_a
-                                key = "${cn_a}.${mem.member}"
-                    else
-                        pass
-            if key != ""
-                var ps = lookupFnParams(key)
-                if ps != nil
-                    var body = lookupFnBody(key)
-                    if body != nil
-                        var psl: List(Param) = ps!
-                        var pi = 0
-                        var args_count = c.args.len
-                        var pli = 0
-                        while pli < psl.len
-                            if pi >= args_count
-                                break
-                            var p = psl.at(pli)
-                            var av = c.args.at(pi).value
-                            if av is Expr.ident as aid
-                                # BUG-312: the TRANSITIVE question, as genArgListNamed asks it.
-                                # Memoised per (file, callee, argument index) -- see _addr_tx_memo.
-                                # This scan decides whether the caller's local is `var`; the
-                                # argument emission decides whether it passes `&x`. With the
-                                # scan asking only about the callee's own body, a container
-                                # mutated one call further down (`mlpFwd(out)` -> `matvec` ->
-                                # `out.set`) got `&h` passed from a `const h` -- "expected
-                                # '*T', found '*const T'".
-                                var tx_key: str = source_file + ":" + key + "#" + pli.toString()
-                                var tx_need: bool = false
-                                if _addr_tx_memo.contains(tx_key)
-                                    tx_need = _addr_tx_memo.fetch(tx_key) == 2
-                                else
-                                    _addr_tx_memo.set(tx_key, 0)
-                                    tx_need = paramNeedsAddrOfTx(p, body)
-                                    _addr_tx_memo.set(tx_key, if(tx_need, 2, 1))
-                                if tx_need
-                                    out.add(aid.name)
-                            pi += 1
-                            pli += 1
-            return
-        branch e
-            on Expr.binary as bx
-                addAddrOfMutationsInExpr(bx.left, out)
-                addAddrOfMutationsInExpr(bx.right, out)
-            on Expr.unary as ux
-                addAddrOfMutationsInExpr(ux.operand, out)
-            on Expr.member as mx
-                addAddrOfMutationsInExpr(mx.object, out)
-            on Expr.index as ix
-                addAddrOfMutationsInExpr(ix.object, out)
-                addAddrOfMutationsInExpr(ix.index, out)
-            on Expr.if_expr as ie
-                addAddrOfMutationsInExpr(ie.cond, out)
-                addAddrOfMutationsInExpr(ie.then_expr, out)
-                addAddrOfMutationsInExpr(ie.else_expr, out)
-            on Expr.orelse_ as oe
-                addAddrOfMutationsInExpr(oe.expr, out)
-                addAddrOfMutationsInExpr(oe.fallback, out)
-            on Expr.catch_ as ce
-                addAddrOfMutationsInExpr(ce.expr, out)
-                addAddrOfMutationsInExpr(ce.fallback, out)
-            on Expr.try_ as te
-                addAddrOfMutationsInExpr(te.expr, out)
-            on Expr.opt_chain as oc
-                addAddrOfMutationsInExpr(oc.base, out)
-                if oc.has_args
-                    for a in oc.args
-                        addAddrOfMutationsInExpr(a.value, out)
-            on Expr.type_check as tc2
-                addAddrOfMutationsInExpr(tc2.expr, out)
-            on Expr.chained_cmp as cc
-                for op in cc.operands
-                    addAddrOfMutationsInExpr(op, out)
-            else
-                pass
-
-    # BUG-144: transitive addr-of.  A container param FORWARDED by bare ident to a
-    # callee that (directly) mutates its matching positional param also needs
-    # `*ArrayList` emission (e.g. a `pos` cursor passed to `advance(pos)`).  Reuses
-    # addAddrOfMutationsInStmts — the same forwarding-detector the local var/const
-    # decision uses — which checks callees with the direct-only `paramNeedsAddrOf`,
-    # so there is no recursion back into this wrapper.  Coverage is one forwarding
-    # hop (the common cursor/accumulator pattern).  Mirrors src/CodeGen.zig.
-    def paramNeedsAddrOfTx(p: Param, body: List(Stmt)?): bool
-        if paramNeedsAddrOf(p, body)
-            return true
-        if p.type_ == nil
-            return false
-        if not isContainerTypeRef(p.type_!)
-            return false
-        # BUG-312: the scan below now calls back into this function, which makes the pair
-        # FULLY transitive -- and unbounded on a recursive function. Past a depth that no
-        # real call chain reaches, answer with the direct check (the pre-BUG-312 answer).
-        if .addr_tx_depth >= 8
-            return false
-        if body as b
-            .addr_tx_depth += 1
-            var fwd: StrSet = StrSet()
-            addAddrOfMutationsInStmts(b, fwd)
-            .addr_tx_depth -= 1
-            return fwd.contains_(p.name)
-        return false
 
     # ── genStmts / genStmt ────────────────────────────────────────────────────
 
@@ -7557,9 +7272,6 @@ struct Generator
         # mutator) instead of guessing from the method name. nil ic (unseeded
         # emission paths) falls back to the name-based over-approximation.
         var ms: StrSet = scanMutations(stmts, .infer_ctx)
-        # BUG-091: idents passed as `&` to mutating-container params must be
-        # declared `var`, otherwise `&items` is `*const ArrayList`.
-        addAddrOfMutationsInStmts(stmts, ms)
         mut_set = ms
         # EARLY-EXIT NARROWING (Sean, 2026-09-30): after `if a == nil` whose body always
         # leaves, `a` emits `a.?` for the rest of this block (unless the block reassigns
@@ -8215,15 +7927,9 @@ struct Generator
                             genType(n.type_!)
                             w.emit("); ")
                             var lli = 0
-                            var box230 = gtll.args.len > 0 and isBoxedElemTypeRef(gtll.args.at(0))
                             while lli < ll_init.elems.len
                                 w.emit(lname230 + ".append(_allocator, ")
-                                if box230
-                                    w.emit("_zbr_boxed(")
-                                    genExpr(ll_init.elems.at(lli))
-                                    w.emit(")")
-                                else
-                                    genExpr(ll_init.elems.at(lli))
+                                genExpr(ll_init.elems.at(lli))
                                 w.emit(") catch @panic(\"OOM\"); ")
                                 lli += 1
                             w.emit("break :" + lbl230 + " " + lname230 + "; };\n")
@@ -8288,16 +7994,7 @@ struct Generator
                             skip_type_ann = true
                 else
                     pass
-        var box_local = false
-        if n.init_expr != nil
-            if exprYieldsBox(n.init_expr!)
-                # 2026-09-24: `var row: List(int) = parent.at(0)` binds the parent's BOX --
-                # a pointer; the annotation would name the value type. Zig infers.
-                box_local = true
-                caller_ptr_params.add(n.name)
-        if box_local
-            pass
-        else if n.type_ != nil and not skip_type_ann
+        if n.type_ != nil and not skip_type_ann
             w.emit(": ")
             genType(n.type_!)
         else if n.init_expr != nil
@@ -8625,7 +8322,7 @@ struct Generator
                         if id.name == "List"
                             w.emit("_zbr_new(_ZbrList(")
                             if inner.args.len > 0
-                                genElemTypeFromExpr(inner.args.at(0).value)
+                                genTypeFromExpr(inner.args.at(0).value)
                             else
                                 w.emit("anytype")
                             w.emit("))")
@@ -8636,7 +8333,7 @@ struct Generator
                             if key_str
                                 w.emit("_ZbrMap(")
                                 if inner.args.len >= 2
-                                    genElemTypeFromExpr(inner.args.at(1).value)
+                                    genTypeFromExpr(inner.args.at(1).value)
                                 else
                                     w.emit("anytype")
                             else
@@ -8648,7 +8345,7 @@ struct Generator
                                         w.emit(", ")
                                     fi = false
                                     if iai == 1
-                                        genElemTypeFromExpr(ta.value)
+                                        genTypeFromExpr(ta.value)
                                     else
                                         genTypeFromExpr(ta.value)
                                     iai += 1
@@ -8722,30 +8419,11 @@ struct Generator
             return id.name == "str"
         return false
 
-    # NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half, Sean's
-    # 2026-09-12 decision): the element of a List, or the value of a HashMap, that is
-    # itself a List / HashMap / Set is emitted as a POINTER (`*std.ArrayList(T)`), so
-    # `.at(i)` / `.get(k)` hand back the parent's own inner container and a mutation
-    # through it is seen by the parent. Every element-position type emission goes
-    # through these; the value is boxed at the store (`_zbr_boxed` in the runtime).
-    def isBoxedElemTypeRef(tr: TypeRef): bool
-        branch tr
-            on TypeRef.generic as g
-                return g.name == "List" or g.name == "HashMap" or g.name == "Set"
-            on TypeRef.named as n
-                var al = findTypeAlias(n.name)
-                if al != nil
-                    return isBoxedElemTypeRef(al!.base)
-                return false
-            else
-                return false
-
-    def isBoxedElemTypeExpr(e: Expr): bool
-        if e is Expr.call as c
-            if c.callee is Expr.ident as id
-                return id.name == "List" or id.name == "HashMap" or id.name == "Set"
-        return false
-
+    # Is this checker type a container (List / HashMap / Set)? Since BUG-501 1d a container
+    # is a reference, so a List(List(T)) element IS the inner list -- `.at(i)` / `.get(k)`
+    # hand back the parent's own inner container with no box around it (2026-09-24's heap
+    # boxes, BUG-314's other half, were retired with the shims in the 2026-10-08 cleanup).
+    # What still asks: structural `==` (BUG-506), and the slot typing of a bare `List()`.
     def isBoxedElemType(t: Type_): bool
         branch t
             on Type_.list_
@@ -8754,37 +8432,6 @@ struct Generator
                 return true
             on Type_.set_
                 return true
-            else
-                return false
-
-    def genElemType(tr: TypeRef)
-        if isBoxedElemTypeRef(tr)
-            w.emit("_ZbrBoxOf(")                # BUG-501 1d: `*T` until T is a reference
-            genType(tr)
-            w.emit(")")
-        else
-            genType(tr)
-
-    def genElemTypeFromExpr(e: Expr)
-        if isBoxedElemTypeExpr(e)
-            w.emit("_ZbrBoxOf(")
-            genTypeFromExpr(e)
-            w.emit(")")
-        else
-            genTypeFromExpr(e)
-
-    # Does a value STORED into this receiver (List elem / HashMap value) need boxing?
-    # Asks the checker's type of the receiver; unknown means no (and zig then names the
-    # mismatch, which leakgen would show).
-    def storedElemBoxed(recv: Expr): bool
-        if .infer_ctx == nil
-            return false
-        var rt: Type_ = inferExpr(recv, .infer_ctx!)
-        branch rt
-            on Type_.list_ as le
-                return isBoxedElemType(le)
-            on Type_.hashmap_ as hm
-                return isBoxedElemType(hm.val_t)
             else
                 return false
 
@@ -8801,28 +8448,22 @@ struct Generator
             else
                 return nil
 
-    # Emit a value in store position: boxed when the slot holds a container. A BARE
+    # Emit a value in store position (List elem / HashMap value). A BARE
     # `List()` / `HashMap()` / `Set()` in that position takes its type from the slot
     # (`ms.add(HashMap())` on a `List(HashMap(str, int))`), the way a `var m: HashMap(..)
     # = HashMap()` takes it from the annotation.
     def genStoredValue(recv: Expr, v: Expr)
-        if storedElemBoxed(recv)
-            w.emit("_zbr_boxed(")
-            var bare_done = false
-            if v is Expr.call as vc
-                if vc.args.len == 0
-                    if vc.callee is Expr.ident as vid
-                        if vid.name == "List" or vid.name == "HashMap" or vid.name == "Set"
-                            if storedElemType(recv) as et
+        if v is Expr.call as vc
+            if vc.args.len == 0
+                if vc.callee is Expr.ident as vid
+                    if vid.name == "List" or vid.name == "HashMap" or vid.name == "Set"
+                        if storedElemType(recv) as et
+                            if isBoxedElemType(et)
                                 var ez: str = genFieldZigType(et)
                                 if ez != ""
                                     w.emit("_zbr_new(" + ez + ")")
-                                    bare_done = true
-            if not bare_done
-                genExpr(v)
-            w.emit(")")
-        else
-            genExpr(v)
+                                    return
+        genExpr(v)
 
     def genTypeFromExpr(e: Expr)
         branch e
@@ -8862,7 +8503,7 @@ struct Generator
                         if id.name == "List"
                             w.emit("_ZbrList(")
                             if c.args.len > 0
-                                genElemTypeFromExpr(c.args.at(0).value)
+                                genTypeFromExpr(c.args.at(0).value)
                             w.emit(")")
                             return
                         if id.name == "HashMap"
@@ -8870,7 +8511,7 @@ struct Generator
                             if ks
                                 w.emit("_ZbrMap(")
                                 if c.args.len >= 2
-                                    genElemTypeFromExpr(c.args.at(1).value)
+                                    genTypeFromExpr(c.args.at(1).value)
                                 else
                                     w.emit("anytype")
                             else
@@ -8882,7 +8523,7 @@ struct Generator
                                         w.emit(", ")
                                     fi = false
                                     if cai == 1
-                                        genElemTypeFromExpr(ta.value)
+                                        genTypeFromExpr(ta.value)
                                     else
                                         genTypeFromExpr(ta.value)
                                     cai += 1
@@ -9191,10 +8832,8 @@ struct Generator
             w.emit("_intern(")
             genExpr(a.value)
             w.emit(")")
-        else if a.op == AssignOp.assign and not exprYieldsBox(a.target)
-            # 2026-09-24: a box assigned into a value slot is copied out (a box local
-            # assigned from another box stays a pointer)
-            genValueOf(a.value)
+        else if a.op == AssignOp.assign
+            genExpr(a.value)
         else if (a.op == AssignOp.plus_eq or a.op == AssignOp.minus_eq or a.op == AssignOp.star_eq or a.op == AssignOp.slash_eq) and .infer_ctx != nil and numKind(inferExpr(a.target, .infer_ctx!)) == 3
             # BUG-445: `f += n` with an int (or narrower float) value converts the value
             # to f's own type. The checker refuses the other direction (int += float).
@@ -9608,11 +9247,6 @@ struct Generator
                 genExpr(e)
                 w.emit(")")
                 return
-        # 2026-09-24: a boxed inner container reaching a VALUE slot (a struct field, a
-        # by-value parameter, a return) is copied out of its box.
-        if exprYieldsBox(e) or exprYieldsOptBox(e)
-            genValueOf(e)
-            return
         # BUG-463: an empty `[]` passed to a `List(X)` parameter takes the PARAMETER's
         # element type. With no elements there is nothing to infer from, and the literal
         # used to fall back to `std.ArrayList([]const u8)` -- a Zig type error at every
@@ -9753,9 +9387,7 @@ struct Generator
         if ensure_armed_active and ensure_uses_result and r.value != nil
             writeIndent()
             w.emit("{ _result = ")
-            if exprYieldsBox(r.value!) or exprYieldsOptBox(r.value!)
-                genValueOf(r.value!)
-            else if method_return_type != nil
+            if method_return_type != nil
                 genCallWithTypeHint(r.value!, method_return_type!)
             else
                 genExpr(r.value!)
@@ -9846,10 +9478,7 @@ struct Generator
         writeIndent()
         if r.value != nil
             w.emit("return ")
-            if exprYieldsBox(r.value!) or exprYieldsOptBox(r.value!)
-                # 2026-09-24: a boxed inner container returned by VALUE is copied out
-                genValueOf(r.value!)
-            else if method_return_type != nil and returnWidensToFloat(r.value!, method_return_type!)
+            if method_return_type != nil and returnWidensToFloat(r.value!, method_return_type!)
                 # BUG-471: an int expression returned from a `float` function widens, as
                 # it already did in a `var x: float = ...` init and a float argument
                 # (BUG-445's rule). It reached Zig as "expected type 'f64', found 'i64'".
@@ -10072,7 +9701,7 @@ struct Generator
                 # is transparent wherever it is bound (the union-variant arm above already
                 # copies `cap_ptr.*`), so capture the pointer privately and bind the value.
                 var box_cap: bool = false
-                if ig2.infer_ctx != nil and not exprYieldsOptBox(cond_expr)
+                if ig2.infer_ctx != nil
                     if inferExpr(cond_expr, ig2.infer_ctx!) is Type_.ref_to
                         box_cap = true
                 # BUG-181: bind the unwrapped capture's type so method dispatch inside the
@@ -10126,9 +9755,6 @@ struct Generator
         if si.is_capture != nil
             # `if x is Union.Variant as r` or `if x as r` — capture form
             # si.cond is ^Expr; auto-deref passes Expr value to genIsCaptureThen
-            # 2026-09-24: `if m.get(k) as row` on boxed values binds the box (a pointer)
-            if exprYieldsOptBox(si.cond)
-                caller_ptr_params.add(si.is_capture!)
             genIsCaptureThen(si.cond, si.is_capture!, si.then_stmts)
             writeIndent()
             w.emit("}")
@@ -10208,19 +9834,6 @@ struct Generator
             if not active_loop_vars.contains_(fv352)
                 active_loop_vars.add(fv352)
                 pushed352.add(fv352)
-        # 2026-09-24: an element of a List(List(T)) (or the value of a HashMap(K, List(V)))
-        # is the parent's BOX -- a pointer -- so the loop variable is one too.
-        if .infer_ctx != nil
-            var fit: Type_ = inferExpr(fi.iter, .infer_ctx!)
-            branch fit
-                on Type_.list_ as fle
-                    if fi.vars.len == 1 and isBoxedElemType(fle)
-                        caller_ptr_params.add(fi.vars.at(0))
-                on Type_.hashmap_ as fhm
-                    if fi.vars.len == 2 and isBoxedElemType(fhm.val_t)
-                        caller_ptr_params.add(fi.vars.at(1))
-                else
-                    pass
         .genForInBody(fi)
         for pv352 in pushed352
             active_loop_vars.removeOne(pv352)
@@ -13605,22 +13218,16 @@ struct Generator
                         else if isBoxedElemType(et)
                             # a literal of containers: the elements are boxed (2026-09-24)
                             var nz: str = genFieldZigType(et)
-                            elem_zig = if(nz == "", "[]const u8", "*" + nz)
+                            elem_zig = if(nz == "", "[]const u8", nz)
                         else
                             elem_zig = zigTypeForListElem(et)
                     w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
                 else
                     w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
                 var li = 0
-                var ll_boxed = elem_zig.startsWith("*std.")
                 while li < ll.elems.len
                     w.emit(ll_var + ".append(_allocator, ")
-                    if ll_boxed
-                        w.emit("_zbr_boxed(")
-                        genExpr(ll.elems.at(li))
-                        w.emit(")")
-                    else
-                        genExpr(ll.elems.at(li))
+                    genExpr(ll.elems.at(li))
                     w.emit(") catch @panic(\"OOM\"); ")
                     li += 1
                 w.emit("break :" + ll_label + " " + ll_var + "; })")
@@ -15467,8 +15074,7 @@ struct Generator
                 if not ctor_needs_fill and ctor_ps != nil
                     ctor_needs_fill = c.args.len < ctor_ps!.len
                 if ctor_needs_fill
-                    var ctor_body: List(Stmt)? = lookupFnBody(id.name + ".init")
-                    genArgListFull(c.args, ctor_ps, ctor_body)
+                    genArgListFull(c.args, ctor_ps)
                 else
                     var first2 = true
                     var box_labels: List(str) = List(str)()
@@ -15620,11 +15226,9 @@ struct Generator
         genExpr(c.callee)
         w.emit("(")
         var reg_params: List(Param)? = nil
-        var reg_body: List(Stmt)? = nil
         if c.callee is Expr.ident as reg_id
             reg_params = lookupFnParams(reg_id.name)
-            reg_body = lookupFnBody(reg_id.name)
-        genArgListFull(c.args, reg_params, reg_body)
+        genArgListFull(c.args, reg_params)
         w.emit(")")
         if reg_throws and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()
@@ -15662,7 +15266,7 @@ struct Generator
                             recordImplicitTry(source_file + ":" + w.cur_line.toString())
                             w.emit("try ")
                         w.emit(modAliasSymbol(mod_id.name) + "." + zbrFnSymbol(mname, false) + "(")
-                        genArgListFull(args, dep_ps, dep_fns.fnBody(mname))
+                        genArgListFull(args, dep_ps)
                         w.emit(")")
                         if dep_throws and try_block_label != nil and not in_try_expr
                             emitTryBlockCatch()
@@ -17184,7 +16788,6 @@ struct Generator
                     # value (`items` instead of `&items`) — a compile error and a
                     # latent runtime bug.
                     var um_params = lookupFnParams(um_cname + "." + mname)
-                    var um_body = lookupFnBody(um_cname + "." + mname)
                     # Named args and/or omitted defaults → delegate to genArgListFull
                     # (name→param matching + declared-default fill), the same path the
                     # constructor uses.  BUG: this user-method early-exit previously emitted
@@ -17199,7 +16802,7 @@ struct Generator
                     if not um_needs_fill and um_params != nil
                         um_needs_fill = args.len < um_params!.len
                     if um_needs_fill and um_params != nil
-                        genArgListFull(args, um_params, um_body)
+                        genArgListFull(args, um_params)
                         w.emit(")")
                         if isClassMethodThrows(um_cname, mname) and try_block_label != nil and not in_try_expr
                             emitTryBlockCatch()
@@ -17223,23 +16826,8 @@ struct Generator
                                         um_emitted = true
                                 if um_emitted
                                     pass
-                                else if paramNeedsAddrOfTx(ump_p, um_body)
-                                    if argIdentInCpp(args.at(um_ai).value)
-                                        genExpr(args.at(um_ai).value)   # Case 1: ptr→ptr
-                                        um_emitted = true
-                                    else
-                                        w.emit("_zbr_ref(&")            # BUG-501 1d
-                                        genExpr(args.at(um_ai).value)
-                                        w.emit(")")
-                                        um_emitted = true
-                                else
-                                    if ump_p.type_ != nil and isContainerTypeRef(ump_p.type_!) and argIdentInCpp(args.at(um_ai).value)
-                                        w.emit("_zbr_cderef(")          # Case 2: ptr→value
-                                        genExpr(args.at(um_ai).value)
-                                        w.emit(")")
-                                        um_emitted = true
-                                    else if ump_p.type_ != nil
-                                        um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
+                                else if ump_p.type_ != nil
+                                    um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
                         if not um_emitted
                             genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
@@ -17365,10 +16953,6 @@ struct Generator
                         w.emit("; break :" + ref_lbl + " _bp_" + ref_uid.toString() + "; }")
                     else if add_item_is_str
                         w.emit("_intern(")
-                        genExpr(args.at(0).value)
-                        w.emit(")")
-                    else if storedElemBoxed(m.object)
-                        w.emit("_zbr_boxed(")
                         genExpr(args.at(0).value)
                         w.emit(")")
                     else
@@ -18551,24 +18135,17 @@ struct Generator
         # params that the body mutates.  Covers static (Class.method), self
         # (.method), and instance (var.method via infer_ctx) call shapes.
         var mc_params: List(Param)? = nil
-        var mc_body: List(Stmt)? = nil
         branch m.object
             on Expr.this_
                 if owner != ""
-                    var tk = owner + "." + mname
-                    mc_params = lookupFnParams(tk)
-                    mc_body = lookupFnBody(tk)
+                    mc_params = lookupFnParams(owner + "." + mname)
             on Expr.ident as obj_id_p
                 if class_names.contains_(obj_id_p.name)
-                    var sk = obj_id_p.name + "." + mname
-                    mc_params = lookupFnParams(sk)
-                    mc_body = lookupFnBody(sk)
+                    mc_params = lookupFnParams(obj_id_p.name + "." + mname)
                 else if .infer_ctx != nil
                     var rt_m: Type_ = inferExpr(m.object, .infer_ctx!)
                     if rt_m is Type_.named as cn_m
-                        var ik = cn_m + "." + mname
-                        mc_params = lookupFnParams(ik)
-                        mc_body = lookupFnBody(ik)
+                        mc_params = lookupFnParams(cn_m + "." + mname)
             else
                 pass
         # Named-arg reordering: if any arg is labeled and we can find param order, emit in param order.
@@ -18593,15 +18170,6 @@ struct Generator
                         if not first2
                             w.emit(", ")
                         first2 = false
-                        # BUG-091/097: addr-of, pass-through, or deref for container params.
-                        var needs_addr_n: bool = false
-                        var is_container_n: bool = false
-                        if mc_params != nil
-                            var psr = mc_params!
-                            if pname_idx < psr.len
-                                var pn = psr.at(pname_idx)
-                                needs_addr_n = paramNeedsAddrOfTx(pn, mc_body)
-                                is_container_n = pn.type_ != nil and isContainerTypeRef(pn.type_!)
                         # Find named arg matching this param first.
                         var found = false
                         var ai: int = 0
@@ -18609,20 +18177,7 @@ struct Generator
                             var a = args.at(ai)
                             if a.name != nil
                                 if (a.name!) == pname
-                                    if needs_addr_n
-                                        if argIdentInCpp(a.value)
-                                            genExpr(a.value)    # Case 1: ptr→ptr
-                                        else
-                                            w.emit("_zbr_ref(&")      # BUG-501 1d
-                                            genExpr(a.value)
-                                            w.emit(")")
-                                    else
-                                        if is_container_n and argIdentInCpp(a.value)
-                                            w.emit("_zbr_cderef(")   # Case 2: ptr→value
-                                            genExpr(a.value)
-                                            w.emit(")")
-                                        else
-                                            genExpr(a.value)
+                                    genExpr(a.value)
                                     found = true
                                     break
                             ai += 1
@@ -18632,20 +18187,7 @@ struct Generator
                                 var pa = args.at(pos_idx)
                                 pos_idx += 1
                                 if pa.name == nil
-                                    if needs_addr_n
-                                        if argIdentInCpp(pa.value)
-                                            genExpr(pa.value)   # Case 1: ptr→ptr
-                                        else
-                                            w.emit("_zbr_ref(&")      # BUG-501 1d
-                                            genExpr(pa.value)
-                                            w.emit(")")
-                                    else
-                                        if is_container_n and argIdentInCpp(pa.value)
-                                            w.emit("_zbr_cderef(")   # Case 2: ptr→value
-                                            genExpr(pa.value)
-                                            w.emit(")")
-                                        else
-                                            genExpr(pa.value)
+                                    genExpr(pa.value)
                                     found = true
                                     break
                         if not found
@@ -18659,7 +18201,6 @@ struct Generator
                 if not first
                     w.emit(", ")
                 first = false
-                # BUG-091/097: three-case addr-of/pass/deref for container params.
                 var already_emitted = false
                 if mc_params == nil and .resolveClosureLambda(a.value) != nil and not memberIsClosureStructConsumer(m)
                     genSigValue(a.value)
@@ -18671,21 +18212,6 @@ struct Generator
                         if mp.type_ != nil and isSigTypeRef(mp.type_!)
                             genSigValue(a.value)
                             already_emitted = true
-                        else if paramNeedsAddrOfTx(mp, mc_body)
-                            if argIdentInCpp(a.value)
-                                genExpr(a.value)        # Case 1: ptr→ptr, no &
-                                already_emitted = true
-                            else
-                                w.emit("_zbr_ref(&")    # BUG-501 1d
-                                genExpr(a.value)
-                                w.emit(")")
-                                already_emitted = true
-                        else
-                            if mp.type_ != nil and isContainerTypeRef(mp.type_!) and argIdentInCpp(a.value)
-                                w.emit("_zbr_cderef(")  # Case 2: ptr→value
-                                genExpr(a.value)
-                                w.emit(")")
-                                already_emitted = true
                 if not already_emitted
                     genExpr(a.value)
                 ai_p += 1
@@ -19237,12 +18763,7 @@ struct Generator
             on TypeRef.generic as g
                 w.emit("_ZbrList(")
                 var el: TypeRef = g.args.at(0)
-                if isBoxedElemTypeRef(el)
-                    w.emit("_ZbrBoxOf(")
-                    genTypeSubst(el, tps, type_args)
-                    w.emit(")")
-                else
-                    genTypeSubst(el, tps, type_args)
+                genTypeSubst(el, tps, type_args)
                 w.emit(")")
             else
                 genType(tr)
@@ -19297,13 +18818,9 @@ struct Generator
         if ps == nil
             genArgListSigAware(recv, args)
             return
-        # BUG-482: the full pass -- named arguments, declared defaults, `&` for a
-        # mutated container, sig conversion -- as a call on a named receiver gets.
-        var body: List(Stmt)? = nil
-        if .infer_ctx != nil
-            if inferExpr(recv, .infer_ctx!) is Type_.named as hb_cn
-                body = lookupFnBody(hb_cn + "." + method)
-        genArgListFull(args, ps, body)
+        # BUG-482: the full pass -- named arguments, declared defaults, sig conversion --
+        # as a call on a named receiver gets.
+        genArgListFull(args, ps)
 
     def genArgListByParams(ps: List(Param), args: List(Arg))
         var i: int = 0
@@ -19350,7 +18867,7 @@ struct Generator
         while i < ps.len
             var p = ps.at(i)
             var a = c.args.at(i)
-            if a.name != nil or paramNeedsAddrOfTx(p, bbody)
+            if a.name != nil
                 return false
             var bw: bool = false
             if p.type_ as pt
@@ -19477,8 +18994,9 @@ struct Generator
             return ps.at(arg_idx).type_
         return nil
 
-    # BUG-091: parallel to lookupFnParams — return the body so call-site emit
-    # can run paramNeedsAddrOf and decide whether to take `&` for each arg.
+    # Parallel to lookupFnParams: the callee's body, so genBorrowedClosureCall can ask
+    # whether a closure argument escapes it. (Until BUG-501 1d it also decided whether a
+    # container argument was passed with `&` -- BUG-091.)
     def lookupFnBody(key: str): List(Stmt)?
         for decl in module_decls
             if decl is Decl.method as m
@@ -19514,16 +19032,8 @@ struct Generator
                         if init_key2 == key
                             return di2.stmts
         # BUG-293: cross-module fallback, the exact mirror of lookupFnParams' §27b
-        # fallback directly above. Without it the body lookup STOPPED AT THE MODULE
-        # BOUNDARY while the param lookup did not, so `paramNeedsAddrOf` answered
-        # `false` for want of a body and the call site emitted a bare `f(xs)` against
-        # a `*std.ArrayList(T)` parameter -- the callee, which CAN see its own body,
-        # had already emitted the pointer. Two sides of one convention consulting
-        # different oracles, disagreeing exactly at the seam.
-        #
-        # Note the direction of the old fallback: no body meant "no addr-of", the
-        # answer that means do nothing. It happened to fail loudly at `zig` rather
-        # than silently, which was luck rather than design.
+        # fallback above -- a lookup that stops at the module boundary while its sibling
+        # does not makes two sides of one call disagree exactly at the seam.
         var fb_parts: List(str) = key.split(".")
         var fb_class: str = ""
         var fb_method: str = key
@@ -19535,28 +19045,25 @@ struct Generator
                 return fb_body
         return nil
 
-    def genArgListFull(args: List(Arg), params: List(Param)?, body: List(Stmt)?)
+    def genArgListFull(args: List(Arg), params: List(Param)?)
         if params == nil
             genArgList(args)
             return
         # Delegate to a typed-parameter helper so .count()/.at() rewrite correctly
         # (the bootstrap compiler only rewrites list methods on function parameters).
-        genArgListNamed(args, params!, body)
+        genArgListNamed(args, params!)
 
     # Inner worker for genArgListFull — ps is a proper parameter so list rewrites apply.
     # Uses `for p in ps` (no .count()/.at() on ps) to avoid selfhost list-rewrite gaps.
     # Full algorithm: for each param, try named match, then positional, then default.
     # This produces byte-identical output to genArgList for purely positional calls.
-    # body (when non-nil) drives BUG-091 addr-of detection.
-    def genArgListNamed(args: List(Arg), ps: List(Param), body: List(Stmt)?)
+    def genArgListNamed(args: List(Arg), ps: List(Param))
         var first = true
         var pos_idx: int = 0
         for p in ps
             if not first
                 w.emit(", ")
             first = false
-            var needs_addr = paramNeedsAddrOfTx(p, body)
-            var is_container = p.type_ != nil and isContainerTypeRef(p.type_!)
             var p_name_str: str = p.name
             var found = false
             var ai: int = 0
@@ -19569,23 +19076,10 @@ struct Generator
                             coerced_n = genInterfaceArgCoercion(a.value, p.type_!)
                         if coerced_n
                             pass
-                        else if needs_addr
-                            if argIdentInCpp(a.value)
-                                genExpr(a.value)        # Case 1: ptr→ptr, no &
-                            else
-                                w.emit("_zbr_ref(&")    # BUG-501 1d
-                                genExpr(a.value)
-                                w.emit(")")
+                        else if p.type_ != nil
+                            genCallWithTypeHint(a.value, p.type_!)
                         else
-                            if is_container and argIdentInCpp(a.value)
-                                w.emit("_zbr_cderef(")  # Case 2: ptr→value
-                                genExpr(a.value)
-                                w.emit(")")
-                            else
-                                if p.type_ != nil
-                                    genCallWithTypeHint(a.value, p.type_!)
-                                else
-                                    genExpr(a.value)
+                            genExpr(a.value)
                         found = true
                         break
                 ai += 1
@@ -19599,23 +19093,10 @@ struct Generator
                             coerced_p = genInterfaceArgCoercion(pa.value, p.type_!)
                         if coerced_p
                             pass
-                        else if needs_addr
-                            if argIdentInCpp(pa.value)
-                                genExpr(pa.value)       # Case 1: ptr→ptr, no &
-                            else
-                                w.emit("_zbr_ref(&")    # BUG-501 1d
-                                genExpr(pa.value)
-                                w.emit(")")
+                        else if p.type_ != nil
+                            genCallWithTypeHint(pa.value, p.type_!)
                         else
-                            if is_container and argIdentInCpp(pa.value)
-                                w.emit("_zbr_cderef(")  # Case 2: ptr→value
-                                genExpr(pa.value)
-                                w.emit(")")
-                            else
-                                if p.type_ != nil
-                                    genCallWithTypeHint(pa.value, p.type_!)
-                                else
-                                    genExpr(pa.value)
+                            genExpr(pa.value)
                         found = true
                         break
             if not found
@@ -21791,7 +21272,7 @@ struct Generator
         if name == "List"
             w.emit("_zbr_new(_ZbrList(")
             if type_args.len > 0
-                genElemTypeFromExpr(type_args.at(0).value)
+                genTypeFromExpr(type_args.at(0).value)
             else
                 w.emit("anytype")
             w.emit("))")
@@ -21802,7 +21283,7 @@ struct Generator
             if key_is_str
                 w.emit("_ZbrMap(")
                 if type_args.len >= 2
-                    genElemTypeFromExpr(type_args.at(1).value)
+                    genTypeFromExpr(type_args.at(1).value)
                 else
                     w.emit("anytype")
             else
@@ -21814,7 +21295,7 @@ struct Generator
                         w.emit(", ")
                     fi = false
                     if tai == 1
-                        genElemTypeFromExpr(ta.value)
+                        genTypeFromExpr(ta.value)
                     else
                         genTypeFromExpr(ta.value)
                     tai += 1

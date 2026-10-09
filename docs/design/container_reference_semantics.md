@@ -441,6 +441,31 @@ the acceptance test for Phase 1.
      current compilers on one program (value copy vs shared). It was planned to follow as its
      own commit in this phase. The boxing / mutable-parameter machinery is deleted in a
      cleanup commit after.
+   - **1d cleanup (2026-10-08): the machinery is deleted from CODEGEN; the runtime shims stay
+     for now.** Gone: `exprYieldsBox` / `exprYieldsOptBox` / `genValueOf`, `storedElemBoxed`,
+     the `_ZbrBoxOf` element wraps and the `"*"` on a container element type (dead -- the
+     corpus emitted no `*_ZbrList(` at all), `caller_ptr_params` and the three-case argument
+     logic, `paramNeedsAddrOf` / `paramNeedsAddrOfTx` and the `addAddrOfMutations` scan with
+     its BUG-312 memo. Kept: `_zbr_boxed` for a `^T` STRUCT slot (BUG-299 / BUG-507 -- a real
+     box), a bare `List()` stored into a typed slot taking the slot's type, and BUG-506's
+     structural `==`. **How it was proven an identity first:** a TRIPWIRE preamble turned each
+     non-identity branch of the shims into a `@compileError`; the corpus (smoke 673/673,
+     full_sweep 0 regressions, a planted control firing) and the GameEngine at fb733cb (221
+     sources, 18 shim calls, 700/742 build steps, every failure a sqlite/libui path of the
+     scratch worktree) compiled clean. Then the emit was diffed over all 943 tracked sources
+     before / after: every changed line a shim unwrapped, plus three locals regaining a type
+     annotation the box path had dropped; the dead-code deletion emitted byte-identically.
+     **What the diff could NOT see, and FULL did:** `bug342_sb_param_append_test` -- a
+     StringBuilder local only passed to mutating parameters and then read with `.build()`
+     stayed `var` (the name-based scan calls `build` a mutation), and the `&sb` that used to
+     satisfy zig was gone: "local variable is never mutated". The diff normalised `var` /
+     `const`, so a `var` that STAYS `var` while its `&` disappears was invisible to it; only a
+     compile can see that. Fixed in `receiverNeedsVar` (a StringBuilder's `build` /
+     `toString` / `len` are reads). **The runtime definitions (`_ZbrRefOf`, `_zbr_ref`,
+     `_zbr_cderef`, `_zbr_unboxed`) are HELD by BUG-543:** the N-1 anchor emits against the
+     current tree's preamble, still calls them, and deleting them would make every anchor
+     emit fail -- `divergence` would score everything an advance and never report a
+     regression. Delete them when the anchor reads its own runtime.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

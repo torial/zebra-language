@@ -7,8 +7,6 @@ const _zbr_rt = @import("zebra_rt.zig");
 pub const panic = std.debug.FullPanic(_zbr_rt._zebra_panic);
 pub const std_options = _zbr_rt.std_options;
 const _zbr_val = _zbr_rt._zbr_val;
-const _zbr_boxed = _zbr_rt._zbr_boxed;
-const _ZbrBoxOf = _zbr_rt._ZbrBoxOf;
 const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
@@ -546,10 +544,10 @@ pub const _zbr_ty_PEnum = struct {
     name: []const u8 = undefined,
     variants: _ZbrList([]const u8) = undefined,
     base: []const u8 = undefined,
-    values: _ZbrList(_ZbrBoxOf(_ZbrList(_zbr_ty_PNode))) = undefined,
+    values: _ZbrList(_ZbrList(_zbr_ty_PNode)) = undefined,
     line: i64 = undefined,
     col: i64 = undefined,
-    pub fn init(name: []const u8, variants: _ZbrList([]const u8), base: []const u8, values: _ZbrList(_ZbrBoxOf(_ZbrList(_zbr_ty_PNode))), line: i64, col: i64) _zbr_ty_PEnum {
+    pub fn init(name: []const u8, variants: _ZbrList([]const u8), base: []const u8, values: _ZbrList(_ZbrList(_zbr_ty_PNode)), line: i64, col: i64) _zbr_ty_PEnum {
         var _self: _zbr_ty_PEnum = undefined;
 // zbr:selfhost/Parser.zbr:371
             _self.name = _intern(name);
@@ -3144,7 +3142,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:1741
         var variants = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Parser.zbr:1742
-        var values = _zbr_new(_ZbrList(_ZbrBoxOf(_ZbrList(_zbr_ty_PNode))));
+        var values = _zbr_new(_ZbrList(_ZbrList(_zbr_ty_PNode)));
 // zbr:selfhost/Parser.zbr:1743
         if (self.isIndent()) {
 // zbr:selfhost/Parser.zbr:1744
@@ -3169,7 +3167,7 @@ pub const _zbr_ty_Parser = struct {
                     vlist.append(_zbr_rt._allocator, (try self.parseExpr())) catch @panic("OOM");
                 }
 // zbr:selfhost/Parser.zbr:1755
-                values.append(_zbr_rt._allocator, _zbr_boxed(vlist)) catch @panic("OOM");
+                values.append(_zbr_rt._allocator, vlist) catch @panic("OOM");
 // zbr:selfhost/Parser.zbr:1756
                 self.skipEol();
             }

@@ -1641,6 +1641,14 @@ def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
         # Fully-immutable value receiver → never `var`, regardless of method name.
         if isImmutableValueType(rt)
             return false
+        # A StringBuilder is a reference (BUG-501 1d), and its readers -- `build`,
+        # `toString`, `len` -- emit as reads of `.items`, so a local that is only read is
+        # `const`. Its `var` used to be satisfied by the `&sb` a mutating parameter took;
+        # with that `&` gone (the 2026-10-08 cleanup) zig named the `var` never mutated
+        # (bug342_sb_param_append_test).
+        if rt is Type_.string_builder
+            if method == "build" or method == "toString" or method == "len"
+                return false
         # BUG-495: `xs.set(i, v)` writes through the list's item SLICE
         # (`_zbr_set(xs.items, i, v)`); the ArrayList value itself is untouched, so a
         # list mutated only by `set` is `const` -- Zig refuses a `var` never mutated.
@@ -2107,16 +2115,10 @@ def exprHasSelfCall(e: Expr): bool
         else
             return false
 
-# ── BUG-091: List(T)/HashMap(K,V) param mutation → addr-of param convention ─
-#
-# When a function-parameter of type List(T) or HashMap(K,V) is mutated inside
-# the body (via .add/.put/.append/.remove/.clear/.sort), the caller expects
-# the underlying container to be modified in place.  Zig's std.ArrayList is
-# value-typed, so a plain pass-by-value parameter is *const ArrayList from
-# the body's view -- .append (which takes *Self) is rejected.  The fix is
-# to emit the parameter as *std.ArrayList(T) and take &arg at every call
-# site.  paramNeedsAddrOf is the canonical predicate; both genMethod (param
-# emission) and the call-site emit consult it.
+# A Zebra container TYPE (List / HashMap / Set, and StringBuilder, which is a List(byte)).
+# Until BUG-501 1d a parameter of one of these that its function mutated was emitted as a
+# pointer and passed with `&` (BUG-091); containers are references now, so a parameter is
+# the container itself and the caller sees every mutation with no `&` anywhere.
 
 def isContainerTypeRef(tr: TypeRef): bool
     branch tr
@@ -2134,17 +2136,3 @@ def isContainerTypeRef(tr: TypeRef): bool
         else
             return false
 
-# Cost: each call runs scanMutations over `body` -- O(|body|).  Because the
-# predicate is consulted at every param-emit and every arg-emit (and the call-
-# site emit may run again per arg), worst case is O(N * M) where N is calls
-# referencing the method and M is the body size.  Acceptable for the current
-# corpus (<100ms total impact in bootstrap).  If profiling shows this matters,
-# memoise per-method by adding a HashMap(str, StrSet) on Generator keyed by
-# "Class.method" (the same key shape used by lookupFnParams/lookupFnBody).
-def paramNeedsAddrOf(p: Param, body: List(Stmt)?): bool
-    if p.type_ == nil: return false
-    if not isContainerTypeRef(p.type_!): return false
-    if body as b
-        var ms: StrSet = scanMutations(b, nil)
-        return ms.contains_(p.name)
-    return false

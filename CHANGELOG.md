@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Emitted code no longer spells the pre-reference container shims (BUG-501 cleanup).**
+  `_ZbrRefOf`, `_zbr_ref(&x)`, `_zbr_cderef`, `_zbr_unboxed` and a container's `_ZbrBoxOf` /
+  `_zbr_boxed` were identities once containers became references (2026-10-06); codegen now
+  writes the plain form. No program's behaviour changes -- 466 programs print exactly what
+  they did -- but checked-in generated `.zig` (a host that regenerates, like the GameEngine)
+  will see those spellings disappear, and a StringBuilder local that is only read is now
+  `const`. `_zbr_boxed` remains for a `^T` struct slot. The runtime still defines the old
+  helpers until the N-1 reference compiler stops depending on them (BUG-543).
 - **Named arguments are checked (BUG-540).** A name that matches none of the callee's
   parameters -- for a class, its `cue init`'s, not its fields -- and a parameter without a
   default that a call by name leaves unfilled are compile errors. Both were silent: the

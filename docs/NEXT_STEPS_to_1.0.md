@@ -1162,6 +1162,14 @@ locals; (4) BUG-438 (field-chain mutation on a struct local) is in the same code
 fall with it; (5) the round-trip and output_sweep are the witnesses, since the compiler's own
 source uses every shape. Sized as the largest single codegen change left before 1.0.
 
+**RESOLVED by BUG-501 1d (2026-10-06): every List / HashMap / Set is a reference from birth**,
+`copy()` is the explicit copy, and `grid.add(row); row.add(x)` reaches `grid`. The 09-24
+boxes (`_zbr_boxed` / `_zbr_unboxed` on containers, `exprYieldsBox`, `storedElemBoxed`) and
+the BUG-091 mutable-parameter machinery (`&` at the call site, `caller_ptr_params`,
+`paramNeedsAddrOf`) were deleted on 2026-10-08 once a tripwire showed every remaining use was
+an identity. `_zbr_boxed` survives for `^T` struct slots only (BUG-299/507). Plan and record:
+`docs/design/container_reference_semantics.md`.
+
 Sean's call: inner containers (`List(List(T))`, `HashMap(K, List(V))`, and the rest) are
 **heap-boxed**, so `parent.at(i)` hands back a reference and a mutation through it is seen
 by the parent -- the Python/C#/Go answer. Today's behaviour is the strictly-safe refusal
