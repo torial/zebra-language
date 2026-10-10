@@ -6,6 +6,28 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-549: an unknown method inside a string interpolation `${...}` is never refused -- it passes the front end and fails inside zig -- FIXED 2026-10-09 (found 2026-10-09)
+- **Severity:** Medium (a whole class: every receiver whose methods the checker refuses by
+  name -- str, List, Timer, the BUG-369 set -- is unchecked inside `${...}`).
+- **Repro:** `print("${s.trimm()} ${xs.sizee()}")` with `s` a str and `xs` a List(int): `zebra -c`
+  exits 0. The same calls outside an interpolation are refused (`'Timer' has no method
+  'elapsedMs' (elapsed/elapsedMicros/reset)`, at the column). Found by zebra-taocp's timing
+  probe, `ms=${t.elapsedMs()}`, which zig refused as "no field or member function named
+  'elapsedMs' in 'zebra_rt.TimerHandle'".
+- **Shape:** BUG-232's sibling. BUG-232 found ARITY checking skipped inside `${...}`; the
+  unknown-method refusal (the *MethodKnown predicates) has the same gap. Fix where the
+  interpolated expressions are walked so they get the same checkCallsInExpr pass as a plain
+  expression, and add a fixture with an unknown method in `${...}` for each refusing
+  receiver kind (str, List, a BUG-369 type).
+- **Fix:** `checkCallsInExpr`'s `string_interp` arm now runs `inferExpr` on each
+  interpolated expression after its call checks. The unknown-method refusals live in
+  `inferExpr`, which nothing ran on an interpolated part; arity (BUG-232) was the other half
+  of the same walk and had already been fixed there.
+- **Fixture:** `test/fail_fixtures/bug549_interp_unknown_method_fail.zbr`, registered three
+  times in the smoke suite (str / List / Timer), each at the column of the method name --
+  7:16, 7:30, 7:43, counted from the source by hand. `zebra -c` accepted it (rc=0) before
+  the fix.
+
 ### BUG-548: a module-level `const` list / dict literal was initialised at comptime -- "unable to resolve comptime value" inside zig, and a float list typed `[]const u8` -- FIXED 2026-10-09 (found 2026-10-09)
 - **Reported by:** Fable, GameEngine (`const TIERS = [0.25, 0.5]`, the first module-level
   container the engine had, after F26 gave containers an owner).

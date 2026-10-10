@@ -46,20 +46,6 @@
 
 ---
 
-### BUG-549: an unknown method inside a string interpolation `${...}` is never refused -- it passes the front end and fails inside zig -- OPEN (found 2026-10-09)
-- **Severity:** Medium (a whole class: every receiver whose methods the checker refuses by
-  name -- str, List, Timer, the BUG-369 set -- is unchecked inside `${...}`).
-- **Repro:** `print("${s.trimm()} ${xs.sizee()}")` with `s` a str and `xs` a List(int): `zebra -c`
-  exits 0. The same calls outside an interpolation are refused (`'Timer' has no method
-  'elapsedMs' (elapsed/elapsedMicros/reset)`, at the column). Found by zebra-taocp's timing
-  probe, `ms=${t.elapsedMs()}`, which zig refused as "no field or member function named
-  'elapsedMs' in 'zebra_rt.TimerHandle'".
-- **Shape:** BUG-232's sibling. BUG-232 found ARITY checking skipped inside `${...}`; the
-  unknown-method refusal (the *MethodKnown predicates) has the same gap. Fix where the
-  interpolated expressions are walked so they get the same checkCallsInExpr pass as a plain
-  expression, and add a fixture with an unknown method in `${...}` for each refusing
-  receiver kind (str, List, a BUG-369 type).
-
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
   the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).

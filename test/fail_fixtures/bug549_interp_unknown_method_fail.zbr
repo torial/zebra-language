@@ -1,0 +1,7 @@
+# BUG-549: an unknown method inside ${...} was never refused -- the same call outside an
+# interpolation was. Each receiver kind that refuses by name, inside an interpolation.
+def main()
+    var s = "abc"
+    var xs = [1, 2]
+    var t = Timer.start()
+    print("${s.trimm()} ${xs.sizee()} ${t.elapsedMs()}")

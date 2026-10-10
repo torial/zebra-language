@@ -6089,6 +6089,11 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             for part in si.parts
                 if part is StringPart.expr_ as se
                     checkCallsInExpr(se, file, line, ctx)
+                    # BUG-549: the unknown-method refusals (`'str' has no method 'trimm'`, the
+                    # BUG-369 set) live in inferExpr, which nothing ran on an interpolated part
+                    # -- `"${s.trimm()}"` passed the front end and failed inside zig. BUG-232's
+                    # sibling: that one was arity, this one is the method name.
+                    inferExpr(se, ctx)
                     last_fe = se
                 # BUG-432: a spec part the formatter cannot honour is ignored, and SAID.
                 # Anchored on the expression it formats: the interpolation node itself

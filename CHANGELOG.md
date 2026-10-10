@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An unknown method inside `${...}` is refused like one outside it (BUG-549).**
+  `"${s.trimm()}"` passed `zebra -c` and failed inside zig; it is now refused at the method
+  name, for every receiver whose methods are checked by name (str, List, Timer and the rest).
 - **A module-level `const` list, set or dict works (BUG-548).** `const TIERS = [0.25, 0.5]`
   failed inside zig ("unable to resolve comptime value"); it is now initialised at start-up
   like a `var`. A const that does not allocate stays a compile-time constant.

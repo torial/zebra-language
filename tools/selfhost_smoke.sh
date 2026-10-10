@@ -2261,6 +2261,11 @@ smoke_run test/bug541_csvwriter_reference_test.zbr "bug541: true 10"
 smoke_run test/bug544_str_len_call_test.zbr "bug544: 3 3 6"
 smoke_run test/bug545_list_pop_test.zbr "bug545: 3 3 -1 22 0"
 smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmarked_fail.zbr:4: error: throws call needs '?'"
+# BUG-549: an unknown method inside ${...} is refused like the same call outside one --
+# one line per refusing receiver kind (str, List, a BUG-369 type), each at its column.
+smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:16: error: 'str' has no method 'trimm'"
+smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:30: error: 'List' has no method 'sizee'"
+smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:43: error: 'Timer' has no method 'elapsedMs'"
 # Failure locations (GameEngine, 2026-10-08): ` at <file>:<line>:` in every failure kind.
 smoke_run_fail test/fail_fixtures/assert_msg_location_fail.zbr "assert failed at test/fail_fixtures/assert_msg_location_fail.zbr:4: x must be positive"
 smoke_run_fail test/fail_fixtures/require_location_fail.zbr "require failed at test/fail_fixtures/require_location_fail.zbr:4: in 'half'"
