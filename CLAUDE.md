@@ -2373,6 +2373,17 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-09, evening (BUG-502 + BUG-548 `d1c79c6`, the daily cache prune
+`6991bc1`, BUG-549 `3431be4`): 57/57 PASS in ONE invocation at JOBS=2 on the committed tree.**
+smoke 692/692, round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical,
+`full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover`, `gramgen`,
+`leakgen` 100/0, `libui-pin-build`, `node-addon`; the new closing prune ran (0 entries over 7
+days -- the cache had been cleared that afternoon). **Every gate ran SLOW with no load to
+explain it:** smoke 2120 s (5958 s standalone earlier) against ~700 usual, on a host measured
+at under one core and near-zero disk I/O. The FULL that gated `d1c79c6` was 44/46 with smoke
+and divergence killed at the 5400 s ceiling, both re-run standalone green. Cause NOT
+established; the untested candidate is antivirus scanning each freshly built test binary.
+
 **DAILY tier 2026-10-09 (closing the overnight: the BUG-501 cleanup `68c0893`, then the leak
 batch + failure locations `0ad017b` -- BUG-517/526/528/533/535/541/544/545): 55/57 in ONE
 invocation at JOBS=2 on the uncommitted tree, the two reds re-run green -- ASSEMBLED.**
