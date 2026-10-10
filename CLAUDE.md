@@ -386,6 +386,16 @@ is built for exactly that shape.
 **Nothing enforces it.** `--daily` is a set, not a schedule; the cadence is the habit
 above.
 
+**The daily also PRUNES THE ZIG CACHE (2026-10-09), as housekeeping rather than a gate.**
+Zig never evicts: every tier compiles hundreds of freshly emitted programs and keeps their
+ZIR (`z/`) and build products (`o/`) for good. This checkout's `.zig-cache` reached 48 GB, the
+engine's 67 GB, with the disk at 60 GB free. So after the RAN-N-OF-M check and before the
+terminal line, a daily run calls `tools/prune_zig_cache.sh .zig-cache --days 7`. That script
+deletes Zig's own entries untouched for a week, leaves the gate caches (`zbr-verdicts/`,
+`zbr-outputs/`) alone, and refuses a directory that does not look like a Zig cache. It never
+fails the tier. Point it at another project's cache by hand; the directory is always named,
+never assumed.
+
 ## Every document says what it is (read this before reading the docs)
 
 Line 1 of each `.md` carries `<!-- doc-status: ... -->`, one of four values. It exists so
