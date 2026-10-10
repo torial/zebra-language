@@ -1,0 +1,9 @@
+# BUG-502 fixture: a module that never uses bug502_mod_a and has a FUNCTION Widget.
+# Compiled after bug502_mod_a, it used to be generated knowing every class compiled
+# before it -- so its own `Widget(21)` could be read as a constructor of a class it
+# cannot see.
+def Widget(n: int): int
+    return n * 2
+
+def useWidget(): int
+    return Widget(21)

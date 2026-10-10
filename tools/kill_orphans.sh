@@ -76,7 +76,12 @@ while IFS='|' read -r pid path; do
             if [[ $COUNT_ONLY -eq 1 ]]; then
                 echo "  would kill $pid  $path"
             else
-                taskkill //F //PID "$pid" >/dev/null 2>&1 \
+                # //T: the whole process TREE. A zebra.exe that is RUNNING a program has
+                # that program as its child, and killing only the parent left it behind
+                # (2026-10-09: a rebuild killed a test run's zebra.exe -- exit 1, no message
+                # -- and the program it launched, in %TEMP% and so outside this tree's scope,
+                # ran on for hours holding a core).
+                taskkill //F //T //PID "$pid" >/dev/null 2>&1 \
                     && echo "  killed orphaned $(basename "${path:-pid $pid}") (pid $pid)"
             fi
             killed=$((killed + 1))

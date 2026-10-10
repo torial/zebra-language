@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A module-level `const` list, set or dict works (BUG-548).** `const TIERS = [0.25, 0.5]`
+  failed inside zig ("unable to resolve comptime value"); it is now initialised at start-up
+  like a `var`. A const that does not allocate stays a compile-time constant.
+- **A module sees the classes it can name, not every class compiled before it (BUG-502).**
+  Each module is generated with its own classes and those of the modules it `use`s
+  directly. Before, what a bare name meant depended on compile ORDER: a module that never
+  imported a class `Widget` but defined a function `Widget` had its own call emitted as
+  that class's constructor once the other module happened to compile first. No existing
+  program in the corpus or the GameEngine changes.
 - **`List.pop()` works (BUG-545):** it returns the last element and THROWS on an empty
   list, so it is written `xs.pop()?` or caught (`xs.pop() catch -1`). It was listed and
   could not be used: the call reached Zig's optional-returning `pop`.

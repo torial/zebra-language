@@ -890,10 +890,18 @@ def isDeferredContainer(nm: str): bool
 # Requires an explicit type annotation (gives the `: T` for the `= undefined` decl).
 # Deferring is safe — assigned before any use; `const`/comptime-value inits excluded.
 def isDeferredModuleVar(mv: DeclVar): bool
-    if mv.is_const or mv.mods.is_static
+    if mv.mods.is_static
         return false
     if mv.init_expr == nil
         return false
+    # BUG-548: a module-level CONST that allocates -- a list / set / dict literal, a
+    # container constructor -- was emitted as a container-scope `pub const`, so Zig
+    # evaluated `_zbr_new` at comptime ("unable to resolve comptime value"), and with no
+    # inference context there its float elements were typed `[]const u8`. It is assigned
+    # in _initModuleVars like a var; the checker already refuses assignment to a const.
+    # Only the allocating shapes: a const of `2 * PI` stays a comptime constant.
+    if mv.is_const
+        return isAllocatingModuleInit(mv.init_expr!)
     # BUG-496: an initializer that is not a compile-time literal cannot sit at
     # container scope (Zig evaluates it at comptime: "unable to resolve comptime
     # value"), so it runs in _initModuleVars() like the BUG-153 containers.
@@ -907,6 +915,22 @@ def isDeferredModuleVar(mv: DeclVar): bool
     if t is TypeRef.named
         return mv.init_expr! is Expr.call
     return false
+
+# BUG-548: an initializer that allocates at run time.
+def isAllocatingModuleInit(e: Expr): bool
+    branch e
+        on Expr.list_lit
+            return true
+        on Expr.set_lit
+            return true
+        on Expr.dict_lit
+            return true
+        on Expr.call as ac
+            if ac.callee is Expr.ident as aid
+                return aid.name == "List" or aid.name == "HashMap" or aid.name == "Map" or aid.name == "Set" or aid.name == "Atomic" or aid.name == "StringBuilder"
+            return false
+        else
+            return false
 
 # A module-var initializer Zig can evaluate at container scope: a literal (an
 # interpolated string is its own variant), a negated numeric literal, nil.
@@ -4535,7 +4559,8 @@ struct Generator
         # local shadowing a file-scope decl). Static class fields are namespaced as
         # `Owner.field`, so they are NOT prefixed.
         if n.mods.is_static or owner == ""
-            if n.is_const and not n.mods.is_static
+            # BUG-548: a deferred const is assigned at run time, so its Zig storage is a var
+            if n.is_const and not n.mods.is_static and not (owner == "" and isDeferredModuleVar(n))
                 w.emit("pub const ")
             else
                 w.emit("pub var ")

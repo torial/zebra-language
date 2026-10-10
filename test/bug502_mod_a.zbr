@@ -1,0 +1,8 @@
+# BUG-502 fixture: a module with a CLASS Widget. bug502_scope_test uses it first.
+class Widget
+    var size: int
+    cue init()
+        .size = 7
+
+def widgetSize(w: Widget): int
+    return w.size

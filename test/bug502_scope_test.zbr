@@ -1,0 +1,8 @@
+# BUG-502: a module is generated with the classes it can NAME (its own and those of the
+# modules it uses directly), not every class compiled before it.
+use bug502_mod_a
+use bug502_mod_b
+
+def main()
+    var w = bug502_mod_a.Widget()
+    print("bug502: ${bug502_mod_b.useWidget()} ${bug502_mod_a.widgetSize(w)}")

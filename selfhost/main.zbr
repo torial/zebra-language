@@ -71,7 +71,13 @@ class MultiCompiler
     # move is to say so where the user is already looking, and decide error-vs-warning
     # after watching it fire on real code. Flip this one line to refuse.
     var cycle_is_error: bool
-    var dep_class_names: List(str)
+    # BUG-502: what each module may NAME as a class -- its own classes and those of the
+    # modules it `use`s directly. It replaced one list accumulated across the whole compile
+    # in VISIT order, which generated each module knowing every class compiled before it,
+    # unrelated siblings included: what a bare name meant depended on compile order.
+    # Keyed by module name, as import_edges is.
+    var mod_classes: HashMap(str, List(str))
+    var mod_deps: HashMap(str, List(str))
     var dep_types: ModuleTypes
     var preamble_path: str
     var output_dir: str
@@ -110,7 +116,8 @@ class MultiCompiler
         .import_edges = List(str)()
         .stateful_mods = List(str)()
         .cycle_is_error = false
-        .dep_class_names = List(str)()
+        .mod_classes = HashMap(str, List(str))()
+        .mod_deps = HashMap(str, List(str))()
         .dep_types = ModuleTypes()
         .preamble_path = preamble_path
         .output_dir = output_dir
@@ -199,6 +206,43 @@ class MultiCompiler
 
     # One entry per distinct (dep, importer) pair. Duplicated `use` lines in one file
     # must not make a module look shared with itself.
+    # BUG-502: the class-name scope of each module (see mod_classes).
+    def noteModClass(path: str, cname: str)
+        var key: str = .moduleNameOf(path)
+        if .mod_classes.get(key) as cl
+            if not cl.contains(cname)
+                cl.add(cname)
+        else
+            var nl = List(str)()
+            nl.add(cname)
+            .mod_classes.set(key, nl)
+
+    def noteModDep(parent_path: str, dep_path: str)
+        var key: str = .moduleNameOf(parent_path)
+        var dn: str = .moduleNameOf(dep_path)
+        if .mod_deps.get(key) as dl
+            if not dl.contains(dn)
+                dl.add(dn)
+        else
+            var nd = List(str)()
+            nd.add(dn)
+            .mod_deps.set(key, nd)
+
+    # The classes a module may name: its own, then those of the modules it `use`s directly.
+    def visibleClassesFor(path: str): List(str)
+        var out = List(str)()
+        var key: str = .moduleNameOf(path)
+        if .mod_classes.get(key) as own
+            for c in own
+                out.add(c)
+        if .mod_deps.get(key) as deps
+            for d in deps
+                if .mod_classes.get(d) as dc
+                    for c2 in dc
+                        if not out.contains(c2)
+                            out.add(c2)
+        return out
+
     def recordImportEdge(dep_path: str, parent_path: str)
         var edge: str = .moduleNameOf(dep_path) + "|" + .moduleNameOf(parent_path)
         if not .hasListed(import_edges, edge)
@@ -336,7 +380,7 @@ class MultiCompiler
                             .compileDep_use(u, zbr_path)?
                         on PNode.class_ as cls
                             var cname: str = cls.name
-                            dep_class_names.add(cname)
+                            .noteModClass(zbr_path, cname)
                         else
                             pass
 
@@ -402,13 +446,13 @@ class MultiCompiler
                         # one combined .zig (deps accumulated below during their compileDep).
                         var fstem: str = .moduleNameOf(zbr_path)
                         if test_mode
-                            zig_src = generateSingleFileCombined(module, zbr_path, preamble_path, sf_dep_bodies, sf_dep_names, dep_class_names, dep_types, strip_contracts, tc_result, library_mode, true, fstem, tag_filter)?
+                            zig_src = generateSingleFileCombined(module, zbr_path, preamble_path, sf_dep_bodies, sf_dep_names, .visibleClassesFor(zbr_path), dep_types, strip_contracts, tc_result, library_mode, true, fstem, tag_filter)?
                         else
-                            zig_src = generateSingleFileCombined(module, zbr_path, preamble_path, sf_dep_bodies, sf_dep_names, dep_class_names, dep_types, strip_contracts, tc_result, library_mode, false, "", nil)?
+                            zig_src = generateSingleFileCombined(module, zbr_path, preamble_path, sf_dep_bodies, sf_dep_names, .visibleClassesFor(zbr_path), dep_types, strip_contracts, tc_result, library_mode, false, "", nil)?
                     else if test_mode
-                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, mp_noted, strip_contracts, tc_result, tag_filter)?
+                        zig_src = generateFullWithDepsTest(module, zbr_path, preamble_path, .visibleClassesFor(zbr_path), dep_types, all_deps, mp_noted, strip_contracts, tc_result, tag_filter)?
                     else
-                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, dep_class_names, dep_types, all_deps, mp_noted, strip_contracts, tc_result, library_mode)?
+                        zig_src = generateFullWithDeps(module, zbr_path, preamble_path, .visibleClassesFor(zbr_path), dep_types, all_deps, mp_noted, strip_contracts, tc_result, library_mode)?
                     # Detect SQLite usage in generated root Zig. The preamble
                     # inlines the `fn _sqlite_open` DEFINITION into every program,
                     # so a plain `contains` false-positives for ALL programs —
@@ -428,10 +472,10 @@ class MultiCompiler
                     if singleFile() and not node_addon
                         # Phase 2: accumulate this dep's namespace struct (topological order);
                         # do NOT write a per-dep file — the root emits one combined .zig.
-                        sf_dep_bodies.add(generateSingleFileDepStruct(module, zbr_path, .moduleNameOf(zbr_path), dep_class_names, dep_types, strip_contracts))
+                        sf_dep_bodies.add(generateSingleFileDepStruct(module, zbr_path, .moduleNameOf(zbr_path), .visibleClassesFor(zbr_path), dep_types, strip_contracts))
                         sf_dep_names.add(.moduleNameOf(zbr_path))
                     else
-                        zig_src = generateDepWith(module, zbr_path, preamble_path, dep_class_names, dep_types, strip_contracts)?
+                        zig_src = generateDepWith(module, zbr_path, preamble_path, .visibleClassesFor(zbr_path), dep_types, strip_contracts)?
 
                 # Step 6: Write .zig file (single-file deps are accumulated, not written)
                 if not (singleFile() and not node_addon and not is_root)
@@ -487,6 +531,7 @@ class MultiCompiler
             dep_path = src_dir + "/" + dep_name + ".zbr"
         if fileExistsExact(dep_path)
             .recordImportEdge(dep_path, parent_path)
+            .noteModDep(parent_path, dep_path)
             .compileDep(dep_path, false)?
             return
         # BUG-125: dep not adjacent to the source.  Try the --module-path dir.
@@ -498,6 +543,7 @@ class MultiCompiler
         if module_path != ""
             var mp_path: str = module_path + "/" + dep_name + ".zbr"
             if fileExistsExact(mp_path)
+                .noteModDep(parent_path, mp_path)
                 .scanDepForTypes(mp_path)?
                 # BUG-516: SAY so. A standalone user (a plain run, `--emit-zig`,
                 # `--output-dir`) otherwise met zig's `unable to load 'dep.zig':
@@ -688,7 +734,7 @@ class MultiCompiler
                 # gets a value-typed field and a *T-vs-T assignment mismatch.
                 for decl2 in pm.decls
                     if decl2 is PNode.class_ as cls2
-                        dep_class_names.add(cls2.name)
+                        .noteModClass(zbr_path, cls2.name)
                 # Resolve for name annotations; ignore recorded errors.
                 var resolver = Resolver.Resolver(zbr_path, "")
                 resolver.resolve(pm_node)?

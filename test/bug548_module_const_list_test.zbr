@@ -1,0 +1,14 @@
+# BUG-548: a module-level CONST that allocates (a list / dict literal) was emitted at
+# container scope, so Zig ran the allocator at comptime ("unable to resolve comptime
+# value") -- and with no inference context there, a float list was typed []const u8.
+# A const that does not allocate (TWICE) stays a compile-time constant.
+const TIERS = [0.25, 0.5]
+const WORDS = ["x", "y"]
+const LIMITS = {"a": 1, "b": 2}
+const TWICE = 2 * 21
+
+def first(): float
+    return TIERS.at(0)
+
+def main()
+    print("bug548: ${first()} ${TIERS.at(1)} ${WORDS.at(1)} ${LIMITS.fetch("b")} ${TWICE}")

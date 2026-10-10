@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-547. Next new bug: BUG-548.**
+**Last bug number generated: BUG-549. Next new bug: BUG-550.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,20 @@
 > measured in.
 
 ---
+
+### BUG-549: an unknown method inside a string interpolation `${...}` is never refused -- it passes the front end and fails inside zig -- OPEN (found 2026-10-09)
+- **Severity:** Medium (a whole class: every receiver whose methods the checker refuses by
+  name -- str, List, Timer, the BUG-369 set -- is unchecked inside `${...}`).
+- **Repro:** `print("${s.trimm()} ${xs.sizee()}")` with `s` a str and `xs` a List(int): `zebra -c`
+  exits 0. The same calls outside an interpolation are refused (`'Timer' has no method
+  'elapsedMs' (elapsed/elapsedMicros/reset)`, at the column). Found by zebra-taocp's timing
+  probe, `ms=${t.elapsedMs()}`, which zig refused as "no field or member function named
+  'elapsedMs' in 'zebra_rt.TimerHandle'".
+- **Shape:** BUG-232's sibling. BUG-232 found ARITY checking skipped inside `${...}`; the
+  unknown-method refusal (the *MethodKnown predicates) has the same gap. Fix where the
+  interpolated expressions are walked so they get the same checkCallsInExpr pass as a plain
+  expression, and add a fixture with an unknown method in `${...}` for each refusing
+  receiver kind (str, List, a BUG-369 type).
 
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
@@ -159,15 +173,6 @@
 - **Repro:** `fdep.zbr`: `struct R` with `var xs: List(int) = List(int)()` and `var k: int`; root: `use fdep exposing R` then `var r = R(k: 3)`.
 - **Found by:** BUG-501 1c's probes (2026-10-03). It also bounds 1c: since cross-module construction must pass every field, a struct literal never has to fill an omitted field of another module's struct -- the fill uses the module-local struct registry.
 - **Fix direction:** the arity check for a struct constructor should count only fields WITHOUT a default; the dep's struct decl (fields + which have defaults) must reach the root's checker. Then 1c's literal fill needs the dep's container fields too -- extend it with the same data.
-
----
-
-### BUG-502: every dependency's classes are visible to every module of the program, transitively -- a bare class name a file never imported can resolve -- OPEN (found 2026-09-30)
-- **Severity:** Low today (an invisible bare name is refused by the front end unless it ALSO means something else, which is how BUG-489 surfaced), but it is the root of a class of "which meaning wins" bugs.
-- **Where:** `main.zbr` accumulates `dep_class_names` across EVERY module the build compiles and hands the whole list to `generateModuleWith` for each module, which registers each as a class. So a module sees classes from modules it never `use`d. BUG-489 fixed the one observable case (a name that is also a stdlib type) by filtering; the list itself is still program-wide.
-- **Found by:** BUG-489's root-causing (2026-09-30).
-- **Fix direction:** the per-module registration should be the module's own classes, its `exposing` names, and (for dotted `m.C` paths) the classes of the modules it `use`s directly -- not the program-wide union. Check whether the GameEngine bare-names any type it only reaches transitively before tightening: the front end currently accepts some such names, and tightening turns them into refusals.
-- **DECIDED (Sean, 2026-10-06):** tighten, before the freeze, after checking the GameEngine for bare names it reaches only transitively.
 
 ---
 

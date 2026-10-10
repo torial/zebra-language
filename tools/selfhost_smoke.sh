@@ -2265,6 +2265,9 @@ smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmark
 smoke_run_fail test/fail_fixtures/assert_msg_location_fail.zbr "assert failed at test/fail_fixtures/assert_msg_location_fail.zbr:4: x must be positive"
 smoke_run_fail test/fail_fixtures/require_location_fail.zbr "require failed at test/fail_fixtures/require_location_fail.zbr:4: in 'half'"
 smoke_run_fail test/fail_fixtures/raise_location_fail.zbr "Error at test/fail_fixtures/raise_location_fail.zbr:4: went wrong"
+# BUG-502: a module is generated with the classes it can NAME, not every class compiled before it
+smoke_run test/bug502_scope_test.zbr "bug502: 42 7"
+smoke_run test/bug548_module_const_list_test.zbr "bug548: 0.25 0.5 y 2 42"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then

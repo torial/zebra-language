@@ -264,6 +264,17 @@ actually be GATED (this repo's timings swing 2x on identical binaries).
 The `algorithms` namespace is what would make it real: the first body of code carrying
 honest complexity annotations to reason over.
 
+**It exists now, as its own repo, and its first finding is about the annotation's SHAPE
+(2026-10-09).** [torial/zebra-taocp](https://github.com/torial/zebra-taocp) (MIT) carries 15
+TAOCP algorithms, each checked against a result published outside this repository. Its
+`binarySearch` is O(log N) with an O(N) `require isSorted(k)`: measured, 1,000 searches over
+100,000 keys take **22,046 ms in an ordinary build and 8.1 ms under `--turbo`**. So a
+complexity annotation must carry the CONTRACTS' cost separately --
+`{ best, average, worst, space, contracts }` -- and a cost diagnostic must say which build
+it reasons about; reading only the algorithm understates every checked build, reading only
+the checked build overstates the shipping one. Writing the library also found BUG-545
+(`List.pop()`) and BUG-549 (unknown methods unchecked inside `${...}`).
+
 ## THE TRANSFORM INTERFACE (Sean's design, 2026-08-26)
 
 Sean proposed wrapping each compiler transformation in an interface: the code shape to

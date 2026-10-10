@@ -13,6 +13,8 @@ bug168_crossmod_prim_return_lib  # helper module imported by other tests; has no
 bug221_transitive_init_leaf  # support module for a bug fixture; exercised through its importer
 bug221_transitive_init_mid  # support module for a bug fixture; exercised through its importer
 bug539_dep_mod  # support module for the BUG-539 fixtures (and runtime_module_check's BUG-536 leg); exercised through its importers
+bug502_mod_a  # support module for bug502_scope_test (a class Widget); exercised through its importer
+bug502_mod_b  # support module for bug502_scope_test (a FUNCTION Widget, never importing bug502_mod_a); exercised through its importer
 bug235_use_lib  # helper module imported by other tests; has no main()
 bug238_except_lib  # helper module imported by other tests; has no main()
 bug476_sig_import_lib  # helper module imported by bug476_sig_import_test; has no main()
