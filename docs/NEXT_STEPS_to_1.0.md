@@ -16,6 +16,37 @@ should not ship over.
 Judge items against [docs/PRINCIPLES.md](docs/PRINCIPLES.md); measurements are in
 [docs/archive/FINDINGS.md](docs/archive/FINDINGS.md).
 
+## THE WORKING LIST TO 1.0 (adopted 2026-10-10, Sean) -- work it top to bottom
+
+Read off this queue and the open ledger; the sections below hold the detail. Tick items here
+as they land, so this list stays the one place that says what is left.
+
+1. **Silent wrong answers first** -- a frozen wrong answer is frozen for all of 1.x.
+   - [ ] BUG-501 -- re-measure its shape table on HEAD (the reference-container switch
+     closed the main case; the entry is still open), then close it or fix what remains.
+   - [ ] BUG-527 -- an interface-typed field assigned inside a method is judged by the
+     enclosing class's same-named field.
+   - [ ] BUG-519 -- another module's struct built by named arguments ignores its defaults.
+   - [ ] BUG-237 -- a union used without `exposing` mis-emits `^T` payloads.
+   - [ ] BUG-530 -- `re.groups()` stops at the first non-participating group.
+   - Lower: the "fails inside zig" class (BUG-546, 531, 534) -- loud, not silent.
+2. [ ] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
+   cannot see a runtime regression. After 1.0 it is the main regression witness.
+3. **Decisions.**
+   - [x] `cue deinit` -- NOT in 1.0 (2026-10-10; stability_policy.md §6).
+   - [ ] Arena scopes under threads: ship with "`allocate` is single-threaded" stated in
+     the memory model; §28j step b stays post-1.0.
+   - [ ] BUG-106 and BUG-252 -- each needs a decision, not code.
+   - [ ] Mark the transform interface and automatic arena scoping post-1.0 explicitly.
+4. **The freeze (§15).** [ ] CHANGELOG reconciliation (milestone vs release numbering);
+   [ ] re-read stability_policy.md §6 against the tree; [ ] declare `surface-freeze` the
+   promise.
+5. **Prove the unproven.** [ ] `zebra up`'s Windows swap, run once against an install.ps1
+   layout (Sean's machine); [ ] a full mutation_check run overnight (~6 h) -- can the
+   gates fail?
+6. [ ] **One or two concurrency dogfood programs** (HTTP+SQLite service, concurrent
+   fetcher) to test the memory model's claims under real threads before they freeze.
+
 ## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
 
 Sean's prompt was V's `v up`. Reading the queue against "what does a stranger need from a
@@ -318,7 +349,11 @@ already had a compiler call site (print/`${}`, `==`, HashMap keys, `<`/sort, for
 either name-dispatched by convention (`toString`) or missing (a class as a HashMap key hashed
 its POINTER; `<` on a user type was a Zig error). Cues made the convention checkable.
 
-**Open: `cue deinit`.** Every other cue is called at a syntactic site. `deinit` is called at
+**DECIDED 2026-10-10: `cue deinit` is NOT in 1.0** (Sean: "fine w nixing it", given the seven
+cues above). Recorded as a non-goal in `docs/design/stability_policy.md` §6. The analysis below
+is kept for whoever reopens it after 1.0.
+
+**Was open: `cue deinit`.** Every other cue is called at a syntactic site. `deinit` is called at
 end of *scope* or end of *arena*, and the language has no written memory model yet (the
 section below). What has to be hashed through with Sean, scenario by scenario, before it
 lands: (1) a class instance is a pointer -- when the last local goes out of scope, does
