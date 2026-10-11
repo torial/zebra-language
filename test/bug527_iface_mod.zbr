@@ -1,0 +1,12 @@
+# BUG-527 helper module: the interface and the class holding an interface-typed field.
+interface Listener
+    def hit(): int
+
+class Holder
+    var listener: Listener?
+    cue init()
+        .listener = nil
+    def fire(): int
+        if .listener as l
+            return l.hit()
+        return -1

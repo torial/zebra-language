@@ -6,6 +6,35 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-527: assigning to an interface-typed field INSIDE A METHOD is judged by the enclosing class's SAME-NAMED field -- the interface wrap is skipped and zig refuses it -- FIXED 2026-10-10 (found 2026-10-05)
+- **Reported by** the GameEngine session (a cousin of BUG-490's call-site case, fixed 93c4f2b).
+- **Repro (two modules):** module A has `interface MinigameListener` and
+  `class ShovelMinigames` with `var listener: MinigameListener?`. Module B (`use A exposing
+  MinigameListener, ShovelMinigames`) has `class WireShovelListener implements
+  MinigameListener` and `class WireShovel` with its OWN field `var listener:
+  WireShovelListener`; in a WireShovel method, `if .minigames as mg` then
+  `mg.listener = .listener` -> zig: expected type '?A.MinigameListener', found
+  '*WireShovelListener' (line, no column).
+- **Isolated by varying one thing at a time:** fails inside the method with ANY value (a
+  field, a local copied from it, a freshly constructed object). Works from `main()` with the
+  same values. Works inside the method once the enclosing class's field is RENAMED (`wl`).
+  So the target `mg.listener` is typed by `WireShovel.listener` -- the BUG-364 shape (another
+  class's field judged by the current class's same-named field), on the interface-conversion
+  path.
+- **Cause:** `getAssignFieldType` asks for the RECEIVER's class field first, but
+  `lookupTypeFieldType` only searches this module's declarations. For a class from another
+  module it found nothing and fell through to `getMemberFieldName` -- which returns the member
+  name whatever the receiver is -- and so to the CURRENT class's same-named field
+  (`Owner.listener: Wire`). The interface path then saw a `Wire` slot and skipped the wrap; its
+  own receiver-aware fallback (BUG-388/515) only runs when no type was found.
+- **Fix:** when the receiver's class is known and the checker knows the field
+  (`fieldTypeAny`) but it is not in this module, return nil instead of the by-name answer.
+  The interface assignment then takes the receiver-aware path, which handles other modules.
+- **Fixture:** `test/bug527_iface_mod.zbr` + `test/bug527_iface_field_assign_test.zbr`
+  (`bug527: 7 8 9`) -- a field, a local copied from it, a fresh object, each assigned inside
+  a method of a class with its own same-named field. Red on the pre-fix binary at line 23
+  with the reported zig error. Round-trip byte-identical; the compiler's own emit unchanged.
+
 ### BUG-501: a container stored in a container is aliased on some paths and copied on others -- writes are silently lost, with no refusal -- FIXED 2026-10-06, CLOSED 2026-10-10 (found 2026-09-30)
 - **Severity:** High (silent data loss -- and possibly corruption, see the correction -- in ordinary code: a `HashMap(str, HashMap(str, int))` or `HashMap(str, List(int))` drops writes depending on HOW the inner container was reached, and nothing in Zebra or Zig says so)
 - **Found by:** Fable (GameEngine port), measured again on `fd6ed7e` with both container kinds:

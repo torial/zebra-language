@@ -31,7 +31,7 @@ as they land, so this list stays the one place that says what is left.
      titles. Their bodies say otherwise -- each is LOUD (zig refuses the emit, or the front end
      wrongly refuses the program), not a silent wrong answer. They move to 1b.
 1b. **Loud but wrong** -- the user gets a refusal or a Zig error for a program that is fine.
-   - [ ] BUG-527 -- `h.listener = v` inside a method, `h` a class from another module with an
+   - [x] BUG-527 (FIXED 2026-10-10) -- `h.listener = v` inside a method, `h` a class from another module with an
      interface-typed field, is typed by the enclosing class's same-named field; zig refuses.
    - [ ] BUG-519 -- another module's struct built by named arguments ignores its defaults
      (refused "expected 2 argument(s)").

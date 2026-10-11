@@ -1,0 +1,44 @@
+# BUG-527: inside a method, `h.listener = v` -- `h` a class from ANOTHER module whose
+# `listener` is interface-typed -- was typed by the ENCLOSING class's same-named field
+# (`Owner.listener: Wire`), so the interface wrap was skipped and zig refused it:
+# expected type '?bug527_iface_mod.Listener', found '*Wire'. Any value failed: a field, a
+# local copied from it, a freshly constructed object.
+use bug527_iface_mod exposing Listener, Holder
+
+class Wire implements Listener
+    var n: int
+    cue init(n: int)
+        .n = n
+    def hit(): int
+        return .n
+
+class Owner
+    var listener: Wire
+    var holder: Holder?
+    cue init()
+        .listener = Wire(7)
+        .holder = Holder()
+    def fromField(): int
+        if .holder as h
+            h.listener = .listener
+            return h.fire()
+        return -2
+    def fromLocal(): int
+        var w = .listener
+        w.n = 8
+        if .holder as h
+            h.listener = w
+            return h.fire()
+        return -2
+    def fromFresh(): int
+        if .holder as h
+            h.listener = Wire(9)
+            return h.fire()
+        return -2
+
+def main()
+    var o = Owner()
+    var a = o.fromField()
+    var b = o.fromLocal()
+    var c = o.fromFresh()
+    print("bug527: ${a} ${b} ${c}")

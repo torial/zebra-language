@@ -8911,9 +8911,19 @@ struct Generator
         if a.target is Expr.member as at_m
             if not (at_m.object is Expr.this_) and .infer_ctx != nil
                 var at_ot: Type_ = inferExpr(at_m.object, .infer_ctx!)
+                if at_ot is Type_.ref_to as at_rr
+                    at_ot = at_rr
                 if at_ot is Type_.named as at_cn
                     if lookupTypeFieldType(at_cn, at_m.member) as at_ft
                         return at_ft
+                    # BUG-527: the receiver's class is known but declared in ANOTHER module,
+                    # so its field is not in module_decls. Falling through to the by-name
+                    # lookup below answered with the CURRENT class's same-named field -- an
+                    # `h.listener = x` in a class with its own `listener: Wire` was judged a
+                    # Wire slot and the interface wrap was skipped. Nil is the honest answer:
+                    # callers that need the type use the receiver-aware inferred path.
+                    if (.infer_ctx!).fieldTypeAny(at_cn, at_m.member) != nil
+                        return nil
         # If target is a member expression (self.field), extract field name and look up type
         var fname = getMemberFieldName(a.target)
         if fname != nil

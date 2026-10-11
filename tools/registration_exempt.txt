@@ -61,3 +61,4 @@ tc_merge_fixture  # NOT a test and cannot compile standalone BY CONSTRUCTION: it
 prog_args_passthrough_test  # asserted INLINE in selfhost_smoke.sh (BUG-347: it needs argv after `--`, which no smoke_* helper passes); the registration scanner cannot see the inline form
 bug415_dep_catch_lib  # helper module used by bug415_dep_module_catch_message_test; has no main()
 deprecated_warning_dep  # helper module imported by deprecated_warning_test (the @deprecated def lives here so the warning is witnessed across `use`); has no main()
+bug527_iface_mod  # support module for bug527_iface_field_assign_test (the interface + Holder in ANOTHER module); exercised through its importer

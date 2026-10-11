@@ -204,23 +204,6 @@
   "expected type 'u64', found 'i64'"; `var u: uint64 = n` builds fine, and `int` has no
   unsigned conversion method. Reported by the book agent; NOT re-run here (needs a C dep).
 
-### BUG-527: assigning to an interface-typed field INSIDE A METHOD is judged by the enclosing class's SAME-NAMED field -- the interface wrap is skipped and zig refuses it -- OPEN (found 2026-10-05)
-- **Reported by** the GameEngine session (a cousin of BUG-490's call-site case, fixed 93c4f2b).
-- **Repro (two modules):** module A has `interface MinigameListener` and
-  `class ShovelMinigames` with `var listener: MinigameListener?`. Module B (`use A exposing
-  MinigameListener, ShovelMinigames`) has `class WireShovelListener implements
-  MinigameListener` and `class WireShovel` with its OWN field `var listener:
-  WireShovelListener`; in a WireShovel method, `if .minigames as mg` then
-  `mg.listener = .listener` -> zig: expected type '?A.MinigameListener', found
-  '*WireShovelListener' (line, no column).
-- **Isolated by varying one thing at a time:** fails inside the method with ANY value (a
-  field, a local copied from it, a freshly constructed object). Works from `main()` with the
-  same values. Works inside the method once the enclosing class's field is RENAMED (`wl`).
-  So the target `mg.listener` is typed by `WireShovel.listener` -- the BUG-364 shape (another
-  class's field judged by the current class's same-named field), on the interface-conversion
-  path.
-- **Repro files:** to be committed as the fixture when fixed (kept in scratch for now).
-
 ### BUG-519: constructing a struct from ANOTHER module by named arguments ignores its field defaults -- `R(k: 3)` is refused "expected 2 argument(s), found 1" -- OPEN (found 2026-10-03)
 - **Severity:** Low-Medium (a front-end refusal, not a leak, but wrong: the same construction works inside the struct's own module, so a default is usable only locally)
 - **Repro:** `fdep.zbr`: `struct R` with `var xs: List(int) = List(int)()` and `var k: int`; root: `use fdep exposing R` then `var r = R(k: 3)`.

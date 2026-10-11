@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Assigning to another module's interface-typed field works inside a method (BUG-527).**
+  `h.listener = w`, where `h`'s class comes from another module and the current class has a
+  field of the same name, failed inside zig; the assignment is typed by `h`'s own field now.
 - **An unknown method inside `${...}` is refused like one outside it (BUG-549).**
   `"${s.trimm()}"` passed `zebra -c` and failed inside zig; it is now refused at the method
   name, for every receiver whose methods are checked by name (str, List, Timer and the rest).
