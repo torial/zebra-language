@@ -1,0 +1,12 @@
+# `cue begin` / `cue end` take no parameters -- `using` calls them on entry and exit.
+class Scope
+    cue init()
+        pass
+    cue begin(depth: int)
+        pass
+    cue end()
+        pass
+
+def main()
+    using Scope()
+        print("in")

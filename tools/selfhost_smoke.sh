@@ -1133,7 +1133,7 @@ smoke examples/counter.zbr
 # `using EXPR` scope-block: calls expr.begin(); defer expr.end(); executes body.
 smoke_run test/in_scope_test.zbr "in_scope_test PASS"
 # TC negative: class missing begin()/end() must fail with a diagnostic.
-smoke_tc_fail test/in_scope_tc_fail_test.zbr "must define 'def begin()'"
+smoke_tc_fail test/in_scope_tc_fail_test.zbr "must declare 'cue begin()' and 'cue end()'"
 
 # `x!` postfix force-unwrap: alias for `x to!`; enables x!.method() chaining.
 smoke_run test/postfix_bang_test.zbr "postfix_bang_test PASS"
@@ -1291,13 +1291,24 @@ smoke_tc_fail test/fail_fixtures/yield_under_branch_test.zbr \
 smoke_tc_fail test/bug428_unresolved_use_fail.zbr \
     "\`use nosuch_module\`: module not found -- no nosuch_module.zbr"
 smoke_tc_fail test/fail_fixtures/cue_unknown_name_test.zbr \
-    "unknown cue 'frobnicate': the cues are init, toString, equals, hash, compare, iter, next"
+    "unknown cue 'frobnicate': the cues are init, toString, equals, hash, compare, iter, next, begin, end"
 smoke_tc_fail test/fail_fixtures/cue_def_tostring_test.zbr \
     "\`toString\` is a cue"
 smoke_tc_fail test/fail_fixtures/cue_hash_without_equals_test.zbr \
     "\`cue hash\` needs \`cue equals\` on the same type"
 smoke_tc_fail test/fail_fixtures/cue_bad_signature_test.zbr \
     "\`cue compare\` takes the other value and returns int"
+# 2026-10-11 (Sean): `cue compare` needs `cue equals`; BUG-550 -- the parameter of
+# equals/compare is the declaring type; `cue begin` / `cue end` drive `using`.
+smoke_tc_fail test/fail_fixtures/cue_compare_without_equals_test.zbr \
+    "cue_compare_without_equals_test.zbr:7:8: error: \`cue compare\` needs \`cue equals\` on the same type"
+smoke_tc_fail test/fail_fixtures/bug550_cue_equals_param_test.zbr \
+    "bug550_cue_equals_param_test.zbr:6:8: error: \`cue equals\` takes the other value and returns bool: \`cue equals(other: V): bool\`"
+smoke_tc_fail test/fail_fixtures/cue_begin_shape_test.zbr \
+    "cue_begin_shape_test.zbr:5:8: error: \`cue begin\` takes no parameters and returns nothing"
+smoke_run test/cue_using_test.zbr "cue_using: <a>x<b>y</b></a>"
+smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
+smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.
 smoke_run test/branch_inline_return_test.zbr "branch inline return OK"

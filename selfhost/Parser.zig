@@ -21,7 +21,7 @@ const _zbr_new = _zbr_rt._zbr_new;
 const _zbr_mod_Token = @import("Token.zig");
 const _zbr_ty_TokenKind = _zbr_mod_Token._zbr_ty_TokenKind;
 const _zbr_ty_Lexer = @import("Lexer.zig")._zbr_ty_Lexer;
-pub var _zbr_mv_CUE_NAMES: []const u8 = "|init|toString|equals|hash|compare|iter|next|";
+pub var _zbr_mv_CUE_NAMES: []const u8 = "|init|toString|equals|hash|compare|iter|next|begin|end|";
 // zbr:selfhost/Parser.zbr:41
 pub fn _zbr_fn_fileExistsExact(path: []const u8) bool {
 // zbr:selfhost/Parser.zbr:42
@@ -3821,7 +3821,7 @@ pub const _zbr_ty_Parser = struct {
 // zbr:selfhost/Parser.zbr:2070
                         if ((!(std.mem.indexOf(u8, _zbr_mv_CUE_NAMES, _str_concat(_str_concat("|", cue_base, _zbr_rt._allocator), "|", _zbr_rt._allocator)) != null))) {
 // zbr:selfhost/Parser.zbr:2071
-                            { _zbr_rt._error_ctx = .{ .at = "selfhost/Parser.zbr:2071", .message = self.errorAt(_str_concat(_str_concat("unknown cue '", cue_base, _zbr_rt._allocator), "': the cues are init, toString, equals, hash, compare, iter, next (a method the compiler calls for you; anything else is a `def`)", _zbr_rt._allocator)) }; return error.ZebraError; }
+                            { _zbr_rt._error_ctx = .{ .at = "selfhost/Parser.zbr:2071", .message = self.errorAt(_str_concat(_str_concat("unknown cue '", cue_base, _zbr_rt._allocator), "': the cues are init, toString, equals, hash, compare, iter, next, begin, end (a method the compiler calls for you; anything else is a `def`)", _zbr_rt._allocator)) }; return error.ZebraError; }
                         }
 // zbr:selfhost/Parser.zbr:2072
                         return (try self.parseMethodDecl(is_static, pending_private, pending_public, false, false, _zbr_new(_ZbrList([]const u8)), false, false, false, false, true, ""));

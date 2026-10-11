@@ -91,14 +91,6 @@
 - **The book quotes the leaked text** (Appendix C, "operator < not allowed for type" and
   "operator == not allowed"): reword those entries when this is fixed.
 
-### BUG-550: the PARAMETER type of `cue equals` is not checked at the declaration -- OPEN (found 2026-10-10)
-- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
-- **Repro:** `class V` with `cue equals(other: int): bool`, then `print(V(1) == V(1))`. `-c`
-  exits 0; zig: "expected type 'i64', found '*V'". The RETURN type is checked (`cue
-  compare(...): bool` is refused), the parameter is not.
-- **Expected:** refused at the declaration -- the cue shape is `cue equals(other: T): bool`
-  with `T` the declaring type (the same check for `compare`'s parameter).
-
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
   the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).
@@ -186,12 +178,6 @@
   unexpected statuses from anyone debugging the runtime. Prefer (a) for the close path;
   decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
   output must hold no `NTSTATUS` line (Windows-only leg).
-
-### BUG-530: `re.groups(s)` stops at the first capture group that took no part in the match -- OPEN (found 2026-10-05)
-- `Regex.compile("(a)?(b)").groups("b")` -> `[]`; `"(cat)|(dog)"` on `"dog"` -> `[]`;
-  `"(a)(x)?(b)"` on `"ab"` -> `["a"]`. `_regex_groups` breaks out of its loop at the
-  first unset save slot. Expected: every group, with a placeholder for one that did not
-  participate (decide: `""` or `str?`). Reported by the book agent; verified.
 
 ### BUG-531: a Regex method called directly on `Regex.compile(...)` in a `var` initializer passes `-c` and fails inside zig -- OPEN (found 2026-10-05)
 - `var r = Regex.compile("a").groups("cat")` -> "no field or member function named

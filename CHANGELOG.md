@@ -23,6 +23,21 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`re.groups(s)` returns `List(str?)` -- one entry per capture group (BUG-530).** It stopped
+  at the first group that took no part in the match, so `(a)(x)?(b)` on "ab" gave `["a"]` and
+  `(cat)|(dog)` on "dog" gave `[]`. A non-participating group is now `nil` (an empty match is
+  `""`). Code that used an element directly as a `str` unwraps it first (`if g as v`).
+- **`cue begin` / `cue end` drive `using` (2026-10-11).** A method the compiler calls is a cue,
+  so `using`'s entry and exit hooks are now declared `cue begin()` / `cue end()`. A `def` pair
+  still works, with a deprecation warning at each `using`; it will be refused later. A
+  `def begin()` that no `using` reaches is an ordinary method.
+- **`cue compare` needs `cue equals` (2026-10-11),** as `cue hash` already did -- otherwise
+  ordering and equality could disagree (`a <= b` and `a >= b` both true, `a == b` false).
+- **The parameter of `cue equals` / `cue compare` must be the declaring type (BUG-550).**
+  `cue equals(other: int)` was accepted and `==` failed inside zig.
+- **Warnings raised while checking a function body are reported** -- the statement walk's
+  warnings were dropped (only its errors were carried back); the `using` deprecation was the
+  first to need them.
 - **Assigning to another module's interface-typed field works inside a method (BUG-527).**
   `h.listener = w`, where `h`'s class comes from another module and the current class has a
   field of the same name, failed inside zig; the assignment is typed by `h`'s own field now.

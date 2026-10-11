@@ -606,9 +606,14 @@ dunder methods, without the underscores. `init` is one; the full set is closed:
 | `cue toString(): str` | no params | `print(x)`, `"${x}"`, `x.toString()` |
 | `cue equals(other: T): bool` | one param | `x == y`, `x != y` |
 | `cue hash(): int` | no params; needs `equals` | `HashMap(T, V)` / `Set(T)` keys |
-| `cue compare(other: T): int` | negative / zero / positive | `<` `<=` `>` `>=`, `list.sort()` |
+| `cue compare(other: T): int` | negative / zero / positive; needs `equals` | `<` `<=` `>` `>=`, `list.sort()` |
 | `cue iter(): I` | `I` declares `cue next` | `for x in obj` |
 | `cue next(): E?` | `nil` when exhausted | `for x in obj` (on `obj` itself or its `iter()`) |
+| `cue begin()` / `cue end()` | no params, no return | `using obj` -- on entry and on exit (§38) |
+
+`T` in `equals` / `compare` is the declaring type -- `==` and `<` call them with one
+(BUG-550). `compare` needs `equals` on the same type, as `hash` does: otherwise `a <= b`
+and `a >= b` could both hold while `a == b` is false.
 
 ```zebra
 class Money
@@ -3944,7 +3949,7 @@ class Stream
 | `re.findAll(s)`                   | `[]str`        | All non-overlapping matches         |
 | `re.replace(s, repl)`             | str            | Replace all matches with `repl`     |
 | `re.split(s)`                     | `[]str`        | The pieces between matches (BUG-416) |
-| `re.groups(s)`                    | `[]str`        | The capture groups of the FIRST match, group 1 at index 0 (the whole match is not included); no match gives `[]`. Stops at the first group that took no part in the match (BUG-530) |
+| `re.groups(s)`                    | `[]str?`       | The capture groups of the FIRST match, group 1 at index 0 (the whole match is not included), ONE entry per group: `nil` for a group that took no part in the match, `""` for one that matched empty. No match gives `[]`. Unwrap an element (`if g as v`) before using it as a `str` |
 
 ### `DateTime` — date/time
 
@@ -4987,7 +4992,12 @@ After `var score: Bounded(0, 100) = 85`, the compiler emits:
 
 ## 38. `using EXPR` — resource scope blocks
 
-`using EXPR` executes a block with a resource that has a `begin()` / `end()` lifecycle.  Any object with both methods works — no interface declaration required.
+`using EXPR` executes a block with a resource that has a `begin()` / `end()` lifecycle. A
+Zebra class declares them as **cues** -- `cue begin()` and `cue end()` -- because the
+compiler calls them, not your code (§5; decided 2026-10-11). No interface declaration is
+required. A class whose `begin` / `end` are `def`s still works for now, with a deprecation
+warning at each `using`; it will be refused in a later release. A `def begin()` that no
+`using` touches is an ordinary method, as `def next()` is when nothing iterates it.
 
 ```zebra
 class CountGroup
@@ -4996,9 +5006,9 @@ class CountGroup
     cue init()
         .entered = 0
         .exited  = 0
-    def begin(): void
+    cue begin(): void
         .entered = .entered + 1
-    def end(): void
+    cue end(): void
         .exited  = .exited + 1
 
 def main(): void

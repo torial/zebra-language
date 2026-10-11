@@ -1,0 +1,16 @@
+# `using` on a class whose begin/end are `def`s still works this release, with a
+# deprecation warning (2026-10-11: they are cues; stability_policy.md warn-then-remove).
+class Old
+    var log: List(str)
+    cue init(log: List(str))
+        .log = log
+    def begin()
+        .log.add("b")
+    def end()
+        .log.add("e")
+
+def main()
+    var log = List(str)()
+    using Old(log)
+        log.add("x")
+    print("cue_using_def: " + log.join(""))

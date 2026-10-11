@@ -1,0 +1,11 @@
+# `cue compare` needs `cue equals` (Sean, 2026-10-11): without it `a <= b` and `a >= b` can
+# both hold while `a == b` is false, because `==` on a class falls back to identity.
+class Ver
+    var n: int
+    cue init(n: int)
+        .n = n
+    cue compare(other: Ver): int
+        return .n - other.n
+
+def main()
+    print(Ver(1) < Ver(2))

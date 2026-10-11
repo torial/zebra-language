@@ -1,0 +1,10 @@
+# BUG-550: the parameter of `cue equals` is the declaring type -- `==` calls it with one.
+class V
+    var n: int
+    cue init(n: int)
+        .n = n
+    cue equals(other: int): bool
+        return .n == other
+
+def main()
+    print(V(1) == V(1))

@@ -3778,18 +3778,30 @@ pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[
     }
     return last;
 }
-pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList([]const u8) {
-    // A1: returns List(str) (see _net_resolve note).
+pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList(?[]const u8) {
+    // A1: returns List(str?) (see _net_resolve note). BUG-530 (Sean, 2026-10-11): ONE entry
+    // per capture group, `nil` for a group that took no part in the match -- the loop used
+    // to stop at the first unset slot, so `(a)(x)?(b)` on "ab" lost `b` and `(cat)|(dog)` on
+    // "dog" returned nothing. `nil`, not "": an empty string is a group that matched empty.
     const alloc = std.heap.page_allocator;
+    // Group k owns save slots 2k (open) and 2k+1 (close); count the opens.
+    var ngroups: usize = 0;
+    for (re.nodes) |nd| {
+        if (nd.kind == .save and nd.slot % 2 == 0) ngroups += 1;
+    }
+    if (ngroups > _MAX_SAVE_SLOTS / 2) ngroups = _MAX_SAVE_SLOTS / 2;
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
         if (_re_match_with_saves(&re, input, start)) |saves| {
-            var out = _zbr_new(_ZbrList([]const u8));
-            var i: usize = 0;
-            while (i + 1 < _MAX_SAVE_SLOTS) : (i += 2) {
-                const s = saves[i]; const e = saves[i + 1];
-                if (s == 0xFFFF_FFFF_FFFF_FFFF) break;
-                if (e != 0xFFFF_FFFF_FFFF_FFFF and e >= s) out.append(alloc, input[s..e]) catch {};
+            var out = _zbr_new(_ZbrList(?[]const u8));
+            var g: usize = 0;
+            while (g < ngroups) : (g += 1) {
+                const s = saves[2 * g]; const e = saves[2 * g + 1];
+                if (s != 0xFFFF_FFFF_FFFF_FFFF and e != 0xFFFF_FFFF_FFFF_FFFF and e >= s) {
+                    out.append(alloc, input[s..e]) catch {};
+                } else {
+                    out.append(alloc, null) catch {};
+                }
             }
             return out;
         }
@@ -3798,7 +3810,7 @@ pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList([]const u8) {
     // VALUE and stops compiling the day containers are references. On the flipped runtime
     // every program calling groups() failed to build; output_sweep caught it through
     // regex_groups_test (smoke does not run that file), cross-sema's declarations leg names it.
-    return _zbr_new(_ZbrList([]const u8));
+    return _zbr_new(_ZbrList(?[]const u8));
 }
 // ── Deep copy-out: `lhs <- rhs` inside `allocate` blocks ────────────────────
 // Detects ArrayList by method presence, not field names, to avoid false-positives

@@ -3706,7 +3706,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if mname == "test" or mname == "match"
                                 return Type_.bool_
-                            if mname == "findAll" or mname == "groups" or mname == "split"
+                            # BUG-530: groups is List(str?) -- nil for a group that did not take part.
+                            if mname == "groups"
+                                return Type_.list_(Type_.optional(Type_.string_))
+                            if mname == "findAll" or mname == "split"
                                 return Type_.list_(Type_.string_)
                             # BUG-393 (`matches`/`replaceAll` reached zig) is what regexMethodKnown above refuses.
                         on Type_.code_editor
@@ -4606,7 +4609,9 @@ def isStrListCallExpr(e: Expr): bool
                 return true
             if mem.member == "items"
                 return true
-            if mem.member == "groups" or mem.member == "findAll"
+            # BUG-530: `groups` is NOT here any more -- its elements are str?, typed by the
+            # call's own List(str?) rather than assumed to be strings.
+            if mem.member == "findAll"
                 return true
             # BUG-090: Reflect.fieldNames / Reflect.fieldTypes return []str
             if mem.member == "fieldNames" or mem.member == "fieldTypes"
@@ -4996,8 +5001,10 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     ctx.addErr(ctx.file, si2.span.line, si2.span.col, "expression has optional type — use 'using expr!' to unwrap before 'using'")
                 on Type_.named as cname
                     if ctx.module_types.hasClass(cname)
-                        var has_begin: bool = ctx.module_types.methodReturn(cname, "begin") != nil
-                        var has_end: bool = ctx.module_types.methodReturn(cname, "end") != nil
+                        var cue_begin: bool = ctx.hasCueAny(cname, "begin")
+                        var cue_end: bool = ctx.hasCueAny(cname, "end")
+                        var has_begin: bool = cue_begin or ctx.module_types.methodReturn(cname, "begin") != nil
+                        var has_end: bool = cue_end or ctx.module_types.methodReturn(cname, "end") != nil
                         if not has_begin or not has_end
                             var missing: str = ""
                             if not has_begin and not has_end
@@ -5006,7 +5013,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                                 missing = "begin"
                             else
                                 missing = "end"
-                            ctx.addErr(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'using' must define 'def begin()' and 'def end()': '" + missing + "' is missing")
+                            ctx.addErr(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'using' must declare 'cue begin()' and 'cue end()': '" + missing + "' is missing")
+                        else if not cue_begin or not cue_end
+                            # 2026-10-11: `using` calls them, so they are cues. A `def` pair
+                            # still works this release (stability_policy.md: warn, then remove).
+                            ctx.addWarn(ctx.file, si2.span.line, si2.span.col, "type '" + cname + "' used in 'using' declares begin/end with `def`; they are cues now -- write `cue begin()` and `cue end()` (`def` is deprecated here and will be refused)")
                 else
                     pass
             walkStmts(si2.stmts, ctx)
@@ -7023,6 +7034,11 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 walkStmts(dm_stmts, scope_ctx)
                 for scp_err in scope_ctx.errors
                     ctx.errors.add(scp_err)
+                # 2026-10-11: the walk's WARNINGS were dropped here -- only errors were
+                # carried back -- so the `using` deprecation below walkStmt never printed.
+                # addWarn drops exact duplicates of what the main pass already said.
+                for scp_w in scope_ctx.warnings
+                    ctx.addWarn(scp_w.file, scp_w.line, scp_w.col, scp_w.message)
                 tc_result.store(ctx.current_class, dm.name, scope_ctx)
                 ctx.current_class = saved_class
         on Decl.init as din
@@ -7726,9 +7742,22 @@ def checkShadowing(decls: List(Decl), file: str, ctx: InferCtx)
             else
                 pass
 
+# BUG-550: the parameter of `cue equals` / `cue compare` must be the declaring type. `==`
+# and `<` call it with a value of that type, so `cue equals(other: int)` was accepted and
+# failed inside zig ("expected type 'i64', found '*V'"). Only a plain named type is judged;
+# a generic class's `Box(T)` parameter is left to the existing paths.
+def cueOtherParamOk(dm: DeclMethod, tname: str): bool
+    if dm.params.len != 1
+        return true
+    if dm.params.at(0).type_ as pt
+        if pt is TypeRef.named as ptn
+            return ptn.name == tname
+    return true
+
 def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types: List(str), file: str, ctx: InferCtx)
     var has_equals: bool = derive_eq
     var hash_decl: DeclMethod? = nil
+    var compare_decl: DeclMethod? = nil
     for mem in members
         if mem is Decl.method as dm
             if not dm.mods.is_cue
@@ -7755,15 +7784,21 @@ def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types:
                     ctx.addErr(file, dm.span.line, dm.span.col, "`cue toString` takes no parameters and returns str: `cue toString(): str`")
             else if dm.name == "equals"
                 has_equals = true
-                if dm.params.len != 1 or rt != "bool"
+                if dm.params.len != 1 or rt != "bool" or not cueOtherParamOk(dm, tname)
                     ctx.addErr(file, dm.span.line, dm.span.col, "`cue equals` takes the other value and returns bool: `cue equals(other: " + tname + "): bool`")
             else if dm.name == "hash"
                 hash_decl = dm
                 if dm.params.len != 0 or rt != "int"
                     ctx.addErr(file, dm.span.line, dm.span.col, "`cue hash` takes no parameters and returns int: `cue hash(): int`")
             else if dm.name == "compare"
-                if dm.params.len != 1 or rt != "int"
+                compare_decl = dm
+                if dm.params.len != 1 or rt != "int" or not cueOtherParamOk(dm, tname)
                     ctx.addErr(file, dm.span.line, dm.span.col, "`cue compare` takes the other value and returns int (negative, zero, positive): `cue compare(other: " + tname + "): int`")
+            else if dm.name == "begin" or dm.name == "end"
+                # `using EXPR` calls them on entry and exit (2026-10-11, Sean: one rule --
+                # a method the compiler calls is a cue).
+                if dm.params.len != 0 or (dm.return_type != nil and rt != "void")
+                    ctx.addErr(file, dm.span.line, dm.span.col, "`cue " + dm.name + "` takes no parameters and returns nothing: `cue " + dm.name + "()` -- `using` calls it on " + (if(dm.name == "begin", "entry", "exit")))
             else if dm.name == "next"
                 var next_ok: bool = false
                 if dm.return_type as ntr
@@ -7782,6 +7817,11 @@ def checkCueShapes(tname: str, members: List(Decl), derive_eq: bool, next_types:
     if hash_decl as hd
         if not has_equals
             ctx.addErr(file, hd.span.line, hd.span.col, "`cue hash` needs `cue equals` on the same type (a HashMap key is looked up by hash, then confirmed by equals)")
+    # Sean, 2026-10-11: without it `a <= b` and `a >= b` can both be true while `a == b` is
+    # false (== falls back to identity on a class), so ordering and equality disagree.
+    if compare_decl as cd
+        if not has_equals
+            ctx.addErr(file, cd.span.line, cd.span.col, "`cue compare` needs `cue equals` on the same type (otherwise `a <= b` and `a >= b` can both hold while `a == b` is false)")
 
 def checkDeclShapes(m: Module, file: str, ctx: InferCtx)
     var iface_names: List(str) = List(str)()

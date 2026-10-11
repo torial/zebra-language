@@ -10,9 +10,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `adds` `allocate` `and` `as` `assert` `bool` `branch` `break` `capture` `catch` `char` `class` `const` `continue` `cue` `def` `else` `ensure` `enum` `except` `export` `exposing` `extend` `extern` `false` `filter` `float` `for` `if` `implements` `implies` `in` `int` `interface` `invariant` `is` `mixin` `namespace` `nil` `not` `on` `or` `orelse` `pass` `print` `private` `public` `raise` `require` `return` `sig` `static` `struct` `test` `this` `throws` `to` `true` `try` `type` `uint` `union` `use` `using` `var` `where` `while` `with` `yield`
 
-## Cues (7)
+## Cues (9)
 
-`cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next`
+`cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next` `cue begin` `cue end`
 
 ## Command forms (39)
 

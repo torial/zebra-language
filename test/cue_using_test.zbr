@@ -1,0 +1,20 @@
+# `cue begin` / `cue end` drive `using` (2026-10-11): entry, body, exit, in order -- and on
+# a nested pair, inner exits before outer.
+class Tag
+    var name: str
+    var log: List(str)
+    cue init(name: str, log: List(str))
+        .name = name
+        .log = log
+    cue begin()
+        .log.add("<" + .name + ">")
+    cue end()
+        .log.add("</" + .name + ">")
+
+def main()
+    var log = List(str)()
+    using Tag("a", log)
+        log.add("x")
+        using Tag("b", log)
+            log.add("y")
+    print("cue_using: " + log.join(""))

@@ -11,10 +11,10 @@ class CountGroup
         .entered = 0
         .exited  = 0
 
-    def begin(): void
+    cue begin(): void
         .entered = .entered + 1
 
-    def end(): void
+    cue end(): void
         .exited = .exited + 1
 
 def main(): void

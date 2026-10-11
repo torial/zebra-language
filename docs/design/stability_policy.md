@@ -126,7 +126,7 @@ does not satisfy it.
 - No `defer`/`errdefer`: freed as identifiers on 2026-09-15 (Sean). `using` is the
   resource-scope construct; a Zig-shaped `defer` was bleed-through.
 - No `cue deinit` (Sean, 2026-10-10). Every 1.0 cue -- `init`, `toString`, `equals`,
-  `hash`, `compare`, `iter`, `next` -- is called at a fixed place in the syntax. `deinit`
+  `hash`, `compare`, `iter`, `next`, `begin`, `end` -- is called at a fixed place in the syntax. `deinit`
   would be called at the end of a scope or an arena, which needs a lifetime rule the memory
   model does not give, and the version that fires at end of scope double-frees the moment a
   class instance escapes. Resources with a release step use `using`.

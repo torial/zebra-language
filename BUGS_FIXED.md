@@ -6,6 +6,39 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-530: `re.groups(s)` stops at the first capture group that took no part in the match -- FIXED 2026-10-11 (found 2026-10-05)
+- `Regex.compile("(a)?(b)").groups("b")` -> `[]`; `"(cat)|(dog)"` on `"dog"` -> `[]`;
+  `"(a)(x)?(b)"` on `"ab"` -> `["a"]`. `_regex_groups` breaks out of its loop at the
+  first unset save slot. Expected: every group, with a placeholder for one that did not
+  participate (decide: `""` or `str?`). Reported by the book agent; verified.
+- **Decision (Sean, 2026-10-11):** `nil` for a non-participating group, so `groups` is
+  `List(str?)`. `""` was rejected: it cannot be told from a group that matched the empty
+  string (`(a*)`).
+- **Fix:** `_regex_groups` counts the pattern's groups (one even-slot `.save` node each) and
+  appends one entry per group, `null` when its slots are unset; the checker types the call
+  `List(str?)` and `groups` left `isStrListCallExpr` (its elements are no longer assumed to be
+  `str`).
+- **Fixture:** `test/bug530_regex_groups_nil_test.zbr` (`-,<b>` / `-,<dog>` / `<a>,-,<b>` /
+  `<>,<b>` / `0`), expected values written from the rule before the run. The pre-fix binary
+  refused it (`g` typed `str`); `regex_groups_test` prints exactly what it did. The only
+  callers outside the corpus are the book's chapter 21 examples, updated separately.
+
+### BUG-550: the PARAMETER type of `cue equals` is not checked at the declaration -- FIXED 2026-10-11 (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** `class V` with `cue equals(other: int): bool`, then `print(V(1) == V(1))`. `-c`
+  exits 0; zig: "expected type 'i64', found '*V'". The RETURN type is checked (`cue
+  compare(...): bool` is refused), the parameter is not.
+- **Expected:** refused at the declaration -- the cue shape is `cue equals(other: T): bool`
+  with `T` the declaring type (the same check for `compare`'s parameter).
+- **Fix:** `checkCueShapes` (TypeChecker) refuses an `equals` / `compare` parameter whose
+  named type is not the declaring type (`cueOtherParamOk`; a generic `Box(T)` parameter is
+  left to the existing paths). Landed with the cue batch Sean decided the same day:
+  `cue compare` needs `cue equals`, and `cue begin` / `cue end` drive `using`.
+- **Fixture:** `test/fail_fixtures/bug550_cue_equals_param_test.zbr`, refused at 6:8 naming
+  `cue equals(other: V): bool`; it passed `-c` before the fix. A scan of ~6,200 `.zbr` files
+  across this repo, zebra-ide, the GameEngine and zebra-taocp found no existing code the new
+  refusals reach.
+
 ### BUG-527: assigning to an interface-typed field INSIDE A METHOD is judged by the enclosing class's SAME-NAMED field -- the interface wrap is skipped and zig refuses it -- FIXED 2026-10-10 (found 2026-10-05)
 - **Reported by** the GameEngine session (a cousin of BUG-490's call-site case, fixed 93c4f2b).
 - **Repro (two modules):** module A has `interface MinigameListener` and

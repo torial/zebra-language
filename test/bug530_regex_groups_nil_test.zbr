@@ -1,0 +1,19 @@
+# BUG-530: `re.groups(s)` returns one entry per capture group, `nil` for a group that took
+# no part in the match (Sean, 2026-10-11). It used to stop at the first unset group:
+# `(a)?(b)` on "b" -> [] and `(a)(x)?(b)` on "ab" -> ["a"]. `nil`, not "": a group that
+# matched the empty string is "" (the `(a*)` row), and the two must stay distinguishable.
+def show(re: Regex, s: str): str
+    var parts = List(str)()
+    for g in re.groups(s)
+        if g as v
+            parts.add("<" + v + ">")
+        else
+            parts.add("-")
+    return parts.join(",")
+
+def main()
+    print("bug530: " + show(Regex.compile("(a)?(b)"), "b"))
+    print("bug530: " + show(Regex.compile("(cat)|(dog)"), "dog"))
+    print("bug530: " + show(Regex.compile("(a)(x)?(b)"), "ab"))
+    print("bug530: " + show(Regex.compile("(a*)(b)"), "b"))
+    print("bug530: ${Regex.compile("(z)").groups("nope").len}")

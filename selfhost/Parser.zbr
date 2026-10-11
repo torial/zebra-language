@@ -22,7 +22,7 @@ use Lexer
 # interpolation, equals on ==, hash for HashMap/Set keys (needs equals), compare on
 # < <= > >= and sort(), iter/next on for-in. tools/surface_inventory.py reads this
 # line for docs/SURFACE.md; the list is the surface.
-var CUE_NAMES: str = "|init|toString|equals|hash|compare|iter|next|"
+var CUE_NAMES: str = "|init|toString|equals|hash|compare|iter|next|begin|end|"
 
 # -- Parse tree node types -----------------------------------------------------
 
@@ -2068,7 +2068,7 @@ class Parser
             # on construction. Zebra's dunders (2026-09-16, Sean). The set is closed:
             var cue_base: str = .peekAt(1).text
             if not (("|" + cue_base + "|") in CUE_NAMES)
-                raise .errorAt("unknown cue '" + cue_base + "': the cues are init, toString, equals, hash, compare, iter, next (a method the compiler calls for you; anything else is a `def`)")
+                raise .errorAt("unknown cue '" + cue_base + "': the cues are init, toString, equals, hash, compare, iter, next, begin, end (a method the compiler calls for you; anything else is a `def`)")
             return .parseMethodDecl(is_static, pending_private, pending_public, false, false, List(str)(), false, false, false, false, true)?
         else if .textIs("invariant")
             return .parseInvariantDecl()?

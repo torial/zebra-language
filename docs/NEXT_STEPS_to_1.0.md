@@ -24,7 +24,7 @@ as they land, so this list stays the one place that says what is left.
 1. **Silent wrong answers first** -- a frozen wrong answer is frozen for all of 1.x.
    - [x] BUG-501 -- CLOSED 2026-10-10: every row re-measured on HEAD; the two the boundary
      probe did not reach are `test/bug501_returned_and_statement_test.zbr`, red on the anchor.
-   - [ ] BUG-530 -- `re.groups()` stops at the first non-participating group (returns fewer
+   - [x] BUG-530 (FIXED 2026-10-11, `nil` per Sean) -- `re.groups()` stopped at the first non-participating group (returns fewer
      groups, no error). Needs a decision first: `""` or `str?` for a group that did not take
      part.
    - CORRECTION 2026-10-10: the list first put BUG-527, 519 and 237 here, read off their
@@ -41,9 +41,9 @@ as they land, so this list stays the one place that says what is left.
      BUG-550 (`cue equals` parameter unchecked), 551 (`<` / struct `==` without the cue),
      552 (`for` over a `def next` type), 553 (struct literal as `==` receiver), 554 (yielding
      `for` over `split()`), 555 (`v[0]` on a class).
-   - Open questions from the same audit (Sean): refuse `cue compare` without `cue equals`,
-     as `cue hash` without `equals` already is? And `using`'s `begin`/`end` are `def`s the
-     compiler calls -- cues by the rule above, but spelled `def`.
+   - [x] BUG-550 (FIXED 2026-10-11) and the audit's two questions, DECIDED by Sean and
+     landed the same day: `cue compare` needs `cue equals`; `begin`/`end` are cues (`def`
+     deprecated in `using`, warn-then-remove).
 2. [ ] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
    cannot see a runtime regression. After 1.0 it is the main regression witness.
 3. **Decisions.**
@@ -357,7 +357,8 @@ then, on the analysis: "I'm actually ok if you do all the ones but `deinit` now"
 a `def` is a method *your code* calls. The set is closed and lives in one place
 (`selfhost/Parser.zbr` `CUE_NAMES`, derived into `docs/SURFACE.md` "Cues" by
 `surface_inventory.py`), so adding one is a surface change with a diff. Landed 2026-09-16:
-`init`, `toString`, `equals`, `hash`, `compare`, `iter`, `next` -- QUICKSTART §5 "Cues",
+`init`, `toString`, `equals`, `hash`, `compare`, `iter`, `next` (and on 2026-10-11 `begin` /
+`end`, which `using` calls) -- QUICKSTART §5 "Cues",
 `test/cue_protocol_test.zbr`, four refusal fixtures. The ranking that put these first: each
 already had a compiler call site (print/`${}`, `==`, HashMap keys, `<`/sort, for-in) that was
 either name-dispatched by convention (`toString`) or missing (a class as a HashMap key hashed

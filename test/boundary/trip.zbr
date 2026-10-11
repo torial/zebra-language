@@ -179,9 +179,9 @@ class Ticket
     cue init()
         .opened = 0
         .closed = 0
-    def begin()
+    cue begin()
         .opened = .opened + 1
-    def end()
+    cue end()
         .closed = .closed + 1
 
 def main()

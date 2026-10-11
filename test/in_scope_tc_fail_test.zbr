@@ -1,5 +1,5 @@
 # TC negative test: class missing begin() and end() used in `using` block.
-# Expected: TC error mentioning "must define 'def begin()' and 'def end()'"
+# Expected: TC error mentioning "must declare 'cue begin()' and 'cue end()'"
 
 class Ungrouped
     var count: int = 0
