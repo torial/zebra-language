@@ -24,12 +24,19 @@ as they land, so this list stays the one place that says what is left.
 1. **Silent wrong answers first** -- a frozen wrong answer is frozen for all of 1.x.
    - [x] BUG-501 -- CLOSED 2026-10-10: every row re-measured on HEAD; the two the boundary
      probe did not reach are `test/bug501_returned_and_statement_test.zbr`, red on the anchor.
-   - [ ] BUG-527 -- an interface-typed field assigned inside a method is judged by the
-     enclosing class's same-named field.
-   - [ ] BUG-519 -- another module's struct built by named arguments ignores its defaults.
-   - [ ] BUG-237 -- a union used without `exposing` mis-emits `^T` payloads.
-   - [ ] BUG-530 -- `re.groups()` stops at the first non-participating group.
-   - Lower: the "fails inside zig" class (BUG-546, 531, 534) -- loud, not silent.
+   - [ ] BUG-530 -- `re.groups()` stops at the first non-participating group (returns fewer
+     groups, no error). Needs a decision first: `""` or `str?` for a group that did not take
+     part.
+   - CORRECTION 2026-10-10: the list first put BUG-527, 519 and 237 here, read off their
+     titles. Their bodies say otherwise -- each is LOUD (zig refuses the emit, or the front end
+     wrongly refuses the program), not a silent wrong answer. They move to 1b.
+1b. **Loud but wrong** -- the user gets a refusal or a Zig error for a program that is fine.
+   - [ ] BUG-527 -- `h.listener = v` inside a method, `h` a class from another module with an
+     interface-typed field, is typed by the enclosing class's same-named field; zig refuses.
+   - [ ] BUG-519 -- another module's struct built by named arguments ignores its defaults
+     (refused "expected 2 argument(s)").
+   - [ ] BUG-237 -- a union used without `exposing` mis-emits `^T` payloads (zig refuses).
+   - [ ] The "fails inside zig" class: BUG-546, 531, 534.
 2. [ ] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
    cannot see a runtime regression. After 1.0 it is the main regression witness.
 3. **Decisions.**

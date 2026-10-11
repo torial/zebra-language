@@ -625,6 +625,16 @@ JOBS=4 bash tools/divergence_check.sh --gate  # THE REGRESSION WITNESS (re-point
                                 #   PRINTS THE ANCHOR ON EVERY RUN, pass or fail, and says
                                 #   loudly when the anchor IS HEAD (a degenerate comparison
                                 #   that can only report zero).
+                                #   THE ANCHOR RUNS FROM ITS OWN DIRECTORY (BUG-543,
+                                #   2026-10-10): a compiler read `selfhost/` relative to the
+                                #   CWD first, so from the repo root the anchor emitted N-1
+                                #   codegen + TODAY's runtime -- blind to runtime regressions,
+                                #   and vacuous the day a helper it calls is deleted.
+                                #   tools/n1_runtime_check.sh runs before the sweep and
+                                #   REFUSES unless lines found only in the anchor's own
+                                #   preamble reach its emit and lines only in the tree's do
+                                #   not (derived each run). Red-checked with the old
+                                #   invocation: 0/9 anchor-only, 20/20 tree-only, exit 2.
                                 #   VERIFIED RED WITH A REAL ADVERSARY, not a mutation:
                                 #   reference := the current selfhost, subject := the
                                 #   BOOTSTRAP -> 7 REGRESSIONS, exit 1. Normal run: 0, exit 0.
@@ -2337,7 +2347,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 108 scripts | <!-- doc-gen: 108 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 109 scripts | <!-- doc-gen: 109 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 43 tracked documents <!-- doc-gen: 43 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

@@ -106,8 +106,19 @@ emit_and_check() { # $1=compiler $2=mode(boot|self) $3=absfile $4=workdir
   # Using one invocation for both also removes a confound the gate carried for a year:
   # it was comparing an INLINE-shape emit against a MODULE-shape emit and attributing the
   # difference to the compilers.
-  "$zebra" --emit-zig "$f" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" \
-      || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
+  #
+  # BUG-543: the ANCHOR runs from its own directory. A compiler reads its runtime from
+  # `selfhost/` relative to the CWD first, so run from the repo root the anchor emitted
+  # "N-1 codegen + today's runtime" and a runtime regression was invisible. Every path
+  # here is absolute, so the cwd changes nothing else; n1_runtime_check (before the
+  # sweep) proves the anchor's emit carries its own preamble.
+  if [ "$mode" = boot ]; then
+    ( cd "${zebra%/*}" && "$zebra" --emit-zig "$f" --output-dir "$wdir" ) >/dev/null 2>"$wdir/emit.err" \
+        || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
+  else
+    "$zebra" --emit-zig "$f" --output-dir "$wdir" >/dev/null 2>"$wdir/emit.err" \
+        || { _keep_emit_err "$wdir" "$name"; echo EMITFAIL; return; }
+  fi
   [ -s "$main" ] || { echo EMITFAIL; return; }
   grep -q "pub fn main" "$main" || { echo NOMAIN; return; }
   # BUG-302: this line used to be `... >/dev/null 2>&1 ... else echo CFAIL`, which
@@ -195,6 +206,18 @@ if [ -n "$RESULTS" ] && [ "$CLASSIFY" = 1 ]; then
   files=""
   nqueued=0
   skip_scan=1
+fi
+
+# BUG-543: before any work, prove the anchor emits against ITS OWN runtime. Without this
+# the comparison can go vacuous silently -- the anchor reading today's preamble sees no
+# runtime regression, and an anchor that cannot build at all scores every file an ADVANCE.
+if [ "${skip_scan:-0}" != 1 ]; then
+  N1RT="$(bash "$REPO/tools/n1_runtime_check.sh" "$BOOT" 2>&1)" || {
+      echo "divergence: REFUSING -- the N-1 anchor is not emitting against its own runtime:" >&2
+      echo "  $N1RT" >&2
+      exit 2
+  }
+  echo "$N1RT"
 fi
 
 # TRACKED files only; see tools/corpus_ls.sh for why a glob is wrong here.

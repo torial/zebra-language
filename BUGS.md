@@ -103,6 +103,14 @@
   directory printed the pre-switch answers. Same binary, same source, two behaviours,
   decided by the working directory -- the UNGIT "nothing ambient" failure, in the gate meant
   to compare versions.
+- **GATE HALF FIXED 2026-10-10:** `divergence_check` runs the anchor from its own cache
+  directory (every path it passes is absolute), and `tools/n1_runtime_check.sh` runs before
+  the sweep: lines only in the anchor's preamble must reach its emitted `zebra_rt.zig`, lines
+  only in the tree's must not, or the run refuses (exit 2). Derived each run, so it does not
+  rot with the next runtime change. Red-checked with the old invocation (the anchor run from
+  the repo root): 0/9 anchor-only lines, 20/20 tree-only, REFUSED. Still open: the compiler
+  half -- `defaultPreamblePath()` still tries the CWD first, so a user's `zebra` run inside a
+  clone of this repo takes the clone's runtime.
 
 ### BUG-542: on Windows, a WebSocket whose peer has already gone prints a Zig "unexpected NTSTATUS" error trace when the runtime answers its close frame -- OPEN (found 2026-10-08)
 - **Severity:** Low-Medium (the program is correct and continues; but a user sees a
