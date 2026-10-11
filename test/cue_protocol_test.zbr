@@ -1,8 +1,8 @@
 # Cues (2026-09-16): a `cue` is a method the compiler calls for you. `init` was the
 # only one; this fixture covers the rest -- toString (print / `${}`), equals (`==`,
 # `!=`), hash (HashMap / Set keys), compare (`<` `<=` `>` `>=` and sort), and
-# iter / next (`for x in obj`). `deinit` is deliberately NOT here: its end-of-scope
-# semantics are an open 1.0 decision.
+# iter / next (`for x in obj`). `deinit` is deliberately NOT here: it is not in 1.0
+# (stability_policy.md section 6, 2026-10-10).
 
 class Money
     var cents: int

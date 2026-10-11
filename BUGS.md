@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-549. Next new bug: BUG-550.**
+**Last bug number generated: BUG-555. Next new bug: BUG-556.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,59 @@
 > measured in.
 
 ---
+
+### BUG-555: `v[0]` on a user class passes the front end and fails inside zig's std -- OPEN (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** `class V` (one int field, a `cue init`), then `var v = V(1)` / `print(v[0])`. `zebra -c`
+  exits 0; the build fails in `std/meta.zig` via `zebra_rt._zbr_at`: "Expected pointer, slice,
+  array or vector type, found '*..._zbr_ty_V'".
+- **Expected:** a front-end refusal at the `[`: user types have no index operator (the 1.0
+  surface says so -- "Not cues, on purpose": `at` / index).
+
+### BUG-554: a yielding `for` over `text.split(" ")` passes the front end and fails inside zig -- OPEN (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** `def words(text: str): Iter(str)` whose body is `for w in text.split(" ")` /
+  `yield w`. `-c` exits 0; zig: "expected type '*array_list.Aligned([]const u8,null)', found
+  'mem.SplitIterator(u8,.sequence)'". Binding `var parts: List(str) = text.split(" ")` first
+  works.
+- **Expected:** QUICKSTART says a yielding `for` over anything but a List / range / cue
+  iterable is REFUSED by name; `split()` here is lowered to a Zig iterator, not a List, so
+  either the generator lowering materialises it or the refusal names it.
+
+### BUG-553: `P(x: 1) == p` on a struct with `cue equals` emits Zig that does not parse -- OPEN (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** `struct P` with `var x: int` and `cue equals(other: P): bool` (or `@derive(Eq)`),
+  then `print(P(x: 1) == p)`. Emits `_zbr_ty_P{ .x = 1 }.equals(p)`; zig: "expected ',' after
+  initializer". With the literal on the RIGHT (`p == P(x: 1)`) it works.
+- **Expected:** a struct literal used as a method receiver is parenthesised (or materialised
+  into a temp, as other expression-position chains are).
+
+### BUG-552: `for x in obj` over a type whose `next` / `iter` is a `def` (not a `cue`) passes the front end and fails inside zig -- OPEN (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** `class Ticker` with `def next(): int?`, then `for t in Ticker(2)`. `-c` exits 0;
+  zig: "no field named 'items' in struct 'Ticker'", with a line and no column.
+- **Expected:** a front-end refusal at the `for` naming the fix: only `cue next` (or a
+  `cue iter` returning a type with one) makes a type iterable.
+
+### BUG-551: comparison operators on a type without the cue that defines them pass the front end and fail inside zig -- OPEN (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** (a) a class with no `cue compare`: `print(V(1) < V(2))` (or `.sort()` on a
+  `List(V)`) -> zig, inside `zebra_rt.zig`: "operator < not allowed for type '*..._zbr_ty_V'".
+  (b) a struct with no `cue equals` / `@derive(Eq)`: `p == q` -> zig: "operator == not allowed
+  for type 'P'". `-c` exits 0 on both.
+- **Expected:** a front-end refusal naming the missing cue (`<` needs `cue compare`; `==` on a
+  struct needs `cue equals` or `@derive(Eq)`). A class with no `cue equals` compares by
+  identity, which works and is documented -- (b) is about structs only.
+- **The book quotes the leaked text** (Appendix C, "operator < not allowed for type" and
+  "operator == not allowed"): reword those entries when this is fixed.
+
+### BUG-550: the PARAMETER type of `cue equals` is not checked at the declaration -- OPEN (found 2026-10-10)
+- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
+- **Repro:** `class V` with `cue equals(other: int): bool`, then `print(V(1) == V(1))`. `-c`
+  exits 0; zig: "expected type 'i64', found '*V'". The RETURN type is checked (`cue
+  compare(...): bool` is refused), the parameter is not.
+- **Expected:** refused at the declaration -- the cue shape is `cue equals(other: T): bool`
+  with `T` the declaring type (the same check for `compare`'s parameter).
 
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --

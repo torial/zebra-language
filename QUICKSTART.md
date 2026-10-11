@@ -654,8 +654,9 @@ def main()
   key is found by hash and *confirmed* by equals.
 - Structs get the same cues, by value. `@derive(Debug, Eq, Hash)` (§43) writes
   `toString` / `equals` / `hash` for you — a hand-written cue wins over the derived one.
-- `cue deinit` (end-of-scope teardown) is **not** in the set yet; its semantics are an
-  open 1.0 decision (`docs/NEXT_STEPS_to_1.0.md`).
+- There is **no `cue deinit`** in 1.0 (decided 2026-10-10, `docs/design/stability_policy.md`
+  §6): every cue has a syntactic call site, and end-of-scope teardown would need a lifetime
+  rule the memory model does not give. A resource with a release step uses `using` (§38).
 
 ### Generators — `yield` writes the iterator for you
 

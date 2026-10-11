@@ -37,6 +37,13 @@ as they land, so this list stays the one place that says what is left.
      (refused "expected 2 argument(s)").
    - [ ] BUG-237 -- a union used without `exposing` mis-emits `^T` payloads (zig refuses).
    - [ ] The "fails inside zig" class: BUG-546, 531, 534.
+   - [ ] The cue leaks the book audit found (2026-10-10), each `-c` rc=0 then a zig error:
+     BUG-550 (`cue equals` parameter unchecked), 551 (`<` / struct `==` without the cue),
+     552 (`for` over a `def next` type), 553 (struct literal as `==` receiver), 554 (yielding
+     `for` over `split()`), 555 (`v[0]` on a class).
+   - Open questions from the same audit (Sean): refuse `cue compare` without `cue equals`,
+     as `cue hash` without `equals` already is? And `using`'s `begin`/`end` are `def`s the
+     compiler calls -- cues by the rule above, but spelled `def`.
 2. [ ] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
    cannot see a runtime regression. After 1.0 it is the main regression witness.
 3. **Decisions.**
