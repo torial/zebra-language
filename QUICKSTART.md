@@ -5057,7 +5057,7 @@ using g.vbox("##main", true)       # vertical box (stretch = true)
 - The `using EXPR` header and the first body line must be on adjacent lines — no blank line between them.
 - Nesting is supported (`using outer` containing `using inner`).
 - `using` is unambiguous: the infix `in` operator (e.g. `"x" in list`) is a separate token and unaffected.
-- The type used in `using EXPR` must define `def begin()` and `def end()` — the compiler enforces this at compile time.
+- The type used in `using EXPR` must declare `cue begin()` and `cue end()` — the compiler enforces this at compile time (a `def` pair still compiles in 0.9, with a deprecation warning).
 
 ---
 

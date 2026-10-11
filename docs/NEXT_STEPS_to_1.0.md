@@ -41,6 +41,9 @@ as they land, so this list stays the one place that says what is left.
      BUG-550 (`cue equals` parameter unchecked), 551 (`<` / struct `==` without the cue),
      552 (`for` over a `def next` type), 553 (struct literal as `==` receiver), 554 (yielding
      `for` over `split()`), 555 (`v[0]` on a class).
+   - [ ] BUG-557 (rc7 book pass): a method call on a `str?` leaks to zig.
+   - [ ] BUG-558 -- DECISION (Sean): `text -> .len` compiles; the reference and the book say
+     a pipeline's right side must be a call. Refuse it, or make it the rule?
    - [x] BUG-550 (FIXED 2026-10-11) and the audit's two questions, DECIDED by Sean and
      landed the same day: `cue compare` needs `cue equals`; `begin`/`end` are cues (`def`
      deprecated in `using`, warn-then-remove).
