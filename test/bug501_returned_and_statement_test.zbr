@@ -1,0 +1,39 @@
+# BUG-501's last two rows, checked on HEAD 2026-10-10 after the reference switch (1d):
+# a List inner returned from a def is THE stored list (empty and seeded), and mutating a
+# call result as a STATEMENT (`innerMap(...).set(...)`) compiles and writes through.
+# Before 1d (anchor f5afd86 with its own runtime) this printed `0 1` for the list rows,
+# and the statement form was a zig error: expected type '*T', found '*const T'.
+def innerList(outer: HashMap(str, List(int)), k: str): List(int)
+    if outer.get(k) as found
+        return found
+    return List(int)()
+
+def innerMap(outer: HashMap(str, HashMap(str, int)), k: str): HashMap(str, int)
+    if outer.get(k) as found
+        return found
+    return HashMap(str, int)()
+
+def main()
+    var lists = HashMap(str, List(int))()
+    lists.set("e", List(int)())
+    var seeded = List(int)()
+    seeded.add(1)
+    lists.set("s", seeded)
+    var le = innerList(lists, "e")
+    le.add(5)
+    var ls = innerList(lists, "s")
+    ls.add(6)
+    var maps = HashMap(str, HashMap(str, int))()
+    maps.set("a", HashMap(str, int)())
+    innerMap(maps, "a").set("x", 7)
+    innerList(lists, "e").add(8)
+    var ne = -1
+    var ns = -1
+    var mx = -1
+    if lists.get("e") as ge
+        ne = ge.len
+    if lists.get("s") as gs
+        ns = gs.len
+    if maps.get("a") as ma
+        mx = ma.get("x") orelse -1
+    print("bug501_ret: ${ne} ${ns} ${mx}")

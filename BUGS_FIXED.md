@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-501: a container stored in a container is aliased on some paths and copied on others -- writes are silently lost, with no refusal -- FIXED 2026-10-06, CLOSED 2026-10-10 (found 2026-09-30)
+- **Severity:** High (silent data loss -- and possibly corruption, see the correction -- in ordinary code: a `HashMap(str, HashMap(str, int))` or `HashMap(str, List(int))` drops writes depending on HOW the inner container was reached, and nothing in Zebra or Zig says so)
+- **Found by:** Fable (GameEngine port), measured again on `fd6ed7e` with both container kinds:
+
+  | shape | HashMap inner | List inner |
+  |---|---|---|
+  | `if outer.get(k) as x` then mutate `x` | ALIASED (write seen) | ALIASED |
+  | `outer.set(k, local)` then mutate `local` | COPY (write lost) | COPY (lost) |
+  | returned from a `def` (`return m` from `get as`), mutated through a temp | SHALLOW COPY -- see below | COPY (lost) |
+  | the same, mutated as a statement `f(outer, k).set(...)` | Zig: `expected type '*T', found '*const T'` | -- |
+
+  Repro: `test/`-shaped program in the filer's notes (two maps, two lists, the four shapes; prints `map: get-as=5 set-then-mutate=0 returned=9` / `list: a=1 ... b=0`).
+- **CORRECTION, same day -- the "returned" row is worse than a copy.** The first measurement read
+  it as ALIASED (the write was seen); Fable's shape read 0. Both functions emit
+  `return _zbr_unboxed(m);`, a by-value copy of a Zig `StringHashMap`, whose struct holds a
+  POINTER to its storage. When the inner map already had storage, the copy's write landed in the
+  SHARED buffer and the original's lookup happened to find it (while its own count was not
+  updated); when the inner map was empty, the copy allocated fresh storage and the write was lost.
+  So the outcome depends on the map's allocation state, and a copy that half-shares storage can
+  CORRUPT the original (a count that disagrees with the buffer, a grow that frees storage the
+  original still points at). Any fix must make these copies either real (deep) or not copies.
+  Fable's repro, verbatim (prints 0; with the inner map pre-populated the same code prints the
+  write): a `def inner(outer, k)` returning the `get as`-bound map, then `var m1 = inner(outer, "a")`
+  / `m1.set("x", 5)` / read back through `outer.get("a")`.
+- **A live instance, found by auditing for the shape (Fable, same day):** the GameEngine's
+  `PlayerData.getScope` returned an inner map by value from a `HashMap`-of-`HashMap` field, and
+  the demo's "bump Wins" wrote through the returned copy -- WORKING, by the shared-storage
+  accident above. It would have stopped working the first time that scope started empty. Now a
+  class (engine findings ledger F18: "a map inside a container or across a def boundary is
+  wrapped in a class", pending the decision).
+- **SCOPE CORRECTION, 2026-09-30 (measured on the batch-1 tree) -- this is not about nesting.**
+  The root is lower: a Zig container (`std.ArrayList`, `StringHashMap`) is a struct holding a
+  POINTER to its buffer plus its own length/capacity, and Zebra copies that struct by value at
+  every assignment. The copy shares the buffer but not the length, so it is neither a copy nor
+  an alias -- the next append on either side can overwrite the other's elements. Nesting is one
+  way to reach it. Three more rows, no container-in-container anywhere:
+
+  | shape | result |
+  |---|---|
+  | `var b = a` (List with one element), `b.add(20)`, `a.add(30)` | `b[1]` reads **30** -- `a`'s append overwrote `b`'s element |
+  | `def all(): List(int)` returning `.items`; caller `got.add(2)`, then `bag.items.add(3)` | `got[1]` reads **3** |
+  | a struct with a List field copied (`var r2 = r1`), both then appended to | `r2.xs[1]` reads `r1`'s value |
+  | `this except xs = ...` on such a struct | the same half-copy: `r3` (len 3) appends into the buffer `r1` (len 2) still owns |
+
+  The field-return row is the common one: a class that hands out its list is ordinary code.
+  Params are unaffected (a container parameter is passed by pointer -- `fill(c)` mutates `c`).
+- **Decision (Sean, 2026-09-30): SHARED semantics** -- given for nested containers, before the
+  root above was measured. Applied honestly it means containers are REFERENCES everywhere
+  (`var b = a` aliases, as in Python/Cobra), i.e. a container value is a pointer to a heap
+  container in the emitted Zig. That is a change to what assignment means for every container,
+  every struct holding one, and `except` -- multi-day, witnessed by the heavy gates, and larger
+  than the nested-only fix that was approved. Held for Sean's confirmation of the wider scope;
+  the alternative is an interim refusal wherever a container is copied out of a live location.
+- **Where it comes from:** the 2026-09-24 container work boxes an inner container and COPIES it out when it reaches a VALUE slot (`genValueOf`, `_zbr_unboxed`) -- deliberately, so a copy-out is the documented rule in some positions. What is not decided anywhere is the rule itself: whether a container nested in a container is a REFERENCE (what `get as` and, for maps, a returned value already do) or a VALUE (what `set(k, local)` does). The two kinds disagree on the return path, which means the current behaviour is not one rule applied twice.
+- **Decision needed (Sean):** reference semantics for nested containers everywhere (the least surprising for Python/Cobra readers, and what the engine assumed), or value semantics everywhere with the aliasing paths made copies -- and in either case a refusal or a warning where a write would be lost. Until then the engine wraps inner maps in a class (`workspace.TagList`, `shop_util.Inventory`), which is a reference.
+- **Also:** the statement-form compile error in row 4 is a leak on its own (a call-result receiver that is a boxed container passed as `*const`).
+- **Fix:** containers are REFERENCES (Phase 1d, 2026-10-06, with Fable's written GO;
+  `docs/design/container_reference_semantics.md`). Closed 2026-10-10 after re-measuring every
+  row of the two tables above on HEAD: rows 1-3 of the first table and all four rows of the
+  scope correction are `test/boundary/container_reference_probe.zbr` (intent-authored before
+  the switch, passing since). The two it did not reach -- a List inner returned from a def
+  (empty and seeded) and the statement form `innerMap(outer, k).set(...)` -- are
+  `test/bug501_returned_and_statement_test.zbr` (`bug501_ret: 2 2 7`).
+- **Control:** the same program on the pre-switch N-1 anchor (`f5afd86`), run with ITS OWN
+  runtime, prints `0 1` for the list rows and refuses the statement form with zig's
+  `expected type '*T', found '*const T'` -- so the fixture can fail. Run from this repo's
+  cwd, the anchor printed the FIXED answers, because it read the current preamble: BUG-543
+  reproduced by accident.
+
 ### BUG-549: an unknown method inside a string interpolation `${...}` is never refused -- it passes the front end and fails inside zig -- FIXED 2026-10-09 (found 2026-10-09)
 - **Severity:** Medium (a whole class: every receiver whose methods the checker refuses by
   name -- str, List, Timer, the BUG-369 set -- is unchecked inside `${...}`).

@@ -2084,6 +2084,7 @@ smoke_run test/bug525_zig_keyword_bindings_test.zbr "kwbind total=481"
 smoke_run test/bug529_interp_quote_segments_test.zbr "bug529: OK"
 smoke_run test/container_copy_test.zbr "copy: OK"
 smoke_run test/bug501_container_hazard_test.zbr "assign 3 3"
+smoke_run test/bug501_returned_and_statement_test.zbr "bug501_ret: 2 2 7"
 # BUG-461: a name reused inside the scope that declares it is refused (Zig forbids
 # shadowing); sibling scopes may reuse a name.
 smoke_tc_fail test/bug461_shadowing_fail.zbr "bug461_shadowing_fail.zbr:7:5: error: \`n\` is already declared as a parameter"

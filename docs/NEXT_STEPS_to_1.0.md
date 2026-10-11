@@ -22,8 +22,8 @@ Read off this queue and the open ledger; the sections below hold the detail. Tic
 as they land, so this list stays the one place that says what is left.
 
 1. **Silent wrong answers first** -- a frozen wrong answer is frozen for all of 1.x.
-   - [ ] BUG-501 -- re-measure its shape table on HEAD (the reference-container switch
-     closed the main case; the entry is still open), then close it or fix what remains.
+   - [x] BUG-501 -- CLOSED 2026-10-10: every row re-measured on HEAD; the two the boundary
+     probe did not reach are `test/bug501_returned_and_statement_test.zbr`, red on the anchor.
    - [ ] BUG-527 -- an interface-typed field assigned inside a method is judged by the
      enclosing class's same-named field.
    - [ ] BUG-519 -- another module's struct built by named arguments ignores its defaults.
