@@ -99,7 +99,7 @@ pub fn _initIo(io: std.Io) void {
 /// The compiler's version -- the ONE place it is written. `zebra --version` prints it
 /// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
 /// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
-pub const _zbr_version: []const u8 = "0.9.0-rc6";
+pub const _zbr_version: []const u8 = "0.9.0-rc7";
 /// NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half): a List's element
 /// or a HashMap's value that is itself a List / HashMap / Set is stored as a pointer, so
 /// `.at(i)` / `.get(k)` alias the parent's slot. Codegen wraps the value at every STORE
@@ -2162,8 +2162,12 @@ pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
 }
 pub const JsonValue = std.json.Value;
 pub fn _json_parse(src: []const u8) ?JsonValue {
-    // parseFromSliceLeaky uses allocator directly (no arena), intentionally leaked.
-    return std.json.parseFromSliceLeaky(JsonValue, std.heap.page_allocator, src, .{}) catch return null;
+    // BUG-556: the tree is built in `_allocator` -- the program arena, or the enclosing
+    // `allocate` block's -- like every other value. It was the std page allocator, which
+    // gives EVERY allocation its own page and was never freed: the GameEngine's 13 MB of
+    // scene JSON committed 13 GB in thirty seconds (351 MB through the program allocator).
+    // "Leaky" is now the arena's contract, not a leak: the arena frees it all at once.
+    return std.json.parseFromSliceLeaky(JsonValue, _allocator, src, .{}) catch return null;
 }
 // Object key iteration: with _json_get_opt (`get`), what lets a protocol relay COPY
 // fields it does not understand, whatever their type.

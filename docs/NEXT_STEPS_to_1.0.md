@@ -44,6 +44,12 @@ as they land, so this list stays the one place that says what is left.
    - [x] BUG-550 (FIXED 2026-10-11) and the audit's two questions, DECIDED by Sean and
      landed the same day: `cue compare` needs `cue equals`; `begin`/`end` are cues (`def`
      deprecated in `using`, warn-then-remove).
+1c. **Memory a long-running program drops (Fable, GameEngine, 2026-10-11) -- a DECISION.**
+   The program arena only grows: strings and containers a game loop drops are freed at exit,
+   so the engine climbs a few MB a second (BUG-556, a 4 KB page per JSON node, was the
+   large part and is fixed). The memory model states the arena rule (G, "lives until the
+   program exits"); the question is whether 1.0 ships it as the rule for long-running
+   programs, with `allocate` blocks as the tool, or needs something more.
 2. [ ] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
    cannot see a runtime regression. After 1.0 it is the main regression witness.
 3. **Decisions.**

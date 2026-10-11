@@ -1,0 +1,28 @@
+# BUG-556: Json.parse built every node with std.heap.page_allocator and never freed it --
+# each allocation took its own 4 KB page, so the GameEngine's 13 MB of scene JSON reached
+# 13 GB of committed memory in thirty seconds (351 MB once parsed through the program
+# allocator). The parsed tree now lives in `_allocator`: the program arena, or the
+# enclosing `allocate` block's, like every other value. The witness is the arena's own
+# footprint: before the fix a parse added nothing to it (it all went to the leak).
+def main()
+    var sb = StringBuilder()
+    sb.append("[")
+    var i = 0
+    while i < 200
+        if i > 0
+            sb.append(",")
+        sb.append("{\"id\": ${i}, \"name\": \"item${i}\", \"tags\": [1, 2, 3]}")
+        i = i + 1
+    sb.append("]")
+    var text = sb.build()
+    var before = sys.memStats().arenaBytes
+    var doc = Json.parse(text)
+    var after = sys.memStats().arenaBytes
+    var place = "outside"
+    if after - before > 10000
+        place = "arena"
+    var n = 0
+    if doc as d
+        if d.tryList() as xs
+            n = xs.len
+    print("bug556: parsed into the ${place}, ${n} items")

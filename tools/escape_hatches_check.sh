@@ -64,7 +64,10 @@ cd "$REPO"
 # 2026-09-28: 77→78 -- BUG-331's _json_fail: a JSON read's error MESSAGE must survive
 #   an `allocate` scope's rewind (the read fails inside the scope, the catch is outside).
 #   Four other new mentions were moved to _allocator instead: they only build its text.
-EXPECTED_PREAMBLE=78
+# 2026-10-11: 78->77 -- BUG-556: Json.parse built its tree with page_allocator, one page per
+#   node and never freed (13 GB from 13 MB of JSON in the GameEngine). It is in _allocator
+#   now, like every other value; the mention is gone, not moved.
+EXPECTED_PREAMBLE=77
 
 # (A second leg counted src/*.zig, the Zig-implemented bootstrap, at 7. Retired with
 #  it 2026-09-16 -- bootstrap_sunset.md Step 3. The selfhost's own emitted literals

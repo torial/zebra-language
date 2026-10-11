@@ -23,6 +23,37 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
+
+rc7 is the first release built on **Zig 0.17** (the tag suffix is `_zig0.17`), and it carries
+**one semantics change**: containers are references. `List`, `HashMap`, `Set`,
+`StringBuilder` and `CsvWriter` are shared on assignment, as in Python; `var b = a` names the
+same container and `a.copy()` makes a new one (BUG-501). The other **breaking changes** each
+turn a silent wrong answer or a failure inside Zig into a refusal at your line:
+
+- an expression the compiler could only GUESS the type of is refused, naming what to annotate
+  (§28a; `--allow-inference-guess` is the one-release hatch);
+- `re.groups(s)` returns `List(str?)`, one entry per capture group, `nil` for a group that
+  took no part in the match (BUG-530) -- unwrap an element before using it as a `str`;
+- `cue compare` needs `cue equals`, and the parameter of `cue equals` / `cue compare` must be
+  the declaring type (BUG-550);
+- arithmetic or ordering on an optional value, and a named argument that matches no parameter
+  (BUG-540), are refused;
+- `--gui-backend=tui` is refused: its zigzag dependency does not support Zig 0.17 yet. Use
+  `--gui-backend=libui_ng`.
+
+**One deprecation:** `using`'s entry and exit hooks are cues now, `cue begin()` / `cue end()`.
+A class whose `begin` / `end` are `def`s still works this release, with a warning at each
+`using`, and will be refused in a later one.
+
+Everything else is a program that failed inside Zig now working, or refused at its line; the
+entries follow.
+
+- **`Json.parse` no longer leaks a page per node (BUG-556).** It built the tree with the page
+  allocator and never freed it -- 13 MB of JSON committed 13 GB. The tree now lives in the
+  program arena (or the enclosing `allocate` block), like every other value.
 - **`re.groups(s)` returns `List(str?)` -- one entry per capture group (BUG-530).** It stopped
   at the first group that took no part in the match, so `(a)(x)?(b)` on "ab" gave `["a"]` and
   `(cat)|(dog)` on "dog" gave `[]`. A non-participating group is now `nil` (an empty match is

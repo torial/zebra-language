@@ -1308,6 +1308,7 @@ smoke_tc_fail test/fail_fixtures/cue_begin_shape_test.zbr \
     "cue_begin_shape_test.zbr:5:8: error: \`cue begin\` takes no parameters and returns nothing"
 smoke_run test/cue_using_test.zbr "cue_using: <a>x<b>y</b></a>"
 smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
+smoke_run test/bug556_json_parse_arena_test.zbr "bug556: parsed into the arena, 200 items"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.

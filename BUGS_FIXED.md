@@ -6,6 +6,24 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-556: `Json.parse` built every node with `page_allocator` and never freed it -- 13 MB of JSON committed 13 GB -- FIXED 2026-10-11 (found 2026-10-11)
+- **Severity:** High (memory: a stranger parsing a large JSON file exhausts the machine).
+- **Reported by:** Fable, GameEngine (TUON_PORT_FINDINGS F50): the engine parses 13 MB of
+  scene JSON and reached 13 GB of committed memory in thirty seconds; Sean saw 40 GB on the
+  machine. Through the program allocator the same parse sits at 351 MB.
+- **Cause:** `_json_parse` (stdlib_preamble.zig) called `std.json.parseFromSliceLeaky` with
+  `std.heap.page_allocator` -- every allocation its own page (4 KB for a node of a few dozen
+  bytes), and "leaky" meant nothing ever freed it.
+- **Fix:** parse into `_allocator`, the program arena or the enclosing `allocate` block's, the
+  allocator every other value uses; the arena frees it at once. A JSON value parsed inside an
+  `allocate` block now dies with the block like any other value (the memory model's rule);
+  no corpus program parses JSON inside one. `escape-hatches` baseline 78 -> 77.
+- **Fixture:** `test/bug556_json_parse_arena_test.zbr` -- the arena's footprint grows by the
+  parse (`sys.memStats().arenaBytes`); before the fix it did not ("parsed into the outside").
+- **Not fixed, and a language question rather than a line (Fable, same report):** strings and
+  containers a long-running program drops are never freed -- the program arena only grows --
+  which is the engine's remaining few MB a second. Recorded on the 1.0 working list.
+
 ### BUG-530: `re.groups(s)` stops at the first capture group that took no part in the match -- FIXED 2026-10-11 (found 2026-10-05)
 - `Regex.compile("(a)?(b)").groups("b")` -> `[]`; `"(cat)|(dog)"` on `"dog"` -> `[]`;
   `"(a)(x)?(b)"` on `"ab"` -> `["a"]`. `_regex_groups` breaks out of its loop at the
