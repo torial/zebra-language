@@ -109,6 +109,8 @@ class VGen
                     return "&ZList[" + .vType(g.args.at(0)) + "]"
                 if g.name == "HashMap" and g.args.count() == 2
                     return "&ZMap[" + .vType(g.args.at(0)) + ", " + .vType(g.args.at(1)) + "]"
+                if g.name == "Set" and g.args.count() == 1
+                    return "&ZSet[" + .vType(g.args.at(0)) + "]"
                 .refused.add("generic type " + g.name)
                 return "voidptr"
             on TypeRef.void_
@@ -126,6 +128,7 @@ class VGen
         if name == "bool": return "bool"
         if name == "char": return "u8"
         if name == "void": return ""
+        if name == "StringBuilder": return "&ZStringBuilder"
         for cn in .class_names
             if cn == name
                 return "&" + name
@@ -439,6 +442,8 @@ class VGen
         if vt == "bool": return "false"
         if vt.startsWith("&ZList["): return "new_zlist" + vt.substring(6, vt.len) + "()"
         if vt.startsWith("&ZMap["): return "new_zmap" + vt.substring(5, vt.len) + "()"
+        if vt.startsWith("&ZSet["): return "new_zset" + vt.substring(5, vt.len) + "()"
+        if vt == "&ZStringBuilder": return "new_zstring_builder()"
         if vt.startsWith("&"): return vt.substring(1, vt.len) + "{}"
         return vt + "{}"
 
@@ -624,6 +629,12 @@ class VGen
 
     # `.x` on this -> self.x; `a.len` (a property) -> a.len; else a.b
     def memberStr(m: ExprMember): str
+        branch m.object
+            on Expr.ident as id
+                if id.name == "Math" and m.member == "PI"
+                    return "math.pi"
+            else
+                pass
         var obj = .exprStr(m.object)
         if m.member == "len"
             return obj + ".len"
@@ -660,7 +671,7 @@ class VGen
                 if .isClassName(id.name)
                     return "new_" + snakeCase(id.name) + "(" + .argsStr(c.args, "new_" + snakeCase(id.name)) + ")"
                 if id.name == "StringBuilder"
-                    .refuse("StringBuilder() (a str and + is the subset's way)", c.span)
+                    return "new_zstring_builder()"
                 return vSafe(id.name) + "(" + .argsStr(c.args, vSafe(id.name)) + ")"
             on Expr.call as inner
                 # List(T)() / HashMap(K, V)(): the runtime's constructors
@@ -670,6 +681,8 @@ class VGen
                             return "new_zlist[" + .typeArgStr(inner.args.at(0).value) + "]()"
                         if cid.name == "HashMap" and inner.args.count() == 2
                             return "new_zmap[" + .typeArgStr(inner.args.at(0).value) + ", " + .typeArgStr(inner.args.at(1).value) + "]()"
+                        if cid.name == "Set" and inner.args.count() == 1
+                            return "new_zset[" + .typeArgStr(inner.args.at(0).value) + "]()"
                     else
                         pass
                 .refuse("a call on a call's result", c.span)
@@ -691,6 +704,8 @@ class VGen
                             return "&ZList[" + .typeArgStr(c.args.at(0).value) + "]"
                         if cid.name == "HashMap" and c.args.count() == 2
                             return "&ZMap[" + .typeArgStr(c.args.at(0).value) + ", " + .typeArgStr(c.args.at(1).value) + "]"
+                        if cid.name == "Set" and c.args.count() == 1
+                            return "&ZSet[" + .typeArgStr(c.args.at(0).value) + "]"
                     else
                         pass
                 .refused.add("a type argument the subset does not spell")
@@ -711,12 +726,55 @@ class VGen
                 pass
         if isMath
             .needs_math = true
-            if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "pow" or name == "min" or name == "max"
+            if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"
                 return "math." + name + "(" + .argsStr(args) + ")"
+            if name == "round": return "zmath_round(" + .argsStr(args) + ")"
+            if name == "clamp": return "zmath_clamp(" + .argsStr(args) + ")"
             .refuse("Math." + name, span)
             return "math." + name + "(" + .argsStr(args) + ")"
+        var statics: str = .staticCall(m, args, span)
+        if statics != ""
+            return statics
         var obj = .exprStr(m.object)
         return .mappedCall(obj, name, args, span)
+
+    # File / Path / sys as static calls onto the runtime's wrappers ("" when
+    # the object is not one of them); Json is the next slice
+    def staticCall(m: ExprMember, args: List(Arg), span: Span): str
+        var ns: str = ""
+        branch m.object
+            on Expr.ident as id
+                ns = id.name
+            else
+                return ""
+        var name = m.member
+        var a = .argsStr(args)
+        if ns == "File"
+            if name == "exists": return "zfile_exists(" + a + ")"
+            if name == "read": return "zfile_read(" + a + ")"
+            if name == "write": return "zfile_write(" + a + ")"
+            if name == "append": return "zfile_append(" + a + ")"
+            if name == "listDir": return "zfile_list_dir(" + a + ")"
+            .refuse("File." + name, span)
+            return "zfile_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Path"
+            if name == "dirname": return "zpath_dirname(" + a + ")"
+            if name == "basename": return "zpath_basename(" + a + ")"
+            if name == "stem": return "zpath_stem(" + a + ")"
+            if name == "join": return "zpath_join(" + a + ")"
+            .refuse("Path." + name, span)
+            return "zpath_" + snakeCase(name) + "(" + a + ")"
+        if ns == "sys"
+            if name == "exit": return "exit(int(" + a + "))"
+            if name == "errln": return "eprintln(" + a + ")"
+            if name == "cwd": return "os.getwd()"
+            if name == "args": return "zlist_of[string](os.args)"
+            .refuse("sys." + name, span)
+            return "zsys_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Json"
+            .refuse("Json." + name + " (the Json value type is the next slice: V's json2.Any has the same shape)", span)
+            return "none"
+        return ""
 
     # the call on an object already spelled (a temporary, or the member's object)
     def mappedCall(obj: str, name: str, args: List(Arg), span: Span): str
@@ -735,17 +793,44 @@ class VGen
         if name == "copy" and args.count() == 0: return obj + ".copy()"
         if name == "last" and args.count() == 0: return obj + ".last()"
         if name == "isEmpty" and args.count() == 0: return obj + ".is_empty()"
+        if name == "values" and args.count() == 0: return obj + ".values()"
+        if name == "put" and args.count() == 2: return obj + ".set(" + .argsStr(args) + ")"
+        if name == "items" and args.count() == 0: return obj + ".items()"
         if name == "insert" or name == "removeAt"
-            .refuse("List." + name + " (V 0.5.2 miscompiles array.insert on a generic element under two instantiations; a repro is kept for a ticket)", span)
+            .refuse("List." + name + " (V 0.5.2 miscompiles array.insert on a generic element under two instantiations; vlang/v#30253)", span)
+        # str (V's own names; a list's split / lines / chars come back boxed)
+        if name == "split" and args.count() == 1: return "zstr_split(" + obj + ", " + .argsStr(args) + ")"
+        if name == "lines" and args.count() == 0: return "zstr_lines(" + obj + ")"
+        if name == "chars" and args.count() == 0: return "zstr_split(" + obj + ", '')"
+        if name == "join" and args.count() == 1: return "zjoin(" + obj + ", " + .argsStr(args) + ")"
+        if name == "charAt" and args.count() == 1
+            .refuse("str.charAt (Zebra's char is a number whose toString prints it; V has no char type to match -- the next slice decides a char's spelling)", span)
+            return "zstr_char_at(" + obj + ", " + .argsStr(args) + ")"
+        if name == "padLeft" and args.count() == 2: return "zstr_pad_left(" + obj + ", " + .argsStr(args) + ")"
+        if name == "padRight" and args.count() == 2: return "zstr_pad_right(" + obj + ", " + .argsStr(args) + ")"
+        if name == "tryInt" and args.count() == 0: return "zstr_try_int(" + obj + ")"
+        if name == "tryFloat" and args.count() == 0: return "zstr_try_float(" + obj + ")"
+        if name == "indexOf" and args.count() == 1: return "zstr_index_of(" + obj + ", " + .argsStr(args) + ")"
+        if name == "replace" and args.count() == 2: return obj + ".replace(" + .argsStr(args) + ")"
+        if name == "replaceAll" and args.count() == 2: return obj + ".replace(" + .argsStr(args) + ")"
+        if name == "repeat" and args.count() == 1: return obj + ".repeat(int(" + .argsStr(args) + "))"
+        if name == "reverse" and args.count() == 0: return obj + ".reverse()"
+        if name == "trimLeft" and args.count() == 0: return obj + ".trim_space_left()"
+        if name == "trimRight" and args.count() == 0: return obj + ".trim_space_right()"
+        if name == "equals" and args.count() == 1: return "(" + obj + " == " + .argsStr(args) + ")"
+        if name == "eqlIgnoreCase" and args.count() == 1: return "(" + obj + ".to_lower() == (" + .argsStr(args) + ").to_lower())"
+        if name == "build" and args.count() == 0: return obj + ".build()"
+        if name == "append" and args.count() == 1: return obj + ".append(" + .argsStr(args) + ")"
+        if name == "sort" or name == "sortBy" or name == "map" or name == "filter" or name == "reduce" or name == "pop" or name == "lastIndexOf"
+            .refuse("." + name + " (needs the receiver's type or a closure: the next slices)", span)
         if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"
         if name == "startsWith" and args.count() == 1: return obj + ".starts_with(" + .argsStr(args) + ")"
         if name == "endsWith" and args.count() == 1: return obj + ".ends_with(" + .argsStr(args) + ")"
         if name == "substring" and args.count() == 2: return obj + "[" + .exprStr(args.at(0).value) + ".." + .exprStr(args.at(1).value) + "]"
         if name == "split" and args.count() == 1: return obj + ".split(" + .argsStr(args) + ")"
         if name == "trim" and args.count() == 0: return obj + ".trim_space()"
-        if name == "toUpper" and args.count() == 0: return obj + ".to_upper()"
-        if name == "toLower" and args.count() == 0: return obj + ".to_lower()"
-        if name == "join" and args.count() == 1: return obj + ".join(" + .argsStr(args) + ")"
+        if (name == "upper" or name == "toUpper") and args.count() == 0: return obj + ".to_upper()"
+        if (name == "lower" or name == "toLower") and args.count() == 0: return obj + ".to_lower()"
         if name == "clear" and args.count() == 0: return obj + ".clear()"
         # a method on one of the program's own classes: self.m(...) / obj.m(...)
         return obj + "." + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
@@ -850,7 +935,9 @@ def generateV(m: Module, runtime: str): VResult
     var g = VGen()
     var body = g.genModule(m)
     var head: str = "// generated by zebra --target v (proof of concept, 2026-10-13); do not edit\n"
-    if g.needs_math
-        head = head + "import math\n"
+    # the runtime (inlined below) uses math, os and strconv: always imported
+    # (an import the program itself never reaches is used by the runtime's
+    # functions, so V does not warn)
+    head = head + "import math\nimport os\nimport strconv\n"
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + runtime + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math)

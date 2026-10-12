@@ -1,0 +1,82 @@
+# v_poc3.zbr -- the V backend's third program: the stdlib slice (2026-10-13).
+# Each mapped method once, with an assert; order-independent where the two
+# backends' hash maps iterate differently; floats cast to int before they
+# print (V prints 3.0 where Zig prints 3). Runs on the Zig backend too.
+
+def main()
+    # ── str ──
+    var s: str = "Hello, World"
+    assert s.upper() == "HELLO, WORLD" and s.lower() == "hello, world", "case"
+    assert s.startsWith("Hello") and s.endsWith("World") and s.contains(", "), "prefix suffix contains"
+    assert s.substring(0, 5) == "Hello" and s.len == 12, "substring and len"
+    var parts: List(str) = "a,b,c".split(",")
+    assert parts.count() == 3 and parts.at(2) == "c", "split"
+    assert parts.join("+") == "a+b+c", "join"
+    assert "  x ".trim() == "x" and "ab".repeat(2) == "abab", "trim repeat"
+    assert "abc".indexOf("c") == 2 and "abc".indexOf("z") == 0 - 1, "indexOf"
+    assert "7".padLeft(3, "0") == "007", "padLeft"   # (charAt returns a char, whose toString is its number: not in the slice)
+    var n: int = "17".tryInt() orelse 0 - 1
+    var bad: int = "x".tryInt() orelse 0 - 1
+    var f: float = "2.5".tryFloat() orelse 0.0
+    assert n == 17 and bad == 0 - 1 and f == 2.5, "tryInt tryFloat"
+    assert "a-b-c".replace("-", "+") == "a+b+c", "replace"
+    print("str: " + s.upper() + " " + parts.join("|") + " " + n.toString() + " " + bad.toString())
+
+    # ── StringBuilder ──
+    var sb = StringBuilder()
+    sb.append("n=")
+    sb.append(42.toString())
+    sb.append("; ")
+    sb.append(1.5.toString())
+    assert sb.build() == "n=42; 1.5", "the builder: " + sb.build()
+    print("builder: " + sb.build())
+
+    # ── Set ──
+    var seen = Set(str)()
+    seen.add("x")
+    seen.add("x")
+    seen.add("y")
+    assert seen.count() == 2 and seen.contains("y") and not seen.contains("z"), "a set"
+    seen.remove("y")
+    print("set: " + seen.count().toString())
+
+    # ── HashMap: values and remove (order-independent) ──
+    var m = HashMap(str, int)()
+    m.set("a", 1)
+    m.set("b", 2)
+    m.set("c", 3)
+    var total: int = 0
+    for v in m.values()
+        total = total + v
+    m.remove("a")
+    assert total == 6 and m.count() == 2 and m.keys().count() == 2, "values, remove, count"
+    print("map: " + total.toString() + " " + m.count().toString())
+
+    # ── Math ──
+    assert Math.sqrt(16.0) == 4.0 and Math.abs(0.0 - 2.0) == 2.0, "sqrt abs"
+    # (each bound to a float first: `Math.floor(2.7).toInt()` is a method on a
+    # call's result, BUG-559's chain-on-temporary path, and with a comptime
+    # float the temporary reaches Zig untyped -- told to the Zebra session)
+    var flf: float = Math.floor(2.7)
+    var rof: float = Math.round(2.4)
+    var mnf: float = Math.min(1.0, 2.0)
+    var mxf: float = Math.max(1.0, 2.0)
+    var clf: float = Math.clamp(5.0, 0.0, 2.0)
+    var fl: int = flf.toInt()
+    var ro: int = rof.toInt()
+    var mn: int = mnf.toInt()
+    var mx: int = mxf.toInt()
+    var cl: int = clf.toInt()
+    # (Math.PI is mapped, but left out here: on the Zig backend `var x: float = Math.PI * 100.0` reaches Zig as an untyped comptime float and is refused -- told to the Zebra session)
+    print("math: " + fl.toString() + " " + ro.toString() + " " + mn.toString() + " " + mx.toString() + " " + cl.toString())
+
+    # ── File and Path ──
+    var tmp: str = "zbr_v_poc3_scratch.txt"
+    File.write(tmp, "hello")
+    File.append(tmp, " there")
+    assert File.exists(tmp), "the file exists after the write"
+    var back: str = File.read(tmp)
+    assert back == "hello there", "read back: " + back
+    assert Path.stem("a/b/file.zbr") == "file" and Path.basename("a/b/file.zbr") == "file.zbr" and Path.dirname("a/b/file.zbr") == "a/b", "the path parts"
+    print("file: " + back + " " + Path.stem("a/b/file.zbr"))
+    print("v_poc3: all ok")

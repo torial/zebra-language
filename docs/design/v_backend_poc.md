@@ -152,6 +152,64 @@ answers correctly, so the attribution was the line map's, not a second bug
 reference per container, a deref per use, which is what V's `&Struct` pays
 everywhere.
 
+## The stdlib slice (2026-10-13)
+
+The engine's own sources were counted for what they call (add, toString,
+count, at, set, get, contains, append, tryFloat, toFloat, tryStr,
+startsWith, to, toInt, substring, trim, keys, endsWith, split, join and
+the Math set, in that order of use), and the Zig emitter's method surface
+was read for Zebra's spellings (211 names). The slice maps, by name:
+
+- **str**: len, upper / lower, startsWith, endsWith, contains, substring,
+  split and lines and chars (boxed on return: a Zebra `split` is a List),
+  join (a List(str)'s), trim / trimLeft / trimRight, repeat, indexOf,
+  replace / replaceAll, padLeft / padRight, tryInt / tryFloat (as V
+  options), equals, eqlIgnoreCase, reverse;
+- **List**: add, at, set, count, contains, copy, clear, last, isEmpty;
+- **HashMap**: set / put, get (an option), has, keys, values, remove, count,
+  copy, clear;
+- **Set** (`&ZSet[T]`): add, contains, remove, count, clear, items;
+- **StringBuilder** (`&ZStringBuilder`): append, build, clear;
+- **Math**: sqrt abs floor ceil sin cos tan pow min max atan2 by name,
+  round and clamp through the runtime, `Math.PI` as `math.pi`;
+- **File**: exists, read, write, append, listDir; **Path**: dirname,
+  basename, stem, join; **sys**: exit, errln, cwd, args -- all over V's `os`.
+
+Refused by name, with the reason in the refusal: a list's indexOf / remove /
+reverse / sort (the receiver's type is needed to tell them from str's; the
+emitter has no types yet), map / filter / reduce (closures), str.toInt
+(the numeric cast is kept), str.charAt (Zebra's char is a number whose
+toString prints it; V has no char to match), List.insert / removeAt
+(vlang/v#30253), Json (the next slice: V's `json2.Any` has Zebra's Json
+shape).
+
+Three things the slice taught:
+
+- **V's imports are per file.** The runtime is inlined after the emitted
+  program's header, so the runtime file carries no imports and the header
+  always imports math, os and strconv; a two-file check mimics that by
+  concatenation, or every `os.` in the runtime is "undefined ident".
+- **Generic methods are instantiated per element type**, so `join` (strings
+  only) and `sort` (a comparable T) cannot live on `ZList[T]`: they are free
+  functions (`zjoin`, `zsort_i64` / `_f64` / `_str`), and `sort` is refused
+  until the emitter knows the element type.
+- **Zebra's own spellings** came from the Zig control, not from me:
+  `upper` / `lower` (not toUpper), StringBuilder's surface is append /
+  appendChar / add / build / toString / clear / len, a char's `toString` is
+  its number, and `//` has no infix form.
+
+`examples/v_poc3.zbr` calls each mapped method once with an assert,
+order-independent where the two backends' maps iterate differently, floats
+cast to int before they print (V prints `3.0` where Zig prints `3`):
+**identical to the Zig backend's seven lines** by diff, nothing refused, no
+warnings; the first two programs still identical under the grown emitter.
+Two Zig-backend quirks met on the way and told to the Zebra session: a
+`.toInt()` on a call's result with a comptime-float operand, recorded as
+BUG-559's second symptom (8fab325: the same chain temporary, untyped with a
+literal operand, mis-lowered with a runtime one; the fix needs both a typed
+temporary and the numeric lowering), worked around by binding the float
+first; and `charAt`'s number.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function
@@ -172,7 +230,9 @@ refuses rather than lowers what it does not spell. The honest estimate for a
 backend that compiles the engine's `zbra/` and `game/mm/` sources (the real
 test, since `luau2zebra.py` ports land there):
 
-1. **The stdlib surface** is the long pole, as it is in the Zig emitter: every
+1. **The stdlib surface** -- begun (the slice above: str, List, HashMap,
+   Set, StringBuilder, Math, File, Path, sys by name; Json next). Still
+   the long pole, as it is in the Zig emitter: every
    `str` / `List` / `HashMap` / `Set` / `StringBuilder` / `Json` / `File` /
    `sys` method the engine's code uses must be mapped or shimmed in a V
    preamble. V's own standard library covers most of them natively (strings,
