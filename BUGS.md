@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-558. Next new bug: BUG-559.**
+**Last bug number generated: BUG-559. Next new bug: BUG-560.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,21 @@
 > measured in.
 
 ---
+
+### BUG-559: `.toInt()` on a call's result reaches zig as a method call on `f64` -- OPEN (found 2026-10-11)
+- **Found by:** the GameEngine session (2026-10-11), reported cross-session; reproduced here on
+  `6a7def7` (rc7 + ledger).
+- **Repro:** `var tenths = Math.floor(x * 10.0 + 0.5).toInt()` with `x = 1.26`. The front end
+  accepts it; zig refuses: `no field or member function named 'toInt' in 'f64'` (line, no column).
+- **Works:** the same value bound first (`var tf = Math.floor(...)` then `tf.toInt()`), and a
+  parenthesised binary receiver (`(p.x / cellSize).toInt()`, the engine's
+  `zbra/integration_chase_test.zbr:18`).
+- **Where:** the method-chain-on-a-temporary materialisation. The emit is
+  `var _mc_1 = @floor(((x * 10.0) + 0.5));` then `const tenths = _mc_1.toInt();` -- the temp is
+  introduced, but the call on it is emitted verbatim instead of through the numeric `toInt`
+  lowering, presumably because the temp has no recorded type when the call is generated.
+- **Expected:** the same lowering as `tf.toInt()`. A fixture should cover the other numeric
+  conversions on a call receiver as well (`toFloat`, `toStr`), since they likely share the path.
 
 ### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, NEEDS A DECISION (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
