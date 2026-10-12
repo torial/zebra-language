@@ -413,6 +413,79 @@ New rows for the rules table:
 | `var k = U.v()` | `mut k := U(U_v{})` | V types a variable by the variant struct unless cast to the sum type |
 | `xs.len` on a List | `xs.count()` | the runtime's list is a struct; `.len` is the string's and the array's |
 
+## The Parser: the front end's second half through (2026-10-13)
+
+**`selfhost/Parser.zbr`** (3810 lines: a class of a hundred-odd methods
+over the token list, a 150-variant `PNode` union of boxed records,
+def-level catches inside methods, a module-level var) measured 70
+refusals and 200 V errors as it stood; four rounds:
+
+1. **`^T`, the boxed record.** 67 of the 70 refusals were the `^T` type
+   (the union's payloads, the records' fields). V cannot take the
+   address of a call's result, so a struct any `^` targets anywhere (a
+   pass over every payload, field, parameter and return) becomes a
+   **reference type**: `&Name` wherever it is named, `@[heap]`, its
+   constructors allocating -- what a boxed node is on the Zig backend
+   too. The cost, stated: a by-value copy of such a struct elsewhere is
+   a shared reference in V. A `^U` of a union is the union by value: V's
+   sum type is already a boxed fat pointer. With that, the 74 "expected
+   a pointer" and 72 "allocate on the heap" errors went. The same round:
+   a def-level catch inside a method captures `mut self` (probed: V
+   allows it), a name beginning with `_` is prefixed `u`, a module-level
+   var with an initializer is a V const (an assignment to it refused
+   with the reason: V has no mutable globals without `-enable-globals`),
+   a `mut` argument that is not an lvalue (a fresh container, an
+   element) is bound to a temporary on a line before the statement,
+   `lastIndexOf` on a string, and the compiler's own
+   `zig"_error_ctx.message"` inside a catch is V's `err.msg()`.
+   Zebra's `List.remove(i)` is by **index**, which the Lexer round had
+   mapped by value: corrected (`remove_at`).
+2. **V's last twenty.** `x == U.v` against a payload-less variant is
+   V's `x is U_v` (a sum type and a variant struct do not compare by
+   `==`); `var x: str? = nil` is `?string(none)` (V types `none` alone
+   as none); the payload type of every variant and the type of every
+   field of every type are kept, so an `as` capture and a branch binding
+   have a type and `.len` through a field chain is `.count()`;
+   `Dir.exists`. Nothing refused, V's check clean.
+3. **The driver.** `selfhost/parser_dump.zbr` parses eleven sources
+   (a function, a class with init / method / static, a struct, an enum,
+   a union, control flow, `use` / a module var / a `sig`, a def-level
+   catch, two broken ones) and prints the tree's shape -- declaration
+   kinds and names, members, every statement by kind, nested. Its first
+   run: a branch binding whose payload is a reference must be `mut`,
+   since V refuses `mut x.field` through an immutable binding (seven
+   errors, one cause).
+4. **V's C stage.** The check passed and the C compiler failed inside
+   the runtime: V instantiates **every method of a generic struct per
+   element type**, so the list's `contains` was built for `PNode`, and
+   V's C for `it == x` over that sum type treated the values as pointers
+   (`*it`, `*x`) and did not compile. The comparing helpers (contains,
+   indexOf, remove by value) are free functions now, instantiated only
+   where called, and the emitter reaches them when it knows the receiver
+   is a list. The V bug is real and unpinned: five minimal probes
+   (recursive sum type, a reference variant, an empty variant, an option
+   payload, a generic-list variant) all pass, so the trigger is
+   something the 150-variant union has that they lack; the failing file
+   is kept at `C:/Projects/v-dist/repro_v2/parser_dump_failing.v`
+   (181 KB) for a bisection before a ticket.
+
+After the four: **the parse dump under V is identical to the Zig
+backend's, 55 lines**, and Token + Lexer + Parser -- about 5,200 lines
+of the compiler's front end -- run on V with nothing refused. The six
+programs and the Lexer's dump stay identical.
+
+New rows for the rules table:
+
+| Zebra | V | why |
+|---|---|---|
+| `^T` (a boxed struct) | `&T`, the struct `@[heap]`, its ctor returning `&T` | V cannot take a call result's address; a boxed node is a reference anyway |
+| `^U` (a boxed union) | `U` | V's sum type is a boxed fat pointer already |
+| `x == U.v` | `x is U_v` | a sum type and a variant struct do not `==` |
+| `var x: T? = nil` | `mut x := ?T(none)` | `none` alone is typed none |
+| `f(List())` for a `mut` param | `mut zt1 := new_zlist[T]()` then `f(mut zt1)` | `mut` takes an lvalue |
+| `var G: T = v` at module level | `const g = v` | no mutable globals without `-enable-globals`; an assignment refused |
+| a generic method comparing `T` | a free function | V instantiates every method per element type |
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

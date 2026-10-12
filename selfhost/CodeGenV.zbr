@@ -48,6 +48,8 @@ class VResult
 
 # "setAnimate" -> "set_animate"; "winDist" -> "win_dist"; "x" -> "x"
 def snakeCase(name: str): str
+    if isAllCaps(name)
+        return name.lower()   # CUE_NAMES -> cue_names
     var out: str = ""
     var first: bool = true
     for ch in name.chars()
@@ -59,6 +61,15 @@ def snakeCase(name: str): str
             out = out + ch.toString()
         first = false
     return out
+
+def isAllCaps(name: str): bool
+    var any: bool = false
+    for ch in name.chars()
+        if ch >= 'a' and ch <= 'z'
+            return false
+        if ch >= 'A' and ch <= 'Z'
+            any = true
+    return any
 
 def lowerOf(ch: char): str
     # (a str index is a byte, and a byte's toString is its number -- "99" for
@@ -74,6 +85,8 @@ def lowerOf(ch: char): str
 # V's reserved words a Zebra name may collide with
 def vSafe(name: str): str
     var s = snakeCase(name)
+    if s.startsWith("_")
+        s = "u" + s   # V refuses a name beginning with `_`
     if s == "match" or s == "type" or s == "struct" or s == "fn" or s == "mut" or s == "pub" or s == "import" or s == "module" or s == "go" or s == "select" or s == "lock" or s == "rlock" or s == "shared" or s == "atomic" or s == "none" or s == "sizeof" or s == "typeof" or s == "unsafe" or s == "defer" or s == "goto" or s == "asm" or s == "union" or s == "interface" or s == "enum" or s == "const" or s == "in" or s == "is" or s == "as" or s == "or" or s == "isreftype" or s == "dump" or s == "spawn" or s == "volatile" or s == "static" or s == "nil"
         return s + "_"
     return s
@@ -98,6 +111,11 @@ class VGen
     var current_statics: List(str)    # the enclosing class's static methods: a bare call among them is `class_m(...)`
     var local_types: HashMap(str, str)  # the V type of each param and local declared so far (what a receiver is)
     var field_types: HashMap(str, str)  # the V type of each field of the enclosing class / struct
+    var heap_names: List(str)         # the structs some `^T` targets: reference types in V (their constructors allocate)
+    var const_names: List(str)        # module-level vars emitted as V consts (an assignment to one is refused)
+    var global_types: HashMap(str, str)  # the V type of each module-level var
+    var union_payloads: HashMap(str, str)   # `U_v` -> the V type of the variant's payload
+    var all_field_types: HashMap(str, str)  # `Name.field` -> the V type, every class and struct
     var local_names: List(str)        # the params and locals declared so far in the enclosing def (they shadow a field)
     var matchN: int               # the temporaries bound for `branch`
     var current_class: str        # "" outside a class
@@ -125,6 +143,11 @@ class VGen
         .current_statics = List(str)()
         .local_types = HashMap(str, str)()
         .field_types = HashMap(str, str)()
+        .heap_names = List(str)()
+        .const_names = List(str)()
+        .global_types = HashMap(str, str)()
+        .union_payloads = HashMap(str, str)()
+        .all_field_types = HashMap(str, str)()
         .local_names = List(str)()
         .matchN = 0
         .current_class = ""
@@ -165,8 +188,15 @@ class VGen
                 return ""
             on TypeRef.nilable as inner
                 return "?" + .vType(inner)
+            on TypeRef.ref_to as inner
+                # `^T`: a reference; a class or a heap struct is one already, and
+                # a union is V's sum type -- a boxed fat pointer by value
+                var s: str = .vType(inner)
+                if s.startsWith("&") or .isUnionName(s)
+                    return s
+                return "&" + s
             else
-                .refused.add("a type the subset does not spell (stream, error union, ref, tuple, fn)")
+                .refused.add("a type the subset does not spell (stream, error union, tuple, fn)")
                 return "voidptr"
 
     def vNamed(qualified: str): str
@@ -254,6 +284,10 @@ class VGen
         for m in ms
             .noteTypeNames(m)
         for m in ms
+            .noteRefTargets(m)
+        for m in ms
+            .noteFieldTypes(m)
+        for m in ms
             .noteSigs(m)
         for m in ms
             .line("// -- " + m.file + " --")
@@ -277,6 +311,130 @@ class VGen
                     .member_counts.set(un.name, un.variants.count())
                 else
                     pass
+
+    # a struct named under `^` anywhere (a union's payload, a field, a param,
+    # a return) is a reference type in V: `&Name` wherever it is named, its
+    # constructor allocating -- V cannot take the address of a call's result,
+    # and a boxed node is a reference on the Zig backend too. The cost: a
+    # by-value copy of such a struct elsewhere is a shared reference in V.
+    def noteRefTargets(m: Module)
+        for d in m.decls
+            branch d
+                on Decl.union_ as un
+                    for v in un.variants
+                        .refWalk(v.payload)
+                on Decl.class_ as c
+                    .refWalkMembers(c.members)
+                on Decl.struct_ as st
+                    .refWalkMembers(st.members)
+                on Decl.method as mth
+                    .refWalkMethod(mth)
+                on Decl.var_ as gv
+                    .refWalk(gv.type_)
+                else
+                    pass
+
+    def refWalkMembers(members: List(Decl))
+        for mem in members
+            branch mem
+                on Decl.var_ as f
+                    .refWalk(f.type_)
+                on Decl.method as mth
+                    .refWalkMethod(mth)
+                on Decl.init as ini
+                    for p in ini.params
+                        .refWalk(p.type_)
+                else
+                    pass
+
+    def refWalkMethod(mth: DeclMethod)
+        for p in mth.params
+            .refWalk(p.type_)
+        .refWalk(mth.return_type)
+
+    def refWalk(t: TypeRef?)
+        if t == nil
+            return
+        branch t!
+            on TypeRef.ref_to as inner
+                branch inner
+                    on TypeRef.named as n
+                        .markHeap(n.name)
+                    else
+                        pass
+                .refWalk(inner)
+            on TypeRef.nilable as inner
+                .refWalk(inner)
+            on TypeRef.generic as g
+                for a in g.args
+                    .refWalk(a)
+            else
+                pass
+
+    def markHeap(qualified: str)
+        var segs: List(str) = qualified.split(".")
+        var name: str = segs.at(segs.count() - 1)
+        if .isStructName(name) and not .isHeapName(name)
+            .heap_names.add(name)
+            var i: int = 0
+            while i < .struct_names.count()
+                if .struct_names.at(i) == name
+                    .struct_names.remove(i)   # (Zebra's List.remove takes an index)
+                    i = .struct_names.count()
+                i = i + 1
+            .class_names.add(name)
+
+    def isHeapName(name: str): bool
+        for h in .heap_names
+            if h == name
+                return true
+        return false
+
+    # every variant's payload type and every type's field types, for the
+    # receiver-type reads (an `as` capture, a branch binding, a field chain)
+    def noteFieldTypes(m: Module)
+        for d in m.decls
+            branch d
+                on Decl.union_ as un
+                    for v in un.variants
+                        if v.payload as pt
+                            .union_payloads.set(un.name + "_" + v.name, .vType(pt))
+                on Decl.class_ as c
+                    .noteFieldsOf(c.name, c.members)
+                on Decl.struct_ as st
+                    .noteFieldsOf(st.name, st.members)
+                else
+                    pass
+
+    def noteFieldsOf(owner: str, members: List(Decl))
+        for mem in members
+            branch mem
+                on Decl.var_ as f
+                    .all_field_types.set(owner + "." + f.name, .vType(f.type_))
+                else
+                    pass
+
+    # `U_v` when the expression is a payload-less variant (`U.v` or `U.v()`), else ""
+    def variantTypeName(e: Expr): str
+        branch e
+            on Expr.member as m
+                var owner: str = .staticOwner(m.object)
+                if .isUnionName(owner)
+                    return owner + "_" + m.member
+                return ""
+            on Expr.call as c
+                if c.args.count() != 0
+                    return ""
+                branch c.callee
+                    on Expr.member as m
+                        var owner: str = .staticOwner(m.object)
+                        if .isUnionName(owner)
+                            return owner + "_" + m.member
+                        return ""
+                    else
+                        return ""
+            else
+                return ""
 
     def noteSigs(m: Module)
         # the second pass: every callee's signature -- the parameter names and
@@ -328,10 +486,22 @@ class VGen
                 .refused.add("a declaration kind the subset does not spell (mixin, extend, type alias)")
 
     def genGlobal(v: DeclVar)
-        if v.is_const and v.init_expr != nil
+        if v.init_expr != nil
+            # a const either way: V has no mutable globals without -enable-globals;
+            # an assignment to a module-level var is refused where it stands
             .line("const " + vSafe(v.name) + " = " + .exprStr(v.init_expr!))
+            if not v.is_const
+                .const_names.add(v.name)
+            if v.type_ as t
+                .global_types.set(v.name, .vType(t))
         else
-            .refuse("module-level var " + v.name + " (V has no mutable globals without __global; the subset takes const only)", v.span)
+            .refuse("module-level var " + v.name + " without an initializer (V has no mutable globals without -enable-globals)", v.span)
+
+    def isConstName(name: str): bool
+        for c in .const_names
+            if c == name
+                return true
+        return false
 
     def noteMembers(ctor: str, members: List(Decl))
         for mem in members
@@ -513,6 +683,11 @@ class VGen
     def genStruct(st: DeclStruct)
         if st.ifaces.count() > 0
             .refuse("struct " + st.name + " implements (interfaces are outside the subset)", st.span)
+        var heap: bool = .isHeapName(st.name)
+        var ret_name: str = st.name
+        if heap
+            .line("@[heap]")
+            ret_name = "&" + st.name
         .line("struct " + st.name + " {")
         .line("pub mut:")
         .depth = .depth + 1
@@ -535,10 +710,10 @@ class VGen
             branch mem
                 on Decl.init as ini
                     had_init = true
-                    .line("fn new_" + snakeCase(st.name) + "(" + .genParams(ini.params) + ") " + st.name + " {")
+                    .line("fn new_" + snakeCase(st.name) + "(" + .genParams(ini.params) + ") " + ret_name + " {")
                     .depth = .depth + 1
                     .resetLocals(ini.params)
-                    .line("mut self := " + .structLit(st.name, st.members, false))
+                    .line("mut self := " + .structLit(st.name, st.members, heap))
                     if ini.stmts as body
                         .genStmts(body)
                     .line("return self")
@@ -568,7 +743,9 @@ class VGen
                         lit = lit + "\t" + vSafe(f.name) + ": " + vSafe(f.name) + "\n"
                     else
                         pass
-            .line("fn new_" + snakeCase(st.name) + "(" + ps + ") " + st.name + " {")
+            if heap
+                lit = "&" + lit
+            .line("fn new_" + snakeCase(st.name) + "(" + ps + ") " + ret_name + " {")
             .depth = .depth + 1
             .line("return " + lit + "}")
             .depth = .depth - 1
@@ -704,11 +881,19 @@ class VGen
                 if .isCurrentField(id.name)
                     if .field_types.get(id.name) as ft
                         return ft
+                if .global_types.get(id.name) as gt
+                    return gt
                 return ""
             on Expr.member as m
                 if exprRootIsThis(m.object)
                     if .field_types.get(m.member) as ft
                         return ft
+                var ot: str = .vTypeOf(m.object)
+                if ot.startsWith("&")
+                    ot = ot.substring(1, ot.len)
+                if ot != ""
+                    if .all_field_types.get(ot + "." + m.member) as ft2
+                        return ft2
                 return ""
             else
                 return ""
@@ -818,6 +1003,12 @@ class VGen
             on Stmt.var_ as v
                 .genLocal(v)
             on Stmt.assign as a
+                branch a.target
+                    on Expr.ident as tid
+                        if .isConstName(tid.name) and not .isLocalName(tid.name)
+                            .refuse("an assignment to module-level var " + tid.name + " (emitted as a V const: V has no mutable globals without -enable-globals)", a.span)
+                    else
+                        pass
                 var tt: str = .vTypeOf(a.target)
                 if isBareCtor(a.value) and tt != ""
                     .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .zeroOf(tt))   # `out = List()`: the target's type
@@ -907,13 +1098,11 @@ class VGen
     # statement; a `return` inside the or block returns from the def, V's own
     # rule, so a value-returning def's catch must return or V says so)
     def genTryCatch(tc: StmtTryCatch)
-        if .in_method
-            .refuse("a catch inside a method (a closure's capture of self is V's call; the next slice)", tc.span)
-            .genStmts(tc.stmts)
-            return
         if tc.clauses.count() != 1
             .refuse("a catch with " + tc.clauses.count().toString() + " clauses (one is the subset)", tc.span)
         var caps: str = ""
+        if .in_method
+            caps = "mut self"   # the receiver captured (V allows it; probed)
         for p in .current_params
             if caps != ""
                 caps = caps + ", "
@@ -974,7 +1163,15 @@ class VGen
             .line(vals + " {")
             .depth = .depth + 1
             if arm.binding as bnd
-                .line(vSafe(bnd) + " := " + t + ".payload")
+                .local_names.add(bnd)
+                var lead: str = ""
+                if arm.values.count() == 1
+                    var vk: str = .armValueStr(arm.values.at(0))
+                    if .union_payloads.get(vk) as pt
+                        .local_types.set(bnd, pt)
+                        if pt.startsWith("&")
+                            lead = "mut "   # a reference payload: V refuses `mut x.field` through an immutable binding
+                .line(lead + vSafe(bnd) + " := " + t + ".payload")
                 if arm.stmts.count() == 0
                     .line("_ = " + vSafe(bnd))
             .genStmts(arm.stmts)
@@ -1071,7 +1268,9 @@ class VGen
                 tname = .ctorTypeOf(ie)
             if tname != ""
                 .local_types.set(v.name, tname)
-            if tname == "i64" and isIntLit(ie)
+            if tname.startsWith("?") and isNilLit(ie)
+                rhs = tname + "(none)"   # `var x: T? = nil`: V types `none` alone as none
+            else if tname == "i64" and isIntLit(ie)
                 rhs = "i64(" + rhs + ")"
             else if tname == "f64" and (isIntLit(ie) or isFloatLit(ie))
                 rhs = "f64(" + rhs + ")"
@@ -1132,7 +1331,13 @@ class VGen
                 if tc.variant_name as vn
                     var subj = .exprStr(tc.expr)
                     .line("if " + subj + " is " + tc.type_name + "_" + vn + " {")
-                    return vSafe(cap) + " := " + subj + ".payload"
+                    .local_names.add(cap)
+                    var lead: str = ""
+                    if .union_payloads.get(tc.type_name + "_" + vn) as pt
+                        .local_types.set(cap, pt)
+                        if pt.startsWith("&")
+                            lead = "mut "
+                    return lead + vSafe(cap) + " := " + subj + ".payload"
                 .refuse("`is` on a class (not a union variant)", tc.span)
                 .line("if true {")
                 return ""
@@ -1287,6 +1492,8 @@ class VGen
                 .refuse("an array literal", al.span)
                 return "0"
             on Expr.zig_lit as zl
+                if zl.text == "_error_ctx.message"
+                    return "err.msg()"   # the compiler's own idiom for the caught error's message (inside a catch: V's err)
                 .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
                 return "0"
             on Expr.opt_chain as oc
@@ -1525,6 +1732,15 @@ class VGen
                     .refused.add("a missing argument (" + fsig.names.at(i) + ") with no default")
                     slots.set(i, "0")
             if fsig.refs.at(i)
+                var slot: str = slots.at(i)
+                if slot.indexOf("(") >= 0 or slot.indexOf("[") >= 0
+                    # V takes `mut` on an lvalue only: a call's result (a fresh
+                    # container, an element) is bound first; the line lands
+                    # before the statement being built
+                    .tmpN = .tmpN + 1
+                    var t = "zt" + .tmpN.toString()
+                    .line("mut " + t + " := " + slot)
+                    slots.set(i, t)
                 out = out + "mut "
             out = out + slots.at(i)
             i = i + 1
@@ -1644,9 +1860,11 @@ class VGen
         var obj = .exprStr(m.object)
         var rtype: str = .vTypeOf(m.object)
         if rtype.startsWith("&ZList[")
-            # the list's own, where the string's would be taken by name
-            if name == "indexOf" and args.count() == 1: return obj + ".index_of(" + .argsStr(args) + ")"
-            if name == "remove" and args.count() == 1: return obj + ".remove_value(" + .argsStr(args) + ")"
+            # the list's own, where the string's would be taken by name (the
+            # comparing ones are free functions: see zebra_rt.v)
+            if name == "indexOf" and args.count() == 1: return "zlist_index_of(" + obj + ", " + .argsStr(args) + ")"
+            if name == "contains" and args.count() == 1: return "zlist_contains(" + obj + ", " + .argsStr(args) + ")"
+            if name == "remove" and args.count() == 1: return obj + ".remove_at(" + .argsStr(args) + ")"   # Zebra's List.remove(i) is by index
             if name == "reverse" and args.count() == 0: return obj + ".reversed()"
         return .mappedCall(obj, name, args, span)
 
@@ -1680,6 +1898,10 @@ class VGen
             if name == "args": return "zlist_of[string](os.args)"
             .refuse("sys." + name, span)
             return "zsys_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Dir"
+            if name == "exists": return "os.is_dir(" + a + ")"
+            .refuse("Dir." + name, span)
+            return "zdir_" + snakeCase(name) + "(" + a + ")"
         if ns == "Json"
             .refuse("Json." + name + " (the Json value type is the next slice: V's json2.Any has the same shape)", span)
             return "none"
@@ -1730,7 +1952,8 @@ class VGen
         if name == "eqlIgnoreCase" and args.count() == 1: return "(" + obj + ".to_lower() == (" + .argsStr(args) + ").to_lower())"
         if name == "build" and args.count() == 0: return obj + ".build()"
         if name == "append" and args.count() == 1: return obj + ".append(" + .argsStr(args) + ")"
-        if name == "sort" or name == "sortBy" or name == "map" or name == "filter" or name == "reduce" or name == "pop" or name == "lastIndexOf"
+        if name == "lastIndexOf" and args.count() == 1: return "zstr_last_index_of(" + obj + ", " + .argsStr(args) + ")"
+        if name == "sort" or name == "sortBy" or name == "map" or name == "filter" or name == "reduce" or name == "pop"
             .refuse("." + name + " (needs the receiver's type or a closure: the next slices)", span)
         if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"
         if name == "startsWith" and args.count() == 1: return obj + ".starts_with(" + .argsStr(args) + ")"
@@ -1752,6 +1975,18 @@ class VGen
             return "math.pow(" + l + ", " + r + ")"
         if b.op == BinaryOp.in_
             return r + ".contains(" + l + ")"
+        if b.op == BinaryOp.eq or b.op == BinaryOp.ne
+            # `kind == TokenKind.at_id` (a payload-less variant): V compares a sum
+            # type with a variant by `is`, never by `==`
+            var vt: str = .variantTypeName(b.right)
+            var sub: str = l
+            if vt == ""
+                vt = .variantTypeName(b.left)
+                sub = r
+            if vt != ""
+                if b.op == BinaryOp.eq
+                    return "(" + sub + " is " + vt + ")"
+                return "!(" + sub + " is " + vt + ")"
         if b.op == BinaryOp.dotdot
             .refused.add("a .. range expression")
             return l
@@ -1797,6 +2032,13 @@ def assignOpV(op: AssignOp): str
 def isIntLit(e: Expr): bool
     branch e
         on Expr.int_lit
+            return true
+        else
+            return false
+
+def isNilLit(e: Expr): bool
+    branch e
+        on Expr.nil_
             return true
         else
             return false

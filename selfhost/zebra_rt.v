@@ -53,16 +53,10 @@ pub fn (l &ZList[T]) copy() &ZList[T] {
 	}
 }
 
-pub fn (l &ZList[T]) contains(x T) bool {
-	// (a loop rather than `x in l.items`: V 0.5.2's -g line map blamed the `in`
-	// for a C error that was the generic insert's; a standalone `in` compiles)
-	for it in l.items {
-		if it == x {
-			return true
-		}
-	}
-	return false
-}
+// (the comparing helpers -- contains, index_of, remove by value -- are free
+// functions below, not methods: V instantiates every method of a generic
+// struct per element type, and its C for `it == x` over the parse tree's
+// sum type did not compile; a free function is instantiated where called)
 
 // (insert / remove_at are out for now: `l.items.insert(int(i), x)` on a generic T
 // is instantiated with the wrong element type under V 0.5.2 once two ZList
@@ -258,18 +252,20 @@ pub fn zlist_reverse[T](l &ZList[T]) &ZList[T] {
 	}
 }
 
-// the list's own spellings, reached when the emitter knows the receiver is a list
-pub fn (l &ZList[T]) index_of(x T) i64 {
-	return zlist_index_of(l, x)
+pub fn zlist_contains[T](l &ZList[T], x T) bool {
+	// (a loop rather than `x in l.items`: V 0.5.2's -g line map blamed the `in`
+	// for a C error that was the generic insert's; a standalone `in` compiles)
+	for it in l.items {
+		if it == x {
+			return true
+		}
+	}
+	return false
 }
 
-pub fn (mut l ZList[T]) remove_value(x T) bool {
-	i := zlist_index_of(l, x)
-	if i < 0 {
-		return false
-	}
+// the list's own spellings, reached when the emitter knows the receiver is a list
+pub fn (mut l ZList[T]) remove_at(i i64) {
 	l.items.delete(int(i))
-	return true
 }
 
 pub fn (l &ZList[T]) reversed() &ZList[T] {
@@ -277,6 +273,10 @@ pub fn (l &ZList[T]) reversed() &ZList[T] {
 }
 
 // ── str ────────────────────────────────────────────────────────────────────
+pub fn zstr_last_index_of(s string, sub string) i64 {
+	return i64(s.last_index(sub) or { -1 })
+}
+
 pub fn zstr_try_int(s string) ?i64 {
 	return strconv.parse_int(s, 10, 64) or { return none }
 }
