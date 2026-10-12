@@ -582,6 +582,90 @@ New rows for the rules table:
 | `f(mut p.field)` through an immutable `p` | `mut zt := p.field` then `f(mut zt)` | a reference copied is the same container |
 | `"\$"` in a string | `'\$'` | the lexer keeps escapes raw |
 
+## CodeGen: the whole compiler through (2026-10-13)
+
+**`selfhost/CodeGen.zbr`** (21,437 lines, the Zig emitter: a Generator
+struct of a hundred-odd methods, a Writer, the `except` records, every
+idiom the language has) measured 28 refusals and 200+ V errors as it
+stood and went through in twelve rounds; the last four were one crash.
+
+1. A struct whose methods assign its fields has **every** method on
+   `mut self` (a per-method test missed bare-name assignments and calls
+   into mutating methods: 181 of the errors); `base except f = v` is V's
+   struct update `Name{ ...base, f: v }` (the pointee spread for a
+   class); an `is` subject that is not a name is bound first.
+2. A mutating call on a receiver that is not a name (`x!.stmts.add(s)`)
+   binds the receiver first, never inside a loop condition; the mutating
+   structs are known before emission (a pass); a union's variant read as
+   a field (`fi.iter.call`) is `(x as U_v).payload`; `items()` /
+   `keys()` / `values()` / `copy()` typed; `concat`, `isNumeric`; a
+   reference parameter stored into a field through `unsafe { }`; every
+   class `@[heap]`; a missing-argument refusal names its callee.
+3. A local initialized from any expression takes the expression's type;
+   an unwrap has its option's inner type.
+4. A map's `get` / `fetch` and a list's `last` typed.
+5. The cross-module collision the note called a known gap, hit:
+   `typeRefStr` in both CgHelpers and CodeGen. A free function declared
+   in more than one module is `<module>_<name>` wherever declared, and a
+   bare call resolves to the current module's own, else a used module's;
+   `main` exempt.
+6. **V's smart cast, three rounds.** V narrows a name after `x == none`
+   / `x != none`; on the narrowed name an `or` block is refused, the
+   generic unwrap helper's re-wrap fails at the C stage ("cannot convert
+   TRef to _option_TRef", 25 lines, drafted as a ticket), the explicit
+   option cast works for a parameter but not for a `mut` local
+   (another C-stage failure), and the narrowing does not carry into a
+   binding (`y := x` stays an option). Mirroring the smart cast in the
+   emitter (a round, undone) hit the binding case. What holds: **a nil
+   comparison is a helper call** (`zis_none(x)`), which V does not narrow
+   through, so an option keeps its type everywhere and the one unwrap
+   `zunwrap(?T(x))` is right in every position.
+7. A Zebra name that is a C keyword or a tcc calling-convention word
+   (`cdecl`, a loop variable) is suffixed: V emits it into its C verbatim
+   and tcc reads the keyword ("identifier expected").
+8. **The crash.** The dump then compiled and segfaulted before its first
+   line, with no backtrace from tcc on Windows ("Unhandled Exception" and
+   three frames of V's own handler). The instrument was a tracer that
+   inserts `eprintln('> name')` at every function entry of the emitted
+   file (`scratchpad/v_trace.py`, 1,295 functions), then single-value
+   probes at the last function entered: the module-class lookup returned
+   an address that was not the object. Sixty lines reproduced it, thirty
+   pinned it: **a `mut c &T` parameter used as a value is the address of
+   the caller's slot** -- field reads through it deref twice and work,
+   but stored into a map or a field it is a stack address. `mut c T` and
+   `c &T` store the object. The emitter had declared every reference
+   parameter `mut x &T`; it declares `mut x T` now. V's escape analysis
+   had refused plain stores of such parameters earlier and the round
+   that wrapped them in `unsafe { }` was hiding the right message.
+   Drafted as a ticket (`repro_v3/TICKET_mut_ref_param_value.md`).
+   Also on the way: a set or string-builder field of a class starts as
+   its constructor, not nil.
+9. A char's `toString` is the character (`ascii_str()`), a byte's its
+   number: a Zig type name built char by char came out `105110116` for
+   `int`, the only difference left in the generated Zig.
+
+The witness: **`selfhost/codegen_dump.zbr`** parses, resolves, builds
+and generates three sources through CodeGen and prints the module's
+Zig without the preamble: **132 lines, byte-identical** to what the
+Zig-built compiler generates. With the ten before it, eleven witnesses
+hold, and every module of the compiler -- Token, Lexer, Parser, Ast,
+AstWalk, AstBuilder, TypeChecker, CgHelpers, Resolver, CodeGen, about
+38,000 lines -- emits with nothing refused, passes V's check, and runs.
+What is not through: `main.zbr` itself (the route, the build driver, the
+`zig` literals of host interop) and `Checker`; a Zebra compiler binary
+built by V is the next step after them.
+
+New rows for the rules table:
+
+| Zebra | V | why |
+|---|---|---|
+| `def f(xs: List(int))`, `def f(c: Node)` | `fn f(mut xs ZList[i64])`, `fn f(mut c Node)` | never `mut x &T`: used as a value it is the slot's address |
+| `x == nil` | `zis_none(x)` | V's smart cast never triggers; the unwrap stays one form |
+| `base except f = v` | `Name{ ...base, f: v }` | V's struct update |
+| `fi.iter.call` (a payload by its variant's name) | `(fi.iter as Expr_call).payload` | |
+| a name `cdecl` | `cdecl_` | tcc's keyword |
+| `ch.toString()` on a char | `ch.ascii_str()` | a byte's `.str()` is its number |
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

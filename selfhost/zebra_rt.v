@@ -233,8 +233,14 @@ pub fn zjoin(l &ZList[string], sep string) string {
 	return l.items.join(sep)
 }
 
-// `x!` on a name: V smart-casts an option after `x != none`, and refuses an
-// `or` block on the cast value; a call takes either
+// `x == nil` / `x != nil`: through a call, so V never smart-casts the name
+// (a smart-cast name refuses an `or` block, keeps its option type in a
+// binding, and breaks the C stage when passed back to a generic `?T`)
+pub fn zis_none[T](x ?T) bool {
+	return x == none
+}
+
+// `x!`: the value, or a failure
 pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
 }
@@ -319,6 +325,18 @@ pub fn (l &ZList[T]) reversed() &ZList[T] {
 }
 
 // ── str ────────────────────────────────────────────────────────────────────
+pub fn zstr_is_numeric(s string) bool {
+	if s.len == 0 {
+		return false
+	}
+	for c in s {
+		if c < `0` || c > `9` {
+			return false
+		}
+	}
+	return true
+}
+
 pub fn zstr_last_index_of(s string, sub string) i64 {
 	return i64(s.last_index(sub) or { -1 })
 }
