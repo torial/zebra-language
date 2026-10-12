@@ -43,6 +43,7 @@ use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
 use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
+use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
@@ -1103,6 +1104,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
+    usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
@@ -1424,6 +1426,38 @@ def defaultPreamblePath(): str
             pre_exe_dir = "."
         pp = pre_exe_dir + "/stdlib_preamble.zig"
     return pp
+
+# --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
+# .v beside the source, the refusals listed (never skipped silently), the run
+# line said. A resolver error stops it like any compile.
+def vTarget(path: str)
+    var src: str = File.read(path)
+    var pm_node = Parser.Parser.parse(src, path)?
+    var resolver = Resolver.Resolver(path, src)
+    resolver.resolve(pm_node)?
+    if resolver.errorCount() > 0
+        sys.errln(resolver.allErrorMessages())
+        sys.exit(1)
+    if pm_node is PNode.module_ as pm
+        var module = ASTBuilder.build(pm, path)?
+        var res: VResult = generateV(module)
+        var dir: str = Path.dirname(path)
+        if dir == ""
+            dir = "."
+        var out: str = dir + "/" + Path.stem(path) + ".v"
+        var v_text: str = res.source   # BUG-560: a field named like a local class's List field, read through an imported class, is lowered as the List; a local first is the workaround
+        File.write(out, v_text)
+        print("zebra --target v: wrote " + out + " (" + v_text.len.toString() + " bytes)")
+        if res.refused.count() > 0
+            print("  refused " + res.refused.count().toString() + " construct(s) the subset does not spell (the V file is partial where they stood):")
+            for r in res.refused
+                print("    " + r)
+        else
+            print("  nothing refused: the whole file is in the subset")
+        print("  run it: v run " + out)
+catch |e|
+    sys.errln("zebra --target v: " + e.message)
+    sys.exit(1)
 
 def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = false)
     var pm_node = Parser.Parser.parse(src, path)?
@@ -4545,9 +4579,10 @@ def main()
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
+    var mode_v               = target_opt == "v"   # --target v: the V backend, a proof of concept (2026-10-13)
     # 2026-09-26: any other value was IGNORED -- `--target x86_64-linux` built for the host
     # and said nothing, so someone asking for a cross-compile shipped the wrong binary.
-    if target_opt != "" and not mode_node
+    if target_opt != "" and not mode_node and not mode_v
         sys.errln("zebra: unknown --target '" + target_opt + "': the only target is `node-addon` (a Node.js native addon). Cross-compiling is not supported; build on the target OS.")
         sys.exit(2)
     # node-addon emits N-API glue at file scope and is built by a separate driver that
@@ -4623,6 +4658,12 @@ def main()
     # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
     # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
     # Compile the root file and all its dependencies
+    # --target v (proof of concept, 2026-10-13): the same front end, a second
+    # emitter, the .v written beside the source; what the subset refused is
+    # printed by name and line. No Zig, no runtime module, no build.
+    if mode_v
+        vTarget(path)
+        sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo
     mc.library_mode = lib_mode

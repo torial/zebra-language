@@ -35,7 +35,7 @@ OUT="${TMPDIR:-/tmp}/zbr_regen"
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 
-FILES=(Token Lexer Ast AstWalk Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen Checker main)
+FILES=(Token Lexer Ast AstWalk Parser Resolver AstBuilder CgHelpers TypeChecker CodeGen CodeGenV Checker main)
 MIN_BYTES=5000
 
 [ -x "$ZEBRA" ] || { echo "regen: REFUSING -- not built: $ZEBRA" >&2; exit 2; }

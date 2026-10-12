@@ -91,3 +91,6 @@ test/node_addon/*.js
 untitled.zbr
 _ide_tmp_check.zbr
 tears_save.txt
+
+# the V backend proof of concept writes <stem>.v beside a source (2026-10-13)
+examples/*.v

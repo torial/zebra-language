@@ -1,0 +1,85 @@
+# v_poc.zbr -- the V backend's proof-of-concept program (2026-10-13).
+# Everything in here is in the subset CodeGenV.zbr spells; the same file
+# compiles and runs on the Zig backend (`zebra examples/v_poc.zbr`), so the
+# two outputs can be compared line for line.
+
+class Counter
+    var count: int
+    var label: str
+
+    cue init(label: str)
+        .count = 0
+        .label = label
+
+    def bump(by: int): int
+        .count = .count + by
+        return .count
+
+    def describe(): str
+        return .label + "=" + .count.toString()
+
+def square(x: int): int
+    return x * x
+
+def mean(xs: List(float)): float
+    var total: float = 0.0
+    for x in xs
+        total = total + x
+    if xs.count() == 0
+        return 0.0
+    return total / xs.count().toFloat()
+
+def main()
+    var c = Counter("hits")
+    c.bump(2)
+    c.bump(3)
+    print(c.describe())
+    assert c.count == 5, "two bumps make five"
+
+    var big: int = 3000000000
+    var bigger = big * 3
+    print("a 64-bit int: " + bigger.toString())
+
+    var words: List(str) = ["alpha", "beta", "gamma"]
+    words.add("delta")
+    var joined: str = ""
+    for w in words
+        if joined != ""
+            joined = joined + ","
+        joined = joined + w
+    print("words: " + joined + " (" + words.count().toString() + ")")
+    assert words.at(3) == "delta", "the added word is last"
+
+    var squares: List(int) = []
+    for i in 0.to(6)
+        squares.add(square(i))
+    print("squares: " + squares.at(5).toString())
+
+    var samples: List(float) = [1.5, 2.5, 3.5]
+    var m = mean(samples)
+    print("mean of three: " + m.toString())
+
+    var n: int = 10
+    var steps: int = 0
+    while n > 1
+        if n % 2 == 0
+            n = n / 2   # `/` on ints is integer division (`//` has no infix form)
+        else
+            n = 3 * n + 1
+        steps = steps + 1
+    print("collatz steps from 10: " + steps.toString())
+    assert steps == 6, "ten reaches one in six steps"
+
+    var grade: str = "none"
+    var score: int = 73
+    if score >= 90
+        grade = "A"
+    else if score >= 70
+        grade = "C"
+    else
+        grade = "F"
+    print("grade for " + score.toString() + ": " + grade)
+
+    var ok: bool = not (grade == "F") and steps > 0
+    print("ok: " + ok.toString())
+    print("v_poc: all ok")

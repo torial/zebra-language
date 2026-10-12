@@ -1,0 +1,696 @@
+# CodeGenV.zbr -- a V backend, proof of concept (2026-10-13).
+#
+# A second emitter over the same front end (Parser -> Resolver -> ASTBuilder):
+# `zebra --target v file.zbr` writes file.v beside the source, for `v run`.
+# The subset: free functions, classes (fields, `cue init`, methods), local
+# and module-level vars, if / else if / else, while, `for x in list`,
+# `for i in a.to(b)`, assign (and the compound ops), return, break,
+# continue, print, assert, calls, member access, `this`, binary and unary
+# ops, the literals, list literals, string interpolation, if-expressions,
+# and a hand-mapped slice of the stdlib surface (str, List, Math, the
+# numeric conversions). Everything else is REFUSED by name and line and
+# listed at the end of the run -- nothing is skipped silently (the Zig
+# emitter's method surface alone is 2,856 lines; the refusal list is the
+# honest measure of the distance).
+#
+# V's own rules the emitter carries: function, method, variable and field
+# names are snake_case (V refuses uppercase in them), types are
+# CapitalCase, Zebra's int is 64-bit so it is V's i64, `this` is `self`,
+# a class is a struct with `mut:` fields, `cue init` is `fn new_<name>()
+# &Name`, a method is `fn (mut self Name) m()`.
+
+use Ast exposing Module, Decl, DeclClass, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, Expr, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprStringLit, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, Span
+
+# the emitter's answer: the V source and what it refused
+class VResult
+    var source: str
+    var refused: List(str)
+    var needs_math: bool
+
+    cue init(source: str, refused: List(str), needs_math: bool)
+        .source = source
+        .refused = refused
+        .needs_math = needs_math
+
+# "setAnimate" -> "set_animate"; "winDist" -> "win_dist"; "x" -> "x"
+def snakeCase(name: str): str
+    var out: str = ""
+    var first: bool = true
+    for ch in name.chars()
+        if ch >= 'A' and ch <= 'Z'
+            if not first
+                out = out + "_"
+            out = out + lowerOf(ch)
+        else
+            out = out + ch.toString()
+        first = false
+    return out
+
+def lowerOf(ch: char): str
+    # (a str index is a byte, and a byte's toString is its number -- "99" for
+    # 'c'; the chars of the alphabet are iterated instead)
+    var up: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    var i: int = 0
+    for lc in "abcdefghijklmnopqrstuvwxyz".chars()
+        if up[i] == ch
+            return lc.toString()
+        i = i + 1
+    return ch.toString()
+
+# V's reserved words a Zebra name may collide with
+def vSafe(name: str): str
+    var s = snakeCase(name)
+    if s == "match" or s == "type" or s == "struct" or s == "fn" or s == "mut" or s == "pub" or s == "import" or s == "module" or s == "go" or s == "select" or s == "lock" or s == "rlock" or s == "shared" or s == "atomic" or s == "none" or s == "sizeof" or s == "typeof" or s == "unsafe" or s == "defer" or s == "goto" or s == "asm" or s == "union" or s == "interface" or s == "enum" or s == "const" or s == "in" or s == "is" or s == "as" or s == "or" or s == "isreftype" or s == "dump" or s == "spawn" or s == "volatile" or s == "static" or s == "nil"
+        return s + "_"
+    return s
+
+class VGen
+    var sb: StringBuilder
+    var depth: int
+    var refused: List(str)
+    var class_names: List(str)
+    var current_class: str        # "" outside a class
+    var needs_math: bool
+
+    cue init()
+        .sb = StringBuilder()
+        .depth = 0
+        .refused = List(str)()
+        .class_names = List(str)()
+        .current_class = ""
+        .needs_math = false
+
+    def refuse(what: str, span: Span)
+        .refused.add(what + " (line " + span.line.toString() + ")")
+
+    def line(s: str)
+        var i: int = 0
+        while i < .depth
+            .sb.append("\t")
+            i = i + 1
+        .sb.append(s)
+        .sb.append("\n")
+
+    # ── types ──────────────────────────────────────────────────────────────
+    def vType(t: TypeRef?): str
+        if t == nil
+            return ""
+        branch t!
+            on TypeRef.named as n
+                return .vNamed(n.name)
+            on TypeRef.generic as g
+                if g.name == "List" and g.args.count() == 1
+                    return "[]" + .vType(g.args.at(0))
+                if g.name == "HashMap" and g.args.count() == 2
+                    return "map[" + .vType(g.args.at(0)) + "]" + .vType(g.args.at(1))
+                .refused.add("generic type " + g.name)
+                return "voidptr"
+            on TypeRef.void_
+                return ""
+            else
+                .refused.add("a type the subset does not spell (nilable, stream, error union, ref, tuple, fn)")
+                return "voidptr"
+
+    def vNamed(name: str): str
+        if name == "int": return "i64"
+        if name == "float": return "f64"
+        if name == "str": return "string"
+        if name == "bool": return "bool"
+        if name == "char": return "u8"
+        if name == "void": return ""
+        for cn in .class_names
+            if cn == name
+                return "&" + name
+        return name
+
+    def isClassName(name: str): bool
+        for cn in .class_names
+            if cn == name
+                return true
+        return false
+
+    # ── the module ─────────────────────────────────────────────────────────
+    def genModule(m: Module): str
+        # the classes first, so a field or a return of a class type is `&Name`
+        for d in m.decls
+            branch d
+                on Decl.class_ as c
+                    .class_names.add(c.name)
+                else
+                    pass
+        for d in m.decls
+            .genDecl(d)
+        return .sb.build()
+
+    def genDecl(d: Decl)
+        branch d
+            on Decl.class_ as c
+                .genClass(c)
+            on Decl.method as mth
+                .genFunction(mth)
+            on Decl.var_ as v
+                .genGlobal(v)
+            on Decl.use_ as u
+                .refuse("use " + u.path + " (a multi-module program; the subset is one file)", u.span)
+            on Decl.struct_ as s
+                .refuse("struct " + s.name + " (the subset spells classes only; a struct is next)", s.span)
+            on Decl.enum_ as e
+                .refuse("enum " + e.name, e.span)
+            on Decl.interface_ as i
+                .refuse("interface " + i.name, i.span)
+            on Decl.union_ as un
+                .refuse("union " + un.name, un.span)
+            else
+                .refused.add("a declaration kind the subset does not spell (namespace, mixin, extend, sig, type alias)")
+
+    def genGlobal(v: DeclVar)
+        if v.is_const and v.init_expr != nil
+            .line("const " + vSafe(v.name) + " = " + .exprStr(v.init_expr!))
+        else
+            .refuse("module-level var " + v.name + " (V has no mutable globals without __global; the subset takes const only)", v.span)
+
+    def genParams(params: List(Param)): str
+        var out: str = ""
+        var first: bool = true
+        for p in params
+            if not first
+                out = out + ", "
+            first = false
+            out = out + vSafe(p.name) + " " + .vType(p.type_)
+            if p.default_ != nil
+                .refuse("a default argument on " + p.name + " (V has none; the subset passes every argument)", p.span)
+        return out
+
+    def genFunction(m: DeclMethod)
+        if m.throws_
+            .refuse("def " + m.name + " throws (errors are outside the subset)", m.span)
+        var ret = .vType(m.return_type)
+        var head = "fn " + vSafe(m.name) + "(" + .genParams(m.params) + ")"
+        if ret != ""
+            head = head + " " + ret
+        .line(head + " {")
+        .depth = .depth + 1
+        if m.stmts as body
+            .genStmts(body)
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+
+    # ── classes ────────────────────────────────────────────────────────────
+    def genClass(c: DeclClass)
+        if c.type_params.count() > 0
+            .refuse("class " + c.name + " with type parameters", c.span)
+        if c.ifaces.count() > 0 or c.mixins.count() > 0
+            .refuse("class " + c.name + " implements / mixes in (interfaces are outside the subset)", c.span)
+        .line("struct " + c.name + " {")
+        .line("mut:")
+        .depth = .depth + 1
+        for mem in c.members
+            branch mem
+                on Decl.var_ as f
+                    .line(vSafe(f.name) + " " + .vType(f.type_))
+                else
+                    pass
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+        .current_class = c.name
+        var had_init: bool = false
+        for mem in c.members
+            branch mem
+                on Decl.init as ini
+                    had_init = true
+                    .genInit(ini, c.name)
+                on Decl.method as mth
+                    .genMethod(mth, c.name)
+                on Decl.var_
+                    pass
+                else
+                    .refuse("a member kind the subset does not spell in class " + c.name, c.span)
+        if not had_init
+            .line("fn new_" + snakeCase(c.name) + "() &" + c.name + " {")
+            .line("\treturn &" + c.name + "{}")
+            .line("}")
+            .line("")
+        .current_class = ""
+
+    def genInit(ini: DeclInit, owner: str)
+        .line("fn new_" + snakeCase(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
+        .depth = .depth + 1
+        .line("mut self := &" + owner + "{}")
+        if ini.stmts as body
+            .genStmts(body)
+        .line("return self")
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+
+    def genMethod(m: DeclMethod, owner: str)
+        if m.throws_
+            .refuse("method " + m.name + " throws", m.span)
+        var ret = .vType(m.return_type)
+        var head = "fn (mut self " + owner + ") " + vSafe(m.name) + "(" + .genParams(m.params) + ")"
+        if ret != ""
+            head = head + " " + ret
+        .line(head + " {")
+        .depth = .depth + 1
+        if m.stmts as body
+            .genStmts(body)
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+
+    # ── statements ─────────────────────────────────────────────────────────
+    def genStmts(stmts: List(Stmt))
+        for s in stmts
+            .genStmt(s)
+
+    def genStmt(s: Stmt)
+        branch s
+            on Stmt.var_ as v
+                .genLocal(v)
+            on Stmt.assign as a
+                .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .exprStr(a.value))
+            on Stmt.expr as e
+                .line(.exprStr(e))
+            on Stmt.if_ as i
+                .genIf(i)
+            on Stmt.while_ as w
+                .line("for " + condStr(.exprStr(w.cond)) + " {")
+                .depth = .depth + 1
+                .genStmts(w.stmts)
+                .depth = .depth - 1
+                .line("}")
+            on Stmt.for_in as fi
+                .genForIn(fi)
+            on Stmt.for_num as fnum
+                var v = vSafe(fnum.var_)
+                var step: str = "++"
+                if fnum.step != nil
+                    step = " += " + .exprStr(fnum.step!)
+                .line("for " + v + " := i64(" + .exprStr(fnum.start) + "); " + v + " < " + .exprStr(fnum.stop_) + "; " + v + step + " {")
+                .depth = .depth + 1
+                .genStmts(fnum.stmts)
+                .depth = .depth - 1
+                .line("}")
+            on Stmt.return_ as r
+                if r.value as rv
+                    .line("return " + .exprStr(rv))
+                else
+                    .line("return")
+            on Stmt.assert_ as asrt
+                if asrt.message as msg
+                    .line("assert " + .exprStr(asrt.cond) + ", " + .exprStr(msg))
+                else
+                    .line("assert " + .exprStr(asrt.cond))
+            on Stmt.print_ as p
+                .genPrint(p)
+            on Stmt.break_
+                .line("break")
+            on Stmt.continue_
+                .line("continue")
+            on Stmt.pass_
+                pass
+            on Stmt.branch_ as b
+                .refuse("branch (V's match is next; the subset has if)", b.span)
+            on Stmt.raise_ as r
+                .refuse("raise (errors are outside the subset)", r.span)
+            on Stmt.try_catch as tc
+                .refuse("try / catch (errors are outside the subset)", tc.span)
+            else
+                .refused.add("a statement kind the subset does not spell (with, in, destructure, allocate, copy-out, contract, yield)")
+
+    # `var x: int = 5` -> `mut x := i64(5)`; the type carried onto a numeric
+    # literal, since V's untyped int is 32-bit and Zebra's is 64
+    def genLocal(v: DeclVar)
+        var name = vSafe(v.name)
+        if v.init_expr as ie
+            var tname: str = ""
+            if v.type_ as t
+                tname = .vType(t)
+            var rhs: str = ""
+            if isEmptyUntypedList(ie) and tname != ""
+                rhs = tname + "{}"   # `var xs: List(int) = []`: the type is the variable's
+            else
+                rhs = .exprStr(ie)
+            if tname == "i64" and isIntLit(ie)
+                rhs = "i64(" + rhs + ")"
+            else if tname == "f64" and (isIntLit(ie) or isFloatLit(ie))
+                rhs = "f64(" + rhs + ")"
+            else if tname == "" and isIntLit(ie)
+                rhs = "i64(" + rhs + ")"
+            .line("mut " + name + " := " + rhs)
+        else
+            if v.type_ as t
+                .line("mut " + name + " := " + .zeroOf(.vType(t)))
+            else
+                .refuse("var " + v.name + " without a type or a value", v.span)
+
+    def zeroOf(vt: str): str
+        if vt == "i64": return "i64(0)"
+        if vt == "f64": return "f64(0)"
+        if vt == "string": return "''"
+        if vt == "bool": return "false"
+        if vt.startsWith("[]"): return vt + "{}"
+        if vt.startsWith("map["): return vt + "{}"
+        if vt.startsWith("&"): return vt.substring(1, vt.len) + "{}"
+        return vt + "{}"
+
+    def genIf(i: StmtIf)
+        if i.is_capture != nil
+            .refuse("if ... as (a nil-check binding; nilables are outside the subset)", i.span)
+        .line("if " + condStr(.exprStr(i.cond)) + " {")
+        .depth = .depth + 1
+        .genStmts(i.then_stmts)
+        .depth = .depth - 1
+        for ei in i.else_ifs
+            .line("} else if " + condStr(.exprStr(ei.cond)) + " {")
+            .depth = .depth + 1
+            .genStmts(ei.stmts)
+            .depth = .depth - 1
+        if i.else_stmts as es
+            .line("} else {")
+            .depth = .depth + 1
+            .genStmts(es)
+            .depth = .depth - 1
+        .line("}")
+
+    def genForIn(fi: StmtForIn)
+        if fi.vars.count() != 1
+            .refuse("for with two loop variables (a map's key and value; maps are next)", fi.span)
+            return
+        if fi.filter != nil
+            .refuse("for ... if (a filtered loop)", fi.span)
+        var v = vSafe(fi.vars.at(0))
+        # `for i in a.to(b)`: a numeric range
+        branch fi.iter
+            on Expr.call as c
+                branch c.callee
+                    on Expr.member as m
+                        if m.member == "to" and c.args.count() == 1
+                            .line("for " + v + " := i64(" + .exprStr(m.object) + "); " + v + " < " + .exprStr(c.args.at(0).value) + "; " + v + "++ {")
+                            .depth = .depth + 1
+                            .genStmts(fi.stmts)
+                            .depth = .depth - 1
+                            .line("}")
+                            return
+                    else
+                        pass
+            else
+                pass
+        .line("for " + v + " in " + .exprStr(fi.iter) + " {")
+        .depth = .depth + 1
+        .genStmts(fi.stmts)
+        .depth = .depth - 1
+        .line("}")
+
+    def genPrint(p: StmtPrint)
+        var fnname: str = "println"
+        if not p.newline
+            fnname = "print"
+        if p.args.count() == 1
+            .line(fnname + "(" + .exprStr(p.args.at(0)) + ")")
+            return
+        var parts: str = ""
+        var first: bool = true
+        for a in p.args
+            if not first
+                parts = parts + " "
+            first = false
+            parts = parts + "\${" + .exprStr(a) + "}"
+        .line(fnname + "('" + parts + "')")
+
+    # ── expressions ────────────────────────────────────────────────────────
+    def exprStr(e: Expr): str
+        branch e
+            on Expr.int_lit as il
+                return il.text
+            on Expr.float_lit as fl
+                return fl.text
+            on Expr.bool_lit as bl
+                if bl.value
+                    return "true"
+                return "false"
+            on Expr.string_lit as sl
+                return .vStringLit(sl.text)
+            on Expr.string_interp as si
+                return .vInterp(si)
+            on Expr.this_
+                return "self"
+            on Expr.ident as id
+                return vSafe(id.name)
+            on Expr.member as m
+                return .memberStr(m)
+            on Expr.call as c
+                return .callStr(c)
+            on Expr.index as ix
+                return .exprStr(ix.object) + "[" + .exprStr(ix.index) + "]"
+            on Expr.binary as b
+                return .binaryStr(b)
+            on Expr.unary as u
+                if u.op == UnaryOp.neg
+                    return "(-" + .exprStr(u.operand) + ")"
+                if u.op == UnaryOp.not_
+                    return "(!" + .exprStr(u.operand) + ")"
+                return "(~" + .exprStr(u.operand) + ")"
+            on Expr.list_lit as ll
+                return .listLitStr(ll)
+            on Expr.if_expr as ie
+                return "(if " + .exprStr(ie.cond) + " { " + .exprStr(ie.then_expr) + " } else { " + .exprStr(ie.else_expr) + " })"
+            on Expr.nil_ as sp
+                .refuse("nil (nilables are outside the subset)", sp)
+                return "none"
+            on Expr.lambda as lam
+                .refuse("a lambda (closures are next)", lam.span)
+                return "fn () {}"
+            on Expr.orelse_ as oe
+                .refuse("orelse (nilables are outside the subset)", oe.span)
+                return .exprStr(oe.expr)
+            on Expr.to_non_nil as tnn
+                .refuse("! (a nilable unwrap)", tnn.span)
+                return .exprStr(tnn.expr)
+            on Expr.dict_lit as dl
+                .refuse("a dict literal (maps are next)", dl.span)
+                return "map[string]i64{}"
+            else
+                .refused.add("an expression kind the subset does not spell (slice, cast, type check, chained compare, catch, try, tuple, set, array, zig literal, opt-chain)")
+                return "0"
+
+    # "text" -> 'text' with V's escapes: a $ or a ' inside is escaped
+    def vStringLit(text: str): str
+        var out: str = "'"
+        for ch in text.chars()
+            if ch == '$'
+                out = out + "\\$"
+            else if ch == '\''
+                out = out + "\\'"
+            else
+                out = out + ch.toString()
+        return out + "'"
+
+    def vInterp(si: ExprStringInterp): str
+        var out: str = "'"
+        for part in si.parts
+            branch part
+                on StringPart.literal as lit
+                    for ch in lit.chars()
+                        if ch == '$'
+                            out = out + "\\$"
+                        else if ch == '\''
+                            out = out + "\\'"
+                        else
+                            out = out + ch.toString()
+                on StringPart.expr_ as ex
+                    out = out + "\${" + .exprStr(ex) + "}"
+                on StringPart.format as f
+                    .refused.add("a format spec in a string (\"" + f + "\")")
+        return out + "'"
+
+    def listLitStr(ll: ExprListLit): str
+        var et: str = ""
+        if ll.elem_type as t
+            et = .vType(t)
+        if ll.elems.count() == 0
+            if et == ""
+                .refused.add("an empty list literal without an element type")
+                return "[]i64{}"
+            return "[]" + et + "{}"
+        var out: str = "["
+        var first: bool = true
+        for el in ll.elems
+            if not first
+                out = out + ", "
+            first = false
+            if et == "i64" and isIntLit(el)
+                out = out + "i64(" + .exprStr(el) + ")"
+            else
+                out = out + .exprStr(el)
+        return out + "]"
+
+    # `.x` on this -> self.x; `a.len` (a property) -> a.len; else a.b
+    def memberStr(m: ExprMember): str
+        var obj = .exprStr(m.object)
+        if m.member == "len"
+            return obj + ".len"
+        return obj + "." + vSafe(m.member)
+
+    def argsStr(args: List(Arg)): str
+        var out: str = ""
+        var first: bool = true
+        for a in args
+            if not first
+                out = out + ", "
+            first = false
+            if a.name != nil
+                .refuse("a named argument (" + a.name! + "); V passes by position", a.span)
+            out = out + .exprStr(a.value)
+        return out
+
+    def callStr(c: ExprCall): str
+        branch c.callee
+            on Expr.member as m
+                return .methodCallStr(m, c.args, c.span)
+            on Expr.ident as id
+                # a class constructed: Name(args) -> new_name(args)
+                if .isClassName(id.name)
+                    return "new_" + snakeCase(id.name) + "(" + .argsStr(c.args) + ")"
+                if id.name == "StringBuilder" or id.name == "List" or id.name == "HashMap"
+                    .refuse(id.name + "() (the container constructors; a list literal with a type is the subset's way)", c.span)
+                return vSafe(id.name) + "(" + .argsStr(c.args) + ")"
+            else
+                .refuse("a call on an expression that is not a name or a member", c.span)
+                return .exprStr(c.callee) + "(" + .argsStr(c.args) + ")"
+
+    # the stdlib surface the subset maps by hand: str, List, Math, the conversions
+    def methodCallStr(m: ExprMember, args: List(Arg), span: Span): str
+        var name = m.member
+        var isMath: bool = false
+        branch m.object
+            on Expr.ident as id
+                if id.name == "Math"
+                    isMath = true
+            else
+                pass
+        if isMath
+            .needs_math = true
+            if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "pow" or name == "min" or name == "max"
+                return "math." + name + "(" + .argsStr(args) + ")"
+            .refuse("Math." + name, span)
+            return "math." + name + "(" + .argsStr(args) + ")"
+        var obj = .exprStr(m.object)
+        if name == "toString" and args.count() == 0: return obj + ".str()"
+        if name == "toFloat" and args.count() == 0: return "f64(" + obj + ")"
+        if name == "toInt" and args.count() == 0: return "i64(" + obj + ")"
+        if name == "count" and args.count() == 0: return obj + ".len"
+        if name == "at" and args.count() == 1: return obj + "[" + .argsStr(args) + "]"
+        if name == "add" and args.count() == 1: return obj + " << " + .argsStr(args)
+        if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"
+        if name == "startsWith" and args.count() == 1: return obj + ".starts_with(" + .argsStr(args) + ")"
+        if name == "endsWith" and args.count() == 1: return obj + ".ends_with(" + .argsStr(args) + ")"
+        if name == "substring" and args.count() == 2: return obj + "[" + .exprStr(args.at(0).value) + ".." + .exprStr(args.at(1).value) + "]"
+        if name == "split" and args.count() == 1: return obj + ".split(" + .argsStr(args) + ")"
+        if name == "trim" and args.count() == 0: return obj + ".trim_space()"
+        if name == "toUpper" and args.count() == 0: return obj + ".to_upper()"
+        if name == "toLower" and args.count() == 0: return obj + ".to_lower()"
+        if name == "join" and args.count() == 1: return obj + ".join(" + .argsStr(args) + ")"
+        if name == "clear" and args.count() == 0: return obj + ".clear()"
+        # a method on one of the program's own classes: self.m(...) / obj.m(...)
+        return obj + "." + vSafe(name) + "(" + .argsStr(args) + ")"
+
+    def binaryStr(b: ExprBinary): str
+        var l = .exprStr(b.left)
+        var r = .exprStr(b.right)
+        if b.op == BinaryOp.pow
+            .needs_math = true
+            return "math.pow(" + l + ", " + r + ")"
+        if b.op == BinaryOp.in_
+            return r + ".contains(" + l + ")"
+        if b.op == BinaryOp.dotdot
+            .refused.add("a .. range expression")
+            return l
+        return "(" + l + " " + binaryOpV(b.op) + " " + r + ")"
+
+def binaryOpV(op: BinaryOp): str
+    if op == BinaryOp.add: return "+"
+    if op == BinaryOp.sub: return "-"
+    if op == BinaryOp.mul: return "*"
+    if op == BinaryOp.div: return "/"
+    if op == BinaryOp.int_div: return "/"
+    if op == BinaryOp.mod: return "%"
+    if op == BinaryOp.bit_and: return "&"
+    if op == BinaryOp.bit_or: return "|"
+    if op == BinaryOp.bit_xor: return "^"
+    if op == BinaryOp.shl: return "<<"
+    if op == BinaryOp.shr: return ">>"
+    if op == BinaryOp.eq: return "=="
+    if op == BinaryOp.ne: return "!="
+    if op == BinaryOp.lt: return "<"
+    if op == BinaryOp.le: return "<="
+    if op == BinaryOp.gt: return ">"
+    if op == BinaryOp.ge: return ">="
+    if op == BinaryOp.and_: return "&&"
+    if op == BinaryOp.or_: return "||"
+    return "?"
+
+def assignOpV(op: AssignOp): str
+    if op == AssignOp.assign: return "="
+    if op == AssignOp.plus_eq: return "+="
+    if op == AssignOp.minus_eq: return "-="
+    if op == AssignOp.star_eq: return "*="
+    if op == AssignOp.slash_eq: return "/="
+    if op == AssignOp.slashslash_eq: return "/="
+    if op == AssignOp.percent_eq: return "%="
+    if op == AssignOp.ampersand_eq: return "&="
+    if op == AssignOp.vertical_bar_eq: return "|="
+    if op == AssignOp.caret_eq: return "^="
+    if op == AssignOp.double_lt_eq: return "<<="
+    if op == AssignOp.double_gt_eq: return ">>="
+    return "="
+
+def isIntLit(e: Expr): bool
+    branch e
+        on Expr.int_lit
+            return true
+        else
+            return false
+
+def isEmptyUntypedList(e: Expr): bool
+    branch e
+        on Expr.list_lit as ll
+            return ll.elems.count() == 0 and ll.elem_type == nil
+        else
+            return false
+
+# a condition without its outer parentheses (V warns on `if (x) {`): one
+# balanced outer pair is stripped, never an inner one
+def condStr(s: str): str
+    if s.len < 2 or not s.startsWith("(") or not s.endsWith(")")
+        return s
+    var depth: int = 0
+    var i: int = 0
+    for ch in s.chars()
+        if ch == '('
+            depth = depth + 1
+        else if ch == ')'
+            depth = depth - 1
+            if depth == 0 and i < s.len - 1
+                return s   # the first pair closes before the end: not an outer pair
+        i = i + 1
+    return s.substring(1, s.len - 1)
+
+def isFloatLit(e: Expr): bool
+    branch e
+        on Expr.float_lit
+            return true
+        else
+            return false
+
+# the entry: the V source for a module, with the refusals
+def generateV(m: Module): VResult
+    var g = VGen()
+    var body = g.genModule(m)
+    var head: str = "// generated by zebra --target v (proof of concept, 2026-10-13); do not edit\n"
+    if g.needs_math
+        head = head + "import math\n"
+    head = head + "\n"
+    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math)
