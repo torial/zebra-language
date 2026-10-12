@@ -177,6 +177,16 @@ and item 3 is now named.
   the other lags; the regen tooling and the drift alarm would have to grow a
   second target.
 
+## If the branch ever merges to main
+
+- `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
+  1670756 the script refuses an emitted module the list does not name, so a
+  merge that drops it fails by name.
+- `tools/bootstrap_check.sh` keeps its own FILES list with the same seam
+  (it checks the listed files are present); CodeGenV goes in there too, or
+  the round-trip proof skips the new module without a word (the Zebra
+  session's note, 2026-10-13).
+
 ## How to run it
 
 ```bash
