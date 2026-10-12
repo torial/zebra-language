@@ -289,6 +289,47 @@ still identical. The one thing the control taught: a catch capture must be
 used or omitted (Zebra's rule), so a fallback that ignores the error is
 written `catch 0 - 1`.
 
+## The first real targets (2026-10-13)
+
+Measured as they stand, from the worktree root (the route finds
+`zebra_rt.v` beside `selfhost/` or beside the binary, where a copy is
+installed), the refusal lists as the distance:
+
+- **`zbra/math.zbr`** (515 lines, nine value structs with methods, format
+  specs, defaults and named arguments): 74 refusals, every one the same
+  cause -- a struct without a `cue init` has Zebra's implicit constructor
+  from its fields (Quaternion, Matrix3, CFrame). The emitter gives such a
+  struct a constructor with every field a parameter in order and a zero
+  default, its signature recorded, so named arguments reach it.
+- **`selfhost/Token.zbr`** (349 lines, a union of forty variants, two
+  classes): nothing refused; V's check named two things. Token's init
+  assigns its fields **bare** (`kind = k`), which Zebra allows inside a
+  class: a bare identifier that names a field of the enclosing type is
+  `self.<field>` unless a parameter or a local declared so far shadows it
+  (the locals are tracked per def through var, for and catch bindings).
+  Keywords is all `static def`: a free function named `<class>_<method>`,
+  reached by a call on the class's name.
+
+After the two: both emit with nothing refused and pass `v -check`. V's
+check is a type check; the run needs a driver, and the engine has one per
+module. **`use`** came next: the route loads each used module (the file
+beside the root, else under `--module-path`), transitively with a visited
+set, parses, resolves and builds each, and the emitter runs its
+declaration passes over all of them and emits every module's declarations
+into the one V file, dependencies first; a `use` declaration emits nothing.
+V's single namespace means a name shared across modules collides, which
+the emitter does not yet detect (a known gap until a prefixing scheme is
+wanted). Two V quirks of naming: a `*_test.v` is a test file to V and must
+hold `test_` functions, so a Zebra `*_test.zbr` is written as
+`*_test_prog.v`; and V prints a notice per unused function of a used
+module, notices rather than errors, left as they are.
+
+**`zbra/math_test.zbr`** (166 lines, `use math`): emitted as two modules in
+one 28 KB file, nothing refused, and under V its **eight lines are
+identical to the Zig backend's**: Vector2, Vector3, Color3, Matrix3,
+CFrame, AABB, quaternions and cframeLerp all ok. The first engine code
+through the backend, with a module boundary crossed.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

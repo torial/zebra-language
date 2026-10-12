@@ -1431,16 +1431,53 @@ def defaultPreamblePath(): str
 # --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
 # .v beside the source, the refusals listed (never skipped silently), the run
 # line said. A resolver error stops it like any compile.
-def vTarget(path: str, gc_on: bool)
+# a module for the V target: parsed, resolved, built; nil with the error said
+def vLoadModule(path: str): Module? throws
     var src: str = File.read(path)
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
     if resolver.errorCount() > 0
         sys.errln(resolver.allErrorMessages())
-        sys.exit(1)
+        return nil
     if pm_node is PNode.module_ as pm
-        var module = ASTBuilder.build(pm, path)?
+        return ASTBuilder.build(pm, path)?
+    return nil
+
+# the used modules, transitively, each once: the file beside the root, else
+# under --module-path; dependencies before their users
+def vCollect(path: str, module_path: str, visited: List(str), out: List(Module)) throws
+    for v in visited
+        if v == path
+            return
+    visited.add(path)
+    var mOpt = vLoadModule(path)?
+    if mOpt as m
+        var dir: str = Path.dirname(path)
+        if dir == ""
+            dir = "."
+        for d in m.decls
+            branch d
+                on Decl.use_ as u
+                    var dep: str = dir + "/" + u.path + ".zbr"
+                    if not File.exists(dep) and module_path != ""
+                        dep = module_path + "/" + u.path + ".zbr"
+                    if not File.exists(dep)
+                        var where_: str = " beside it"
+                        if module_path != ""
+                            where_ = where_ + " nor under --module-path " + module_path
+                        sys.errln("zebra --target v: `use " + u.path + "` in " + path + ": no " + u.path + ".zbr" + where_ + ": nothing written")
+                        sys.exit(1)
+                    vCollect(dep, module_path, visited, out)?
+                else
+                    pass
+        out.add(m)
+
+def vTarget(path: str, gc_on: bool, module_path: str)
+    var modules = List(Module)()
+    var visited = List(str)()
+    vCollect(path, module_path, visited, modules)?
+    if modules.count() > 0
         # the V runtime (the boxed containers), inlined into the emitted file:
         # in the repo, or next to an installed zebra.exe, as the preamble is
         var rt_path: str = "selfhost/zebra_rt.v"
@@ -1452,14 +1489,19 @@ def vTarget(path: str, gc_on: bool)
         if not File.exists(rt_path)
             sys.errln("zebra --target v: the V runtime zebra_rt.v is not at selfhost/zebra_rt.v nor beside zebra.exe: nothing written")
             sys.exit(1)
-        var res: VResult = generateV(module, File.read(rt_path))
+        var res: VResult = generateV(modules, File.read(rt_path))
         var dir: str = Path.dirname(path)
         if dir == ""
             dir = "."
-        var out: str = dir + "/" + Path.stem(path) + ".v"
+        # (V reads a `*_test.v` as a test file and wants `test_` functions in
+        # it: a Zebra `*_test.zbr`, a program, is written as `*_test_prog.v`)
+        var stem: str = Path.stem(path)
+        if stem.endsWith("_test")
+            stem = stem + "_prog"
+        var out: str = dir + "/" + stem + ".v"
         var v_text: str = res.source   # BUG-560: a field named like a local class's List field, read through an imported class, is lowered as the List; a local first is the workaround
         File.write(out, v_text)
-        print("zebra --target v: wrote " + out + " (" + v_text.len.toString() + " bytes)")
+        print("zebra --target v: wrote " + out + " (" + v_text.len.toString() + " bytes; " + modules.count().toString() + " module(s) in one file)")
         if res.refused.count() > 0
             print("  refused " + res.refused.count().toString() + " construct(s) the subset does not spell (the V file is partial where they stood):")
             for r in res.refused
@@ -4681,7 +4723,7 @@ def main()
     # emitter, the .v written beside the source; what the subset refused is
     # printed by name and line. No Zig, no runtime module, no build.
     if mode_v
-        vTarget(path, args.contains("--gc"))
+        vTarget(path, args.contains("--gc"), module_path)
         sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo
