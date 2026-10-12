@@ -330,6 +330,89 @@ identical to the Zig backend's**: Vector2, Vector3, Color3, Matrix3,
 CFrame, AABB, quaternions and cframeLerp all ok. The first engine code
 through the backend, with a module boundary crossed.
 
+## The Lexer: the first compiler module through (2026-10-13)
+
+**`selfhost/Lexer.zbr`** (1016 lines: a class with twenty-odd methods
+over a source string, a `sig`, module-level `static def` predicates,
+char literals everywhere, slices, lambdas, `branch` over char ranges)
+measured 298 refusals as it stood, then went through in four rounds:
+
+1. **The kinds it names.** 270 of the 298 were char literals behind one
+   catch-all message; the catch-all is split per kind now, and the
+   emitter spells `c'A'` as `` u8(`A`) `` (Zebra's char is a byte; V's
+   rune literal cast), a slice as `s[a..b]`, a cast as `T(x)`, a chained
+   compare as its conjunction, a `sig` as `type F = fn (...) R`, a lambda
+   as `fn [captures] (...) R { }` (a captured container or class is a
+   reference either way; a `mut` capture where the type is one), and
+   `for i in a..b` as V's counted loop.
+2. **Names across the module boundary.** `Token.Token` and
+   `Token.Keywords.lookup` came out verbatim and broke V's parse of the
+   struct (`unknown type Lexer` 22 times was the cascade). The emitter
+   notes the used modules' names from the `use` declarations; a dotted
+   type is its last segment; `Mod.Name(args)` is the module's declaration
+   (the class's constructor when Name is a class); the owner of a static
+   access (`Mod.Class.method`, `Mod.Enum.member`, a union's variant) is
+   read through the module. `on c'0'..c'9'` is V's inclusive range arm
+   `` u8(`0`)...u8(`9`) `` (V takes the cast form; probed).
+3. **What V could not see.** 200 errors after that, nearly all one
+   cascade: Zebra allows a bare call to a method of the enclosing class
+   (`peek()`, `emit(k, t, ln, cl)`), which V reads as an unknown free
+   function, and everything downstream is `void`. The emitter now keeps
+   the enclosing class's instance and static method names (a bare call
+   among them is `self.m(...)` or `class_m(...)`), and **the V type of
+   every parameter, local and field** (declared, or inferred from a
+   constructor call or a union variant), which pays three more ways:
+   `.len` on a container is `.count()` (a string's stays `.len`); a
+   list's `remove` / `indexOf` / `reverse` reach the list's own methods
+   where the string's were taken by name before; `out = List()`
+   (untyped, the field's type implied) takes the target's constructor.
+   And a local bound to a union variant (`var kind =
+   TokenKind.zig_single()`) is cast to its union, since V types the
+   variable by the variant struct and refuses the next assignment of
+   another variant -- the two "cannot assign to kind" errors.
+4. **The driver.** `selfhost/lexer_test.zbr` no longer compiles on the
+   Zig backend (a static `main` inside the class beside the module's
+   `main`: "duplicate struct member name"), so `selfhost/lexer_dump.zbr`
+   stands in: fifteen sources tokenized and every token printed (kind
+   name for thirty kinds, text, line, col; an unterminated string's error
+   caught and printed). Its round found `use Lexer` then
+   `Lexer.tokenize(src)`: a module whose name is also its class's, so
+   `Mod.x(args)` is the class's static method unless x names a type; and
+   the method lists are cleared at a class's end (a later bare call
+   matched the last class's statics and spelled `_tokenize`).
+
+After the four: the Lexer emits with **nothing refused and passes V's
+check** (51 KB, two modules), and the dump under V is **identical to the
+Zig backend's, 117 lines** -- keywords, identifiers, indentation (indent /
+dedent / eol), comments, operators, numbers, strings, a char literal, a
+range, `use ... exposing`, if / else, and the unterminated string's error
+message. The six earlier programs stay identical.
+
+Two things the round found beside the emitter, both unfixed:
+
+- **A module loaded twice.** The driver first sat in
+  `C:/Projects/v-dist/targets/`, which held a stale `token.zbr` copy; the
+  route resolved the driver's `use Token` to that copy and the Lexer's to
+  `selfhost/Token.zbr`, and emitted both ("cannot register struct
+  TokenKind_indent, another type with this name exists"). The route
+  dedups by file path; it should refuse two files for one module name,
+  naming both. Noted, not built.
+- **The Zig backend's `--module-path` from outside the directory.** The
+  same driver run on the Zig backend with `--module-path selfhost` wrote
+  the scratch build without `Lexer.zig` ("unable to load 'Lexer.zig':
+  FileNotFound"); the driver beside the sources builds. A Zig-backend
+  gap, not the V backend's; for the Zebra session.
+
+New rows for the rules table:
+
+| Zebra | V | why |
+|---|---|---|
+| `c'A'` | `` u8(`A`) `` | a char is a byte; V's rune literal is a rune (i32) |
+| `on c'0'..c'9'` | `` u8(`0`)...u8(`9`) `` | V's match range arm is three dots, inclusive |
+| `peek()` inside a class | `self.peek()` | V has no implicit receiver |
+| `var k = U.v()` | `mut k := U(U_v{})` | V types a variable by the variant struct unless cast to the sum type |
+| `xs.len` on a List | `xs.count()` | the runtime's list is a struct; `.len` is the string's and the array's |
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

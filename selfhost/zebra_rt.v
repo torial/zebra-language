@@ -258,6 +258,24 @@ pub fn zlist_reverse[T](l &ZList[T]) &ZList[T] {
 	}
 }
 
+// the list's own spellings, reached when the emitter knows the receiver is a list
+pub fn (l &ZList[T]) index_of(x T) i64 {
+	return zlist_index_of(l, x)
+}
+
+pub fn (mut l ZList[T]) remove_value(x T) bool {
+	i := zlist_index_of(l, x)
+	if i < 0 {
+		return false
+	}
+	l.items.delete(int(i))
+	return true
+}
+
+pub fn (l &ZList[T]) reversed() &ZList[T] {
+	return zlist_reverse(l)
+}
+
 // ── str ────────────────────────────────────────────────────────────────────
 pub fn zstr_try_int(s string) ?i64 {
 	return strconv.parse_int(s, 10, 64) or { return none }

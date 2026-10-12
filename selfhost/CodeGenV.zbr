@@ -19,7 +19,7 @@
 # a class is a struct with `mut:` fields, `cue init` is `fn new_<name>()
 # &Name`, a method is `fn (mut self Name) m()`.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
 # (and which are references, hence `mut`)
@@ -93,6 +93,11 @@ class VGen
     var in_method: bool               # inside a method (a def-level catch there is refused: a closure's capture of self is V's call)
     var catch_bindings: List(str)     # the error bindings in scope: `e.message` is `e.msg()` on these
     var current_fields: List(str)     # the enclosing class's / struct's fields: a bare name among them is `self.<field>`
+    var module_names: List(str)       # the used modules' names: `Mod.Name` is `Name` in the one V file
+    var current_methods: List(str)    # the enclosing class's instance methods: a bare call among them is `self.m(...)`
+    var current_statics: List(str)    # the enclosing class's static methods: a bare call among them is `class_m(...)`
+    var local_types: HashMap(str, str)  # the V type of each param and local declared so far (what a receiver is)
+    var field_types: HashMap(str, str)  # the V type of each field of the enclosing class / struct
     var local_names: List(str)        # the params and locals declared so far in the enclosing def (they shadow a field)
     var matchN: int               # the temporaries bound for `branch`
     var current_class: str        # "" outside a class
@@ -115,6 +120,11 @@ class VGen
         .in_method = false
         .catch_bindings = List(str)()
         .current_fields = List(str)()
+        .module_names = List(str)()
+        .current_methods = List(str)()
+        .current_statics = List(str)()
+        .local_types = HashMap(str, str)()
+        .field_types = HashMap(str, str)()
         .local_names = List(str)()
         .matchN = 0
         .current_class = ""
@@ -159,7 +169,10 @@ class VGen
                 .refused.add("a type the subset does not spell (stream, error union, ref, tuple, fn)")
                 return "voidptr"
 
-    def vNamed(name: str): str
+    def vNamed(qualified: str): str
+        # `Token.Token` (a type of a used module) is `Token` in the one V file
+        var segs: List(str) = qualified.split(".")
+        var name: str = segs.at(segs.count() - 1)
         if name == "int": return "i64"
         if name == "float": return "f64"
         if name == "str": return "string"
@@ -196,10 +209,48 @@ class VGen
                 return true
         return false
 
+    def isModuleName(name: str): bool
+        for mn in .module_names
+            if mn == name
+                return true
+        return false
+
+    # the name a static access stands on: `Name.x` -> Name, `Mod.Name.x` ->
+    # Name when Mod is a used module; "" when the object is an expression
+    def staticOwner(obj: Expr): str
+        branch obj
+            on Expr.ident as id
+                return id.name
+            on Expr.member as m
+                branch m.object
+                    on Expr.ident as id
+                        if .isModuleName(id.name)
+                            return m.member
+                    else
+                        pass
+                return ""
+            else
+                return ""
+
+    def isModuleIdent(obj: Expr): bool
+        branch obj
+            on Expr.ident as id
+                return .isModuleName(id.name)
+            else
+                return false
+
     # ── the module ─────────────────────────────────────────────────────────
     # every module in one V file: the used modules first (their declarations
     # the root's depend on), the root last; the passes see all of them
     def genModules(ms: List(Module)): str
+        for m in ms
+            for d in m.decls
+                branch d
+                    on Decl.use_ as u
+                        var segs: List(str) = u.path.split("/")
+                        .module_names.add(segs.at(segs.count() - 1))
+                    else
+                        pass
         for m in ms
             .noteTypeNames(m)
         for m in ms
@@ -263,8 +314,18 @@ class VGen
                 .refuse("interface " + i.name, i.span)
             on Decl.union_ as un
                 .genUnion(un)
+            on Decl.sig_ as sg
+                # a function type: `sig F(c: char): bool` -> `type F = fn (c u8) bool`
+                var ret = .vType(sg.return_type)
+                var head = "type " + sg.name + " = fn (" + .genParams(sg.params) + ")"
+                if ret != ""
+                    head = head + " " + ret
+                .line(head)
+                .line("")
+            on Decl.namespace_ as ns
+                .refuse("namespace " + ns.name + " (flattening is the next step)", ns.span)
             else
-                .refused.add("a declaration kind the subset does not spell (namespace, mixin, extend, fsig, type alias)")
+                .refused.add("a declaration kind the subset does not spell (mixin, extend, type alias)")
 
     def genGlobal(v: DeclVar)
         if v.is_const and v.init_expr != nil
@@ -393,6 +454,9 @@ class VGen
         .line("")
         .current_class = c.name
         .current_fields = fieldNames(c.members)
+        .field_types = .fieldTypes(c.members)
+        .current_methods = methodNames(c.members, false)
+        .current_statics = methodNames(c.members, true)
         var had_init: bool = false
         for mem in c.members
             branch mem
@@ -416,6 +480,9 @@ class VGen
             .line("}")
             .line("")
         .current_class = ""
+        .current_methods = List(str)()
+        .current_statics = List(str)()
+        .current_fields = List(str)()
 
     # `&Name{ ... }` with every reference field initialised (V refuses an
     # uninitialised reference field): a container by its constructor, a
@@ -460,6 +527,9 @@ class VGen
         .line("")
         .current_class = st.name
         .current_fields = fieldNames(st.members)
+        .field_types = .fieldTypes(st.members)
+        .current_methods = methodNames(st.members, false)
+        .current_statics = methodNames(st.members, true)
         var had_init: bool = false
         for mem in st.members
             branch mem
@@ -505,6 +575,9 @@ class VGen
             .line("}")
             .line("")
         .current_class = ""
+        .current_methods = List(str)()
+        .current_statics = List(str)()
+        .current_fields = List(str)()
 
     # a struct's method: `mut self` only when the body assigns to a field
     # (V refuses a mutation through an immutable receiver, and warns on a
@@ -603,8 +676,108 @@ class VGen
 
     def resetLocals(params: List(Param))
         .local_names = List(str)()
+        .local_types = HashMap(str, str)()
         for p in params
             .local_names.add(p.name)
+            var pt: str = .vType(p.type_)
+            if pt != ""
+                .local_types.set(p.name, pt)
+
+    def fieldTypes(members: List(Decl)): HashMap(str, str)
+        var out = HashMap(str, str)()
+        for mem in members
+            branch mem
+                on Decl.var_ as f
+                    out.set(f.name, .vType(f.type_))
+                else
+                    pass
+        return out
+
+    # the V type of a name or a field access, "" when the emitter does not
+    # know it (a call's result, an element): a local or a param first, then
+    # a field of the enclosing type (bare, or through self)
+    def vTypeOf(e: Expr): str
+        branch e
+            on Expr.ident as id
+                if .local_types.get(id.name) as lt
+                    return lt
+                if .isCurrentField(id.name)
+                    if .field_types.get(id.name) as ft
+                        return ft
+                return ""
+            on Expr.member as m
+                if exprRootIsThis(m.object)
+                    if .field_types.get(m.member) as ft
+                        return ft
+                return ""
+            else
+                return ""
+
+    def isContainerType(vt: str): bool
+        return vt.startsWith("&ZList[") or vt.startsWith("&ZMap[") or vt.startsWith("&ZSet[")
+
+    # the V type a constructor call makes, "" when it is not one
+    def ctorTypeOf(e: Expr): str
+        branch e
+            on Expr.call as c
+                branch c.callee
+                    on Expr.ident as id
+                        if .isClassName(id.name)
+                            return "&" + id.name
+                        if .isStructName(id.name)
+                            return id.name
+                        if id.name == "StringBuilder"
+                            return "&ZStringBuilder"
+                        return ""
+                    on Expr.call as inner
+                        branch inner.callee
+                            on Expr.ident as cid
+                                if cid.name == "List" and inner.args.count() == 1
+                                    return "&ZList[" + .typeArgStr(inner.args.at(0).value) + "]"
+                                if cid.name == "HashMap" and inner.args.count() == 2
+                                    return "&ZMap[" + .typeArgStr(inner.args.at(0).value) + ", " + .typeArgStr(inner.args.at(1).value) + "]"
+                                if cid.name == "Set" and inner.args.count() == 1
+                                    return "&ZSet[" + .typeArgStr(inner.args.at(0).value) + "]"
+                                return ""
+                            else
+                                return ""
+                    else
+                        return ""
+            else
+                return ""
+
+    # the union a variant expression belongs to, "" when it is not one:
+    # `U.v(x)`, `U.v()`, `U.v`
+    def unionOfExpr(e: Expr): str
+        branch e
+            on Expr.call as c
+                branch c.callee
+                    on Expr.member as m
+                        var owner: str = .staticOwner(m.object)
+                        if .isUnionName(owner)
+                            return owner
+                        return ""
+                    else
+                        return ""
+            on Expr.member as m
+                var owner: str = .staticOwner(m.object)
+                if .isUnionName(owner)
+                    return owner
+                return ""
+            else
+                return ""
+
+    def isMethodName(name: str): bool
+        for n in .current_methods
+            if n == name
+                return true
+        return false
+
+    def isStaticName(name: str): bool
+        for n in .current_statics
+            if n == name
+                return true
+        return false
 
     def isLocalName(name: str): bool
         for n in .local_names
@@ -645,7 +818,11 @@ class VGen
             on Stmt.var_ as v
                 .genLocal(v)
             on Stmt.assign as a
-                .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .exprStr(a.value))
+                var tt: str = .vTypeOf(a.target)
+                if isBareCtor(a.value) and tt != ""
+                    .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .zeroOf(tt))   # `out = List()`: the target's type
+                else
+                    .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .exprStr(a.value))
             on Stmt.expr as e
                 .genExprStmt(e)
             on Stmt.if_ as i
@@ -852,14 +1029,16 @@ class VGen
     def armValueStr(v: Expr): str
         branch v
             on Expr.member as m
-                branch m.object
-                    on Expr.ident as id
-                        if .isUnionName(id.name)
-                            return id.name + "_" + m.member
-                        if .isEnumName(id.name)
-                            return "." + vSafe(m.member)   # a match on an enum spells its arms `.member`
-                    else
-                        pass
+                var owner: str = .staticOwner(m.object)
+                if .isUnionName(owner)
+                    return owner + "_" + m.member
+                if .isEnumName(owner)
+                    return "." + vSafe(m.member)   # a match on an enum spells its arms `.member`
+                return .exprStr(v)
+            on Expr.binary as rb
+                if rb.op == BinaryOp.dotdot
+                    # `on c'0'..c'9'`: V's inclusive range arm, three dots
+                    return .exprStr(rb.left) + "..." + .exprStr(rb.right)
                 return .exprStr(v)
             else
                 return .exprStr(v)
@@ -877,8 +1056,21 @@ class VGen
             if isUntypedListLit(ie) and tname.startsWith("&ZList[")
                 # `var xs: List(int) = [...]`: the element type is the variable's
                 rhs = .listLitWith(ie, tname.substring(7, tname.len - 1))
+            else if isBareCtor(ie) and tname != ""
+                rhs = .zeroOf(tname)   # `var xs: List(int) = List()`: the type is the variable's
             else
                 rhs = .exprStr(ie)
+                var un: str = .unionOfExpr(ie)
+                if un != ""
+                    # a variant is a value of its union: V would type the variable
+                    # by the variant and refuse the next assignment
+                    rhs = un + "(" + rhs + ")"
+                    if tname == ""
+                        tname = un
+            if tname == ""
+                tname = .ctorTypeOf(ie)
+            if tname != ""
+                .local_types.set(v.name, tname)
             if tname == "i64" and isIntLit(ie)
                 rhs = "i64(" + rhs + ")"
             else if tname == "f64" and (isIntLit(ie) or isFloatLit(ie))
@@ -888,6 +1080,7 @@ class VGen
             .line("mut " + name + " := " + rhs)
         else
             if v.type_ as t
+                .local_types.set(v.name, .vType(t))
                 .line("mut " + name + " := " + .zeroOf(.vType(t)))
             else
                 .refuse("var " + v.name + " without a type or a value", v.span)
@@ -955,6 +1148,18 @@ class VGen
             .refuse("for ... if (a filtered loop)", fi.span)
         var v = vSafe(fi.vars.at(0))
         .local_names.add(fi.vars.at(0))
+        # `for i in a..b`: a numeric range
+        branch fi.iter
+            on Expr.binary as rb
+                if rb.op == BinaryOp.dotdot
+                    .line("for " + v + " := i64(" + .exprStr(rb.left) + "); " + v + " < " + .exprStr(rb.right) + "; " + v + "++ {")
+                    .depth = .depth + 1
+                    .genStmts(fi.stmts)
+                    .depth = .depth - 1
+                    .line("}")
+                    return
+            else
+                pass
         # `for i in a.to(b)`: a numeric range
         branch fi.iter
             on Expr.call as c
@@ -1039,9 +1244,6 @@ class VGen
                 return "true"
             on Expr.nil_
                 return "none"
-            on Expr.lambda as lam
-                .refuse("a lambda (closures are next)", lam.span)
-                return "fn () {}"
             on Expr.orelse_ as oe
                 return "(" + .exprStr(oe.expr) + " or { " + .exprStr(oe.fallback) + " })"
             on Expr.to_non_nil as tnn
@@ -1051,6 +1253,54 @@ class VGen
                 return "map[string]i64{}"
             on Expr.try_ as t
                 return .exprStr(t.expr) + "!"
+            on Expr.char_lit as cl
+                return .charLitStr(cl.text)
+            on Expr.slice as sl
+                var a: str = ""
+                var b: str = ""
+                if sl.start as st
+                    a = .exprStr(st)
+                if sl.stop_ as sp
+                    b = .exprStr(sp)
+                return .exprStr(sl.object) + "[" + a + ".." + b + "]"
+            on Expr.cast as ca
+                return .vType(ca.target) + "(" + .exprStr(ca.expr) + ")"
+            on Expr.chained_cmp as cc
+                # a < b < c -> (a < b) && (b < c); the middle operands are spelled twice
+                var out: str = "("
+                var i: int = 0
+                while i < cc.ops.count()
+                    if i > 0
+                        out = out + " && "
+                    out = out + "(" + .exprStr(cc.operands.at(i)) + " " + cc.ops.at(i) + " " + .exprStr(cc.operands.at(i + 1)) + ")"
+                    i = i + 1
+                return out + ")"
+            on Expr.lambda as lam
+                return .lambdaStr(lam)
+            on Expr.tuple_lit as tl
+                .refuse("a tuple literal", tl.span)
+                return "0"
+            on Expr.set_lit as stl
+                .refuse("a set literal", stl.span)
+                return "new_zset[i64]()"
+            on Expr.array_lit as al
+                .refuse("an array literal", al.span)
+                return "0"
+            on Expr.zig_lit as zl
+                .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
+                return "0"
+            on Expr.opt_chain as oc
+                .refuse("an optional chain (?.)", oc.span)
+                return .exprStr(oc.base)
+            on Expr.old_ as ol
+                .refuse("an `old` expression (contracts)", ol.span)
+                return .exprStr(ol.operand)
+            on Expr.except_ as ex
+                .refuse("an `except` expression", ex.span)
+                return .exprStr(ex.base)
+            on Expr.result_ as rs
+                .refuse("`result` (contracts)", rs)
+                return "0"
             on Expr.catch_ as c
                 # `expr catch |e| fallback` -> `(expr or { e := err  fallback })`:
                 # the or block's last expression is its value
@@ -1061,8 +1311,67 @@ class VGen
                     return out
                 return "(" + .exprStr(c.expr) + " or { " + .exprStr(c.fallback) + " })"
             else
-                .refused.add("an expression kind the subset does not spell (slice, cast, type check, chained compare, catch, try, tuple, set, array, zig literal, opt-chain)")
+                .refused.add("an expression kind the subset does not spell")
                 return "0"
+
+    # `c'A'` -> u8(`A`): Zebra's char is a byte; V's rune literal cast to u8
+    # (the AST keeps the raw text, c-prefix and quotes included)
+    def charLitStr(text: str): str
+        var inner: str = text
+        if inner.startsWith("c'") and inner.endsWith("'") and inner.len >= 3
+            inner = inner.substring(2, inner.len - 1)
+        else if inner.startsWith("'") and inner.endsWith("'") and inner.len >= 2
+            inner = inner.substring(1, inner.len - 1)
+        if inner == "\\'"
+            inner = "'"
+        if inner == "`"
+            inner = "\\`"
+        return "u8(`" + inner + "`)"
+
+    # a lambda as V's anonymous function, its captures listed (V captures by
+    # value unless `mut`; a captured container or class is a reference anyway)
+    def lambdaStr(lam: ExprLambda): str
+        var caps: str = ""
+        for cv in lam.captures
+            if caps != ""
+                caps = caps + ", "
+            if .isRefType(cv.type_)
+                caps = caps + "mut " + vSafe(cv.name)
+            else
+                caps = caps + vSafe(cv.name)
+        var capList: str = ""
+        if caps != ""
+            capList = "[" + caps + "] "
+        var ret = .vType(lam.return_type)
+        var head = "fn " + capList + "(" + .genParams(lam.params) + ")"
+        if ret != ""
+            head = head + " " + ret
+        var saved_locals = .local_names.copy()   # (a container is a reference: the restore needs its own copy)
+        for p in lam.params
+            .local_names.add(p.name)
+        var body: str = ""
+        branch lam.body_
+            on LambdaBody.expr_ as e
+                body = "\n\treturn " + .exprStr(e) + "\n"
+            on LambdaBody.stmts as sts
+                # the statements through a nested writer: the lines are joined
+                var inner = VGen()
+                inner.class_names = .class_names
+                inner.struct_names = .struct_names
+                inner.enum_names = .enum_names
+                inner.union_names = .union_names
+                inner.sigs = .sigs
+                inner.member_counts = .member_counts
+                inner.current_fields = .current_fields
+                inner.local_names = .local_names
+                inner.catch_bindings = .catch_bindings
+                inner.depth = 1
+                inner.genStmts(sts)
+                for r in inner.refused
+                    .refused.add(r)
+                body = "\n" + inner.sb.build()
+        .local_names = saved_locals
+        return head + " {" + body + "}"
 
     # "text" -> 'text' with V's escapes: a $ or a ' inside is escaped
     def vStringLit(text: str): str
@@ -1132,18 +1441,19 @@ class VGen
 
     # `.x` on this -> self.x; `a.len` (a property) -> a.len; else a.b
     def memberStr(m: ExprMember): str
-        branch m.object
-            on Expr.ident as id
-                if id.name == "Math" and m.member == "PI"
-                    return "math.pi"
-                if .isEnumName(id.name)
-                    return id.name + "." + vSafe(m.member)
-                if .isUnionName(id.name)
-                    return id.name + "_" + m.member + "{}"   # a payload-less variant as a value
-            else
-                pass
+        var owner: str = .staticOwner(m.object)
+        if owner == "Math" and m.member == "PI"
+            return "math.pi"
+        if .isEnumName(owner)
+            return owner + "." + vSafe(m.member)
+        if .isUnionName(owner)
+            return owner + "_" + m.member + "{}"   # a payload-less variant as a value
+        if .isModuleIdent(m.object)
+            return vSafe(m.member)   # `Mod.name`: the used module's declaration, in this file
         var obj = .exprStr(m.object)
         if m.member == "len"
+            if .isContainerType(.vTypeOf(m.object))
+                return obj + ".count()"   # Zebra's `.len` on a container
             return obj + ".len"
         if m.member == "message" and .isCatchBinding(obj)
             return obj + ".msg()"   # V's IError
@@ -1223,14 +1533,11 @@ class VGen
     def callStr(c: ExprCall): str
         branch c.callee
             on Expr.member as m
+                if .isModuleIdent(m.object) and not .isModuleClassStatic(m)
+                    return .identCallStr(m.member, c.args)   # `Mod.Name(args)`: the used module's declaration
                 return .methodCallStr(m, c.args, c.span)
             on Expr.ident as id
-                # a class or a struct constructed: Name(args) -> new_name(args)
-                if .isClassName(id.name) or .isStructName(id.name)
-                    return "new_" + snakeCase(id.name) + "(" + .argsStr(c.args, "new_" + snakeCase(id.name)) + ")"
-                if id.name == "StringBuilder"
-                    return "new_zstring_builder()"
-                return vSafe(id.name) + "(" + .argsStr(c.args, vSafe(id.name)) + ")"
+                return .identCallStr(id.name, c.args)
             on Expr.call as inner
                 # List(T)() / HashMap(K, V)(): the runtime's constructors
                 branch inner.callee
@@ -1249,11 +1556,47 @@ class VGen
                 .refuse("a call on an expression that is not a name or a member", c.span)
                 return .exprStr(c.callee) + "(" + .argsStr(c.args) + ")"
 
+    # `Mod.x(args)` where Mod is a used module AND a class of that name (Zebra's
+    # `use Lexer` then `Lexer.tokenize(src)`): the class's static method --
+    # unless x names a type (`Token.Token(...)` is the class's constructor)
+    def isModuleClassStatic(m: ExprMember): bool
+        branch m.object
+            on Expr.ident as id
+                if not (.isClassName(id.name) or .isStructName(id.name))
+                    return false
+                if .isClassName(m.member) or .isStructName(m.member) or .isUnionName(m.member) or .isEnumName(m.member)
+                    return false
+                return true
+            else
+                return false
+
+    # a call on a bare name: a class or a struct constructed (Name(args) ->
+    # new_name(args)), else a free function
+    def identCallStr(name: str, args: List(Arg)): str
+        if .isClassName(name) or .isStructName(name)
+            return "new_" + snakeCase(name) + "(" + .argsStr(args, "new_" + snakeCase(name)) + ")"
+        if name == "StringBuilder"
+            return "new_zstring_builder()"
+        if (name == "List" or name == "HashMap" or name == "Set") and args.count() == 0
+            .refused.add("an untyped " + name + "() where the emitter does not know the target's type (a typed var or a field takes it)")
+            return "new_zlist[i64]()"
+        # a bare call naming a method of the enclosing class (Zebra allows it)
+        if .in_method and .isMethodName(name)
+            return "self." + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+        if .isStaticName(name)
+            return snakeCase(.current_class) + "_" + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+        return vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+
     # a type named as a constructor's argument (`List(int)`, `HashMap(str, Box)`)
     def typeArgStr(e: Expr): str
         branch e
             on Expr.ident as id
                 return .vNamed(id.name)
+            on Expr.member as mm
+                if .isModuleIdent(mm.object)
+                    return .vNamed(mm.member)   # `List(Mod.Name)`
+                .refused.add("a type argument the subset does not spell (a member)")
+                return "voidptr"
             on Expr.call as c
                 # a nested container type: List(List(int))
                 branch c.callee
@@ -1276,20 +1619,17 @@ class VGen
     def methodCallStr(m: ExprMember, args: List(Arg), span: Span): str
         var name = m.member
         var isMath: bool = false
-        branch m.object
-            on Expr.ident as id
-                if id.name == "Math"
-                    isMath = true
-                # a static method: Class.method(args) -> class_method(args)
-                if .isClassName(id.name) or .isStructName(id.name)
-                    return snakeCase(id.name) + "_" + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
-                # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
-                if .isUnionName(id.name)
-                    if args.count() == 0
-                        return id.name + "_" + name + "{}"
-                    return id.name + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " }"
-            else
-                pass
+        var owner: str = .staticOwner(m.object)
+        if owner == "Math"
+            isMath = true
+        # a static method: Class.method(args) -> class_method(args)
+        if .isClassName(owner) or .isStructName(owner)
+            return snakeCase(owner) + "_" + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+        # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
+        if .isUnionName(owner)
+            if args.count() == 0
+                return owner + "_" + name + "{}"
+            return owner + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " }"
         if isMath
             .needs_math = true
             if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"
@@ -1302,17 +1642,20 @@ class VGen
         if statics != ""
             return statics
         var obj = .exprStr(m.object)
+        var rtype: str = .vTypeOf(m.object)
+        if rtype.startsWith("&ZList[")
+            # the list's own, where the string's would be taken by name
+            if name == "indexOf" and args.count() == 1: return obj + ".index_of(" + .argsStr(args) + ")"
+            if name == "remove" and args.count() == 1: return obj + ".remove_value(" + .argsStr(args) + ")"
+            if name == "reverse" and args.count() == 0: return obj + ".reversed()"
         return .mappedCall(obj, name, args, span)
 
     # File / Path / sys as static calls onto the runtime's wrappers ("" when
     # the object is not one of them); Json is the next slice
     def staticCall(m: ExprMember, args: List(Arg), span: Span): str
-        var ns: str = ""
-        branch m.object
-            on Expr.ident as id
-                ns = id.name
-            else
-                return ""
+        var ns: str = .staticOwner(m.object)
+        if ns == ""
+            return ""
         var name = m.member
         var a = .argsStr(args)
         if ns == "File"
@@ -1520,6 +1863,30 @@ def dropLast(xs: List(str)): List(str)
         out.add(xs.at(i))
         i = i + 1
     return out
+
+def methodNames(members: List(Decl), statics: bool): List(str)
+    var out = List(str)()
+    for mem in members
+        branch mem
+            on Decl.method as mth
+                if mth.mods.is_static == statics
+                    out.add(mth.name)
+            else
+                pass
+    return out
+
+def isBareCtor(e: Expr): bool
+    branch e
+        on Expr.call as c
+            if c.args.count() != 0
+                return false
+            branch c.callee
+                on Expr.ident as id
+                    return id.name == "List" or id.name == "HashMap" or id.name == "Set"
+                else
+                    return false
+        else
+            return false
 
 def fieldNames(members: List(Decl)): List(str)
     var out = List(str)()

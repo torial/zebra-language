@@ -1,0 +1,102 @@
+# lexer_dump.zbr -- a driver for the Lexer on the V backend (2026-10-13):
+# tokenizes a few sources and prints every token (kind name for the common
+# kinds, text, line, col), the same under both backends, so the outputs diff.
+# The checked-in selfhost/lexer_test.zbr no longer compiles on the Zig
+# backend (a static `main` beside the module's), so this stands in.
+
+use Token exposing TokenKind
+use Lexer
+
+def kindName(k: TokenKind): str
+    branch k
+        on TokenKind.indent
+            return "indent"
+        on TokenKind.dedent
+            return "dedent"
+        on TokenKind.eol
+            return "eol"
+        on TokenKind.eof
+            return "eof"
+        on TokenKind.id
+            return "id"
+        on TokenKind.integer_lit
+            return "integer_lit"
+        on TokenKind.float_lit
+            return "float_lit"
+        on TokenKind.string_double
+            return "string_double"
+        on TokenKind.string_single
+            return "string_single"
+        on TokenKind.char_lit_single
+            return "char_lit_single"
+        on TokenKind.dot
+            return "dot"
+        on TokenKind.dotdot
+            return "dotdot"
+        on TokenKind.colon
+            return "colon"
+        on TokenKind.comma
+            return "comma"
+        on TokenKind.lparen
+            return "lparen"
+        on TokenKind.rparen
+            return "rparen"
+        on TokenKind.lbracket
+            return "lbracket"
+        on TokenKind.rbracket
+            return "rbracket"
+        on TokenKind.plus
+            return "plus"
+        on TokenKind.minus
+            return "minus"
+        on TokenKind.star
+            return "star"
+        on TokenKind.arrow
+            return "arrow"
+        on TokenKind.kw_class
+            return "kw_class"
+        on TokenKind.kw_def
+            return "kw_def"
+        on TokenKind.kw_return
+            return "kw_return"
+        on TokenKind.kw_use
+            return "kw_use"
+        on TokenKind.kw_exposing
+            return "kw_exposing"
+        on TokenKind.kw_var
+            return "kw_var"
+        on TokenKind.kw_if
+            return "kw_if"
+        on TokenKind.kw_else
+            return "kw_else"
+        else
+            return "other"
+
+def showText(t: str): str
+    return t.replace("\n", "\\n")
+
+def dump(label: str, src: str)
+    var toks: List(Token.Token) = Lexer.tokenize(src)?
+    print("-- " + label + ": " + toks.len.toString() + " tokens")
+    for t in toks
+        print("  " + kindName(t.kind) + " '" + showText(t.text) + "' " + t.line.toString() + ":" + t.col.toString())
+catch |e|
+    print("-- " + label + " FAILED: " + e.message)
+
+def main()
+    dump("keyword", "class")
+    dump("identifier", "fooBar")
+    dump("class", "class Foo\n    def bar\n        return 1")
+    dump("indentation", "a\n    b\n        c\n    d\ne")
+    dump("comment", "x # this is a comment\ny")
+    dump("operators", "a + b * c")
+    dump("int", "42")
+    dump("float", "3.25")
+    dump("call", "foo(1, 2)")
+    dump("string", "var s: str = \"hi\"")
+    dump("char", "c'A'")
+    dump("range", "for i in 0..10")
+    dump("exposing", "use Foo exposing Bar")
+    dump("if", "if a == b\n    x\nelse\n    y")
+    dump("unterminated", "\"open")
+    print("lexer_dump: done")
