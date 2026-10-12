@@ -181,12 +181,9 @@ and item 3 is now named.
 
 ```bash
 # in the worktree, on Zig 0.17
-# NOT tools/regen_selfhost.sh: its --no-runtime-module re-emits every module in a shape five
-# times the committed one (the runtime inlined per module; Ast.zig 56 KB -> 352 KB) and the
-# two shapes do not mix. The compiler's default flags reproduce the committed shape byte
-# for byte (a repo matter, told to the Zebra session):
-zig-out/bin/zebra.exe --emit-zig --output-dir /tmp/emit selfhost/main.zbr
-cp /tmp/emit/main.zig /tmp/emit/CodeGenV.zig selfhost/     # the two that changed; zebra_rt.zig compared, not copied
+bash tools/regen_selfhost.sh --apply     # since f970e71 (the Zebra session, from this branch's finding): one default-flag
+                                         # emit of main.zbr, every module validated against the committed one and installed
+                                         # with zebra_rt.zig; on this branch all fourteen show 0 changed lines, CodeGenV among them
 ~/.zvm/0.17.0/zig.exe build
 zig-out/bin/zebra.exe --target v examples/v_poc.zbr      # writes examples/v_poc.v, lists refusals
 C:/Projects/v-dist/v/v.exe run examples/v_poc.v
