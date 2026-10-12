@@ -1,0 +1,165 @@
+# ast_dump.zbr -- a driver for the AstBuilder on the V backend (2026-10-13):
+# parses and BUILDS a few sources and prints the built tree's shape
+# (declaration kinds and names, members, every statement by kind, nested;
+# an else-if chain, a branch's arm count, a catch's clause count), the
+# same under both backends, so the outputs diff.
+
+use Token exposing TokenKind
+use Lexer
+use Parser exposing PNode, PModule
+use AstBuilder exposing ASTBuilder
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, DeclUnion, DeclMethod, DeclVar, DeclUse, DeclSig, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtBranch, StmtTryCatch, ElseIf
+
+def pad(depth: int): str
+    var out: str = ""
+    var i: int = 0
+    while i < depth
+        out = out + "  "
+        i = i + 1
+    return out
+
+def dumpStmts(stmts: List(Stmt), depth: int)
+    for s in stmts
+        dumpStmt(s, depth)
+
+def dumpStmt(n: Stmt, depth: int)
+    branch n
+        on Stmt.var_ as v
+            var has_init: str = "no"
+            if v.init_expr != nil
+                has_init = "yes"
+            print(pad(depth) + "var " + v.name + " init=" + has_init)
+        on Stmt.if_ as pif
+            var else_n: str = "none"
+            if pif.else_stmts as es
+                else_n = es.len.toString()
+            print(pad(depth) + "if then=" + pif.then_stmts.len.toString() + " elifs=" + pif.else_ifs.len.toString() + " else=" + else_n)
+            dumpStmts(pif.then_stmts, depth + 1)
+            for ei in pif.else_ifs
+                print(pad(depth) + "elif stmts=" + ei.stmts.len.toString())
+                dumpStmts(ei.stmts, depth + 1)
+            if pif.else_stmts as es2
+                dumpStmts(es2, depth + 1)
+        on Stmt.while_ as w
+            print(pad(depth) + "while body=" + w.stmts.len.toString())
+            dumpStmts(w.stmts, depth + 1)
+        on Stmt.for_in as fi
+            print(pad(depth) + "for-in " + fi.vars.len.toString() + " var(s) body=" + fi.stmts.len.toString())
+            dumpStmts(fi.stmts, depth + 1)
+        on Stmt.for_num as fn_
+            print(pad(depth) + "for-num " + fn_.var_ + " body=" + fn_.stmts.len.toString())
+            dumpStmts(fn_.stmts, depth + 1)
+        on Stmt.return_ as r
+            var has_value: str = "no"
+            if r.value != nil
+                has_value = "yes"
+            print(pad(depth) + "return value=" + has_value)
+        on Stmt.branch_ as b
+            var else_n: str = "none"
+            if b.else_ as es
+                else_n = es.len.toString()
+            print(pad(depth) + "branch arms=" + b.cases.len.toString() + " else=" + else_n)
+            for arm in b.cases
+                print(pad(depth + 1) + "arm values=" + arm.values.len.toString() + " stmts=" + arm.stmts.len.toString())
+                dumpStmts(arm.stmts, depth + 2)
+        on Stmt.try_catch as tc
+            print(pad(depth) + "try stmts=" + tc.stmts.len.toString() + " clauses=" + tc.clauses.len.toString())
+            dumpStmts(tc.stmts, depth + 1)
+        on Stmt.assign
+            print(pad(depth) + "assign")
+        on Stmt.expr
+            print(pad(depth) + "expr")
+        on Stmt.print_
+            print(pad(depth) + "print")
+        on Stmt.assert_
+            print(pad(depth) + "assert")
+        on Stmt.raise_
+            print(pad(depth) + "raise")
+        on Stmt.pass_
+            print(pad(depth) + "pass")
+        on Stmt.break_
+            print(pad(depth) + "break")
+        on Stmt.continue_
+            print(pad(depth) + "continue")
+        else
+            print(pad(depth) + "other-stmt")
+
+def dumpMethod(m: DeclMethod, depth: int)
+    var kind: str = "def"
+    if m.mods.is_static
+        kind = "static def"
+    var ret: str = "none"
+    if m.return_type != nil
+        ret = "yes"
+    var throws_s: str = ""
+    if m.throws_
+        throws_s = " throws"
+    if m.stmts as body
+        print(pad(depth) + kind + " " + m.name + " params=" + m.params.len.toString() + " ret=" + ret + throws_s + " stmts=" + body.len.toString())
+        dumpStmts(body, depth + 1)
+    else
+        print(pad(depth) + kind + " " + m.name + " params=" + m.params.len.toString() + " ret=" + ret + throws_s + " (no body)")
+
+def dumpMember(n: Decl, depth: int)
+    branch n
+        on Decl.var_ as f
+            print(pad(depth) + "field " + f.name)
+        on Decl.method as m
+            dumpMethod(m, depth)
+        on Decl.init as ini
+            print(pad(depth) + "init params=" + ini.params.len.toString())
+            if ini.stmts as body
+                dumpStmts(body, depth + 1)
+        else
+            print(pad(depth) + "other-member")
+
+def dumpDecl(n: Decl, depth: int)
+    branch n
+        on Decl.use_ as u
+            print(pad(depth) + "use " + u.path + " exposing=" + u.exposed.len.toString())
+        on Decl.class_ as c
+            print(pad(depth) + "class " + c.name + " members=" + c.members.len.toString())
+            for mem in c.members
+                dumpMember(mem, depth + 1)
+        on Decl.struct_ as st
+            print(pad(depth) + "struct " + st.name + " members=" + st.members.len.toString())
+            for mem in st.members
+                dumpMember(mem, depth + 1)
+        on Decl.enum_ as e
+            print(pad(depth) + "enum " + e.name + " members=" + e.members.len.toString())
+        on Decl.union_ as u
+            print(pad(depth) + "union " + u.name + " variants=" + u.variants.len.toString())
+        on Decl.sig_ as s
+            print(pad(depth) + "sig " + s.name)
+        on Decl.method as m
+            dumpMethod(m, depth)
+        on Decl.var_ as v
+            print(pad(depth) + "module var " + v.name)
+        else
+            print(pad(depth) + "other-decl")
+
+def dump(label: str, src: str)
+    var root: PNode = Parser.Parser.parse(src, label + ".zbr")?
+    if root is PNode.module_ as pm
+        var m: Module = ASTBuilder.build(pm, label + ".zbr")?
+        print("-- " + label + ": " + m.decls.len.toString() + " decl(s)")
+        for d in m.decls
+            dumpDecl(d, 1)
+    else
+        print("-- " + label + ": not a module")
+catch |e|
+    print("-- " + label + " FAILED: " + e.message)
+
+def main()
+    dump("empty", "")
+    dump("function", "def add(a: int, b: int): int\n    return a + b\n")
+    dump("class", "class Counter\n    var n: int\n\n    cue init(start: int)\n        .n = start\n\n    def bump(): int\n        .n = .n + 1\n        return .n\n\n    static def zero(): Counter\n        return Counter(0)\n")
+    dump("struct", "struct Vec2\n    var x: float\n    var y: float\n\n    def len(): float\n        return Math.sqrt(x * x + y * y)\n")
+    dump("enum", "enum Suit\n    hearts\n    spades\n    clubs\n    diamonds\n")
+    dump("union", "union Shape\n    circle: float\n    square: float\n    empty\n")
+    dump("control", "def walk(xs: List(int)): int\n    var total: int = 0\n    for x in xs\n        if x > 10\n            total = total + x\n        else if x < 0\n            continue\n        else\n            pass\n    var i: int = 0\n    while i < 3\n        i = i + 1\n        if i == 2\n            break\n    for k in 0..3\n        total = total + k\n    print(\"done\", total)\n    assert total >= 0, \"total\"\n    return total\n")
+    dump("branch", "def kind(s: Shape): str\n    branch s\n        on Shape.circle as r\n            return \"circle\"\n        on Shape.square, Shape.empty\n            return \"other\"\n        else\n            return \"?\"\n")
+    dump("errors", "def broken(a: int): int throws\n    if a < 0\n        raise \"no\"\n    return a\n\ndef safe(a: int): int\n    var n: int = broken(a)?\n    return n\ncatch |e|\n    return 0 - 1\n")
+    dump("use", "use Token exposing TokenKind, Token\nuse Lexer\n\nvar LIMIT: int = 3\n\nsig Pred(c: char): bool\n")
+    dump("bad", "class\n")
+    print("ast_dump: done")

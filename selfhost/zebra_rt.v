@@ -12,6 +12,7 @@
 // unused imports are a V warning, and these are used here regardless)
 
 // ── List ───────────────────────────────────────────────────────────────────
+@[heap]
 pub struct ZList[T] {
 pub mut:
 	items []T
@@ -71,14 +72,28 @@ pub fn (l &ZList[T]) last() T {
 	return l.items.last()
 }
 
-pub fn (l &ZList[T]) str() string {
+// (a free function, not a method: a method is instantiated for every
+// element type the struct is named with, and V's own string method for a
+// float array lost a helper to its unused-pruning at the C stage)
+pub fn zlist_str[T](l &ZList[T]) string {
 	return l.items.str()
 }
 
 // ── HashMap ────────────────────────────────────────────────────────────────
+@[heap]
 pub struct ZMap[K, V] {
 pub mut:
 	m map[K]V
+}
+
+pub fn (m &ZMap[K, V]) contains(k K) bool {
+	return k in m.m
+}
+
+// Zebra's fetch: the value, or a failure when the key is absent (the Zig
+// backend's `.?`; callers guard with contains)
+pub fn (m &ZMap[K, V]) fetch(k K) V {
+	return m.m[k] or { panic('fetch: no such key: ${k}') }
 }
 
 pub fn new_zmap[K, V]() &ZMap[K, V] {
@@ -132,6 +147,7 @@ pub fn (z &ZMap[K, V]) copy() &ZMap[K, V] {
 }
 
 // ── Set ────────────────────────────────────────────────────────────────────
+@[heap]
 pub struct ZSet[T] {
 pub mut:
 	m map[T]bool
@@ -168,6 +184,7 @@ pub fn (s &ZSet[T]) items() &ZList[T] {
 }
 
 // ── StringBuilder ──────────────────────────────────────────────────────────
+@[heap]
 pub struct ZStringBuilder {
 pub mut:
 	parts []string
@@ -214,6 +231,35 @@ pub fn (b &ZStringBuilder) len() i64 {
 // and `join` only exists for strings; `sort` wants a comparable T)
 pub fn zjoin(l &ZList[string], sep string) string {
 	return l.items.join(sep)
+}
+
+// `x!` on a name: V smart-casts an option after `x != none`, and refuses an
+// `or` block on the cast value; a call takes either
+pub fn zunwrap[T](x ?T) T {
+	return x or { panic('a nil unwrapped') }
+}
+
+// the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
+pub const zbr_version = 'zebra (V backend, proof of concept)'
+
+// a long `or` / `and` chain (V's checker gives up at forty nested levels);
+// every term is evaluated: no short-circuit past thirty terms
+pub fn zany(xs []bool) bool {
+	for x in xs {
+		if x {
+			return true
+		}
+	}
+	return false
+}
+
+pub fn zall(xs []bool) bool {
+	for x in xs {
+		if !x {
+			return false
+		}
+	}
+	return true
 }
 
 pub fn zsort_i64(mut l ZList[i64]) {

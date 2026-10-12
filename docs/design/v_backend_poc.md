@@ -492,6 +492,96 @@ New rows for the rules table:
 | `var G: T = v` at module level | `const g = v` | no mutable globals without `-enable-globals`; an assignment refused |
 | a generic method comparing `T` | a free function | V instantiates every method per element type |
 
+## The whole front end through (2026-10-13)
+
+After the Parser, the rest of the front end -- **Ast** (1243 lines),
+**AstWalk** (755), **AstBuilder** (1605) and **Resolver** (523, which
+folds in **TypeChecker** (7924) and **CgHelpers** (2147) through its
+`use` lines: eight modules, 567 KB of V) -- measured 1,664 / 1,729 /
+4,739 / 3,326 V errors as they stood, all from one cause, and went clean
+in seven rounds:
+
+1. A reference to a nilable (`^Expr?`) came out `&?Expr`, which V's
+   parser refuses, and the whole file after it was noise: it is `?Expr`
+   for a union and `?&Name` for a boxed struct. A refusal names its
+   **file** with the line now (eight modules in one emit; a bare line
+   number pointed at the wrong module). `for k, v in m` is V's loop over
+   the runtime's inner map, the two variables typed from the map's type.
+   A method name shared by two classes with different parameter lists is
+   called by position (the signature table was keyed by the bare name and
+   refused the second class's calls as "more arguments"). A mutable
+   module-level var is a V `__global`, and the route's run line carries
+   `-enable-globals` when any exists (the const rule before it was a lie
+   the TypeChecker's three globals exposed).
+2. The runtime's containers are `@[heap]` (an option of a reference to
+   one can then be stored in a field: V's escape rule); a map's `contains`
+   and `fetch` (Zebra's get-or-fail); `s.chars()` is the bytes (Zebra's
+   char is a byte); the element type of `xs.at(i)` and of a `for x in xs`
+   variable is known; an `if x as y` over an option of a reference binds
+   `mut` and is typed.
+3. A left-leaning chain of one operator is emitted flat, and past thirty
+   terms an `or` / `and` goes through `zany` / `zall` over a list: **V's
+   checker gives up at forty nested levels** ("too many expr levels: 41"
+   on a fifty-term keyword test), and the tree is the depth whether or
+   not the parentheses are written -- so the long form loses
+   short-circuiting, said in a comment. `x!` on a name is `zunwrap(x)`, a
+   generic helper, since V smart-casts an option after `x != none` and
+   then refuses an `or` block on it. A binding whose type is a struct, a
+   class or a container is `mut`. `xs.sort()` by the list's element type.
+   The compiler's own `zig"_zbr_version"` is a runtime const.
+4. A for over elements that need `mut` runs **by index** with `mut x :=
+   xs.at(i)`: V's `for mut x` makes a reference to the element (`&&T`
+   over a list of references) and needs the list's root mutable. The
+   return type of every def and method is kept, so a call's result has a
+   type. `x is Enum.member` is `==`. A numeric local is cast to its
+   declared type whatever its initializer (`var pos: int = -1` was V's
+   32-bit int). A used module's `main` is not emitted. **Zebra's string
+   escapes are translated, not passed through**: the lexer keeps them raw
+   and the Zig backend passes them on, but `\$` reached V as an escaped
+   backslash before an interpolation. An `is` on a call's result binds
+   the subject first (V smart-casts names, not calls).
+5. A `mut` value-struct parameter -- tried for `f(mut m.decls)` through an
+   immutable parameter -- made V demand `mut` at every call site and
+   broke two earlier witnesses; undone. The case is solved at the call
+   site: a `mut` argument that is a field path not rooted at `self` is
+   bound to a local first (a reference field copied is the same
+   container). The implicit constructor declares `mut` on its reference
+   parameters, as its recorded signature always said.
+6. The list's `str()` method, instantiated for f64 by the uncalled sort
+   helper's signature, made V emit its own float-array string method
+   with a helper its unused-pruning had dropped (`StrIntpData` undeclared
+   at the C stage; `-no-skip-unused` runs the program identical). A free
+   function now. A fifteen-line probe does not reproduce it; not filed.
+
+The witnesses: **`selfhost/ast_dump.zbr`** parses and builds eleven
+sources and prints the built tree (else-if chains, a branch's arms, a
+catch's clauses): **69 lines identical** on both backends.
+**`selfhost/resolver_dump.zbr`** resolves six sources through the
+Resolver -- which runs the TypeChecker's inference and CgHelpers -- and
+prints the count and every message: **11 lines identical**. With the
+Lexer's and the Parser's dumps, the six programs and the engine's math
+test, ten witnesses hold, and the front end but CodeGen -- about 16,000
+lines of the compiler -- runs on V.
+
+What the pipeline learned about itself on the way, each a false green
+caught after the fact and closed: it carried on after a refused regen
+and diffed the old binary (stops now); it printed "build exit 0" for a
+failed build through a pipe (the build's own exit gates it now, and a
+binary older than its source is refused); it called two empty files
+identical (an empty control is "no control" now).
+
+New rows for the rules table:
+
+| Zebra | V | why |
+|---|---|---|
+| `^Expr?` | `?Expr` / `?&Name` | never `&?T` |
+| `var G: T = v` at module level | `__global ( g = v )` + `-enable-globals` | the real mutable global |
+| `a or b or ... (50 terms)` | `zany([a, b, ...])` | the checker's forty-level limit; no short-circuit |
+| `x!` after `if x != nil` | `zunwrap(x)` | the smart cast refuses `or` |
+| `for x in xs` with `mut x.field` passed on | by index, `mut x := xs.at(i)` | `for mut` references the element |
+| `f(mut p.field)` through an immutable `p` | `mut zt := p.field` then `f(mut zt)` | a reference copied is the same container |
+| `"\$"` in a string | `'\$'` | the lexer keeps escapes raw |
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

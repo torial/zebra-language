@@ -1,0 +1,28 @@
+# resolver_dump.zbr -- a driver for the Resolver on the V backend (2026-10-13):
+# parses and RESOLVES a few sources (a clean one, an undefined name, a
+# wrong arity, a type mismatch, a missing method) and prints the error
+# count and every message, the same under both backends, so the outputs
+# diff. The Resolver folds in the TypeChecker and CgHelpers, so this is
+# the whole front end but CodeGen.
+
+use Parser exposing PNode
+use Resolver
+
+def run(label: str, src: str)
+    var root: PNode = Parser.Parser.parse(src, label + ".zbr")?
+    var r = Resolver.Resolver(label + ".zbr", src)
+    r.resolve(root)?
+    print("-- " + label + ": " + r.errorCount().toString() + " error(s)")
+    if r.errorCount() > 0
+        print(r.allErrorMessages())
+catch |e|
+    print("-- " + label + " FAILED: " + e.message)
+
+def main()
+    run("clean", "def add(a: int, b: int): int\n    return a + b\n\ndef main()\n    var s: int = add(1, 2)\n    print(s)\n")
+    run("undefined", "def main()\n    var s: int = add(1, 2)\n    print(s)\n")
+    run("arity", "def add(a: int, b: int): int\n    return a + b\n\ndef main()\n    var s: int = add(1)\n    print(s)\n")
+    run("mismatch", "def main()\n    var s: int = \"text\"\n    print(s)\n")
+    run("method", "class Counter\n    var n: int\n\n    def bump()\n        .n = .n + 1\n\ndef main()\n    var c = Counter()\n    c.jump()\n")
+    run("shadow", "def f(x: int): int\n    var x: int = 2\n    return x\n")
+    print("resolver_dump: done")

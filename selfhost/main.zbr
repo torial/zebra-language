@@ -1512,10 +1512,13 @@ def vTarget(path: str, gc_on: bool, module_path: str)
         # (Sean, 2026-10-13: the language book tempers its line on GCs to
         # "available as an explicitly enabled mode"): -gc none frees nothing,
         # as Zebra's arena does today; --gc asks V for its Boehm collector
+        var globals_flag: str = ""
+        if res.has_globals
+            globals_flag = " -enable-globals"   # a mutable module-level var is a V __global
         if gc_on
-            print("  run it: v -gc boehm run " + out + "   (--gc: V's collector on)")
+            print("  run it: v -gc boehm" + globals_flag + " run " + out + "   (--gc: V's collector on)")
         else
-            print("  run it: v -gc none run " + out + "   (no collector, as Zebra's arena; --gc turns V's on)")
+            print("  run it: v -gc none" + globals_flag + " run " + out + "   (no collector, as Zebra's arena; --gc turns V's on)")
 catch |e|
     sys.errln("zebra --target v: " + e.message)
     sys.exit(1)
