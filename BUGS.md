@@ -155,6 +155,16 @@
   emitted as `const`, or as `@as(f64, ...)`, from the call's inferred type), AND the method
   must go through the numeric lowering. Fixing only the lowering would leave the literal case
   red. The fixture should include a literal-operand line.
+- **Third symptom (GameEngine session 2026-10-12, reproduced on `94a2e1d`):** a method chain
+  on a STRUCT result. With `struct Vec2` (x, y: float) and methods `add(o: Vec2): Vec2` and
+  `scale(s: float): Vec2`, `var c = a.add(b).scale(2.0)` fails at zig with "expected type
+  '*Vec2', found '*const Vec2'". The temporary for `a.add(b)` is bound `const`, and every
+  struct method's receiver is a mutable pointer. Bound first (`var ab = a.add(b)` then
+  `ab.scale(2.0)`) it prints 8.0. **So all three symptoms are one decision at the
+  materialisation:** the temporary's binding (var/const) and type are chosen without regard to
+  what the next call needs. A typed `var` temporary would satisfy all three. The
+  alternative -- a `*const` receiver for methods that assign no field -- fixes only this one,
+  and changes every struct method's signature.
 
 ### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, NEEDS A DECISION (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
