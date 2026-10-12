@@ -19,7 +19,21 @@
 # a class is a struct with `mut:` fields, `cue init` is `fn new_<name>()
 # &Name`, a method is `fn (mut self Name) m()`.
 
-use Ast exposing Module, Decl, DeclClass, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, Expr, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprStringLit, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, Span
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, Expr, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprStringLit, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
+
+# a callee's parameters, for named arguments and defaults at the call
+# (and which are references, hence `mut`)
+class FnSig
+    var names: List(str)
+    var has_default: List(bool)
+    var defaults: List(Expr)      # a nil placeholder where has_default is false
+    var refs: List(bool)
+
+    cue init()
+        .names = List(str)()
+        .has_default = List(bool)()
+        .defaults = List(Expr)()
+        .refs = List(bool)()
 
 # the emitter's answer: the V source and what it refused
 class VResult
@@ -69,6 +83,13 @@ class VGen
     var depth: int
     var refused: List(str)
     var class_names: List(str)
+    var struct_names: List(str)   # value types: V structs by value
+    var enum_names: List(str)
+    var union_names: List(str)    # V sum types over per-variant structs
+    var sigs: HashMap(str, FnSig) # by callee name: a function, `new_<type>`, a method (a name shared across types keeps the first)
+    var member_counts: HashMap(str, int)   # a union's variants, an enum's members: whether a branch over them is exhaustive (V refuses an `else` on an exhaustive match)
+    var pending_format: str       # a format spec for the next ${} in an interpolation
+    var matchN: int               # the temporaries bound for `branch`
     var current_class: str        # "" outside a class
     var needs_math: bool
     var tmpN: int                 # the temporaries bound for mutating calls on call results
@@ -79,6 +100,13 @@ class VGen
         .depth = 0
         .refused = List(str)()
         .class_names = List(str)()
+        .struct_names = List(str)()
+        .enum_names = List(str)()
+        .union_names = List(str)()
+        .sigs = HashMap(str, FnSig)()
+        .member_counts = HashMap(str, int)()
+        .pending_format = ""
+        .matchN = 0
         .current_class = ""
         .needs_math = false
         .tmpN = 0
@@ -134,6 +162,24 @@ class VGen
                 return "&" + name
         return name
 
+    def isStructName(name: str): bool
+        for sn in .struct_names
+            if sn == name
+                return true
+        return false
+
+    def isEnumName(name: str): bool
+        for en in .enum_names
+            if en == name
+                return true
+        return false
+
+    def isUnionName(name: str): bool
+        for un in .union_names
+            if un == name
+                return true
+        return false
+
     def isClassName(name: str): bool
         for cn in .class_names
             if cn == name
@@ -147,23 +193,29 @@ class VGen
             branch d
                 on Decl.class_ as c
                     .class_names.add(c.name)
+                on Decl.struct_ as st
+                    .struct_names.add(st.name)
+                on Decl.enum_ as en
+                    .enum_names.add(en.name)
+                    .member_counts.set(en.name, en.members.count())
+                on Decl.union_ as un
+                    .union_names.add(un.name)
+                    .member_counts.set(un.name, un.variants.count())
                 else
                     pass
-        # the second pass: which parameters are references (V wants `mut` on a
-        # param mutated through a method, at the declaration and at the call)
+        # the second pass: every callee's signature -- the parameter names and
+        # defaults (named arguments are reordered to positions at the call,
+        # missing ones filled from the defaults) and which are references (V
+        # wants `mut` on a param mutated through a method, at the declaration
+        # and at the call)
         for d in m.decls
             branch d
                 on Decl.method as mth
-                    .noteRefParams(vSafe(mth.name), mth.params)
+                    .noteSig(vSafe(mth.name), mth.params)
                 on Decl.class_ as c
-                    for mem in c.members
-                        branch mem
-                            on Decl.init as ini
-                                .noteRefParams("new_" + snakeCase(c.name), ini.params)
-                            on Decl.method as cm
-                                .noteRefParams(vSafe(cm.name), cm.params)
-                            else
-                                pass
+                    .noteMembers("new_" + snakeCase(c.name), c.members)
+                on Decl.struct_ as st
+                    .noteMembers("new_" + snakeCase(st.name), st.members)
                 else
                     pass
         for d in m.decls
@@ -180,16 +232,16 @@ class VGen
                 .genGlobal(v)
             on Decl.use_ as u
                 .refuse("use " + u.path + " (a multi-module program; the subset is one file)", u.span)
-            on Decl.struct_ as s
-                .refuse("struct " + s.name + " (the subset spells classes only; a struct is next)", s.span)
-            on Decl.enum_ as e
-                .refuse("enum " + e.name, e.span)
+            on Decl.struct_ as st
+                .genStruct(st)
+            on Decl.enum_ as en
+                .genEnum(en)
             on Decl.interface_ as i
                 .refuse("interface " + i.name, i.span)
             on Decl.union_ as un
-                .refuse("union " + un.name, un.span)
+                .genUnion(un)
             else
-                .refused.add("a declaration kind the subset does not spell (namespace, mixin, extend, sig, type alias)")
+                .refused.add("a declaration kind the subset does not spell (namespace, mixin, extend, fsig, type alias)")
 
     def genGlobal(v: DeclVar)
         if v.is_const and v.init_expr != nil
@@ -197,9 +249,30 @@ class VGen
         else
             .refuse("module-level var " + v.name + " (V has no mutable globals without __global; the subset takes const only)", v.span)
 
-    def noteRefParams(name: str, params: List(Param))
-        if .ref_params.get(name) != nil
+    def noteMembers(ctor: str, members: List(Decl))
+        for mem in members
+            branch mem
+                on Decl.init as ini
+                    .noteSig(ctor, ini.params)
+                on Decl.method as cm
+                    .noteSig(vSafe(cm.name), cm.params)
+                else
+                    pass
+
+    def noteSig(name: str, params: List(Param))
+        if .sigs.get(name) != nil
             return
+        var fsig = FnSig()
+        for p in params
+            fsig.names.add(p.name)
+            if p.default_ as d
+                fsig.has_default.add(true)
+                fsig.defaults.add(d)
+            else
+                fsig.has_default.add(false)
+                fsig.defaults.add(Expr.nil_(p.span))
+            fsig.refs.add(.isRefType(p.type_))
+        .sigs.set(name, fsig)
         var flags = List(bool)()
         for p in params
             flags.add(.isRefType(p.type_))
@@ -222,8 +295,6 @@ class VGen
             if .isRefType(p.type_)
                 mut_ = "mut "
             out = out + mut_ + vSafe(p.name) + " " + .vType(p.type_)
-            if p.default_ != nil
-                .refuse("a default argument on " + p.name + " (V has none; the subset passes every argument)", p.span)
         return out
 
     def genFunction(m: DeclMethod)
@@ -284,8 +355,10 @@ class VGen
     # `&Name{ ... }` with every reference field initialised (V refuses an
     # uninitialised reference field): a container by its constructor, a
     # class-typed field by `unsafe { nil }` (Zebra's zero for it)
-    def structLit(owner: str, members: List(Decl)): str
-        var out: str = "&" + owner + "{"
+    def structLit(owner: str, members: List(Decl), by_ref: bool = true): str
+        var out: str = owner + "{"
+        if by_ref
+            out = "&" + out
         var any: bool = false
         for mem in members
             branch mem
@@ -302,6 +375,112 @@ class VGen
                 else
                     pass
         return out + "}"
+
+    # ── value structs: V structs by value, a constructor by value, methods
+    #    `mut` when the body assigns to a field ──────────────────────────────
+    def genStruct(st: DeclStruct)
+        if st.ifaces.count() > 0
+            .refuse("struct " + st.name + " implements (interfaces are outside the subset)", st.span)
+        .line("struct " + st.name + " {")
+        .line("pub mut:")
+        .depth = .depth + 1
+        for mem in st.members
+            branch mem
+                on Decl.var_ as f
+                    .line(vSafe(f.name) + " " + .vType(f.type_))
+                else
+                    pass
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+        .current_class = st.name
+        var had_init: bool = false
+        for mem in st.members
+            branch mem
+                on Decl.init as ini
+                    had_init = true
+                    .line("fn new_" + snakeCase(st.name) + "(" + .genParams(ini.params) + ") " + st.name + " {")
+                    .depth = .depth + 1
+                    .line("mut self := " + .structLit(st.name, st.members, false))
+                    if ini.stmts as body
+                        .genStmts(body)
+                    .line("return self")
+                    .depth = .depth - 1
+                    .line("}")
+                    .line("")
+                on Decl.method as mth
+                    .genValueMethod(mth, st.name)
+                on Decl.var_
+                    pass
+                else
+                    .refuse("a member kind the subset does not spell in struct " + st.name, st.span)
+        if not had_init
+            .line("fn new_" + snakeCase(st.name) + "() " + st.name + " {")
+            .depth = .depth + 1
+            .line("return " + .structLit(st.name, st.members, false))
+            .depth = .depth - 1
+            .line("}")
+            .line("")
+        .current_class = ""
+
+    # a struct's method: `mut self` only when the body assigns to a field
+    # (V refuses a mutation through an immutable receiver, and warns on a
+    # `mut` never used); `cue toString()` is V's str()
+    def genValueMethod(m: DeclMethod, owner: str)
+        if m.throws_
+            .refuse("method " + m.name + " throws", m.span)
+        var ret = .vType(m.return_type)
+        var mname = vSafe(m.name)
+        if m.name == "toString" and m.params.count() == 0
+            mname = "str"
+        var recv: str = "self " + owner
+        if m.stmts as body0
+            if stmtsAssignThis(body0)
+                recv = "mut self " + owner
+        var head = "fn (" + recv + ") " + mname + "(" + .genParams(m.params) + ")"
+        if ret != ""
+            head = head + " " + ret
+        .line(head + " {")
+        .depth = .depth + 1
+        if m.stmts as body
+            .genStmts(body)
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+
+    # ── enums ──────────────────────────────────────────────────────────────
+    def genEnum(en: DeclEnum)
+        if en.base != nil
+            .refuse("enum " + en.name + " with a base type", en.span)
+        .line("enum " + en.name + " {")
+        .depth = .depth + 1
+        for mem in en.members
+            if mem.value != nil
+                .refuse("enum member " + en.name + "." + mem.name + " with a value", mem.span)
+            .line(vSafe(mem.name))
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+
+    # ── unions: a V sum type over one struct per variant (`U_v { payload T }`,
+    #    empty when the variant carries none) ─────────────────────────────────
+    def genUnion(un: DeclUnion)
+        var names: str = ""
+        for v in un.variants
+            var vname = un.name + "_" + v.name
+            if names != ""
+                names = names + " | "
+            names = names + vname
+            if v.payload as pt
+                .line("struct " + vname + " {")
+                .line("pub mut:")
+                .line("\tpayload " + .vType(pt))
+                .line("}")
+            else
+                .line("struct " + vname + " {}")
+            .line("")
+        .line("type " + un.name + " = " + names)
+        .line("")
 
     def genInit(ini: DeclInit, owner: str, members: List(Decl))
         .line("fn new_" + snakeCase(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
@@ -381,7 +560,7 @@ class VGen
             on Stmt.pass_
                 pass
             on Stmt.branch_ as b
-                .refuse("branch (V's match is next; the subset has if)", b.span)
+                .genBranch(b)
             on Stmt.raise_ as r
                 .refuse("raise (errors are outside the subset)", r.span)
             on Stmt.try_catch as tc
@@ -398,7 +577,7 @@ class VGen
                     on Expr.member as m
                         if isCallExpr(m.object)
                             .tmpN = .tmpN + 1
-                            var t = "_t" + .tmpN.toString()
+                            var t = "zt" + .tmpN.toString()   # (V refuses a name beginning with `_`)
                             .line("mut " + t + " := " + .exprStr(m.object))
                             .line(.mappedCall(t, m.member, c.args, c.span))
                             return
@@ -407,6 +586,97 @@ class VGen
             else
                 pass
         .line(.exprStr(e))
+
+    # `branch x` as V's `match` on a bound temporary (V smart-casts an
+    # identifier, not an expression); a union arm's binding reads the
+    # variant's payload; an `else` is always present (V wants exhaustiveness)
+    def genBranch(b: StmtBranch)
+        .matchN = .matchN + 1
+        var t = "zm" + .matchN.toString()   # (V refuses a name beginning with `_`)
+        .line(t + " := " + .exprStr(b.expr))
+        .line("match " + t + " {")
+        .depth = .depth + 1
+        for arm in b.cases
+            if arm.guard_expr.count() > 0
+                .refuse("a branch arm with a guard", arm.span)
+            if arm.struct_pat != nil
+                .refuse("a branch arm with a struct pattern", arm.span)
+            var vals: str = ""
+            var first: bool = true
+            for v in arm.values
+                if not first
+                    vals = vals + ", "
+                first = false
+                vals = vals + .armValueStr(v)
+            .line(vals + " {")
+            .depth = .depth + 1
+            if arm.binding as bnd
+                .line(vSafe(bnd) + " := " + t + ".payload")
+                if arm.stmts.count() == 0
+                    .line("_ = " + vSafe(bnd))
+            .genStmts(arm.stmts)
+            .depth = .depth - 1
+            .line("}")
+        # V wants a match exhaustive OR with an else, and refuses an else on
+        # an exhaustive one: over a union or an enum the arms are counted
+        # against the type's members; over a plain value an else is always needed
+        var exhaustive: bool = .armsExhaustive(b)
+        if b.else_ as es
+            if exhaustive
+                .line("// (the branch's else: unreachable, every member is an arm; V refuses it)")
+            else
+                .line("else {")
+                .depth = .depth + 1
+                .genStmts(es)
+                .depth = .depth - 1
+                .line("}")
+        else if not exhaustive
+            .line("else {}")
+        .depth = .depth - 1
+        .line("}")
+
+    def armsExhaustive(b: StmtBranch): bool
+        var subject: str = ""
+        var seen = List(str)()
+        for arm in b.cases
+            for v in arm.values
+                branch v
+                    on Expr.member as m
+                        branch m.object
+                            on Expr.ident as id
+                                if .isUnionName(id.name) or .isEnumName(id.name)
+                                    subject = id.name
+                                    var key = m.member
+                                    var had: bool = false
+                                    for sn in seen
+                                        if sn == key
+                                            had = true
+                                    if not had
+                                        seen.add(key)
+                            else
+                                pass
+                    else
+                        pass
+        if subject == ""
+            return false
+        return seen.count() >= (.member_counts.get(subject) orelse 0)
+
+    # an arm's value: a union variant (`U.v`, the variant's struct type), an
+    # enum member, or a plain value
+    def armValueStr(v: Expr): str
+        branch v
+            on Expr.member as m
+                branch m.object
+                    on Expr.ident as id
+                        if .isUnionName(id.name)
+                            return id.name + "_" + m.member
+                        if .isEnumName(id.name)
+                            return "." + vSafe(m.member)   # a match on an enum spells its arms `.member`
+                    else
+                        pass
+                return .exprStr(v)
+            else
+                return .exprStr(v)
 
     # `var x: int = 5` -> `mut x := i64(5)`; the type carried onto a numeric
     # literal, since V's untyped int is 32-bit and Zebra's is 64
@@ -448,11 +718,14 @@ class VGen
         return vt + "{}"
 
     def genIf(i: StmtIf)
+        var captured: str = ""
         if i.is_capture as cap
-            .line("if " + vSafe(cap) + " := " + .exprStr(i.cond) + " {")
+            captured = .genIfCapture(cap, i.cond)
         else
             .line("if " + condStr(.exprStr(i.cond)) + " {")
         .depth = .depth + 1
+        if captured != ""
+            .line(captured)
         .genStmts(i.then_stmts)
         .depth = .depth - 1
         for ei in i.else_ifs
@@ -469,6 +742,23 @@ class VGen
             .genStmts(es)
             .depth = .depth - 1
         .line("}")
+
+    # `if cond as name`: a nilable's binding (`if name := cond {`), or a union
+    # check's (`if x is U_v {` then `name := x.payload`, V's smart cast on an
+    # identifier); returns the then-block's first line when there is one
+    def genIfCapture(cap: str, cond: Expr): str
+        branch cond
+            on Expr.type_check as tc
+                if tc.variant_name as vn
+                    var subj = .exprStr(tc.expr)
+                    .line("if " + subj + " is " + tc.type_name + "_" + vn + " {")
+                    return vSafe(cap) + " := " + subj + ".payload"
+                .refuse("`is` on a class (not a union variant)", tc.span)
+                .line("if true {")
+                return ""
+            else
+                .line("if " + vSafe(cap) + " := " + .exprStr(cond) + " {")
+                return ""
 
     def genForIn(fi: StmtForIn)
         if fi.vars.count() != 1
@@ -552,6 +842,11 @@ class VGen
                 return .listLitStr(ll)
             on Expr.if_expr as ie
                 return "(if " + .exprStr(ie.cond) + " { " + .exprStr(ie.then_expr) + " } else { " + .exprStr(ie.else_expr) + " })"
+            on Expr.type_check as tc
+                if tc.variant_name as vn
+                    return "(" + .exprStr(tc.expr) + " is " + tc.type_name + "_" + vn + ")"
+                .refuse("`is` on a class (not a union variant)", tc.span)
+                return "true"
             on Expr.nil_
                 return "none"
             on Expr.lambda as lam
@@ -595,7 +890,12 @@ class VGen
                 on StringPart.expr_ as ex
                     out = out + "\${" + .exprStr(ex) + "}"
                 on StringPart.format as f
-                    .refused.add("a format spec in a string (\"" + f + "\")")
+                    # a format spec FOLLOWS its expression in the parts: spliced
+                    # into the `${...}` just emitted (V's own spelling, `${x:.4f}`)
+                    if out.endsWith("}")
+                        out = out.substring(0, out.len - 1) + ":" + f + "}"
+                    else
+                        .refused.add("a format spec (" + f + ") with no expression before it")
         return out + "'"
 
     def listLitStr(ll: ExprListLit): str
@@ -621,6 +921,8 @@ class VGen
                     first = false
                     if et == "i64" and isIntLit(el)
                         out = out + "i64(" + .exprStr(el) + ")"
+                    else if .isUnionName(et)
+                        out = out + et + "(" + .exprStr(el) + ")"   # a sum type's element: cast, or V infers the first variant
                     else
                         out = out + .exprStr(el)
                 return out + "])"
@@ -633,6 +935,10 @@ class VGen
             on Expr.ident as id
                 if id.name == "Math" and m.member == "PI"
                     return "math.pi"
+                if .isEnumName(id.name)
+                    return id.name + "." + vSafe(m.member)
+                if .isUnionName(id.name)
+                    return id.name + "_" + m.member + "{}"   # a payload-less variant as a value
             else
                 pass
         var obj = .exprStr(m.object)
@@ -641,24 +947,67 @@ class VGen
         return obj + "." + vSafe(m.member)
 
     def argsStr(args: List(Arg), callee: str = ""): str
-        var flags: List(bool)? = nil
+        var sigOpt: FnSig? = nil
         if callee != ""
-            flags = .ref_params.get(callee)
+            sigOpt = .sigs.get(callee)
+        if sigOpt as fsig
+            return .argsBySig(args, fsig)
+        # an unknown callee (the stdlib, a method the pass did not see): by position
         var out: str = ""
         var first: bool = true
-        var i: int = 0
         for a in args
             if not first
                 out = out + ", "
             first = false
             if a.name != nil
-                .refuse("a named argument (" + a.name! + "); V passes by position", a.span)
-            var mut_: str = ""
-            if flags as fl
-                if i < fl.count()
-                    if fl.at(i)
-                        mut_ = "mut "
-            out = out + mut_ + .exprStr(a.value)
+                .refuse("a named argument (" + a.name! + ") to a callee the emitter has no signature for", a.span)
+            out = out + .exprStr(a.value)
+        return out
+
+    # the arguments in the callee's order: a named argument to its parameter,
+    # the unnamed ones in sequence to the rest, a missing one from its default
+    def argsBySig(args: List(Arg), fsig: FnSig): str
+        var slots = List(str)()
+        var filled = List(bool)()
+        for n in fsig.names
+            slots.add("")
+            filled.add(false)
+        var pos: int = 0
+        for a in args
+            if a.name as an
+                var k: int = 0
+                var found: bool = false
+                for n in fsig.names
+                    if n == an
+                        slots.set(k, .exprStr(a.value))
+                        filled.set(k, true)
+                        found = true
+                    k = k + 1
+                if not found
+                    .refuse("a named argument (" + an + ") the callee has no parameter for", a.span)
+            else
+                while pos < fsig.names.count() and filled.at(pos)
+                    pos = pos + 1
+                if pos < fsig.names.count()
+                    slots.set(pos, .exprStr(a.value))
+                    filled.set(pos, true)
+                    pos = pos + 1
+                else
+                    .refuse("more arguments than the callee has parameters", a.span)
+        var out: str = ""
+        var i: int = 0
+        while i < fsig.names.count()
+            if i > 0
+                out = out + ", "
+            if not filled.at(i)
+                if fsig.has_default.at(i)
+                    slots.set(i, .exprStr(fsig.defaults.at(i)))
+                else
+                    .refused.add("a missing argument (" + fsig.names.at(i) + ") with no default")
+                    slots.set(i, "0")
+            if fsig.refs.at(i)
+                out = out + "mut "
+            out = out + slots.at(i)
             i = i + 1
         return out
 
@@ -667,8 +1016,8 @@ class VGen
             on Expr.member as m
                 return .methodCallStr(m, c.args, c.span)
             on Expr.ident as id
-                # a class constructed: Name(args) -> new_name(args)
-                if .isClassName(id.name)
+                # a class or a struct constructed: Name(args) -> new_name(args)
+                if .isClassName(id.name) or .isStructName(id.name)
                     return "new_" + snakeCase(id.name) + "(" + .argsStr(c.args, "new_" + snakeCase(id.name)) + ")"
                 if id.name == "StringBuilder"
                     return "new_zstring_builder()"
@@ -722,6 +1071,11 @@ class VGen
             on Expr.ident as id
                 if id.name == "Math"
                     isMath = true
+                # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
+                if .isUnionName(id.name)
+                    if args.count() == 0
+                        return id.name + "_" + name + "{}"
+                    return id.name + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " }"
             else
                 pass
         if isMath
@@ -896,6 +1250,54 @@ def isUntypedListLit(e: Expr): bool
     branch e
         on Expr.list_lit as ll
             return ll.elem_type == nil
+        else
+            return false
+
+# whether a body assigns to a field of this (`.x = ...`), through if / while /
+# for bodies: a struct method that does needs a `mut` receiver
+def stmtsAssignThis(stmts: List(Stmt)): bool
+    for s in stmts
+        if stmtAssignsThis(s)
+            return true
+    return false
+
+def stmtAssignsThis(s: Stmt): bool
+    branch s
+        on Stmt.assign as a
+            return exprRootIsThis(a.target)
+        on Stmt.if_ as i
+            if stmtsAssignThis(i.then_stmts)
+                return true
+            for ei in i.else_ifs
+                if stmtsAssignThis(ei.stmts)
+                    return true
+            if i.else_stmts as es
+                return stmtsAssignThis(es)
+            return false
+        on Stmt.while_ as w
+            return stmtsAssignThis(w.stmts)
+        on Stmt.for_in as fi
+            return stmtsAssignThis(fi.stmts)
+        on Stmt.for_num as fnum
+            return stmtsAssignThis(fnum.stmts)
+        on Stmt.branch_ as b
+            for arm in b.cases
+                if stmtsAssignThis(arm.stmts)
+                    return true
+            if b.else_ as es
+                return stmtsAssignThis(es)
+            return false
+        else
+            return false
+
+def exprRootIsThis(e: Expr): bool
+    branch e
+        on Expr.member as m
+            return exprRootIsThis(m.object)
+        on Expr.index as ix
+            return exprRootIsThis(ix.object)
+        on Expr.this_
+            return true
         else
             return false
 

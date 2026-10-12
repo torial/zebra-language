@@ -1105,6 +1105,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
     usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
+    usageLine("  zebra --target v --gc <source.zbr>       ... and say the run line with V's collector on (off by default: nothing is freed, as Zebra's arena)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
@@ -1430,7 +1431,7 @@ def defaultPreamblePath(): str
 # --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
 # .v beside the source, the refusals listed (never skipped silently), the run
 # line said. A resolver error stops it like any compile.
-def vTarget(path: str)
+def vTarget(path: str, gc_on: bool)
     var src: str = File.read(path)
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
@@ -1465,7 +1466,14 @@ def vTarget(path: str)
                 print("    " + r)
         else
             print("  nothing refused: the whole file is in the subset")
-        print("  run it: v run " + out)
+        # the collector is an explicit mode on this backend, not the default
+        # (Sean, 2026-10-13: the language book tempers its line on GCs to
+        # "available as an explicitly enabled mode"): -gc none frees nothing,
+        # as Zebra's arena does today; --gc asks V for its Boehm collector
+        if gc_on
+            print("  run it: v -gc boehm run " + out + "   (--gc: V's collector on)")
+        else
+            print("  run it: v -gc none run " + out + "   (no collector, as Zebra's arena; --gc turns V's on)")
 catch |e|
     sys.errln("zebra --target v: " + e.message)
     sys.exit(1)
@@ -4192,7 +4200,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--gc --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4673,7 +4681,7 @@ def main()
     # emitter, the .v written beside the source; what the subset refused is
     # printed by name and line. No Zig, no runtime module, no build.
     if mode_v
-        vTarget(path)
+        vTarget(path, args.contains("--gc"))
         sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo

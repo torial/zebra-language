@@ -152,6 +152,19 @@ answers correctly, so the attribution was the line map's, not a second bug
 reference per container, a deref per use, which is what V's `&Struct` pays
 everywhere.
 
+## The collector is a mode, not the default (Sean, 2026-10-13)
+
+The Zebra language book argues against garbage collection, and V collects
+by default (Boehm). The backend does not change the book's position by the
+back door: `zebra --target v` says the run line as `v -gc none run <file>`,
+under which V frees nothing, as Zebra's arena does today; `--gc` says it as
+`v -gc boehm run <file>`. A program that wants the collector asks for it.
+The book's line becomes "available as an explicitly enabled mode on the V
+backend", wording for Sean to approve when the book is next touched. (The
+F50 class of growth -- strings and containers never freed -- is what `--gc`
+would end for a standalone program; the reference-counting decision for the
+Zig backend stands.)
+
 ## The stdlib slice (2026-10-13)
 
 The engine's own sources were counted for what they call (add, toString,
@@ -210,6 +223,49 @@ literal operand, mis-lowered with a runtime one; the fix needs both a typed
 temporary and the numeric lowering), worked around by binding the float
 first; and `charAt`'s number.
 
+## The type system's core (2026-10-13)
+
+The first real target, `zbra/math.zbr`, constructs its structs with named
+arguments and default parameters and prints with format specs, so those
+came in with the slice:
+
+- **a declarations pass** records every callee's parameter names, defaults
+  and reference flags (a function, `new_<type>`, a method, by name); at a
+  call, named arguments go to their positions, the unnamed ones in sequence
+  to the rest, a missing one from its default, and `mut` where the parameter
+  is a reference;
+- **value structs** as V structs by value: `new_name(...) Name`, methods
+  `(self Name)` or `(mut self Name)` when the body assigns to a field (a scan
+  through if / while / for / branch bodies), `cue toString()` as V's `str()`;
+- **enums** by name, their `branch` arms spelled `.member`;
+- **unions** as V sum types over one struct per variant (`U_v { payload T }`,
+  empty without a payload): `U.v(x)` constructs, `branch` is a `match` on a
+  bound temporary (V smart-casts an identifier, not an expression), an arm's
+  binding reads the variant's payload, `x is U.v` and `if x is U.v as p` are
+  the smart cast;
+- **`branch` on a plain value** as `match` with `else`; over a union or an
+  enum the arms are counted against the type's members and `else` is
+  emitted only when they do not cover it (V refuses both a non-exhaustive
+  match without `else` and an `else` on an exhaustive one);
+- **format specs** spliced into V's own `${x:.4f}` (a format part follows
+  its expression in the AST's parts, which the run showed before the
+  builder's source did).
+
+`examples/v_poc4.zbr` (a struct with defaults, named arguments, methods and
+a formatted `toString`; an enum and a branch on it; a union with payload and
+payload-less variants, a branch with bindings, `is ... as`; a branch on an
+int with several values and an else; a function with a default parameter
+called both ways): **identical to the Zig backend's seven lines** by diff,
+nothing refused, no warnings; the three earlier programs still identical.
+
+Met on the way: V refuses a name beginning with `_` (temporaries are `zt1`,
+`zm1`), a sum-type list literal needs each element cast, a struct's
+constructor returns by value, Zebra's `sig` is a keyword (the emitter's
+signature records are `fsig`); and the Zig backend's chain temporary showed
+a third symptom (`a.add(b).scale(2.0)`, a struct method on a call's result,
+reaches zig as a method on a `const` temporary), told to the Zebra session
+and bound first in the test.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function
@@ -250,7 +306,7 @@ test, since `luau2zebra.py` ports land there):
    `insert` once V fixes its generic `array.insert`, Set, StringBuilder) and
    the Zebra idioms that rely on the reference (`copy()` for a snapshot, a
    list handed to the host).
-4. **Classes with interfaces, generics, unions, `branch`** map onto V's
+4. **Classes with interfaces, generics, unions, `branch`** -- unions, enums, value structs and `branch` done (the section above); interfaces and generics map onto V's
    interfaces, generics (`fn f[T]`), sum types and `match`; mechanical but wide
    (1,591 lines' worth).
 5. **Closures** (the engine's capture closures since 838f05f) map onto V's
