@@ -19,7 +19,7 @@
 # a class is a struct with `mut:` fields, `cue init` is `fn new_<name>()
 # &Name`, a method is `fn (mut self Name) m()`.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprStringLit, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
 # (and which are references, hence `mut`)
@@ -92,6 +92,8 @@ class VGen
     var current_ret: str              # the enclosing def's V return type ("" for none)
     var in_method: bool               # inside a method (a def-level catch there is refused: a closure's capture of self is V's call)
     var catch_bindings: List(str)     # the error bindings in scope: `e.message` is `e.msg()` on these
+    var current_fields: List(str)     # the enclosing class's / struct's fields: a bare name among them is `self.<field>`
+    var local_names: List(str)        # the params and locals declared so far in the enclosing def (they shadow a field)
     var matchN: int               # the temporaries bound for `branch`
     var current_class: str        # "" outside a class
     var needs_math: bool
@@ -112,6 +114,8 @@ class VGen
         .current_ret = ""
         .in_method = false
         .catch_bindings = List(str)()
+        .current_fields = List(str)()
+        .local_names = List(str)()
         .matchN = 0
         .current_class = ""
         .needs_math = false
@@ -222,6 +226,7 @@ class VGen
                     .noteMembers("new_" + snakeCase(c.name), c.members)
                 on Decl.struct_ as st
                     .noteMembers("new_" + snakeCase(st.name), st.members)
+                    .noteImplicitCtor("new_" + snakeCase(st.name), st.members)
                 else
                     pass
         for d in m.decls
@@ -264,6 +269,34 @@ class VGen
                     .noteSig(vSafe(cm.name), cm.params)
                 else
                     pass
+
+    # a struct with no `cue init` is constructed from its fields, every one
+    # named or in order, a missing one zero (Zebra's implicit constructor)
+    def noteImplicitCtor(ctor: str, members: List(Decl))
+        if .sigs.get(ctor) != nil
+            return
+        var fsig = FnSig()
+        for mem in members
+            branch mem
+                on Decl.var_ as f
+                    fsig.names.add(f.name)
+                    fsig.has_default.add(true)
+                    fsig.defaults.add(.zeroExpr(f))
+                    fsig.refs.add(.isRefType(f.type_))
+                else
+                    pass
+        .sigs.set(ctor, fsig)
+
+    # a field's zero as an expression the call can spell (the literal kinds;
+    # a container or a class field falls back to nil, which the V side
+    # spells as its constructor through zeroOf at the struct literal)
+    def zeroExpr(f: DeclVar): Expr
+        var t = .vType(f.type_)
+        if t == "i64": return Expr.int_lit(ExprIntLit(f.span, "0", IntBase.decimal))
+        if t == "f64": return Expr.float_lit(ExprFloatLit(f.span, "0.0"))
+        if t == "string": return Expr.string_lit(ExprStringLit(f.span, StringKind.plain, ""))
+        if t == "bool": return Expr.bool_lit(ExprBoolLit(f.span, false))
+        return Expr.nil_(f.span)
 
     def noteSig(name: str, params: List(Param))
         if .sigs.get(name) != nil
@@ -321,6 +354,7 @@ class VGen
         .current_params = m.params
         .current_ret = ret
         .in_method = false
+        .resetLocals(m.params)
         if m.stmts as body
             .genStmts(body)
         .depth = .depth - 1
@@ -346,6 +380,7 @@ class VGen
         .line("}")
         .line("")
         .current_class = c.name
+        .current_fields = fieldNames(c.members)
         var had_init: bool = false
         for mem in c.members
             branch mem
@@ -353,7 +388,10 @@ class VGen
                     had_init = true
                     .genInit(ini, c.name, c.members)
                 on Decl.method as mth
-                    .genMethod(mth, c.name)
+                    if mth.mods.is_static
+                        .genStaticMethod(mth, c.name)
+                    else
+                        .genMethod(mth, c.name)
                 on Decl.var_
                     pass
                 else
@@ -409,6 +447,7 @@ class VGen
         .line("}")
         .line("")
         .current_class = st.name
+        .current_fields = fieldNames(st.members)
         var had_init: bool = false
         for mem in st.members
             branch mem
@@ -416,6 +455,7 @@ class VGen
                     had_init = true
                     .line("fn new_" + snakeCase(st.name) + "(" + .genParams(ini.params) + ") " + st.name + " {")
                     .depth = .depth + 1
+                    .resetLocals(ini.params)
                     .line("mut self := " + .structLit(st.name, st.members, false))
                     if ini.stmts as body
                         .genStmts(body)
@@ -430,9 +470,25 @@ class VGen
                 else
                     .refuse("a member kind the subset does not spell in struct " + st.name, st.span)
         if not had_init
-            .line("fn new_" + snakeCase(st.name) + "() " + st.name + " {")
+            # the implicit constructor: every field a parameter, in order
+            var ps: str = ""
+            var lit: str = st.name + "{"
+            var any: bool = false
+            for mem in st.members
+                branch mem
+                    on Decl.var_ as f
+                        if ps != ""
+                            ps = ps + ", "
+                        ps = ps + vSafe(f.name) + " " + .vType(f.type_)
+                        if not any
+                            lit = lit + "\n"
+                        any = true
+                        lit = lit + "\t" + vSafe(f.name) + ": " + vSafe(f.name) + "\n"
+                    else
+                        pass
+            .line("fn new_" + snakeCase(st.name) + "(" + ps + ") " + st.name + " {")
             .depth = .depth + 1
-            .line("return " + .structLit(st.name, st.members, false))
+            .line("return " + lit + "}")
             .depth = .depth - 1
             .line("}")
             .line("")
@@ -458,6 +514,7 @@ class VGen
         .current_params = m.params
         .current_ret = ret
         .in_method = true
+        .resetLocals(m.params)
         if m.stmts as body
             .genStmts(body)
         .depth = .depth - 1
@@ -501,6 +558,7 @@ class VGen
     def genInit(ini: DeclInit, owner: str, members: List(Decl))
         .line("fn new_" + snakeCase(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
         .depth = .depth + 1
+        .resetLocals(ini.params)
         .line("mut self := " + .structLit(owner, members))
         if ini.stmts as body
             .genStmts(body)
@@ -508,6 +566,45 @@ class VGen
         .depth = .depth - 1
         .line("}")
         .line("")
+
+    # a `static def` is a free function named <class>_<method>; a call on the
+    # class's name reaches it
+    def genStaticMethod(m: DeclMethod, owner: str)
+        var ret = .retType(m)
+        var head = "fn " + snakeCase(owner) + "_" + vSafe(m.name) + "(" + .genParams(m.params) + ")"
+        if ret != ""
+            head = head + " " + ret
+        .line(head + " {")
+        .depth = .depth + 1
+        .current_params = m.params
+        .current_ret = ret
+        .in_method = false
+        .resetLocals(m.params)
+        var saved = .current_fields
+        .current_fields = List(str)()   # no self in a static method
+        if m.stmts as body
+            .genStmts(body)
+        .current_fields = saved
+        .depth = .depth - 1
+        .line("}")
+        .line("")
+
+    def resetLocals(params: List(Param))
+        .local_names = List(str)()
+        for p in params
+            .local_names.add(p.name)
+
+    def isLocalName(name: str): bool
+        for n in .local_names
+            if n == name
+                return true
+        return false
+
+    def isCurrentField(name: str): bool
+        for f in .current_fields
+            if f == name
+                return true
+        return false
 
     def genMethod(m: DeclMethod, owner: str)
         var ret = .retType(m)
@@ -519,6 +616,7 @@ class VGen
         .current_params = m.params
         .current_ret = ret
         .in_method = true
+        .resetLocals(m.params)
         if m.stmts as body
             .genStmts(body)
         .depth = .depth - 1
@@ -550,6 +648,7 @@ class VGen
                 .genForIn(fi)
             on Stmt.for_num as fnum
                 var v = vSafe(fnum.var_)
+                .local_names.add(fnum.var_)
                 var step: str = "++"
                 if fnum.step != nil
                     step = " += " + .exprStr(fnum.step!)
@@ -756,6 +855,7 @@ class VGen
     # `var x: int = 5` -> `mut x := i64(5)`; the type carried onto a numeric
     # literal, since V's untyped int is 32-bit and Zebra's is 64
     def genLocal(v: DeclVar)
+        .local_names.add(v.name)
         var name = vSafe(v.name)
         if v.init_expr as ie
             var tname: str = ""
@@ -842,6 +942,7 @@ class VGen
         if fi.filter != nil
             .refuse("for ... if (a filtered loop)", fi.span)
         var v = vSafe(fi.vars.at(0))
+        .local_names.add(fi.vars.at(0))
         # `for i in a.to(b)`: a numeric range
         branch fi.iter
             on Expr.call as c
@@ -898,6 +999,8 @@ class VGen
             on Expr.this_
                 return "self"
             on Expr.ident as id
+                if .isCurrentField(id.name) and not .isLocalName(id.name)
+                    return "self." + vSafe(id.name)   # a bare field name inside its class (Zebra allows it)
                 return vSafe(id.name)
             on Expr.member as m
                 return .memberStr(m)
@@ -1165,6 +1268,9 @@ class VGen
             on Expr.ident as id
                 if id.name == "Math"
                     isMath = true
+                # a static method: Class.method(args) -> class_method(args)
+                if .isClassName(id.name) or .isStructName(id.name)
+                    return snakeCase(id.name) + "_" + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
                 # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
                 if .isUnionName(id.name)
                     if args.count() == 0
@@ -1401,6 +1507,16 @@ def dropLast(xs: List(str)): List(str)
     while i < xs.count() - 1
         out.add(xs.at(i))
         i = i + 1
+    return out
+
+def fieldNames(members: List(Decl)): List(str)
+    var out = List(str)()
+    for mem in members
+        branch mem
+            on Decl.var_ as f
+                out.add(f.name)
+            else
+                pass
     return out
 
 def isCallExpr(e: Expr): bool
