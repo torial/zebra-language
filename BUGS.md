@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-561. Next new bug: BUG-562.**
+**Last bug number generated: BUG-562. Next new bug: BUG-563.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,31 @@
 > measured in.
 
 ---
+
+### BUG-562: a List bound from a literal and written only by subscript (`s[i] = v`, `s[i] += 1`) is emitted `var`; zig refuses it as never mutated -- OPEN (found 2026-10-12)
+- **Found by:** zebra-taocp's batch-2 test (`var stirling = [0, 0, 0, 0, 0]` then
+  `stirling[mx] += 1`); reproduced on `8ff157d`.
+- **Repro:**
+  ```
+  def main()
+      var s = [0, 0]
+      s[1] = 5
+      print(s)
+  ```
+  `b.zbr:2: error: local variable is never mutated` -- zig's, at `var s = (blk_ll_1: {...})`
+  (col 9). `s[1] += 1` and a subscript write inside a loop fail the same way.
+- **Control:** `var s = List(int)()` / `s.add(0)` / `s[0] += 1` prints `[1]` -- the `add`
+  (`s.append(...)`) keeps zig satisfied, so the bug only shows when element writes are the
+  ONLY writes.
+- **Mechanism:** BUG-495's, by the other spelling. A container binding is a pointer since
+  BUG-501 1d (`_ZbrList(T)` is `*std.ArrayList(T)`), and a subscript write emits
+  `_zbr_set(s.items, i, v)`, a write THROUGH the pointer. Only rebinding (`s = ...`) mutates the
+  binding. BUG-495's fix taught `receiverNeedsVar` that `set()` on a List does not need
+  `var`; the subscript-assignment path still counts its base as mutated.
+- **Expected:** a subscript assignment whose base is a List or map local must not mark the
+  base mutated -- the same rule as `set()`. Check a fixed-size value (an array or struct
+  value, if any can be subscripted) separately: for those a subscript write IS a mutation.
+- **Workaround:** `s.set(i, v)` (BUG-495's fixed path), or build the list with `add`.
 
 ### BUG-561: a list, dict or set literal cannot span lines, though a parenthesised expression can -- OPEN (found 2026-10-12)
 - **Found by:** writing zebra-taocp's pentomino table (a 12-row nested list); reproduced on
