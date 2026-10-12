@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-559. Next new bug: BUG-560.**
+**Last bug number generated: BUG-560. Next new bug: BUG-561.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,36 @@
 > measured in.
 
 ---
+
+### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- OPEN (found 2026-10-12)
+- **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),
+  reported cross-session; reproduced and minimised here on `cfd289b`.
+- **Repro:** `boxmod.zbr` declares `class Box` with `var source: str` (set in `cue init`) and
+  `def makeBox(): Box`. The main file:
+  ```
+  use boxmod exposing Box, makeBox
+  class Other
+      var source: List(str)
+      cue init()
+          .source = List(str)()
+  def main()
+      var bx: Box = makeBox()
+      print(bx.source.len.toString())
+  ```
+  The front end accepts it; zig refuses: `no member named 'items' in 'str'` (line 8, no column).
+  The `.len` was emitted as a List's `.items.len`.
+- **Controls, all print 5:** (1) the same program without `class Other`; (2) the field bound
+  to a local first (`var s = bx.source` then `s.len`). The reporter also saw: (3) the field
+  renamed in one of the two classes; (4) everything in one module.
+- **Not the variable name.** The report suspected a `var.field` dotted key (`res.source`), but
+  renaming the variable to `bx` fails the same way. The trigger is the FIELD NAME plus a
+  receiver whose class lives in another module.
+- **Where (inferred, not traced):** the BUG-527 / BUG-360 family. When the receiver's class
+  is not in `module_decls`, the field's type is apparently looked up by NAME among the
+  current module's classes, and a same-named field there wins. The fix belongs at that
+  lookup: resolve the field through the receiver's declared class (the imported Box), or
+  return nil (unknown) rather than another class's answer -- the same rule BUG-527 applied
+  in `getAssignFieldType`.
 
 ### BUG-559: `.toInt()` on a call's result reaches zig as a method call on `f64` -- OPEN (found 2026-10-11)
 - **Found by:** the GameEngine session (2026-10-11), reported cross-session; reproduced here on
