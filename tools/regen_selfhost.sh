@@ -64,6 +64,17 @@ echo "── regenerating ${#FILES[@]} module(s) with the SELFHOST (zebra.exe) �
 
 fail=0
 total_diff=0
+# FILES is hand-kept, and the emit is the truth: a module main.zbr now uses but FILES omits
+# would be emitted and then silently never validated or installed (the v-backend-poc branch
+# added CodeGenV and had to remember this list). Refuse on any emitted module not named.
+for z in "$OUT"/*.zig; do
+    [ -e "$z" ] || continue
+    m="${z##*/}"; m="${m%.zig}"
+    case " ${FILES[*]} zebra_rt " in *" $m "*) ;; *)
+        printf '  %-14s %s\n' "$m" "EMITTED BUT NOT IN FILES — add it to FILES in this script"
+        fail=$((fail + 1)) ;;
+    esac
+done
 printf '  %-14s %9s %9s %8s\n' module emitted committed diff
 for f in "${FILES[@]}" zebra_rt; do
     src="$OUT/$f.zig"
