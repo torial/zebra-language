@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-560. Next new bug: BUG-561.**
+**Last bug number generated: BUG-561. Next new bug: BUG-562.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,36 @@
 > measured in.
 
 ---
+
+### BUG-561: a list, dict or set literal cannot span lines, though a parenthesised expression can -- OPEN (found 2026-10-12)
+- **Found by:** writing zebra-taocp's pentomino table (a 12-row nested list); reproduced on
+  `8fab325`.
+- **Repro:**
+  ```
+  def main()
+      var a = [[1, 2],
+          [3, 4]]
+      print(a)
+  ```
+  `error: unexpected expression token: '\n'` at the end of line 2. Aligning the second row under
+  the first instead gives `indentation is 13 space(s)`, and a dict literal split the same way
+  fails identically.
+- **Controls, both print 3:** `var x = (1 +` / `2)` and `foo(1,` / `2)` -- a line break inside
+  PARENTHESES is a continuation.
+- **Cause:** `selfhost/Lexer.zbr` suppresses the end-of-line token and indentation processing
+  while `parenDepth > 0`. `(` / `)` (and `open_call`) adjust `parenDepth`; `[`, `]`, `{` and `}`
+  emit their tokens without touching it. So a newline inside brackets or braces is an
+  end-of-line plus an indentation change, in the middle of an expression.
+- **Expected:** brackets and braces continue the line as parentheses do (Python's rule, and the
+  one a reader of `foo(1,` / `2)` will assume). QUICKSTART documents continuation only for
+  pipelines ("a multi-line pipeline needs parentheses"); it says nothing for literals.
+- **Proposed fix (not applied):** count `[`/`]` and `{`/`}` in a separate bracket depth (or in
+  `parenDepth`), and suppress eol/indentation when either is non-zero. Keep the lambda logic
+  keyed on parentheses only -- `inLambdaParams` / `afterLambdaParams` / `lambdaStack` read
+  `parenDepth`, and a `def` lambda inside a list literal must still get its body's
+  indentation. Needs a fixture for a nested list, a dict and a set literal across lines, plus
+  a lambda inside a multi-line list.
+- **Workaround:** build the value with `.add` per line (zebra-taocp's `pentominoShapes` does).
 
 ### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- OPEN (found 2026-10-12)
 - **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),
