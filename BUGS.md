@@ -90,6 +90,16 @@
   lowering, presumably because the temp has no recorded type when the call is generated.
 - **Expected:** the same lowering as `tf.toInt()`. A fixture should cover the other numeric
   conversions on a call receiver as well (`toFloat`, `toStr`), since they likely share the path.
+- **Second symptom, same temporary (reported by the GameEngine session 2026-10-12, reproduced
+  on `f970e71`):** with a LITERAL operand, `var fl: int = Math.floor(2.7).toInt()` fails
+  EARLIER, at the temporary itself: `var _mc = @floor(2.7)` has type `comptime_float`, and zig
+  says "variable of type 'comptime_float' must be const or comptime". With a runtime operand
+  (`Math.floor(x).toInt()`) it is BUG-559's message, and bound first (`var f: float = ...`
+  then `f.toInt()`) it prints 2. The same happens for Math.round / min / max / clamp on
+  literal floats. **So the fix needs both halves:** the temporary must be TYPED (it should be
+  emitted as `const`, or as `@as(f64, ...)`, from the call's inferred type), AND the method
+  must go through the numeric lowering. Fixing only the lowering would leave the literal case
+  red. The fixture should include a literal-operand line.
 
 ### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, NEEDS A DECISION (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
