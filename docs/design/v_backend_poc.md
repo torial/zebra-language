@@ -612,7 +612,7 @@ stood and went through in twelve rounds; the last four were one crash.
 6. **V's smart cast, three rounds.** V narrows a name after `x == none`
    / `x != none`; on the narrowed name an `or` block is refused, the
    generic unwrap helper's re-wrap fails at the C stage ("cannot convert
-   TRef to _option_TRef", 25 lines, drafted as a ticket), the explicit
+   TRef to _option_TRef", 25 lines, filed as vlang/v#30277), the explicit
    option cast works for a parameter but not for a `mut` local
    (another C-stage failure), and the narrowing does not carry into a
    binding (`y := x` stays an option). Mirroring the smart cast in the
@@ -637,7 +637,7 @@ stood and went through in twelve rounds; the last four were one crash.
    parameter `mut x &T`; it declares `mut x T` now. V's escape analysis
    had refused plain stores of such parameters earlier and the round
    that wrapped them in `unsafe { }` was hiding the right message.
-   Drafted as a ticket (`repro_v3/TICKET_mut_ref_param_value.md`).
+   Filed as vlang/v#30276 (`repro_v3/storeparam.v`, 30 lines).
    Also on the way: a set or string-builder field of a class starts as
    its constructor, not nil.
 9. A char's `toString` is the character (`ascii_str()`), a byte's its
