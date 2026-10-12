@@ -462,12 +462,18 @@ refusals and 200 V errors as it stood; four rounds:
    (`*it`, `*x`) and did not compile. The comparing helpers (contains,
    indexOf, remove by value) are free functions now, instantiated only
    where called, and the emitter reaches them when it knows the receiver
-   is a list. The V bug is real and unpinned: five minimal probes
-   (recursive sum type, a reference variant, an empty variant, an option
-   payload, a generic-list variant) all pass, so the trigger is
-   something the 150-variant union has that they lack; the failing file
-   is kept at `C:/Projects/v-dist/repro_v2/parser_dump_failing.v`
-   (181 KB) for a bisection before a ticket.
+   is a list. The V bug is pinned and filed as **vlang/v#30275**
+   (2026-10-13, 28 lines): a generic method comparing two `T` values is
+   emitted with *another instantiation's* equality function once the
+   struct is instantiated for a sum type and for a struct that holds a
+   reference to that sum-type instantiation -- the second instantiation
+   need only exist as a type, not be called. Five hand-written probes
+   had all passed; what found it was a two-stage reduction of the 181 KB
+   failing file (the union's 75 variants delta-debugged to two, then the
+   file's top-level blocks to eight, then the eight re-read by hand into
+   the repro). The generated C says it plainly: `Box[Tree].has` compares
+   two `main__Tree` with `main__Param_struct_eq`. Related to #30253 (the
+   insert miscompile), the same family.
 
 After the four: **the parse dump under V is identical to the Zig
 backend's, 55 lines**, and Token + Lexer + Parser -- about 5,200 lines
