@@ -1440,7 +1440,18 @@ def vTarget(path: str)
         sys.exit(1)
     if pm_node is PNode.module_ as pm
         var module = ASTBuilder.build(pm, path)?
-        var res: VResult = generateV(module)
+        # the V runtime (the boxed containers), inlined into the emitted file:
+        # in the repo, or next to an installed zebra.exe, as the preamble is
+        var rt_path: str = "selfhost/zebra_rt.v"
+        if not File.exists(rt_path)
+            var exe_dir: str = Path.dirname(sys.selfExe())
+            if exe_dir == ""
+                exe_dir = "."
+            rt_path = exe_dir + "/zebra_rt.v"
+        if not File.exists(rt_path)
+            sys.errln("zebra --target v: the V runtime zebra_rt.v is not at selfhost/zebra_rt.v nor beside zebra.exe: nothing written")
+            sys.exit(1)
+        var res: VResult = generateV(module, File.read(rt_path))
         var dir: str = Path.dirname(path)
         if dir == ""
             dir = "."

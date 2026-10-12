@@ -6,6 +6,19 @@ on Sean's ask: pull main, add V as a backend in a worktree as a proof of concept
 so the question "could V be Zebra's second backend" is answered with a run and
 an estimate rather than an opinion. Nothing here is on main.*
 
+## What it is for (Sean, 2026-10-13)
+
+Two reasons, both of which move the estimate:
+
+- **Vinix.** Sean is weighing the Vinix OS, written in V, as a daily driver.
+  A Zebra program native to that OS wants a V backend, and the engine's "host
+  stays Zig" line below becomes a road rather than a wall: a V host is a
+  project, but it is the project that would matter there.
+- **Openness.** V takes tickets and PRs from LLMs rather than refusing them,
+  so a backend that finds V's bugs can send them back and have the language
+  improve under it. The first night produced one confirmed (the generic
+  `insert` miscompile below), with a twenty-line repro ready to post.
+
 ## What was built
 
 - `selfhost/CodeGenV.zbr` (about 560 lines): a second emitter over the same
@@ -95,6 +108,50 @@ claims. What it does not prove: anything about the stdlib surface beyond the
 dozen methods mapped, nilables, errors, closures, interfaces, generics, or
 the container semantics (item 3 below).
 
+## Containers are references (decided and done for the subset, 2026-10-13)
+
+Sean's decision: keep Zebra's reference semantics for containers (BUG-501
+1d: two names for one container). A V array is a value copied on assignment,
+so the backend boxes: `selfhost/zebra_rt.v` holds `ZList[T]` and `ZMap[K, V]`
+as structs by reference with the methods on them (add, at, set, count, copy,
+contains, clear, last, is_empty; set, get as an option, has, keys, remove,
+count, copy), inlined at the top of every emitted file so one file runs. The
+emitter maps `List(T)` to `&ZList[T]`, `List(T)()` and typed literals to the
+runtime's constructors, the methods by name, iteration to `.items`, and the
+nilable shapes a map needs: `orelse` as `or { }`, `if x as y` as `if y := x`,
+`T?` as `?T`, `nil` as `none`.
+
+The probe first (`C:/Projects/v-dist/probe/refsem.v`, six cases with asserts):
+two names one container, mutation through a function and through a struct
+field, an independent `copy()`, a boxed literal, a list of lists. Then
+`examples/v_poc2.zbr`, the same six in Zebra plus a map through `get`,
+`orelse`, `if as` and `keys`: **identical to the Zig backend's nine lines**,
+nothing refused, no warnings; and `examples/v_poc.zbr` still identical to its
+control under the new emitter.
+
+Three V rules the emitter carries, each named by a V error:
+
+- a mutating method cannot be called on a call's result (`rows.at(0).add(7)`:
+  "cannot pass expression as mut"): the emitter binds a temporary;
+- a reference field must be initialised: the constructor's struct literal
+  initialises every reference field, a container by the runtime's constructor,
+  a class-typed field by `unsafe { nil }` (Zebra's zero for it);
+- a parameter mutated through a method is `mut` at the declaration and at the
+  call (`fill(mut a, 3)`): a first pass collects which parameters are
+  references, by callee name (a method name shared across classes keeps the
+  first, a known coarseness until the emitter has types).
+
+One V bug met and worked around, the repro at
+`C:/Projects/v-dist/repro_v/generic_insert.v`: `l.items.insert(i, x)` on a
+generic struct gets the other instantiation's element type once two
+instantiations exist (`insert` / `removeAt` are out of the runtime until V
+fixes it; the emitter refuses them by name). A first C error was attributed by
+`-g` to `x in l.items` in `contains`; a standalone repro of that compiles and
+answers correctly, so the attribution was the line map's, not a second bug
+(`contains` stays a loop, which is right either way). One cost: a
+reference per container, a deref per use, which is what V's `&Struct` pays
+everywhere.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function
@@ -127,14 +184,12 @@ test, since `luau2zebra.py` ports land there):
    `catch`, `raise`) maps onto V's result types (`!T`, `or { }`, `return error()`)
    cleanly too. Both are smaller than they look because V's semantics are the
    same shape.
-3. **Containers as references** (zebra-language BUG-501 1d, cfd2bc8): V's arrays
-   and maps are *value* types copied on assignment unless passed as `mut` or
-   held in a struct by reference. This is the semantic seam, the one the proof
-   of concept did not reach: a Zebra `List` is one object under two names, a V
-   array is two after `b := a`. A full backend either boxes containers (a
-   `&[]T` behind every List, costing a deref on every use) or re-derives the
-   container semantics for V. This is the decision to make before any of the
-   rest, and it is Sean's.
+3. **Containers as references** -- decided (kept) and done for the subset,
+   see the section above: a boxed `ZList` / `ZMap` by reference in a V
+   runtime. What remains is the rest of the method surface (sort, slices,
+   `insert` once V fixes its generic `array.insert`, Set, StringBuilder) and
+   the Zebra idioms that rely on the reference (`copy()` for a snapshot, a
+   list handed to the host).
 4. **Classes with interfaces, generics, unions, `branch`** map onto V's
    interfaces, generics (`fn f[T]`), sum types and `match`; mechanical but wide
    (1,591 lines' worth).

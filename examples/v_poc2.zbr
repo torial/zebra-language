@@ -1,0 +1,72 @@
+# v_poc2.zbr -- the V backend's second program: containers are REFERENCES
+# (2026-10-13). Every alias the probe tried, in Zebra: two names for one
+# list, a list filled through a function, held in a class field, an
+# independent copy, a list of lists, and a map through get / orelse /
+# `if as` / keys. Runs on the Zig backend too; the outputs are diffed.
+
+class Bag
+    var name: str
+    var stuff: List(int)
+
+    cue init(name: str)
+        .name = name
+        .stuff = List(int)()
+
+    def stash(x: int)
+        .stuff.add(x)
+
+    def total(): int
+        var t: int = 0
+        for x in .stuff
+            t = t + x
+        return t
+
+def fill(xs: List(int), n: int)
+    for i in 0.to(n)
+        xs.add(i * i)
+
+def main()
+    var a: List(int) = []
+    a.add(1)
+    var b = a
+    b.add(2)
+    assert a.count() == 2, "two names, one container"
+    print("alias: " + a.count().toString())
+
+    fill(a, 3)
+    assert b.count() == 5, "filled through a function, seen through the other name"
+    print("through a function: " + b.at(4).toString())
+
+    var bag = Bag("bag")
+    bag.stuff = a
+    bag.stash(99)
+    assert a.at(5) == 99, "the field is the same container"
+    print("through a field: " + a.count().toString() + " total " + bag.total().toString())
+
+    var c = a.copy()
+    c.add(7)
+    assert a.count() == 6 and c.count() == 7, "copy makes an independent container"
+    print("copy: " + a.count().toString() + " " + c.count().toString())
+
+    var rows: List(List(int)) = []
+    rows.add(a)
+    var inner = rows.at(0)
+    inner.add(8)
+    assert a.count() == 7, "a list held in a list is the same list"
+    print("nested: " + a.count().toString() + " last " + a.at(6).toString())
+
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("one", 1)
+    m.set("two", 2)
+    var got: int = m.get("two") orelse 0
+    var missing: int = m.get("three") orelse 0 - 1
+    print("map: " + got.toString() + " " + missing.toString() + " " + m.keys().count().toString())
+    if m.get("one") as v
+        print("as: " + v.toString())
+    var names: List(str) = ["x", "y"]
+    names.add("z")
+    var joined: str = ""
+    for nm in names
+        joined = joined + nm
+    print("names: " + joined)
+    print("v_poc2: all ok")

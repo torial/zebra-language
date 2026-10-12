@@ -71,6 +71,8 @@ class VGen
     var class_names: List(str)
     var current_class: str        # "" outside a class
     var needs_math: bool
+    var tmpN: int                 # the temporaries bound for mutating calls on call results
+    var ref_params: HashMap(str, List(bool))   # by callee name (a function, `new_<class>`, a method): which params are references, hence `mut` (V's rule for a param mutated through a method; a method name shared across classes keeps the first)
 
     cue init()
         .sb = StringBuilder()
@@ -79,6 +81,8 @@ class VGen
         .class_names = List(str)()
         .current_class = ""
         .needs_math = false
+        .tmpN = 0
+        .ref_params = HashMap(str, List(bool))()
 
     def refuse(what: str, span: Span)
         .refused.add(what + " (line " + span.line.toString() + ")")
@@ -99,16 +103,20 @@ class VGen
             on TypeRef.named as n
                 return .vNamed(n.name)
             on TypeRef.generic as g
+                # the containers are references, as Zebra's are: the runtime's
+                # boxed ZList / ZMap by reference (zebra_rt.v), never V's value arrays
                 if g.name == "List" and g.args.count() == 1
-                    return "[]" + .vType(g.args.at(0))
+                    return "&ZList[" + .vType(g.args.at(0)) + "]"
                 if g.name == "HashMap" and g.args.count() == 2
-                    return "map[" + .vType(g.args.at(0)) + "]" + .vType(g.args.at(1))
+                    return "&ZMap[" + .vType(g.args.at(0)) + ", " + .vType(g.args.at(1)) + "]"
                 .refused.add("generic type " + g.name)
                 return "voidptr"
             on TypeRef.void_
                 return ""
+            on TypeRef.nilable as inner
+                return "?" + .vType(inner)
             else
-                .refused.add("a type the subset does not spell (nilable, stream, error union, ref, tuple, fn)")
+                .refused.add("a type the subset does not spell (stream, error union, ref, tuple, fn)")
                 return "voidptr"
 
     def vNamed(name: str): str
@@ -136,6 +144,23 @@ class VGen
             branch d
                 on Decl.class_ as c
                     .class_names.add(c.name)
+                else
+                    pass
+        # the second pass: which parameters are references (V wants `mut` on a
+        # param mutated through a method, at the declaration and at the call)
+        for d in m.decls
+            branch d
+                on Decl.method as mth
+                    .noteRefParams(vSafe(mth.name), mth.params)
+                on Decl.class_ as c
+                    for mem in c.members
+                        branch mem
+                            on Decl.init as ini
+                                .noteRefParams("new_" + snakeCase(c.name), ini.params)
+                            on Decl.method as cm
+                                .noteRefParams(vSafe(cm.name), cm.params)
+                            else
+                                pass
                 else
                     pass
         for d in m.decls
@@ -169,6 +194,20 @@ class VGen
         else
             .refuse("module-level var " + v.name + " (V has no mutable globals without __global; the subset takes const only)", v.span)
 
+    def noteRefParams(name: str, params: List(Param))
+        if .ref_params.get(name) != nil
+            return
+        var flags = List(bool)()
+        for p in params
+            flags.add(.isRefType(p.type_))
+        .ref_params.set(name, flags)
+
+    # a container or a class: by reference in V, so `mut` when passed to be mutated
+    def isRefType(t: TypeRef?): bool
+        if t == nil
+            return false
+        return .vType(t).startsWith("&")
+
     def genParams(params: List(Param)): str
         var out: str = ""
         var first: bool = true
@@ -176,7 +215,10 @@ class VGen
             if not first
                 out = out + ", "
             first = false
-            out = out + vSafe(p.name) + " " + .vType(p.type_)
+            var mut_: str = ""
+            if .isRefType(p.type_)
+                mut_ = "mut "
+            out = out + mut_ + vSafe(p.name) + " " + .vType(p.type_)
             if p.default_ != nil
                 .refuse("a default argument on " + p.name + " (V has none; the subset passes every argument)", p.span)
         return out
@@ -220,7 +262,7 @@ class VGen
             branch mem
                 on Decl.init as ini
                     had_init = true
-                    .genInit(ini, c.name)
+                    .genInit(ini, c.name, c.members)
                 on Decl.method as mth
                     .genMethod(mth, c.name)
                 on Decl.var_
@@ -229,15 +271,39 @@ class VGen
                     .refuse("a member kind the subset does not spell in class " + c.name, c.span)
         if not had_init
             .line("fn new_" + snakeCase(c.name) + "() &" + c.name + " {")
-            .line("\treturn &" + c.name + "{}")
+            .depth = .depth + 1
+            .line("return " + .structLit(c.name, c.members))
+            .depth = .depth - 1
             .line("}")
             .line("")
         .current_class = ""
 
-    def genInit(ini: DeclInit, owner: str)
+    # `&Name{ ... }` with every reference field initialised (V refuses an
+    # uninitialised reference field): a container by its constructor, a
+    # class-typed field by `unsafe { nil }` (Zebra's zero for it)
+    def structLit(owner: str, members: List(Decl)): str
+        var out: str = "&" + owner + "{"
+        var any: bool = false
+        for mem in members
+            branch mem
+                on Decl.var_ as f
+                    var ft = .vType(f.type_)
+                    if ft.startsWith("&")
+                        var field_init: str = "unsafe { nil }"   # (not `init`: it shadows a declaration in the emitted Zig)
+                        if ft.startsWith("&ZList[") or ft.startsWith("&ZMap[")
+                            field_init = .zeroOf(ft)
+                        if not any
+                            out = out + "\n"
+                        any = true
+                        out = out + "\t" + vSafe(f.name) + ": " + field_init + "\n"
+                else
+                    pass
+        return out + "}"
+
+    def genInit(ini: DeclInit, owner: str, members: List(Decl))
         .line("fn new_" + snakeCase(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
         .depth = .depth + 1
-        .line("mut self := &" + owner + "{}")
+        .line("mut self := " + .structLit(owner, members))
         if ini.stmts as body
             .genStmts(body)
         .line("return self")
@@ -272,7 +338,7 @@ class VGen
             on Stmt.assign as a
                 .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .exprStr(a.value))
             on Stmt.expr as e
-                .line(.exprStr(e))
+                .genExprStmt(e)
             on Stmt.if_ as i
                 .genIf(i)
             on Stmt.while_ as w
@@ -320,6 +386,25 @@ class VGen
             else
                 .refused.add("a statement kind the subset does not spell (with, in, destructure, allocate, copy-out, contract, yield)")
 
+    # an expression statement; a mutating method on a call's RESULT binds a
+    # temporary first (V: "cannot pass expression as mut"): `rows.at(0).add(7)`
+    def genExprStmt(e: Expr)
+        branch e
+            on Expr.call as c
+                branch c.callee
+                    on Expr.member as m
+                        if isCallExpr(m.object)
+                            .tmpN = .tmpN + 1
+                            var t = "_t" + .tmpN.toString()
+                            .line("mut " + t + " := " + .exprStr(m.object))
+                            .line(.mappedCall(t, m.member, c.args, c.span))
+                            return
+                    else
+                        pass
+            else
+                pass
+        .line(.exprStr(e))
+
     # `var x: int = 5` -> `mut x := i64(5)`; the type carried onto a numeric
     # literal, since V's untyped int is 32-bit and Zebra's is 64
     def genLocal(v: DeclVar)
@@ -329,8 +414,9 @@ class VGen
             if v.type_ as t
                 tname = .vType(t)
             var rhs: str = ""
-            if isEmptyUntypedList(ie) and tname != ""
-                rhs = tname + "{}"   # `var xs: List(int) = []`: the type is the variable's
+            if isUntypedListLit(ie) and tname.startsWith("&ZList[")
+                # `var xs: List(int) = [...]`: the element type is the variable's
+                rhs = .listLitWith(ie, tname.substring(7, tname.len - 1))
             else
                 rhs = .exprStr(ie)
             if tname == "i64" and isIntLit(ie)
@@ -351,20 +437,24 @@ class VGen
         if vt == "f64": return "f64(0)"
         if vt == "string": return "''"
         if vt == "bool": return "false"
-        if vt.startsWith("[]"): return vt + "{}"
-        if vt.startsWith("map["): return vt + "{}"
+        if vt.startsWith("&ZList["): return "new_zlist" + vt.substring(6, vt.len) + "()"
+        if vt.startsWith("&ZMap["): return "new_zmap" + vt.substring(5, vt.len) + "()"
         if vt.startsWith("&"): return vt.substring(1, vt.len) + "{}"
         return vt + "{}"
 
     def genIf(i: StmtIf)
-        if i.is_capture != nil
-            .refuse("if ... as (a nil-check binding; nilables are outside the subset)", i.span)
-        .line("if " + condStr(.exprStr(i.cond)) + " {")
+        if i.is_capture as cap
+            .line("if " + vSafe(cap) + " := " + .exprStr(i.cond) + " {")
+        else
+            .line("if " + condStr(.exprStr(i.cond)) + " {")
         .depth = .depth + 1
         .genStmts(i.then_stmts)
         .depth = .depth - 1
         for ei in i.else_ifs
-            .line("} else if " + condStr(.exprStr(ei.cond)) + " {")
+            if ei.is_capture as ecap
+                .line("} else if " + vSafe(ecap) + " := " + .exprStr(ei.cond) + " {")
+            else
+                .line("} else if " + condStr(.exprStr(ei.cond)) + " {")
             .depth = .depth + 1
             .genStmts(ei.stmts)
             .depth = .depth - 1
@@ -398,7 +488,7 @@ class VGen
                         pass
             else
                 pass
-        .line("for " + v + " in " + .exprStr(fi.iter) + " {")
+        .line("for " + v + " in " + .exprStr(fi.iter) + ".items {")   # a list's items (the subset iterates lists)
         .depth = .depth + 1
         .genStmts(fi.stmts)
         .depth = .depth - 1
@@ -457,18 +547,15 @@ class VGen
                 return .listLitStr(ll)
             on Expr.if_expr as ie
                 return "(if " + .exprStr(ie.cond) + " { " + .exprStr(ie.then_expr) + " } else { " + .exprStr(ie.else_expr) + " })"
-            on Expr.nil_ as sp
-                .refuse("nil (nilables are outside the subset)", sp)
+            on Expr.nil_
                 return "none"
             on Expr.lambda as lam
                 .refuse("a lambda (closures are next)", lam.span)
                 return "fn () {}"
             on Expr.orelse_ as oe
-                .refuse("orelse (nilables are outside the subset)", oe.span)
-                return .exprStr(oe.expr)
+                return "(" + .exprStr(oe.expr) + " or { " + .exprStr(oe.fallback) + " })"
             on Expr.to_non_nil as tnn
-                .refuse("! (a nilable unwrap)", tnn.span)
-                return .exprStr(tnn.expr)
+                return "(" + .exprStr(tnn.expr) + " or { panic('a nil unwrapped') })"
             on Expr.dict_lit as dl
                 .refuse("a dict literal (maps are next)", dl.span)
                 return "map[string]i64{}"
@@ -510,22 +597,30 @@ class VGen
         var et: str = ""
         if ll.elem_type as t
             et = .vType(t)
-        if ll.elems.count() == 0
-            if et == ""
-                .refused.add("an empty list literal without an element type")
-                return "[]i64{}"
-            return "[]" + et + "{}"
-        var out: str = "["
-        var first: bool = true
-        for el in ll.elems
-            if not first
-                out = out + ", "
-            first = false
-            if et == "i64" and isIntLit(el)
-                out = out + "i64(" + .exprStr(el) + ")"
+        if et == ""
+            .refused.add("a list literal without an element type (write `var xs: List(T) = [...]`)")
+            return "new_zlist[i64]()"
+        return .listLitWith(Expr.list_lit(ll), et)
+
+    # a list literal as the runtime's boxed list of a known element type
+    def listLitWith(e: Expr, et: str): str
+        branch e
+            on Expr.list_lit as ll
+                if ll.elems.count() == 0
+                    return "new_zlist[" + et + "]()"
+                var out: str = "zlist_of[" + et + "](["
+                var first: bool = true
+                for el in ll.elems
+                    if not first
+                        out = out + ", "
+                    first = false
+                    if et == "i64" and isIntLit(el)
+                        out = out + "i64(" + .exprStr(el) + ")"
+                    else
+                        out = out + .exprStr(el)
+                return out + "])"
             else
-                out = out + .exprStr(el)
-        return out + "]"
+                return .exprStr(e)
 
     # `.x` on this -> self.x; `a.len` (a property) -> a.len; else a.b
     def memberStr(m: ExprMember): str
@@ -534,16 +629,26 @@ class VGen
             return obj + ".len"
         return obj + "." + vSafe(m.member)
 
-    def argsStr(args: List(Arg)): str
+    def argsStr(args: List(Arg), callee: str = ""): str
+        var flags: List(bool)? = nil
+        if callee != ""
+            flags = .ref_params.get(callee)
         var out: str = ""
         var first: bool = true
+        var i: int = 0
         for a in args
             if not first
                 out = out + ", "
             first = false
             if a.name != nil
                 .refuse("a named argument (" + a.name! + "); V passes by position", a.span)
-            out = out + .exprStr(a.value)
+            var mut_: str = ""
+            if flags as fl
+                if i < fl.count()
+                    if fl.at(i)
+                        mut_ = "mut "
+            out = out + mut_ + .exprStr(a.value)
+            i = i + 1
         return out
 
     def callStr(c: ExprCall): str
@@ -553,13 +658,46 @@ class VGen
             on Expr.ident as id
                 # a class constructed: Name(args) -> new_name(args)
                 if .isClassName(id.name)
-                    return "new_" + snakeCase(id.name) + "(" + .argsStr(c.args) + ")"
-                if id.name == "StringBuilder" or id.name == "List" or id.name == "HashMap"
-                    .refuse(id.name + "() (the container constructors; a list literal with a type is the subset's way)", c.span)
-                return vSafe(id.name) + "(" + .argsStr(c.args) + ")"
+                    return "new_" + snakeCase(id.name) + "(" + .argsStr(c.args, "new_" + snakeCase(id.name)) + ")"
+                if id.name == "StringBuilder"
+                    .refuse("StringBuilder() (a str and + is the subset's way)", c.span)
+                return vSafe(id.name) + "(" + .argsStr(c.args, vSafe(id.name)) + ")"
+            on Expr.call as inner
+                # List(T)() / HashMap(K, V)(): the runtime's constructors
+                branch inner.callee
+                    on Expr.ident as cid
+                        if cid.name == "List" and inner.args.count() == 1
+                            return "new_zlist[" + .typeArgStr(inner.args.at(0).value) + "]()"
+                        if cid.name == "HashMap" and inner.args.count() == 2
+                            return "new_zmap[" + .typeArgStr(inner.args.at(0).value) + ", " + .typeArgStr(inner.args.at(1).value) + "]()"
+                    else
+                        pass
+                .refuse("a call on a call's result", c.span)
+                return .exprStr(c.callee) + "(" + .argsStr(c.args) + ")"
             else
                 .refuse("a call on an expression that is not a name or a member", c.span)
                 return .exprStr(c.callee) + "(" + .argsStr(c.args) + ")"
+
+    # a type named as a constructor's argument (`List(int)`, `HashMap(str, Box)`)
+    def typeArgStr(e: Expr): str
+        branch e
+            on Expr.ident as id
+                return .vNamed(id.name)
+            on Expr.call as c
+                # a nested container type: List(List(int))
+                branch c.callee
+                    on Expr.ident as cid
+                        if cid.name == "List" and c.args.count() == 1
+                            return "&ZList[" + .typeArgStr(c.args.at(0).value) + "]"
+                        if cid.name == "HashMap" and c.args.count() == 2
+                            return "&ZMap[" + .typeArgStr(c.args.at(0).value) + ", " + .typeArgStr(c.args.at(1).value) + "]"
+                    else
+                        pass
+                .refused.add("a type argument the subset does not spell")
+                return "voidptr"
+            else
+                .refused.add("a type argument the subset does not spell")
+                return "voidptr"
 
     # the stdlib surface the subset maps by hand: str, List, Math, the conversions
     def methodCallStr(m: ExprMember, args: List(Arg), span: Span): str
@@ -578,12 +716,27 @@ class VGen
             .refuse("Math." + name, span)
             return "math." + name + "(" + .argsStr(args) + ")"
         var obj = .exprStr(m.object)
+        return .mappedCall(obj, name, args, span)
+
+    # the call on an object already spelled (a temporary, or the member's object)
+    def mappedCall(obj: str, name: str, args: List(Arg), span: Span): str
         if name == "toString" and args.count() == 0: return obj + ".str()"
         if name == "toFloat" and args.count() == 0: return "f64(" + obj + ")"
         if name == "toInt" and args.count() == 0: return "i64(" + obj + ")"
-        if name == "count" and args.count() == 0: return obj + ".len"
-        if name == "at" and args.count() == 1: return obj + "[" + .argsStr(args) + "]"
-        if name == "add" and args.count() == 1: return obj + " << " + .argsStr(args)
+        # the containers: the runtime's ZList / ZMap methods, by their names
+        if name == "count" and args.count() == 0: return obj + ".count()"
+        if name == "at" and args.count() == 1: return obj + ".at(" + .argsStr(args) + ")"
+        if name == "add" and args.count() == 1: return obj + ".add(" + .argsStr(args) + ")"
+        if name == "set" and args.count() == 2: return obj + ".set(" + .argsStr(args) + ")"
+        if name == "get" and args.count() == 1: return obj + ".get(" + .argsStr(args) + ")"
+        if name == "has" and args.count() == 1: return obj + ".has(" + .argsStr(args) + ")"
+        if name == "keys" and args.count() == 0: return obj + ".keys()"
+        if name == "remove" and args.count() == 1: return obj + ".remove(" + .argsStr(args) + ")"
+        if name == "copy" and args.count() == 0: return obj + ".copy()"
+        if name == "last" and args.count() == 0: return obj + ".last()"
+        if name == "isEmpty" and args.count() == 0: return obj + ".is_empty()"
+        if name == "insert" or name == "removeAt"
+            .refuse("List." + name + " (V 0.5.2 miscompiles array.insert on a generic element under two instantiations; a repro is kept for a ticket)", span)
         if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"
         if name == "startsWith" and args.count() == 1: return obj + ".starts_with(" + .argsStr(args) + ")"
         if name == "endsWith" and args.count() == 1: return obj + ".ends_with(" + .argsStr(args) + ")"
@@ -595,7 +748,7 @@ class VGen
         if name == "join" and args.count() == 1: return obj + ".join(" + .argsStr(args) + ")"
         if name == "clear" and args.count() == 0: return obj + ".clear()"
         # a method on one of the program's own classes: self.m(...) / obj.m(...)
-        return obj + "." + vSafe(name) + "(" + .argsStr(args) + ")"
+        return obj + "." + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
 
     def binaryStr(b: ExprBinary): str
         var l = .exprStr(b.left)
@@ -654,10 +807,17 @@ def isIntLit(e: Expr): bool
         else
             return false
 
-def isEmptyUntypedList(e: Expr): bool
+def isUntypedListLit(e: Expr): bool
     branch e
         on Expr.list_lit as ll
-            return ll.elems.count() == 0 and ll.elem_type == nil
+            return ll.elem_type == nil
+        else
+            return false
+
+def isCallExpr(e: Expr): bool
+    branch e
+        on Expr.call
+            return true
         else
             return false
 
@@ -686,11 +846,11 @@ def isFloatLit(e: Expr): bool
             return false
 
 # the entry: the V source for a module, with the refusals
-def generateV(m: Module): VResult
+def generateV(m: Module, runtime: str): VResult
     var g = VGen()
     var body = g.genModule(m)
     var head: str = "// generated by zebra --target v (proof of concept, 2026-10-13); do not edit\n"
     if g.needs_math
         head = head + "import math\n"
-    head = head + "\n"
+    head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + runtime + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math)
