@@ -266,6 +266,29 @@ a third symptom (`a.add(b).scale(2.0)`, a struct method on a call's result,
 reaches zig as a method on a `const` temporary), told to the Zebra session
 and bound first in the test.
 
+## Errors (2026-10-13)
+
+Zebra's error channel is V's result type, shape for shape: a `throws` def
+returns `!T` (`!` for none), `raise msg` is `return error(msg)` (the
+details, when given, appended to the message: V's error carries one string,
+nothing dropped), `f()?` is `f()!`, and `f() catch |e| fallback` is V's
+`or { e := err ... fallback }` block, the block's last expression its value,
+`e.message` as `e.msg()` on a binding the emitter knows is an error. V has
+no try statement, so the **def-level `catch |e|`** is the def's body as a
+result-returning closure over the def's parameters (`fn [mut xs, n] () !T {
+... }()`), the catch as its `or` block; a `return` inside the `or` block
+returns from the def by V's own rule, which is what Zebra's catch means. A
+catch inside a method is refused for now (a closure's capture of `self` is
+V's call), as is a typed catch clause.
+
+`examples/v_poc5.zbr` (a throws def that raises, a `?` chain through a
+second throws def, a def-level catch on a plain def, the expression-level
+catch with and without its binding): **identical to the Zig backend's five
+lines** by diff, nothing refused, no warnings; the four earlier programs
+still identical. The one thing the control taught: a catch capture must be
+used or omitted (Zebra's rule), so a fallback that ignores the error is
+written `catch 0 - 1`.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function
@@ -295,7 +318,7 @@ test, since `luau2zebra.py` ports land there):
    arrays, maps, JSON, os), so this is a mapping table plus a small
    `zebra_rt.v`, not a port of `stdlib_preamble.zig` (5,611 lines) — but it is
    the bulk of the work. Order of magnitude: the 3,663 lines above, re-expressed.
-2. **Nilables, `orelse`, `if ... as`, `!`** map onto V's option types
+2. **Nilables, `orelse`, `if ... as`, `!`** -- done for the subset (the nilables with the containers, the errors above). They map onto V's option types
    (`?T`, `or { }`, `if x := y { }`) cleanly; the error channel (`throws`, `?`,
    `catch`, `raise`) maps onto V's result types (`!T`, `or { }`, `return error()`)
    cleanly too. Both are smaller than they look because V's semantics are the

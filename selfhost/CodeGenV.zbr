@@ -19,7 +19,7 @@
 # a class is a struct with `mut:` fields, `cue init` is `fn new_<name>()
 # &Name`, a method is `fn (mut self Name) m()`.
 
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, Expr, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprStringLit, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprStringLit, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
 # (and which are references, hence `mut`)
@@ -88,7 +88,10 @@ class VGen
     var union_names: List(str)    # V sum types over per-variant structs
     var sigs: HashMap(str, FnSig) # by callee name: a function, `new_<type>`, a method (a name shared across types keeps the first)
     var member_counts: HashMap(str, int)   # a union's variants, an enum's members: whether a branch over them is exhaustive (V refuses an `else` on an exhaustive match)
-    var pending_format: str       # a format spec for the next ${} in an interpolation
+    var current_params: List(Param)   # the enclosing def's parameters (a def-level catch closes over them)
+    var current_ret: str              # the enclosing def's V return type ("" for none)
+    var in_method: bool               # inside a method (a def-level catch there is refused: a closure's capture of self is V's call)
+    var catch_bindings: List(str)     # the error bindings in scope: `e.message` is `e.msg()` on these
     var matchN: int               # the temporaries bound for `branch`
     var current_class: str        # "" outside a class
     var needs_math: bool
@@ -105,7 +108,10 @@ class VGen
         .union_names = List(str)()
         .sigs = HashMap(str, FnSig)()
         .member_counts = HashMap(str, int)()
-        .pending_format = ""
+        .current_params = List(Param)()
+        .current_ret = ""
+        .in_method = false
+        .catch_bindings = List(str)()
         .matchN = 0
         .current_class = ""
         .needs_math = false
@@ -297,15 +303,24 @@ class VGen
             out = out + mut_ + vSafe(p.name) + " " + .vType(p.type_)
         return out
 
-    def genFunction(m: DeclMethod)
-        if m.throws_
-            .refuse("def " + m.name + " throws (errors are outside the subset)", m.span)
+    # a `throws` def returns V's result (`!T`, `!` for none); `raise` is
+    # `return error(...)`, `?` is `!`
+    def retType(m: DeclMethod): str
         var ret = .vType(m.return_type)
+        if m.throws_
+            return "!" + ret
+        return ret
+
+    def genFunction(m: DeclMethod)
+        var ret = .retType(m)
         var head = "fn " + vSafe(m.name) + "(" + .genParams(m.params) + ")"
         if ret != ""
             head = head + " " + ret
         .line(head + " {")
         .depth = .depth + 1
+        .current_params = m.params
+        .current_ret = ret
+        .in_method = false
         if m.stmts as body
             .genStmts(body)
         .depth = .depth - 1
@@ -427,9 +442,7 @@ class VGen
     # (V refuses a mutation through an immutable receiver, and warns on a
     # `mut` never used); `cue toString()` is V's str()
     def genValueMethod(m: DeclMethod, owner: str)
-        if m.throws_
-            .refuse("method " + m.name + " throws", m.span)
-        var ret = .vType(m.return_type)
+        var ret = .retType(m)
         var mname = vSafe(m.name)
         if m.name == "toString" and m.params.count() == 0
             mname = "str"
@@ -442,6 +455,9 @@ class VGen
             head = head + " " + ret
         .line(head + " {")
         .depth = .depth + 1
+        .current_params = m.params
+        .current_ret = ret
+        .in_method = true
         if m.stmts as body
             .genStmts(body)
         .depth = .depth - 1
@@ -494,14 +510,15 @@ class VGen
         .line("")
 
     def genMethod(m: DeclMethod, owner: str)
-        if m.throws_
-            .refuse("method " + m.name + " throws", m.span)
-        var ret = .vType(m.return_type)
+        var ret = .retType(m)
         var head = "fn (mut self " + owner + ") " + vSafe(m.name) + "(" + .genParams(m.params) + ")"
         if ret != ""
             head = head + " " + ret
         .line(head + " {")
         .depth = .depth + 1
+        .current_params = m.params
+        .current_ret = ret
+        .in_method = true
         if m.stmts as body
             .genStmts(body)
         .depth = .depth - 1
@@ -562,9 +579,9 @@ class VGen
             on Stmt.branch_ as b
                 .genBranch(b)
             on Stmt.raise_ as r
-                .refuse("raise (errors are outside the subset)", r.span)
+                .genRaise(r)
             on Stmt.try_catch as tc
-                .refuse("try / catch (errors are outside the subset)", tc.span)
+                .genTryCatch(tc)
             else
                 .refused.add("a statement kind the subset does not spell (with, in, destructure, allocate, copy-out, contract, yield)")
 
@@ -586,6 +603,64 @@ class VGen
             else
                 pass
         .line(.exprStr(e))
+
+    # `raise msg` -> `return error(msg)`; the details, when given, appended to
+    # the message (V's error carries one string; nothing dropped)
+    def genRaise(r: StmtRaise)
+        var msg: str = "'raised'"
+        if r.message as m
+            msg = .exprStr(m)
+        if r.details as d
+            msg = "(" + msg + " + ': ' + " + .exprStr(d) + ")"
+        .line("return error(" + msg + ")")
+
+    # the def-level `catch |e|`: the body as a result-returning closure over
+    # the def's parameters, the catch as its `or` block (V has no try
+    # statement; a `return` inside the or block returns from the def, V's own
+    # rule, so a value-returning def's catch must return or V says so)
+    def genTryCatch(tc: StmtTryCatch)
+        if .in_method
+            .refuse("a catch inside a method (a closure's capture of self is V's call; the next slice)", tc.span)
+            .genStmts(tc.stmts)
+            return
+        if tc.clauses.count() != 1
+            .refuse("a catch with " + tc.clauses.count().toString() + " clauses (one is the subset)", tc.span)
+        var caps: str = ""
+        for p in .current_params
+            if caps != ""
+                caps = caps + ", "
+            if .isRefType(p.type_)
+                caps = caps + "mut " + vSafe(p.name)
+            else
+                caps = caps + vSafe(p.name)
+        var capList: str = ""
+        if caps != ""
+            capList = "[" + caps + "] "
+        var inner: str = .current_ret
+        if not inner.startsWith("!")
+            inner = "!" + inner
+        var lead: str = ""
+        if .current_ret != "" and not (.current_ret == "!")
+            lead = "return "
+        .line(lead + "fn " + capList + "() " + inner + " {")
+        .depth = .depth + 1
+        .genStmts(tc.stmts)
+        .depth = .depth - 1
+        .line("}() or {")
+        .depth = .depth + 1
+        for cl in tc.clauses
+            if cl.type_ != nil
+                .refuse("a typed catch clause", cl.span)
+            if cl.binding as b
+                .line(vSafe(b) + " := err")
+                .catch_bindings.add(vSafe(b))
+                if cl.stmts.count() == 0
+                    .line("_ = " + vSafe(b))
+            .genStmts(cl.stmts)
+            if cl.binding != nil
+                .catch_bindings = dropLast(.catch_bindings)
+        .depth = .depth - 1
+        .line("}")
 
     # `branch x` as V's `match` on a bound temporary (V smart-casts an
     # identifier, not an expression); a union arm's binding reads the
@@ -859,6 +934,17 @@ class VGen
             on Expr.dict_lit as dl
                 .refuse("a dict literal (maps are next)", dl.span)
                 return "map[string]i64{}"
+            on Expr.try_ as t
+                return .exprStr(t.expr) + "!"
+            on Expr.catch_ as c
+                # `expr catch |e| fallback` -> `(expr or { e := err  fallback })`:
+                # the or block's last expression is its value
+                if c.err_var as ev
+                    .catch_bindings.add(vSafe(ev))
+                    var out = "(" + .exprStr(c.expr) + " or {\n" + vSafe(ev) + " := err\n_ = " + vSafe(ev) + "\n" + .exprStr(c.fallback) + "\n})"
+                    .catch_bindings = dropLast(.catch_bindings)
+                    return out
+                return "(" + .exprStr(c.expr) + " or { " + .exprStr(c.fallback) + " })"
             else
                 .refused.add("an expression kind the subset does not spell (slice, cast, type check, chained compare, catch, try, tuple, set, array, zig literal, opt-chain)")
                 return "0"
@@ -944,7 +1030,15 @@ class VGen
         var obj = .exprStr(m.object)
         if m.member == "len"
             return obj + ".len"
+        if m.member == "message" and .isCatchBinding(obj)
+            return obj + ".msg()"   # V's IError
         return obj + "." + vSafe(m.member)
+
+    def isCatchBinding(name: str): bool
+        for b in .catch_bindings
+            if b == name
+                return true
+        return false
 
     def argsStr(args: List(Arg), callee: str = ""): str
         var sigOpt: FnSig? = nil
@@ -1300,6 +1394,14 @@ def exprRootIsThis(e: Expr): bool
             return true
         else
             return false
+
+def dropLast(xs: List(str)): List(str)
+    var out = List(str)()
+    var i: int = 0
+    while i < xs.count() - 1
+        out.add(xs.at(i))
+        i = i + 1
+    return out
 
 def isCallExpr(e: Expr): bool
     branch e
