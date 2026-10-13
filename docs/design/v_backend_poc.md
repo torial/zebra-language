@@ -924,7 +924,11 @@ Eighteen rounds:
     backend panics `assert failed at f.zbr:12: msg`); the emitter now
     spells it `if !(cond) { panic('assert failed at <file>:<line>: '
     + msg) }`, the condition rendered once. Both `-prod` binaries print
-    the harness's lines now. The lesson the round leaves: a build that
+    the harness's lines now. The Zebra session confirms this is the
+    language's own contract, gated on the Zig backend: contract mode
+    asserts that an `assert` survives `--turbo` and `--release` ("a
+    check the author wrote to RUN"), so the two backends mean the same
+    thing by the word. The lesson the round leaves: a build that
     succeeds is not a witness -- round 13's `-prod` build "worked" too --
     only a run diffed against the control is, and a test whose acts
     live inside its asserts is one a build flag can hollow out.
