@@ -30,6 +30,14 @@ confirmed via `tools/bootstrap_check.sh`.
   before, each was refused with "unexpected expression token". No program that compiled before
   changes meaning: a newline inside brackets was always an error.
 
+### Fixes
+
+- **A List or map written only by subscript compiles (BUG-562).** `var s = [0, 0]` then
+  `s[1] = 5` (or `s[i] += 1`, or `m[k] = v` on a map) was emitted as a Zig `var` and refused
+  as "local variable is never mutated", because a container is a reference and the write goes
+  through it. The same applied to an `if x as v` binding written by subscript. Such a local is
+  now `const`; rebinding (`s = ...`) still makes it `var`.
+
 ## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
 
 rc7 is the first release built on **Zig 0.17** (the tag suffix is `_zig0.17`), and it carries

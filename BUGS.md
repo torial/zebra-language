@@ -107,31 +107,6 @@
   indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
   indent with a message naming the lambda, not end-of-input on the line after.
 
-### BUG-562: a List bound from a literal and written only by subscript (`s[i] = v`, `s[i] += 1`) is emitted `var`; zig refuses it as never mutated -- OPEN (found 2026-10-12)
-- **Found by:** zebra-taocp's batch-2 test (`var stirling = [0, 0, 0, 0, 0]` then
-  `stirling[mx] += 1`); reproduced on `8ff157d`.
-- **Repro:**
-  ```
-  def main()
-      var s = [0, 0]
-      s[1] = 5
-      print(s)
-  ```
-  `b.zbr:2: error: local variable is never mutated` -- zig's, at `var s = (blk_ll_1: {...})`
-  (col 9). `s[1] += 1` and a subscript write inside a loop fail the same way.
-- **Control:** `var s = List(int)()` / `s.add(0)` / `s[0] += 1` prints `[1]` -- the `add`
-  (`s.append(...)`) keeps zig satisfied, so the bug only shows when element writes are the
-  ONLY writes.
-- **Mechanism:** BUG-495's, by the other spelling. A container binding is a pointer since
-  BUG-501 1d (`_ZbrList(T)` is `*std.ArrayList(T)`), and a subscript write emits
-  `_zbr_set(s.items, i, v)`, a write THROUGH the pointer. Only rebinding (`s = ...`) mutates the
-  binding. BUG-495's fix taught `receiverNeedsVar` that `set()` on a List does not need
-  `var`; the subscript-assignment path still counts its base as mutated.
-- **Expected:** a subscript assignment whose base is a List or map local must not mark the
-  base mutated -- the same rule as `set()`. Check a fixed-size value (an array or struct
-  value, if any can be subscripted) separately: for those a subscript write IS a mutation.
-- **Workaround:** `s.set(i, v)` (BUG-495's fixed path), or build the list with `add`.
-
 ### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- OPEN (found 2026-10-12)
 - **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),
   reported cross-session; reproduced and minimised here on `cfd289b`.
