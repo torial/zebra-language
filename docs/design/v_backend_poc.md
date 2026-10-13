@@ -765,9 +765,24 @@ is the wrapper.
 Zig exactly as the Zig-built one does, so it can stand in for it
 wherever `--emit-zig` is the job (the engine's regen, a `zebra build`
 that only emits). It cannot build the Zig it emits (that needs Zig, as
-before), it has no LSP and no debugger bridge, and no HTTP. The next
-step the binary enables: `zebra_v --target v selfhost/main.zbr` -- the
-V backend emitting itself, and a fixed point to check.
+before), it has no LSP and no debugger bridge, and no HTTP.
+
+**The fixed point (2026-10-13).** `zebra_v --target v selfhost/main.zbr`
+is the V backend emitting itself. Generation 0 is the Zig-built
+compiler's emission of the backend's own source (61,627 lines of V);
+generation 1 is a V-built compiler's emission of the same source;
+generation 2 is the compiler built from generation 1 emitting it again;
+generation 3 the compiler built from generation 2. **Generations 0, 2
+and 3 are one file** (sha256 705ff021...). Generation 1 differed from 0
+in two lines because the binary that wrote it predated the last emitter
+change (the globals' shape), and its successor carried the change: the
+difference was the source's, not the host's. The compiler built from
+generation 2 emits the whole compiler to Zig byte-identical to the
+Zig-built one, as its predecessors did. So: a Zebra compiler whose host
+language is V, built by a Zebra compiler whose host language is V,
+reproduces itself and reproduces the Zig-hosted compiler's output.
+`C:/Projects/v-dist/fixed/` keeps the generations; `vbin/
+zebra_v_none_debug.exe` is generation 2.
 
 ## The distance to a full backend, measured on the Zig emitter
 
