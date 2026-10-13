@@ -784,6 +784,122 @@ reproduces itself and reproduces the Zig-hosted compiler's output.
 `C:/Projects/v-dist/fixed/` keeps the generations; `vbin/
 zebra_v_none_debug.exe` is generation 2.
 
+## The engine's first modules (2026-10-13)
+
+Sean's stress test: the game engine (`C:\Projects\GameEngine`, `zbra/`
+and `game/mm/`) through the backend, from the engine root with
+`--module-path zbra`. Measured as they stood: `zbra/signal` (60 lines)
+clean; `zbra/instance` (973) and `zbra/tween` (445) wanting interfaces
+and a type alias; `game/mm/health` (362 lines, which folds in **21
+modules**: the workspace, the instance tree, the GUI scene loader, the
+player handler, the shop, the datastore) wanting untyped list literals,
+the stream type and much that only showed once the first were in.
+Fifteen rounds:
+
+1. **Interfaces.** `interface I` is V's interface with every method under
+   `mut:` (a class's methods are all `mut self`); `implements` emits
+   nothing (V's interfaces are structural); an interface-typed parameter
+   is `mut`; an interface's methods have signatures and return types like
+   a class's. A simple `type Alias = Base` resolves to its base wherever
+   named (V's `type` makes a distinct type). An untyped list literal takes
+   its first element's type.
+2. A name that is a V import (`time`) or a V type (`map`, `string`,
+   `int`) is suffixed. **Capture closures** declare their captures at the
+   capture point (`capture var rc: RoundControl = this` is `mut rc :=
+   self` before the `fn [mut rc]`), as is when the value is the name
+   itself, assigned when a capture already declared the name. A method's
+   return type is keyed by its owner too and read by the receiver's type.
+   **A signature that cannot fit the call** (more arguments than
+   parameters, a named one it lacks, a missing one without a default)
+   was matched by name to another declaration's: Zebra's checker already
+   accepted the real callee, so the arguments go by position. `SqliteDb`
+   and `SqliteRow` are runtime types whose every call panics (no sqlite
+   on this backend); `Random.new(seed)` is a seeded xoshiro256++ whose
+   sequence is **not** the Zig backend's (a known divergence). **Zebra's
+   own narrowing**: after `if x == nil: return` or inside `if x != nil`,
+   Zebra reads a nilable local -- and a field of `this` -- as its inner
+   type; the emitter tracks the narrowed names per block and spells a
+   narrowed read as `zunwrap(?T(x))`, right in every position because V
+   never narrows here (the nil check is `zis_none`); an assignment
+   un-narrows; a re-check reads the raw name.
+3. **A module-level var declared in more than one module** is
+   `<module>_<name>` wherever declared or read: three modules' `_registry`
+   collided in V's one namespace and the reads crossed (a player handler
+   typed as a menu button). A call through a function-typed value (`h(x)`
+   with `h` of a `sig` type) takes the sig's signature.
+4. **A lambda's nested emitter inherits the whole context** -- it
+   inherited nine tables of forty; inside a closure a call's result had
+   no type, so a mutating call on it was not bound and an `as` over it
+   not `mut`.
+5. **A user type's own method comes before the stdlib table.** The table
+   (contains, add, get, set, keys, ...) was consulted by name first and
+   took a `TagList.contains(inst)` for a string's. The expression-
+   statement path that bound a call-result receiver itself went: the
+   method emitter does it, with the type.
+6. `x.toString()` on a user type is V's `str()`; `opt == value` (Zebra
+   compares a nilable with a value) is `zopt_eq`.
+7. **A def that is nilable AND throws** (`def f(): T? throws`; V has no
+   `!?T`) returns `!ZOpt[T]`, a two-field wrapper in the runtime: `return
+   nil` is `ZOpt[T]{}`, `return x` wraps, and `f()?` at a call is
+   `zopt_of(f()!)`, V's option again; the type table keeps `!?T`.
+8. **Zebra's Json idioms**: `p[key]?` and `arr[0]?` are subscripts on a
+   Json value (helpers returning V's result); a Json value converts by
+   the type of the local, parameter, field or cast that receives it
+   (`var sx: float = arr[0]?` is `.f64()`, a str `zjson_str`, a
+   `List(JsonValue)` `zjson_list`), so the signature table now carries
+   the parameters' types; a for-in over a Json value iterates its array;
+   literals have types.
+9. Three faults of my own found on the way: the return-type pass
+   recorded a throwing def's type without its `!`, so no `?`-call was ever
+   typed as one; a bare call to a method of the enclosing type lost its
+   return type when free functions were re-keyed; the definitions pass
+   ran after the return-type pass it feeds.
+10. **Two sigs of one shape are one V name** (vlang/v#30282). The health
+    test's V check was clean and its C stage failed on `undefined symbol
+    '..._add_T_anon_fn_'`: V instantiates a generic struct's methods
+    **once per resolved type** and calls them under each alias, so with
+    `sig VoidCallback()`, `sig JoinHandler()` and `sig CleanupFn()` all
+    `fn ()`, the second and third aliases' `ZList.add` -- and `get`,
+    `count`, every method -- were declared and never generated. Ten
+    probes pinned it to seventeen lines: a cast at the call site and a
+    named function in place of the lambda fail the same way; two
+    aliases of different shapes, of `int` or of one struct work, and a
+    direct `<<` works. The emitter keys every sig by its V shape (the
+    parameter types with their `mut`, the return) and spells a sig
+    whose shape an earlier sig owns by the owner wherever it is named;
+    its own declaration is a comment naming the spelling and the
+    ticket. The cost is nominal: two Zebra sigs of one shape were
+    distinct types on the Zig backend and are one here, which no Zebra
+    program can tell apart without overloading, which Zebra has not.
+11. **A keyed try is the member's.** With the C stage through, the V
+    binary ran the health test to "all ok" with the harness's two death
+    lines and 2 Health components to the harness's 19: a Json value's
+    keyed try (`n.tryList("tags")`, `p.tryStr("name")`, `v.tryFloat("x")`)
+    was spelled as the bare `zjson_try_X(v)` with its key dropped, so
+    the GUI scene loader asked each node whether it was itself a list
+    and registered no tag, and the export's seventeen tagged instances
+    never reached the Framework. The Zig backend has two families
+    (`_json_self_X(v)`, `_json_try_X(v, key)`); the V runtime now has
+    `zjson_tryk_X(j, k)` beside the bare six, chosen by the argument
+    count. The count in the test's last line is why this was seen at
+    all: "all ok" alone would have passed it.
+
+**What runs.** `zbra/signal_test`, `zbra/instance_test` and
+`zbra/tween_test` -- each with its own `main` -- print the same lines on
+both backends (1, 1 and 10 lines). `game/mm/health_test` (222 lines, the
+Health component's whole behaviour over the exported GUI scene: damage,
+armor, regen, death, kill rewards) runs under V and prints the harness's
+three lines byte for byte -- the two death notices and `all ok (19
+Health components)`, seventeen of them the export's tagged instances
+bound by the Framework at `begin()`, two the test's own. Its control
+comes from the engine's own harness (`zig build run-health_test`),
+since the Zig backend's `--module-path` cannot build a driver that sits
+outside the module directory; the V run is from the engine root, where
+the scene file is. The four refusals in the 21 modules stand (three
+stream-typed fields and one tuple literal, each a stub that panics if
+reached) and nothing in the test reaches them. The V compile of the
+health test is 9,000 lines of V and about two seconds with tcc.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

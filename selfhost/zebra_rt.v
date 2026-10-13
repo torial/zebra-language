@@ -240,6 +240,34 @@ pub fn zis_none[T](x ?T) bool {
 	return x == none
 }
 
+// a def that is nilable AND throws returns this (V has no `!?T`): the
+// emitter wraps its returns and unwraps a `?`-call back to V's option
+pub struct ZOpt[T] {
+pub mut:
+	has bool
+	val T
+}
+
+pub fn zopt_of[T](o ZOpt[T]) ?T {
+	if o.has {
+		return o.val
+	}
+	return none
+}
+
+pub fn zopt_from[T](x ?T) ZOpt[T] {
+	if v := x {
+		return ZOpt[T]{ has: true, val: v }
+	}
+	return ZOpt[T]{}
+}
+
+// `opt == value` (Zebra compares a nilable with a value): false when none
+pub fn zopt_eq[T](a ?T, b T) bool {
+	x := a or { return false }
+	return x == b
+}
+
 // `x!`: the value, or a failure
 pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
@@ -428,6 +456,75 @@ pub fn zjson_try_list(j json2.Any) ?&ZList[json2.Any] {
 	return none
 }
 
+// `v.tryX(key)`: the member as X when v is an object with the key, else none
+// (Zebra's _json_try_X beside the bare _json_self_X)
+pub fn zjson_tryk_str(j json2.Any, k string) ?string {
+	m := zjson_get(j, k) or { return none }
+	return zjson_try_str(m)
+}
+
+pub fn zjson_tryk_int(j json2.Any, k string) ?i64 {
+	m := zjson_get(j, k) or { return none }
+	return zjson_try_int(m)
+}
+
+pub fn zjson_tryk_float(j json2.Any, k string) ?f64 {
+	m := zjson_get(j, k) or { return none }
+	return zjson_try_float(m)
+}
+
+pub fn zjson_tryk_bool(j json2.Any, k string) ?bool {
+	m := zjson_get(j, k) or { return none }
+	return zjson_try_bool(m)
+}
+
+pub fn zjson_tryk_obj(j json2.Any, k string) ?json2.Any {
+	m := zjson_get(j, k) or { return none }
+	return zjson_try_obj(m)
+}
+
+pub fn zjson_tryk_list(j json2.Any, k string) ?&ZList[json2.Any] {
+	m := zjson_get(j, k) or { return none }
+	return zjson_try_list(m)
+}
+
+// `j[key]?`: the member, or an error (Zebra's _json_idx)
+pub fn zjson_idx(j json2.Any, k string) !json2.Any {
+	if j is map[string]json2.Any {
+		m := j as map[string]json2.Any
+		return m[k] or { return error('json: no key ' + k) }
+	}
+	return error('json: not an object, indexed by ' + k)
+}
+
+// `arr[i]?`: the element, or an error
+pub fn zjson_idx_at(j json2.Any, i i64) !json2.Any {
+	if j is []json2.Any {
+		a := j as []json2.Any
+		if i < 0 || i >= a.len {
+			return error('json: index ${i} of ${a.len}')
+		}
+		return a[int(i)]
+	}
+	return error('json: not an array, indexed by ${i}')
+}
+
+// a Json value received as a str: the string itself, else its JSON text
+pub fn zjson_str(j json2.Any) string {
+	if j is string {
+		return j as string
+	}
+	return j.json_str()
+}
+
+// `for x in j`: the array's elements (none for anything else)
+pub fn zjson_list(j json2.Any) &ZList[json2.Any] {
+	if j is []json2.Any {
+		return zlist_of[json2.Any](j as []json2.Any)
+	}
+	return new_zlist[json2.Any]()
+}
+
 pub fn zjson_keys(j json2.Any) &ZList[string] {
 	if j is map[string]json2.Any {
 		m := j as map[string]json2.Any
@@ -507,6 +604,102 @@ pub fn zjson_append_float(j json2.Any, v f64) json2.Any {
 
 pub fn zjson_append_bool(j json2.Any, v bool) json2.Any {
 	return zjson_append(j, json2.Any(v))
+}
+
+// ── Random: a seeded generator (xoshiro256++, seeded by splitmix64 as Zig's
+// DefaultPrng is; the range reduction is not Zig's, so a sequence here is
+// not the Zig backend's -- a known divergence, said in the note) ─────────
+@[heap]
+pub struct ZRandom {
+pub mut:
+	s [4]u64
+}
+
+pub fn zrandom_new(seed i64) &ZRandom {
+	mut r := &ZRandom{}
+	mut x := u64(seed)
+	for i in 0 .. 4 {
+		x += u64(0x9E3779B97F4A7C15)
+		mut z := x
+		z = (z ^ (z >> 30)) * u64(0xBF58476D1CE4E5B9)
+		z = (z ^ (z >> 27)) * u64(0x94D049BB133111EB)
+		r.s[i] = z ^ (z >> 31)
+	}
+	return r
+}
+
+fn zrotl(x u64, k int) u64 {
+	return (x << k) | (x >> (64 - k))
+}
+
+pub fn (mut r ZRandom) next_u64() u64 {
+	result := zrotl(r.s[0] + r.s[3], 23) + r.s[0]
+	t := r.s[1] << 17
+	r.s[2] ^= r.s[0]
+	r.s[3] ^= r.s[1]
+	r.s[1] ^= r.s[2]
+	r.s[0] ^= r.s[3]
+	r.s[2] ^= t
+	r.s[3] = zrotl(r.s[3], 45)
+	return result
+}
+
+// Random.nextInt(lo, hi): inclusive both ends
+pub fn (mut r ZRandom) next_int(lo i64, hi i64) i64 {
+	if hi <= lo {
+		return lo
+	}
+	span := u64(hi - lo + 1)
+	return lo + i64(r.next_u64() % span)
+}
+
+pub fn (mut r ZRandom) next_float() f64 {
+	return f64(r.next_u64() >> 11) / f64(u64(1) << 53)
+}
+
+// ── Sqlite: no sqlite on this backend; the types exist so a program that
+// holds a database compiles, and every call on one panics with the reason ──
+@[heap]
+pub struct ZSqliteDb {
+pub mut:
+	path string
+}
+
+@[heap]
+pub struct ZSqliteRow {
+pub mut:
+	n i64
+}
+
+pub fn zsqlite_open(path string) ?&ZSqliteDb {
+	panic('not on the V backend: Sqlite.open: no sqlite (the Zig backend links the vendored sqlite3)')
+}
+
+pub fn (mut d ZSqliteDb) exec(sql_text string, params &ZList[string]) {
+	panic('not on the V backend: SqliteDb.exec: no sqlite')
+}
+
+pub fn (mut d ZSqliteDb) query(sql_text string, params &ZList[string]) &ZList[&ZSqliteRow] {
+	panic('not on the V backend: SqliteDb.query: no sqlite')
+}
+
+pub fn (mut d ZSqliteDb) close() {
+}
+
+pub fn (r &ZSqliteRow) as_int(col string) i64 {
+	panic('not on the V backend: SqliteRow.asInt: no sqlite')
+}
+
+pub fn (r &ZSqliteRow) as_str(col string) string {
+	panic('not on the V backend: SqliteRow.asStr: no sqlite')
+}
+
+pub fn (r &ZSqliteRow) as_float(col string) f64 {
+	panic('not on the V backend: SqliteRow.asFloat: no sqlite')
+}
+
+pub fn (r &ZSqliteRow) as_bool(col string) bool {
+	panic('not on the V backend: SqliteRow.asBool: no sqlite')
 }
 
 // ── Random, Hash, Http ────────────────────────────────────────────────────
