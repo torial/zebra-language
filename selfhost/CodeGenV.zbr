@@ -136,6 +136,8 @@ class VGen
     var struct_mut: bool              # the struct being emitted has a method that assigns a field: every method is `mut self`
     var mut_structs: List(str)        # the structs whose methods are all `mut self` (a pass before emission)
     var in_cond: bool                 # emitting a loop's condition: no line may be hoisted before it
+    var in_ctor: bool                 # emitting a constructor's body: a bare return is `return self`
+    var current_exposed: HashMap(str, str)   # a name the module's `use ... exposing` lines name -> the stem that exposes it
     var def_modules: HashMap(str, List(str))   # a free function's name -> the module stems that declare it
     var current_stem: str             # the module being emitted, by its file's stem
     var current_uses: List(str)       # the stems the module being emitted uses
@@ -190,6 +192,8 @@ class VGen
         .struct_mut = false
         .mut_structs = List(str)()
         .in_cond = false
+        .in_ctor = false
+        .current_exposed = HashMap(str, str)()
         .def_modules = HashMap(str, List(str))()
         .current_stem = ""
         .current_uses = List(str)()
@@ -370,6 +374,14 @@ class VGen
         if args.count() == 1
             return "zjson_tryk_" + kind + "(" + obj + ", " + ja + ")"
         return "zjson_try_" + kind + "(" + obj + ")"
+
+    # a nilable local Zebra reads narrowed: spelled zunwrap(?T(x)), no lvalue
+    def isNarrowedIdent(e: Expr): bool
+        branch e
+            on Expr.ident as id
+                return .isNarrowed(id.name)
+            else
+                return false
 
     def isIfaceName(name: str): bool
         for n in .iface_names
@@ -680,6 +692,10 @@ class VGen
                 for s in mods
                     if s == .current_stem
                         return snakeCase(.current_stem) + "_" + vSafe(name)
+                if .current_exposed.get(name) as est
+                    for s3 in mods
+                        if s3 == est
+                            return snakeCase(est) + "_" + vSafe(name)   # the use line that exposes the name
                 for u in .current_uses
                     for s2 in mods
                         if s2 == u
@@ -696,6 +712,10 @@ class VGen
                 for s in mods
                     if s == .current_stem
                         return snakeCase(.current_stem) + "_" + vSafe(name)
+                if .current_exposed.get(name) as est
+                    for s3 in mods
+                        if s3 == est
+                            return snakeCase(est) + "_" + vSafe(name)   # the use line that exposes the name
                 for u in .current_uses
                     for s2 in mods
                         if s2 == u
@@ -737,6 +757,7 @@ class VGen
         g.def_modules = .def_modules
         g.current_stem = .current_stem
         g.current_uses = .current_uses
+        g.current_exposed = .current_exposed
         g.all_field_types = .all_field_types
         g.local_names = .local_names
         g.matchN = .matchN + 1000
@@ -932,11 +953,14 @@ class VGen
         .current_file = m.file
         .current_stem = moduleStem(m.file)
         .current_uses = List(str)()
+        .current_exposed = HashMap(str, str)()
         for d in m.decls
             branch d
                 on Decl.use_ as u
                     var segs: List(str) = u.path.split("/")
                     .current_uses.add(segs.at(segs.count() - 1))
+                    for ex in u.exposed
+                        .current_exposed.set(ex, segs.at(segs.count() - 1))
                 else
                     pass
 
@@ -1408,7 +1432,9 @@ class VGen
         .resetLocals(ini.params)
         .line("mut self := " + .structLit(owner, members))
         if ini.stmts as body
+            .in_ctor = true
             .genBody(body, "new_" + snakeCase(owner))
+            .in_ctor = false
         .line("return self")
         .depth = .depth - 1
         .line("}")
@@ -1553,6 +1579,8 @@ class VGen
                                 return "&ZList[string]"
                             if cm.member == "values"
                                 return "&ZList[json2.Any]"
+                        if (cm.member == "chars" or cm.member == "bytes") and c.args.count() == 0 and (ot == "string" or ot == "")
+                            return "&ZList[u8]"
                         if (cm.member == "lines" and c.args.count() == 0) or (cm.member == "split" and c.args.count() == 1)
                             return "&ZList[string]"
                         if cm.member == "chars" and c.args.count() == 0
@@ -1963,6 +1991,8 @@ class VGen
                             .line("return ZOpt[" + wt + "]{ has: true, val: " + .exprStr(rv) + " }")
                     else
                         .line("return " + .exprStr(rv))
+                else if .in_ctor
+                    .line("return self")   # a `cue init` returning early: the object
                 else
                     .line("return")
             on Stmt.assert_ as asrt
@@ -3172,7 +3202,7 @@ class VGen
             return statics
         var obj = .exprStr(m.object)
         var rtype: str = .vTypeOf(m.object)
-        if not isNameExpr(m.object) and not .in_cond and .mutatesReceiver(rtype, name)
+        if (not isNameExpr(m.object) or .isNarrowedIdent(m.object)) and not .in_cond and .mutatesReceiver(rtype, name)
             # V takes a mutating call on an lvalue only: the receiver (a call's
             # result, an unwrap) is bound first, on a line before the statement
             .tmpN = .tmpN + 1
@@ -3382,6 +3412,7 @@ class VGen
         if name == "split" and args.count() == 1: return "zstr_split(" + obj + ", " + .argsStr(args) + ")"
         if name == "lines" and args.count() == 0: return "zstr_lines(" + obj + ")"
         if name == "chars" and args.count() == 0: return "zlist_of[u8](" + obj + ".bytes())"   # Zebra's char is a byte
+        if name == "bytes" and args.count() == 0: return "zlist_of[u8](" + obj + ".bytes())"   # Zebra's List(byte), the same
         if name == "join" and args.count() == 1: return "zjoin(" + obj + ", " + .argsStr(args) + ")"
         if name == "charAt" and args.count() == 1
             .refuse("str.charAt (Zebra's char is a number whose toString prints it; V has no char type to match -- the next slice decides a char's spelling)", span)
@@ -3907,7 +3938,7 @@ def condStr(s: str): str
 
 # the builtin namespaces a static access may name
 def isBuiltinNs(ns: str): bool
-    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite"
+    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime"
 
 def isFloatLit(e: Expr): bool
     branch e
