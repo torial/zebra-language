@@ -999,6 +999,29 @@ deeper, every existing witness identical throughout:
     substring. The prod reference is zig cc; tcc is the debug lane,
     and V's own word is that tcc is not meant for `-prod`.
 
+**What the demo costs** (the autoplay's first two minutes stepped, 168
+lines, measured with the scratch measure.ps1 from the engine root,
+three runs each). Overnight on an idle host the readings were stable;
+the daytime readings of the optimized binaries spread two- to fourfold
+because the host was in use, so those are given as best to worst.
+
+| build | wall | peak memory |
+|---|---|---|
+| Zig harness, Debug (`zig build run-demo_test`) | 28.2 to 37.1 s | 808 MB |
+| Zig harness, ReleaseFast | 2.6 to 5.2 s | 805 MB |
+| V, tcc, no collector | 33.0 to 35.6 s | 1,059 MB |
+| V, tcc, Boehm | 31.0 to 32.1 s | 240 MB |
+| V, zig cc -O3 `-prod` | 7.4 to 29.6 s | 1,051 MB |
+| V, MSVC /O2 `-prod` | 22.9 to 57.2 s | 1,052 MB |
+
+Reading it: unoptimized V under tcc runs the demo at the Debug harness's
+speed; the collector returns four fifths of the memory at no speed
+cost; the optimized Zig harness is five to ten times faster than its
+Debug build, and the best optimized V binary (clang via zig cc) is two
+to three times behind it; MSVC's build is behind clang's. A quiet-host
+rerun of the optimized row is owed before the ratio is quoted as more
+than a first read.
+
 Two V rules met on the way: a local may not bear an imported module's
 name (`rand`, `bits`), and `-prod` makes a warning an error. One
 instrument fix: a chain now stops at the first red witness of the
