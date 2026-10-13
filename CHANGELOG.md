@@ -46,6 +46,11 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`.len` on an imported class's `str` field is a string length (BUG-560),** even when a
   class in the current module has a List field of the same name; it was lowered as the
   List's `.items.len` and refused by zig.
+- **A `for` loop variable is typed by its own loop (BUG-566).** `for v in xs` over a List of
+  numbers or strings was refused ("cannot infer the type of `v`") when another block of the
+  same function declared a different local named `v`, before or after the loop. The loop
+  variable now has the element type inside the loop, and the name means the block's local again
+  after it.
 
 ## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
 

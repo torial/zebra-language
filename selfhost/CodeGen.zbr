@@ -9863,6 +9863,31 @@ struct Generator
     # ── genForIn ──────────────────────────────────────────────────────────────
     # Conservative: 1 var → List (.items), 2 vars → HashMap iterator.
 
+    # BUG-566: element types a for-in loop variable is bound to in the inference scope,
+    # beyond the containers BUG-196 already binds.
+    def isPrimitiveOrStrElem(t: Type_): bool
+        branch t
+            on Type_.int_
+                return true
+            on Type_.uint_
+                return true
+            on Type_.float_
+                return true
+            on Type_.bool_
+                return true
+            on Type_.char_
+                return true
+            on Type_.string_
+                return true
+            on Type_.int_n as _
+                return true
+            on Type_.uint_n as _
+                return true
+            on Type_.float_n as _
+                return true
+            else
+                return false
+
     def genForIn(fi: StmtForIn)
         var pushed352: List(str) = List(str)()
         for fv352 in fi.vars
@@ -10326,6 +10351,14 @@ struct Generator
                 # deref in the selfhost — diverging from the bootstrap, which
                 # auto-derefs.  Mirrors the branch-binding seeding (see the
                 # `on Expr.is_capture`/branch path).  Round-trip fix.
+                # BUG-566: the inference scope is flat (one map per function), so remember
+                # what the loop variable's name meant before the loop and restore it after.
+                var _lv_had: bool = false
+                var _lv_prev: Type_ = Type_.unknown_
+                if .infer_ctx as ic_lv_save
+                    if ic_lv_save.hasLocal(vname)
+                        _lv_had = true
+                        _lv_prev = ic_lv_save.localType(vname)
                 if .infer_ctx as ic_for
                     var iter_t: Type_ = inferExpr(fi.iter, ic_for)
                     if iter_t is Type_.list_ as for_elem_t
@@ -10372,7 +10405,20 @@ struct Generator
                                 # dispatch on the loop var as a set.
                                 ic_for.bind(vname, for_elem_t)
                             else
-                                pass
+                                # BUG-566: a primitive or str element was not bound, so the
+                                # loop variable kept whatever the function's flat scope held
+                                # for its NAME -- a List declared in another block, before or
+                                # after the loop -- and `code * 10 + v` was "cannot infer".
+                                # Bind those. Any other KNOWN element type replaces a stale
+                                # binding when one exists (the element is the truth); with
+                                # nothing bound, struct loops keep today's paths. NOT unknown_:
+                                # the first draft shadowed with it and the compiler could not
+                                # build its own source -- `for m in markers` (main.zbr) relied
+                                # on a stale `m` that happened to be the right struct.
+                                if isPrimitiveOrStrElem(for_elem_t)
+                                    ic_for.bind(vname, for_elem_t)
+                                else if ic_for.hasLocal(vname) and not (for_elem_t is Type_.unknown_) and not (for_elem_t is Type_.unresolved)
+                                    ic_for.bind(vname, for_elem_t)
                 ig.discardUnusedLoopVars(fi)
                 ig.emitForGuard(fi)
                 ig.genStmts(fi.stmts)
@@ -10383,6 +10429,11 @@ struct Generator
                     ig.genStmts(fi.else_!)
                 writeIndent()
                 w.emit("}\n")
+                if .infer_ctx as ic_lv_restore         # BUG-566: the loop's scope ends
+                    if _lv_had
+                        ic_lv_restore.bind(vname, _lv_prev)
+                    else if ic_lv_restore.hasLocal(vname)
+                        ic_lv_restore.unbind(vname)
             # Loop scope ends: drop the loop var's "active" registration unless an
             # enclosing scope had already registered it (shadowing).
             if not _flv_had

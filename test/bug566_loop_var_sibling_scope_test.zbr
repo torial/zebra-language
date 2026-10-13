@@ -1,0 +1,24 @@
+# BUG-566: a for-in loop variable over a List of primitives or strings could not be typed when
+# another block of the function declared a local of the same name -- before or after the
+# loop -- because codegen's inference scope is flat and the loop bound nothing for those
+# elements. Each block's local must type as its own, and the loop variable as the element.
+def main()
+    var code: int = 0
+    if code == 0
+        var v = List(int)()
+        v.add(7)
+        print(v.count())
+    for v in [1, 2]
+        code = code * 10 + v
+    if code > 0
+        var v = List(int)()
+        v.add(1)
+        v.add(2)
+        print(v.count())
+    var label: str = ""
+    for w in ["ab", "c"]
+        label = label + w
+    if label.len > 0
+        var w = 41
+        print(w + 1)
+    print("bug566: ${code} ${label}")

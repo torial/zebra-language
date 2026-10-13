@@ -46,34 +46,6 @@
 
 ---
 
-### BUG-566: a `for v in ...` loop variable cannot be typed when ANY block of the same function declares a local `v` of another type -- before or after the loop -- OPEN (found 2026-10-13)
-- **Found by:** zebra-taocp's batch-3 test (`for v in ps[i]` beside a later, unrelated
-  `var v = List(int)()` in the Karatsuba block); reproduced on HEAD `3133ec1` and on the N-1
-  anchor `f5afd86`, so it predates the 2026-10-12 fixes.
-- **Repro:**
-  ```
-  def main()
-      var code: int = 0
-      for v in [1, 2]
-          code = code * 10 + v
-      if code > 0
-          var v = List(int)()
-          v.add(1)
-          print(v.count())
-      print(code)
-  ```
-  `4:28: error: cannot infer the type of 'v', an operand of '+'`. The same with the `if` block
-  BEFORE the loop. A valid program refused by the front end.
-- **Control:** renaming the block's local to `w` prints `1` and `12`.
-- **Mechanism (inferred, not traced):** local types appear to be kept per FUNCTION by name, so
-  the loop's `v` (an int, from the List(int) literal) and the block's `v` (a List(int)) collide,
-  and the collision reads as "unknown" rather than as two scopes. The loop variable's type
-  belongs to the loop's own scope, and a local declared in a sibling block is not visible
-  there at all.
-- **Expected:** scope-correct typing: the loop variable's element type inside the loop, the
-  block's local inside the block.
-- **Workaround:** a distinct name (zebra-taocp's plain-changes test uses `pv`).
-
 ### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
 - **Repro (QUICKSTART's own example, "Array literal"):**

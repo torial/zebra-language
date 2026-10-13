@@ -6,6 +6,56 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-566: a `for v in ...` loop variable cannot be typed when ANY block of the same function declares a local `v` of another type -- before or after the loop -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** zebra-taocp's batch-3 test (`for v in ps[i]` beside a later, unrelated
+  `var v = List(int)()` in the Karatsuba block); reproduced on HEAD `3133ec1` and on the N-1
+  anchor `f5afd86`, so it predates the 2026-10-12 fixes.
+- **Repro:**
+  ```
+  def main()
+      var code: int = 0
+      for v in [1, 2]
+          code = code * 10 + v
+      if code > 0
+          var v = List(int)()
+          v.add(1)
+          print(v.count())
+      print(code)
+  ```
+  `4:28: error: cannot infer the type of 'v', an operand of '+'`. The same with the `if` block
+  BEFORE the loop. A valid program refused by the front end.
+- **Control:** renaming the block's local to `w` prints `1` and `12`.
+- **Mechanism (inferred, not traced):** local types appear to be kept per FUNCTION by name, so
+  the loop's `v` (an int, from the List(int) literal) and the block's `v` (a List(int)) collide,
+  and the collision reads as "unknown" rather than as two scopes. The loop variable's type
+  belongs to the loop's own scope, and a local declared in a sibling block is not visible
+  there at all.
+- **Expected:** scope-correct typing: the loop variable's element type inside the loop, the
+  block's local inside the block.
+- **Workaround:** a distinct name (zebra-taocp's plain-changes test uses `pv`).
+- **Cause (traced, replacing the inference above):** the refusal is codegen's (§28a), and
+  codegen's inference scope is flat -- one map per function. `genForInBody` bound the loop
+  variable only for a CONTAINER element (BUG-196's List / map / Set case); for an int, float,
+  bool, char or str element it bound nothing, so `v` kept whatever the scope held for that NAME
+  -- the List declared in the other block.
+- **Fixed 2026-10-13.** `genForInBody` binds a primitive or str element type
+  (`isPrimitiveOrStrElem`); any other KNOWN element type replaces a binding only when one
+  already exists (the element is the truth; with nothing bound, struct loops keep today's
+  paths); and when the loop ends it RESTORES the name's previous binding, so a block after the
+  loop sees its own local. Fixture `test/bug566_loop_var_sibling_scope_test.zbr`: a List `v` in
+  a block before the loop and another after it, an int loop variable `v` between them, a str
+  loop variable beside a later int local -- watched red on the old binary first.
+- **The first draft could not build the compiler, and the gate path caught it before anything
+  was committed.** It shadowed a stale binding with `unknown_` for struct elements too; the full
+  rebuild then refused `selfhost/main.zbr` (`m.zig_line`, `d.col`: "cannot infer"), because
+  `for m in markers` had been typed by a stale `m` that happened to be the right struct. The
+  rebuild restored the generated files, and the regeneration had to start again from the
+  committed compiler (`git checkout -- selfhost/CodeGen.zig`, `rebuild.sh --no-regen`, then
+  `--module CodeGen`): `--module` regenerates with the BUILT binary, which by then was the
+  broken draft. Replacing a stale binding with the element's real type, rather than with
+  unknown, keeps that loop -- and is the more correct rule anyway.
+- DAILY 57/57 in one invocation (2026-10-13, the night's closing tier): smoke 705/705, round-trip byte-identical, `output_sweep` 466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover`, `gramgen`, `leakgen`, `libui-pin-build`, `node-addon`.
+
 ### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- FIXED 2026-10-12 (found 2026-10-12)
 - **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),
   reported cross-session; reproduced and minimised here on `cfd289b`.
