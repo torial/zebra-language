@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-560. Next new bug: BUG-561.**
+**Last bug number generated: BUG-565. Next new bug: BUG-566.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,50 +46,66 @@
 
 ---
 
-### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- OPEN (found 2026-10-12)
-- **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),
-  reported cross-session; reproduced and minimised here on `cfd289b`.
-- **Repro:** `boxmod.zbr` declares `class Box` with `var source: str` (set in `cue init`) and
-  `def makeBox(): Box`. The main file:
+### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
+- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
+- **Repro (QUICKSTART's own example, "Array literal"):**
   ```
-  use boxmod exposing Box, makeBox
-  class Other
-      var source: List(str)
-      cue init()
-          .source = List(str)()
   def main()
-      var bx: Box = makeBox()
-      print(bx.source.len.toString())
+      var nums = @[3, 1, 4, 1, 5]
+      if 3 in nums
+          print("three is present")
   ```
-  The front end accepts it; zig refuses: `no member named 'items' in 'str'` (line 8, no column).
-  The `.len` was emitted as a List's `.items.len`.
-- **Controls, all print 5:** (1) the same program without `class Other`; (2) the field bound
-  to a local first (`var s = bx.source` then `s.len`). The reporter also saw: (3) the field
-  renamed in one of the two classes; (4) everything in one module.
-- **Not the variable name.** The report suspected a `var.field` dotted key (`res.source`), but
-  renaming the variable to `bx` fails the same way. The trigger is the FIELD NAME plus a
-  receiver whose class lives in another module.
-- **Where (inferred, not traced):** the BUG-527 / BUG-360 family. When the receiver's class
-  is not in `module_decls`, the field's type is apparently looked up by NAME among the
-  current module's classes, and a same-named field there wins. The fix belongs at that
-  lookup: resolve the field through the receiver's declared class (the imported Box), or
-  return nil (unknown) rather than another class's answer -- the same rule BUG-527 applied
-  in `getAssignFieldType`.
+  `error: expected type 'str', found 'struct { comptime T = 3, ... }'` (zig's). Also:
+  `var arr = @[9, 10, 11]` then `arr[2]` -> std.meta "Expected pointer, slice, array or vector
+  type, found 'struct { comptime comptime_int = 9, ... }'"; `for v in arr` -> "no field named
+  'items' in tuple".
+- **What works:** `if name in @["match", "find"]` -- a string literal tested inline
+  (`test/array_in_test.zbr`, the only fixture). The literal is emitted as an anonymous Zig
+  tuple, and `_zebra_in` takes strings.
+- **Why no gate saw it:** `doc_example_check` runs the front end only (`zebra -c`), and the
+  front end accepts the example.
+- **Expected:** either `@[...]` is a real fixed array (indexable, iterable, any element type,
+  bindable), or it is documented as the inline membership form only and the front end refuses
+  the other uses by name. Today the reference documents a use that cannot compile.
 
-### BUG-559: `.toInt()` on a call's result reaches zig as a method call on `f64` -- OPEN (found 2026-10-11)
-- **Found by:** the GameEngine session (2026-10-11), reported cross-session; reproduced here on
-  `6a7def7` (rc7 + ledger).
-- **Repro:** `var tenths = Math.floor(x * 10.0 + 0.5).toInt()` with `x = 1.26`. The front end
-  accepts it; zig refuses: `no field or member function named 'toInt' in 'f64'` (line, no column).
-- **Works:** the same value bound first (`var tf = Math.floor(...)` then `tf.toInt()`), and a
-  parenthesised binary receiver (`(p.x / cellSize).toInt()`, the engine's
-  `zbra/integration_chase_test.zbr:18`).
-- **Where:** the method-chain-on-a-temporary materialisation. The emit is
-  `var _mc_1 = @floor(((x * 10.0) + 0.5));` then `const tenths = _mc_1.toInt();` -- the temp is
-  introduced, but the call on it is emitted verbatim instead of through the numeric `toInt`
-  lowering, presumably because the temp has no recorded type when the call is generated.
-- **Expected:** the same lowering as `tf.toInt()`. A fixture should cover the other numeric
-  conversions on a call receiver as well (`toFloat`, `toStr`), since they likely share the path.
+### BUG-563: a list literal of lambdas is accepted and typed as `List(str)` -- calling an element is an inference error, binding it leaks a zig error -- OPEN (found 2026-10-12)
+- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor and on HEAD.
+- **Repro:**
+  ```
+  def main()
+      var fns = [def(x: int) = x + 1, def(x: int) = x * 10]
+      var a: int = fns[0](4)
+      print(a)
+  ```
+  zig: `expected type 'str', found '*const fn (i64) i64'`. With `print(fns[0](4) + fns[1](4))`
+  the front end instead says "cannot infer the type of this expression, an operand of `+`".
+- **Expected:** the element type of a list of lambdas is their function type (or a `sig` when
+  annotated, `var fns: List(Step) = [...]`); calling `fns[i](x)` types as the lambda's return.
+  At least: refuse the literal in the front end rather than typing it `List(str)`.
+
+### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- OPEN (found 2026-10-12)
+- **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
+  predates BUG-561.
+- **Repro:**
+  ```
+  def main()
+      var t = add(applyTo2(def(x: int) = x + 1),
+          applyTo2(def(x: int): int
+              var y: int = x * 3
+              return y
+          ))
+      print(t)
+  ```
+  `9:1: error: unexpected end of input while parsing an expression`. Written with the body one
+  level past the STATEMENT (8 spaces) and `))` back at the statement's level, it prints 9.
+- **Cause:** inside a continuation the lexer does not process indentation, so the
+  continuation line (`applyTo2(` at 8 spaces) never sets the depth; the lambda's body is
+  measured against the statement (depth 1), and a body at 12 spaces is two indents. Its
+  dedent then never returns to the lambda's start depth, the lambda stack is never popped, and
+  the rest of the file is read as one expression.
+- **Expected:** measure the body against the line the lambda STARTS on -- record that line's
+  indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
+  indent with a message naming the lambda, not end-of-input on the line after.
 
 ### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, NEEDS A DECISION (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).

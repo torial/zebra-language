@@ -6,6 +6,192 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- FIXED 2026-10-12 (found 2026-10-12)
+- **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),
+  reported cross-session; reproduced and minimised here on `cfd289b`.
+- **Repro:** `boxmod.zbr` declares `class Box` with `var source: str` (set in `cue init`) and
+  `def makeBox(): Box`. The main file:
+  ```
+  use boxmod exposing Box, makeBox
+  class Other
+      var source: List(str)
+      cue init()
+          .source = List(str)()
+  def main()
+      var bx: Box = makeBox()
+      print(bx.source.len.toString())
+  ```
+  The front end accepts it; zig refuses: `no member named 'items' in 'str'` (line 8, no column).
+  The `.len` was emitted as a List's `.items.len`.
+- **Controls, all print 5:** (1) the same program without `class Other`; (2) the field bound
+  to a local first (`var s = bx.source` then `s.len`). The reporter also saw: (3) the field
+  renamed in one of the two classes; (4) everything in one module.
+- **Not the variable name.** The report suspected a `var.field` dotted key (`res.source`), but
+  renaming the variable to `bx` fails the same way. The trigger is the FIELD NAME plus a
+  receiver whose class lives in another module.
+- **Where (inferred, not traced):** the BUG-527 / BUG-360 family. When the receiver's class
+  is not in `module_decls`, the field's type is apparently looked up by NAME among the
+  current module's classes, and a same-named field there wins. The fix belongs at that
+  lookup: resolve the field through the receiver's declared class (the imported Box), or
+  return nil (unknown) rather than another class's answer -- the same rule BUG-527 applied
+  in `getAssignFieldType`.
+- **Fixed 2026-10-12.** The `.len` lowering (CodeGen.genMemberCall, BUG-181's block) asks
+  inference first when the receiver is a FIELD (`bx.source`): a definite str, List or map type
+  decides it, and only a receiver inference cannot type falls back to the name lookups --
+  which are the ones that answered for another class. Fixture
+  `test/bug560_imported_field_len_test.zbr` (+ its module `test/bug560_boxmod.zbr`): an
+  imported class's `str` field beside a local class's same-named `List(str)` field, both
+  measured, watched red on the old binary; the reporter's two-file repro prints 5.
+- FULL tier, ASSEMBLED rather than one clean invocation: 43/46 green together (smoke 704/704, round-trip byte-identical, `output_sweep` 466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions). The three reds: `registration` and `doc-lint` were this change's own bookkeeping -- the new module `test/bug560_boxmod.zbr` needed its registration_exempt line -- fixed and re-run green; `release-mode` failed its GUI leg ("GUI (libui_ng) build produced no app", the debug build only, the release build of the same emit succeeded) and passed all checks re-run standalone.
+
+### BUG-559: `.toInt()` on a call's result reaches zig as a method call on `f64` -- FIXED 2026-10-12 (found 2026-10-11)
+- **Found by:** the GameEngine session (2026-10-11), reported cross-session; reproduced here on
+  `6a7def7` (rc7 + ledger).
+- **Repro:** `var tenths = Math.floor(x * 10.0 + 0.5).toInt()` with `x = 1.26`. The front end
+  accepts it; zig refuses: `no field or member function named 'toInt' in 'f64'` (line, no column).
+- **Works:** the same value bound first (`var tf = Math.floor(...)` then `tf.toInt()`), and a
+  parenthesised binary receiver (`(p.x / cellSize).toInt()`, the engine's
+  `zbra/integration_chase_test.zbr:18`).
+- **Where:** the method-chain-on-a-temporary materialisation. The emit is
+  `var _mc_1 = @floor(((x * 10.0) + 0.5));` then `const tenths = _mc_1.toInt();` -- the temp is
+  introduced, but the call on it is emitted verbatim instead of through the numeric `toInt`
+  lowering, presumably because the temp has no recorded type when the call is generated.
+- **Expected:** the same lowering as `tf.toInt()`. A fixture should cover the other numeric
+  conversions on a call receiver as well (`toFloat`, `toStr`), since they likely share the path.
+- **Second symptom, same temporary (reported by the GameEngine session 2026-10-12, reproduced
+  on `f970e71`):** with a LITERAL operand, `var fl: int = Math.floor(2.7).toInt()` fails
+  EARLIER, at the temporary itself: `var _mc = @floor(2.7)` has type `comptime_float`, and zig
+  says "variable of type 'comptime_float' must be const or comptime". With a runtime operand
+  (`Math.floor(x).toInt()`) it is BUG-559's message, and bound first (`var f: float = ...`
+  then `f.toInt()`) it prints 2. The same happens for Math.round / min / max / clamp on
+  literal floats. **So the fix needs both halves:** the temporary must be TYPED (it should be
+  emitted as `const`, or as `@as(f64, ...)`, from the call's inferred type), AND the method
+  must go through the numeric lowering. Fixing only the lowering would leave the literal case
+  red. The fixture should include a literal-operand line.
+- **Third symptom (GameEngine session 2026-10-12, reproduced on `94a2e1d`):** a method chain
+  on a STRUCT result. With `struct Vec2` (x, y: float) and methods `add(o: Vec2): Vec2` and
+  `scale(s: float): Vec2`, `var c = a.add(b).scale(2.0)` fails at zig with "expected type
+  '*Vec2', found '*const Vec2'". The temporary for `a.add(b)` is bound `const`, and every
+  struct method's receiver is a mutable pointer. Bound first (`var ab = a.add(b)` then
+  `ab.scale(2.0)`) it prints 8.0. **So all three symptoms are one decision at the
+  materialisation:** the temporary's binding (var/const) and type are chosen without regard to
+  what the next call needs. A typed `var` temporary would satisfy all three. The
+  alternative -- a `*const` receiver for methods that assign no field -- fixes only this one,
+  and changes every struct method's signature.
+- **CORRECTION (2026-10-12, before the fix): the paragraph above is wrong about the third
+  symptom, and about there being one cause.** Zig's own column shows the refused expression is
+  `a`, the receiver of the INNER call -- `const a = ...` then `var _mc_1 = a.add(b);` -- not the
+  temporary, which is `var`. `scanMutationsInExpr` never descended into a call used as a
+  receiver, so `a` was never marked mutated. And symptoms 1 and 2 are not about the temporary's
+  binding either: the hoist already skips value-type receivers (`isValueTypeExpr` lists
+  float), but `inferExpr` typed only `Math.abs/min/max`, so `Math.floor(...)` was unknown and
+  hoisted. Two causes, two fixes.
+- **Fixed 2026-10-12, two causes, two fixes (see the correction above).**
+  (1) `inferExpr` (selfhost/TypeChecker.zbr) types the Math namespace's results, read off
+  genMathCall's emit: always float for the members it casts to or names f64 (`pow`, `hypot`,
+  `atan2`, `log`, `lerp`, `cbrt`, `log1p`, `expm1`, `toRadians`, `toDegrees`, the hyperbolics);
+  float only for a float argument where the emit returns its argument's type (`floor`, `ceil`,
+  `sqrt`, the trigonometric and exponential pass-throughs, `round`, `trunc`, `clamp` -- the
+  integer `sqrt` returns an integer); bool for `isNaN` / `isInf`; int for `gcd` / `lcm`. A
+  float receiver is a value type, so the chain is no longer hoisted and `.toInt()` goes through
+  the numeric lowering -- with a literal operand too, since nothing is bound. (2)
+  `scanMutationsInExpr` (CgHelpers) descends into a CALL used as a receiver, and into list
+  literals and subscripts, which it skipped entirely; `a.add(b).scale(2.0)` now marks `a`.
+- Fixture `test/bug559_chain_on_value_result_test.zbr` -- all three reported shapes plus
+  `Math.sqrt(16.0).toInt()`, `Math.pow(2.0, 10.0).toInt()` and a struct chain inside a list
+  literal -- watched red on the old binary; the three original reproductions print 13, 2, 8.0.
+- FULL tier, ASSEMBLED rather than one clean invocation: 43/46 green together (smoke 704/704, round-trip byte-identical, `output_sweep` 466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions). The three reds: `registration` and `doc-lint` were this change's own bookkeeping -- the new module `test/bug560_boxmod.zbr` needed its registration_exempt line -- fixed and re-run green; `release-mode` failed its GUI leg ("GUI (libui_ng) build produced no app", the debug build only, the release build of the same emit succeeded) and passed all checks re-run standalone.
+
+### BUG-562: a List bound from a literal and written only by subscript (`s[i] = v`, `s[i] += 1`) is emitted `var`; zig refuses it as never mutated -- FIXED 2026-10-12 (found 2026-10-12)
+- **Found by:** zebra-taocp's batch-2 test (`var stirling = [0, 0, 0, 0, 0]` then
+  `stirling[mx] += 1`); reproduced on `8ff157d`.
+- **Repro:**
+  ```
+  def main()
+      var s = [0, 0]
+      s[1] = 5
+      print(s)
+  ```
+  `b.zbr:2: error: local variable is never mutated` -- zig's, at `var s = (blk_ll_1: {...})`
+  (col 9). `s[1] += 1` and a subscript write inside a loop fail the same way.
+- **Control:** `var s = List(int)()` / `s.add(0)` / `s[0] += 1` prints `[1]` -- the `add`
+  (`s.append(...)`) keeps zig satisfied, so the bug only shows when element writes are the
+  ONLY writes.
+- **Mechanism:** BUG-495's, by the other spelling. A container binding is a pointer since
+  BUG-501 1d (`_ZbrList(T)` is `*std.ArrayList(T)`), and a subscript write emits
+  `_zbr_set(s.items, i, v)`, a write THROUGH the pointer. Only rebinding (`s = ...`) mutates the
+  binding. BUG-495's fix taught `receiverNeedsVar` that `set()` on a List does not need
+  `var`; the subscript-assignment path still counts its base as mutated.
+- **Expected:** a subscript assignment whose base is a List or map local must not mark the
+  base mutated -- the same rule as `set()`. Check a fixed-size value (an array or struct
+  value, if any can be subscripted) separately: for those a subscript write IS a mutation.
+- **Workaround:** `s.set(i, v)` (BUG-495's fixed path), or build the list with `add`.
+- **Fixed 2026-10-12.** `scanMutationsInto` (selfhost/CgHelpers.zbr) no longer counts a
+  subscript assignment as mutating its base when the base's inferred type is a List or a map
+  (`subscriptWritesThroughReference`); without type information the answer is unchanged, so a
+  value type -- a SIMD vector, a fixed array -- still counts. Fixture
+  `test/bug562_subscript_write_const_test.zbr`: `=` and `+=` on a literal-bound list, a tally
+  in a loop, map subscript writes, a List parameter, a rebinding (still `var`), and an
+  `if maybe as got` binding written by subscript. Watched red on the old binary first -- and
+  it went red at the CAPTURE line, a latent instance of the same bug in BUG-372's var-copy path,
+  which the same analysis decides and the fix covers (`|got|` now binds directly). The emit was
+  inspected: `const s`, `const counts`, `const m`, `var r`.
+- FULL 46/46 in one invocation: smoke 702/702, round-trip byte-identical, `output_sweep` 466
+  identical (465 cache hits / 1 miss -- the change touched one corpus emit), `full_sweep` /
+  `examples_sweep` / `divergence` 0 regressions.
+
+### BUG-561: a list, dict or set literal cannot span lines, though a parenthesised expression can -- FIXED 2026-10-12 (found 2026-10-12)
+- **Found by:** writing zebra-taocp's pentomino table (a 12-row nested list); reproduced on
+  `8fab325`.
+- **Repro:**
+  ```
+  def main()
+      var a = [[1, 2],
+          [3, 4]]
+      print(a)
+  ```
+  `error: unexpected expression token: '\n'` at the end of line 2. Aligning the second row under
+  the first instead gives `indentation is 13 space(s)`, and a dict literal split the same way
+  fails identically.
+- **Controls, both print 3:** `var x = (1 +` / `2)` and `foo(1,` / `2)` -- a line break inside
+  PARENTHESES is a continuation.
+- **Cause:** `selfhost/Lexer.zbr` suppresses the end-of-line token and indentation processing
+  while `parenDepth > 0`. `(` / `)` (and `open_call`) adjust `parenDepth`; `[`, `]`, `{` and `}`
+  emit their tokens without touching it. So a newline inside brackets or braces is an
+  end-of-line plus an indentation change, in the middle of an expression.
+- **Expected:** brackets and braces continue the line as parentheses do (Python's rule, and the
+  one a reader of `foo(1,` / `2)` will assume). QUICKSTART documents continuation only for
+  pipelines ("a multi-line pipeline needs parentheses"); it says nothing for literals.
+- **Proposed fix (as applied):** count `[`/`]` and `{`/`}` in a separate bracket depth (or in
+  `parenDepth`), and suppress eol/indentation when either is non-zero. Keep the lambda logic
+  keyed on parentheses only -- `inLambdaParams` / `afterLambdaParams` / `lambdaStack` read
+  `parenDepth`, and a `def` lambda inside a list literal must still get its body's
+  indentation. Needs a fixture for a nested list, a dict and a set literal across lines, plus
+  a lambda inside a multi-line list.
+- **Workaround:** build the value with `.add` per line (zebra-taocp's `pentominoShapes` does).
+- **Fixed 2026-10-12.** `selfhost/Lexer.zbr` counts `[`, `@[` and `{` (and their closers,
+  never below zero) in a new `bracketDepth`, and suppresses the end-of-line token and
+  indentation while it or `parenDepth` is non-zero. The lambda state machine still keys on
+  parentheses, and its detection now also fires inside brackets, so a statement-body lambda
+  in a multi-line list gets its body back exactly as one in a multi-line call does. Fixture:
+  `test/bug561_multiline_literals_test.zbr` (nested list, brackets on their own lines, dict,
+  `@[`, a subscript and call across lines, an expression lambda and a statement-body lambda
+  inside a list, interpolation untouched), watched red on the old binary first.
+- **This REVERSES BUG-084, and the entry above misdescribed the cause.** The restriction was
+  not an oversight: until 2026-08-20 the selfhost lexer DID count brackets, and BUG-084 removed
+  that so the selfhost would agree with the Zig bootstrap, which never had it -- pinned by the
+  must-fail fixture `test/bug084_bracket_paren_depth_fail.zbr`, whose own header said that if
+  multi-line brackets were ever wanted, the right response was to change both lexers and delete
+  the pin. The bootstrap was retired 2026-09-16, so there is one lexer and the parity reason is
+  gone. The QUICK tier's first run went red on exactly that pin (701 passed, 1 failed), which
+  is how this history was found; the pin is deleted and the new fixture cites BUG-084.
+  No program that compiled before changes meaning: a newline inside brackets was an error.
+- **Found on the way, all predating this fix (same results on the N-1 anchor):** BUG-563 (a
+  list literal of lambdas types as `List(str)`), BUG-564 (a statement-body lambda in a
+  continuation must indent past the STATEMENT; deeper gives "unexpected end of input"), BUG-565
+  (`@[...]` works only inline after `in` with strings; QUICKSTART's own example does not
+  compile).
+
 ### BUG-556: `Json.parse` built every node with `page_allocator` and never freed it -- 13 MB of JSON committed 13 GB -- FIXED 2026-10-11 (found 2026-10-11)
 - **Severity:** High (memory: a stranger parsing a large JSON file exhausts the machine).
 - **Reported by:** Fable, GameEngine (TUON_PORT_FINDINGS F50): the engine parses 13 MB of

@@ -1,0 +1,14 @@
+# BUG-560: `.len` on an imported class's str field was lowered as a List's `.items.len`
+# because a LOCAL class has a List field of the same name -- the decision read the field
+# NAME, not the receiver's type. The fix decides from the type inference knows.
+use bug560_boxmod exposing Box, makeBox
+class Other
+    var source: List(str)
+    cue init()
+        .source = List(str)()
+def main()
+    var bx: Box = makeBox()
+    var o = Other()
+    o.source.add("x")
+    o.source.add("y")
+    print("bug560: ${bx.source.len} ${o.source.len} ${bx.text.len}")

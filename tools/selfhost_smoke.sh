@@ -1309,6 +1309,10 @@ smoke_tc_fail test/fail_fixtures/cue_begin_shape_test.zbr \
 smoke_run test/cue_using_test.zbr "cue_using: <a>x<b>y</b></a>"
 smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
 smoke_run test/bug556_json_parse_arena_test.zbr "bug556: parsed into the arena, 200 items"
+smoke_run test/bug561_multiline_literals_test.zbr "bug561: 4 7 3 [3, 6, 5]"
+smoke_run test/bug562_subscript_write_const_test.zbr "bug562: [101, 5] [1, 1, 2] 15 [2, 3] 9"
+smoke_run test/bug559_chain_on_value_result_test.zbr "bug559: 13 2 4 1024 8.0 12.0 4.0"
+smoke_run test/bug560_imported_field_len_test.zbr "bug560: 5 2 5"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.
@@ -1887,7 +1891,6 @@ smoke_emit_contains test/bug083_generic_implements_test.zbr "Printable.check(@Th
 # BUG-084: the selfhost Lexer tracked `[`/`]` in parenDepth and the Zig Tokenizer did
 # not, so the two disagreed on whether a bracket may span lines. A MUST-FAIL fixture is
 # the only shape that can see it: reverting the fix makes the selfhost ACCEPT this file.
-smoke_tc_fail test/bug084_bracket_paren_depth_fail.zbr "unexpected expression token"
 # BUG-124: BOOTSTRAP-only -- the bug is in the Zig compiler genBoxedArgExpr, and the
 # selfhost has always been correct here, so a normal smoke_run would pin nothing. Watched
 # going RED against a bootstrap built with genType(inner) restored:

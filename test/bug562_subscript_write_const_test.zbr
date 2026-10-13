@@ -1,0 +1,28 @@
+# BUG-562: a List (or map) local written ONLY by subscript is not mutated as a binding. A
+# container is a reference (BUG-501 1d), and `s[i] = v` writes THROUGH it
+# (`_zbr_set(s.items, i, v)`), so the local must be emitted `const` -- zig refuses a `var`
+# that is never mutated. BUG-495 made the same call for `s.set(i, v)`. Rebinding (`r = ...`)
+# still mutates the binding, and still needs `var`.
+def bump(xs: List(int))
+    xs[0] += 100
+
+def main()
+    var s = [0, 0]
+    s[1] = 5
+    s[0] += 1
+    var counts = [0, 0, 0]
+    for v in [2, 0, 2, 1]
+        counts[v] += 1
+    var m = {"a": 1}
+    m["a"] = 7
+    m["b"] = 8
+    bump(s)
+    var r = [1]
+    r = [2, 3]
+    # a pattern binding written by subscript (BUG-372's capture path reads the same analysis)
+    var maybe: List(int)? = [4, 4]
+    var got_first: int = 0
+    if maybe as got
+        got[0] = 9
+        got_first = got[0]
+    print("bug562: ${s} ${counts} ${m["a"] + m["b"]} ${r} ${got_first}")

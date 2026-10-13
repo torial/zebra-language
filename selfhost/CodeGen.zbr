@@ -12880,7 +12880,21 @@ struct Generator
                     var _len_unknown = true
                     if m.object is Expr.ident
                         _len_unknown = typeIsUnknown(m.object)
-                    if fname != nil
+                    # BUG-560: a FIELD whose type inference KNOWS -- `bx.source` with `bx: Box`
+                    # from another module -- is decided by that type. The name lookup below
+                    # stays for receivers inference cannot type (the case its comment
+                    # protects), but for these it answered for ANOTHER class: a local class's
+                    # `source: List(str)` turned `bx.source.len` into `.items.len` on a str.
+                    var _len_decided = false
+                    if m.object is Expr.member and .infer_ctx != nil
+                        var _lm_t: Type_ = inferExpr(m.object, .infer_ctx!)
+                        if _lm_t is Type_.ref_to as _lm_r
+                            _lm_t = _lm_r
+                        if _lm_t is Type_.string_ or _lm_t is Type_.list_ or _lm_t is Type_.hashmap_
+                            is_list_obj = _lm_t is Type_.list_
+                            is_hm_obj = _lm_t is Type_.hashmap_
+                            _len_decided = true
+                    if fname != nil and not _len_decided
                         var fn2 = fname!
                         # str_params takes priority — string variables are never lists
                         if not str_params.contains_(fn2)

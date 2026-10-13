@@ -1672,6 +1672,21 @@ def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
     # No type info available (unit tests, pre-seed emission paths): name-based.
     return not isReadOnlyMethod(method)
 
+# BUG-562: `xs[i] = v` on a List or map. A container is a reference (BUG-501 1d), and the
+# write goes THROUGH it -- `_zbr_set(xs.items, i, v)` for a list, a `put` on the map pointer
+# for a map -- so the binding itself never changes, and zig refuses a `var` that is never
+# mutated. The same call BUG-495 made for `xs.set(i, v)`. Only rebinding (`xs = ...`)
+# mutates the binding. Without type information (nil ic) the answer stays "it mutates":
+# a value type -- a SIMD vector, a fixed array -- really is changed by a subscript write.
+def subscriptWritesThroughReference(obj: Expr, ic: InferCtx?): bool
+    if ic as ic_v
+        var t: Type_ = unwrapForMutation(inferExpr(obj, ic_v))
+        if t is Type_.list_
+            return true
+        if t is Type_.hashmap_
+            return true
+    return false
+
 def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
     branch expr
         on Expr.call as c
@@ -1702,8 +1717,20 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
                             if isStructValueType(inferExpr(root, ic2), ic2)
                                 if receiverNeedsVar(m.object, m.member, ic)
                                     out.add(rid.name)
+                # BUG-559: a CALL as the receiver -- `a.add(b).scale(2.0)`. The outer call's
+                # object is the inner call, which was never scanned, so `a` (whose `add`
+                # takes a mutable receiver) was emitted `const` and zig refused
+                # `a.add(b)`: "expected '*Vec2', found '*const Vec2'".
+                if m.object is Expr.call
+                    scanMutationsInExpr(m.object, out, ic)
             for arg in c.args
                 scanMutationsInExpr(arg.value, out, ic)
+        on Expr.list_lit as ll
+            for le in ll.elems
+                scanMutationsInExpr(le, out, ic)
+        on Expr.index as ixe
+            scanMutationsInExpr(ixe.object, out, ic)
+            scanMutationsInExpr(ixe.index, out, ic)
         on Expr.binary as b
             scanMutationsInExpr(b.left, out, ic)
             scanMutationsInExpr(b.right, out, ic)
@@ -1755,9 +1782,11 @@ def scanMutationsInto(stmts: List(Stmt), out: StrSet, ic: InferCtx?)
                         if m.object is Expr.ident as id
                             out.add(id.name)
                     on Expr.index as ix
-                        # counts[k] = v mutates counts
+                        # counts[k] = v mutates counts -- unless counts is a List or map,
+                        # whose subscript write goes THROUGH the reference (BUG-562).
                         if ix.object is Expr.ident as id
-                            out.add(id.name)
+                            if not subscriptWritesThroughReference(ix.object, ic)
+                                out.add(id.name)
                     else
                         pass
                 # BUG-537: the RIGHT-HAND SIDE too. `sum = inner.plus(sum)` calls `plus` on

@@ -1,0 +1,24 @@
+# BUG-559: a method chain on a call's VALUE result. Math results were untyped, so
+# `Math.floor(x).toInt()` was hoisted into an untyped `var _mc_N` and `.toInt` emitted
+# verbatim (zig: no member 'toInt' in f64; with a literal operand, a comptime_float `var`);
+# and `a.add(b).scale(2.0)` never scanned the inner call, so `a` was `const` and zig refused
+# `a.add(b)` ("expected '*Vec2', found '*const Vec2'").
+struct Vec2
+    var x: float
+    var y: float
+    def add(o: Vec2): Vec2
+        return Vec2(.x + o.x, .y + o.y)
+    def scale(s: float): Vec2
+        return Vec2(.x * s, .y * s)
+
+def main()
+    var x = 1.26
+    var tenths = Math.floor(x * 10.0 + 0.5).toInt()
+    var fl: int = Math.floor(2.7).toInt()
+    var sq: int = Math.sqrt(16.0).toInt()
+    var p: int = Math.pow(2.0, 10.0).toInt()
+    var a = Vec2(1.0, 2.0)
+    var b = Vec2(3.0, 4.0)
+    var c = a.add(b).scale(2.0)
+    var vs = [a.add(b).scale(1.0)]
+    print("bug559: ${tenths} ${fl} ${sq} ${p} ${c.x} ${c.y} ${vs[0].x}")
