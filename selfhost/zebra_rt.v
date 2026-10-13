@@ -795,50 +795,85 @@ pub fn (mut r ZRandom) next_float() f64 {
 	return bits.f64_from_bits(exponent | mantissa)
 }
 
-// ── Sqlite: no sqlite on this backend; the types exist so a program that
-// holds a database compiles, and every call on one panics with the reason ──
+// == sqlite begin ==
+// Zebra's SqliteDb / SqliteRow on V's db.sqlite (the vendored amalgamation in
+// V's thirdparty/sqlite, the same sqlite3.c the Zig backend links). This
+// section is inlined, and db.sqlite imported, only into a program that
+// uses them (the emitter checks the body for these names).
 @[heap]
 pub struct ZSqliteDb {
 pub mut:
 	path string
+	db   sqlite.DB
 }
 
 @[heap]
 pub struct ZSqliteRow {
 pub mut:
-	n i64
+	cols map[string]string
 }
 
 pub fn zsqlite_open(path string) ?&ZSqliteDb {
-	panic('not on the V backend: Sqlite.open: no sqlite (the Zig backend links the vendored sqlite3)')
+	db := sqlite.connect(path) or { return none }
+	return &ZSqliteDb{
+		path: path
+		db:   db
+	}
 }
 
+fn zsqlite_params(params &ZList[string]) []string {
+	mut out := []string{}
+	for p in params.items {
+		out << p
+	}
+	return out
+}
+
+// exec(sql, params): the statement run with its `?` parameters; a failure
+// is the program's fault and says the statement
 pub fn (mut d ZSqliteDb) exec(sql_text string, params &ZList[string]) {
-	panic('not on the V backend: SqliteDb.exec: no sqlite')
+	d.db.exec_param_many(sql_text, zsqlite_params(params)) or { panic('sqlite exec: ' + err.msg() + ' -- ' + sql_text) }
 }
 
+// query(sql, params): the rows, each its columns by name
 pub fn (mut d ZSqliteDb) query(sql_text string, params &ZList[string]) &ZList[&ZSqliteRow] {
-	panic('not on the V backend: SqliteDb.query: no sqlite')
+	mut out := new_zlist[&ZSqliteRow]()
+	rows := d.db.exec_param_many(sql_text, zsqlite_params(params)) or { panic('sqlite query: ' + err.msg() + ' -- ' + sql_text) }
+	for r in rows {
+		mut cols := map[string]string{}
+		for i, name in r.names {
+			if i < r.vals.len {
+				cols[name] = r.vals[i]
+			}
+		}
+		out.add(&ZSqliteRow{
+			cols: cols
+		})
+	}
+	return out
 }
 
 pub fn (mut d ZSqliteDb) close() {
+	d.db.close() or {}
 }
 
 pub fn (r &ZSqliteRow) as_int(col string) i64 {
-	panic('not on the V backend: SqliteRow.asInt: no sqlite')
+	return (r.cols[col] or { '0' }).i64()
 }
 
 pub fn (r &ZSqliteRow) as_str(col string) string {
-	panic('not on the V backend: SqliteRow.asStr: no sqlite')
+	return r.cols[col] or { '' }
 }
 
 pub fn (r &ZSqliteRow) as_float(col string) f64 {
-	panic('not on the V backend: SqliteRow.asFloat: no sqlite')
+	return (r.cols[col] or { '0' }).f64()
 }
 
 pub fn (r &ZSqliteRow) as_bool(col string) bool {
-	panic('not on the V backend: SqliteRow.asBool: no sqlite')
+	v := r.cols[col] or { '0' }
+	return v == '1' || v == 'true'
 }
+// == sqlite end ==
 
 // ── Random, Hash, Http ────────────────────────────────────────────────────
 pub fn zrandom_int(lo i64, hi i64) i64 {

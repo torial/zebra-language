@@ -3998,5 +3998,16 @@ def generateV(ms: List(Module), runtime: str): VResult
     # (an import the program itself never reaches is used by the runtime's
     # functions, so V does not warn)
     head = head + "import math\nimport math.bits\nimport os\nimport strconv\nimport time\nimport x.json2\nimport rand\nimport crypto.sha256\n"
-    head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + runtime + "\n// -- the program --\n"
+    # the runtime's sqlite section (V's db.sqlite, 9 MB of C to compile) goes
+    # in, with its import, only when the program names it
+    var rt_text: str = runtime
+    var needs_sqlite: bool = body.contains("zsqlite_") or body.contains("ZSqliteDb") or body.contains("ZSqliteRow")
+    if needs_sqlite
+        head = head + "import db.sqlite\n"
+    else
+        var sa: int = rt_text.indexOf("// == sqlite begin ==")
+        var sb: int = rt_text.indexOf("// == sqlite end ==")
+        if sa >= 0 and sb > sa
+            rt_text = rt_text.substring(0, sa) + "// (the sqlite section is left out: the program has no database)\n" + rt_text.substring(sb + "// == sqlite end ==".len, rt_text.len)
+    head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals)

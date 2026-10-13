@@ -1015,6 +1015,9 @@ because the host was in use, so those are given as best to worst.
 | V, MSVC /O2 `-prod` | 22.9 to 57.2 s | 1,052 MB |
 | V, zig cc -O3 `-prod`, Boehm | 14.7 to 16.8 s | 174 to 181 MB |
 
+(The datastore test, SQLite real, prints the harness's one line under V
+too; it is part of the engine batch now.)
+
 Reading it: unoptimized V under tcc runs the demo at the Debug harness's
 speed; the collector returns four fifths of the memory at no speed
 cost; the optimized Zig harness is five to ten times faster than its
@@ -1026,6 +1029,21 @@ than a first read. The collector under clang does not crawl on the demo
 optimized build with Boehm has the lowest peak memory of the table, so
 the collector is a switch in the shipping build too, at the cost of a
 five-minute compile of the 37,000-line C with -O3.
+
+21. **SQLite is real** (round 31). Zebra's `SqliteDb` / `SqliteRow`, the
+    engine's datastore and the game's player store, were runtime stubs
+    that panicked; they are V's `db.sqlite` now, over the same vendored
+    amalgamation the Zig backend links (copied from the pinned compiler
+    worktree's `vendor/sqlite` into V's `thirdparty/sqlite`; no
+    download), `?` parameters through `exec_param_many`, rows read by
+    column name. The section is inlined, and `db.sqlite` imported, only
+    into a program whose emitted body names the runtime's sqlite
+    symbols (a text check on the body), so a program without a
+    database neither imports nor compiles the 9 MB of C; the demo and
+    the datastore test carry it, the compiler and the small tests do
+    not. The datastore test prints the harness's line under V. Sean's
+    rule (2026-10-02): a mechanism the game's code uses must be working
+    and under test, never skipped -- this was the last stub.
 
 Two V rules met on the way: a local may not bear an imported module's
 name (`rand`, `bits`), and `-prod` makes a warning an error. One
@@ -1168,6 +1186,13 @@ and item 3 is now named.
   session's note, 2026-10-13).
 
 ## How to run it
+
+SQLite on the V side needs V's own thirdparty copy of the amalgamation:
+`C:/Projects/v-dist/v/thirdparty/sqlite/sqlite3.c` and `sqlite3.h`,
+copied from a pinned compiler worktree's `vendor/sqlite/` (the same
+files the Zig backend links; V's own install script would download
+them instead). Without them a program that uses a database fails at
+the C stage naming the missing header.
 
 ```bash
 # in the worktree, on Zig 0.17
