@@ -145,6 +145,7 @@ class VGen
     var global_modules: HashMap(str, List(str))   # a module-level var's name -> the module stems that declare it
     var iface_names: List(str)        # the interfaces: V interfaces, their values pointers to classes
     var sig_names: List(str)          # the sig types: a lambda passed as one is cast to its name
+    var emitted_globals: List(str)    # every module-level const / var as emitted: a local of that name is renamed (V's one namespace)
     var sig_canon: HashMap(str, str)  # a sig's name -> the first-declared sig of its V shape (vlang/v#30282: one instantiation per shape)
     var sig_shapes: HashMap(str, str) # a V shape (param types with mut, the return) -> the first sig declared with it
     var narrowed: List(str)           # the nilable locals Zebra narrows in the current block: read as zunwrap(?T(x))
@@ -199,6 +200,7 @@ class VGen
         .global_modules = HashMap(str, List(str))()
         .iface_names = List(str)()
         .sig_names = List(str)()
+        .emitted_globals = List(str)()
         .sig_canon = HashMap(str, str)()
         .sig_shapes = HashMap(str, str)()
         .narrowed = List(str)()
@@ -421,6 +423,8 @@ class VGen
             .noteMutStructs(m)
         for m in ms
             .noteSigs(m)
+        for m in ms
+            .noteEmittedGlobals(m)   # (after the definitions: which names two modules share)
         var last: int = ms.count() - 1
         var mi: int = 0
         for m in ms
@@ -489,6 +493,29 @@ class VGen
                         .sig_shapes.set(shape, sg.name)
                 else
                     pass
+
+    # the emitted name of every module-level const / var: a var two modules
+    # declare is `<module>_<name>` in each (globalName), else its own name
+    def noteEmittedGlobals(m: Module)
+        for d in m.decls
+            branch d
+                on Decl.var_ as gv
+                    if .global_modules.get(gv.name) as mods
+                        if mods.count() > 1
+                            for s in mods
+                                .emitted_globals.add(snakeCase(s) + "_" + vSafe(gv.name))
+                        else
+                            .emitted_globals.add(vSafe(gv.name))
+                    else
+                        .emitted_globals.add(vSafe(gv.name))
+                else
+                    pass
+
+    def isEmittedGlobal(name: str): bool
+        for g in .emitted_globals
+            if g == name
+                return true
+        return false
 
     def sigShape(params: List(Param), ret: TypeRef?): str
         var out: str = ""
@@ -703,6 +730,7 @@ class VGen
         g.iface_names = .iface_names
         g.sig_names = .sig_names
         g.sig_canon = .sig_canon
+        g.emitted_globals = .emitted_globals
         g.aliases = .aliases
         g.narrowed = .narrowed
         return g
@@ -2107,6 +2135,9 @@ class VGen
         var name = vSafe(v.name)
         if .isFnName(name)
             name = name + "_v"   # V refuses a call ambiguous between a function and a local of its name
+            .renames.set(v.name, name)
+        else if .isEmittedGlobal(name)
+            name = name + "_v"   # a local shadowing a module-level const of any module: a warning -prod refuses
             .renames.set(v.name, name)
         if v.init_expr as ie
             var tname: str = ""

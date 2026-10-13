@@ -794,7 +794,7 @@ and a type alias; `game/mm/health` (362 lines, which folds in **21
 modules**: the workspace, the instance tree, the GUI scene loader, the
 player handler, the shop, the datastore) wanting untyped list literals,
 the stream type and much that only showed once the first were in.
-Fifteen rounds:
+Seventeen rounds:
 
 1. **Interfaces.** `interface I` is V's interface with every method under
    `mut:` (a class's methods are all `mut self`); `implements` emits
@@ -883,6 +883,36 @@ Fifteen rounds:
     `zjson_tryk_X(j, k)` beside the bare six, chosen by the argument
     count. The count in the test's last line is why this was seen at
     all: "all ok" alone would have passed it.
+12. **The second batch** (tags, guiscene, guitree, player_handler,
+    round): tags and guiscene identical at once; guitree and round
+    wanted `.sort(def(a, b): bool = ...)` and `.sortBy(def(a): K =
+    ...)` with closures -- the runtime's stable insertion sorts
+    (`zlist_sort_with`, `zlist_sort_by_i64 / _f64 / _str` by the
+    lambda's return type; the Zig backend's `std.mem.sort` is stable,
+    so ties keep their order on both); round wanted a list literal to
+    have a type (its declared element type, else its first element's),
+    so `for p in [p1, p2, p3]` over class references takes the mutable
+    index loop (V: "`p` is immutable"); and player_handler DIVERGED, as
+    the previous report's least-confident item said it might: json2
+    parses every number as f64 and `zjson_try_int` returned the
+    truncation, so the scene loader's `attrText` spelled a
+    SpeedReduction of 1.6 as "1" and Iron Armor walked at 0.99 against
+    the harness's 0.984. The Zig backend's `_json_as_int` is null for a
+    float with a fraction; the V runtime's is now the same. All five
+    identical after: 1, 1, 1, 6 and 1 lines.
+13. **A local named like any module's global is renamed.** The health
+    test's `-prod` build failed in V's checker with "duplicate of a
+    const name `step`": TweenClock.update's local `step` against
+    diffusable's `const step = 0.1`. Zebra scopes a module's globals to
+    the module; V's one file has one namespace, and the shadowing is a
+    WARNING that `-prod` refuses as an error (the debug build carried
+    it silently). Isolated by flag (`-prod` alone, not `-skip-unused`),
+    by a rename (the one local clears it) and by a 60-line ddmin (the
+    const at its end): not a V bug. The emitter collects every emitted
+    global name after its other passes and renames a local of that
+    name `step_v`, as a local named like a function already was. Every
+    engine emission now passes `-prod -check` clean, and the health
+    test builds under `zig cc -O3`.
 
 **What runs.** `zbra/signal_test`, `zbra/instance_test` and
 `zbra/tween_test` -- each with its own `main` -- print the same lines on
