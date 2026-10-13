@@ -794,7 +794,7 @@ and a type alias; `game/mm/health` (362 lines, which folds in **21
 modules**: the workspace, the instance tree, the GUI scene loader, the
 player handler, the shop, the datastore) wanting untyped list literals,
 the stream type and much that only showed once the first were in.
-Eighteen rounds:
+Twenty-eight rounds:
 
 1. **Interfaces.** `interface I` is V's interface with every method under
    `mut:` (a class's methods are all `mut self`); `implements` emits
@@ -933,6 +933,70 @@ Eighteen rounds:
     only a run diffed against the control is, and a test whose acts
     live inside its asserts is one a build flag can hollow out.
 
+**The demo, rounds 20 to 28.** `game/mm/demo_test` builds the whole
+monster mayhem demo as the host does and steps the autoplay's first two
+minutes: 19,000 lines of V, 168 lines of output, the vote, the map, the
+spawns, the figures, the creators, the fort, the night, the round's end
+and the next vote. It went from "cannot register struct TweenInfo" to
+byte-identical in nine rounds, each one V error or one wrong line
+deeper, every existing witness identical throughout:
+
+15. **Two modules' same-named types are renamed in the source.** V has
+    one namespace per file and the demo's module set declares nine
+    type names twice (gui's TweenInfo struct against tween's class, two
+    TweenServices, the easing enums, Weld, Seen, NotifyLog, CameraMode,
+    MessageHandler). The emitter has forty type-name sites and the
+    front end no generic walker, so the route renames `<Stem>_<Name>`
+    in each module's SOURCE TEXT before parsing it again, by the
+    lexer's `id` and `open_call` tokens (a name followed by `(` is its
+    own kind), in the declaring module and in every `use ... exposing`
+    that names it -- Zebra's own resolution -- and the parser, the
+    resolver and the emitter never meet the collision.
+16. **Scopes, captures, tuples.** A statement list restores the local
+    names and renames it declared (a capture declared in one loop body
+    was "already declared" in the next); a capture of a renamed local
+    takes the local's V name; a constructor call has a type, so a list
+    literal of them is typed; tuples are the runtime's `ZTuple2 /
+    ZTuple3` (V: a generic parameter is exactly one capital letter and
+    `C` is reserved), the literal V infers, `t.0` is `t.f0` -- the
+    engine's four stubs were that one tuple counted at three sites.
+17. **A name in scope wins over a module of its name** (the engine's
+    modules are common nouns: tween, character, health, door), else
+    `tween.step(dt)` was a bare call; Zebra's `else if` is V's flat
+    `else if` when its condition renders without a temporary (a probe
+    render in a cloned context decides; the autoplay's seventy nested
+    elses passed V's depth of forty); `str.bytes()` is a List(byte); a
+    constructor's bare `return` is `return self`; a narrowed read is
+    bound before a mutating call and reads as its inner type; a free
+    function or a global resolves by the `use ... exposing` that names
+    it, not the use lines' order (build_tools got math's snapToGrid
+    for building's); DateTime is a builtin namespace; `x != nil` is
+    parenthesized as an operand; a unary or binary expression has a
+    type (`var best = -1` is i64, not V's int).
+18. **A seeded Random samples as the Zig backend does.** The vote's
+    winner differed: the generator was Zig's (xoshiro256++ by
+    SplitMix64) but the sampling was not. Zig's `intRangeAtMost` is
+    `lo +% uintAtMost(hi -% lo)`, `uintAtMost` is `uintLessThan(n + 1)`
+    (Lemire's multiply-shift with rejection, a draw consumed even for
+    lo == hi), `float(f64)` takes a draw's leading zeros as the
+    exponent; ported bit for bit (four 32-bit products for the 128-bit
+    multiply, checked against Python). A `Random.new(42)` probe prints
+    the same fourteen lines through both backends. The module-level
+    `Random.randInt` is entropy on both.
+19. **A capture of a reference is declared through its pointer cast**
+    (vlang/v#30348). The creator's eight edits re-dressed nothing:
+    inside a closure capturing a heap reference with `[mut self]`
+    (every try block's body is one), `mut demo := self` copies the
+    struct while `typeof(self)` says `&MmDemo`; `&MmDemo(self)` keeps
+    the pointer. Found by prints inside the emitted V -- addresses and
+    `typeof` -- in three probes and no regen.
+
+Two V rules met on the way: a local may not bear an imported module's
+name (`rand`, `bits`), and `-prod` makes a warning an error. One
+instrument fix: a chain now stops at the first red witness of the
+pipeline's report, and the engine batch's diff normalizes every
+millisecond count in the text (the demo prints five load timings).
+
 **What runs.** `zbra/signal_test`, `zbra/instance_test` and
 `zbra/tween_test` -- each with its own `main` -- print the same lines on
 both backends (1, 1 and 10 lines). `game/mm/health_test` (222 lines, the
@@ -944,7 +1008,9 @@ bound by the Framework at `begin()`, two the test's own. Its control
 comes from the engine's own harness (`zig build run-health_test`),
 since the Zig backend's `--module-path` cannot build a driver that sits
 outside the module directory; the V run is from the engine root, where
-the scene file is. Built with `-prod` under tcc and under `zig cc -O3`
+the scene file is. The demo test (the whole demo, two minutes stepped,
+168 lines) prints the harness's lines byte for byte with its five load
+timings normalized. Built with `-prod` under tcc and under `zig cc -O3`
 (11.6 and 19.5 s), the health test prints the same three lines; it is
 startup-bound (150 to 300 ms, 8 to 17 MB) on the Zig harness, tcc,
 tcc with Boehm and zig cc alike, so it gives no performance signal --
