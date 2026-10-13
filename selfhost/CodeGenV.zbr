@@ -2756,10 +2756,17 @@ class VGen
                     if .renames.get(cv.name) as rn
                         cname = rn   # the local itself under its V name (renamed off a function or a global)
                 if not same
+                    # a reference is declared through its pointer cast: inside a
+                    # closure capturing `[mut self]` (a try block's body), a bare
+                    # `mut demo := self` copies the struct (vlang/v#30348)
+                    var cinit: str = .exprStr(cie)
+                    var cvt0: str = .vType(cv.type_)
+                    if cvt0.startsWith("&") and not cvt0.startsWith("&Z")
+                        cinit = cvt0 + "(" + cinit + ")"
                     if .isLocalName(cv.name)
-                        .line(vSafe(cv.name) + " = " + .exprStr(cie))   # a name a capture already declared
+                        .line(vSafe(cv.name) + " = " + cinit)   # a name a capture already declared
                     else
-                        .line("mut " + vSafe(cv.name) + " := " + .exprStr(cie))
+                        .line("mut " + vSafe(cv.name) + " := " + cinit)
             else
                 .refuse("a capture without a value (" + cv.name + ")", cv.span)
             .local_names.add(cv.name)
