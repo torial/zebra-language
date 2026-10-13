@@ -6,6 +6,45 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-568: a Zig error inside a USED module's generated file reached the user raw -- a temp `.zig` path and Zig's spellings -- while the same error in the root module is remapped to the `.zbr` -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** zebra-taocp's batch 4 (`partitionsInto` fell off its end without `return out`,
+  my mistake, in the imported library). Reproduced on HEAD `25ac283` and on the N-1 anchor.
+- **Repro:** a module `lib.zbr` with `def f(n: int): int` whose `while true` loop `break`s and
+  falls off the end, used by a program that calls `f`. Output:
+  `...\Temp\zebra-g-797404263\lib.zig:12:26: error: function with non-void return type 'i64'
+  implicitly returns`, plus Zig source context. The same function in the ROOT module reads
+  `g.zbr:1: error: this def is declared to return int but can reach the end of its body without a
+  `return` -- every path needs one` (BUG-410's remap).
+- **Cause:** that "missing return" is not a front-end check; it is Zig's error, rewritten by
+  `remapZigErrors` (main.zbr) through the `// zbr:` markers of the generated file. It was given
+  the ROOT file only, so a diagnostic in a dependency's file (emitted beside it) passed through
+  untouched -- every kind of Zig error, not just this one.
+- **Fixed 2026-10-13.** `remapZigErrors` maps each diagnostic through the markers of the
+  generated file THAT LINE names (`zigFileOfLine`, both path separators), loading a
+  dependency's lines once; `zebra_rt.zig` has no markers and still passes through. Also: the
+  message spelled a List return type as Zig's `*array_list.Aligned(i64,null)`;
+  `humanizeZigTypes2` now writes `List(int)` (nested: `List(List(int))`). Fixture
+  `test/bug568_dep_missing_return_test.zbr` + its module `test/bug568_dep_missing_return_lib.zbr`,
+  registered `smoke_run_fail`, which requires the Zebra message AND that no `.zig:` location
+  reaches the output; watched red on the old binary first.
+- **Not done:** a FRONT-END missing-return check. `zebra -c` (front end only) still accepts these
+  functions, and the error arrives only from a full build; the remap makes it readable, it does
+  not make it early.
+- FULL 46/46 in one invocation (with BUG-567): smoke 707/707, round-trip byte-identical,
+  `cli-surface` 57/57, `output_sweep` 466 identical, `full_sweep` / `examples_sweep` /
+  `divergence` 0 regressions.
+
+### BUG-567: an identifier that BEGINS with a sized type name -- `int8x`, `uint16count`, `float32ish`, `int128Digits` -- was lexed as that type and refused -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** zebra-taocp's batch 4 (`def int128Digits(...)`: "expected identifier, got
+  'int128Digits'"). Reproduced on HEAD and on the N-1 anchor.
+- **Cause:** `selfhost/Lexer.zbr` classified a word as `int_size` / `uint_size` / `float_size` when
+  the FIRST character after the prefix was a digit, never checking the rest.
+- **Fixed 2026-10-13.** The tail must be digits only (`allDigitsFrom`). Fixture
+  `test/bug567_sized_prefix_ident_test.zbr`: `int8x`, `uint16count`, `float32ish` and
+  `int128Digits` as names beside `int8`, `uint16`, `float32` and `int128` as types; watched red
+  first. zebra-taocp keeps its `digitsOf128` name until it next updates (its README says why).
+- FULL 46/46 in one invocation, gated together with BUG-568 (see there).
+
 ### BUG-566: a `for v in ...` loop variable cannot be typed when ANY block of the same function declares a local `v` of another type -- before or after the loop -- FIXED 2026-10-13 (found 2026-10-13)
 - **Found by:** zebra-taocp's batch-3 test (`for v in ps[i]` beside a later, unrelated
   `var v = List(int)()` in the Karatsuba block); reproduced on HEAD `3133ec1` and on the N-1

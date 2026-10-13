@@ -25,6 +25,17 @@ static def isDigit(c: char): bool
         else
             return false
 
+# BUG-567: every character of `word` from `start` on is a digit (and there is at least one).
+static def allDigitsFrom(word: str, start: int): bool
+    if start >= word.len
+        return false
+    var i: int = start
+    while i < word.len
+        if not isDigit(word[i])
+            return false
+        i += 1
+    return true
+
 static def isDigitOrUnder(c: char): bool
     return isDigit(c) or c == c'_'
 
@@ -327,14 +338,16 @@ class Lexer
                 scanSimpleString(q, start, kind, ln, cl, false)?
                 return
 
-        # Sized type names: int8, uint16, float32, etc.
-        if word.len > 3 and word[0] == c'i' and word[1] == c'n' and word[2] == c't' and isDigit(word[3])
+        # Sized type names: int8, uint16, float32, etc. -- the prefix followed by DIGITS ONLY.
+        # BUG-567: only the first character after the prefix was tested, so `int8x`,
+        # `uint16count` or `int128Digits` lexed as a type and could not name anything.
+        if word.len > 3 and word[0] == c'i' and word[1] == c'n' and word[2] == c't' and allDigitsFrom(word, 3)
             emit(TokenKind.int_size(), word, ln, cl)
             return
-        if word.len > 4 and word[0] == c'u' and word[1] == c'i' and word[2] == c'n' and word[3] == c't' and isDigit(word[4])
+        if word.len > 4 and word[0] == c'u' and word[1] == c'i' and word[2] == c'n' and word[3] == c't' and allDigitsFrom(word, 4)
             emit(TokenKind.uint_size(), word, ln, cl)
             return
-        if word.len > 5 and word[0] == c'f' and word[1] == c'l' and word[2] == c'o' and word[3] == c'a' and word[4] == c't' and isDigit(word[5])
+        if word.len > 5 and word[0] == c'f' and word[1] == c'l' and word[2] == c'o' and word[3] == c'a' and word[4] == c't' and allDigitsFrom(word, 5)
             emit(TokenKind.float_size(), word, ln, cl)
             return
 

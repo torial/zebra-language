@@ -1,0 +1,7 @@
+# BUG-568: a Zig error inside a USED module's generated file must be remapped to that module's
+# .zbr line, in Zebra's words, like one in the root module. The smoke registration requires
+# the Zebra message AND that no .zig location reaches the user.
+use bug568_dep_missing_return_lib exposing countUp, collect
+def main()
+    print(countUp(3))
+    print(collect(2))

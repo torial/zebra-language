@@ -5196,6 +5196,12 @@ def humanizeZigTypes2(msg: str, mod_name: str): str
     var m: str = msg
     m = m.replace("[]const u8", "str")
     m = m.replace("[]u8", "str")
+    # BUG-568: a List is `*array_list.Aligned(T,null)` to Zig (a reference since BUG-501).
+    m = m.replace("*array_list.Aligned(", "List(")
+    m = m.replace("array_list.Aligned(", "List(")
+    m = m.replace(",null)", ")")
+    m = m.replace("List(i64)", "List(int)")
+    m = m.replace("List(f64)", "List(float)")
     # BUG-281 B: a Zebra type emits as `_zbr_ty_<name>`, and Zig quotes that spelling
     # back in its own diagnostics — `no field named 'y' in struct '_zbr_ty_P'`.  The
     # user wrote `struct P` and has never seen the prefix, so showing it is the exact
@@ -5208,10 +5214,40 @@ def humanizeZigTypes2(msg: str, mod_name: str): str
         m = m.replace(mod_name + ".", "")
     return m
 
+# BUG-568: the directory part of a path, either separator; "" when there is none.
+def pathDirOf(p: str): str
+    var cut: int = -1
+    var i: int = 0
+    while i < p.len
+        if p[i] == c'/' or p[i] == c'\\'
+            cut = i
+        i += 1
+    if cut < 0
+        return ""
+    return p.substring(0, cut)
+
+# BUG-568: the bare file name ("lib.zig") of the generated file a Zig diagnostic line starts
+# with, or "".
+def zigFileOfLine(line: str): str
+    var at: int = line.indexOf(".zig:")
+    if at < 0
+        return ""
+    var start: int = at
+    while start > 0 and line[start - 1] != c'/' and line[start - 1] != c'\\' and line[start - 1] != c' '
+        start -= 1
+    return line.substring(start, at + 4)
+
 def remapZigErrors(stderr_text: str, zig_path: str): str
     var zig_lines: List(str) = File.readLines(zig_path)
     var zig_base: str = pathBasename(zig_path)
     var mod_name: str = zig_base.replace(".zig", "")
+    # BUG-568: a USED module is emitted beside the root (lib.zig next to main.zig), each with
+    # its own // zbr: markers. Only the root's lines were remapped, so a Zig error in a
+    # dependency reached the user raw -- a temp path and Zig's spellings (a missing `return`
+    # read "function with non-void return type 'i64' implicitly returns"). Each diagnostic now
+    # maps through the markers of the file IT names; the runtime has none and passes through.
+    var zig_dir: str = pathDirOf(zig_path)
+    var dep_lines: HashMap(str, List(str)) = HashMap(str, List(str))()
     var stderr_lines: List(str) = List(str)()
     for sln in stderr_text.split("\n")
         stderr_lines.add(sln)
@@ -5235,9 +5271,29 @@ def remapZigErrors(stderr_text: str, zig_path: str): str
         if emit_raw and line.startsWith("referenced by:")
             skip_context = true
             emit_raw = false
+        var cur_base: str = ""
+        var cur_lines: List(str) = zig_lines
+        var cur_mod: str = mod_name
         if emit_raw
             if zig_base in line
-                var marker: str = zig_base + ":"
+                cur_base = zig_base
+            else
+                var dep_base: str = zigFileOfLine(line)
+                if dep_base != "" and dep_base != "zebra_rt.zig" and zig_dir != ""
+                    var dep_path: str = zig_dir + "/" + dep_base
+                    if dep_lines.contains(dep_base)
+                        cur_base = dep_base
+                        cur_lines = dep_lines.get(dep_base) orelse zig_lines
+                        cur_mod = dep_base.replace(".zig", "")
+                    else if File.exists(dep_path)
+                        var dl: List(str) = File.readLines(dep_path)
+                        dep_lines.put(dep_base, dl)
+                        cur_base = dep_base
+                        cur_lines = dl
+                        cur_mod = dep_base.replace(".zig", "")
+        if emit_raw
+            if cur_base != ""
+                var marker: str = cur_base + ":"
                 var after: str = ""
                 var found_m: bool = false
                 for seg in line.split(marker)
@@ -5262,9 +5318,9 @@ def remapZigErrors(stderr_text: str, zig_path: str): str
                         var sev_msg_t: str = sev_msg.trimLeft()
                         var is_diag: bool = sev_msg_t.startsWith("error:") or sev_msg_t.startsWith("warning:") or sev_msg_t.startsWith("note:")
                         if is_diag and zig_line > 0
-                            var zbr_loc: str = findZbrComment(zig_lines, zig_line)
+                            var zbr_loc: str = findZbrComment(cur_lines, zig_line)
                             if zbr_loc != ""
-                                out = out + zbr_loc + ": " + humanizeZigTypes(sev_msg_t, mod_name) + "\n"
+                                out = out + zbr_loc + ": " + humanizeZigTypes(sev_msg_t, cur_mod) + "\n"
                                 skip_context = true
                                 emit_raw = false
                             else if sev_msg_t.startsWith("note:")

@@ -1,0 +1,14 @@
+# BUG-568's module: two functions that can reach their end without a return -- DELIBERATELY.
+# Zig refuses both in this module's generated file, and before the fix that error reached the
+# user raw (a temp .zig path, "function with non-void return type 'i64' implicitly returns").
+def countUp(n: int): int
+    var i: int = 0
+    while true
+        i += 1
+        if i > n
+            break
+
+def collect(n: int): List(int)
+    var out = List(int)()
+    for i in 0 : n
+        out.add(i)

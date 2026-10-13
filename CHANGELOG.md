@@ -51,6 +51,12 @@ confirmed via `tools/bootstrap_check.sh`.
   same function declared a different local named `v`, before or after the loop. The loop
   variable now has the element type inside the loop, and the name means the block's local again
   after it.
+- **Names like `int8x`, `uint16count` or `int128Digits` are identifiers (BUG-567).** A word
+  that began with a sized type name followed by a digit was lexed as that type.
+- **A compile error inside a module you `use` is reported at that module's `.zbr` line, in
+  Zebra's words (BUG-568),** as one in the main file always was -- it reached you as a raw Zig
+  error against a temporary `.zig` file. The missing-`return` message now spells a List
+  return type `List(int)`, not Zig's `*array_list.Aligned(i64,null)`.
 
 ## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
 

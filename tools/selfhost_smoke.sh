@@ -1314,6 +1314,8 @@ smoke_run test/bug562_subscript_write_const_test.zbr "bug562: [101, 5] [1, 1, 2]
 smoke_run test/bug559_chain_on_value_result_test.zbr "bug559: 13 2 4 1024 8.0 12.0 4.0"
 smoke_run test/bug560_imported_field_len_test.zbr "bug560: 5 2 5"
 smoke_run test/bug566_loop_var_sibling_scope_test.zbr "bug566: 12 abc"
+smoke_run test/bug567_sized_prefix_ident_test.zbr "bug567: 7 0.5 0.25 7 65535 13"
+smoke_run_fail test/bug568_dep_missing_return_test.zbr "can reach the end of its body without a"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.

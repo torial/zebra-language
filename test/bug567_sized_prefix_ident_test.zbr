@@ -1,0 +1,21 @@
+# BUG-567: a name that BEGINS with a sized type name -- int8x, uint16count, float32ish,
+# int128Digits -- is an identifier. The lexer took any word whose first character after
+# `int` / `uint` / `float` was a digit as a type, so each of these was "expected identifier".
+# The controls: int8, uint16, float32 and int128 themselves are still types.
+def int128Digits(x: int128): int
+    var n: int = 0
+    var v: int128 = x
+    while v > 0
+        n += 1
+        v = v / 10
+    return n
+
+def main()
+    var int8x: int = 3
+    var uint16count: int = 4
+    var float32ish: float = 0.5
+    var small: int8 = 7
+    var wide: uint16 = 65535
+    var half: float32 = 0.25
+    var big: int128 = 1234567890123
+    print("bug567: ${int8x + uint16count} ${float32ish} ${half} ${small} ${wide} ${int128Digits(big)}")
