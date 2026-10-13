@@ -2278,6 +2278,11 @@ class VGen
                 rhs = "f64(" + rhs + ")"
             else if tname == "" and isIntLit(ie)
                 rhs = "i64(" + rhs + ")"
+            else if tname.startsWith("&") and not tname.startsWith("&Z") and isIdentExpr(ie)
+                # a reference by name: through its pointer cast -- inside a
+                # closure capturing the name with [mut], a bare assignment
+                # copies the struct (vlang/v#30348)
+                rhs = tname + "(" + rhs + ")"
             .line("mut " + name + " := " + rhs)
         else
             if v.type_ as t
@@ -2313,9 +2318,9 @@ class VGen
             .narrowed.add(ne_name)   # `if x != nil`: Zebra reads x as its inner type in the block
         if captured != ""
             .line(captured)
-            if i.is_capture as cap2
-                if not readsName(cap2, i.then_stmts)
-                    .line("_ = " + vSafe(cap2))   # a binding nothing reads
+        if i.is_capture as cap2
+            if not readsName(cap2, i.then_stmts)
+                .line("_ = " + vSafe(cap2))   # a binding nothing reads (V's unused variable, an error under -prod)
         .genStmts(i.then_stmts)
         if ne_name != ""
             .unnarrow(ne_name)
@@ -3849,6 +3854,13 @@ def coerceRendered(s: str, want: str): str
 def isLambdaExpr(e: Expr): bool
     branch e
         on Expr.lambda
+            return true
+        else
+            return false
+
+def isIdentExpr(e: Expr): bool
+    branch e
+        on Expr.ident
             return true
         else
             return false
