@@ -1017,7 +1017,7 @@ pub fn zstr_try_float(s string) ?f64 {
 }
 
 pub fn zstr_char_at(s string, i i64) string {
-	return s[i..i + 1]
+	return s[int(i)..int(i + 1)]   // int bounds: an i64 bound panics in range under MSVC, with or without -prod (vlang/v#30352)
 }
 
 pub fn zstr_split(s string, sep string) &ZList[string] {

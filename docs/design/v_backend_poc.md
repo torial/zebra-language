@@ -919,7 +919,7 @@ Twenty-eight rounds:
     `assert` statements, condition and all, and the engine's tests put
     the act inside the assert (`assert mh.damage(hit(50.0, c)) ==
     "Dead"`), so no damage was dealt, no death printed, one component
-    never removed. A tcc `-prod` build showed the same, so not the C
+    never removed. An MSVC `-prod` build showed the same, so not the C
     compiler. A Zebra assert is evaluated in every build (the Zig
     backend panics `assert failed at f.zbr:12: msg`); the emitter now
     spells it `if !(cond) { panic('assert failed at <file>:<line>: '
@@ -990,6 +990,14 @@ deeper, every existing witness identical throughout:
     struct while `typeof(self)` says `&MmDemo`; `&MmDemo(self)` keeps
     the pointer. Found by prints inside the emitted V -- addresses and
     `typeof` -- in three probes and no regen.
+20. **Every emitted slice bound is cast to int** (vlang/v#30352). Under
+    MSVC, with or without `-prod` -- and a bare `-prod` picks MSVC on
+    this host, so every "tcc -prod" build of the night was MSVC's --
+    a string slice with `i64` bounds panics for an end that is in
+    range; tcc and clang are right. Five lines pin it; the demo built
+    `-prod` under MSVC had stopped after four lines at mapSlug's
+    substring. The prod reference is zig cc; tcc is the debug lane,
+    and V's own word is that tcc is not meant for `-prod`.
 
 Two V rules met on the way: a local may not bear an imported module's
 name (`rand`, `bits`), and `-prod` makes a warning an error. One
@@ -1010,8 +1018,9 @@ since the Zig backend's `--module-path` cannot build a driver that sits
 outside the module directory; the V run is from the engine root, where
 the scene file is. The demo test (the whole demo, two minutes stepped,
 168 lines) prints the harness's lines byte for byte with its five load
-timings normalized. Built with `-prod` under tcc and under `zig cc -O3`
-(11.6 and 19.5 s), the health test prints the same three lines; it is
+timings normalized. Built with `-prod` under MSVC (what a bare `-prod` picks on this host)
+and under `zig cc -O3` (11.6 and 19.5 s), the health test prints the same
+three lines; it is
 startup-bound (150 to 300 ms, 8 to 17 MB) on the Zig harness, tcc,
 tcc with Boehm and zig cc alike, so it gives no performance signal --
 a read needs a longer workload. The four refusals in the 21 modules stand (three

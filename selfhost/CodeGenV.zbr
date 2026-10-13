@@ -2653,7 +2653,7 @@ class VGen
                     a = .exprStr(st)
                 if sl.stop_ as sp
                     b = .exprStr(sp)
-                return .exprStr(sl.object) + "[" + a + ".." + b + "]"
+                return .exprStr(sl.object) + "[int(" + a + ")..int(" + b + ")]"   # int bounds: an i64 bound panics in range under MSVC, with or without -prod (vlang/v#30352)
             on Expr.cast as ca
                 if .vTypeOf(ca.expr) == "json2.Any"
                     return .coerced(ca.expr, .vType(ca.target))
@@ -3473,7 +3473,7 @@ class VGen
         if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"
         if name == "startsWith" and args.count() == 1: return obj + ".starts_with(" + .argsStr(args) + ")"
         if name == "endsWith" and args.count() == 1: return obj + ".ends_with(" + .argsStr(args) + ")"
-        if name == "substring" and args.count() == 2: return obj + "[" + .exprStr(args.at(0).value) + ".." + .exprStr(args.at(1).value) + "]"
+        if name == "substring" and args.count() == 2: return obj + "[int(" + .exprStr(args.at(0).value) + ")..int(" + .exprStr(args.at(1).value) + ")]"   # int bounds: MSVC (vlang/v#30352)
         if name == "split" and args.count() == 1: return obj + ".split(" + .argsStr(args) + ")"
         if name == "trim" and args.count() == 0: return obj + ".trim_space()"
         if (name == "upper" or name == "toUpper") and args.count() == 0: return obj + ".to_upper()"
