@@ -719,17 +719,80 @@ pub fn (mut r ZRandom) next_u64() u64 {
 	return result
 }
 
-// Random.nextInt(lo, hi): inclusive both ends
-pub fn (mut r ZRandom) next_int(lo i64, hi i64) i64 {
-	if hi <= lo {
-		return lo
-	}
-	span := u64(hi - lo + 1)
-	return lo + i64(r.next_u64() % span)
+// a 64 x 64 -> 128 product as (high, low): V has no u128
+fn zmul_wide(a u64, b u64) (u64, u64) {
+	a_lo := a & 0xFFFFFFFF
+	a_hi := a >> 32
+	b_lo := b & 0xFFFFFFFF
+	b_hi := b >> 32
+	p0 := a_lo * b_lo
+	p1 := a_lo * b_hi
+	p2 := a_hi * b_lo
+	p3 := a_hi * b_hi
+	mid := (p0 >> 32) + (p1 & 0xFFFFFFFF) + (p2 & 0xFFFFFFFF)
+	lo := (p0 & 0xFFFFFFFF) | (mid << 32)
+	hi := p3 + (p1 >> 32) + (p2 >> 32) + (mid >> 32)
+	return hi, lo
 }
 
+// Zig's std.Random.uintLessThan(u64, n): Lemire's multiply-shift with
+// rejection -- the same draws in the same order as the Zig backend
+fn (mut r ZRandom) uint_less_than(less_than u64) u64 {
+	mut x := r.next_u64()
+	mut hi, mut l := zmul_wide(x, less_than)
+	if l < less_than {
+		mut t := (~less_than) + 1   // -less_than, wrapping
+		if t >= less_than {
+			t -= less_than
+			if t >= less_than {
+				t %= less_than
+			}
+		}
+		for l < t {
+			x = r.next_u64()
+			hi, l = zmul_wide(x, less_than)
+		}
+	}
+	return hi
+}
+
+// Random.nextInt(lo, hi): inclusive both ends -- Zig's intRangeAtMost(i64):
+// lo +% uintAtMost(u64, hi -% lo); a draw is consumed even for lo == hi
+pub fn (mut r ZRandom) next_int(lo i64, hi i64) i64 {
+	ulo := u64(lo)
+	uhi := u64(hi)
+	span := uhi - ulo
+	mut res := u64(0)
+	if span == u64(0xFFFFFFFFFFFFFFFF) {
+		res = r.next_u64()
+	} else {
+		res = r.uint_less_than(span + 1)
+	}
+	return i64(ulo + res)
+}
+
+// Zig's float(f64): the leading zeros of a draw are the exponent (twelve
+// or more: further draws), the low 52 bits the mantissa
 pub fn (mut r ZRandom) next_float() f64 {
-	return f64(r.next_u64() >> 11) / f64(u64(1) << 53)
+	draw := r.next_u64()
+	mut rand_lz := u64(bits.leading_zeros_64(draw))
+	if rand_lz >= 12 {
+		rand_lz = 12
+		for {
+			addl := u64(bits.leading_zeros_64(r.next_u64()))
+			rand_lz += addl
+			if addl != 64 {
+				break
+			}
+			if rand_lz >= 1022 {
+				rand_lz = 1022
+				break
+			}
+		}
+	}
+	mantissa := draw & u64(0xFFFFFFFFFFFFF)
+	exponent := (u64(1022) - rand_lz) << 52
+	return bits.f64_from_bits(exponent | mantissa)
 }
 
 // ── Sqlite: no sqlite on this backend; the types exist so a program that

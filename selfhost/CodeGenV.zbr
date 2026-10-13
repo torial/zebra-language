@@ -102,7 +102,7 @@ def vSafe(name: str): str
     if s == "map" or s == "string" or s == "array" or s == "chan" or s == "thread" or s == "any" or s == "voidptr" or s == "byte" or s == "rune" or s == "int" or s == "f32" or s == "f64" or s == "i8" or s == "i16" or s == "i32" or s == "i64" or s == "u8" or s == "u16" or s == "u32" or s == "u64" or s == "isize" or s == "usize" or s == "char"
         return s + "_"
     # the modules the emitted file imports: a parameter `time` was a duplicate of one
-    if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2"
+    if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2" or s == "bits"
         return s + "_"
     return s
 
@@ -3252,6 +3252,8 @@ class VGen
             return obj + ".i64()"   # parsed, not cast
         if rtype == "string" and name == "toFloat" and args.count() == 0
             return obj + ".f64()"
+        if rtype == "&ZStringBuilder" and name == "toString" and args.count() == 0
+            return obj + ".build()"   # a builder's text, not V's struct printer
         if rtype == "json2.Any" or (rtype == "" and isJsonOnlyMethod(name))
             var ja: str = .argsStr(args)
             if name == "get" and args.count() == 1: return "zjson_get(" + obj + ", " + ja + ")"
@@ -3976,6 +3978,6 @@ def generateV(ms: List(Module), runtime: str): VResult
     # the runtime (inlined below) uses math, os and strconv: always imported
     # (an import the program itself never reaches is used by the runtime's
     # functions, so V does not warn)
-    head = head + "import math\nimport os\nimport strconv\nimport time\nimport x.json2\nimport rand\nimport crypto.sha256\n"
+    head = head + "import math\nimport math.bits\nimport os\nimport strconv\nimport time\nimport x.json2\nimport rand\nimport crypto.sha256\n"
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + runtime + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals)
