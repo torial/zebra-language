@@ -19,6 +19,7 @@
 # a class is a struct with `mut:` fields, `cue init` is `fn new_<name>()
 # &Name`, a method is `fn (mut self Name) m()`.
 
+use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
@@ -93,8 +94,8 @@ def vSafe(name: str): str
         return s + "_"
     # C's own words, which V emits verbatim into its C (tcc read a loop
     # variable `cdecl` as its calling-convention keyword)
-    if s == "cdecl" or s == "stdcall" or s == "fastcall" or s == "int" or s == "char" or s == "float" or s == "double" or s == "long" or s == "short" or s == "void" or s == "signed" or s == "unsigned" or s == "auto" or s == "register" or s == "extern" or s == "inline" or s == "restrict" or s == "typedef" or s == "switch" or s == "case" or s == "default" or s == "do" or s == "while" or s == "for" or s == "if" or s == "else" or s == "break" or s == "continue" or s == "return" or s == "bool"
-        return s + "_"
+    if s == "cdecl" or s == "stdcall" or s == "fastcall" or s == "int" or s == "char" or s == "float" or s == "double" or s == "long" or s == "short" or s == "void" or s == "signed" or s == "unsigned" or s == "auto" or s == "register" or s == "extern" or s == "inline" or s == "restrict" or s == "typedef" or s == "switch" or s == "case" or s == "default" or s == "do" or s == "while" or s == "for" or s == "if" or s == "else" or s == "break" or s == "continue" or s == "return" or s == "bool" or s == "near" or s == "far" or s == "pascal" or s == "huge"
+        return s + "_"   # (near / far / pascal / huge: macros in tcc's Windows headers)
     return s
 
 class VGen
@@ -130,6 +131,11 @@ class VGen
     var def_modules: HashMap(str, List(str))   # a free function's name -> the module stems that declare it
     var current_stem: str             # the module being emitted, by its file's stem
     var current_uses: List(str)       # the stems the module being emitted uses
+    var capturing: bool               # a function body is being captured (a stub replaces it if anything is refused)
+    var fn_names: List(str)           # every free function's V name (a local of that name is renamed)
+    var global_inits: List(str)       # `name = value` for every __global, set by zglobals_init() at main's start
+    var renames: HashMap(str, str)    # a local's Zebra name -> its V name when renamed
+    var captured: List(str)           # the body's lines while capturing
     var all_field_types: HashMap(str, str)  # `Name.field` -> the V type, every class and struct
     var local_names: List(str)        # the params and locals declared so far in the enclosing def (they shadow a field)
     var matchN: int               # the temporaries bound for `branch`
@@ -171,6 +177,11 @@ class VGen
         .def_modules = HashMap(str, List(str))()
         .current_stem = ""
         .current_uses = List(str)()
+        .capturing = false
+        .captured = List(str)()
+        .fn_names = List(str)()
+        .global_inits = List(str)()
+        .renames = HashMap(str, str)()
         .all_field_types = HashMap(str, str)()
         .local_names = List(str)()
         .matchN = 0
@@ -183,12 +194,40 @@ class VGen
         .refused.add(what + " (" + .current_file + ":" + span.line.toString() + ")")
 
     def line(s: str)
+        var out: str = ""
         var i: int = 0
         while i < .depth
-            .sb.append("\t")
+            out = out + "\t"
             i = i + 1
-        .sb.append(s)
-        .sb.append("\n")
+        out = out + s + "\n"
+        if .capturing
+            .captured.add(out)
+        else
+            .sb.append(out)
+
+    # a function's body: captured, and replaced by a stub when any construct
+    # in it was refused -- the program compiles and runs, and the gap names
+    # itself when the function is reached (the refusal list says it was stubbed)
+    def genBody(stmts: List(Stmt), what: str)
+        var mark: int = .refused.count()
+        .capturing = true
+        .captured = List(str)()
+        .genStmts(stmts)
+        .capturing = false
+        if .refused.count() > mark
+            var reasons: str = ""
+            var k: int = mark
+            while k < .refused.count()
+                if reasons != ""
+                    reasons = reasons + "; "
+                reasons = reasons + .refused.at(k)
+                .refused.set(k, .refused.at(k) + " [in " + what + ": stubbed]")
+                k = k + 1
+            .line("panic('not on the V backend: " + .vEscape(what + ": " + reasons) + "')")
+        else
+            for l in .captured
+                .sb.append(l)
+        .captured = List(str)()
 
     # ── types ──────────────────────────────────────────────────────────────
     def vType(t: TypeRef?): str
@@ -240,6 +279,7 @@ class VGen
         if name == "char": return "u8"
         if name == "void": return ""
         if name == "StringBuilder": return "&ZStringBuilder"
+        if name == "Json" or name == "JsonValue": return "json2.Any"   # by value, as Zig's std.json.Value
         for cn in .class_names
             if cn == name
                 return "&" + name
@@ -328,16 +368,7 @@ class VGen
         var last: int = ms.count() - 1
         var mi: int = 0
         for m in ms
-            .current_file = m.file
-            .current_stem = moduleStem(m.file)
-            .current_uses = List(str)()
-            for d in m.decls
-                branch d
-                    on Decl.use_ as u
-                        var segs: List(str) = u.path.split("/")
-                        .current_uses.add(segs.at(segs.count() - 1))
-                    else
-                        pass
+            .enterModule(m)
             .line("// -- " + m.file + " --")
             for d in m.decls
                 var skip: bool = false
@@ -352,6 +383,13 @@ class VGen
                 if not skip
                     .genDecl(d)
             mi = mi + 1
+        if .global_inits.count() > 0
+            .line("// the module-level vars, set before main runs (the Zig backend's _initModuleVars)")
+            .line("fn zglobals_init() {")
+            for gi in .global_inits
+                .line("\t" + gi)
+            .line("}")
+            .line("")
         return .sb.build()
 
     def noteTypeNames(m: Module)
@@ -477,6 +515,7 @@ class VGen
         for d in m.decls
             branch d
                 on Decl.method as mth
+                    .fn_names.add(vSafe(mth.name))
                     if .def_modules.get(mth.name) as have
                         have.add(stem)
                     else
@@ -503,6 +542,12 @@ class VGen
                             return snakeCase(u) + "_" + vSafe(name)
                 return snakeCase(mods.at(0)) + "_" + vSafe(name)
         return vSafe(name)
+
+    def isFnName(vname: str): bool
+        for n in .fn_names
+            if n == vname
+                return true
+        return false
 
     def isMutStruct(name: str): bool
         for n in .mut_structs
@@ -641,15 +686,29 @@ class VGen
         # missing ones filled from the defaults) and which are references (V
         # wants `mut` on a param mutated through a method, at the declaration
         # and at the call)
+        .enterModule(m)
         for d in m.decls
             branch d
                 on Decl.method as mth
-                    .noteSig(vSafe(mth.name), mth.params)
+                    .noteSig(.freeFnName(mth.name), mth.params)   # keyed as emitted: a module-prefixed name has its own entry
                 on Decl.class_ as c
-                    .noteMembers("new_" + snakeCase(c.name), c.members)
+                    .noteMembers("new_" + snakeCase(c.name), c.members, c.name)
                 on Decl.struct_ as st
-                    .noteMembers("new_" + snakeCase(st.name), st.members)
+                    .noteMembers("new_" + snakeCase(st.name), st.members, st.name)
                     .noteImplicitCtor("new_" + snakeCase(st.name), st.members)
+                else
+                    pass
+
+    # the module being walked or emitted: its stem and the stems it uses
+    def enterModule(m: Module)
+        .current_file = m.file
+        .current_stem = moduleStem(m.file)
+        .current_uses = List(str)()
+        for d in m.decls
+            branch d
+                on Decl.use_ as u
+                    var segs: List(str) = u.path.split("/")
+                    .current_uses.add(segs.at(segs.count() - 1))
                 else
                     pass
 
@@ -696,21 +755,42 @@ class VGen
                 .line("const " + vSafe(v.name) + " = " + rhs)
             else
                 # a mutable module-level var: V's __global, which the run must
-                # enable (-enable-globals on the run line the route prints)
+                # enable (-enable-globals on the run line the route prints);
+                # declared by type and set in zglobals_init() at main's start --
+                # MSVC refuses V's static initializer for a string global
+                var gt2: str = ""
+                if v.type_ as t2
+                    gt2 = .vType(t2)
+                if gt2 == ""
+                    gt2 = .ctorTypeOf(v.init_expr!)
+                if gt2 == ""
+                    gt2 = .vTypeOf(v.init_expr!)
+                if gt2 == "" and isIntLit(v.init_expr!)
+                    gt2 = "i64"
+                if gt2 == "" and isStringLit(v.init_expr!)
+                    gt2 = "string"
+                if gt2 == ""
+                    .refuse("module-level var " + v.name + " whose type the emitter cannot name (declare it)", v.span)
+                    gt2 = "voidptr"
                 .line("__global (")
-                .line("\t" + vSafe(v.name) + " = " + rhs)
+                .line("\t" + vSafe(v.name) + " " + gt2)
                 .line(")")
+                .global_inits.add(vSafe(v.name) + " = " + rhs)
                 .has_globals = true
         else
             .refuse("module-level var " + v.name + " without an initializer", v.span)
 
-    def noteMembers(ctor: str, members: List(Decl))
+    def noteMembers(ctor: str, members: List(Decl), owner: str)
         for mem in members
             branch mem
                 on Decl.init as ini
                     .noteSig(ctor, ini.params)
                 on Decl.method as cm
-                    .noteSig(vSafe(cm.name), cm.params)
+                    if cm.mods.is_static
+                        .noteSig(snakeCase(owner) + "_" + vSafe(cm.name), cm.params)   # as the static is emitted and called
+                    else
+                        .noteSig("." + vSafe(cm.name), cm.params)   # methods under `.name`: apart from the free functions
+                        .noteSig(owner + "." + vSafe(cm.name), cm.params)   # by owner too: no collision when the receiver's type is known
                 else
                     pass
 
@@ -816,12 +896,14 @@ class VGen
             head = head + " " + ret
         .line(head + " {")
         .depth = .depth + 1
+        if m.name == "main" and .has_globals
+            .line("zglobals_init()")
         .current_params = m.params
         .current_ret = ret
         .in_method = false
         .resetLocals(m.params)
         if m.stmts as body
-            .genStmts(body)
+            .genBody(body, vSafe(m.name))
         .depth = .depth - 1
         .line("}")
         .line("")
@@ -1008,7 +1090,7 @@ class VGen
         .in_method = true
         .resetLocals(m.params)
         if m.stmts as body
-            .genStmts(body)
+            .genBody(body, vSafe(m.name))
         .depth = .depth - 1
         .line("}")
         .line("")
@@ -1053,7 +1135,7 @@ class VGen
         .resetLocals(ini.params)
         .line("mut self := " + .structLit(owner, members))
         if ini.stmts as body
-            .genStmts(body)
+            .genBody(body, "new_" + snakeCase(owner))
         .line("return self")
         .depth = .depth - 1
         .line("}")
@@ -1075,7 +1157,7 @@ class VGen
         var saved = .current_fields
         .current_fields = List(str)()   # no self in a static method
         if m.stmts as body
-            .genStmts(body)
+            .genBody(body, snakeCase(owner) + "_" + vSafe(m.name))
         .current_fields = saved
         .depth = .depth - 1
         .line("}")
@@ -1134,6 +1216,53 @@ class VGen
                         var ot: str = .vTypeOf(cm.object)
                         if cm.member == "last" and c.args.count() == 0
                             return .elemOf(ot)
+                        if isStringReturningMethod(cm.member)
+                            return "string"
+                        var jowner: str = .staticOwner(cm.object)
+                        if jowner == "Arg" and cm.member == "parse"
+                            return "ZArgs"
+                        if jowner == "Dir" and cm.member == "list"
+                            return "&ZList[string]"
+                        if jowner == "File" and (cm.member == "listDir" or cm.member == "readLines")
+                            return "&ZList[string]"
+                        if jowner == "sys"
+                            if cm.member == "run"
+                                return "ZRunResult"
+                            if cm.member == "args"
+                                return "&ZList[string]"
+                            if cm.member == "getenv" or cm.member == "readLine"
+                                return "?string"
+                        if ot == "ZArgs"
+                            if cm.member == "option" or cm.member == "unknownFlag" or cm.member == "usage"
+                                return "string"
+                            if cm.member == "optionInt"
+                                return "i64"
+                            if cm.member == "positional"
+                                return "?string"
+                            if cm.member == "contains" or cm.member == "flag"
+                                return "bool"
+                        if jowner == "Json"
+                            if cm.member == "parse"
+                                return "?json2.Any"
+                            if cm.member == "object" or cm.member == "array"
+                                return "json2.Any"
+                        if ot == "json2.Any" or (ot == "" and isJsonOnlyMethod(cm.member))
+                            if cm.member == "get" or cm.member == "tryObj"
+                                return "?json2.Any"
+                            if cm.member == "tryStr"
+                                return "?string"
+                            if cm.member == "tryInt"
+                                return "?i64"
+                            if cm.member == "tryFloat"
+                                return "?f64"
+                            if cm.member == "tryBool"
+                                return "?bool"
+                            if cm.member == "tryList"
+                                return "?&ZList[json2.Any]"
+                            if cm.member == "keys"
+                                return "&ZList[string]"
+                            if cm.member == "values"
+                                return "&ZList[json2.Any]"
                         if (cm.member == "lines" and c.args.count() == 0) or (cm.member == "split" and c.args.count() == 1)
                             return "&ZList[string]"
                         if cm.member == "chars" and c.args.count() == 0
@@ -1164,6 +1293,18 @@ class VGen
                         return .retOf(c)
             on Expr.try_ as t
                 return .vTypeOf(t.expr)   # `f()?`: the result's type
+            on Expr.slice as sl
+                return .vTypeOf(sl.object)   # a slice of a string is a string, of a list a list
+            on Expr.orelse_ as oe
+                var oet: str = .vTypeOf(oe.expr)   # `x orelse y`: the option's inner type
+                if oet.startsWith("?")
+                    return oet.substring(1, oet.len)
+                return oet
+            on Expr.catch_ as ce
+                var cet: str = .vTypeOf(ce.expr)   # `f() catch y`: the result's type
+                if cet.startsWith("!")
+                    return cet.substring(1, cet.len)
+                return cet
             on Expr.to_non_nil as tnn
                 var it: str = .vTypeOf(tnn.expr)   # `x!`: the option's inner type
                 if it.startsWith("?")
@@ -1339,15 +1480,31 @@ class VGen
         .in_method = true
         .resetLocals(m.params)
         if m.stmts as body
-            .genStmts(body)
+            .genBody(body, vSafe(m.name))
         .depth = .depth - 1
         .line("}")
         .line("")
 
     # ── statements ─────────────────────────────────────────────────────────
     def genStmts(stmts: List(Stmt))
+        var i: int = 0
         for s in stmts
             .genStmt(s)
+            branch s
+                on Stmt.var_ as v
+                    # a local nothing after it READS (an assignment is no read to V):
+                    # acknowledged, or V's unused variable
+                    if not readsName(v.name, restOf(stmts, i + 1))
+                        .line("_ = " + .localName(v.name))
+                else
+                    pass
+            i = i + 1
+
+    # a local's V name (renamed when it collides with a free function)
+    def localName(zname: str): str
+        if .renames.get(zname) as rn
+            return rn
+        return vSafe(zname)
 
     def genStmt(s: Stmt)
         branch s
@@ -1422,6 +1579,18 @@ class VGen
             on Expr.call as c
                 branch c.callee
                     on Expr.member as m
+                        if isJsonPutMethod(m.member) and isNameExpr(m.object) and (.vTypeOf(m.object) == "json2.Any" or (isJsonOnlyMethod(m.member) and .vTypeOf(m.object) == ""))
+                            # `j.put(k, v)` -> `j = zjson_put(j, k, v)`: the value semantics kept
+                            var jobj: str = .exprStr(m.object)
+                            var helper: str = "zjson_" + snakeCase(m.member)
+                            if m.member == "put" or m.member == "append"
+                                # a Json value or a string: the last argument's type decides
+                                var lastArg = c.args.at(c.args.count() - 1).value
+                                var lt: str = .vTypeOf(lastArg)
+                                if lt == "string" or isStringLit(lastArg)
+                                    helper = helper + "_str"
+                            .line(jobj + " = " + helper + "(" + jobj + ", " + .argsStr(c.args) + ")")
+                            return
                         if isCallExpr(m.object)
                             .tmpN = .tmpN + 1
                             var t = "zt" + .tmpN.toString()   # (V refuses a name beginning with `_`)
@@ -1482,8 +1651,7 @@ class VGen
             if cl.binding as b
                 .line(vSafe(b) + " := err")
                 .catch_bindings.add(vSafe(b))
-                if cl.stmts.count() == 0
-                    .line("_ = " + vSafe(b))
+                .line("_ = " + vSafe(b))   # (always: a clause that never reads it would be V's unused variable)
             .genStmts(cl.stmts)
             if cl.binding != nil
                 .catch_bindings = dropLast(.catch_bindings)
@@ -1514,17 +1682,18 @@ class VGen
             .line(vals + " {")
             .depth = .depth + 1
             if arm.binding as bnd
-                .local_names.add(bnd)
-                var lead: str = ""
-                if arm.values.count() == 1
-                    var vk: str = .armValueStr(arm.values.at(0))
-                    if .union_payloads.get(vk) as pt
-                        .local_types.set(bnd, pt)
-                        if .needsMut(pt)
-                            lead = "mut "   # V refuses `mut x.field` through an immutable binding
-                .line(lead + vSafe(bnd) + " := " + t + ".payload")
-                if arm.stmts.count() == 0
-                    .line("_ = " + vSafe(bnd))
+                if bnd != "_"   # (a discarded binding is not bound: V's unused variable)
+                    .local_names.add(bnd)
+                    var lead: str = ""
+                    if arm.values.count() == 1
+                        var vk: str = .armValueStr(arm.values.at(0))
+                        if .union_payloads.get(vk) as pt
+                            .local_types.set(bnd, pt)
+                            if .needsMut(pt)
+                                lead = "mut "   # V refuses `mut x.field` through an immutable binding
+                    .line(lead + vSafe(bnd) + " := " + t + ".payload")
+                    if not mightUseName(bnd, arm.stmts)
+                        .line("_ = " + vSafe(bnd))
             .genStmts(arm.stmts)
             .depth = .depth - 1
             .line("}")
@@ -1596,6 +1765,9 @@ class VGen
     def genLocal(v: DeclVar)
         .local_names.add(v.name)
         var name = vSafe(v.name)
+        if .isFnName(name)
+            name = name + "_v"   # V refuses a call ambiguous between a function and a local of its name
+            .renames.set(v.name, name)
         if v.init_expr as ie
             var tname: str = ""
             if v.type_ as t
@@ -1658,6 +1830,9 @@ class VGen
         .depth = .depth + 1
         if captured != ""
             .line(captured)
+            if i.is_capture as cap2
+                if not readsName(cap2, i.then_stmts)
+                    .line("_ = " + vSafe(cap2))   # a binding nothing reads
         .genStmts(i.then_stmts)
         .depth = .depth - 1
         for ei in i.else_ifs
@@ -1728,6 +1903,10 @@ class VGen
                     .local_types.set(vname, inner.substring(cut + 2, inner.len))
             .line("for " + vSafe(kname) + ", " + vSafe(vname) + " in " + .exprStr(fi.iter) + ".m {")
             .depth = .depth + 1
+            if not mightUseName(kname, fi.stmts)
+                .line("_ = " + vSafe(kname))
+            if not mightUseName(vname, fi.stmts)
+                .line("_ = " + vSafe(vname))
             .genStmts(fi.stmts)
             .depth = .depth - 1
             .line("}")
@@ -1768,6 +1947,7 @@ class VGen
             else
                 pass
         var et: str = .elemOf(.vTypeOf(fi.iter))
+        var v_unused: bool = not mightUseName(fi.vars.at(0), fi.stmts)
         if et != ""
             .local_types.set(fi.vars.at(0), et)
             if .needsMut(et)
@@ -1781,12 +1961,24 @@ class VGen
                 .line("for " + ix + " := 0; " + ix + " < " + it + ".count(); " + ix + "++ {")
                 .depth = .depth + 1
                 .line("mut " + v + " := " + it + ".at(" + ix + ")")
+                if v_unused
+                    .line("_ = " + v)
                 .genStmts(fi.stmts)
                 .depth = .depth - 1
                 .line("}")
                 return
-        .line("for " + v + " in " + .exprStr(fi.iter) + ".items {")   # a list's items (the subset iterates lists)
+        var iter_s: str = .exprStr(fi.iter)
+        if not isNameExpr(fi.iter)
+            # an expression iterated (a call, an unwrap, an orelse): bound first --
+            # V's C for `(expr or { ... }).items` in a for header did not compile
+            .tmpN = .tmpN + 1
+            var zi = "zit" + .tmpN.toString()
+            .line(zi + " := " + iter_s)
+            iter_s = zi
+        .line("for " + v + " in " + iter_s + ".items {")   # a list's items (the subset iterates lists)
         .depth = .depth + 1
+        if v_unused
+            .line("_ = " + v)
         .genStmts(fi.stmts)
         .depth = .depth - 1
         .line("}")
@@ -1825,6 +2017,9 @@ class VGen
             on Expr.this_
                 return "self"
             on Expr.ident as id
+                if .renames.get(id.name) as rn
+                    if .isLocalName(id.name)
+                        return rn
                 if .isCurrentField(id.name) and not .isLocalName(id.name)
                     return "self." + vSafe(id.name)   # a bare field name inside its class (Zebra allows it)
                 return vSafe(id.name)
@@ -1833,6 +2028,11 @@ class VGen
             on Expr.call as c
                 return .callStr(c)
             on Expr.index as ix
+                var ixt: str = .vTypeOf(ix.object)
+                if ixt.startsWith("&ZList[")
+                    return .exprStr(ix.object) + ".at(" + .exprStr(ix.index) + ")"   # the runtime's list
+                if ixt.startsWith("&ZMap[")
+                    return .exprStr(ix.object) + ".fetch(" + .exprStr(ix.index) + ")"
                 return .exprStr(ix.object) + "[" + .exprStr(ix.index) + "]"
             on Expr.binary as b
                 return .binaryStr(b)
@@ -1845,7 +2045,7 @@ class VGen
             on Expr.list_lit as ll
                 return .listLitStr(ll)
             on Expr.if_expr as ie
-                return "(if " + .exprStr(ie.cond) + " { " + .exprStr(ie.then_expr) + " } else { " + .exprStr(ie.else_expr) + " })"
+                return "(if " + condStr(.exprStr(ie.cond)) + " { " + .exprStr(ie.then_expr) + " } else { " + .exprStr(ie.else_expr) + " })"
             on Expr.type_check as tc
                 if tc.variant_name as vn
                     if .isEnumName(tc.type_name)
@@ -1909,6 +2109,14 @@ class VGen
                     return "err.msg()"   # the compiler's own idiom for the caught error's message (inside a catch: V's err)
                 if zl.text == "_zbr_version"
                     return "zbr_version"   # the compiler's own version string: a runtime const on this backend
+                if zl.text == "builtin.zig_version_string"
+                    return "'(no Zig: the V backend)'"
+                if zl.text == "builtin.target.os.tag == .macos"
+                    return "(os.user_os() == 'macos')"
+                if zl.text == "@as([]const u8, @tagName(builtin.target.cpu.arch))"
+                    return "zsys_arch()"
+                if zl.text == "@as(i64, @intCast(std.os.windows.GetCurrentProcessId()))"
+                    return "i64(os.getpid())"
                 .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
                 return "0"
             on Expr.opt_chain as oc
@@ -2260,10 +2468,15 @@ class VGen
             return "new_zlist[i64]()"
         # a bare call naming a method of the enclosing class (Zebra allows it)
         if .in_method and .isMethodName(name)
-            return "self." + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+            var mkey: str = "." + vSafe(name)
+            if .sigs.get(.current_class + "." + vSafe(name)) != nil
+                mkey = .current_class + "." + vSafe(name)
+            return "self." + vSafe(name) + "(" + .argsStr(args, mkey) + ")"
         if .isStaticName(name)
-            return snakeCase(.current_class) + "_" + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
-        return .freeFnName(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+            var skey: str = snakeCase(.current_class) + "_" + vSafe(name)
+            return skey + "(" + .argsStr(args, skey) + ")"
+        var fname: str = .freeFnName(name)
+        return fname + "(" + .argsStr(args, fname) + ")"
 
     # a type named as a constructor's argument (`List(int)`, `HashMap(str, Box)`)
     def typeArgStr(e: Expr): str
@@ -2302,7 +2515,14 @@ class VGen
             isMath = true
         # a static method: Class.method(args) -> class_method(args)
         if .isClassName(owner) or .isStructName(owner)
-            return snakeCase(owner) + "_" + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+            var skey2: str = snakeCase(owner) + "_" + vSafe(name)
+            if .sigs.get(skey2) == nil
+                # no such static declared: a builtin namespace of the same name
+                # (`Arg.parse()` beside the AST's `Arg` struct)
+                var bi: str = .staticCall(m, args, span)
+                if bi != ""
+                    return bi
+            return skey2 + "(" + .argsStr(args, skey2) + ")"
         # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
         if .isUnionName(owner)
             if args.count() == 0
@@ -2330,6 +2550,29 @@ class VGen
             obj = tr
         if rtype == "u8" and name == "toString" and args.count() == 0
             return obj + ".ascii_str()"   # a char's toString is the character (a byte's would be its number)
+        if rtype == "string" and name == "toInt" and args.count() == 0
+            return obj + ".i64()"   # parsed, not cast
+        if rtype == "string" and name == "toFloat" and args.count() == 0
+            return obj + ".f64()"
+        if rtype == "json2.Any" or (rtype == "" and isJsonOnlyMethod(name))
+            var ja: str = .argsStr(args)
+            if name == "get" and args.count() == 1: return "zjson_get(" + obj + ", " + ja + ")"
+            if name == "has" and args.count() == 1: return "zjson_has(" + obj + ", " + ja + ")"
+            if name == "tryStr": return "zjson_try_str(" + obj + ")"
+            if name == "tryInt": return "zjson_try_int(" + obj + ")"
+            if name == "tryFloat": return "zjson_try_float(" + obj + ")"
+            if name == "tryBool": return "zjson_try_bool(" + obj + ")"
+            if name == "tryObj": return "zjson_try_obj(" + obj + ")"
+            if name == "tryList": return "zjson_try_list(" + obj + ")"
+            if name == "keys": return "zjson_keys(" + obj + ")"
+            if name == "values": return "zjson_values(" + obj + ")"
+            if name == "isNull": return "zjson_is_null(" + obj + ")"
+            if name == "isObject": return "zjson_is_object(" + obj + ")"
+            if name == "isArray": return "zjson_is_array(" + obj + ")"
+            if name == "stringify" or name == "toString": return obj + ".json_str()"
+            if isJsonPutMethod(name)
+                .refuse("Json." + name + " on a value that is not a name (the put family rewrites `j.put(k, v)` as `j = zjson_put(j, k, v)`)", span)
+                return obj
         if rtype.startsWith("&ZList[")
             # the list's own, where the string's would be taken by name (the
             # comparing ones are free functions: see zebra_rt.v)
@@ -2345,7 +2588,7 @@ class VGen
                 return "zsort_str(mut " + obj + ")"
             if name == "remove" and args.count() == 1: return obj + ".remove_at(" + .argsStr(args) + ")"   # Zebra's List.remove(i) is by index
             if name == "reverse" and args.count() == 0: return obj + ".reversed()"
-        return .mappedCall(obj, name, args, span)
+        return .mappedCall(obj, name, args, span, rtype)
 
     # File / Path / sys as static calls onto the runtime's wrappers ("" when
     # the object is not one of them); Json is the next slice
@@ -2353,6 +2596,8 @@ class VGen
         var ns: str = .staticOwner(m.object)
         if ns == ""
             return ""
+        if not isBuiltinNs(ns)
+            return ""   # (before the arguments are rendered: rendering binds temporaries, and a second rendering bound them twice)
         var name = m.member
         var a = .argsStr(args)
         if ns == "File"
@@ -2361,6 +2606,12 @@ class VGen
             if name == "write": return "zfile_write(" + a + ")"
             if name == "append": return "zfile_append(" + a + ")"
             if name == "listDir": return "zfile_list_dir(" + a + ")"
+            if name == "isDir": return "os.is_dir(" + a + ")"
+            if name == "rename": return "os.mv(" + a + ") or {}"
+            if name == "delete": return "os.rm(" + a + ") or {}"
+            if name == "tryDelete": return "zfile_try_delete(" + a + ")"
+            if name == "copy": return "os.cp(" + a + ") or {}"
+            if name == "readLines": return "zstr_lines(zfile_read(" + a + "))"
             .refuse("File." + name, span)
             return "zfile_" + snakeCase(name) + "(" + a + ")"
         if ns == "Path"
@@ -2373,21 +2624,60 @@ class VGen
         if ns == "sys"
             if name == "exit": return "exit(int(" + a + "))"
             if name == "errln": return "eprintln(" + a + ")"
+            if name == "err": return "eprint(" + a + ")"
             if name == "cwd": return "os.getwd()"
             if name == "args": return "zlist_of[string](os.args)"
+            if name == "getenv": return "os.getenv_opt(" + a + ")"
+            if name == "setenv": return "os.setenv(" + a + ", true)"
+            if name == "selfExe": return "os.executable()"
+            if name == "run": return "zsys_run(" + a + ")"
+            if name == "sleep": return "time.sleep(i64(" + a + ") * time.millisecond)"
+            if name == "readLine": return "zsys_readline()"
+            if name == "exec_inherit": return "zsys_exec_inherit(" + a + ")"
+            if name == "writeStdout": return "print(" + a + ")"
             .refuse("sys." + name, span)
             return "zsys_" + snakeCase(name) + "(" + a + ")"
         if ns == "Dir"
             if name == "exists": return "os.is_dir(" + a + ")"
+            if name == "createAll": return "os.mkdir_all(" + a + ") or {}"
+            if name == "list": return "zdir_list(" + a + ")"
+            if name == "deleteAll": return "os.rmdir_all(" + a + ") or {}"
+            if name == "tryDeleteAll": return "zdir_try_delete_all(" + a + ")"
             .refuse("Dir." + name, span)
             return "zdir_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Terminal"
+            if name == "write" and args.count() == 2: return "print(" + .exprStr(args.at(0).value) + " + " + .exprStr(args.at(1).value) + ")"
+            if name == "write": return "print(" + a + ")"
+            if name == "writeln": return "println(" + a + ")"
+            .refuse("Terminal." + name, span)
+            return "zterm_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Arg"
+            if name == "parse": return "zarg_parse()"
+            .refuse("Arg." + name, span)
+            return "zarg_" + snakeCase(name) + "()"
         if ns == "Json"
-            .refuse("Json." + name + " (the Json value type is the next slice: V's json2.Any has the same shape)", span)
+            if name == "parse": return "zjson_parse(" + a + ")"
+            if name == "object": return "zjson_object()"
+            if name == "array": return "zjson_array()"
+            if name == "stringify": return "(" + a + ").json_str()"
+            .refuse("Json." + name, span)
+            return "zjson_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Random"
+            if name == "randInt": return "zrandom_int(" + a + ")"
+            .refuse("Random." + name, span)
+            return "zrandom_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Hash"
+            if name == "sha256": return "zhash_sha256(" + a + ")"
+            .refuse("Hash." + name, span)
+            return "zhash_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Http"
+            # V's net.http needs socket headers tcc on Windows does not ship: a stub
+            .refuse("Http." + name + " (no HTTP client on this backend: V's net.http needs socket headers tcc does not ship on Windows)", span)
             return "none"
         return ""
 
     # the call on an object already spelled (a temporary, or the member's object)
-    def mappedCall(obj: str, name: str, args: List(Arg), span: Span): str
+    def mappedCall(obj: str, name: str, args: List(Arg), span: Span, rtype: str = ""): str
         if name == "toString" and args.count() == 0: return obj + ".str()"
         if name == "concat" and args.count() == 1: return "(" + obj + " + " + .argsStr(args) + ")"
         if name == "isNumeric" and args.count() == 0: return "zstr_is_numeric(" + obj + ")"
@@ -2446,9 +2736,26 @@ class VGen
         if (name == "lower" or name == "toLower") and args.count() == 0: return obj + ".to_lower()"
         if name == "clear" and args.count() == 0: return obj + ".clear()"
         # a method on one of the program's own classes: self.m(...) / obj.m(...)
-        return obj + "." + vSafe(name) + "(" + .argsStr(args, vSafe(name)) + ")"
+        var key: str = "." + vSafe(name)
+        var rt: str = rtype
+        if rt.startsWith("&")
+            rt = rt.substring(1, rt.len)
+        if rt != "" and .sigs.get(rt + "." + vSafe(name)) != nil
+            key = rt + "." + vSafe(name)   # the receiver's own method, whatever other classes call theirs
+        return obj + "." + vSafe(name) + "(" + .argsStr(args, key) + ")"
 
     def binaryStr(b: ExprBinary): str
+        if b.op == BinaryOp.or_ or b.op == BinaryOp.and_ or b.op == BinaryOp.add
+            # decided before any operand is rendered: rendering binds temporaries,
+            # and the chain renders its operands itself
+            if b.op != BinaryOp.add and .chainLen(b) > 30
+                var terms = List(str)()
+                .chainTerms(b, terms)
+                var fn_: str = "zany"
+                if b.op == BinaryOp.and_
+                    fn_ = "zall"
+                return fn_ + "([" + zjoinStr(terms, ", ") + "])"
+            return "(" + .chainStr(b) + ")"
         var l = .exprStr(b.left)
         var r = .exprStr(b.right)
         if b.op == BinaryOp.pow
@@ -2491,19 +2798,10 @@ class VGen
         if b.op == BinaryOp.dotdot
             .refused.add("a .. range expression")
             return l
-        if b.op == BinaryOp.or_ or b.op == BinaryOp.and_ or b.op == BinaryOp.add
-            # a left-leaning chain of one operator, flat; past thirty terms an
-            # `or` / `and` goes through zany / zall over a list (V's checker
-            # gives up at forty nested levels, flat or not: the tree is the
-            # depth) -- every term evaluated there, no short-circuit
-            if b.op != BinaryOp.add and .chainLen(b) > 30
-                var terms = List(str)()
-                .chainTerms(b, terms)
-                var fn_: str = "zany"
-                if b.op == BinaryOp.and_
-                    fn_ = "zall"
-                return fn_ + "([" + zjoinStr(terms, ", ") + "])"
-            return "(" + .chainStr(b) + ")"
+        # (a chain of or / and / + was returned above, before the operands were
+        # rendered: flat, and past thirty terms through zany / zall -- V's
+        # checker gives up at forty nested levels, and every term is evaluated
+        # there, no short-circuit)
         return "(" + l + " " + binaryOpV(b.op) + " " + r + ")"
 
     def chainLen(b: ExprBinary): int
@@ -2602,6 +2900,116 @@ def isIntLit(e: Expr): bool
         else
             return false
 
+# the Json methods no other type has (dispatched without the receiver's type)
+def isJsonOnlyMethod(name: str): bool
+    # (not tryInt / tryFloat: a string has them)
+    return name == "tryStr" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "isNull" or name == "isObject" or name == "isArray" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+
+# the stdlib methods whose result is a string, whatever the receiver
+def isStringReturningMethod(name: str): bool
+    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "substring" or name == "replace" or name == "replaceAll" or name == "repeat" or name == "padLeft" or name == "padRight" or name == "concat" or name == "join" or name == "toString" or name == "stringify" or name == "build"
+
+def isJsonPutMethod(name: str): bool
+    return name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+
+def isStringLit(e: Expr): bool
+    branch e
+        on Expr.string_lit
+            return true
+        on Expr.string_interp
+            return true
+        else
+            return false
+
+# a name READ somewhere in the statements: through expressions only, an
+# assignment's target excluded (V counts an assigned-only local as unused)
+def readsName(name: str, stmts: List(Stmt)): bool
+    for s in stmts
+        if readsNameStmt(name, s)
+            return true
+    return false
+
+def readsNameStmt(name: str, s: Stmt): bool
+    branch s
+        on Stmt.assign as a
+            if mightUseNameInExpr(name, a.value)
+                return true
+            branch a.target
+                on Expr.member as m
+                    return mightUseNameInExpr(name, m.object)
+                on Expr.index as ix
+                    return mightUseNameInExpr(name, ix.object) or mightUseNameInExpr(name, ix.index)
+                else
+                    return false
+        on Stmt.var_ as v
+            if v.init_expr as ie
+                return mightUseNameInExpr(name, ie)
+            return false
+        on Stmt.expr as e
+            return mightUseNameInExpr(name, e)
+        on Stmt.if_ as i
+            if mightUseNameInExpr(name, i.cond) or readsName(name, i.then_stmts)
+                return true
+            for ei in i.else_ifs
+                if mightUseNameInExpr(name, ei.cond) or readsName(name, ei.stmts)
+                    return true
+            if i.else_stmts as es
+                return readsName(name, es)
+            return false
+        on Stmt.while_ as w
+            return mightUseNameInExpr(name, w.cond) or readsName(name, w.stmts)
+        on Stmt.for_in as fi
+            if mightUseNameInExpr(name, fi.iter) or readsName(name, fi.stmts)
+                return true
+            if fi.filter as flt
+                return mightUseNameInExpr(name, flt)
+            return false
+        on Stmt.for_num as fnum
+            if mightUseNameInExpr(name, fnum.start) or mightUseNameInExpr(name, fnum.stop_) or readsName(name, fnum.stmts)
+                return true
+            if fnum.step as st
+                return mightUseNameInExpr(name, st)
+            return false
+        on Stmt.return_ as r
+            if r.value as rv
+                return mightUseNameInExpr(name, rv)
+            return false
+        on Stmt.branch_ as b
+            if mightUseNameInExpr(name, b.expr)
+                return true
+            for arm in b.cases
+                for v in arm.values
+                    if mightUseNameInExpr(name, v)
+                        return true
+                if readsName(name, arm.stmts)
+                    return true
+            if b.else_ as es
+                return readsName(name, es)
+            return false
+        on Stmt.try_catch as tc
+            if readsName(name, tc.stmts)
+                return true
+            for cl in tc.clauses
+                if readsName(name, cl.stmts)
+                    return true
+            return false
+        on Stmt.print_ as p
+            for a in p.args
+                if mightUseNameInExpr(name, a)
+                    return true
+            return false
+        else
+            return mightUseNameStmt(name, s)   # the rest: the conservative walker
+
+# the statements from index `from` on (a copy: the walker takes a list)
+def restOf(stmts: List(Stmt), from: int): List(Stmt)
+    var out = List(Stmt)()
+    var i: int = from
+    while i < stmts.count()
+        out.add(stmts.at(i))
+        i = i + 1
+    return out
+
 def isNilLit(e: Expr): bool
     branch e
         on Expr.nil_
@@ -2697,8 +3105,16 @@ def condStr(s: str): str
         return s
     var depth: int = 0
     var i: int = 0
+    var quote: char = ' '   # inside a '...' or `...` literal: its parentheses are text
+    var in_lit: bool = false
     for ch in s.chars()
-        if ch == '('
+        if in_lit
+            if ch == quote
+                in_lit = false
+        else if ch == '\'' or ch == '`'
+            in_lit = true
+            quote = ch
+        else if ch == '('
             depth = depth + 1
         else if ch == ')'
             depth = depth - 1
@@ -2706,6 +3122,10 @@ def condStr(s: str): str
                 return s   # the first pair closes before the end: not an outer pair
         i = i + 1
     return s.substring(1, s.len - 1)
+
+# the builtin namespaces a static access may name
+def isBuiltinNs(ns: str): bool
+    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal"
 
 def isFloatLit(e: Expr): bool
     branch e
@@ -2722,6 +3142,6 @@ def generateV(ms: List(Module), runtime: str): VResult
     # the runtime (inlined below) uses math, os and strconv: always imported
     # (an import the program itself never reaches is used by the runtime's
     # functions, so V does not warn)
-    head = head + "import math\nimport os\nimport strconv\n"
+    head = head + "import math\nimport os\nimport strconv\nimport time\nimport x.json2\nimport rand\nimport crypto.sha256\n"
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + runtime + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals)

@@ -2418,95 +2418,90 @@ pub fn _zbr_fn_defaultPreamblePath() []const u8 {
     return pp;
 }
 
-// zbr:selfhost/main.zbr:1435
-pub fn _zbr_fn_vLoadModule(path: []const u8) anyerror!?_zbr_ty_Module {
-// zbr:selfhost/main.zbr:1436
-    const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:1437
-    const pm_node = (try _zbr_mod_Parser._zbr_ty_Parser.parse(src, path));
+pub fn _zbr_fn_vLoadModule(path: []const u8) anyerror!_zbr_ty_Module {
 // zbr:selfhost/main.zbr:1438
-    var resolver = _zbr_ty_Resolver.init(path, src);
+    const src: []const u8 = (std.Io.Dir.cwd().readFileAlloc(_zbr_rt._io, path, _zbr_rt._allocator, .unlimited) catch @panic("File.read error"));
 // zbr:selfhost/main.zbr:1439
-    (try resolver.resolve(pm_node));
+    const pm_node = (try _zbr_mod_Parser._zbr_ty_Parser.parse(src, path));
 // zbr:selfhost/main.zbr:1440
-    if (_zebra_gt(resolver.errorCount(), 0)) {
+    var resolver = _zbr_ty_Resolver.init(path, src);
 // zbr:selfhost/main.zbr:1441
-        std.debug.print("{s}\n", .{resolver.allErrorMessages()});
+    (try resolver.resolve(pm_node));
 // zbr:selfhost/main.zbr:1442
-        return null;
-    }
+    if (_zebra_gt(resolver.errorCount(), 0)) {
 // zbr:selfhost/main.zbr:1443
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:1443", .message = resolver.allErrorMessages() }; return error.ZebraError; }
+    }
+// zbr:selfhost/main.zbr:1444
     if (_zbr_val(pm_node) == .module_) {
         const pm_ptr = pm_node.module_;
         const pm = pm_ptr.*;
-// zbr:selfhost/main.zbr:1444
+// zbr:selfhost/main.zbr:1445
         return (try _zbr_ty_ASTBuilder.build(pm, path));
     }
-// zbr:selfhost/main.zbr:1445
-    return null;
+// zbr:selfhost/main.zbr:1446
+    { _zbr_rt._error_ctx = .{ .at = "selfhost/main.zbr:1446", .message = _str_concat(path, ": not a module", _zbr_rt._allocator) }; return error.ZebraError; }
 }
 
-// zbr:selfhost/main.zbr:1449
-pub fn _zbr_fn_vCollect(path: []const u8, module_path: []const u8, visited: _ZbrList([]const u8), out: _ZbrList(_zbr_ty_Module)) anyerror!void {
 // zbr:selfhost/main.zbr:1450
-    for (visited.items) |v| {
+pub fn _zbr_fn_vCollect(path: []const u8, module_path: []const u8, visited: _ZbrList([]const u8), out: _ZbrList(_zbr_ty_Module)) anyerror!void {
 // zbr:selfhost/main.zbr:1451
-        if (std.mem.eql(u8, v, path)) {
+    for (visited.items) |v| {
 // zbr:selfhost/main.zbr:1452
+        if (std.mem.eql(u8, v, path)) {
+// zbr:selfhost/main.zbr:1453
             return;
         }
     }
-// zbr:selfhost/main.zbr:1453
-    visited.append(_zbr_rt._allocator, _intern(path)) catch @panic("OOM");
 // zbr:selfhost/main.zbr:1454
-    const mOpt = (try _zbr_fn_vLoadModule(path));
+    visited.append(_zbr_rt._allocator, _intern(path)) catch @panic("OOM");
 // zbr:selfhost/main.zbr:1455
-    if (mOpt) |m| {
+    const m: _zbr_ty_Module = (try _zbr_fn_vLoadModule(path));
 // zbr:selfhost/main.zbr:1456
-        var dir: []const u8 = (std.fs.path.dirname(path) orelse "");
+    var dir: []const u8 = (std.fs.path.dirname(path) orelse "");
 // zbr:selfhost/main.zbr:1457
-        if (std.mem.eql(u8, dir, "")) {
+    if (std.mem.eql(u8, dir, "")) {
 // zbr:selfhost/main.zbr:1458
-            dir = ".";
-        }
-// zbr:selfhost/main.zbr:1459
-        for (m.decls.items) |d| {
-// zbr:selfhost/main.zbr:1460
-            switch (_zbr_val(d)) {
-                .use_ => |_ptr_u| {
-                    const u = _ptr_u.*;
-// zbr:selfhost/main.zbr:1462
-                    var dep: []const u8 = _str_concat(_str_concat(_str_concat(dir, "/", _zbr_rt._allocator), u.path, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator);
-// zbr:selfhost/main.zbr:1463
-                    if (((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, dep, .{}) catch break :blk_fex false; break :blk_fex true; })) and !std.mem.eql(u8, module_path, ""))) {
-// zbr:selfhost/main.zbr:1464
-                        dep = _str_concat(_str_concat(_str_concat(module_path, "/", _zbr_rt._allocator), u.path, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator);
-                    }
-// zbr:selfhost/main.zbr:1465
-                    if ((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, dep, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
-// zbr:selfhost/main.zbr:1466
-                        var where_: []const u8 = " beside it";
-// zbr:selfhost/main.zbr:1467
-                        if (!std.mem.eql(u8, module_path, "")) {
-// zbr:selfhost/main.zbr:1468
-                            where_ = _str_concat(_str_concat(where_, " nor under --module-path ", _zbr_rt._allocator), module_path, _zbr_rt._allocator);
-                        }
-// zbr:selfhost/main.zbr:1469
-                        std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("zebra --target v: `use ", u.path, _zbr_rt._allocator), "` in ", _zbr_rt._allocator), path, _zbr_rt._allocator), ": no ", _zbr_rt._allocator), u.path, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator), where_, _zbr_rt._allocator), ": nothing written", _zbr_rt._allocator)});
-// zbr:selfhost/main.zbr:1470
-                        _zbr_exit(@as(i64, 1));
-                    }
-// zbr:selfhost/main.zbr:1471
-                    (try _zbr_fn_vCollect(dep, module_path, visited, out));
-                },
-                else => {
-                    // pass
-                },
-            }
-        }
-// zbr:selfhost/main.zbr:1474
-        out.append(_zbr_rt._allocator, m) catch @panic("OOM");
+        dir = ".";
     }
+// zbr:selfhost/main.zbr:1459
+    for (m.decls.items) |d| {
+// zbr:selfhost/main.zbr:1460
+        switch (_zbr_val(d)) {
+            .use_ => |_ptr_u| {
+                const u = _ptr_u.*;
+// zbr:selfhost/main.zbr:1462
+                var dep: []const u8 = _str_concat(_str_concat(_str_concat(dir, "/", _zbr_rt._allocator), u.path, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator);
+// zbr:selfhost/main.zbr:1463
+                if (((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, dep, .{}) catch break :blk_fex false; break :blk_fex true; })) and !std.mem.eql(u8, module_path, ""))) {
+// zbr:selfhost/main.zbr:1464
+                    dep = _str_concat(_str_concat(_str_concat(module_path, "/", _zbr_rt._allocator), u.path, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator);
+                }
+// zbr:selfhost/main.zbr:1465
+                if ((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, dep, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
+// zbr:selfhost/main.zbr:1466
+                    var where_: []const u8 = " beside it";
+// zbr:selfhost/main.zbr:1467
+                    if (!std.mem.eql(u8, module_path, "")) {
+// zbr:selfhost/main.zbr:1468
+                        where_ = _str_concat(_str_concat(where_, " nor under --module-path ", _zbr_rt._allocator), module_path, _zbr_rt._allocator);
+                    }
+// zbr:selfhost/main.zbr:1469
+                    std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("zebra --target v: `use ", u.path, _zbr_rt._allocator), "` in ", _zbr_rt._allocator), path, _zbr_rt._allocator), ": no ", _zbr_rt._allocator), u.path, _zbr_rt._allocator), ".zbr", _zbr_rt._allocator), where_, _zbr_rt._allocator), ": nothing written", _zbr_rt._allocator)});
+// zbr:selfhost/main.zbr:1470
+                    _zbr_exit(@as(i64, 1));
+                }
+// zbr:selfhost/main.zbr:1471
+                (try _zbr_fn_vCollect(dep, module_path, visited, out));
+            },
+            else => {
+                // pass
+            },
+        }
+    }
+// zbr:selfhost/main.zbr:1474
+    out.append(_zbr_rt._allocator, m) catch @panic("OOM");
 }
 
 // zbr:selfhost/main.zbr:1476

@@ -107,7 +107,7 @@ pub fn (mut z ZMap[K, V]) set(k K, v V) {
 // Zebra's get is a nilable: V's option
 pub fn (z &ZMap[K, V]) get(k K) ?V {
 	if k in z.m {
-		return z.m[k]
+		return z.m[k] or { return none }
 	}
 	return none
 }
@@ -325,6 +325,342 @@ pub fn (l &ZList[T]) reversed() &ZList[T] {
 }
 
 // ── str ────────────────────────────────────────────────────────────────────
+// ── sys ───────────────────────────────────────────────────────────────────
+pub struct ZRunResult {
+pub mut:
+	exit_code i64
+	stdout    string
+	stderr    string
+}
+
+// sys.run(argv): the program run to completion, its streams captured
+pub fn zsys_run(argv &ZList[string]) ZRunResult {
+	if argv.count() == 0 {
+		return ZRunResult{ exit_code: -1, stderr: 'sys.run: no program named' }
+	}
+	mut p := os.new_process(argv.items[0])
+	p.set_args(argv.items[1..].clone())
+	p.set_redirect_stdio()
+	p.run()
+	out := p.stdout_slurp()
+	errs := p.stderr_slurp()
+	p.wait()
+	code := p.code
+	p.close()
+	return ZRunResult{ exit_code: i64(code), stdout: out, stderr: errs }
+}
+
+// ── Json: Zebra's Json / JsonValue is json2.Any by value ──────────────────
+pub fn zjson_parse(s string) ?json2.Any {
+	return json2.decode[json2.Any](s) or { return none }
+}
+
+pub fn zjson_object() json2.Any {
+	return json2.Any(map[string]json2.Any{})
+}
+
+pub fn zjson_array() json2.Any {
+	return json2.Any([]json2.Any{})
+}
+
+pub fn zjson_get(j json2.Any, k string) ?json2.Any {
+	if j is map[string]json2.Any {
+		m := j as map[string]json2.Any
+		return m[k] or { return none }
+	}
+	return none
+}
+
+pub fn zjson_has(j json2.Any, k string) bool {
+	if j is map[string]json2.Any {
+		m := j as map[string]json2.Any
+		return k in m
+	}
+	return false
+}
+
+pub fn zjson_try_str(j json2.Any) ?string {
+	if j is string {
+		return j as string
+	}
+	return none
+}
+
+fn zjson_is_number(j json2.Any) bool {
+	if j is string || j is bool || j is json2.Null || j is []json2.Any || j is map[string]json2.Any {
+		return false
+	}
+	return true
+}
+
+pub fn zjson_try_int(j json2.Any) ?i64 {
+	if zjson_is_number(j) {
+		return j.i64()
+	}
+	return none
+}
+
+pub fn zjson_try_float(j json2.Any) ?f64 {
+	if zjson_is_number(j) {
+		return j.f64()
+	}
+	return none
+}
+
+pub fn zjson_try_bool(j json2.Any) ?bool {
+	if j is bool {
+		return j as bool
+	}
+	return none
+}
+
+pub fn zjson_try_obj(j json2.Any) ?json2.Any {
+	if j is map[string]json2.Any {
+		return j
+	}
+	return none
+}
+
+pub fn zjson_try_list(j json2.Any) ?&ZList[json2.Any] {
+	if j is []json2.Any {
+		return zlist_of[json2.Any](j as []json2.Any)
+	}
+	return none
+}
+
+pub fn zjson_keys(j json2.Any) &ZList[string] {
+	if j is map[string]json2.Any {
+		m := j as map[string]json2.Any
+		return zlist_of[string](m.keys())
+	}
+	return new_zlist[string]()
+}
+
+pub fn zjson_values(j json2.Any) &ZList[json2.Any] {
+	if j is map[string]json2.Any {
+		m := j as map[string]json2.Any
+		return zlist_of[json2.Any](m.values())
+	}
+	return new_zlist[json2.Any]()
+}
+
+pub fn zjson_is_null(j json2.Any) bool {
+	return j is json2.Null
+}
+
+pub fn zjson_is_object(j json2.Any) bool {
+	return j is map[string]json2.Any
+}
+
+pub fn zjson_is_array(j json2.Any) bool {
+	return j is []json2.Any
+}
+
+// the put / append family returns the new value: the emitter writes
+// `j = zjson_put(j, k, v)` for Zebra's `j.put(k, v)` (a sum type cannot be
+// a mut parameter), which keeps the value semantics of Zig's std.json.Value
+pub fn zjson_put(j json2.Any, k string, v json2.Any) json2.Any {
+	mut m := map[string]json2.Any{}
+	if j is map[string]json2.Any {
+		m = (j as map[string]json2.Any).clone()
+	}
+	m[k] = v
+	return json2.Any(m)
+}
+
+pub fn zjson_put_str(j json2.Any, k string, v string) json2.Any {
+	return zjson_put(j, k, json2.Any(v))
+}
+
+pub fn zjson_put_int(j json2.Any, k string, v i64) json2.Any {
+	return zjson_put(j, k, json2.Any(v))
+}
+
+pub fn zjson_put_float(j json2.Any, k string, v f64) json2.Any {
+	return zjson_put(j, k, json2.Any(v))
+}
+
+pub fn zjson_put_bool(j json2.Any, k string, v bool) json2.Any {
+	return zjson_put(j, k, json2.Any(v))
+}
+
+pub fn zjson_append(j json2.Any, v json2.Any) json2.Any {
+	mut a := []json2.Any{}
+	if j is []json2.Any {
+		a = (j as []json2.Any).clone()
+	}
+	a << v
+	return json2.Any(a)
+}
+
+pub fn zjson_append_str(j json2.Any, v string) json2.Any {
+	return zjson_append(j, json2.Any(v))
+}
+
+pub fn zjson_append_int(j json2.Any, v i64) json2.Any {
+	return zjson_append(j, json2.Any(v))
+}
+
+pub fn zjson_append_float(j json2.Any, v f64) json2.Any {
+	return zjson_append(j, json2.Any(v))
+}
+
+pub fn zjson_append_bool(j json2.Any, v bool) json2.Any {
+	return zjson_append(j, json2.Any(v))
+}
+
+// ── Random, Hash, Http ────────────────────────────────────────────────────
+pub fn zrandom_int(lo i64, hi i64) i64 {
+	return rand.i64_in_range(lo, hi + 1) or { lo }
+}
+
+pub fn zhash_sha256(s string) string {
+	return sha256.hexhash(s)
+}
+
+// ── Arg: the builtin argument parser (the Zig preamble's ArgResult) ────────
+pub struct ZArgs {
+pub mut:
+	raw []string
+}
+
+pub fn zarg_parse() ZArgs {
+	if os.args.len > 1 {
+		return ZArgs{ raw: os.args[1..].clone() }
+	}
+	return ZArgs{}
+}
+
+pub fn (a ZArgs) flag(long string, short string) bool {
+	for x in a.raw {
+		if x == long || x == short {
+			return true
+		}
+	}
+	return false
+}
+
+pub fn (a ZArgs) contains(name string) bool {
+	for x in a.raw {
+		if x == name {
+			return true
+		}
+	}
+	return false
+}
+
+pub fn (a ZArgs) option(name string, default_val string) string {
+	for x in a.raw {
+		if x.starts_with(name) && x.len > name.len && x[name.len] == `=` {
+			return x[name.len + 1..]
+		}
+	}
+	for i := 0; i + 1 < a.raw.len; i++ {
+		if a.raw[i] == name {
+			return a.raw[i + 1]
+		}
+	}
+	return default_val
+}
+
+pub fn (a ZArgs) option_int(name string, default_val i64) i64 {
+	s := a.option(name, '')
+	if s.len == 0 {
+		return default_val
+	}
+	return strconv.parse_int(s, 10, 64) or { default_val }
+}
+
+pub fn (a ZArgs) unknown_flag(known string) string {
+	for x in a.raw {
+		if x.len < 2 || x[0] != `-` {
+			continue
+		}
+		if x == '--' {
+			break
+		}
+		name := if eq := x.index('=') { x[..eq] } else { x }
+		mut found := false
+		for k in known.split(' ') {
+			if k == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return x
+		}
+	}
+	return ''
+}
+
+pub fn (a ZArgs) positional(idx i64) ?string {
+	mut pos := i64(0)
+	for x in a.raw {
+		if !x.starts_with('-') {
+			if pos == idx {
+				return x
+			}
+			pos += 1
+		}
+	}
+	return none
+}
+
+pub fn (a ZArgs) usage() string {
+	return 'Usage: program [options]'
+}
+
+pub fn zdir_try_delete_all(path string) bool {
+	os.rmdir_all(path) or { return false }
+	return true
+}
+
+pub fn zfile_try_delete(path string) bool {
+	os.rm(path) or { return false }
+	return true
+}
+
+// sys.readLine: a line without its newline, none at the end of input
+pub fn zsys_readline() ?string {
+	line := os.get_raw_line()
+	if line.len == 0 {
+		return none
+	}
+	return line.trim_right('\r\n')
+}
+
+// sys.exec_inherit(argv): run with the parent's stdio; the exit code
+pub fn zsys_exec_inherit(argv &ZList[string]) i64 {
+	mut parts := []string{}
+	for a in argv.items {
+		if a.contains(' ') || a.contains('"') {
+			parts << '"' + a.replace('"', '\\"') + '"'
+		} else {
+			parts << a
+		}
+	}
+	return i64(os.system(parts.join(' ')))
+}
+
+// Dir.list(path): the entries' names
+pub fn zdir_list(path string) &ZList[string] {
+	return zlist_of[string](os.ls(path) or { []string{} })
+}
+
+// the CPU architecture's name as Zig's builtin.target.cpu.arch spells it
+pub fn zsys_arch() string {
+	$if x64 {
+		return 'x86_64'
+	} $else $if arm64 {
+		return 'aarch64'
+	} $else $if x32 {
+		return 'x86'
+	} $else {
+		return 'unknown'
+	}
+}
+
 pub fn zstr_is_numeric(s string) bool {
 	if s.len == 0 {
 		return false

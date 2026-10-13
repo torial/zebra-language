@@ -666,6 +666,109 @@ New rows for the rules table:
 | a name `cdecl` | `cdecl_` | tcc's keyword |
 | `ch.toString()` on a char | `ch.ascii_str()` | a byte's `.str()` is its number |
 
+## The compiler binary, and what it costs (2026-10-13)
+
+**`selfhost/main.zbr`** (5385 lines, the route: the CLI, the build
+driver, the LSP server, the debugger bridge, the updater) and
+**`Checker`** (765) went through in fourteen rounds, and `zebra --target
+v selfhost/main.zbr` now writes one V file that V builds into
+**`zebra_v.exe`, a Zebra compiler built by V**. What it took, beyond the
+earlier rules:
+
+- **A function holding a refused construct is a stub.** Its body is
+  captured while emitted; if anything in it was refused, the body is
+  replaced by `panic('not on the V backend: <fn>: <reasons>')` and the
+  refusal list says `[in <fn>: stubbed]`. The program compiles and runs,
+  and the gap names itself where it is reached. The route's sixteen
+  remaining refusals are inside two functions: `run_lsp` (channels,
+  atomics, goroutines) and `dbg_run_session` (piped processes, stdin
+  polling). `zebra_v lsp` panics with that sentence; `zebra_v --emit-zig`
+  does not.
+- **Signatures keyed by what is emitted.** A free function under its
+  (module-prefixed) V name, a method under `.name` and `Owner.name`, a
+  static under `owner_name`: a method and a free function of one name no
+  longer collide into positional calls that lose `mut`.
+- **The OS and stdlib surface the route uses**: sys (err, getenv,
+  setenv, selfExe, run with a captured process, sleep, readLine,
+  exec_inherit, writeStdout), Dir (createAll, list, deleteAll), File
+  (isDir, rename, delete, copy, readLines), Random, Hash (sha256), the
+  builtin **Arg** parser ported line for line as a runtime struct, and
+  **Json**: Zebra's Json / JsonValue is V's `json2.Any` by value (as Zig's
+  std.json.Value is), the statics and the reads through runtime helpers,
+  and the put / append family as the statement rewrite `j = zjson_put(j,
+  k, v)` (a sum type cannot be a mut parameter; the rewrite keeps the
+  value semantics). Http is refused: V's net.http needs socket headers
+  tcc does not ship on Windows, so the updater's fetch is a stub.
+- **Three rendering bugs of my own**, each a V warning that `-prod`
+  makes an error: the static-namespace resolver rendered a call's
+  arguments before knowing the call was no static (every argument
+  temporary bound twice); the binary emitter rendered both operands
+  before deciding the expression was a chain (the chain rendered them
+  again); the condition stripper counted parentheses inside rune
+  literals. Rendering an expression binds temporaries, so rendering it
+  twice is never harmless -- a rule now.
+- **`_ = x` for a name nothing reads**, through the compiler's own
+  AstWalk and a stricter walker of mine (V counts an assigned-only local
+  as unused); a `_` binding is not bound; a module-level var is declared
+  by type and set in `zglobals_init()` at main's start (MSVC refuses V's
+  static initializer for a string global; this is the Zig backend's
+  `_initModuleVars` shape).
+- Also: `Arg.parse()` beside the AST's own `Arg` struct (a static access
+  on a type that declares no such static goes to the builtin namespaces
+  first); `near` / `far` / `pascal` / `huge` are macros in tcc's Windows
+  headers; a for-in over an `orelse` expression binds the iterable first
+  (V's C for it did not compile); `xs[i]` on a known list is `.at(i)`;
+  `str.toInt()` is `.i64()` when the receiver is a string; the route's
+  own `vLoadModule` no longer returns a nilable AND throws (V has no
+  `!?T`).
+
+**The witness.** `zebra_v.exe --emit-zig --output-dir D selfhost/main.zbr`
+writes the whole compiler -- fourteen `.zig` files, **99,080 lines** --
+**byte-identical** to what the Zig-built compiler writes. Every variant
+below produces the same fourteen files.
+
+**The cost**, measured on that emit (the compiler compiling itself to
+Zig; three runs each, the middle one; peak = peak working set, read
+through a Process handle refreshed each 10 ms -- a 300 MB control reads
+303 MB; the first readings, without the refresh, were a tenth of the
+truth):
+
+| compiler | built by | wall | peak memory |
+|---|---|---|---|
+| zebra.exe, Debug | Zig | 8.5 s | 358 MB |
+| zebra.exe, ReleaseFast | Zig | 1.15 s | 330 MB |
+| zebra_v.exe, tcc, no collector | V | 4.8 s | 521 MB |
+| zebra_v.exe, tcc, Boehm | V | 5.1 s | 179 MB |
+| zebra_v.exe, zig cc -O3, no collector | V | 2.0 s | 517 MB |
+
+What the table says: V's debug build (tcc compiles in 2.6 s) is twice
+as fast as Zig's Debug and the optimized V build is 1.7x slower than
+Zig's ReleaseFast; V without a collector holds 60 percent more memory
+than Zig's arena (its strings and arrays allocate per value; nothing is
+freed in either); **the Boehm collector costs 6 percent of the time and
+takes back two thirds of the peak**. The collector is V's default and
+the backend's explicit mode (`--gc` on the route; `-gc none` is what the
+run line prints without it).
+
+What did not make the table: the zig cc build with Boehm did not finish
+the emit in 600 s of CPU (the collector under clang -O3 on Windows;
+killed, unpinned); V's `-prod` picks MSVC on this host (installed, not
+on PATH), compiles the compiler in 1m39 -- and the binary panics at a
+slice bound during parsing that the tcc- and clang-built binaries
+accept (`slice index out of range for int: 2674`), under -O2 and also
+without optimization: an MSVC-specific difference in V's generated C,
+unpinned; `zig cc` needs V's `-Wl,-stack=N` dropped and links without
+`-flto` (long-double math symbols go missing with it) -- `vbin/zigcc.py`
+is the wrapper.
+
+**What a V-built Zebra compiler is and is not.** It compiles Zebra to
+Zig exactly as the Zig-built one does, so it can stand in for it
+wherever `--emit-zig` is the job (the engine's regen, a `zebra build`
+that only emits). It cannot build the Zig it emits (that needs Zig, as
+before), it has no LSP and no debugger bridge, and no HTTP. The next
+step the binary enables: `zebra_v --target v selfhost/main.zbr` -- the
+V backend emitting itself, and a fixed point to check.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

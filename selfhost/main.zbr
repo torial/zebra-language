@@ -1431,18 +1431,19 @@ def defaultPreamblePath(): str
 # --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
 # .v beside the source, the refusals listed (never skipped silently), the run
 # line said. A resolver error stops it like any compile.
-# a module for the V target: parsed, resolved, built; nil with the error said
-def vLoadModule(path: str): Module? throws
+# a module for the V target: parsed, resolved, built; the resolver's errors
+# raised (a def that is nilable AND throws has no V spelling, so this one
+# raises where it returned nil before, 2026-10-13)
+def vLoadModule(path: str): Module throws
     var src: str = File.read(path)
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
     if resolver.errorCount() > 0
-        sys.errln(resolver.allErrorMessages())
-        return nil
+        raise resolver.allErrorMessages()
     if pm_node is PNode.module_ as pm
         return ASTBuilder.build(pm, path)?
-    return nil
+    raise path + ": not a module"
 
 # the used modules, transitively, each once: the file beside the root, else
 # under --module-path; dependencies before their users
@@ -1451,27 +1452,26 @@ def vCollect(path: str, module_path: str, visited: List(str), out: List(Module))
         if v == path
             return
     visited.add(path)
-    var mOpt = vLoadModule(path)?
-    if mOpt as m
-        var dir: str = Path.dirname(path)
-        if dir == ""
-            dir = "."
-        for d in m.decls
-            branch d
-                on Decl.use_ as u
-                    var dep: str = dir + "/" + u.path + ".zbr"
-                    if not File.exists(dep) and module_path != ""
-                        dep = module_path + "/" + u.path + ".zbr"
-                    if not File.exists(dep)
-                        var where_: str = " beside it"
-                        if module_path != ""
-                            where_ = where_ + " nor under --module-path " + module_path
-                        sys.errln("zebra --target v: `use " + u.path + "` in " + path + ": no " + u.path + ".zbr" + where_ + ": nothing written")
-                        sys.exit(1)
-                    vCollect(dep, module_path, visited, out)?
-                else
-                    pass
-        out.add(m)
+    var m: Module = vLoadModule(path)?
+    var dir: str = Path.dirname(path)
+    if dir == ""
+        dir = "."
+    for d in m.decls
+        branch d
+            on Decl.use_ as u
+                var dep: str = dir + "/" + u.path + ".zbr"
+                if not File.exists(dep) and module_path != ""
+                    dep = module_path + "/" + u.path + ".zbr"
+                if not File.exists(dep)
+                    var where_: str = " beside it"
+                    if module_path != ""
+                        where_ = where_ + " nor under --module-path " + module_path
+                    sys.errln("zebra --target v: `use " + u.path + "` in " + path + ": no " + u.path + ".zbr" + where_ + ": nothing written")
+                    sys.exit(1)
+                vCollect(dep, module_path, visited, out)?
+            else
+                pass
+    out.add(m)
 
 def vTarget(path: str, gc_on: bool, module_path: str)
     var modules = List(Module)()
