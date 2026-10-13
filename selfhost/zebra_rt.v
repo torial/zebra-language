@@ -304,6 +304,48 @@ pub fn zsort_f64(mut l ZList[f64]) {
 	l.items.sort()
 }
 
+// a list sorted by a comparator or a key: stable insertion sorts (the Zig
+// backend's std.mem.sort is stable, so ties keep their order on both)
+pub fn zlist_sort_with[T](mut l ZList[T], less fn (T, T) bool) {
+	for i := 1; i < l.items.len; i++ {
+		for j := i; j > 0 && less(l.items[j], l.items[j - 1]); j-- {
+			tmp := l.items[j]
+			l.items[j] = l.items[j - 1]
+			l.items[j - 1] = tmp
+		}
+	}
+}
+
+pub fn zlist_sort_by_i64[T](mut l ZList[T], key fn (T) i64) {
+	for i := 1; i < l.items.len; i++ {
+		for j := i; j > 0 && key(l.items[j]) < key(l.items[j - 1]); j-- {
+			tmp := l.items[j]
+			l.items[j] = l.items[j - 1]
+			l.items[j - 1] = tmp
+		}
+	}
+}
+
+pub fn zlist_sort_by_f64[T](mut l ZList[T], key fn (T) f64) {
+	for i := 1; i < l.items.len; i++ {
+		for j := i; j > 0 && key(l.items[j]) < key(l.items[j - 1]); j-- {
+			tmp := l.items[j]
+			l.items[j] = l.items[j - 1]
+			l.items[j - 1] = tmp
+		}
+	}
+}
+
+pub fn zlist_sort_by_str[T](mut l ZList[T], key fn (T) string) {
+	for i := 1; i < l.items.len; i++ {
+		for j := i; j > 0 && key(l.items[j]) < key(l.items[j - 1]); j-- {
+			tmp := l.items[j]
+			l.items[j] = l.items[j - 1]
+			l.items[j - 1] = tmp
+		}
+	}
+}
+
 pub fn zsort_str(mut l ZList[string]) {
 	l.items.sort()
 }
@@ -421,7 +463,16 @@ fn zjson_is_number(j json2.Any) bool {
 	return true
 }
 
+// a whole number only: json2 parses every number as f64, and a fraction
+// is not an int (the Zig backend's _json_as_int is null for 1.6)
 pub fn zjson_try_int(j json2.Any) ?i64 {
+	if j is f64 {
+		f := j as f64
+		if math.floor(f) == f && f >= -9.2233720368547758e18 && f < 9.2233720368547758e18 {
+			return i64(f)
+		}
+		return none
+	}
 	if zjson_is_number(j) {
 		return j.i64()
 	}

@@ -344,6 +344,14 @@ class VGen
                 return true
         return false
 
+    # a lambda's declared return type, in V
+    def lambdaRet(e: Expr): str
+        branch e
+            on Expr.lambda as lam
+                return .vType(lam.return_type)
+            else
+                return ""
+
     def jsonTry(kind: str, obj: str, args: List(Arg), ja: str): str
         if args.count() == 1
             return "zjson_tryk_" + kind + "(" + obj + ", " + ja + ")"
@@ -1568,6 +1576,11 @@ class VGen
                 if .isClassName(.current_class)
                     return "&" + .current_class
                 return .current_class
+            on Expr.list_lit as ll
+                var lt: str = .listLitElemType(ll)   # (an iterated literal of references takes the mutable loop)
+                if lt == ""
+                    return ""
+                return "&ZList[" + lt + "]"
             else
                 return ""
 
@@ -2634,12 +2647,13 @@ class VGen
                         .refused.add("a format spec (" + f + ") with no expression before it")
         return out + "'"
 
-    def listLitStr(ll: ExprListLit): str
+    # a list literal's element type: the declared one, else the first
+    # element's when the emitter knows it; "" when neither
+    def listLitElemType(ll: ExprListLit): str
         var et: str = ""
         if ll.elem_type as t
             et = .vType(t)
         if et == "" and ll.elems.count() > 0
-            # the first element's type, when the emitter knows it
             var first = ll.elems.at(0)
             et = .vTypeOf(first)
             if et == "" and isStringLit(first)
@@ -2650,6 +2664,10 @@ class VGen
                 et = "f64"
             if et == "" and isBoolLit(first)
                 et = "bool"
+        return et
+
+    def listLitStr(ll: ExprListLit): str
+        var et: str = .listLitElemType(ll)
         if et == ""
             .refused.add("a list literal without an element type (write `var xs: List(T) = [...]`)")
             return "new_zlist[i64]()"
@@ -2714,7 +2732,7 @@ class VGen
     # or a mutating struct's any method, a container's writers
     def mutatesReceiver(rtype: str, name: str): bool
         if rtype.startsWith("&ZList[") or rtype.startsWith("&ZMap[") or rtype.startsWith("&ZSet[") or rtype == "&ZStringBuilder" or rtype == ""
-            return name == "add" or name == "set" or name == "put" or name == "clear" or name == "remove" or name == "removeAt" or name == "insert" or name == "append" or name == "appendChar" or name == "sort" or name == "reverse" or name == "pop"
+            return name == "add" or name == "set" or name == "put" or name == "clear" or name == "remove" or name == "removeAt" or name == "insert" or name == "append" or name == "appendChar" or name == "sort" or name == "sortBy" or name == "reverse" or name == "pop"
         if rtype.startsWith("&")
             return true
         return .isMutStruct(rtype)
@@ -3068,6 +3086,16 @@ class VGen
             if name == "indexOf" and args.count() == 1: return "zlist_index_of(" + obj + ", " + .argsStr(args) + ")"
             if name == "contains" and args.count() == 1: return "zlist_contains(" + obj + ", " + .argsStr(args) + ")"
             if name == "toString" and args.count() == 0: return "zlist_str(" + obj + ")"
+            if name == "sort" and args.count() == 1 and isLambdaExpr(args.at(0).value)
+                # a comparator: the runtime's stable sort (std.mem.sort is stable on the Zig backend)
+                return "zlist_sort_with(mut " + obj + ", " + .exprStr(args.at(0).value) + ")"
+            if name == "sortBy" and args.count() == 1 and isLambdaExpr(args.at(0).value)
+                var kt: str = .lambdaRet(args.at(0).value)
+                if kt == "i64": return "zlist_sort_by_i64(mut " + obj + ", " + .exprStr(args.at(0).value) + ")"
+                if kt == "f64": return "zlist_sort_by_f64(mut " + obj + ", " + .exprStr(args.at(0).value) + ")"
+                if kt == "string": return "zlist_sort_by_str(mut " + obj + ", " + .exprStr(args.at(0).value) + ")"
+                .refuse("List.sortBy with a key of type " + kt + " (the runtime sorts by i64, f64 and str)", span)
+                return "zlist_sort_by_i64(mut " + obj + ", " + .exprStr(args.at(0).value) + ")"
             if name == "sort" and args.count() == 0
                 var et: str = .elemOf(rtype)
                 if et == "string": return "zsort_str(mut " + obj + ")"
