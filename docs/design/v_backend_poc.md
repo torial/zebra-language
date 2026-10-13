@@ -949,6 +949,25 @@ stream-typed fields and one tuple literal, each a stub that panics if
 reached) and nothing in the test reaches them. The V compile of the
 health test is 9,000 lines of V and about two seconds with tcc.
 
+## Main merged, the workarounds out (2026-10-13)
+
+The Zebra session fixed BUG-559 and BUG-560 on main (3133ec1; the cause
+corrected from what this note recorded above: the `*const` was the
+INNER receiver, which the mutation scan never reached through a call
+used as a receiver, and `inferExpr` typed only Math.abs / min / max, so
+a `Math.floor(...)` result was unknown and hoisted), with BUG-561
+(5e14144) and BUG-562 (68e80e3). Main is merged into this branch
+(6fd6626: a clean textual merge, and the pipeline's fifteen witnesses
+identical on the merged tree with the regen leaving it unchanged -- the
+semantic check a clean merge does not give). The two workarounds are
+out: the route's local that stood in for `res.source.len` read through
+the imported class, and the third example's floats bound before
+`.toInt()` -- `Math.floor(2.7).toInt()` is written as Zebra writes it
+and prints the same on both backends. Still open on main from the same
+night: BUG-563 (a list of lambdas types as List(str)), BUG-564 (a
+statement lambda's indent inside a multi-line call), BUG-565 (`@[...]`
+only inline after `in`); none is in this backend's way yet.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function

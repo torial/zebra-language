@@ -1499,9 +1499,8 @@ def vTarget(path: str, gc_on: bool, module_path: str)
         if stem.endsWith("_test")
             stem = stem + "_prog"
         var out: str = dir + "/" + stem + ".v"
-        var v_text: str = res.source   # BUG-560: a field named like a local class's List field, read through an imported class, is lowered as the List; a local first is the workaround
-        File.write(out, v_text)
-        print("zebra --target v: wrote " + out + " (" + v_text.len.toString() + " bytes; " + modules.count().toString() + " module(s) in one file)")
+        File.write(out, res.source)
+        print("zebra --target v: wrote " + out + " (" + res.source.len.toString() + " bytes; " + modules.count().toString() + " module(s) in one file)")
         if res.refused.count() > 0
             print("  refused " + res.refused.count().toString() + " construct(s) the subset does not spell (the V file is partial where they stood):")
             for r in res.refused

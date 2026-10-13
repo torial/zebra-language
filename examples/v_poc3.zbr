@@ -54,16 +54,14 @@ def main()
 
     # ── Math ──
     assert Math.sqrt(16.0) == 4.0 and Math.abs(0.0 - 2.0) == 2.0, "sqrt abs"
-    # (each bound to a float first: `Math.floor(2.7).toInt()` is a method on a
-    # call's result, BUG-559's chain-on-temporary path, and with a comptime
-    # float the temporary reaches Zig untyped -- told to the Zebra session)
-    var flf: float = Math.floor(2.7)
-    var rof: float = Math.round(2.4)
+    # (`.toInt()` on a call's result, with a comptime-float operand: BUG-559's
+    # chain-on-temporary path, fixed on main 3133ec1 -- written as Zebra
+    # writes it, a witness of the fix on both backends)
     var mnf: float = Math.min(1.0, 2.0)
     var mxf: float = Math.max(1.0, 2.0)
     var clf: float = Math.clamp(5.0, 0.0, 2.0)
-    var fl: int = flf.toInt()
-    var ro: int = rof.toInt()
+    var fl: int = Math.floor(2.7).toInt()
+    var ro: int = Math.round(2.4).toInt()
     var mn: int = mnf.toInt()
     var mx: int = mxf.toInt()
     var cl: int = clf.toInt()
