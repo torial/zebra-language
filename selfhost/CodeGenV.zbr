@@ -1923,10 +1923,20 @@ class VGen
                 else
                     .line("return")
             on Stmt.assert_ as asrt
+                # never V's `assert`: -prod drops it, statement and all, and a
+                # Zebra assert is evaluated in every build (the act is often
+                # inside it: `assert h.damage(x) == "Dead"`). The Zig backend's
+                # own words on failure.
+                var place: str = .vStringLit("assert failed at " + .current_file + ":" + asrt.span.line.toString() + ": ")
+                var cs: str = .exprStr(asrt.cond)   # (rendered once: a render binds temporaries)
+                var what: str = ""
                 if asrt.message as msg
-                    .line("assert " + .exprStr(asrt.cond) + ", " + .exprStr(msg))
+                    what = .exprStr(msg)
                 else
-                    .line("assert " + .exprStr(asrt.cond))
+                    what = .vStringLit(cs)
+                .line("if !(" + cs + ") {")
+                .line("\tpanic(" + place + " + " + what + ")")
+                .line("}")
             on Stmt.print_ as p
                 .genPrint(p)
             on Stmt.break_

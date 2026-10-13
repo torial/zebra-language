@@ -794,7 +794,7 @@ and a type alias; `game/mm/health` (362 lines, which folds in **21
 modules**: the workspace, the instance tree, the GUI scene loader, the
 player handler, the shop, the datastore) wanting untyped list literals,
 the stream type and much that only showed once the first were in.
-Seventeen rounds:
+Eighteen rounds:
 
 1. **Interfaces.** `interface I` is V's interface with every method under
    `mut:` (a class's methods are all `mut self`); `implements` emits
@@ -913,6 +913,21 @@ Seventeen rounds:
     name `step_v`, as a local named like a function already was. Every
     engine emission now passes `-prod -check` clean, and the health
     test builds under `zig cc -O3`.
+14. **An assert is never V's assert.** The first thing the `-prod`
+    binary did was lie: one line, "all ok (20 Health components)",
+    against the harness's three lines and nineteen. V's `-prod` drops
+    `assert` statements, condition and all, and the engine's tests put
+    the act inside the assert (`assert mh.damage(hit(50.0, c)) ==
+    "Dead"`), so no damage was dealt, no death printed, one component
+    never removed. A tcc `-prod` build showed the same, so not the C
+    compiler. A Zebra assert is evaluated in every build (the Zig
+    backend panics `assert failed at f.zbr:12: msg`); the emitter now
+    spells it `if !(cond) { panic('assert failed at <file>:<line>: '
+    + msg) }`, the condition rendered once. Both `-prod` binaries print
+    the harness's lines now. The lesson the round leaves: a build that
+    succeeds is not a witness -- round 13's `-prod` build "worked" too --
+    only a run diffed against the control is, and a test whose acts
+    live inside its asserts is one a build flag can hollow out.
 
 **What runs.** `zbra/signal_test`, `zbra/instance_test` and
 `zbra/tween_test` -- each with its own `main` -- print the same lines on
@@ -925,7 +940,11 @@ bound by the Framework at `begin()`, two the test's own. Its control
 comes from the engine's own harness (`zig build run-health_test`),
 since the Zig backend's `--module-path` cannot build a driver that sits
 outside the module directory; the V run is from the engine root, where
-the scene file is. The four refusals in the 21 modules stand (three
+the scene file is. Built with `-prod` under tcc and under `zig cc -O3`
+(11.6 and 19.5 s), the health test prints the same three lines; it is
+startup-bound (150 to 300 ms, 8 to 17 MB) on the Zig harness, tcc,
+tcc with Boehm and zig cc alike, so it gives no performance signal --
+a read needs a longer workload. The four refusals in the 21 modules stand (three
 stream-typed fields and one tuple literal, each a stub that panics if
 reached) and nothing in the test reaches them. The V compile of the
 health test is 9,000 lines of V and about two seconds with tcc.
