@@ -1,0 +1,57 @@
+# BUG-561: a newline inside brackets or braces continues the line, as one inside
+# parentheses does. Before the fix every literal below was "unexpected expression token: '\n'".
+#
+# This REVERSES BUG-084 (2026-08-20), deliberately. The selfhost lexer once let `[`/`]` span
+# lines; BUG-084 removed that so it would agree with the Zig bootstrap, which never had it,
+# and pinned the rejection with a must-fail fixture whose own header said that if multi-line
+# brackets were ever wanted, the pin is what goes red and the answer is to change both lexers
+# and delete it. The bootstrap was retired 2026-09-16, so there is one lexer and the parity
+# reason is gone; the pin is deleted and this file replaces it.
+sig Step(x: int): int
+
+def double(x: int): int
+    return 2 * x
+
+def applyTo2(f: Step): int
+    return f(2)
+
+def main()
+    # a nested list, the continuation indented by one level
+    var grid = [[1, 2],
+        [3, 4]]
+    print(grid)
+    # brackets on their own lines, the closing one back at the statement's level
+    var rows = [
+        [5, 6],
+        [7, 8]
+    ]
+    print(rows)
+    # a dict literal
+    var m = {"a": 1,
+        "b": 2}
+    print(m["a"] + m["b"])
+    # an @[ ] array literal, which an ordinary ] closes (used inline with `in`, the one form
+    # @[ ] supports today -- BUG-565)
+    var name = "findAll"
+    if name in @["match", "find",
+        "findAll", "groups"]
+        print("findAll is in the array")
+    # a subscript and a call argument that span lines inside brackets
+    print(double(grid[1][
+        0]))
+    # lambdas inside a multi-line list: an expression lambda, and a statement-body lambda
+    # whose body gets its indentation back (the lexer's lambda stack) while still inside [ ].
+    # The body is indented one level past the STATEMENT, as inside parentheses (BUG-564).
+    var applied = [applyTo2(def(x: int) = x + 1),
+        applyTo2(def(x: int): int
+        var y: int = x * 3
+        return y
+    ), 5]
+    print(applied)
+    # interpolation with brackets is untouched
+    print("first row ${grid[0]} and ${m["b"]}")
+    # an ordinary statement after all of them: the bracket depth is back to zero. The values
+    # the smoke registration checks: grid[1][1] = 4, rows[1][0] = 7, 1 + 2 = 3, and the lambdas
+    var after: int = 3
+    if after > 2
+        print("bug561: ${grid[1][1]} ${rows[1][0]} ${m["a"] + m["b"]} ${applied}")

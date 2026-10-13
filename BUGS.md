@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-562. Next new bug: BUG-563.**
+**Last bug number generated: BUG-565. Next new bug: BUG-566.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,67 @@
 
 ---
 
+### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
+- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
+- **Repro (QUICKSTART's own example, "Array literal"):**
+  ```
+  def main()
+      var nums = @[3, 1, 4, 1, 5]
+      if 3 in nums
+          print("three is present")
+  ```
+  `error: expected type 'str', found 'struct { comptime T = 3, ... }'` (zig's). Also:
+  `var arr = @[9, 10, 11]` then `arr[2]` -> std.meta "Expected pointer, slice, array or vector
+  type, found 'struct { comptime comptime_int = 9, ... }'"; `for v in arr` -> "no field named
+  'items' in tuple".
+- **What works:** `if name in @["match", "find"]` -- a string literal tested inline
+  (`test/array_in_test.zbr`, the only fixture). The literal is emitted as an anonymous Zig
+  tuple, and `_zebra_in` takes strings.
+- **Why no gate saw it:** `doc_example_check` runs the front end only (`zebra -c`), and the
+  front end accepts the example.
+- **Expected:** either `@[...]` is a real fixed array (indexable, iterable, any element type,
+  bindable), or it is documented as the inline membership form only and the front end refuses
+  the other uses by name. Today the reference documents a use that cannot compile.
+
+### BUG-563: a list literal of lambdas is accepted and typed as `List(str)` -- calling an element is an inference error, binding it leaks a zig error -- OPEN (found 2026-10-12)
+- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor and on HEAD.
+- **Repro:**
+  ```
+  def main()
+      var fns = [def(x: int) = x + 1, def(x: int) = x * 10]
+      var a: int = fns[0](4)
+      print(a)
+  ```
+  zig: `expected type 'str', found '*const fn (i64) i64'`. With `print(fns[0](4) + fns[1](4))`
+  the front end instead says "cannot infer the type of this expression, an operand of `+`".
+- **Expected:** the element type of a list of lambdas is their function type (or a `sig` when
+  annotated, `var fns: List(Step) = [...]`); calling `fns[i](x)` types as the lambda's return.
+  At least: refuse the literal in the front end rather than typing it `List(str)`.
+
+### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- OPEN (found 2026-10-12)
+- **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
+  predates BUG-561.
+- **Repro:**
+  ```
+  def main()
+      var t = add(applyTo2(def(x: int) = x + 1),
+          applyTo2(def(x: int): int
+              var y: int = x * 3
+              return y
+          ))
+      print(t)
+  ```
+  `9:1: error: unexpected end of input while parsing an expression`. Written with the body one
+  level past the STATEMENT (8 spaces) and `))` back at the statement's level, it prints 9.
+- **Cause:** inside a continuation the lexer does not process indentation, so the
+  continuation line (`applyTo2(` at 8 spaces) never sets the depth; the lambda's body is
+  measured against the statement (depth 1), and a body at 12 spaces is two indents. Its
+  dedent then never returns to the lambda's start depth, the lambda stack is never popped, and
+  the rest of the file is read as one expression.
+- **Expected:** measure the body against the line the lambda STARTS on -- record that line's
+  indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
+  indent with a message naming the lambda, not end-of-input on the line after.
+
 ### BUG-562: a List bound from a literal and written only by subscript (`s[i] = v`, `s[i] += 1`) is emitted `var`; zig refuses it as never mutated -- OPEN (found 2026-10-12)
 - **Found by:** zebra-taocp's batch-2 test (`var stirling = [0, 0, 0, 0, 0]` then
   `stirling[mx] += 1`); reproduced on `8ff157d`.
@@ -70,36 +131,6 @@
   base mutated -- the same rule as `set()`. Check a fixed-size value (an array or struct
   value, if any can be subscripted) separately: for those a subscript write IS a mutation.
 - **Workaround:** `s.set(i, v)` (BUG-495's fixed path), or build the list with `add`.
-
-### BUG-561: a list, dict or set literal cannot span lines, though a parenthesised expression can -- OPEN (found 2026-10-12)
-- **Found by:** writing zebra-taocp's pentomino table (a 12-row nested list); reproduced on
-  `8fab325`.
-- **Repro:**
-  ```
-  def main()
-      var a = [[1, 2],
-          [3, 4]]
-      print(a)
-  ```
-  `error: unexpected expression token: '\n'` at the end of line 2. Aligning the second row under
-  the first instead gives `indentation is 13 space(s)`, and a dict literal split the same way
-  fails identically.
-- **Controls, both print 3:** `var x = (1 +` / `2)` and `foo(1,` / `2)` -- a line break inside
-  PARENTHESES is a continuation.
-- **Cause:** `selfhost/Lexer.zbr` suppresses the end-of-line token and indentation processing
-  while `parenDepth > 0`. `(` / `)` (and `open_call`) adjust `parenDepth`; `[`, `]`, `{` and `}`
-  emit their tokens without touching it. So a newline inside brackets or braces is an
-  end-of-line plus an indentation change, in the middle of an expression.
-- **Expected:** brackets and braces continue the line as parentheses do (Python's rule, and the
-  one a reader of `foo(1,` / `2)` will assume). QUICKSTART documents continuation only for
-  pipelines ("a multi-line pipeline needs parentheses"); it says nothing for literals.
-- **Proposed fix (not applied):** count `[`/`]` and `{`/`}` in a separate bracket depth (or in
-  `parenDepth`), and suppress eol/indentation when either is non-zero. Keep the lambda logic
-  keyed on parentheses only -- `inLambdaParams` / `afterLambdaParams` / `lambdaStack` read
-  `parenDepth`, and a `def` lambda inside a list literal must still get its body's
-  indentation. Needs a fixture for a nested list, a dict and a set literal across lines, plus
-  a lambda inside a multi-line list.
-- **Workaround:** build the value with `.add` per line (zebra-taocp's `pentominoShapes` does).
 
 ### BUG-560: `.len` on an imported class's `str` field lowers as a List when a LOCAL class has a List field of the same name -- OPEN (found 2026-10-12)
 - **Found by:** the GameEngine session (2026-10-12, building the V-backend proof of concept),

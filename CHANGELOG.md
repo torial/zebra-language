@@ -23,7 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+### Language
+
+- **A newline inside `[ ]` or `{ }` continues the statement, as one inside `( )` always has
+  (BUG-561).** A nested list, a dict or set literal, or an `@[...]` array can now span lines;
+  before, each was refused with "unexpected expression token". No program that compiled before
+  changes meaning: a newline inside brackets was always an error.
 
 ## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
 

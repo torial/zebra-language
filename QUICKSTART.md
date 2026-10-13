@@ -112,6 +112,11 @@ Hello, Zebra!
 - `def main` declares a top-level function named `main`. No class required.
 - `print` is a built-in statement (not a function call) — parentheses are optional.
 - Indentation defines blocks — no braces or `begin`/`end`.
+- A statement continues across lines inside `( )`, `[ ]` and `{ }`: a newline there does not
+  end it, and the continuation lines' indentation is free. That is how a long call, a nested
+  list or a dict literal is written over several lines. A statement-body lambda inside one
+  still indents its body one level past the *statement*. Outside brackets a newline ends the
+  statement (a multi-line pipeline needs parentheses, §3).
 
 **A slightly larger example** — reading command-line arguments:
 

@@ -68,6 +68,10 @@ class Lexer
     var indentDepth     : int
     var blockDepth      : int
     var parenDepth      : int
+    # BUG-561: `[` `@[` `{` nesting. A newline inside brackets or braces continues the line,
+    # as one inside parentheses does. Kept apart from parenDepth because the lambda state
+    # machine below keys on PARENTHESES (a `def(...)` lambda's own parameter list).
+    var bracketDepth    : int
     var out             : List(Token.Token)
     # Lambda-in-call-arg state machine
     var inLambdaParams   : bool
@@ -86,6 +90,7 @@ class Lexer
         indentDepth      = 0
         blockDepth       = 0
         parenDepth       = 0
+        bracketDepth     = 0
         out              = List()
         inLambdaParams    = false
         lambdaParamDepth  = 0
@@ -267,6 +272,7 @@ class Lexer
         var c1 = peek1()
         if c1 == c'['
             pos = pos + 2
+            bracketDepth = bracketDepth + 1
             emit(TokenKind.at_lbracket(), "@[", ln, cl)
             return
         if isAlpha(c1) or c1 == c'_'
@@ -869,7 +875,7 @@ class Lexer
             emit(TokenKind.comma(), ",", ln, cl)
             return
         if c == c'('
-            if parenDepth > 0 and out.len > 0
+            if (parenDepth > 0 or bracketDepth > 0) and out.len > 0
                 var lastKind = out.at(out.len - 1).kind
                 branch lastKind
                     on TokenKind.kw_def
@@ -888,15 +894,21 @@ class Lexer
             emit(TokenKind.rparen(), ")", ln, cl)
             return
         if c == c'['
+            bracketDepth = bracketDepth + 1
             emit(TokenKind.lbracket(), "[", ln, cl)
             return
         if c == c']'
+            if bracketDepth > 0
+                bracketDepth = bracketDepth - 1
             emit(TokenKind.rbracket(), "]", ln, cl)
             return
         if c == c'{'
+            bracketDepth = bracketDepth + 1
             emit(TokenKind.lcurly(), "{", ln, cl)
             return
         if c == c'}'
+            if bracketDepth > 0
+                bracketDepth = bracketDepth - 1
             emit(TokenKind.rcurly(), "}", ln, cl)
             return
         raise lexErr(c, ln, cl)
@@ -938,7 +950,7 @@ class Lexer
                         var ln = line
                         var cl = col()
                         advanceNewline()
-                        if parenDepth == 0 or afterLambdaParams or lambdaStack.len > 0
+                        if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or lambdaStack.len > 0
                             emit(TokenKind.eol(), "\n", ln, cl)
                             if afterLambdaParams
                                 afterLambdaParams = false
@@ -973,7 +985,7 @@ class Lexer
                         atLineStart = true
                         continue
                     on LineKind.has_content
-                        if parenDepth == 0 or lambdaStack.len > 0
+                        if (parenDepth == 0 and bracketDepth == 0) or lambdaStack.len > 0
                             processIndentation()?
 
             var c = src[pos]
@@ -986,7 +998,7 @@ class Lexer
                 var ln = line
                 var cl = col()
                 advanceNewline()
-                if parenDepth == 0 or afterLambdaParams or lambdaStack.len > 0
+                if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or lambdaStack.len > 0
                     emit(TokenKind.eol(), "\n", ln, cl)
                     if afterLambdaParams
                         afterLambdaParams = false
