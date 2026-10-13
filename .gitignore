@@ -96,3 +96,4 @@ tears_save.txt
 examples/*.v
 selfhost/*.v
 !selfhost/zebra_rt.v
+zig-out-fast/
