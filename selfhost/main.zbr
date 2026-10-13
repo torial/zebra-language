@@ -47,6 +47,8 @@ use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
+use Lexer
+use Token exposing TokenKind
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
@@ -1436,6 +1438,9 @@ def defaultPreamblePath(): str
 # raises where it returned nil before, 2026-10-13)
 def vLoadModule(path: str): Module throws
     var src: str = File.read(path)
+    return vLoadModuleText(src, path)?
+
+def vLoadModuleText(src: str, path: str): Module throws
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
     resolver.resolve(pm_node)?
@@ -1473,10 +1478,139 @@ def vCollect(path: str, module_path: str, visited: List(str), out: List(Module))
                 pass
     out.add(m)
 
+# V has one namespace per file; Zebra scopes a type to its module. A type
+# two modules of the program declare under one name (gui's TweenInfo struct,
+# tween's TweenInfo class) is renamed `<Stem>_<Name>` in each module's SOURCE
+# TEXT, which is parsed again -- in the module that declares it, and in every
+# module whose `use ... exposing` names it from that module (Zebra's own
+# resolution) -- so the parser, the resolver and the emitter never meet the
+# collision. The lexer's identifier tokens are the rename sites; a member
+# after `.` is not a type name and is left alone.
+def vTypeNames(m: Module): List(str)
+    var out = List(str)()
+    for d in m.decls
+        branch d
+            on Decl.class_ as c
+                out.add(c.name)
+            on Decl.struct_ as st
+                out.add(st.name)
+            on Decl.enum_ as en
+                out.add(en.name)
+            on Decl.union_ as un
+                out.add(un.name)
+            on Decl.interface_ as di
+                out.add(di.name)
+            on Decl.sig_ as sg
+                out.add(sg.name)
+            on Decl.type_alias_ as ta
+                out.add(ta.name)
+            else
+                pass
+    return out
+
+def vCapStem(stem: str): str
+    if stem.len == 0
+        return stem
+    var lower: str = "abcdefghijklmnopqrstuvwxyz"
+    var upper: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    var first: str = stem[0..1]
+    var idx: int = lower.indexOf(first)
+    if idx >= 0
+        first = upper[idx..idx + 1]
+    return first + stem[1..stem.len]
+
+def vRenameInText(src: str, map: HashMap(str, str)): str throws
+    var toks = Lexer.tokenize(src)?
+    var starts = List(int)()
+    starts.add(0)
+    var i: int = 0
+    while i < src.len
+        if src[i] == '\n'
+            starts.add(i + 1)
+        i = i + 1
+    var sb = StringBuilder()
+    var at: int = 0
+    var afterDot: bool = false
+    for t in toks
+        # a name is an `id`, or an `open_call` (a name the `(` follows at
+        # once: `TweenService()`, the word alone as its text)
+        var isName: bool = false
+        var isDot: bool = false
+        branch t.kind
+            on TokenKind.id
+                isName = true
+            on TokenKind.open_call
+                isName = true
+            on TokenKind.dot
+                isDot = true
+            else
+                pass
+        if isName and not afterDot
+            if map.get(t.text) as nn
+                var off: int = starts.at(t.line - 1) + t.col - 1
+                # the coordinates must point at the text (a token the lexer
+                # re-spelled would not): else it is left alone
+                if off + t.text.len <= src.len and src[off..off + t.text.len] == t.text and off >= at
+                    sb.append(src[at..off])
+                    sb.append(nn)
+                    at = off + t.text.len
+        afterDot = isDot
+    sb.append(src[at..src.len])
+    return sb.build()
+
+def vRenameCollisions(modules: List(Module)): List(Module) throws
+    var declared = HashMap(str, List(str))()
+    for m in modules
+        var stem: str = Path.stem(m.file)
+        for n in vTypeNames(m)
+            if declared.get(n) as have
+                have.add(stem)
+            else
+                var fresh = List(str)()
+                fresh.add(stem)
+                declared.set(n, fresh)
+    var colliding = List(str)()
+    for n in declared.keys()
+        if declared.get(n) as mods
+            if mods.count() > 1
+                colliding.add(n)
+    if colliding.count() == 0
+        return modules
+    var out = List(Module)()
+    for m in modules
+        var stem: str = Path.stem(m.file)
+        var own: List(str) = vTypeNames(m)
+        var map = HashMap(str, str)()
+        for n in colliding
+            if own.contains(n)
+                map.set(n, vCapStem(stem) + "_" + n)
+        for d in m.decls
+            branch d
+                on Decl.use_ as u
+                    for ex in u.exposed
+                        if colliding.contains(ex) and map.get(ex) == nil
+                            map.set(ex, vCapStem(Path.stem(u.path)) + "_" + ex)
+                else
+                    pass
+        if map.count() == 0
+            out.add(m)
+        else
+            var names: str = ""
+            for k in map.keys()
+                if names != ""
+                    names = names + ", "
+                if map.get(k) as nn
+                    names = names + k + " -> " + nn
+            print("zebra --target v: " + m.file + ": " + map.count().toString() + " type name(s) two modules declare, renamed in the source (V has one namespace per file): " + names)
+            var renamed: str = vRenameInText(File.read(m.file), map)?
+            out.add(vLoadModuleText(renamed, m.file)?)
+    return out
+
 def vTarget(path: str, gc_on: bool, module_path: str)
     var modules = List(Module)()
     var visited = List(str)()
     vCollect(path, module_path, visited, modules)?
+    modules = vRenameCollisions(modules)?
     if modules.count() > 0
         # the V runtime (the boxed containers), inlined into the emitted file:
         # in the repo, or next to an installed zebra.exe, as the preamble is

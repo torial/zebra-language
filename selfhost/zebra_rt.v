@@ -274,6 +274,30 @@ pub fn zunwrap[T](x ?T) T {
 }
 
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
+// Zebra's DateTime: the epoch milliseconds (the Zig backend's _DateTime)
+pub struct ZDateTime {
+pub:
+	epoch_ms i64
+}
+
+pub fn zdatetime_now() ZDateTime {
+	return ZDateTime{epoch_ms: time.now().unix_milli()}
+}
+
+// Zebra's tuples: (A, B) is ZTuple2[A, B], its elements f0 and f1 (`t.0` is `t.f0`)
+pub struct ZTuple2[A, B] {
+pub mut:
+	f0 A
+	f1 B
+}
+
+pub struct ZTuple3[A, B, D] {
+pub mut:
+	f0 A
+	f1 B
+	f2 D
+}
+
 pub const zbr_version = 'zebra (V backend, proof of concept)'
 
 // a long `or` / `and` chain (V's checker gives up at forty nested levels);

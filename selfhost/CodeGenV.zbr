@@ -288,8 +288,19 @@ class VGen
                 if s.startsWith("&") or .isUnionName(s)
                     return s
                 return "&" + s
+            on TypeRef.tuple as tt
+                # a tuple is the runtime's ZTuple2 / ZTuple3: fields f0, f1, f2
+                if tt.elems.count() < 2 or tt.elems.count() > 3
+                    .refused.add("a tuple of " + tt.elems.count().toString() + " (the runtime spells 2 and 3)")
+                    return "voidptr"
+                var parts: str = ""
+                for et in tt.elems
+                    if parts != ""
+                        parts = parts + ", "
+                    parts = parts + .vType(et)
+                return "ZTuple" + tt.elems.count().toString() + "[" + parts + "]"
             else
-                .refused.add("a type the subset does not spell (stream, error union, tuple, fn)")
+                .refused.add("a type the subset does not spell (stream, error union, fn)")
                 return "voidptr"
 
     def vNamed(qualified: str): str
@@ -311,6 +322,7 @@ class VGen
         if name == "SqliteDb": return "&ZSqliteDb"
         if name == "SqliteRow": return "&ZSqliteRow"
         if name == "Random": return "&ZRandom"
+        if name == "DateTime": return "ZDateTime"
         for cn in .class_names
             if cn == name
                 return "&" + name
@@ -380,7 +392,7 @@ class VGen
             on Expr.member as m
                 branch m.object
                     on Expr.ident as id
-                        if .isModuleName(id.name)
+                        if .isModuleRef(id.name)
                             return m.member
                     else
                         pass
@@ -388,10 +400,18 @@ class VGen
             else
                 return ""
 
+    # a module's name stands for the module only when nothing in scope has
+    # it: the engine's modules are common nouns (tween, character, health,
+    # door), and a local of that name is the value
+    def isModuleRef(name: str): bool
+        if .isLocalName(name) or .isCurrentField(name) or .isGlobalName(name)
+            return false
+        return .isModuleName(name)
+
     def isModuleIdent(obj: Expr): bool
         branch obj
             on Expr.ident as id
-                return .isModuleName(id.name)
+                return .isModuleRef(id.name)
             else
                 return false
 
@@ -785,6 +805,8 @@ class VGen
     def retOf(c: ExprCall): str
         branch c.callee
             on Expr.ident as id
+                if .isClassName(id.name) or .isStructName(id.name)
+                    return .vNamed(id.name)   # a constructor call: the type (a list literal of them is typed by it)
                 # a bare call to a method of the enclosing type, a static of it,
                 # or a free function
                 if .current_class != "" and .isMethodName(id.name)
@@ -1455,6 +1477,8 @@ class VGen
                 var ot: str = .vTypeOf(m.object)
                 if ot.startsWith("&")
                     ot = ot.substring(1, ot.len)
+                if ot.startsWith("ZTuple") and isDigits(m.member)
+                    return tupleElemType(ot, m.member)
                 if ot != ""
                     if .all_field_types.get(ot + "." + m.member) as ft2
                         return ft2
@@ -1481,6 +1505,8 @@ class VGen
                             return "ZArgs"
                         if jowner == "Random" and cm.member == "new"
                             return "&ZRandom"
+                        if jowner == "DateTime" and cm.member == "now"
+                            return "ZDateTime"
                         if jowner == "Sqlite" and cm.member == "open"
                             return "?&ZSqliteDb"
                         if ot == "&ZSqliteDb" and cm.member == "query"
@@ -1609,6 +1635,16 @@ class VGen
                 if lt == ""
                     return ""
                 return "&ZList[" + lt + "]"
+            on Expr.tuple_lit as tl
+                var tparts: str = ""
+                for el in tl.elems
+                    var et: str = .vTypeOf(el)
+                    if et == ""
+                        return ""
+                    if tparts != ""
+                        tparts = tparts + ", "
+                    tparts = tparts + et
+                return "ZTuple" + tl.elems.count().toString() + "[" + tparts + "]"
             else
                 return ""
 
@@ -1784,6 +1820,11 @@ class VGen
     # ── statements ─────────────────────────────────────────────────────────
     def genStmts(stmts: List(Stmt))
         var nmark: int = .narrowed.count()
+        # a statement list is a scope: a local (and a rename) it declares is
+        # gone after it, as in V and in Zebra -- else a capture declared in
+        # one loop body reads as "already declared" in the next
+        var saved_ln = .local_names.copy()   # (containers are references: the restore needs its own copy)
+        var saved_rn = .renames.copy()
         var i: int = 0
         for s in stmts
             .genStmt(s)
@@ -1798,6 +1839,8 @@ class VGen
             i = i + 1
         while .narrowed.count() > nmark
             .narrowed.remove(.narrowed.count() - 1)
+        .local_names = saved_ln
+        .renames = saved_rn
 
     def isNarrowed(zname: str): bool
         for n in .narrowed
@@ -2235,17 +2278,69 @@ class VGen
             .genStmts(ei.stmts)
             .depth = .depth - 1
         if i.else_stmts as es
-            .line("} else {")
-            .depth = .depth + 1
-            if eq_name != "" and i.else_ifs.count() == 0
-                .narrowed.add(eq_name)   # the else of `if x == nil`
-            .genStmts(es)
-            if eq_name != "" and i.else_ifs.count() == 0
-                .unnarrow(eq_name)
-            .depth = .depth - 1
+            # Zebra's `else if` is an if alone in the else: V's `} else if`,
+            # flat -- seventy nested elses (the autoplay's stage chain) passed
+            # V's depth of forty. Not over a nil comparison: its narrowing
+            # stays in the nested form.
+            var chained: bool = false
+            if eq_name == ""
+                chained = .genElseIfChain(es)
+            if not chained
+                .line("} else {")
+                .depth = .depth + 1
+                if eq_name != "" and i.else_ifs.count() == 0
+                    .narrowed.add(eq_name)   # the else of `if x == nil`
+                .genStmts(es)
+                if eq_name != "" and i.else_ifs.count() == 0
+                    .unnarrow(eq_name)
+                .depth = .depth - 1
         .line("}")
         if eq_name != "" and i.else_ifs.count() == 0 and i.else_stmts == nil and endsWithExit(i.then_stmts)
             .narrowed.add(eq_name)   # `if x == nil: return`: x is its inner type for the rest of the block
+
+    # an else holding one plain if (no capture, no nil comparison): emitted as
+    # `} else if cond {` and its own else the same way, flat; true when it was
+    def genElseIfChain(es: List(Stmt)): bool
+        if es.count() != 1
+            return false
+        branch es.at(0)
+            on Stmt.if_ as ni
+                if ni.is_capture != nil
+                    return false
+                if .nilCmpLocal(ni.cond, true) != "" or .nilCmpLocal(ni.cond, false) != ""
+                    return false
+                # the condition rendered in a cloned context first: one that binds
+                # a temporary (a `mut` argument wants a variable) emits a line, and
+                # V's `else if` has no place for it -- the nested form then. A
+                # render that emitted nothing is pure, so its text is used as is.
+                var probe = .cloneContext()
+                probe.depth = .depth
+                var cs: str = probe.exprStr(ni.cond)
+                for r in probe.refused
+                    .refused.add(r)
+                if probe.sb.build() != ""
+                    return false
+                .line("} else if " + condStr(cs) + " {")
+                .depth = .depth + 1
+                .genStmts(ni.then_stmts)
+                .depth = .depth - 1
+                for ei in ni.else_ifs
+                    if ei.is_capture as ecap
+                        .line("} else if " + vSafe(ecap) + " := " + .exprStr(ei.cond) + " {")
+                    else
+                        .line("} else if " + condStr(.exprStr(ei.cond)) + " {")
+                    .depth = .depth + 1
+                    .genStmts(ei.stmts)
+                    .depth = .depth - 1
+                if ni.else_stmts as es2
+                    if not .genElseIfChain(es2)
+                        .line("} else {")
+                        .depth = .depth + 1
+                        .genStmts(es2)
+                        .depth = .depth - 1
+                return true
+            else
+                return false
 
     # `if cond as name`: a nilable's binding (`if name := cond {`), or a union
     # check's (`if x is U_v {` then `name := x.payload`, V's smart cast on an
@@ -2358,6 +2453,7 @@ class VGen
                 .line("for " + ix + " := 0; " + ix + " < " + it + ".count(); " + ix + "++ {")
                 .depth = .depth + 1
                 .line("mut " + v + " := " + it + ".at(" + ix + ")")
+                .local_names.add(fi.vars.at(0))   # in scope: a module of its name is not meant
                 if v_unused
                     .line("_ = " + v)
                 .genStmts(fi.stmts)
@@ -2519,8 +2615,17 @@ class VGen
             on Expr.lambda as lam
                 return .lambdaStr(lam)
             on Expr.tuple_lit as tl
-                .refuse("a tuple literal", tl.span)
-                return "0"
+                if tl.elems.count() < 2 or tl.elems.count() > 3
+                    .refuse("a tuple literal of " + tl.elems.count().toString() + " (the runtime spells 2 and 3)", tl.span)
+                    return "0"
+                var fields: str = ""
+                var fi: int = 0
+                for el in tl.elems
+                    if fi > 0
+                        fields = fields + ", "
+                    fields = fields + "f" + fi.toString() + ": " + .exprStr(el)
+                    fi = fi + 1
+                return "ZTuple" + tl.elems.count().toString() + "{" + fields + "}"   # (V infers the type arguments from the fields)
             on Expr.set_lit as stl
                 .refuse("a set literal", stl.span)
                 return "new_zset[i64]()"
@@ -2588,6 +2693,7 @@ class VGen
             # `capture var rc: T = this`: V captures a variable of the enclosing
             # scope, so the capture is declared there first (a line before the
             # statement holding the lambda)
+            var cname: str = vSafe(cv.name)   # the captured variable's V name
             if cv.init_expr as cie
                 var same: bool = false
                 branch cie
@@ -2595,6 +2701,9 @@ class VGen
                         same = cid.name == cv.name   # `capture var b = b`: the local itself
                     else
                         pass
+                if same
+                    if .renames.get(cv.name) as rn
+                        cname = rn   # the local itself under its V name (renamed off a function or a global)
                 if not same
                     if .isLocalName(cv.name)
                         .line(vSafe(cv.name) + " = " + .exprStr(cie))   # a name a capture already declared
@@ -2609,9 +2718,9 @@ class VGen
             if caps != ""
                 caps = caps + ", "
             if .isRefType(cv.type_)
-                caps = caps + "mut " + vSafe(cv.name)
+                caps = caps + "mut " + cname
             else
-                caps = caps + vSafe(cv.name)
+                caps = caps + cname
         var capList: str = ""
         if caps != ""
             capList = "[" + caps + "] "
@@ -2749,6 +2858,8 @@ class VGen
             return vSafe(m.member)   # `Mod.name`: the used module's declaration, in this file
         var obj = .exprStr(m.object)
         var ot: str = .vTypeOf(m.object)
+        if isDigits(m.member)
+            return obj + ".f" + m.member   # a tuple's element by position
         if .isUnionName(ot) and .union_payloads.get(ot + "_" + m.member) != nil
             return "(" + obj + " as " + ot + "_" + m.member + ").payload"   # Zebra's payload access by the variant's name
         if m.member == "len"
@@ -3224,6 +3335,10 @@ class VGen
             if name == "open": return "zsqlite_open(" + a + ")"
             .refuse("Sqlite." + name, span)
             return "zsqlite_" + snakeCase(name) + "(" + a + ")"
+        if ns == "DateTime"
+            if name == "now": return "zdatetime_now()"
+            .refuse("DateTime." + name, span)
+            return "zdatetime_now()"
         if ns == "Random"
             if name == "randInt": return "zrandom_int(" + a + ")"
             if name == "new": return "zrandom_new(" + a + ")"
@@ -3480,6 +3595,46 @@ def zjoinStr(xs: List(str), sep: str): str
         first = false
         out = out + x
     return out
+
+def isDigits(s: str): bool
+    if s.len == 0
+        return false
+    var i: int = 0
+    while i < s.len
+        if s[i] < '0' or s[i] > '9'
+            return false
+        i = i + 1
+    return true
+
+# the Nth type argument of `ZTuple2[A, B]` (a nested generic's commas sit deeper)
+def tupleElemType(vt: str, n: str): str
+    var open_: int = vt.indexOf("[")
+    if open_ < 0
+        return ""
+    var inner: str = vt.substring(open_ + 1, vt.len - 1)
+    var parts = List(str)()
+    var depth: int = 0
+    var cur: str = ""
+    var i: int = 0
+    while i < inner.len
+        var ch = inner[i]
+        if ch == '['
+            depth = depth + 1
+        if ch == ']'
+            depth = depth - 1
+        if ch == ',' and depth == 0
+            parts.add(cur.trim())
+            cur = ""
+        else
+            cur = cur + inner[i..i + 1]
+        i = i + 1
+    parts.add(cur.trim())
+    var want: int = 0
+    if n.tryInt() as w
+        want = w
+    if want < parts.count()
+        return parts.at(want)
+    return ""
 
 def isIntLit(e: Expr): bool
     branch e
