@@ -1013,6 +1013,7 @@ because the host was in use, so those are given as best to worst.
 | V, tcc, Boehm | 31.0 to 32.1 s | 240 MB |
 | V, zig cc -O3 `-prod` | 7.4 to 29.6 s | 1,051 MB |
 | V, MSVC /O2 `-prod` | 22.9 to 57.2 s | 1,052 MB |
+| V, zig cc -O3 `-prod`, Boehm | 14.7 to 16.8 s | 174 to 181 MB |
 
 Reading it: unoptimized V under tcc runs the demo at the Debug harness's
 speed; the collector returns four fifths of the memory at no speed
@@ -1020,7 +1021,11 @@ cost; the optimized Zig harness is five to ten times faster than its
 Debug build, and the best optimized V binary (clang via zig cc) is two
 to three times behind it; MSVC's build is behind clang's. A quiet-host
 rerun of the optimized row is owed before the ratio is quoted as more
-than a first read.
+than a first read. The collector under clang does not crawl on the demo
+(the crawl seen on the compiler-emit workload was that workload's): the
+optimized build with Boehm has the lowest peak memory of the table, so
+the collector is a switch in the shipping build too, at the cost of a
+five-minute compile of the 37,000-line C with -O3.
 
 Two V rules met on the way: a local may not bear an imported module's
 name (`rand`, `bits`), and `-prod` makes a warning an error. One
