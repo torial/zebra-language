@@ -37,6 +37,15 @@ confirmed via `tools/bootstrap_check.sh`.
   as "local variable is never mutated", because a container is a reference and the write goes
   through it. The same applied to an `if x as v` binding written by subscript. Such a local is
   now `const`; rebinding (`s = ...`) still makes it `var`.
+- **A method chain on a `Math` result compiles (BUG-559).** `Math.floor(x).toInt()` failed
+  inside zig ("no member named 'toInt' in 'f64'", or a comptime_float `var` with a literal
+  operand): `Math.floor`, `sqrt`, `pow` and the rest had no inferred type, so the chain was
+  hoisted into an untyped temporary and its method emitted verbatim. Math results are typed
+  now, from what each member emits. And a chain on a struct method's result
+  (`a.add(b).scale(2.0)`) no longer leaves `a` const when `add` needs a mutable receiver.
+- **`.len` on an imported class's `str` field is a string length (BUG-560),** even when a
+  class in the current module has a List field of the same name; it was lowered as the
+  List's `.items.len` and refused by zig.
 
 ## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
 

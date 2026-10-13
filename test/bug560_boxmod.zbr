@@ -1,0 +1,9 @@
+# BUG-560's module: a class whose `source` field is a str.
+class Box
+    var text: str
+    var source: str
+    cue init(text: str)
+        .text = text
+        .source = text
+def makeBox(): Box
+    return Box("hello")

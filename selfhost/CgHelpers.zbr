@@ -1717,8 +1717,20 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
                             if isStructValueType(inferExpr(root, ic2), ic2)
                                 if receiverNeedsVar(m.object, m.member, ic)
                                     out.add(rid.name)
+                # BUG-559: a CALL as the receiver -- `a.add(b).scale(2.0)`. The outer call's
+                # object is the inner call, which was never scanned, so `a` (whose `add`
+                # takes a mutable receiver) was emitted `const` and zig refused
+                # `a.add(b)`: "expected '*Vec2', found '*const Vec2'".
+                if m.object is Expr.call
+                    scanMutationsInExpr(m.object, out, ic)
             for arg in c.args
                 scanMutationsInExpr(arg.value, out, ic)
+        on Expr.list_lit as ll
+            for le in ll.elems
+                scanMutationsInExpr(le, out, ic)
+        on Expr.index as ixe
+            scanMutationsInExpr(ixe.object, out, ic)
+            scanMutationsInExpr(ixe.index, out, ic)
         on Expr.binary as b
             scanMutationsInExpr(b.left, out, ic)
             scanMutationsInExpr(b.right, out, ic)

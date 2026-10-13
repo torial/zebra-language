@@ -1311,6 +1311,8 @@ smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
 smoke_run test/bug556_json_parse_arena_test.zbr "bug556: parsed into the arena, 200 items"
 smoke_run test/bug561_multiline_literals_test.zbr "bug561: 4 7 3 [3, 6, 5]"
 smoke_run test/bug562_subscript_write_const_test.zbr "bug562: [101, 5] [1, 1, 2] 15 [2, 3] 9"
+smoke_run test/bug559_chain_on_value_result_test.zbr "bug559: 13 2 4 1024 8.0 12.0 4.0"
+smoke_run test/bug560_imported_field_len_test.zbr "bug560: 5 2 5"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.

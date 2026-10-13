@@ -3302,6 +3302,26 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                     var ma_t: Type_ = inferExpr(c.args.at(0).value, ctx)
                                     if isNumeric(ma_t)
                                         return ma_t
+                                # BUG-559: every other Math result was unknown, so a chain on
+                                # one (`Math.floor(x).toInt()`) was hoisted into an untyped
+                                # `var _mc_N` and its method emitted verbatim -- `.toInt` in
+                                # f64, or a comptime_float `var`. Types read off genMathCall's
+                                # emit. ALWAYS f64: the members it casts to or names f64.
+                                var mm: str = mem.member
+                                if mm == "pow" or mm == "hypot" or mm == "atan2" or mm == "log" or mm == "lerp" or mm == "cbrt" or mm == "log1p" or mm == "expm1" or mm == "toRadians" or mm == "toDegrees" or mm == "sinh" or mm == "cosh" or mm == "tanh" or mm == "asinh" or mm == "acosh" or mm == "atanh"
+                                    return Type_.float_
+                                if mm == "isNaN" or mm == "isInf"
+                                    return Type_.bool_
+                                if mm == "gcd" or mm == "lcm"
+                                    return Type_.int_
+                                # f64 only for a float argument: @floor / @ceil and std.math's
+                                # generic functions return their argument's type (sqrt of an
+                                # integer is an integer), and the open namespace passes the
+                                # rest through to std.math.<name>.
+                                if mm == "floor" or mm == "ceil" or mm == "round" or mm == "trunc" or mm == "sqrt" or mm == "sin" or mm == "cos" or mm == "tan" or mm == "asin" or mm == "acos" or mm == "atan" or mm == "exp" or mm == "exp2" or mm == "log2" or mm == "log10" or mm == "clamp"
+                                    var mf_t: Type_ = inferExpr(c.args.at(0).value, ctx)
+                                    if mf_t is Type_.float_
+                                        return Type_.float_
                             if bname == "Hash"
                                 if mem.member == "crc32" or mem.member == "fnv64" or mem.member == "xxHash64"
                                     return Type_.int_
