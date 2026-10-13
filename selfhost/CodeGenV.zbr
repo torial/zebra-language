@@ -1488,6 +1488,8 @@ class VGen
         branch e
             on Expr.ident as id
                 if .local_types.get(id.name) as lt
+                    if lt.startsWith("?") and .isNarrowed(id.name)
+                        return lt.substring(1, lt.len)   # Zebra reads it narrowed: the inner type
                     return lt
                 if .isCurrentField(id.name)
                     if .field_types.get(id.name) as ft
@@ -1663,6 +1665,25 @@ class VGen
                 if lt == ""
                     return ""
                 return "&ZList[" + lt + "]"
+            on Expr.unary as u
+                # `-x`, `not x`: the operand's type (bool for not)
+                if u.op == UnaryOp.not_
+                    return "bool"
+                return .vTypeOf(u.operand)
+            on Expr.binary as bn
+                # arithmetic: the left's type, else the right's; a comparison or
+                # a logical op: bool (an untyped `var dot = 0 - 1` is i64 by it)
+                if bn.op == BinaryOp.eq or bn.op == BinaryOp.ne or bn.op == BinaryOp.lt or bn.op == BinaryOp.le or bn.op == BinaryOp.gt or bn.op == BinaryOp.ge or bn.op == BinaryOp.and_ or bn.op == BinaryOp.or_ or bn.op == BinaryOp.in_
+                    return "bool"
+                if bn.op == BinaryOp.dotdot
+                    return ""
+                var blt: str = .vTypeOf(bn.left)
+                if blt != "" and blt != "json2.Any"
+                    return blt
+                var brt: str = .vTypeOf(bn.right)
+                if brt != "json2.Any"
+                    return brt
+                return ""
             on Expr.tuple_lit as tl
                 var tparts: str = ""
                 for el in tl.elems
@@ -3492,7 +3513,7 @@ class VGen
                     call = "zis_none(" + nt + "(" + nil_side + "))"
                 if b.op == BinaryOp.eq
                     return call
-                return "!" + call
+                return "(!" + call + ")"   # (parenthesized: `.str()` on it binds to the call otherwise)
             # `opt == value`: Zebra compares a nilable with a value; V does not
             var lt2: str = .vTypeOf(b.left)
             var rt2: str = .vTypeOf(b.right)
