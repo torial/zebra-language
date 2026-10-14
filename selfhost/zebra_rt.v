@@ -269,6 +269,12 @@ pub fn zopt_eq[T](a ?T, b T) bool {
 }
 
 // `x!`: the value, or a failure
+// an option held as itself: what `?T(x)` did on 0.5.2, which master refuses as
+// a cast of an option to its own type
+pub fn zopt_id[T](x ?T) ?T {
+	return x
+}
+
 pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
 }

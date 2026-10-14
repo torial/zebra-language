@@ -2508,7 +2508,7 @@ class VGen
                 .line(it + " := " + .exprStr(fi.iter))
                 .line("for " + ix + " := 0; " + ix + " < " + it + ".count(); " + ix + "++ {")
                 .depth = .depth + 1
-                .line("mut " + v + " := " + it + ".at(" + ix + ")")
+                .line("mut " + v + " := unsafe { " + it + ".at(" + ix + ") }")   # (unsafe: master's "aliases mutable data from an immutable value" on the temporary)
                 .local_names.add(fi.vars.at(0))   # in scope: a module of its name is not meant
                 if v_unused
                     .line("_ = " + v)
@@ -2571,7 +2571,7 @@ class VGen
             on Expr.ident as id
                 if .isNarrowed(id.name)
                     if .local_types.get(id.name) as nlt
-                        return "zunwrap(" + nlt + "(" + .localName(id.name) + "))"   # Zebra reads it narrowed; V never narrows here
+                        return "zunwrap(zopt_id(" + .localName(id.name) + "))"   # Zebra reads it narrowed; V never narrows here (zopt_id: the option's type held without a cast, which master refuses)
                 if .renames.get(id.name) as rn
                     if .isLocalName(id.name)
                         return rn
@@ -2635,7 +2635,7 @@ class VGen
                         pass
                 var ot: str = .vTypeOf(tnn.expr)
                 if ot.startsWith("?")
-                    return "zunwrap(" + ot + "(" + .exprStr(tnn.expr) + "))"
+                    return "zunwrap(zopt_id(" + .exprStr(tnn.expr) + "))"
                 return "zunwrap(" + .exprStr(tnn.expr) + ")"
             on Expr.dict_lit as dl
                 .refuse("a dict literal (maps are next)", dl.span)
@@ -2934,7 +2934,7 @@ class VGen
         var plain: str = obj + "." + vSafe(m.member)
         if exprRootIsThis(m.object) and .isNarrowed(plain)
             if .field_types.get(m.member) as nft
-                return "zunwrap(" + nft + "(" + plain + "))"   # Zebra reads the field narrowed
+                return "zunwrap(zopt_id(" + plain + "))"   # Zebra reads the field narrowed
         return plain
 
     def isCatchBinding(name: str): bool
@@ -3524,7 +3524,7 @@ class VGen
                     nt = .vTypeOf(b.right)
                 var call: str = "zis_none(" + nil_side + ")"
                 if nt.startsWith("?")
-                    call = "zis_none(" + nt + "(" + nil_side + "))"
+                    call = "zis_none(zopt_id(" + nil_side + "))"
                 if b.op == BinaryOp.eq
                     return call
                 return "(!" + call + ")"   # (parenthesized: `.str()` on it binds to the call otherwise)
