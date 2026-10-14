@@ -2395,6 +2395,20 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-14 (closing the night: BUG-570/571 `02042a4`, BUG-572..578 `48c5399`,
+filings `d84f772`): 56/57 in ONE invocation at JOBS=2 on the committed tree, ~74 min on a
+near-idle host.** smoke 719/719, round-trip byte-identical, `output_sweep` 466 identical,
+`full_sweep` / `divergence` 0 regressions, `regen-recover`, `gramgen` 0/0, `leakgen` 100/0. The
+red was `release-mode`'s size leg: "865 KB vs **128 KB** unoptimised -- the -O flag looks
+LOST". The reference is ~15 MB every other time; re-run alone minutes later, all nine legs
+passed (865 vs 15360, GUI 1735 vs 5637). NOT EXPLAINED, and the obvious hypothesis was tested
+and FAILED: a reference build killed by its timeout leaves NO binary (measured with a 0.05 s
+timeout) and the existing "cannot find" check already says so, so the 128 KB file was a
+binary that existed. A second occurrence should keep that file. The two daytime FULLs before
+it (at Idle priority, other sessions' load) hit the 5400 s ceiling on smoke and divergence;
+`full_sweep` filed two emits killed by its 40 s timeout as regressions -- it now retries a
+timeout and names it EMITTIMEOUT (`02042a4`).
+
 **DAILY tier 2026-10-09, evening (BUG-502 + BUG-548 `d1c79c6`, the daily cache prune
 `6991bc1`, BUG-549 `3431be4`): 57/57 PASS in ONE invocation at JOBS=2 on the committed tree.**
 smoke 692/692, round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical,
