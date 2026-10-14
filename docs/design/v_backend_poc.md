@@ -1140,10 +1140,12 @@ six lines), so the emitter's `__global` block carries `= ?T(none)`; and
 `sys.execInherit` runs through `os.new_process`. All three master
 tickets went through the review protocol first.
 
-**What runs under master:** the tween, datastore (SQLite), health (21
-modules), player_handler, round and guitree tests, and the whole demo --
-168 lines, identical to the harness -- all under master's compiler with
-tcc. Master's checker takes 3m16 on the demo's 37,000 lines where
+**What runs under master:** every engine program the 0.5.2 lane runs --
+signal, instance, tween, health (21 modules), tags, guiscene, guitree,
+player_handler, round, datastore (SQLite) and the whole demo (168
+lines) -- all identical to the harness under master's compiler with
+tcc, in one scripted lane (`v_master_tests.sh`); the prod lane over the
+same eleven through zig cc is the next witness. Master's checker takes 3m16 on the demo's 37,000 lines where
 0.5.2's takes 44 s. Master's `-prod` through zig cc first failed its
 link on long-double math and `isnan` symbols; that was not the module
 cache (a build without it fails the same), not zig's libc (a test
