@@ -1144,8 +1144,11 @@ tickets went through the review protocol first.
 signal, instance, tween, health (21 modules), tags, guiscene, guitree,
 player_handler, round, datastore (SQLite) and the whole demo (168
 lines) -- all identical to the harness under master's compiler with
-tcc, in one scripted lane (`v_master_tests.sh`); the prod lane over the
-same eleven through zig cc is the next witness. Master's checker takes 3m16 on the demo's 37,000 lines where
+tcc, in one scripted lane (`v_master_tests.sh`) -- and all eleven again
+built `-prod` through zig cc under master (`v_master_prod.sh`, 1m17 to
+4m06 a build), identical to the harness. The master lane is a peer of
+the 0.5.2 lane now: `v_round_master_chain.sh` runs both master stages
+after the 0.5.2 stages, so a round that breaks either dialect is red. Master's checker takes 3m16 on the demo's 37,000 lines where
 0.5.2's takes 44 s. Master's `-prod` through zig cc first failed its
 link on long-double math and `isnan` symbols; that was not the module
 cache (a build without it fails the same), not zig's libc (a test
