@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-568. Next new bug: BUG-569.**
+**Last bug number generated: BUG-571. Next new bug: BUG-572.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,35 @@
 > measured in.
 
 ---
+
+### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, NEEDS A DECISION (found 2026-10-13)
+- **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
+  should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
+- **Repro (QUICKSTART §19, "Implicit closure capture", verbatim shape):**
+  ```
+  def main()
+      var counter = 0
+      var bump = def()
+          counter += 1
+      bump()
+      bump()
+      print(counter)
+  ```
+  `lam_int.zbr:4: error: cannot assign to constant` (zig's, remapped). The same for a struct
+  field (`c.n = c.n + 1` inside the lambda), and for a mutating method on a captured struct
+  (`def(): int = c.bump()`: "expected '*Counter', found '*const Counter'"; with `c` made `var`
+  outside, zig says "mutable 'c' not accessible from here").
+- **What works:** reading a captured local; an explicit `capture` block for per-closure state
+  (§19.1).
+- **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
+  the bullet right under it says implicit capture is for "read-only access in most cases".
+- **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the
+  enclosing local (Python `nonlocal`, C# lambdas); or (b) it is READ-ONLY -- refuse a write to a
+  captured local in the front end, naming `capture` as the way to keep state, and fix §19's
+  example. (a) is what the example promises; (b) is what the implementation does today, minus
+  the error message.
+- **Why no gate saw it:** doc_example_check runs the front end only, and the front end accepts
+  the example (pattern search 4 -- a full-build leg for doc examples -- is aimed at exactly this).
 
 ### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.

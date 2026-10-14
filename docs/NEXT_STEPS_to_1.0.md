@@ -30,6 +30,27 @@ as they land, so this list stays the one place that says what is left.
    - CORRECTION 2026-10-10: the list first put BUG-527, 519 and 237 here, read off their
      titles. Their bodies say otherwise -- each is LOUD (zig refuses the emit, or the front end
      wrongly refuses the program), not a silent wrong answer. They move to 1b.
+1a. **Pattern searches (adopted 2026-10-13, Sean: "a short term plan of attack")** -- the nine
+   bugs zebra-taocp and the GameEngine found on 2026-10-12/13 fall into six shapes, and each
+   shape is searchable instead of waited for. In order of value:
+   - [ ] **Walkers that skip expression variants** (BUG-559, BUG-562): opt the mutation scanner
+     (`scanMutationsInExpr`) and its siblings into `lint_expr_walkers`; fix what it names.
+     Two predicted bugs CONFIRMED before starting: a mutating struct call inside a tuple
+     literal or under `!` leaks "expected '*T', found '*const T'".
+   - [ ] **Root-module-only handling** (BUG-568, 560, 527, 536/539): a "move it into a used
+     module" transform over the must-fail fixtures and the output_sweep corpus -- messages must
+     still map to .zbr with no `.zig:` location, outputs must stay identical.
+   - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381):
+     collide names on purpose (sibling blocks, same field name and different type in two
+     classes/modules) and alpha-rename to unique names; neither may change a program's output.
+   - [ ] **Half-built constructs that parse** (BUG-563, 565): a full-build leg for doc examples
+     that are whole programs (doc_example_check is front-end only, which is why QUICKSTART's
+     own `@[...]` example never compiled); grow leakgen's caps with the forms.
+   - [ ] **Two spellings that should be equivalent** (BUG-559, 561, 562): bind <-> chain,
+     subscript <-> set/at, one-line <-> multi-line rewrites of corpus files, output compared.
+   - [ ] **Prefix checks / stale parity rules** (BUG-567, 561): an identifier probe over every
+     keyword and type name with suffixes; grep for restrictions still justified by bootstrap
+     parity.
 1b. **Loud but wrong** -- the user gets a refusal or a Zig error for a program that is fine.
    - [x] BUG-527 (FIXED 2026-10-10) -- `h.listener = v` inside a method, `h` a class from another module with an
      interface-typed field, is typed by the enclosing class's same-named field; zig refuses.

@@ -36,7 +36,10 @@
 set -u
 source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the shared ~/.zvm/bin default
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-ZEBRA="$REPO/zig-out/bin/zebra.exe"
+# FULL_SWEEP_ZEBRA_OVERRIDE is a TEST HOOK (used by no tier), like divergence's N1_REF_OVERRIDE:
+# it lets a stub compiler attack the classification paths -- e.g. an emit that stalls past
+# the timeout must be retried and named EMITTIMEOUT, never filed as a refusal.
+ZEBRA="${FULL_SWEEP_ZEBRA_OVERRIDE:-$REPO/zig-out/bin/zebra.exe}"
 # Linux/macOS build `zebra`, not `zebra.exe` (CI quick-linux, 2026-09-26): use it when the .exe is absent.
 [ -x "$ZEBRA" ] || [ ! -x "${ZEBRA%.exe}" ] || ZEBRA="${ZEBRA%.exe}"
 # shellcheck source=tools/zig_build_lib.sh
@@ -82,10 +85,23 @@ check_one() {
   # Found by `hearsay` (C:/Projects/hearsay), a linter written specifically for this
   # class: a diagnostic stream discarded on a path that then issues a verdict.
   local eerr="$wdir/emit.err"
-  if ! timeout 40 "$ZEBRA" --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$eerr"; then
+  # A TIMED-OUT emit is not a refusal (2026-10-13). On a loaded host two baseline files
+  # were killed at 40 s right after "wrote ....zig" -- no error in their evidence -- and
+  # filed as EMITFAIL, so the gate reported two REGRESSIONS that passed by hand. A timeout
+  # gets one retry with a longer budget; one that still times out is EMITTIMEOUT, named as
+  # such, and is never mistaken for the compiler rejecting the source.
+  local erc=0
+  timeout 40 "$ZEBRA" --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$eerr" || erc=$?
+  if [ "$erc" -eq 124 ]; then
+    echo "$name" >> "$OUT/emit_retried.txt"
+    erc=0
+    timeout 240 "$ZEBRA" --emit-zig "$REPO/$rel" --output-dir "$wdir" >/dev/null 2>"$eerr" || erc=$?
+  fi
+  if [ "$erc" -ne 0 ]; then
     mkdir -p "$OUT/evidence" 2>/dev/null
     cp "$eerr" "$OUT/evidence/$name.emit.err" 2>/dev/null
-    echo "EMITFAIL $name"; rm -rf "$wdir"; return
+    if [ "$erc" -eq 124 ]; then echo "EMITTIMEOUT $name"; else echo "EMITFAIL $name"; fi
+    rm -rf "$wdir"; return
   fi
   local main="$wdir/$name.zig"
   if [ ! -f "$main" ] || ! grep -q "pub fn main" "$main"; then
@@ -134,7 +150,12 @@ bash "$REPO/tools/corpus_ls.sh" "$CORPUS_DIR" \
 
 grep '^PASS ' "$OUT/results.txt" | awk '{print $2}' | LC_ALL=C sort > "$OUT/pass.txt"
 echo "── $CORPUS_LABEL ──"
-for b in PASS CFAIL DEPMISS EMITFAIL NOMAIN INFRA; do echo "$b: $(grep -c "^$b " "$OUT/results.txt")"; done
+for b in PASS CFAIL DEPMISS EMITFAIL EMITTIMEOUT NOMAIN INFRA; do echo "$b: $(grep -c "^$b " "$OUT/results.txt")"; done
+# Printed every run, zero included (the BUG-302 discipline): a rising count is the early
+# warning that the host is too loaded for this gate's answers to be about the compiler.
+_eretried=0
+[ -f "$OUT/emit_retried.txt" ] && _eretried=$(wc -l < "$OUT/emit_retried.txt" | tr -d ' ')
+echo "emit timeouts retried: $_eretried (an emit killed at 40 s re-runs once at 240 s)"
 # ALWAYS printed, zero included: a number that only appears when it is bad is a number
 # nobody has a baseline for.
 _retries=0
@@ -192,7 +213,11 @@ if [ "$GATE" = 1 ]; then
   # text file LF, 2026-09-14) scored EVERY entry a regression -- 486 PASS, 485 "regressions".
   reg=$(LC_ALL=C comm -23 <(tr -d '\r' < "$BASELINE") "$OUT/pass.txt")
   if [ -n "$reg" ]; then
-    echo "✗ REGRESSION — baseline-passing tests that now FAIL:"; echo "$reg"; exit 1
+    echo "✗ REGRESSION — baseline-passing tests that now FAIL:"
+    # Each one is named with its bucket: an EMITTIMEOUT is the host, not the compiler --
+    # re-run the file alone before believing it.
+    for _r in $reg; do echo "$_r  ($(grep -E "^[A-Z]+ $_r\$" "$OUT/results.txt" | awk '{print $1}'))"; done
+    exit 1
   fi
   newp=$(LC_ALL=C comm -13 <(tr -d '\r' < "$BASELINE") "$OUT/pass.txt")
   [ -n "$newp" ] && { echo "· new passes (run --update-baseline to lock them in):"; echo "$newp"; }

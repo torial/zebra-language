@@ -57,6 +57,14 @@ confirmed via `tools/bootstrap_check.sh`.
   Zebra's words (BUG-568),** as one in the main file always was -- it reached you as a raw Zig
   error against a temporary `.zig` file. The missing-`return` message now spells a List
   return type `List(int)`, not Zig's `*array_list.Aligned(i64,null)`.
+- **`mc?.bump()` on an optional struct updates `mc` (BUG-570).** A mutating method called
+  through `?.` on an optional value struct ran on a copy, so its change was silently lost. And
+  a mutating struct method called inside a tuple literal, under `!`, in an `except` or in a
+  slice bound no longer leaves its receiver `const` (which zig refused).
+- **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
+  list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a
+  pipeline or a lambda body it was missed by `zebra -c` (and so by the editor) and surfaced only
+  as a zig error at build time.
 
 ## Release 0.9.0-rc7 — 2026-10-11 (everything since rc6)
 

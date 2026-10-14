@@ -342,8 +342,64 @@ class Resolver
 
     # -- Expression walking ----------------------------------------------------
 
+    # BUG-571 (pattern search 1): this walker visited 13 of the 35 expression kinds, so an
+    # undefined name inside a list / dict / set / tuple / array literal, `orelse`, `catch`, a
+    # chained comparison, a pipeline, a named argument or a lambda passed the front end -- `zebra
+    # -c` and the LSP said nothing, and zig reported "use of undeclared identifier" later, with
+    # no column. Every expression-bearing kind is walked now; the rest are leaves (literals,
+    # nil, this, result, zig"..." text, a format spec).
     def resolveExpr(expr: PNode) throws
         branch expr
+            on PNode.expr_orelse as por
+                for e in por.expr
+                    .resolveExpr(e)?
+                for e in por.fallback
+                    .resolveExpr(e)?
+            on PNode.expr_catch as pca
+                for e in pca.expr
+                    .resolveExpr(e)?
+                if pca.binding != ""
+                    .method_scope.put(pca.binding, 4)
+                for e in pca.fallback
+                    .resolveExpr(e)?
+            on PNode.expr_chained_cmp as pcc
+                for e in pcc.operands
+                    .resolveExpr(e)?
+            on PNode.expr_pipeline as ppl
+                for e in ppl.lhs
+                    .resolveExpr(e)?
+                for e in ppl.rhs
+                    .resolveExpr(e)?
+            on PNode.expr_list_lit as pll
+                for e in pll.elems
+                    .resolveExpr(e)?
+            on PNode.expr_set_lit as psl
+                for e in psl.elems
+                    .resolveExpr(e)?
+            on PNode.expr_array_lit as pal
+                for e in pal.elems
+                    .resolveExpr(e)?
+            on PNode.expr_tuple_lit as ptl
+                for e in ptl.elems
+                    .resolveExpr(e)?
+            on PNode.expr_dict_lit as pdl
+                for e in pdl.keys
+                    .resolveExpr(e)?
+                for e in pdl.values
+                    .resolveExpr(e)?
+            on PNode.expr_named_arg as pna
+                for e in pna.value
+                    .resolveExpr(e)?
+            on PNode.expr_lambda as plm
+                for lp in plm.params
+                    .method_scope.put(lp.name, 3)
+                for lc in plm.captures
+                    for e in lc.init_expr
+                        .resolveExpr(e)?
+                    .method_scope.put(lc.name, 4)
+                for e in plm.body_expr
+                    .resolveExpr(e)?
+                .resolveStmts(plm.body_stmts)?
             on PNode.expr_id as id
                 if not .isInScope(id.name)
                     .errors.add(ResolveError(.fmtErrAt(id.line, id.col, "undefined name: '" + id.name + "'")))

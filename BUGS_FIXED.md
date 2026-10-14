@@ -6,6 +6,71 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-571: an undefined name inside a list / dict / set / tuple / array literal, `orelse`, `catch`, a chained comparison, a pipeline or a lambda passed the FRONT END -- `zebra -c` and the LSP said nothing -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 1, in two steps. Opting `Checker.walkExpr` into
+  `lint_expr_walkers` flagged its `?.` gap, and a probe of an undefined name inside `?.`
+  arguments passed `zebra -c` -- but the cause turned out to be the `orelse` the probe sat in,
+  in a DIFFERENT walker: the Resolver's `resolveExpr`, which walks the PARSE tree (`PNode`),
+  where `lint_expr_walkers` cannot see. Listing the parse-tree expression kinds against its
+  arms: 13 of 35 walked, and ten expression-bearing kinds skipped. Reproduced on HEAD and on the
+  N-1 anchor.
+- **Repro:** `var xs = [1, undefinedX]` -- `zebra -c` exit 0; a full build fails in zig with
+  "use of undeclared identifier 'undefinedX'" and no column. The same for `x orelse undefinedB`,
+  `f(1) catch |e| undefinedC`, `undefinedZ -> f()`, `1 < undefinedN < 3`, `{k: undefinedV}`,
+  `(1, undefinedT)`, `@[undefinedA]` and a lambda body.
+- **Why it matters beyond the message:** `zebra -c` is what the LSP and zebra-ide use for live
+  diagnostics, so the editor showed NOTHING for these.
+- **Fixed 2026-10-13.** `resolveExpr` (selfhost/Resolver.zbr) walks `orelse`, `catch` (its
+  binding put in scope before the fallback), chained comparisons, pipelines, list / set / array /
+  tuple / dict literals, named arguments, and lambdas (parameters and capture variables in scope,
+  capture initialisers, an expression body or statements). Fixtures:
+  `test/fail_fixtures/bug571_undefined_in_unwalked_exprs_test.zbr` -- one undefined name per
+  construct, all TEN reported at line:col by `zebra -c` (registered on one of them) -- and
+  `test/bug571_resolver_walks_all_ok_test.zbr`, valid uses of every newly walked construct
+  (catch binding, lambda parameter, capture, literals, orelse, pipeline, chained comparison),
+  which must compile and print, so a false positive from the new arms goes red.
+- **The instrument gap is the larger finding:** `lint_expr_walkers` derives its oracle from
+  `Ast.zbr`'s `Expr` union and cannot see walkers over the parser's `PNode` union. Extending it
+  (oracle: Parser.zbr's `PNode` union) is the next step of pattern search 1.
+- **Gated (FULL, 2026-10-13, at Idle priority on a loaded host -- ASSEMBLED, not one
+  clean invocation):** round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical,
+  `examples_sweep` 0 regressions, every static and fast gate. Smoke and `divergence` were killed
+  at the 5400 s ceiling (smoke at 503 PASS / 0 FAIL); `full_sweep`'s two "regressions" were
+  emits killed by its 40 s timeout and pass by hand (the gate now retries a timeout and names it
+  EMITTIMEOUT); `check-mode` failed only its timing leg, `release-mode` only its GUI build
+  (exit 143). The next commit's combined FULL re-runs smoke and `divergence`.
+
+### BUG-570: a mutating struct method called inside a tuple, under `!`, in `except`, in a slice bound or through `?.` left its receiver `const` -- and `?.` on an optional value struct mutated a COPY -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 1. `scanMutationsInExpr` was opted into `lint_expr_walkers`
+  (`# expr-walker: exhaustive`), which named 12 expression variants it did not descend into;
+  two of them were PREDICTED to be bugs and confirmed before anything was changed:
+  `var t = (c.bump(), 7)` and `var v: int = c.bumpMaybe()!` both failed inside zig with
+  "expected '*T', found '*const T'" (`c` emitted `const`; `bump` takes `*Counter`).
+- **The silent half, found while fixing:** `mc?.bump()` on an optional value struct was emitted
+  as `if (mc) |_oc_val| { var _oc = _oc_val; break _oc.bump(); }` -- the method ran on a COPY,
+  so the update never reached `mc`: two calls returned the same number and `mc` kept its old
+  value. With `mc` const (as the scanner left it) this compiled -- a wrong answer, not an error.
+- **Fixed 2026-10-13.** (1) `scanMutationsInExpr` (CgHelpers) handles tuple and array literals,
+  `!`, `is nil`, casts, `old`, slices (object and bounds), `except` (base and values) and `?.`
+  (a method call marks its base, as a call's receiver does); `ident` and `zig_lit` are waived
+  with reasons, and `lambda` is waived with a MEASURED reason (BUG-569). The lint now reports 0
+  findings for it. (2) The `?.` emitter (CodeGen) captures by POINTER when the base is a local
+  optional value struct and the method needs a mutable receiver (`|*_oc_val_N|`), and calls a
+  NARROWED base (`if mc != nil`) directly on its payload, `@as(?@TypeOf(...), mc.?.bump())`.
+  Fixture `test/bug570_mutation_in_nested_expr_test.zbr` -- every reachable shape, plus two
+  consecutive `?.bump()` calls that must return different numbers -- watched red first.
+- **Gated (FULL, 2026-10-13, at Idle priority on a loaded host -- ASSEMBLED, not one
+  clean invocation):** round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical,
+  `examples_sweep` 0 regressions, every static and fast gate. Smoke and `divergence` were killed
+  at the 5400 s ceiling (smoke at 503 PASS / 0 FAIL); `full_sweep`'s two "regressions" were
+  emits killed by its 40 s timeout and pass by hand (the gate now retries a timeout and names it
+  EMITTIMEOUT); `check-mode` failed only its timing leg, `release-mode` only its GUI build
+  (exit 143). The next commit's combined FULL re-runs smoke and `divergence`.
+- **A regression this commit introduced, fixed in the next one:** `x?.reader()` on an
+  optional struct from a USED module left `x` a `var` zig names never mutated -- the scanner
+  marked the base while the emitter took the pointer path only for a struct of this module.
+  Found by pattern search 2's move-to-module sweep; fixture `bug570_dep_opt_chain_test`.
+
 ### BUG-568: a Zig error inside a USED module's generated file reached the user raw -- a temp `.zig` path and Zig's spellings -- while the same error in the root module is remapped to the `.zbr` -- FIXED 2026-10-13 (found 2026-10-13)
 - **Found by:** zebra-taocp's batch 4 (`partitionsInto` fell off its end without `return out`,
   my mistake, in the imported library). Reproduced on HEAD `25ac283` and on the N-1 anchor.

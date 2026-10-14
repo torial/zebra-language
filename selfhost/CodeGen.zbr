@@ -22,8 +22,8 @@
 #   genCall, genMemberCall, genMathCall, genArgList, genGenericCtorCall
 #   genTypeFromExpr — type-as-expr → Zig type name
 
-use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld
-use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
+use CgHelpers exposing hexLitZig, setStructReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
@@ -9865,6 +9865,19 @@ struct Generator
 
     # BUG-566: element types a for-in loop variable is bound to in the inference scope,
     # beyond the containers BUG-196 already binds.
+    # BUG-570: the arguments of a `?.` method call, as the inline loop in genExpr emits them.
+    def genOcArgs(oc: ExprOptChain)
+        var ai = 0
+        while ai < oc.args.len
+            if ai > 0
+                w.emit(", ")
+            var a = oc.args.at(ai)
+            if a.name != nil
+                emitName(a.name!)               # BUG-280
+                w.emit(" = ")
+            genExpr(a.value)
+            ai = ai + 1
+
     def isPrimitiveOrStrElem(t: Type_): bool
         branch t
             on Type_.int_
@@ -13734,10 +13747,43 @@ struct Generator
                         genExpr(oca.value)
                     w.emit(") else null)")
                     return
+                # BUG-570: `mc?.bump()` on an optional VALUE struct called the method on a COPY
+                # (`var _oc_N = _oc_val_N`), so a mutating method's update never reached `mc` --
+                # a silent wrong answer: two calls returned the same number. When the base is a
+                # local and the method needs a mutable receiver, capture by pointer instead, so
+                # the call mutates `mc` itself (scanMutationsInExpr marks `mc` var for it).
+                var oc_ptr_cap: bool = false
+                var oc_narrowed: bool = false
+                if oc.has_args and .infer_ctx != nil
+                    if oc.base is Expr.ident as ocb_id
+                        var ocp_t: Type_ = inferExpr(oc.base, .infer_ctx!)
+                        if ocp_t is Type_.optional as ocp_in
+                            if isStructValueType(ocp_in, .infer_ctx!) and receiverNeedsVar(oc.base, oc.member, .infer_ctx)
+                                oc_ptr_cap = true
+                        else if nil_narrowed as ocn_set
+                            # Narrowed to non-nil (`if mc != nil`): the base emits as `mc.?`,
+                            # already the payload and an lvalue, so call it directly; `@as(?…)`
+                            # keeps the `?.` result optional for a following `orelse`.
+                            if ocn_set.contains_(ocb_id.name) and isStructValueType(ocp_t, .infer_ctx!) and receiverNeedsVar(oc.base, oc.member, .infer_ctx)
+                                oc_narrowed = true
+                if oc_narrowed
+                    w.emit("@as(?@TypeOf(")
+                    genExpr(oc.base)
+                    w.emit("." + oc.member + "(")
+                    genOcArgs(oc)
+                    w.emit(")), ")
+                    genExpr(oc.base)
+                    w.emit("." + oc.member + "(")
+                    genOcArgs(oc)
+                    w.emit("))")
+                    return
                 w.emit("(if (")
                 genExpr(oc.base)
                 if oc.has_args
-                    w.emit(") |_oc_val_" + oc_u + "| _oc_blk_" + oc_u + ": { var _oc_" + oc_u + " = _oc_val_" + oc_u + "; break :_oc_blk_" + oc_u + " _oc_" + oc_u + ".")
+                    if oc_ptr_cap
+                        w.emit(") |*_oc_val_" + oc_u + "| _oc_blk_" + oc_u + ": { break :_oc_blk_" + oc_u + " _oc_val_" + oc_u + ".")
+                    else
+                        w.emit(") |_oc_val_" + oc_u + "| _oc_blk_" + oc_u + ": { var _oc_" + oc_u + " = _oc_val_" + oc_u + "; break :_oc_blk_" + oc_u + " _oc_" + oc_u + ".")
                     w.emit(oc.member)
                     w.emit("(")
                     var ai = 0

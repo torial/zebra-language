@@ -1,0 +1,38 @@
+# BUG-570 (pattern search 1): a mutating struct method called INSIDE a tuple literal, under
+# `!`, in an `except`, in a slice bound or through `?.` must mark its receiver mutated. The
+# mutation scanner skipped those expression kinds, so the receiver was emitted `const` and
+# zig refused the call ("expected '*T', found '*const T'"); and `?.` on an optional value
+# struct ran the method on a COPY, so its update was silently lost.
+struct Counter
+    var n: int
+    def bump(): int
+        .n = .n + 1
+        return .n
+    def bumpMaybe(): int?
+        .n = .n + 1
+        return .n
+
+struct Pair
+    var a: int
+    var b: int
+
+def main()
+    var c = Counter(0)
+    var t = (c.bump(), 7)
+    var c2 = Counter(10)
+    var v: int = c2.bumpMaybe()!
+    var c3 = Counter(20)
+    var p = Pair(1, 2)
+    var q = p except b = c3.bump()
+    var c4 = Counter(1)
+    var s = "hello"[0..c4.bump()]
+    var mc: Counter? = Counter(30)
+    var w: int = 0
+    if mc != nil
+        w = mc?.bump() orelse 0
+    # the silent half: `?.` on an optional value struct ran the method on a COPY, so two calls
+    # returned the same number and the struct never changed (41 41, n = 40)
+    var mc2: Counter? = Counter(40)
+    var x1: int = mc2?.bump() orelse 0
+    var x2: int = mc2?.bump() orelse 0
+    print("bug570: ${t.0} ${v} ${q.b} ${s} ${w} ${x1} ${x2}")

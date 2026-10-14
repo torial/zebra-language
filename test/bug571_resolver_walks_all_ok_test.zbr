@@ -1,0 +1,29 @@
+# BUG-571's other direction: the Resolver now walks these constructs, and a VALID use of each
+# must not be reported -- the catch binding, a lambda's parameters and capture variables are in
+# scope, and every kind of literal, orelse, pipeline and chained comparison resolves its names.
+def mayFail(k: int): int throws
+    if k < 0
+        raise "neg"
+    return k
+
+def twice(k: int): int
+    return 2 * k
+
+def main()
+    var n: int = 4
+    var xs = [n, n + 1]
+    var t = (n, 7)
+    var d = {"a": n}
+    var o: int? = nil
+    var g: int = o orelse n
+    var h: int = mayFail(-1) catch |err| err.message.len
+    var p: int = n -> twice()
+    var c: bool = 1 < n < 9
+    var step: int = 5
+    var f = def(x: int): int = x + step
+    var acc = def(x: int): int
+        capture
+            var base: int = 100
+        base = base + n
+        return x + base
+    print("bug571: ${xs} ${t.1} ${d["a"]} ${g} ${h} ${p} ${c} ${f(1)} ${acc(1)}")

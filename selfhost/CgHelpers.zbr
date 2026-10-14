@@ -1687,6 +1687,16 @@ def subscriptWritesThroughReference(obj: Expr, ic: InferCtx?): bool
             return true
     return false
 
+# expr-walker: exhaustive
+# expr-walker-ok: ident — a bare name is a READ; whether it is mutated is decided by the
+#   construct around it (an assignment target, a method call's receiver), never by the name.
+# expr-walker-ok: zig_lit — a raw `zig"…"` literal is opaque text; a mutation inside it is
+#   Zig's business and invisible to a structural walk (the BUG-267 shape).
+# expr-walker-ok: lambda — MEASURED, not argued (2026-10-13): marking a local the lambda body
+#   mutates as `var` does not make it work. `var c = Counter(0)` / `var f = def(): int =
+#   c.bump()` fails as "expected '*Counter', found '*const Counter'", and with `c` made `var`
+#   Zig answers "mutable 'c' not accessible from here" -- mutating an implicitly captured local
+#   is BUG-569, a capture problem, not a scan problem.
 def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
     branch expr
         on Expr.call as c
@@ -1766,6 +1776,43 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
         on Expr.chained_cmp as cc
             for op in cc.operands
                 scanMutationsInExpr(op, out, ic)
+        # Pattern search 1 (2026-10-13): the variants lint_expr_walkers named. A mutating call
+        # inside any of them left its receiver `const` -- `(c.bump(), 7)` and `c.bumpMaybe()!`
+        # both failed inside zig with "expected '*T', found '*const T'" (BUG-570).
+        on Expr.tuple_lit as tl
+            for te in tl.elems
+                scanMutationsInExpr(te, out, ic)
+        on Expr.array_lit as al
+            for ae in al.elems
+                scanMutationsInExpr(ae, out, ic)
+        on Expr.to_non_nil as tn
+            scanMutationsInExpr(tn.expr, out, ic)
+        on Expr.is_nil as isn
+            scanMutationsInExpr(isn.expr, out, ic)
+        on Expr.cast as ce
+            scanMutationsInExpr(ce.expr, out, ic)
+        on Expr.old_ as od
+            scanMutationsInExpr(od.operand, out, ic)
+        on Expr.slice as sl
+            scanMutationsInExpr(sl.object, out, ic)
+            if sl.start as sl_s
+                scanMutationsInExpr(sl_s, out, ic)
+            if sl.stop_ as sl_e
+                scanMutationsInExpr(sl_e, out, ic)
+        on Expr.except_ as ex
+            scanMutationsInExpr(ex.base, out, ic)
+            for ef in ex.fields
+                scanMutationsInExpr(ef.value, out, ic)
+        on Expr.opt_chain as oc
+            # `mc?.bump()` is a method call on `mc` when it has arguments -- the same decision
+            # as a call's receiver above.
+            if oc.has_args
+                if oc.base is Expr.ident as oc_id
+                    if receiverNeedsVar(oc.base, oc.member, ic)
+                        out.add(oc_id.name)
+                for oa in oc.args
+                    scanMutationsInExpr(oa.value, out, ic)
+            scanMutationsInExpr(oc.base, out, ic)
         else
             pass
 

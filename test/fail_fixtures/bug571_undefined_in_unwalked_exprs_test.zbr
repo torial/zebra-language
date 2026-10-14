@@ -1,0 +1,22 @@
+# BUG-571 (pattern search 1): an undefined name inside each of these constructs must be refused
+# by the FRONT END. The Resolver walked 13 of the 35 expression kinds, so every one of these
+# passed `zebra -c` (and the LSP) and reached zig as "use of undeclared identifier".
+def mayFail(k: int): int throws
+    return k
+
+def f(k: int): int
+    return k
+
+def main()
+    var a = [1, noSuchInList]
+    var b = {noSuchInSet}
+    var c = {"k": noSuchInDict}
+    var d = (1, noSuchInTuple)
+    var e: int? = nil
+    var g: int = e orelse noSuchInOrelse
+    var h: int = mayFail(1) catch |err| noSuchInCatch
+    var i = noSuchInPipeline -> f()
+    var j: bool = 1 < noSuchInChain < 3
+    var k = def(x: int): int = x + noSuchInLambda
+    var m = @[noSuchInArray]
+    print("${a} ${b} ${c} ${d} ${g} ${h} ${i} ${j} ${k(1)} ${m}")
