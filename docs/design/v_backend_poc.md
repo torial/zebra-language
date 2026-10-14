@@ -1093,6 +1093,63 @@ night: BUG-563 (a list of lambdas types as List(str)), BUG-564 (a
 statement lambda's indent inside a multi-line call), BUG-565 (`@[...]`
 only inline after `in`); none is in this backend's way yet.
 
+## V master's new compiler (2026-10-13)
+
+Sean's question -- V's other compiler, the one with the flat AST and the
+SSA path, is the better place to focus; had I tested its optimized
+output? -- had the honest answer no: every number above came through
+0.5.2's classic compiler, and the optimization was the C compiler's. So
+master was built here (`C:/Projects/v-master`, commit 37b596b: seven
+attempts, the Windows bootstrap being broken today in three ways -- the
+module cache's native object that nothing on Windows builds or links,
+MSVC's 16 KB string-literal limit on the generated second stage, and
+clang found without its environment -- and finally built through a
+`clang` shim onto zig cc that spells the mingw target as zig does,
+passes `-fwrapv -fno-sanitize=undefined` since zig cc traps the signed
+overflow V's literal parser relies on wrapping through, and compiles the
+module cache's one native source alongside a stage) and our emitted
+programs put through it.
+
+What master's new compiler is, read from its sources: a flat AST, a
+transformer, `markused` dead-code elimination, a direct emitter to C
+(`cleanc`), and under `-prod` `-O3 -flto` per unit with content-cached
+objects and a profile-guided build script; V's own optimizer -- mem2reg,
+dominators, phi, fold, dce, a verifier, MIR lowering -- exists only on
+the ARM64 native path, macOS only. On this host its code quality is
+still clang's or MSVC's, on cleaner C with the dead code gone first.
+
+**The dialect it demanded**, rounds 32 to 36, all of which keep every
+0.5.2 witness identical: an option cast to its own type is refused
+(`zopt_id(x)`, an identity function, in its place); a mutable binding of
+an element reached through an immutable temporary is refused (`unsafe
+{ }` around the index loop's binding); a narrowed read is spelled by its
+TARGET -- the function form `zunwrap(zopt_id(x))` by default, since
+0.5.2 miscompiles V's `or` form used directly as a call argument of a
+generic-struct pointer type, and V's `x or { panic }` bound to a
+temporary first where the value flows into an interface, since master
+loses the method table of a value that comes out of a generic call
+(vlang/v#30470) or of a field read in `or` form inside a closure
+capturing `[mut self]` (every try block's body; the shape is on the
+ticket); an option of a struct reference into an option of an interface
+gets no conversion (vlang/v#30471); an option- or result-typed global
+declared without an initializer is emitted type-erased (vlang/v#30473:
+six lines), so the emitter's `__global` block carries `= ?T(none)`; and
+`os.system` is deprecated, an error under `-prod`, so the runtime's
+`sys.execInherit` runs through `os.new_process`. All three master
+tickets went through the review protocol first.
+
+**What runs under master:** the tween, datastore (SQLite), health (21
+modules), player_handler, round and guitree tests, and the whole demo --
+168 lines, identical to the harness -- all under master's compiler with
+tcc. Master's checker takes 3m16 on the demo's 37,000 lines where
+0.5.2's takes 44 s. Master's `-prod` through zig cc links its
+precompiled module-cache objects and fails on long-double math symbols
+(`frexpl`, `modfl`, `atanl`) that master's runtime references and zig's
+bundled mingw libc does not provide; `-prod` through MSVC is the open
+try. Until an optimized master binary runs, the "better place to focus"
+has no number beside the 7.4 s row -- but the dialect is in, the engine's
+programs run on both compilers, and three more V bugs are filed.
+
 ## The distance to a full backend, measured on the Zig emitter
 
 `selfhost/CodeGen.zbr` is 21,402 lines in 495 functions. Counted by function
