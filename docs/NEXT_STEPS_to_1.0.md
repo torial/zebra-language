@@ -44,10 +44,15 @@ as they land, so this list stays the one place that says what is left.
      module" transform over the must-fail fixtures and the output_sweep corpus -- messages must
      still map to .zbr with no `.zig:` location, outputs must stay identical. STARTED
      2026-10-13: the transform (every declaration but `main` into a module the program `use`s
-     `exposing`; `extend` stays, it is file-scoped) over the smoke_run fixtures, 120 of 393 run,
-     23 diffs: BUG-570's follow-up and BUG-574..577 FIXED, BUG-579/580/581 filed, two are
-     BUG-519. Left: the other 273 fixtures, and the must-fail half (messages must still map).
-   - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381):
+     `exposing`; `extend` stays, it is file-scoped) over ALL smoke_run fixtures (2026-10-14:
+     the 243 that fit, 38 diffs): BUG-570's follow-up and BUG-574..577 FIXED; BUG-579..581 and
+     BUG-584..588 filed; six are BUG-519. Left: fix the filed ones (most share one cause --
+     dep-module facts that never reach ModuleTypes), turn the transform into a tool, and the
+     must-fail half (messages must still map).
+   - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381).
+     STARTED 2026-10-14: one name, two types, sibling scopes, 10 binding sites x 30 type pairs
+     (3,000 programs): BUG-583 (destructure and `is ... as` bindings) and BUG-582 (an
+     enumerate over a literal, found in passing). The alpha-rename half is not built yet:
      collide names on purpose (sibling blocks, same field name and different type in two
      classes/modules) and alpha-rename to unique names; neither may change a program's output.
    - [ ] **Half-built constructs that parse** (BUG-563, 565): a full-build leg for doc examples

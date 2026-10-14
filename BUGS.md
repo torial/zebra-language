@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-581. Next new bug: BUG-582.**
+**Last bug number generated: BUG-588. Next new bug: BUG-589.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,71 @@
 > measured in.
 
 ---
+
+### BUG-588: `Json.parse(Point, s)` with `Point` from a USED module fails inside zig "expected type 'str', found 'type'" -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 2 (json_parse_typed_test split): the typed-parse dispatch
+  recognises a target type declared in this module only.
+
+### BUG-587: a USED module's union with a keyword-named variant, and a top-level `def error()` exposed from a used module, name undeclared identifiers -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 2 (bug280_keyword_idents: `Shape.volatile(12)` -> "use of
+  undeclared identifier 'Shape'"; bug280_freed_words_test: `error()` -> "use of undeclared
+  identifier 'error'"). BUG-280/281's escaping and prefixing of keyword-named things is not
+  applied to the exposed-name bindings genUse emits.
+
+
+### BUG-586: a mutating method of a USED module's struct, named like a builtin reader (`count`, `hash`), leaves the receiver `const` -- zig "expected '*T', found '*const T'" -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 2 (bug455_struct_method_named_like_builtin,
+  bug453_cue_field_call_map_key split).
+- **Cause:** BUG-455's `_struct_recv` table (the exact `*` / `*const` receiver of every struct
+  method) is built from THIS module's declarations; a dep struct falls back to the method-name
+  heuristic, which calls `count` a reader. The dep's receivers have to cross the boundary
+  (ModuleTypes), as BUG-574..577 did for interfaces, generics, tags and aliases.
+
+
+### BUG-585: `[]` passed to a USED module's generic function -- zig "expected type '*T', found 'T'" -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 2 (bug463_empty_list_arg, bug501_generic_empty_list split):
+  `first(int)([])`, `count(int)([])` with the generic function in the dep. BUG-463/501's
+  parameter-typed empty list covers this module's functions only.
+
+
+### BUG-584: a value into a `^T` slot of a USED module's struct is not boxed -- zig "expected type '?*T', found 'T'" -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 2, the move-to-module transform: bug299_struct_into_boxed_slot,
+  bug473_boxed_union_tag and bug507_hat_optional_capture split into two modules. A field
+  assignment (`holder.opt_pair = Pair(...)`, `sb.s = Shape.box(9)`) and a constructor argument
+  (`Holder(Shape.square(2.0))`) into a dep type's `^T` / `^T?` field. BUG-299/473/507 fixed
+  these for types declared in the same module.
+
+
+### BUG-583: one name, two types in SIBLING blocks -- the second binding is judged by the first: a destructure is refused, an `is ... as x` payload and a re-annotated `List` print with the wrong format -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 3 -- a generator that declares `x` in two sibling scopes of one
+  function with different types and uses it in a type-dependent way (10 binding sites x 30
+  type pairs, one program each, expected output derived by construction). Shapes seen:
+  - `var x: int` in one `if`, `var (x, z) = ("ab", 0)` in a sibling: the checker refuses
+    `x.upper()` -- "'int' has no method 'upper'" (a FALSE refusal: the destructure does not
+    rebind the name).
+  - the same with `if u is U_str.v as x`: zig "cannot format slice without a specifier" (the
+    print chose the int format).
+  - `var x: str` then `var x: List(int)` in a sibling block -- at nearly every site pair the
+    list prints with `{s}`, zig "expected type '[]const u8', found '*array_list...'".
+- **Cause (to confirm per shape):** BUG-566's class -- state keyed by NAME in a scope the
+  language does not have (inference is flat per function; codegen's string-local name sets
+  are not cleared when a name is rebound). BUG-566 fixed the for-in binding only.
+- **The matrix, 2026-10-14:** 3,000 programs, 1,105 BAD. 570 are BUG-582 (any pair with the
+  literal-enumerate site). Of the other 536, nearly all involve a DESTRUCTURE (`var (x, z) =`)
+  or an `is ... as x` binding, in EITHER position and against almost every other site (18-22
+  of 30 type pairs each); `def(x: T)` lambda parameters, `branch ... on V as x` arms and
+  for-in rebind correctly (about 1 per pair: the str -> List print format). So the two binding
+  forms neither rebind a stale name nor shadow it for what follows.
+- **The generator** was a scratch tool at the time of filing; it becomes a tool with pattern
+  search 3.
+
+
+### BUG-582: `for i, x in <list literal>` fails inside zig "no field or member function named 'iterator' in 'List(str)'" -- OPEN (found 2026-10-14)
+- **Found by:** pattern search 3's collision generator, whose enumerate site was written over a
+  literal. No collision is needed: `for i, x in ["ab", "cd"]` alone fails; the same loop over a
+  variable (`var xs = [...]` / `for i, x in xs`) prints `0 ab` / `1 cd`. A half-built
+  construct (shape 4): the index form's emit assumes a named list.
+
 
 ### BUG-581: a capture closure returned by a USED module's factory fails inside zig "expected type '*T', found '*const T'" when called -- OPEN (found 2026-10-13)
 - **Found by:** pattern search 2 (closure_factory_test, fn_type_annotation_test split into
