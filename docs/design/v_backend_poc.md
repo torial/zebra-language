@@ -1144,10 +1144,17 @@ tickets went through the review protocol first.
 modules), player_handler, round and guitree tests, and the whole demo --
 168 lines, identical to the harness -- all under master's compiler with
 tcc. Master's checker takes 3m16 on the demo's 37,000 lines where
-0.5.2's takes 44 s. Master's `-prod` through zig cc links its
-precompiled module-cache objects and fails on long-double math symbols
-(`frexpl`, `modfl`, `atanl`) that master's runtime references and zig's
-bundled mingw libc does not provide. **`-prod` through MSVC builds and
+0.5.2's takes 44 s. Master's `-prod` through zig cc first failed its
+link on long-double math and `isnan` symbols; that was not the module
+cache (a build without it fails the same), not zig's libc (a test
+program using the names links) and not the generated C (the kept C has
+none of them) -- master passes `-O3 -flto` inline for its unit compiles,
+and zig cc's link loses exactly those symbols under LTO, the loss the
+compiler-binary work had met in the response file; with `-flto`
+dropped everywhere the optimized master binary through zig cc **builds
+in 5m13 and runs the demo identical**. Its timing on this host came back
+INVALID from the guarded instrument (another session's daily gate at 37
+to 65 percent), which is the instrument working. **`-prod` through MSVC builds and
 runs the demo identical** (4m12 to build), and that is the first
 optimized number from the new compiler, on the same busy daytime host as
 the table above, three runs each:
