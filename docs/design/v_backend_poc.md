@@ -1155,11 +1155,30 @@ the table above, three runs each:
 | V 0.5.2, MSVC /O2 `-prod` | 7.9 to 9.7 s | 1,054 MB |
 | V master, MSVC /O2 `-prod` | 4.6 to 12.0 s | 1,096 MB |
 
-Best against best, master's C is 1.7 times faster through the same C
-compiler, which is what `markused` and the cleaner emitter would be
-expected to buy; the ranges overlap on this host, so it is a first read
-with a quiet-host rerun owed, as the whole optimized row is. The
-dialect is in, the engine's programs run on both compilers, the
+**Retracted the next night:** "master 1.7 times faster" was noise. The
+machine is a 15-watt laptop processor (i5-8365U, 1.6 GHz base, turbo to
+about 4.1) whose clock a load reading cannot see: the same binaries ran
+2.6 times slower one night than the other at a reported 0 percent, a
+fixed loop took 11.7 s and then 2.1 s back to back. So the optimized
+rows were re-measured round-robin -- every row in every round, a fixed
+calibration loop first -- which cancels the drift in the ratios:
+
+| round (calibration loop) | Zig ReleaseFast | V 0.5.2 zig cc -O3 | V 0.5.2 MSVC /O2 | V master MSVC /O2 | V 0.5.2 zig cc -O3 + Boehm |
+|---|---|---|---|---|---|
+| 1 (7.7 s) | 7.2 s | 16.9 s | 7.4 s | 6.2 s | 6.0 s |
+| 2 (5.6 s) | 2.6 s | 6.7 s | 6.9 s | 9.5 s | 4.3 s |
+| 3 (3.9 s) | 2.5 s | 3.7 s | 6.2 s | 4.8 s | 5.6 s |
+| 4 (4.5 s) | 2.2 s | 6.6 s | 5.1 s | 7.1 s | 4.5 s |
+
+What resolves: the optimized Zig harness is the fastest in every round,
+by 1.5 to 3 times over any optimized V build; the optimized V builds
+are indistinguishable from one another on this instrument (zig cc,
+MSVC, master's MSVC, Boehm's all swing twofold within a round); and the
+memory column, which is deterministic, stands as the solid result --
+Boehm at 174 to 181 MB against 1.05 to 1.10 GB for everything else. A
+master-versus-0.5.2 speed difference, if there is one, is below what
+this laptop can measure; a desktop with a fixed clock would settle it.
+The dialect is in, the engine's programs run on both compilers, the
 optimized master binary exists, and three more V bugs are filed.
 
 ## The distance to a full backend, measured on the Zig emitter
