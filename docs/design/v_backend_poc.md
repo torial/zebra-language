@@ -761,6 +761,28 @@ unpinned; `zig cc` needs V's `-Wl,-stack=N` dropped and links without
 `-flto` (long-double math symbols go missing with it) -- `vbin/zigcc.py`
 is the wrapper.
 
+Where each of the wrapper's adjustments belongs, traced on 2026-10-14
+(Sean asked whether they were worth reporting; none is new). V keys a
+C compiler's kind on its FILE NAME before it asks the binary --
+`contains('gcc')` is checked before `--version` is read -- so
+`zigcc.cmd` has been driven as GCC by both versions (a copy named
+`zigclang.cmd` is clang to them, and `-showcc` shows the difference:
+under 0.5.2 the gcc path adds `-flto -fno-strict-aliasing -std=c99`,
+the clang path adds no `-flto` on Windows at all, an exclusion from
+2022 (d4fc8601, vlang/v#13470: clang over binutils ld could not link
+bitcode); master's rewritten driver adds `-flto` to both). The LTO
+link loss is zig's own: ziglang/zig#31958 on Codeberg (2026-04-19,
+Zig 0.16.0, open, the same symbol list, "does not occur if zigc
+symbols are not weak"), reproduced here from a nine-line C file. Not
+V's: V's Windows CI drives msys2's clang, which links through lld,
+where LTO works; the host's LLVM clang 22 targets MSVC and builds
+nothing for V in debug under either version, so no "clang on Windows"
+claim could be witnessed here. The stack flag: master already emits
+`-Wl,--stack=`, which zig cc accepts; 0.5.2's `-stack=` it refuses.
+The mingw target spelling and the missing `-fwrapv` are in #30495,
+the module cache's object in #30493. So the wrapper stays as it is,
+and a zig release that closes #31958 retires its `-flto` line.
+
 **What a V-built Zebra compiler is and is not.** It compiles Zebra to
 Zig exactly as the Zig-built one does, so it can stand in for it
 wherever `--emit-zig` is the job (the engine's regen, a `zebra build`
