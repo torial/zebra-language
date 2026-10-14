@@ -1055,7 +1055,13 @@ class VGen
                     gt2 = "voidptr"
                 .global_types.set(gname, gt2)
                 .line("__global (")
-                .line("\t" + gname + " " + gt2)
+                if gt2.startsWith("?")
+                    # an option-typed global carries its initializer: declared by
+                    # type alone, master's compiler emits the type-erased option
+                    # (vlang/v, repro_v9)
+                    .line("\t" + gname + " = " + gt2 + "(none)")
+                else
+                    .line("\t" + gname + " " + gt2)
                 .line(")")
                 .global_inits.add(gname + " = " + rhs)
                 .has_globals = true
