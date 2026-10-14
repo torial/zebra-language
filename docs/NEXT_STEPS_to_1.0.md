@@ -33,13 +33,20 @@ as they land, so this list stays the one place that says what is left.
 1a. **Pattern searches (adopted 2026-10-13, Sean: "a short term plan of attack")** -- the nine
    bugs zebra-taocp and the GameEngine found on 2026-10-12/13 fall into six shapes, and each
    shape is searchable instead of waited for. In order of value:
-   - [ ] **Walkers that skip expression variants** (BUG-559, BUG-562): opt the mutation scanner
+   - [x] **Walkers that skip expression variants** (BUG-559, BUG-562): opt the mutation scanner
      (`scanMutationsInExpr`) and its siblings into `lint_expr_walkers`; fix what it names.
      Two predicted bugs CONFIRMED before starting: a mutating struct call inside a tuple
-     literal or under `!` leaks "expected '*T', found '*const T'".
+     literal or under `!` leaks "expected '*T', found '*const T'". DONE 2026-10-13: BUG-570,
+     BUG-571 (the Resolver's PARSE-tree walker, which the lint could not see -- it checks the
+     `PNode` tree too now), BUG-569 filed (a decision). Left: `collectAllIdents` misses nine
+     variants (escape analysis; untestable until BUG-563), `Checker.walkExpr` misses `?.`.
    - [ ] **Root-module-only handling** (BUG-568, 560, 527, 536/539): a "move it into a used
      module" transform over the must-fail fixtures and the output_sweep corpus -- messages must
-     still map to .zbr with no `.zig:` location, outputs must stay identical.
+     still map to .zbr with no `.zig:` location, outputs must stay identical. STARTED
+     2026-10-13: the transform (every declaration but `main` into a module the program `use`s
+     `exposing`; `extend` stays, it is file-scoped) over the smoke_run fixtures, 120 of 393 run,
+     23 diffs: BUG-570's follow-up and BUG-574..577 FIXED, BUG-579/580/581 filed, two are
+     BUG-519. Left: the other 273 fixtures, and the must-fail half (messages must still map).
    - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381):
      collide names on purpose (sibling blocks, same field name and different type in two
      classes/modules) and alpha-rename to unique names; neither may change a program's output.

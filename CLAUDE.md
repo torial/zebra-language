@@ -1809,6 +1809,18 @@ python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUI
                                 #   report if <25 variants extract, if its list_lit/int_lit
                                 #   controls flip, or if NO walker opted in — a gate with
                                 #   nothing to check must not print clean. 0 = clean.
+                                #   TWO TREES SINCE 2026-10-13 (BUG-571): the Resolver walks
+                                #   the PARSE tree (`PNode`), which this gate could not see --
+                                #   `resolveExpr` handled 13 of its expression kinds and an
+                                #   undefined name inside a list literal, `orelse`, `catch`, a
+                                #   pipeline or a lambda passed the front end. PNode walkers
+                                #   opt in with `# pnode-walker: exhaustive` (waiver
+                                #   `# pnode-walker-ok: <variant> <reason>`); oracle Parser.zbr's
+                                #   `union PNode`, its `expr_*` variants only (the union mixes
+                                #   declarations and statements), controls `expr_list_lit`
+                                #   bearing / `expr_int` leaf, and it REFUSES if either tree has
+                                #   no walker opted in. Red-checked with the REAL attacker: the
+                                #   pre-fix Resolver, marked, gives 12 findings and exit 1.
 bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK tier):
                                 #   `use foo` resolving to a prebuilt `foo.lib`/`.a` must
                                 #   LINK and the foreign call must return the right value.
@@ -2340,7 +2352,7 @@ than "what do we know":
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 36 probes / 376 assertions | <!-- doc-gen: 36 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 376 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
-| **an Expr walker descends into every variant that holds exprs** | **`lint_expr_walkers`** (oracle = `Ast.zbr`) | 13 opted in; the gate prints the ratio | <!-- doc-gen: 13 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
+| **an Expr walker descends into every variant that holds exprs** (and a PNode walker into every expression-bearing parse node) | **`lint_expr_walkers`** (oracles = `Ast.zbr`'s `Expr`, `Parser.zbr`'s `PNode`) | 13 opted in; the gate prints the ratio | <!-- doc-gen: 13 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_fallthrough` (`lint_interp_escape` retired 2026-09-15 with the bootstrap) | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
@@ -3285,7 +3297,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **800** <!-- doc-gen: 800 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **811** <!-- doc-gen: 811 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

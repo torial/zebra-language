@@ -1,0 +1,16 @@
+# BUG-578: a diagnostic in a function body is reported ONCE. The method arm walked the body
+# twice and merged the second walk's errors past addErr's duplicate filter (BUG-319), so each
+# of these printed twice -- in a top-level def and in a struct method alike. (BUG-285 fixed the
+# same doubling for an un-annotated var-init only.)
+struct K
+    var a: int
+    def shout(): str
+        var t: str = "a"
+        return t.toUpper()
+
+def loud(): str
+    var u: str = "b"
+    return u.toLower2()
+
+def main()
+    print(K(1).shout() + loud())

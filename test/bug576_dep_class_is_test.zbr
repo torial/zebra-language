@@ -1,0 +1,10 @@
+# BUG-576: `x is C` where C is a class from a USED module. The class's type tag was a
+# file-private constant of that module, so this failed inside zig "use of undeclared
+# identifier '_ttag_Dog'". (The interface half, `v is Show` on an interface value, is
+# still open -- see the ledger.)
+use bug576_dep_class_is_lib exposing Dog, Cat
+
+def main()
+    var d = Dog("rex")
+    var c = Cat("tom")
+    print("bug576: ${d is Dog} ${c is Dog} ${c is not Dog} ${d is not Dog}")

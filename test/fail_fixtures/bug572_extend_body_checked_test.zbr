@@ -1,0 +1,9 @@
+# BUG-572: an `extend` body is checked by the front end. `toUpper` is not a str method (it is
+# `upper`), and before the fix `zebra -c` passed this -- the checker had no arm for `extend`
+# -- so zig reported it later with no column. QUICKSTART §42's own example had this line.
+extend str
+    def shout(): str
+        return this.toUpper() + "!"
+
+def main()
+    print("hello".shout())

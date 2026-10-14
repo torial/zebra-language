@@ -1,0 +1,37 @@
+# BUG-573: every `extend` target QUICKSTART §42 documents is callable, not only `str`.
+# Before the fix the checker refused each call below "'<T>' has no method '<m>'".
+struct Q
+    var a: int
+
+class Counter
+    var n: int
+    cue init(n: int)
+        .n = n
+
+extend int
+    def twice(): int
+        return this * 2
+
+extend float
+    def half(): float
+        return this / 2.0
+
+extend List(str)
+    def joinWith(sep: str): str
+        return this.join(sep)
+
+extend Q
+    def next(): int
+        return this.a + 1
+
+extend Counter
+    def doubled(): int
+        return this.n * 2
+
+def main()
+    var n: int = 21
+    var f: float = 5.0
+    var xs = ["a", "b", "c"]
+    var q = Q(6)
+    var c = Counter(4)
+    print("bug573: ${n.twice()} ${f.half()} ${xs.joinWith("-")} ${q.next()} ${c.doubled()}")

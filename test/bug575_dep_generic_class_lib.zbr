@@ -1,0 +1,7 @@
+# Helper module for bug575_dep_generic_class_type_test: a generic CLASS declared here.
+class Box(T)
+    var v: T
+    cue init(v: T)
+        .v = v
+    def get(): T
+        return .v

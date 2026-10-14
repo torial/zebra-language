@@ -1,0 +1,10 @@
+# Helper module for bug570_dep_opt_chain_test: a value struct declared in ANOTHER module.
+struct Tally
+    var n: int
+    cue init(n: int)
+        .n = n
+    def bump(): int
+        .n = .n + 1
+        return .n
+    def doubled(): int
+        return .n * 2

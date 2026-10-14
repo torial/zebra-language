@@ -1003,6 +1003,8 @@ class ASTBuilder
             else
                 return nil
 
+    # pnode-walker: exhaustive
+    # pnode-walker-ok: expr_named_arg built by the expr_call arm, the only place a named argument can stand
     def buildExpr(pn: PNode): Expr throws
         branch pn
             # BUG-288: literals carry their REAL position now. `zspan()` here was the

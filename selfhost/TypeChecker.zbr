@@ -1100,14 +1100,13 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # BUILTIN receiver, and the unknown-method refusal must see them. They are
                 # registered under a pseudo-class named for the builtin (`$extend:str`), so
                 # the table lookup and the return type both come from one place.
-                if ext.target is TypeRef.named as ext_nr
-                    var ext_key: str = extendKeyFor(ext_nr.name)
-                    if ext_key != ""
-                        var ect: ClassTypes = ClassTypes(ext_key)
-                        if mt.classOf(ext_key) as prev_ect
-                            ect = prev_ect
-                        addClassMembers(mt, ect, ext.members)
-                        mt.addClass(ect)
+                var ext_key: str = extendKeyFor(extendTargetName(ext.target))
+                if ext_key != ""
+                    var ect: ClassTypes = ClassTypes(ext_key)
+                    if mt.classOf(ext_key) as prev_ect
+                        ect = prev_ect
+                    addClassMembers(mt, ect, ext.members)
+                    mt.addClass(ect)
             on Decl.interface_ as iface
                 # Record which interfaces this interface extends for transitive conformance.
                 if iface.ifaces.len > 0
@@ -1788,10 +1787,16 @@ class InferCtx
         if .dep_types.classConformsTo(class_name, iface_name)
             return true
         var bare: str = stripModulePrefix(class_name)
-        if bare != class_name
-            if .module_types.classConformsTo(bare, iface_name)
+        # BUG-574: the INTERFACE may be qualified too (`var s: lib1.Show = d`); conformance
+        # is recorded under the bare names. A generic key (`Comparable(lib1.Score)`) is
+        # left whole: stripModulePrefix splits at the LAST dot, inside the argument.
+        var bare_if: str = iface_name
+        if not iface_name.contains("(")
+            bare_if = stripModulePrefix(iface_name)
+        if bare != class_name or bare_if != iface_name
+            if .module_types.classConformsTo(bare, bare_if)
                 return true
-            return .dep_types.classConformsTo(bare, iface_name)
+            return .dep_types.classConformsTo(bare, bare_if)
         return false
 
 # Strip the leading "Module." from a qualified type name, leaving the
@@ -1841,13 +1846,22 @@ def isString(t: Type_): bool
 # set sort sortBy remove at` -- codegen dispatches those by NAME for containers, and on
 # a str they compiled to nonsense or to a Zig error about `.items`. Refusing them is the
 # point.
-# The pseudo-class an `extend <Builtin>` block registers under: "" for a target that is
-# not one of the builtins the tables cover.
+# The pseudo-class an `extend <T>` block registers under. BUG-573: this answered only for
+# `str` and the bare name `List`, so every other form QUICKSTART §42 documents -- `extend
+# int`, `extend List(str)`, `extend` on a user class or struct -- registered nothing, and
+# the unknown-method refusals (BUG-369) rejected the calls. Every target has a key now; a
+# generic target registers under its base name (`List(str)` -> `$extend:List`).
 def extendKeyFor(target: str): str
-    if target == "str"
-        return "$extend:str"
-    if target == "List"
-        return "$extend:List"
+    if target == ""
+        return ""
+    return "$extend:" + target
+
+# The name an `extend` target registers under: `str`, `int`, `Q`, `List` for `List(str)`.
+def extendTargetName(target: TypeRef): str
+    if target is TypeRef.named as en
+        return en.name
+    if target is TypeRef.generic as eg
+        return eg.name
     return ""
 
 def strMethodKnown(name: str): bool
@@ -3544,6 +3558,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # stays untyped here as it always was.
                             if mem.member == "to"
                                 return Type_.unknown_
+                            if ctx.methodReturnAny("$extend:int", mem.member) as iext_ret   # BUG-573
+                                return iext_ret
                             ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                        "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString; abs, min, max, pow are Math.* functions)")
                             return Type_.unknown_
@@ -3554,6 +3570,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if mem.member == "toFloat" or mem.member == "toFloat32"
                                 return Type_.float_
+                            if ctx.methodReturnAny("$extend:float", mem.member) as fext_ret   # BUG-573
+                                return fext_ret
                             ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                        "'float' has no method '" + mem.member + "' (toInt/toFloat32/toString; abs, floor, ceil, round, sqrt are Math.* functions)")
                             return Type_.unknown_
@@ -3627,6 +3645,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # are merged in pass 2) refuses an unknown member here, naming
                             # its methods. Interfaces, dep classes and the stdlib-backed
                             # names below are left to the arms that know them.
+                            # BUG-573: an `extend` block on a user type adds methods too.
+                            if ctx.methodReturnAny("$extend:" + tn, mem.member) as uext_ret
+                                return uext_ret
                             if ctx.module_types.classOf(tn) as user_ct
                                 if user_ct.is_class or user_ct.is_struct
                                     if not user_ct.is_interface and mem.member != "toString"
@@ -7044,6 +7065,7 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 var scope_ctx: InferCtx = InferCtx(ctx.module_types, ctx.current_class)
                 scope_ctx.withDepTypes(ctx.dep_types)
                 scope_ctx.withFile(file)
+                scope_ctx.withSelfType(ctx.self_type_override)          # BUG-572: extend bodies
                 if dm.return_type != nil
                     scope_ctx.withReturnType(typeFromRef(dm.return_type!))
                 for pp in dm.params
@@ -7052,8 +7074,11 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                         ppt = typeFromRef(pp.type_!)
                     scope_ctx.bind(pp.name, ppt)
                 walkStmts(dm_stmts, scope_ctx)
+                # BUG-578: through addErr, not `ctx.errors.add` -- the second walk re-infers
+                # every expression the first one did, and BUG-319's exact-duplicate filter
+                # lives in addErr. Appending past it printed each body diagnostic twice.
                 for scp_err in scope_ctx.errors
-                    ctx.errors.add(scp_err)
+                    ctx.addErr(scp_err.file, scp_err.line, scp_err.col, scp_err.message)
                 # 2026-10-11: the walk's WARNINGS were dropped here -- only errors were
                 # carried back -- so the `using` deprecation below walkStmt never printed.
                 # addWarn drops exact duplicates of what the main pass already said.
@@ -7061,6 +7086,22 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     ctx.addWarn(scp_w.file, scp_w.line, scp_w.col, scp_w.message)
                 tc_result.store(ctx.current_class, dm.name, scope_ctx)
                 ctx.current_class = saved_class
+        on Decl.extend_ as dex
+            # BUG-572: an extension method's body was never checked -- checkDecl had no arm
+            # for `extend`, so `zebra -c` (and the LSP) passed an unknown method in it and
+            # zig reported it later with no column (QUICKSTART §42's own example called
+            # `this.toUpper()`). Each member is checked as a method, with `this` typed as
+            # the target -- a primitive, a List, or a user type, whose fields `.x` reaches.
+            var dex_saved_cls: str = ctx.current_class
+            var dex_saved_self: Type_? = ctx.self_type_override
+            var dex_name: str = extendTargetName(dex.target)
+            ctx.withSelfType(typeFromRef(dex.target))
+            if ctx.module_types.classOf(dex_name) != nil
+                ctx.current_class = dex_name
+            for dex_m in dex.members
+                checkDecl(dex_m, file, ctx, tc_result)
+            ctx.current_class = dex_saved_cls
+            ctx.withSelfType(dex_saved_self)
         on Decl.init as din
             # BUG-512 (2026-10-01): a `cue init` body was never checked -- in a class OR a
             # struct; checkDecl had no arm for it, so every statement-level refusal was

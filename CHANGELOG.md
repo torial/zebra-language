@@ -61,6 +61,23 @@ confirmed via `tools/bootstrap_check.sh`.
   through `?.` on an optional value struct ran on a copy, so its change was silently lost. And
   a mutating struct method called inside a tuple literal, under `!`, in an `except` or in a
   slice bound no longer leaves its receiver `const` (which zig refused).
+- **`extend` works on every target QUICKSTART §42 documents (BUG-573),** not only `str`: an
+  extension method on `int`, `float`, `List(T)` or a user class or struct was refused at its
+  call site ("'int' has no method 'twice'"), and once accepted it did not compile. And an
+  `extend` body is checked like any method (BUG-572) -- `zebra -c` and the editor said nothing
+  about an unknown method in one, and the build failed later inside zig. §42's own example
+  called `this.toUpper()`; the method is `upper()`.
+- **Moving declarations into a module you `use` no longer breaks them** -- found by moving
+  every declaration but `main` out of the test programs and comparing output. A class from a
+  used module now converts to that module's interface in a `var`, a `^Iface` var, a
+  `List.add`, a `return`, and as a generic interface (BUG-574; a call argument and a field
+  already did), and `var s: lib.Show = d` is no longer refused "does not implement". A generic
+  class from a used module works in an annotation, a return type or a parameter (BUG-575);
+  `x is Dog` works with `Dog` from a used module (BUG-576); and an exposed type alias or
+  refinement type compiles (BUG-577). `x?.bump()` on an optional struct from a used module
+  updates `x` (BUG-570's follow-up). Still open: an exposed namespace (BUG-579), `v is Iface`
+  on an interface value (BUG-580), and a closure returned by a used module's factory (BUG-581).
+- **A diagnostic inside a function body is reported once (BUG-578),** not twice.
 - **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
   list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a
   pipeline or a lambda body it was missed by `zebra -c` (and so by the editor) and surfaced only

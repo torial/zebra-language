@@ -348,6 +348,8 @@ class Resolver
     # -c` and the LSP said nothing, and zig reported "use of undeclared identifier" later, with
     # no column. Every expression-bearing kind is walked now; the rest are leaves (literals,
     # nil, this, result, zig"..." text, a format spec).
+    # pnode-walker: exhaustive
+    # pnode-walker-ok: expr_zig_lit its `${Type}` names are checked by the type checker, which reports an unknown one
     def resolveExpr(expr: PNode) throws
         branch expr
             on PNode.expr_orelse as por

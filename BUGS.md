@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-571. Next new bug: BUG-572.**
+**Last bug number generated: BUG-581. Next new bug: BUG-582.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,38 @@
 > measured in.
 
 ---
+
+### BUG-581: a capture closure returned by a USED module's factory fails inside zig "expected type '*T', found '*const T'" when called -- OPEN (found 2026-10-13)
+- **Found by:** pattern search 2 (closure_factory_test, fn_type_annotation_test split into
+  two modules): `var c = makeCounter(10)` / `c()` with `makeCounter` in the dep.
+- **Cause:** a capture closure mutates its own state when called, so its local must be `var`.
+  Codegen knows a function is a closure FACTORY only from THIS module's declarations
+  (`collectClosureFactories`), so a dep factory's result is emitted `const` and the runtime's
+  call helper takes `*T`. Same shape as BUG-575/576/577/579: a registry filled from the root
+  module only.
+- **Fix direction:** carry "returns a capture closure" across the boundary (ModuleTypes), or
+  decide `var` from the inferred type of the value rather than from the callee's name.
+
+### BUG-580: `v is Show` on an interface VALUE, with `Show` declared in a USED module, names an undeclared `_zbr_implements_Show` -- OPEN (found 2026-10-13)
+- **Found by:** pattern search 2 (generic_class_iface_test split into two modules).
+- **Cause:** `_zbr_implements_<I>` is a file-private function of the interface's module, and it
+  enumerates the classes declared IN THAT MODULE. Making it reachable is not enough: a class in
+  another module that implements `Show` would answer false.
+- **Fix direction:** membership has to be decided where all implementers are known -- e.g. a
+  per-class list of implemented interfaces carried with the type tag, or the vtable -- rather
+  than per interface module. The class-tag half (`x is Dog`) was BUG-576.
+
+
+### BUG-579: exposing a NAMESPACE from a used module fails inside zig "has no member named '_zbr_ty_Outer'" -- OPEN (found 2026-10-13)
+- **Found by:** pattern search 2, the move-to-module transform (nested_namespace_dotted_test,
+  nested_namespace_nested_test split into two modules).
+- **Cause:** `genUse` prefixes every exposed uppercase name as a type (`_zbr_ty_`), but a
+  namespace is emitted unprefixed (`pub const Outer = struct`). `namespace_names` is filled from
+  THIS module's declarations only, and the dep ModuleTypes do not record namespace names, so
+  genUse cannot tell an exposed namespace from a type.
+- **Fix direction:** carry namespace names in the dep tables (buildModuleTypes), and skip the
+  prefix for them in genUse as for sigs and interfaces. Control: the two fixtures above, split.
+
 
 ### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, NEEDS A DECISION (found 2026-10-13)
 - **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner

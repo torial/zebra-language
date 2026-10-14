@@ -1,0 +1,5 @@
+# Helper module for bug577_dep_type_alias_test: a type alias declared HERE.
+type Meters = int
+
+def tall(m: Meters): bool
+    return m > 100

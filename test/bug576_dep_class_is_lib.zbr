@@ -1,0 +1,10 @@
+# Helper module for bug576_dep_class_is_test: the classes an `is` test names live HERE.
+class Dog
+    var name: str
+    cue init(name: str)
+        .name = name
+
+class Cat
+    var name: str
+    cue init(name: str)
+        .name = name

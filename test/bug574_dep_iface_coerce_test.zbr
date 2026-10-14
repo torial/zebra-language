@@ -1,0 +1,21 @@
+# BUG-574: a class from a USED module converts to that module's interface everywhere, not
+# only as a call argument (BUG-490) or a field (BUG-515). Each line below failed inside zig
+# ("expected type 'Show', found '*Dog'") or, qualified, was refused "does not implement".
+use bug574_dep_iface_coerce_lib exposing Show, Measure, Dog, Rod
+use bug574_dep_iface_coerce_lib
+
+def pick(): Show
+    var d = Dog("ret")
+    return d
+
+def main()
+    var d = Dog("rex")
+    var s: Show = d
+    var t: Show = Dog("ctor")
+    var q: bug574_dep_iface_coerce_lib.Show = d
+    var xs = List(Show)()
+    xs.add(Dog("listed"))
+    var r = Rod(9)
+    var m: Measure(Rod) = r
+    var h: ^Show = Dog("boxed")
+    print("bug574: ${s.show()} | ${t.show()} | ${q.show()} | ${xs.at(0).show()} | ${pick().show()} | ${m.measure(Rod(4))} | ${h.show()}")

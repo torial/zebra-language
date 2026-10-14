@@ -1,0 +1,21 @@
+# Helper module for bug574_dep_iface_coerce_test: the interfaces and the classes that
+# implement them live HERE, the conversions happen in the module that uses this one.
+interface Show
+    def show(): str
+
+interface Measure(T)
+    def measure(other: T): int
+
+class Dog implements Show
+    var name: str
+    cue init(name: str)
+        .name = name
+    def show(): str
+        return "dog " + .name
+
+class Rod implements Measure(Rod)
+    var len: int
+    cue init(len: int)
+        .len = len
+    def measure(other: Rod): int
+        return .len - other.len

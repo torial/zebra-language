@@ -6,6 +6,100 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-578: a diagnostic inside a function body printed TWICE -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** BUG-572's fixture reported its one error twice at the same line and column.
+  Not extend-specific: a top-level `def` and a struct method did the same on HEAD.
+- **Cause and fix:** `checkDecl`'s method arm walks a body twice (checkStmts, then walkStmts on
+  a fresh `scope_ctx`) and merged the second walk's errors with `ctx.errors.add`, past the
+  exact-duplicate filter BUG-319 put in `addErr` -- whose own comment says a guard on the sink
+  "cannot be forgotten by whoever adds the third" double visit; this merge went around the
+  sink. It goes through `addErr` now. BUG-285 had fixed the same doubling for an un-annotated
+  var-init only. Fixture `test/fail_fixtures/bug578_body_diag_once_test.zbr`, two
+  `smoke_run_fail_once` registrations; the unpatched compiler printed 4 diagnostics, now 2.
+- **Gated with BUG-572..577 and BUG-570's follow-up (2026-10-13/14):** FULL at JOBS=2 --
+  round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical, `full_sweep` and
+  `examples_sweep` 0 regressions, `divergence` 0 regressions vs the N-1 anchor, `check-mode`,
+  `cli-surface` 57/57, `contract-mode` 11/11. Smoke hit the 5400 s ceiling in-tier (400 PASS,
+  0 FAIL) and passed standalone **719/719**; `release-mode`'s GUI leg timed out in-tier and
+  both builds succeed by hand (release 1687 KB vs 5637 KB). Two rebuild passes reached a fixed
+  point. ASSEMBLED, not one clean invocation.
+
+### BUG-577: an exposed type alias (or refinement type) from a USED module failed inside zig "has no member named '_zbr_ty_<Alias>'" -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 2 (type_alias_test, refinement_type_test, fuzz_f2_unused_local_test).
+- **Cause and fix:** an alias is transparent where it is declared, so its module declared
+  nothing, while `use m exposing A` binds `const _zbr_ty_A = m._zbr_ty_A;`. The defining module
+  now declares `pub const _zbr_ty_<A> = <base>;` (a parameterised alias has no single type and
+  is skipped). Fixture `test/bug577_dep_type_alias_test.zbr` (+ `_lib`). A refinement's CHECK
+  across the boundary is not covered by this fix.
+
+### BUG-576: `x is Dog` with `Dog` from a USED module named an undeclared `_ttag_Dog` -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 2 (is_not_class_test).
+- **Cause and fix:** the tag is a FILE-PRIVATE `const _ttag_<C> = _zbr_hash("<C>")` of the
+  module that declares C. Another module's class gets the same value in place,
+  `(comptime _zbr_hash("Dog"))`. Fixture `test/bug576_dep_class_is_test.zbr` (+ `_lib`).
+- **Not this bug:** `v is Show` on an interface VALUE across modules -- BUG-580, open.
+
+### BUG-575: a generic class from a USED module, in a type position, was emitted by value -- `var b: Box(int) = Box(int)(4)` failed inside zig "expected type 'T', found '*T'" -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 2 (generic_class_default_init_test split into two modules).
+  `var b = Box(int)(4)` worked; an annotation, a return type or a parameter type did not.
+- **Cause and fix:** `genGenericType` added the `*` only when `isGenericClassName` -- a search
+  of THIS module's declarations -- said so. A class name applied to type arguments is a generic
+  class wherever it was declared. Fixture `test/bug575_dep_generic_class_type_test.zbr`
+  (+ `_lib`), red on the unpatched compiler.
+
+### BUG-574: a class from a USED module converted to that module's interface only as a call argument or a field -- `var s: Show = d`, `List(Show).add(d)`, `return d` and a generic interface failed inside zig; `lib.Show` was refused "does not implement" -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 2, the move-to-module transform (every declaration except
+  `main` moved into a module the program `use`s): four generic-interface fixtures went red, and
+  the minimal form needs no generics. In one file the program printed `dog rex`; split, zig
+  refused "expected type 'lib1.Show', found '*lib1.Dog'".
+- **The shape is the finding.** BUG-490 fixed the call argument and BUG-515 the field
+  assignment, each by widening one gate from `findInterfaceDecl` (THIS module) to the dep
+  interfaces. Six more sites had the same gate: a var-init (ident or constructor), a
+  heap-boxed `var x: ^Iface`, two `List.add` paths, and a `return`. Two predicates now carry the decision for every site --
+  `isDepIfaceRef` (named or generic, declared in another module) and `isConcreteForDepIface`
+  -- and each converts through BUG-490's `.from(value)`. The checker's conformance lookup
+  stripped the module from the CLASS name only, so `var q: lib.Show = d` was refused; it
+  strips a qualified interface name too (a generic key is left whole).
+- **Fixture:** `test/bug574_dep_iface_coerce_test.zbr` (+ `_lib`): ident, constructor,
+  qualified, `^Show`, `List.add`, `return`, and a generic interface. Red on the unpatched compiler.
+
+### BUG-573: calling an extension method on `int`, `float`, `List(T)` or a user class/struct was REFUSED -- only `extend str` worked -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** narrowing BUG-572. Every form QUICKSTART §42 documents beyond `str` was
+  refused at the call site: `extend int` + `n.twice()` -> "'int' has no method 'twice'";
+  `extend List(str)` + `xs.joinWith("-")` -> "'List' has no method 'joinWith'"; `extend Q` +
+  `q.next()` -> "'Q' has no method 'next'". No corpus file used any of them.
+- **Three layers, each found by the previous one's fix:**
+  1. The checker: BUG-369's unknown-method refusals consulted an extension table only for
+     receivers `extendKeyFor` knew -- `str` and the bare name `List`; `extend List(str)` is a
+     GENERIC TypeRef and never reached it. Every target has a `$extend:<T>` pseudo-class now,
+     a generic one under its base name, and the int, float and user-type refusals consult it.
+  2. Codegen: `genExtend` named a generic target `Unknown` (`fn _ext_Unknown_joinWith(self:
+     Unknown, ...)`), and `genExtMethod` spelled a user target by its bare name, which is not a
+     Zig type (types are `_zbr_ty_`-prefixed, and a class is a pointer). Both go through
+     `genType` now, and `extTypeName` maps a list receiver to `List` so the call is rewritten.
+  3. The mutation scanner: an extension call is the free function `_ext_T_m(obj, ...)`, taking
+     `self` by value (a class: its pointer), but the name-based fallback in `receiverNeedsVar`
+     marked `xs`, `q` and `c` `var`, and zig refused them "never mutated". CgHelpers carries the
+     module's extension table (`_ext_recv`, set beside `_struct_recv`) and answers no for an
+     extension call.
+- **Fixture:** `test/bug573_extend_every_target_test.zbr` -- int, float, `List(str)`, a struct
+  and a class, `bug573: 42 2.5 a-b-c 7 8`. Red on the unpatched compiler at its first call.
+
+### BUG-572: an `extend` body was never checked by the front end -- `zebra -c` passed an unknown method in it, and zig reported it later with no column -- FIXED 2026-10-13 (found 2026-10-13)
+- **Found by:** pattern search 3's generator, indirectly. Its str operation was written as
+  `x.toUpper()`, copied from QUICKSTART §42's own example, and failed; the §42 example itself
+  did not compile (`return this.toUpper() + "!"` -- the method is `upper()`). `zebra -c` exited 0
+  on it; the full build failed in zig, "no field or member function named 'toUpper' in 'str'",
+  line only.
+- **Cause:** `TypeChecker.checkDecl` had no arm for `Decl.extend_`, so the statements of an
+  extension method were never checked. Codegen ran inference over them in a private
+  `InferCtx` whose errors were dropped.
+- **Fixed.** `checkDecl` checks each extension method as a method, with `this` typed as the
+  target (a primitive, a `List(T)`, or a user type whose fields `.x` reaches); the method arm's
+  second walk carries the same `this`. QUICKSTART §42's example now says `upper()`. Fixture
+  `test/fail_fixtures/bug572_extend_body_checked_test.zbr` (`smoke_run_fail_once`: reported
+  once, at 6:21). Watched red: the unpatched compiler's `-c` exits 0 on it.
+
 ### BUG-571: an undefined name inside a list / dict / set / tuple / array literal, `orelse`, `catch`, a chained comparison, a pipeline or a lambda passed the FRONT END -- `zebra -c` and the LSP said nothing -- FIXED 2026-10-13 (found 2026-10-13)
 - **Found by:** pattern search 1, in two steps. Opting `Checker.walkExpr` into
   `lint_expr_walkers` flagged its `?.` gap, and a probe of an undefined name inside `?.`

@@ -1319,6 +1319,18 @@ smoke_run_fail test/bug568_dep_missing_return_test.zbr "can reach the end of its
 smoke_run test/bug570_mutation_in_nested_expr_test.zbr "bug570: 1 11 21 he 31 41 42"
 smoke_run test/bug571_resolver_walks_all_ok_test.zbr "bug571: [4, 5] 7 4 4 3 8 true 6 105"
 smoke_tc_fail test/fail_fixtures/bug571_undefined_in_unwalked_exprs_test.zbr "undefined name: 'noSuchInPipeline'"
+# Pattern search 2026-10-13: extend on every target (BUG-572/573), the move-to-module sweep's
+# cross-module findings (BUG-574..577, and BUG-570's dep-struct follow-up), duplicate body
+# diagnostics (BUG-578 -- smoke_run_fail_once: each message must appear EXACTLY once).
+smoke_run_fail_once test/fail_fixtures/bug572_extend_body_checked_test.zbr "bug572_extend_body_checked_test.zbr:6:21: error: 'str' has no method 'toUpper'"
+smoke_run test/bug573_extend_every_target_test.zbr "bug573: 42 2.5 a-b-c 7 8"
+smoke_run test/bug574_dep_iface_coerce_test.zbr "bug574: dog rex | dog ctor | dog rex | dog listed | dog ret | 5 | dog boxed"
+smoke_run test/bug575_dep_generic_class_type_test.zbr "bug575: 4 5 s"
+smoke_run test/bug576_dep_class_is_test.zbr "bug576: true false true false"
+smoke_run test/bug577_dep_type_alias_test.zbr "bug577: 120 true false"
+smoke_run test/bug570_dep_opt_chain_test.zbr "bug570dep: true 4 5 10"
+smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:9:18: error: 'str' has no method 'toUpper'"
+smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:13:14: error: 'str' has no method 'toLower2'"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"
 # Full-corpus sweep (2026-07-24): stale tests using removed syntax, refreshed to
 # current forms (print("x") not print "x"; `: T` not `as T`) and now gated.

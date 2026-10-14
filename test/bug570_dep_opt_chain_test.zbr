@@ -1,0 +1,13 @@
+# BUG-570's follow-up, found by the move-to-module sweep: `?.` on an optional value struct
+# from a USED module. A reader (`doubled`) left a `var` zig named never mutated; a mutator
+# (`bump`) must update the variable, not a copy -- two calls return 4 then 5.
+use bug570_dep_opt_chain_lib exposing Tally
+
+def main()
+    var none: Tally? = nil
+    var r: int? = none?.doubled()
+    var t: Tally? = Tally(3)
+    var a: int? = t?.bump()
+    var b: int? = t?.bump()
+    var d: int? = t?.doubled()
+    print("bug570dep: ${r == nil} ${a!} ${b!} ${d!}")

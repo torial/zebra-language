@@ -1629,7 +1629,41 @@ var _struct_recv: str = ""
 def setStructReceivers(table: str)
     _struct_recv = table
 
+# BUG-573: " Type.method " for every `extend` method of the module being emitted (Type is
+# `str`, `int`, `List`, a class or struct name). An extension call is emitted as the free
+# function `_ext_Type_method(obj, ...)`, which takes `self` by value (a class: its pointer),
+# so the receiver is never mutated through it -- the name-based fallback below marked such
+# locals `var` and zig refused them. Set beside _struct_recv, from the declarations alone.
+var _ext_recv: str = " "
+
+def setExtReceivers(table: str)
+    _ext_recv = table
+
+def extReceiverName(t: Type_): str
+    branch t
+        on Type_.string_
+            return "str"
+        on Type_.int_
+            return "int"
+        on Type_.float_
+            return "float"
+        on Type_.bool_
+            return "bool"
+        on Type_.char_
+            return "char"
+        on Type_.list_
+            return "List"
+        on Type_.named as en
+            return en
+        else
+            return ""
+
 def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
+    if ic as ic_x
+        if _ext_recv != " "
+            var ext_rn: str = extReceiverName(unwrapForMutation(inferExpr(obj, ic_x)))
+            if ext_rn != "" and _ext_recv.contains(" " + ext_rn + "." + method + " ")
+                return false
     if ic as ic_v
         var rt: Type_ = unwrapForMutation(inferExpr(obj, ic_v))
         if rt is Type_.named as rn
@@ -1932,6 +1966,10 @@ def isStructValueType(t: Type_, ic: InferCtx): bool
     if t is Type_.named as n
         if ic.module_types.classOf(n) as ct
             return ct.is_struct
+        # A struct from a USED module is a value too (the move-to-module sweep: the
+        # mutation scanner and the `?.` emitter disagreed about one, BUG-570's follow-up).
+        if ic.dep_types.classOf(n) as dct
+            return dct.is_struct
     return false
 
 # BUG-453: an expression whose value is a fresh temporary -- arithmetic, a negation, a

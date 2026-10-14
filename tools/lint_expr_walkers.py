@@ -45,6 +45,20 @@ and only those are checked. A deliberate omission is spelled:
 
     # expr-walker-ok: lambda bodies are visited by the caller instead
 
+TWO TREES (2026-10-13, BUG-571). The compiler walks expressions in TWO representations:
+the typed AST (`Expr`, Ast.zbr) and the parse tree (`PNode`, Parser.zbr) that the Resolver
+walks. This gate originally knew only the first, so `Resolver.resolveExpr` -- which visited
+13 of the parse tree's expression kinds and skipped ten that hold expressions -- was
+invisible to it, and an undefined name inside a list literal, `orelse`, `catch`, a pipeline
+or a lambda passed the front end. The PNode tree is checked the same way, under its own
+marker, oracle and controls:
+
+    # pnode-walker: exhaustive            # opt-in, as above
+    # pnode-walker-ok: expr_zig_lit <reason>
+
+PNode is ONE union for declarations, statements and expressions, so only its `expr_*`
+variants are in the required set: a statement walker is a different contract.
+
     python tools/lint_expr_walkers.py           # report
     python tools/lint_expr_walkers.py --gate    # exit 1 on any finding
 """
@@ -54,7 +68,6 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-AST = REPO / "selfhost" / "Ast.zbr"
 # DERIVED, not listed. This was a hardcoded list of six files until 2026-08-17, and it
 # failed the exact way this gate exists to prevent: `collectOldNodesInto` was moved to a
 # NEW module (selfhost/AstWalk.zbr, for BUG-292) and silently left coverage -- opted-in
@@ -71,6 +84,9 @@ SEARCH = sorted(
     for p in (REPO / "selfhost").glob("*.zbr")
     if p.name != "Ast.zbr"
 )
+# The parse-tree walkers live beside the parser (and Parser.zbr is its own oracle file, so
+# nothing is excluded for the PNode tree).
+ALL_SELFHOST = sorted(p.relative_to(REPO).as_posix() for p in (REPO / "selfhost").glob("*.zbr"))
 
 # Two variants bear identifiers WITHOUT holding child expressions, so no structural
 # derivation can find them. Both are hardcoded, and both are named:
@@ -81,6 +97,20 @@ SEARCH = sorted(
 #             definition. Included so the gate cannot bless a walker that lost the
 #             one case it exists to have.
 SEMANTIC_BEARING = {"zig_lit", "ident"}
+
+# One entry per expression tree. `prefix` filters the union's variants (PNode mixes
+# declarations, statements and expressions); the two controls are pinned to the mechanism:
+# a list literal holds a list of the root type, an integer literal holds text.
+TREES = [
+    dict(name="Expr", oracle="selfhost/Ast.zbr", root="Expr", prefix="", tag="Expr",
+         marker="expr-walker", min_variants=25, semantic=SEMANTIC_BEARING,
+         bearing_ctl="list_lit", leaf_ctl="int_lit"),
+    dict(name="PNode", oracle="selfhost/Parser.zbr", root="PNode", prefix="expr_",
+         tag="PNode", marker="pnode-walker", min_variants=30,
+         # the parse-tree spellings of the same two: an identifier, and zig"..." text
+         semantic={"expr_id", "expr_zig_lit"},
+         bearing_ctl="expr_list_lit", leaf_ctl="expr_int"),
+]
 
 
 def parse_blocks(src, kind):
@@ -109,9 +139,9 @@ def type_names(t):
     return set(re.findall(r"\b([A-Z]\w*)\b", t))
 
 
-def bearing(payload, structs, unions, depth=0, seen=None):
-    """True when `payload` reaches an Expr through its fields (one+ level)."""
-    if payload == "Expr":
+def bearing(payload, structs, unions, root, depth=0, seen=None):
+    """True when `payload` reaches `root` through its fields (one+ level)."""
+    if payload == root:
         return True
     seen = seen or set()
     if payload in seen or depth > 3:
@@ -129,51 +159,58 @@ def bearing(payload, structs, unions, depth=0, seen=None):
         if not m:
             continue
         for n in type_names(m.group(1)):
-            if n == "Expr":
+            if n == root:
                 return True
-            if bearing(n, structs, unions, depth + 1, seen):
+            if bearing(n, structs, unions, root, depth + 1, seen):
                 return True
     return False
 
 
-def main():
-    src = io.open(AST, encoding="utf-8").read()
+def refuse(msg):
+    print(f"[expr-walker] REFUSING: {msg}", file=sys.stderr)
+    return 2
+
+
+def check_tree(t):
+    """(findings, summary) for one expression tree, or an int exit code on refusal."""
+    src = io.open(REPO / t["oracle"], encoding="utf-8").read()
     unions = parse_blocks(src, "union")
     structs = parse_blocks(src, "struct")
-    expr = unions.get("Expr")
-    if not expr:
-        print("[expr-walker] REFUSING: could not find `union Expr` in Ast.zbr", file=sys.stderr)
-        return 2
+    body = unions.get(t["root"])
+    if not body:
+        return refuse(f"could not find `union {t['root']}` in {t['oracle']}")
 
     variants = {}
-    for line in expr.split("\n"):
+    for line in body.split("\n"):
         m = re.match(r"^\s+(\w+)\s*:\s*\^?(\w+)", line)
-        if m:
+        if m and m.group(1).startswith(t["prefix"]):
             variants[m.group(1)] = m.group(2)
 
-    required = {v for v, p in variants.items() if bearing(p, structs, unions)} | SEMANTIC_BEARING
+    required = {v for v, p in variants.items()
+                if bearing(p, structs, unions, t["root"])} | t["semantic"]
     leaves = set(variants) - required
 
     # ── Controls, run before reporting ────────────────────────────────────────
-    # Pinned to the MECHANISM, not to a known gap: `list_lit` must classify as
-    # ident-bearing (it holds `elems: List(Expr)`) and `int_lit` as a leaf. If the
+    # Pinned to the MECHANISM, not to a known gap: a list literal must classify as
+    # bearing (it holds a list of the root type) and an integer literal as a leaf. If the
     # extractor stops resolving field types, both flip and this refuses to report --
     # rather than announcing that every walker is clean.
-    if len(variants) < 25:
-        print(f"[expr-walker] REFUSING: only {len(variants)} Expr variants extracted "
-              f"(expected 30+); the extractor is broken, not the code", file=sys.stderr)
-        return 2
-    if "list_lit" not in required:
-        print("[expr-walker] REFUSING: control failed — list_lit did not classify as "
-              "ident-bearing", file=sys.stderr)
-        return 2
-    if "int_lit" in required:
-        print("[expr-walker] REFUSING: control failed — int_lit classified as "
-              "ident-bearing", file=sys.stderr)
-        return 2
+    if len(variants) < t["min_variants"]:
+        return refuse(f"only {len(variants)} {t['name']} variants extracted (expected "
+                      f"{t['min_variants']}+); the extractor is broken, not the code")
+    if t["bearing_ctl"] not in required:
+        return refuse(f"control failed — {t['bearing_ctl']} did not classify as "
+                      f"expression-bearing")
+    if t["leaf_ctl"] in required:
+        return refuse(f"control failed — {t['leaf_ctl']} classified as expression-bearing")
+    if not t["semantic"] <= set(variants):
+        return refuse(f"a hardcoded {t['name']} variant no longer exists: "
+                      f"{sorted(t['semantic'] - set(variants))}")
 
+    arm = re.compile(r"on\s+" + t["tag"] + r"\.(\w+)")
+    marker = t["marker"] + ": exhaustive"
     findings, checked, total_walkers = [], 0, 0
-    for rel in SEARCH:
+    for rel in SEARCH if t["name"] == "Expr" else ALL_SELFHOST:
         p = REPO / rel
         if not p.exists():
             continue
@@ -184,15 +221,17 @@ def main():
                 continue
             # gather the function body (until the next def at the same-or-lower indent)
             indent = len(line) - len(line.lstrip())
-            body = []
+            fbody = []
             for j in range(i + 1, len(lines)):
                 nxt = lines[j]
                 if nxt.strip() and (len(nxt) - len(nxt.lstrip())) <= indent and \
                         re.match(r"^\s*(def|class|struct|union)\b", nxt):
                     break
-                body.append(nxt)
-            body_txt = "\n".join(body)
-            if "on Expr." not in body_txt:
+                fbody.append(nxt)
+            body_txt = "\n".join(fbody)
+            handled = set(arm.findall(body_txt))
+            # a walker of THIS tree's expressions: it names at least one of its variants
+            if not handled & set(variants):
                 continue
             total_walkers += 1
             # Opt-in marker: scan the WHOLE contiguous comment block above the def, not a
@@ -207,35 +246,46 @@ def main():
                     break  # blank line ends the block (but allow one directly above)
                 k -= 1
             head = "\n".join(lines[k + 1:i])
-            if "expr-walker: exhaustive" not in head:
+            if marker not in head:
                 continue
             checked += 1
-            handled = set(re.findall(r"on\s+Expr\.(\w+)", body_txt))
-            waived = set(re.findall(r"expr-walker-ok:\s*(\w+)", body_txt + "\n" + head))
-            missing = sorted(required - handled - waived)
-            for v in missing:
+            waived = set(re.findall(t["marker"] + r"-ok:\s*(\w+)", body_txt + "\n" + head))
+            for v in sorted(required - handled - waived):
                 findings.append((rel, i + 1, m.group(1), v))
 
-    if checked == 0:
-        print("[expr-walker] REFUSING: no walker opted in with `# expr-walker: exhaustive` "
-              "— the gate would pass vacuously", file=sys.stderr)
-        return 2
-
     for rel, ln, fn, v in findings:
-        print(f"  {rel}:{ln}: [walker-drift] {fn}() does not handle Expr.{v}, "
-              f"which the AST says contains expressions")
-
+        print(f"  {rel}:{ln}: [walker-drift] {fn}() does not handle {t['tag']}.{v}, "
+              f"which {t['oracle']} says contains expressions")
     if checked < total_walkers:
-        print(f"              NOT checked: {total_walkers - checked} walker(s) without "
-              f"`# expr-walker: exhaustive`. Most legitimately care about a few forms; "
-              f"add the marker to any that should be complete.")
+        print(f"              NOT checked ({t['name']}): {total_walkers - checked} walker(s) "
+              f"without `# {marker}`. Most legitimately care about a few forms; add the "
+              f"marker to any that should be complete.")
+    summary = (f"{t['name']}: {len(variants)} variants ({len(required)} bearing, "
+               f"{len(leaves)} leaf), {checked}/{total_walkers} walkers opted in")
+    return findings, checked, summary
+
+
+def main():
+    results = []
+    for t in TREES:
+        r = check_tree(t)
+        if isinstance(r, int):
+            return r
+        results.append(r)
+
+    # Each tree must have at least one opted-in walker, or its half of the gate passes
+    # vacuously -- the state the PNode half was in for its whole life before 2026-10-13.
+    for t, (_, checked, _) in zip(TREES, results):
+        if checked == 0:
+            return refuse(f"no {t['name']} walker opted in with `# {t['marker']}: "
+                          f"exhaustive` — that half of the gate would pass vacuously")
+
+    findings = [f for r in results for f in r[0]]
     print("              NOT checked: whether a handled variant is handled CORRECTLY, "
           "and any name embedded in a zig\"…\" string (BUG-267 — structurally invisible).")
     # The verdict prints LAST on purpose: gates.sh shows a gate's final non-empty line on
     # the board, so a trailing caveat would display in place of the result.
-    print(f"[expr-walker] {len(variants)} Expr variants ({len(required)} ident-bearing, "
-          f"{len(leaves)} leaf); {checked}/{total_walkers} walkers opted in; "
-          f"{len(findings)} finding(s)")
+    print(f"[expr-walker] {'; '.join(r[2] for r in results)}; {len(findings)} finding(s)")
 
     if "--gate" in sys.argv and findings:
         return 1

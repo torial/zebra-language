@@ -5315,7 +5315,7 @@ built-in ones.
 ```zebra
 extend str
     def shout(): str
-        return this.toUpper() + "!"
+        return this.upper() + "!"
 
     def wordCount(): int
         return this.split(" ").len

@@ -1,0 +1,9 @@
+# BUG-577: an exposed type alias from a USED module. The alias is transparent where it is
+# declared, so that module declared nothing, while `exposing Meters` bound
+# `_zbr_ty_Meters` to it -- zig: "has no member named '_zbr_ty_Meters'".
+use bug577_dep_type_alias_lib exposing Meters, tall
+
+def main()
+    var h: Meters = 120
+    var low: Meters = 7
+    print("bug577: ${h} ${tall(h)} ${tall(low)}")

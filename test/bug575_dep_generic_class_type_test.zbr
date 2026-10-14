@@ -1,0 +1,15 @@
+# BUG-575: a generic class from a used module, named in a TYPE position, is a pointer like
+# any class instance. Before the fix the annotation, the return type and the parameter type
+# below were emitted by value and zig refused them ("expected type 'T', found '*T'").
+use bug575_dep_generic_class_lib exposing Box
+
+def make(k: int): Box(int)
+    return Box(int)(k)
+
+def unbox(b: Box(str)): str
+    return b.get()
+
+def main()
+    var b: Box(int) = Box(int)(4)
+    var c: Box(int) = make(5)
+    print("bug575: ${b.get()} ${c.get()} ${unbox(Box(str)("s"))}")
