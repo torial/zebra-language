@@ -137,6 +137,7 @@ class VGen
     var mut_structs: List(str)        # the structs whose methods are all `mut self` (a pass before emission)
     var in_cond: bool                 # emitting a loop's condition: no line may be hoisted before it
     var in_ctor: bool                 # emitting a constructor's body: a bare return is `return self`
+    var iface_target: bool            # rendering a value for an interface-typed place: a narrowed read is V's own unwrap there
     var current_exposed: HashMap(str, str)   # a name the module's `use ... exposing` lines name -> the stem that exposes it
     var def_modules: HashMap(str, List(str))   # a free function's name -> the module stems that declare it
     var current_stem: str             # the module being emitted, by its file's stem
@@ -193,6 +194,7 @@ class VGen
         .mut_structs = List(str)()
         .in_cond = false
         .in_ctor = false
+        .iface_target = false
         .current_exposed = HashMap(str, str)()
         .def_modules = HashMap(str, List(str))()
         .current_stem = ""
@@ -369,6 +371,20 @@ class VGen
                 return .vType(lam.return_type)
             else
                 return ""
+
+    # a nilable read where Zebra has narrowed it: V's own unwrap, with no
+    # generic in the path (master's new compiler miscompiles a reference that
+    # comes out of a generic function into an interface: repro_v8), panicking
+    # in the Zig backend's words when the narrowing was wrong
+    def narrowedRead(rendered: str, what: str): str
+        if .iface_target
+            # into an interface: V's own unwrap, no generic in the path -- master
+            # infers a generic's T from the assignment target and boxes without a
+            # method table (repro_v8)
+            return "(" + rendered + " or { panic(" + .vStringLit("narrowed read of " + what + " is none at " + .current_file) + ") })"
+        # elsewhere the function form: 0.5.2 miscompiles an `or` expression used
+        # directly as a call argument of a generic-struct pointer type
+        return "zunwrap(zopt_id(" + rendered + "))"
 
     def jsonTry(kind: str, obj: str, args: List(Arg), ja: str): str
         if args.count() == 1
@@ -2254,7 +2270,15 @@ class VGen
             else if isBareCtor(ie) and tname != ""
                 rhs = .zeroOf(tname)   # `var xs: List(int) = List()`: the type is the variable's
             else
+                var tn0: str = tname
+                if tn0.startsWith("?")
+                    tn0 = tn0.substring(1, tn0.len)
+                var decl_iface: bool = .isIfaceName(tn0)
+                if decl_iface
+                    .iface_target = true   # `var l: Loader = x!`: the narrowed read in V's own unwrap
                 rhs = .exprStr(ie)
+                if decl_iface
+                    .iface_target = false
                 var un: str = .unionOfExpr(ie)
                 if un != ""
                     # a variant is a value of its union: V would type the variable
@@ -2571,7 +2595,7 @@ class VGen
             on Expr.ident as id
                 if .isNarrowed(id.name)
                     if .local_types.get(id.name) as nlt
-                        return "zunwrap(zopt_id(" + .localName(id.name) + "))"   # Zebra reads it narrowed; V never narrows here (zopt_id: the option's type held without a cast, which master refuses)
+                        return .narrowedRead(.localName(id.name), id.name)   # Zebra reads it narrowed; V never narrows here
                 if .renames.get(id.name) as rn
                     if .isLocalName(id.name)
                         return rn
@@ -2635,7 +2659,7 @@ class VGen
                         pass
                 var ot: str = .vTypeOf(tnn.expr)
                 if ot.startsWith("?")
-                    return "zunwrap(zopt_id(" + .exprStr(tnn.expr) + "))"
+                    return .narrowedRead(.exprStr(tnn.expr), "a value")
                 return "zunwrap(" + .exprStr(tnn.expr) + ")"
             on Expr.dict_lit as dl
                 .refuse("a dict literal (maps are next)", dl.span)
@@ -2934,7 +2958,7 @@ class VGen
         var plain: str = obj + "." + vSafe(m.member)
         if exprRootIsThis(m.object) and .isNarrowed(plain)
             if .field_types.get(m.member) as nft
-                return "zunwrap(zopt_id(" + plain + "))"   # Zebra reads the field narrowed
+                return .narrowedRead(plain, m.member)   # Zebra reads the field narrowed
         return plain
 
     def isCatchBinding(name: str): bool
@@ -3056,7 +3080,15 @@ class VGen
     # an expression rendered for a place of a known type: a Json value
     # converts (Zebra's `var n: int = j["n"]?` reads by the receiving type)
     def coerced(e: Expr, want: str): str
+        var want0: str = want
+        if want0.startsWith("?")
+            want0 = want0.substring(1, want0.len)
+        var into_iface: bool = .isIfaceName(want0)
+        if into_iface
+            .iface_target = true
         var s: str = .exprStr(e)
+        if into_iface
+            .iface_target = false
         if .vTypeOf(e) == "json2.Any"
             return coerceRendered(s, want)
         if .isSigName(want) and isLambdaExpr(e)
