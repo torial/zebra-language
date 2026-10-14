@@ -138,6 +138,7 @@ class VGen
     var in_cond: bool                 # emitting a loop's condition: no line may be hoisted before it
     var in_ctor: bool                 # emitting a constructor's body: a bare return is `return self`
     var iface_target: bool            # rendering a value for an interface-typed place: a narrowed read is V's own unwrap there
+    var narrowed_or_used: bool        # the last narrowed read was rendered in the `or` form (coerced binds it before an interface)
     var current_exposed: HashMap(str, str)   # a name the module's `use ... exposing` lines name -> the stem that exposes it
     var def_modules: HashMap(str, List(str))   # a free function's name -> the module stems that declare it
     var current_stem: str             # the module being emitted, by its file's stem
@@ -195,6 +196,7 @@ class VGen
         .in_cond = false
         .in_ctor = false
         .iface_target = false
+        .narrowed_or_used = false
         .current_exposed = HashMap(str, str)()
         .def_modules = HashMap(str, List(str))()
         .current_stem = ""
@@ -381,6 +383,7 @@ class VGen
             # into an interface: V's own unwrap, no generic in the path -- master
             # infers a generic's T from the assignment target and boxes without a
             # method table (repro_v8)
+            .narrowed_or_used = true
             return "(" + rendered + " or { panic(" + .vStringLit("narrowed read of " + what + " is none at " + .current_file) + ") })"
         # elsewhere the function form: 0.5.2 miscompiles an `or` expression used
         # directly as a call argument of a generic-struct pointer type
@@ -3092,9 +3095,20 @@ class VGen
         var into_iface: bool = .isIfaceName(want0)
         if into_iface
             .iface_target = true
+            .narrowed_or_used = false
         var s: str = .exprStr(e)
         if into_iface
             .iface_target = false
+            if .narrowed_or_used and not .in_cond
+                # two steps into the interface: the value bound to a local first --
+                # master loses the method table when the `or` form sits in the
+                # assignment inside a closure capturing [mut self] (vlang/v#30470)
+                .tmpN = .tmpN + 1
+                var tn: str = "zt" + .tmpN.toString()
+                .line("mut " + tn + " := " + s)
+                .local_names.add(tn)
+                s = tn
+            .narrowed_or_used = false
         if .vTypeOf(e) == "json2.Any"
             return coerceRendered(s, want)
         if .isSigName(want) and isLambdaExpr(e)

@@ -1003,16 +1003,19 @@ pub fn zsys_readline() ?string {
 }
 
 // sys.exec_inherit(argv): run with the parent's stdio; the exit code
+// (os.new_process, not os.system: master deprecates the latter and -prod
+// makes the deprecation an error)
 pub fn zsys_exec_inherit(argv &ZList[string]) i64 {
-	mut parts := []string{}
-	for a in argv.items {
-		if a.contains(' ') || a.contains('"') {
-			parts << '"' + a.replace('"', '\\"') + '"'
-		} else {
-			parts << a
-		}
+	if argv.items.len == 0 {
+		return 1
 	}
-	return i64(os.system(parts.join(' ')))
+	mut p := os.new_process(argv.items[0])
+	p.set_args(argv.items[1..].clone())
+	p.run()
+	p.wait()
+	code := p.code
+	p.close()
+	return i64(code)
 }
 
 // Dir.list(path): the entries' names
