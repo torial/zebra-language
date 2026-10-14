@@ -783,6 +783,24 @@ The mingw target spelling and the missing `-fwrapv` are in #30495,
 the module cache's object in #30493. So the wrapper stays as it is,
 and a zig release that closes #31958 retires its `-flto` line.
 
+The clang V assumes, installed (Sean's pick, 2026-10-14): llvm-mingw
+20261006 at `C:/Projects/llvm-mingw` (737 MB; clang 23.1.3 for
+x86_64-w64-windows-gnu, lld inside; the zip kept beside it). Three
+answers in a quarter of an hour. The nine-line LTO program links on
+it, so the loss was zig's alone. V master passes `-flto` to it under
+`-prod` and the hello program builds and runs in debug and `-prod`, so
+master dropping the 2022 exclusion is no regression and that ticket is
+dead. And V 0.5.2 fails the C stage under it in both modes -- its
+generated C passes a `u32*` where the Windows SDK declares `LPDWORD`,
+which clang 22 and later refuse (the LLVM installer's MSVC-target
+clang 22 had said the same) -- fixed upstream on 2026-10-12 (75da3f80,
+vlang/v#30255, after the release), and `-cflags
+-Wno-incompatible-pointer-types` builds 0.5.2 under it meanwhile. So
+the lanes gain a compiler V supports with no wrapper in the path
+(`v_clang_lane.sh 052|master [prod]` on the same eleven programs and
+controls), and the pin to 0.5.2 carries one more reason to move at
+0.5.3.
+
 **What a V-built Zebra compiler is and is not.** It compiles Zebra to
 Zig exactly as the Zig-built one does, so it can stand in for it
 wherever `--emit-zig` is the job (the engine's regen, a `zebra build`
