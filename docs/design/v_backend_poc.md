@@ -1145,10 +1145,22 @@ tcc. Master's checker takes 3m16 on the demo's 37,000 lines where
 0.5.2's takes 44 s. Master's `-prod` through zig cc links its
 precompiled module-cache objects and fails on long-double math symbols
 (`frexpl`, `modfl`, `atanl`) that master's runtime references and zig's
-bundled mingw libc does not provide; `-prod` through MSVC is the open
-try. Until an optimized master binary runs, the "better place to focus"
-has no number beside the 7.4 s row -- but the dialect is in, the engine's
-programs run on both compilers, and three more V bugs are filed.
+bundled mingw libc does not provide. **`-prod` through MSVC builds and
+runs the demo identical** (4m12 to build), and that is the first
+optimized number from the new compiler, on the same busy daytime host as
+the table above, three runs each:
+
+| build | wall | peak memory |
+|---|---|---|
+| V 0.5.2, MSVC /O2 `-prod` | 7.9 to 9.7 s | 1,054 MB |
+| V master, MSVC /O2 `-prod` | 4.6 to 12.0 s | 1,096 MB |
+
+Best against best, master's C is 1.7 times faster through the same C
+compiler, which is what `markused` and the cleaner emitter would be
+expected to buy; the ranges overlap on this host, so it is a first read
+with a quiet-host rerun owed, as the whole optimized row is. The
+dialect is in, the engine's programs run on both compilers, the
+optimized master binary exists, and three more V bugs are filed.
 
 ## The distance to a full backend, measured on the Zig emitter
 
