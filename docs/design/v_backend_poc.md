@@ -1134,6 +1134,29 @@ overflow V's literal parser relies on wrapping through, and compiles the
 module cache's one native source alongside a stage) and our emitted
 programs put through it.
 
+Master moves, and the lane follows it (2026-10-14, 02:49): pulled to
+d67ee55 (a shallow fetch and reset; the previous binary kept beside it
+as `v_37b596b.exe`) and bootstrapped through the same shim in seven
+minutes (`cmd //c ".\makev.bat -clang"` from the checkout: cmd on this
+host does not search the current directory for a bare name). Under
+it: vlang/v#30352 is fixed (3887674e, the i64 slice prints the right
+character under MSVC; 0.5.2 still has it, so the emitter's `int()`
+cast on slice bounds stays until the pin moves); #30470, #30471 and
+#30473 reproduce unchanged; both lanes are green, eleven of eleven
+under tcc and eleven of eleven `-prod` through zig cc. The `-prod`
+builds took two to twenty-five times longer than under 37b596b
+(signal_test 8m37 against 20 s, the demo 7m22 against 4m06), but the
+Zebra session's gate was running alongside them, so that is not a
+reading of master. One thing master does now that it did not: when
+the new compiler's C fails to compile, it keeps the failing C, the
+compiler's name and its output under `%TEMP%/v_0/v3_fallback_<pid>.c_error/`
+and looks for a V 0.5.2 "fallback" build (`make v1`) to retry with,
+which this host has not -- so a failure under master could one day be
+masked by a silent retry through the classic compiler, and a lane
+that reads "IDENTICAL" would then be reading the old compiler's work.
+The lanes' logs say which compiler compiled (the fallback message is
+printed when it is tried), and that line is now part of what to read.
+
 What master's new compiler is, read from its sources: a flat AST, a
 transformer, `markused` dead-code elimination, a direct emitter to C
 (`cleanc`), and under `-prod` `-O3 -flto` per unit with content-cached
