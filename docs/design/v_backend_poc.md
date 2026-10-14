@@ -1103,7 +1103,9 @@ master was built here (`C:/Projects/v-master`, commit 37b596b: seven
 attempts, the Windows bootstrap being broken today in three ways -- the
 module cache's native object that nothing on Windows builds or links,
 MSVC's 16 KB string-literal limit on the generated second stage, and
-clang found without its environment -- and finally built through a
+Clang always given a MinGW target it has no sysroot for (vlang/v#30493,
+#30494 and #30495, each through the review protocol, which corrected
+two of the three causes before they went out) -- and finally built through a
 `clang` shim onto zig cc that spells the mingw target as zig does,
 passes `-fwrapv -fno-sanitize=undefined` since zig cc traps the signed
 overflow V's literal parser relies on wrapping through, and compiles the
