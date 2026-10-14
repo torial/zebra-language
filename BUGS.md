@@ -143,7 +143,7 @@
   prefix for them in genUse as for sigs and interfaces. Control: the two fixtures above, split.
 
 
-### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, NEEDS A DECISION (found 2026-10-13)
+### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)
 - **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
   should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
 - **Repro (QUICKSTART §19, "Implicit closure capture", verbatim shape):**
@@ -169,6 +169,13 @@
   captured local in the front end, naming `capture` as the way to keep state, and fix §19's
   example. (a) is what the example promises; (b) is what the implementation does today, minus
   the error message.
+- **DECIDED 2026-10-14 (Sean): (a), BY REFERENCE** -- "similar to C# semantics": the closure
+  shares the enclosing local, so a write through it is seen outside and by every other closure
+  that captured it. §19's example becomes correct as written; the "read-only access in most
+  cases" bullet under it goes. Design questions to settle in the note before codegen: a closure
+  that OUTLIVES its frame (returned, stored in a field or list) needs the captured local
+  heap-boxed, as C# lifts it into a display class; and a loop variable captured per iteration
+  (C# 5 gives each `foreach` iteration its own variable -- say which Zebra does).
 - **Why no gate saw it:** doc_example_check runs the front end only, and the front end accepts
   the example (pattern search 4 -- a full-build leg for doc examples -- is aimed at exactly this).
 
@@ -233,7 +240,7 @@
   indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
   indent with a message naming the lambda, not end-of-input on the line after.
 
-### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, NEEDS A DECISION (found 2026-10-11)
+### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, DECIDED: refuse it (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
 - **Repro:** `var n = text -> .len` with `text = "hello"` compiles and prints `5`.
 - **The disagreement:** QUICKSTART §3 says the right side of `->` is a call (`x -> f(y)`) or a
@@ -243,6 +250,9 @@
 - **Decision (Sean):** refuse it, as the reference says -- or make it the rule (`x -> .field`
   is `x.field`) and fix QUICKSTART §3 and the book's ch15. Until then the book teaches
   something rc7 does not do.
+- **DECIDED 2026-10-14 (Sean): refuse it,** as QUICKSTART §3 and the book's ch15 already
+  say. The refusal names the fix (`text.len`, or `-> .method()` for a call). Nothing to change
+  in the docs; check the corpus and the book's examples for `-> .field` before landing.
 
 ### BUG-557: a method call on a `str?` passes the front end and fails inside zig -- OPEN (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
