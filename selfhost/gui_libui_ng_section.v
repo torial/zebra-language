@@ -55,10 +55,16 @@
 // dot, warn: the Zig section's painters, premultiplied as libui wants, which
 // registerIcon's bytes now are too).
 //
-// Not here (the Zig section has them): the check / edit / button table
-// columns, the CodeEditor, drawing. A call to one of those is a V compile
-// error naming the method, not a silent no-op; hotkey, takeKey and minSize
-// are accepted and not acted on (said once each).
+// And the table's check, edit and button columns (`tableSetupCheckColumn` /
+// `EditColumn` / `ButtonColumn`, each with the program's closure for the
+// row's toggle, edit or click; a check cell is `tableCheck`): libui's
+// SetCellValue is dispatched by column to the closure and the model is not
+// changed there -- the message goes to update and the next frame's rows carry
+// the answer.
+//
+// Not here (the Zig section has them): the CodeEditor, drawing. A call to one
+// of those is a V compile error naming the method, not a silent no-op; hotkey,
+// takeKey and minSize are accepted and not acted on (said once each).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
@@ -67,8 +73,9 @@
 // `menu:<label>` (a menu item), `dblclick:<table id>=<row>`,
 // `select:<table id>=<row>`, `tool:<label>`, `treesel:<id>=<key>`,
 // `treeact:<id>=<key>`, `treeexp:<id>=<key>=<0|1>`, `dialog:<path>` (what the
-// next file dialog returns; empty = cancelled), `tick` (every timer fires
-// once), `quit`.
+// next file dialog returns; empty = cancelled), `cellcheck:<id>=<row>=<0|1>`,
+// `celledit:<id>=<row>=<text>`, `cellbutton:<id>=<row>`, `tick` (every timer
+// fires once), `quit`.
 // ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
 // what the window shows.
 
@@ -222,6 +229,15 @@ fn C.uiTableModelRowChanged(m &C.uiTableModel, index int)
 fn C.uiTableModelRowDeleted(m &C.uiTableModel, old_index int)
 fn C.uiNewTable(params &C.uiTableParams) &C.uiTable
 fn C.uiTableAppendTextColumn(t &C.uiTable, name &char, text_model_column int, text_editable_model_column int, text_params voidptr)
+fn C.uiTableAppendCheckboxColumn(t &C.uiTable, name &char, checkbox_model_column int, checkbox_editable_model_column int)
+fn C.uiTableAppendButtonColumn(t &C.uiTable, name &char, button_model_column int, button_clickable_model_column int)
+fn C.uiNewTableValueInt(i int) &C.uiTableValue
+fn C.uiFreeTableValue(v &C.uiTableValue)
+fn C.uiTableValueInt(v &C.uiTableValue) int
+fn C.uiTableValueString(v &C.uiTableValue) &char
+
+const zgui_table_value_int = 2 // uiTableValueTypeInt (String, Image, Int, Color)
+const zgui_column_always_editable = -2 // uiTableModelColumnAlwaysEditable
 fn C.uiTableOnRowDoubleClicked(t &C.uiTable, f fn (&C.uiTable, int, voidptr), data voidptr)
 fn C.uiTableGetSelection(t &C.uiTable) &C.uiTableSelection
 fn C.uiTableSetSelection(t &C.uiTable, sel &C.uiTableSelection)
@@ -389,6 +405,12 @@ pub mut:
 	model     &C.uiTableModel = unsafe { nil }
 	table     &C.uiTable      = unsafe { nil }
 	activated int = -1 // a double-clicked row, read once by tableActivatedRow
+	check_col  int = -1 // the column kinds, by index (-1: none)
+	edit_col   int = -1
+	button_col int = -1
+	on_check   fn (i64, bool)   = unsafe { nil }
+	on_edit    fn (i64, string) = unsafe { nil }
+	on_button  fn (i64)         = unsafe { nil }
 	st        &ZGuiState = unsafe { nil }
 }
 
@@ -662,6 +684,10 @@ fn zgui_tbl_num_columns(mh &C.uiTableModelHandler, m &C.uiTableModel) int {
 }
 
 fn zgui_tbl_column_type(mh &C.uiTableModelHandler, m &C.uiTableModel, column int) int {
+	t := unsafe { &ZGuiTable(mh) }
+	if column == t.check_col {
+		return zgui_table_value_int
+	}
 	return zgui_table_value_string
 }
 
@@ -676,11 +702,38 @@ fn zgui_tbl_cell_value(mh &C.uiTableModelHandler, m &C.uiTableModel, row int, co
 	if row >= 0 && row < t.shown.len && column >= 0 && column < t.shown[row].len {
 		text = t.shown[row][column]
 	}
+	if column == t.check_col {
+		return C.uiNewTableValueInt(if text == '1' { 1 } else { 0 })
+	}
 	return C.uiNewTableValueString(zgui_cstr(text))
 }
 
+// a check toggled, a cell edited or a button clicked: to the program's closure
+// for that column; the model is NOT changed here -- the message goes to update,
+// the next frame's rows carry the answer (or not, if update declined)
 fn zgui_tbl_set_cell_value(mh &C.uiTableModelHandler, m &C.uiTableModel, row int, column int, v &C.uiTableValue) {
-	// the columns are not editable: nothing to set
+	t := unsafe { &ZGuiTable(mh) }
+	if column == t.button_col {
+		// a button column: libui calls with no value for the click
+		if t.on_button != unsafe { nil } {
+			t.on_button(i64(row))
+		}
+		return
+	}
+	if v == unsafe { nil } {
+		return
+	}
+	if column == t.edit_col {
+		if t.on_edit != unsafe { nil } {
+			// (copied: libui frees the value when this returns, the message is handled later)
+			text := unsafe { cstring_to_vstring(C.uiTableValueString(v)) }
+			t.on_edit(i64(row), text)
+		}
+		return
+	}
+	if column == t.check_col && t.on_check != unsafe { nil } {
+		t.on_check(i64(row), C.uiTableValueInt(v) != 0)
+	}
 }
 
 fn zgui_on_row_double_clicked(tb &C.uiTable, row int, data voidptr) {
@@ -710,7 +763,15 @@ fn zgui_make_table_control(t &ZGuiTable) voidptr {
 	tb := C.uiNewTable(&params)
 	for c := 0; c < tt.ncols; c++ {
 		name := if c < tt.names.len { tt.names[c] } else { '' }
-		C.uiTableAppendTextColumn(tb, zgui_cstr(name), c, -1, unsafe { nil })
+		if c == tt.check_col {
+			C.uiTableAppendCheckboxColumn(tb, zgui_cstr(name), c, zgui_column_always_editable)
+		} else if c == tt.edit_col {
+			C.uiTableAppendTextColumn(tb, zgui_cstr(name), c, zgui_column_always_editable, unsafe { nil })
+		} else if c == tt.button_col {
+			C.uiTableAppendButtonColumn(tb, zgui_cstr(name), c, zgui_column_always_editable)
+		} else {
+			C.uiTableAppendTextColumn(tb, zgui_cstr(name), c, -1, unsafe { nil })
+		}
 	}
 	C.uiTableOnRowDoubleClicked(tb, zgui_on_row_double_clicked, voidptr(tt))
 	tt.table = tb
@@ -1501,6 +1562,34 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 		}
 		return true
 	}
+	if verb == 'cellcheck' || verb == 'celledit' || verb == 'cellbutton' {
+		// <id>=<row>[=<value>]
+		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <id>=<row>[=<value>]') }
+		t := s.tables[rest[..eq]] or { panic('ZGUI_SCRIPT: no table ' + rest[..eq]) }
+		mut rowtext := rest[eq + 1..]
+		mut val := ''
+		if eq2 := rowtext.index('=') {
+			val = rowtext[eq2 + 1..]
+			rowtext = rowtext[..eq2]
+		}
+		row := rowtext.int()
+		match verb {
+			'cellcheck' {
+				v := C.uiNewTableValueInt(if val == '1' { 1 } else { 0 })
+				zgui_tbl_set_cell_value(&t.handler, t.model, row, t.check_col, v)
+				C.uiFreeTableValue(v)
+			}
+			'celledit' {
+				v := C.uiNewTableValueString(zgui_cstr(val))
+				zgui_tbl_set_cell_value(&t.handler, t.model, row, t.edit_col, v)
+				C.uiFreeTableValue(v)
+			}
+			else {
+				zgui_tbl_set_cell_value(&t.handler, t.model, row, t.button_col, unsafe { nil })
+			}
+		}
+		return true
+	}
 	if verb == 'dblclick' || verb == 'select' {
 		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <id>=<row>') }
 		mut t := s.tables[rest[..eq]] or { panic('ZGUI_SCRIPT: no table ' + rest[..eq]) }
@@ -1649,12 +1738,21 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'combobox', 'radio' { n.kind + '(' + n.label + '=' + n.ival.str() + ')' }
 			'begin_tabs' { 'tabs(' + n.label + '=' + C.uiTabSelected(unsafe { &C.uiTab(n.ctl) }).str() + ')' }
 			'begin_tab_page' { 'page(' + n.text + ')' }
-			'table' { 'table(' + n.label + ' ' + (s.tables[n.label] or { panic('no table') }).shown.len.str() + ' rows)' }
+			'table' { 'table(' + n.label + ' ' + zgui_table_words(s.tables[n.label] or { panic('no table') }) + ')' }
 			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
 	return parts.join(' ')
+}
+
+// a table's rows as words: `3 rows: [1 main.zbr] [0 Parser.zbr] [1 README.md]`
+fn zgui_table_words(t &ZGuiTable) string {
+	mut parts := []string{}
+	for r in t.shown {
+		parts << '[' + r.join(' ') + ']'
+	}
+	return t.shown.len.str() + ' rows: ' + parts.join(' ')
 }
 
 // a tree's nodes as words: `src/[+main.zbr Parser.zbr gui/[-tree.zbr]] docs/[-README.md] build.zbr`
@@ -2301,6 +2399,9 @@ pub fn (g Gui) begin_table(id string, cols i64) bool {
 	t.names = []string{}
 	t.rows = [][]string{}
 	t.cur_col = 0
+	t.check_col = -1
+	t.edit_col = -1
+	t.button_col = -1
 	st.cur_table = t
 	return true
 }
@@ -2310,6 +2411,56 @@ pub fn (g Gui) table_setup_column(label string) {
 	if t != unsafe { nil } {
 		t.names << label
 	}
+}
+
+// the column kinds: a check column (a cell is `tableCheck`), an editable text
+// column, a button column (a cell's text is the button's); each with the
+// program's closure for the row's toggle, edit or click
+pub fn (g Gui) table_setup_check_column[G](label string, on fn (i64, bool) G) {
+	mut t := g.st.cur_table
+	if t == unsafe { nil } {
+		return
+	}
+	t.check_col = t.names.len
+	t.names << label
+	st := g.st
+	t.on_check = fn [on, st] [G](row i64, checked bool) {
+		m := on(row, checked)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+}
+
+pub fn (g Gui) table_setup_edit_column[G](label string, on fn (i64, string) G) {
+	mut t := g.st.cur_table
+	if t == unsafe { nil } {
+		return
+	}
+	t.edit_col = t.names.len
+	t.names << label
+	st := g.st
+	t.on_edit = fn [on, st] [G](row i64, text string) {
+		m := on(row, text)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+}
+
+pub fn (g Gui) table_setup_button_column[G](label string, on fn (i64) G) {
+	mut t := g.st.cur_table
+	if t == unsafe { nil } {
+		return
+	}
+	t.button_col = t.names.len
+	t.names << label
+	st := g.st
+	t.on_button = fn [on, st] [G](row i64) {
+		m := on(row)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+}
+
+// a check cell: 1 or 0 as the cell's text (the model reads it as an int)
+pub fn (g Gui) table_check(checked bool) {
+	g.text(if checked { '1' } else { '0' })
 }
 
 pub fn (g Gui) table_headers_row() {

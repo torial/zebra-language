@@ -83,7 +83,7 @@ build_and_run table examples/table_strip_smoke.zbr "tick;tick;dblclick:##rows=1;
 r() { sed -n "$((1 + $1))p" "$OUT/table_run.txt"; }
 fail=""
 [ "$(wc -l < "$OUT/table_run.txt")" = 6 ] || fail="6 frames expected, $(wc -l < "$OUT/table_run.txt") drawn"
-echo "$(r 0)" | grep -q "text(ticks 0  saved 0  tab -1) table(##rows 3 rows) text(selected -1  activated -1)" || fail="${fail:-frame 0 should show no ticks, three rows, nothing selected or activated (the class defaults)}"
+echo "$(r 0)" | grep -q "text(ticks 0  saved 0  tab -1) table(##rows 3 rows: .*) text(selected -1  activated -1)" || fail="${fail:-frame 0 should show no ticks, three rows, nothing selected or activated (the class defaults)}"
 echo "$(r 3)" | grep -q "text(ticks 2 " || fail="${fail:-frame 3 should show two ticks}"
 echo "$(r 4)" | grep -q "activated 1)" || fail="${fail:-frame 4 should show row 1 activated}"
 echo "$(r 5)" | grep -q "text(selected 2  activated 1)" || fail="${fail:-frame 5 should show row 2 selected}"
@@ -163,4 +163,29 @@ echo "$(e 2)" | grep -q "editcombo(Open=lib/x.zbr) text(path: lib/x.zbr)" || fai
 echo "$(e 3)" | grep -q "text(path: src/main.zbr)" || fail="${fail:-frame 3 should show the last recent item}"
 [ -z "$fail" ] || { echo "v_gui_check: editcombo FAILED -- $fail:"; cat "$OUT/editcombo_run.txt"; exit 6; }
 echo "v_gui_check: editcombo ok -- a path typed, the last recent picked (4 frames)"
+
+# 10. a check column (examples/table_check_smoke.zbr): row 1 checked through
+# the column's closure, then None and All through the buttons
+build_and_run tcheck examples/table_check_smoke.zbr "cellcheck:##files=1=1;click:None;click:All;tick;quit"
+k() { sed -n "$((1 + $1))p" "$OUT/tcheck_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/tcheck_run.txt")" = 5 ] || fail="5 frames expected, $(wc -l < "$OUT/tcheck_run.txt") drawn"
+echo "$(k 0)" | grep -q "table(##files 3 rows: \[1 main.zbr\] \[0 Parser.zbr\] \[1 README.md\]) text(Save 2 of 3)" || fail="${fail:-frame 0 should show the initial checks}"
+echo "$(k 2)" | grep -q "\[1 Parser.zbr\]" || fail="${fail:-frame 2 should show row 1 checked}"
+echo "$(k 3)" | grep -q "text(Save 0 of 3)" || fail="${fail:-frame 3 should show none checked}"
+echo "$(k 4)" | grep -q "text(Save 3 of 3)" || fail="${fail:-frame 4 should show all checked}"
+[ -z "$fail" ] || { echo "v_gui_check: tcheck FAILED -- $fail:"; cat "$OUT/tcheck_run.txt"; exit 6; }
+echo "v_gui_check: tcheck ok -- a check cell toggled through its column's closure, None and All (5 frames)"
+
+# 11. an edit column and a button column (examples/table_edit_smoke.zbr): a
+# rename, an empty rename refused by update, a row removed by its button
+build_and_run tedit examples/table_edit_smoke.zbr "celledit:##names=1=delta;celledit:##names=0=;cellbutton:##names=2;tick;quit"
+j() { sed -n "$((1 + $1))p" "$OUT/tedit_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/tedit_run.txt")" = 5 ] || fail="5 frames expected, $(wc -l < "$OUT/tedit_run.txt") drawn"
+echo "$(j 2)" | grep -q "\[delta Remove\].*text(3 names; row 1 -> delta)" || fail="${fail:-frame 2 should show the rename}"
+echo "$(j 3)" | grep -q "text(3 names; empty name refused for row 0)" || fail="${fail:-frame 3 should show the refusal}"
+echo "$(j 4)" | grep -q "table(##names 2 rows: \[alpha Remove\] \[delta Remove\]) text(2 names; removed row 2)" || fail="${fail:-frame 4 should show the row removed}"
+[ -z "$fail" ] || { echo "v_gui_check: tedit FAILED -- $fail:"; cat "$OUT/tedit_run.txt"; exit 6; }
+echo "v_gui_check: tedit ok -- a cell renamed, an empty rename refused, a row removed by its button (5 frames)"
 echo "v_gui_check: ok"

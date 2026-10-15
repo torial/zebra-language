@@ -984,6 +984,21 @@ bytes now are too, a step the fifth batch had skipped (the warn
 triangle's amber is this section's own: the Zig line was cut in the
 read). Nine witnesses now.
 
+The seventh batch completes the table: `tableSetupCheckColumn`,
+`tableSetupEditColumn` and `tableSetupButtonColumn` each take the
+program's closure for the row's toggle (row and a bool), edit (row and
+the new text) or click (the row), a check cell is `tableCheck` (1 or 0
+as the cell's text, which the model reports as libui's integer value),
+the columns are appended by kind with libui's always-editable
+sentinel, and the model's SetCellValue is dispatched by column to the
+closure; the model is not changed there -- the message goes to update
+and the next frame's rows carry the answer, or do not, as
+`examples/table_edit_smoke.zbr` shows by refusing an empty name. The
+trace now prints a table's rows as words. Two more witnesses:
+`examples/table_check_smoke.zbr` (row 1 checked through the closure,
+then None and All) and `table_edit_smoke.zbr` (a rename, the refused
+empty rename, a row removed by its button). Eleven.
+
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
 the program's Msg is `i64`: four bytes copied, eight read back, the
@@ -1019,9 +1034,8 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the Zig section's remaining widgets (the check / edit
-/ button table columns, the CodeEditor, drawing, hotkeys), the tui
-backend on V, a
+What it is not: the Zig section's remaining widgets (the CodeEditor,
+drawing, hotkeys), the tui backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from
