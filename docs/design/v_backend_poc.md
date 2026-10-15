@@ -1262,7 +1262,7 @@ and the debugger are a session with Sean).
 **The engine's headless tests as the ladder (2026-10-15).** After the
 IDE, the largest set of real programs there is: `tools/v_engine_check.py`
 takes every test root `build.zig` names (through the engine's own
-`tools/affected_tests.py`), keeps the 95 whose root is a Zebra source
+`tools/affected_tests.py`), keeps the 95 whose root is a Zebra source <!-- doc-lint-ok: the GameEngine's own tool (C:/Projects/GameEngine/tools), not this repo's -->
 (the other 255 are Zig-rooted host tests, counted, never guessed), emits
 each from the engine root with `--module-path zbra`, moves the `.v` out of
 the engine tree at once, builds it with V, runs it from the engine root
@@ -1297,7 +1297,7 @@ counts chose:
 - **V 0.5.2's json2 keeps the escape sequences inside object keys** (a
   key `Iron \"Spear\"` reads back with its backslashes and encodes
   doubled); master is fine. The runtime unescapes keys after a decode.
-- **The engine's own test tool.** `tools/affected_tests.py` mapped
+- **The engine's own test tool.** `tools/affected_tests.py` mapped <!-- doc-lint-ok: the GameEngine's own tool (C:/Projects/GameEngine/tools), not this repo's -->
   `.root_module = tmod` to the LAST definition of a module variable
   `build.zig` reuses four times, so datastore_test's root read as
   voting_test's (the F42 class): the nearest preceding definition now,
