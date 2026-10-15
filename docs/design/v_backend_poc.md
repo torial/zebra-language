@@ -969,6 +969,21 @@ a node of an iconed tree picked). Two runtime gaps they found: a Zebra
 list's `append` (the emitter maps methods by name; the runtime had only
 `add`) and a StringBuilder's `appendChar`, both added to `zebra_rt.v`.
 
+The sixth batch: the dialogs -- `openFile` / `saveFile` / `openFolder`
+return a Zebra option, `msgBox` / `msgBoxError` show -- are libui's
+modal ones on a real run and, scripted, the next `dialog:<path>` answer
+(an empty one is a cancel) with a `dialogs(...)` word in the trace, so
+`examples/file_dialog_smoke.zbr` runs headless: an open answered, a
+save cancelled with the status left alone, a folder answered, an alert
+and an error recorded; the editable combobox (`comboboxEditable`, a
+list of choices and a text, the `set` verb;
+`examples/combobox_editable_smoke.zbr`); and the built-in icon set,
+the Zig section's four painters (folder, file, dot, warn) ported pixel
+for pixel and premultiplied as libui wants -- which `registerIcon`'s
+bytes now are too, a step the fifth batch had skipped (the warn
+triangle's amber is this section's own: the Zig line was cut in the
+read). Nine witnesses now.
+
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
 the program's Msg is `i64`: four bytes copied, eight read back, the
@@ -1004,10 +1019,9 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the Zig section's remaining widgets (the editable
-combobox, the check / edit / button table columns, the CodeEditor,
-drawing, the dialogs, the built-in icon set, hotkeys), the tui backend
-on V, a
+What it is not: the Zig section's remaining widgets (the check / edit
+/ button table columns, the CodeEditor, drawing, hotkeys), the tui
+backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from

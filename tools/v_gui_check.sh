@@ -134,4 +134,33 @@ echo "$(c 4)" | grep -q "text(pasted: zebra on v)" || fail="${fail:-frame 4 shou
 echo "$(c 6)" | grep -q "text(picked: src/todo)" || fail="${fail:-frame 6 should show the tree node picked}"
 [ -z "$fail" ] || { echo "v_gui_check: clip FAILED -- $fail:"; cat "$OUT/clip_run.txt"; exit 6; }
 echo "v_gui_check: clip ok -- copied and pasted through the clipboard, a tree node picked (7 frames)"
+
+# 8. the dialogs (examples/file_dialog_smoke.zbr): Open File answered, Save
+# File cancelled (the status stays), Open Folder answered, an alert and an
+# error shown -- scripted, a dialog's answer comes from `dialog:` and the
+# trace records what opened
+build_and_run dialogs examples/file_dialog_smoke.zbr "dialog:C:/tmp/a.txt;click:Open File;tick;dialog:;click:Save File;tick;dialog:C:/tmp;click:Open Folder;tick;click:Show Alert;tick;click:Show Error;tick;quit"
+d() { sed -n "$((1 + $1))p" "$OUT/dialogs_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/dialogs_run.txt")" = 14 ] || fail="14 frames expected, $(wc -l < "$OUT/dialogs_run.txt") drawn"
+echo "$(d 3)" | grep -q "dialogs(open_file)" || fail="${fail:-frame 3 should record the open dialog}"
+echo "$(d 4)" | grep -q "text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 4 should show the opened path}"
+echo "$(d 6)" | grep -q "dialogs(save_file) text(File Dialog Smoke Test) text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 6 should record the save dialog with the status unchanged}"
+echo "$(d 7)" | grep -q "text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 7 should keep the status after the cancelled save}"
+echo "$(d 10)" | grep -q "text(Status: Folder: C:/tmp)" || fail="${fail:-frame 10 should show the folder}"
+echo "$(d 11)" | grep -q "dialogs(msgbox(File Dialogs))" || fail="${fail:-frame 11 should record the alert}"
+echo "$(d 13)" | grep -q "dialogs(msgbox_error(Error))" || fail="${fail:-frame 13 should record the error box}"
+[ -z "$fail" ] || { echo "v_gui_check: dialogs FAILED -- $fail:"; cat "$OUT/dialogs_run.txt"; exit 6; }
+echo "v_gui_check: dialogs ok -- open answered, save cancelled, folder answered, an alert and an error recorded (14 frames)"
+
+# 9. the editable combobox (examples/combobox_editable_smoke.zbr): a path typed,
+# then Last (the model picks the last recent item)
+build_and_run editcombo examples/combobox_editable_smoke.zbr "set:Open=lib/x.zbr;click:Last;tick;quit"
+e() { sed -n "$((1 + $1))p" "$OUT/editcombo_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/editcombo_run.txt")" = 4 ] || fail="4 frames expected, $(wc -l < "$OUT/editcombo_run.txt") drawn"
+echo "$(e 2)" | grep -q "editcombo(Open=lib/x.zbr) text(path: lib/x.zbr)" || fail="${fail:-frame 2 should show the typed path}"
+echo "$(e 3)" | grep -q "text(path: src/main.zbr)" || fail="${fail:-frame 3 should show the last recent item}"
+[ -z "$fail" ] || { echo "v_gui_check: editcombo FAILED -- $fail:"; cat "$OUT/editcombo_run.txt"; exit 6; }
+echo "v_gui_check: editcombo ok -- a path typed, the last recent picked (4 frames)"
 echo "v_gui_check: ok"

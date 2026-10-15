@@ -49,10 +49,16 @@
 // name is drawn without and said once: the Zig section's built-in set is not
 // here).
 //
-// Not here (the Zig section has them): the editable combobox, the check / edit
-// / button table columns, the CodeEditor, drawing, the dialogs. A call to one
-// of those is a V compile error naming the method, not a silent no-op; hotkey,
-// takeKey and minSize are accepted and not acted on (said once each).
+// And the editable combobox, the dialogs (openFile / saveFile / openFolder,
+// msgBox / msgBoxError: libui's modal ones, or, scripted, the next `dialog:`
+// answer and a line in the trace) and the built-in icon set (folder, file,
+// dot, warn: the Zig section's painters, premultiplied as libui wants, which
+// registerIcon's bytes now are too).
+//
+// Not here (the Zig section has them): the check / edit / button table
+// columns, the CodeEditor, drawing. A call to one of those is a V compile
+// error naming the method, not a silent no-op; hotkey, takeKey and minSize
+// are accepted and not acted on (said once each).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
@@ -60,8 +66,9 @@
 // `pick:<label>=<index>` (a combobox or radio), `tab:<id>=<index>`,
 // `menu:<label>` (a menu item), `dblclick:<table id>=<row>`,
 // `select:<table id>=<row>`, `tool:<label>`, `treesel:<id>=<key>`,
-// `treeact:<id>=<key>`, `treeexp:<id>=<key>=<0|1>`, `tick` (every timer
-// fires once), `quit`.
+// `treeact:<id>=<key>`, `treeexp:<id>=<key>=<0|1>`, `dialog:<path>` (what the
+// next file dialog returns; empty = cancelled), `tick` (every timer fires
+// once), `quit`.
 // ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
 // what the window shows.
 
@@ -128,6 +135,7 @@ struct C.uiTree {}
 struct C.uiTreeModel {}
 struct C.uiToolbar {}
 struct C.uiImage {}
+struct C.uiEditableCombobox {}
 
 // the fork's tree model handler: five function pointers, first in ZGuiTree
 struct C.uiTreeModelHandler {
@@ -243,6 +251,16 @@ fn C.uiToolbarClear(t &C.uiToolbar)
 fn C.uiToolbarSetItemEnabled(t &C.uiToolbar, index int, enabled int)
 fn C.uiToolbarOnClicked(t &C.uiToolbar, f fn (&C.uiToolbar, int, voidptr), data voidptr)
 fn C.uiNewImage(width f64, height f64) &C.uiImage
+fn C.uiNewEditableCombobox() &C.uiEditableCombobox
+fn C.uiEditableComboboxAppend(c &C.uiEditableCombobox, text &char)
+fn C.uiEditableComboboxText(c &C.uiEditableCombobox) &char
+fn C.uiEditableComboboxSetText(c &C.uiEditableCombobox, text &char)
+fn C.uiEditableComboboxOnChanged(c &C.uiEditableCombobox, f fn (&C.uiEditableCombobox, voidptr), data voidptr)
+fn C.uiMsgBox(parent &C.uiWindow, title &char, description &char)
+fn C.uiMsgBoxError(parent &C.uiWindow, title &char, description &char)
+fn C.uiOpenFile(parent &C.uiWindow) &char
+fn C.uiSaveFile(parent &C.uiWindow) &char
+fn C.uiOpenFolder(parent &C.uiWindow) &char
 fn C.uiImageAppend(i &C.uiImage, pixels voidptr, pixel_width int, pixel_height int, byte_stride int)
 
 const zgui_slider_steps = 1000 // a slider is 0..1000 under the hood; the value maps onto min..max
@@ -314,6 +332,8 @@ pub mut:
 	icons        map[string]&C.uiImage
 	icon_queue   []ZGuiIconReq // registerIcon runs before Gui.run, before uiInit: queued
 	icon_said    map[string]bool
+	dialog_answers []string // scripted: what the next dialogs return (`dialog:<path>`; empty = cancelled)
+	dialogs_shown  []string // this frame's dialogs, for the trace
 }
 
 struct ZGuiIconReq {
@@ -544,6 +564,98 @@ fn zgui_build_menus(st &ZGuiState) {
 	s.menus_frozen = true
 }
 
+// libui wants premultiplied alpha; a registered icon arrives straight
+fn zgui_premultiply(rgba []u8) []u8 {
+	mut out := []u8{len: rgba.len}
+	for i := 0; i + 3 < rgba.len; i += 4 {
+		a := u32(rgba[i + 3])
+		out[i] = u8((u32(rgba[i]) * a + 127) / 255)
+		out[i + 1] = u8((u32(rgba[i + 1]) * a + 127) / 255)
+		out[i + 2] = u8((u32(rgba[i + 2]) * a + 127) / 255)
+		out[i + 3] = u8(a)
+	}
+	return out
+}
+
+fn zgui_image(pixels []u8, w int, h int) &C.uiImage {
+	img := C.uiNewImage(f64(w), f64(h))
+	C.uiImageAppend(img, voidptr(pixels.data), w, h, w * 4)
+	return img
+}
+
+fn zgui_icon_px(mut buf []u8, x int, y int, r u8, g u8, b u8, a u8) {
+	if x < 0 || y < 0 || x >= 16 || y >= 16 {
+		return
+	}
+	o := (y * 16 + x) * 4
+	buf[o] = u8((u32(r) * u32(a)) / 255)
+	buf[o + 1] = u8((u32(g) * u32(a)) / 255)
+	buf[o + 2] = u8((u32(b) * u32(a)) / 255)
+	buf[o + 3] = a
+}
+
+fn zgui_icon_rect(mut buf []u8, x0 int, y0 int, x1 int, y1 int, r u8, g u8, b u8) {
+	for y := y0; y < y1; y++ {
+		for x := x0; x < x1; x++ {
+			zgui_icon_px(mut buf, x, y, r, g, b, 255)
+		}
+	}
+}
+
+// the built-in icons, 16x16 premultiplied RGBA, as the Zig section paints them
+fn zgui_paint_icon(name string) []u8 {
+	mut buf := []u8{len: 16 * 16 * 4}
+	match name {
+		'folder' { // a tab and a body, warm yellow with a darker outline
+			zgui_icon_rect(mut buf, 1, 3, 7, 5, 0xC9, 0x9A, 0x2E)
+			zgui_icon_rect(mut buf, 1, 5, 15, 14, 0xC9, 0x9A, 0x2E)
+			zgui_icon_rect(mut buf, 2, 6, 14, 13, 0xF2, 0xC4, 0x5A)
+		}
+		'file' { // a white page, grey outline, folded corner
+			zgui_icon_rect(mut buf, 3, 1, 13, 15, 0x77, 0x77, 0x77)
+			zgui_icon_rect(mut buf, 4, 2, 12, 14, 0xFC, 0xFC, 0xFC)
+			for i := 0; i < 4; i++ {
+				zgui_icon_rect(mut buf, 9 + i, 1, 13, 2 + i, 0x77, 0x77, 0x77)
+				zgui_icon_rect(mut buf, 9, 2 + i, 13, 3 + i, 0xE0, 0xE0, 0xE0)
+			}
+			zgui_icon_rect(mut buf, 6, 7, 11, 8, 0xAA, 0xAA, 0xAA)
+			zgui_icon_rect(mut buf, 6, 10, 11, 11, 0xAA, 0xAA, 0xAA)
+		}
+		'dot' { // a blue disc
+			for y := 0; y < 16; y++ {
+				for x := 0; x < 16; x++ {
+					dx := x * 2 - 15
+					dy := y * 2 - 15
+					if dx * dx + dy * dy <= 11 * 11 {
+						zgui_icon_px(mut buf, x, y, 0x2A, 0x6E, 0xBB, 255)
+					}
+				}
+			}
+		}
+		'warn' { // an amber triangle with a dark bang (the amber is this section's own: the Zig line is cut in the source read)
+			for y := 2; y < 15; y++ {
+				half := ((y - 2) * 7) / 12
+				for x := 8 - half; x <= 8 + half && x < 16; x++ {
+					zgui_icon_px(mut buf, x, y, 0xF0, 0xA8, 0x20, 255)
+				}
+			}
+			zgui_icon_rect(mut buf, 7, 6, 9, 11, 0x33, 0x22, 0x00)
+			zgui_icon_rect(mut buf, 7, 12, 9, 14, 0x33, 0x22, 0x00)
+		}
+		else {}
+	}
+	return buf
+}
+
+fn zgui_on_editcombo_changed(c &C.uiEditableCombobox, data voidptr) {
+	mut n := unsafe { &ZGuiNode(data) }
+	raw := C.uiEditableComboboxText(c)
+	t := unsafe { cstring_to_vstring(raw) }
+	C.uiFreeText(raw)
+	n.text = t
+	n.on_text(t)
+}
+
 fn zgui_tbl_num_columns(mh &C.uiTableModelHandler, m &C.uiTableModel) int {
 	t := unsafe { &ZGuiTable(mh) }
 	return t.ncols
@@ -675,7 +787,7 @@ fn zgui_tree_icon(mh &C.uiTreeModelHandler, m &C.uiTreeModel, node voidptr) &C.u
 	}
 	mut st := t.st
 	if n.icon !in st.icon_said {
-		eprintln('[zgui] icon "' + n.icon + '" is not registered (Gui.registerIcon) and the built-in set is not on the V backend yet: drawn without')
+		eprintln('[zgui] icon "' + n.icon + '" is neither built in (folder, file, dot, warn) nor registered (Gui.registerIcon): drawn without')
 		st.icon_said[n.icon] = true
 	}
 	return unsafe { nil }
@@ -810,7 +922,7 @@ fn zgui_sync_toolbar(st &ZGuiState) {
 				if found := s.icons[it.icon] {
 					img = found
 				} else if it.icon !in s.icon_said {
-					eprintln('[zgui] icon "' + it.icon + '" is not registered (Gui.registerIcon) and the built-in set is not on the V backend yet: drawn without')
+					eprintln('[zgui] icon "' + it.icon + '" is neither built in (folder, file, dot, warn) nor registered (Gui.registerIcon): drawn without')
 					s.icon_said[it.icon] = true
 				}
 			}
@@ -853,11 +965,17 @@ fn zgui_init(st &ZGuiState, title string, width int, height int) {
 		panic('libui init failed: ' + msg)
 	}
 	for r in s.icon_queue {
-		img := C.uiNewImage(f64(r.w), f64(r.h))
-		C.uiImageAppend(img, voidptr(r.rgba.str), r.w, r.h, r.w * 4)
-		s.icons[r.name] = img
+		if r.rgba.len < r.w * r.h * 4 {
+			eprintln('[zgui] registerIcon ' + r.name + ': ' + r.rgba.len.str() + ' bytes for ' + r.w.str() + 'x' + r.h.str() + ' RGBA (wants ' + (r.w * r.h * 4).str() + '): not registered')
+			continue
+		}
+		s.icons[r.name] = zgui_image(zgui_premultiply(r.rgba.bytes()), r.w, r.h)
 	}
 	s.icon_queue = []ZGuiIconReq{}
+	// the built-in set: folder, file, dot, warn (the Zig section's painters)
+	for name in ['folder', 'file', 'dot', 'warn'] {
+		s.icons[name] = zgui_image(zgui_paint_icon(name), 16, 16)
+	}
 	// the window is made at the first commit, after the first frame's menus
 	s.title = title
 	s.width = width
@@ -905,7 +1023,7 @@ fn zgui_same_shape(a &ZGuiNode, b &ZGuiNode) bool {
 	if a.kind == 'spinbox' && (a.imin != b.imin || a.imax != b.imax) {
 		return false
 	}
-	if (a.kind == 'combobox' || a.kind == 'radio') && a.items.join('\x01') != b.items.join('\x01') {
+	if (a.kind == 'combobox' || a.kind == 'radio' || a.kind == 'editcombo') && a.items.join('\x01') != b.items.join('\x01') {
 		return false
 	}
 	if a.kind == 'table' && a.items.join('\x01') != b.items.join('\x01') {
@@ -919,7 +1037,7 @@ fn zgui_same_shape(a &ZGuiNode, b &ZGuiNode) bool {
 
 // a control with no label of its own gets one beside it (or its form row's)
 fn zgui_needs_label(kind string) bool {
-	return kind == 'field' || kind == 'spinbox' || kind == 'slider' || kind == 'progress'
+	return kind == 'field' || kind == 'spinbox' || kind == 'slider' || kind == 'progress' || kind == 'editcombo'
 }
 
 // one control for a node, built fresh
@@ -973,6 +1091,15 @@ fn zgui_build_control(n &ZGuiNode) voidptr {
 		'tree' {
 			t := m.st.trees[n.label] or { panic('zgui: no tree ' + n.label) }
 			return zgui_make_tree_control(t)
+		}
+		'editcombo' {
+			c := C.uiNewEditableCombobox()
+			for it in n.items {
+				C.uiEditableComboboxAppend(c, zgui_cstr(it))
+			}
+			C.uiEditableComboboxSetText(c, zgui_cstr(n.text))
+			C.uiEditableComboboxOnChanged(c, zgui_on_editcombo_changed, voidptr(m))
+			return voidptr(c)
 		}
 		'combobox' {
 			c := C.uiNewCombobox()
@@ -1064,6 +1191,12 @@ fn zgui_commit(st &ZGuiState) {
 				'tree' {
 					t := s.trees[n.label] or { panic('zgui: no tree ' + n.label) }
 					zgui_tree_update_nodes(t, t.shown, t.roots)
+				}
+				'editcombo' {
+					if p.text != n.text {
+						C.uiEditableComboboxSetText(unsafe { &C.uiEditableCombobox(n.ctl) }, zgui_cstr(n.text))
+					}
+					C.uiEditableComboboxOnChanged(unsafe { &C.uiEditableCombobox(n.ctl) }, zgui_on_editcombo_changed, voidptr(n))
 				}
 				'combobox' {
 					if p.ival != n.ival {
@@ -1330,6 +1463,11 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 		}
 		panic('ZGUI_SCRIPT: no menu item labelled ' + label)
 	}
+	if verb == 'dialog' {
+		// the next dialog's answer (an empty path: cancelled)
+		s.dialog_answers << rest
+		return true
+	}
 	if verb == 'tool' {
 		for it in s.tool_items {
 			if it.kind == 'item' && it.label == label {
@@ -1408,6 +1546,12 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 					e := unsafe { &C.uiEntry(n.ctl) }
 					C.uiEntrySetText(e, zgui_cstr(value))
 					zgui_on_entry_changed(e, voidptr(n))
+					return true
+				}
+				if n.kind == 'editcombo' {
+					c := unsafe { &C.uiEditableCombobox(n.ctl) }
+					C.uiEditableComboboxSetText(c, zgui_cstr(value))
+					zgui_on_editcombo_changed(c, voidptr(n))
 					return true
 				}
 			}
@@ -1497,6 +1641,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 	for n in s.prev {
 		parts << match n.kind {
 			'field' { 'field(' + n.label + '=' + n.text + ')' }
+			'editcombo' { 'editcombo(' + n.label + '=' + n.text + ')' }
 			'toggle' { 'toggle(' + n.label + '=' + (if n.ival != 0 { 'on' } else { 'off' }) + ')' }
 			'spinbox' { 'spinbox(' + n.label + '=' + n.ival.str() + ')' }
 			'slider' { 'slider(' + n.label + '=' + n.fval.str() + ')' }
@@ -1537,8 +1682,13 @@ fn zgui_end_frame(st &ZGuiState) {
 			}
 			tb = 'toolbar(' + ws.join(' ') + ') '
 		}
-		println('[zgui] frame ' + s.frame.str() + ': ' + tb + zgui_trace_line(s))
+		mut dl := ''
+		if s.dialogs_shown.len > 0 {
+			dl = 'dialogs(' + s.dialogs_shown.join(' ') + ') '
+		}
+		println('[zgui] frame ' + s.frame.str() + ': ' + tb + dl + zgui_trace_line(s))
 	}
+	s.dialogs_shown = []string{}
 	s.frame++
 	s.redraw = s.sent > 0
 }
@@ -1748,6 +1898,83 @@ pub fn (g Gui) tool_enabled(enabled bool) {
 }
 
 pub fn (g Gui) end_toolbar() {
+}
+
+// -- the editable combobox and the dialogs --
+
+pub fn (g Gui) combobox_editable[G](label string, items &ZList[string], text string, on fn (string) G) {
+	mut n := g.node('editcombo', label)
+	n.items = items.items.clone()
+	n.text = text
+	st := g.st
+	n.on_text = fn [on, st] [G](t string) {
+		m := on(t)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+}
+
+// a file dialog: libui's modal one, or, scripted, the next `dialog:` answer
+fn (g Gui) file_dialog(kind string) ?string {
+	mut s := g.st
+	s.dialogs_shown << kind
+	if s.script.len > 0 || s.dialog_answers.len > 0 {
+		if s.dialog_answers.len == 0 {
+			panic('ZGUI_SCRIPT: a ' + kind + ' dialog opened with no dialog:<path> answer queued')
+		}
+		ans := s.dialog_answers[0]
+		s.dialog_answers = s.dialog_answers[1..].clone()
+		if ans == '' {
+			return none
+		}
+		return ans
+	}
+	if s.window == unsafe { nil } {
+		return none
+	}
+	p := match kind {
+		'open_file' { C.uiOpenFile(s.window) }
+		'save_file' { C.uiSaveFile(s.window) }
+		else { C.uiOpenFolder(s.window) }
+	}
+	if p == unsafe { nil } {
+		return none
+	}
+	t := unsafe { cstring_to_vstring(p) }
+	C.uiFreeText(p)
+	return t
+}
+
+pub fn (g Gui) open_file() ?string {
+	return g.file_dialog('open_file')
+}
+
+pub fn (g Gui) save_file() ?string {
+	return g.file_dialog('save_file')
+}
+
+pub fn (g Gui) open_folder() ?string {
+	return g.file_dialog('open_folder')
+}
+
+fn (g Gui) message_box(kind string, title string, description string) {
+	mut s := g.st
+	s.dialogs_shown << kind + '(' + title + ')'
+	if s.script.len > 0 || s.window == unsafe { nil } {
+		return // scripted: recorded in the trace, not shown
+	}
+	if kind == 'msgbox' {
+		C.uiMsgBox(s.window, zgui_cstr(title), zgui_cstr(description))
+	} else {
+		C.uiMsgBoxError(s.window, zgui_cstr(title), zgui_cstr(description))
+	}
+}
+
+pub fn (g Gui) msg_box(title string, description string) {
+	g.message_box('msgbox', title, description)
+}
+
+pub fn (g Gui) msg_box_error(title string, description string) {
+	g.message_box('msgbox_error', title, description)
 }
 
 // -- the clipboard and the icons (Gui.setClipboardText / clipboardText / registerIcon) --
