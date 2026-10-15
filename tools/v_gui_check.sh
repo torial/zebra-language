@@ -218,4 +218,32 @@ echo "$(q 5)" | grep -q "text(last: enter " || fail="${fail:-frame 5 should show
 echo "$(q 6)" | grep -q "text(last: key 65 " || fail="${fail:-frame 6 should show the key}"
 [ -z "$fail" ] || { echo "v_gui_check: canvas FAILED -- $fail:"; cat "$OUT/canvas_run.txt"; exit 6; }
 echo "v_gui_check: canvas ok -- press, drag, release, enter and a key through the canvas's closures (7 frames)"
+
+# 14. the code editor (examples/editor_events_smoke.zbr), over the fork's
+# Scintilla shim (zig-libui-ng/zig-out-fast/lib/sci_native.lib): an edit
+# appended through Scintilla, a Ctrl+S chord, a margin click, each taken by a
+# tick and counted by the model
+[ -f "$ZEBRA_LIBUI_NG/../zig-out-fast/lib/sci_native.lib" ] || { echo "v_gui_check: no $ZEBRA_LIBUI_NG/../zig-out-fast/lib/sci_native.lib (zig build -Doptimize=ReleaseFast -p zig-out-fast in zig-libui-ng, with the install line for sci_native): the editor case needs it"; exit 2; }
+build_and_run editor examples/editor_events_smoke.zbr "edtype:x;click:tick;edkey:83,1;click:tick;edmargin:1;click:tick;tick;quit"
+v() { sed -n "$((1 + $1))p" "$OUT/editor_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/editor_run.txt")" = 8 ] || fail="8 frames expected, $(wc -l < "$OUT/editor_run.txt") drawn"
+echo "$(v 0)" | grep -q "text(modified=0  char=0  margin=-1  key=0 (mods<<16|vk)) editor(3 lines)" || fail="${fail:-frame 0 should show the editor with its three lines and no events}"
+echo "$(v 3)" | grep -q "text(modified=1 " || fail="${fail:-frame 3 should count the edit as modified}"
+echo "$(v 5)" | grep -q "key=65619 " || fail="${fail:-frame 5 should show the Ctrl+S chord}"
+echo "$(v 7)" | grep -q "margin=1 " || fail="${fail:-frame 7 should show the margin line clicked}"
+[ -z "$fail" ] || { echo "v_gui_check: editor FAILED -- $fail:"; cat "$OUT/editor_run.txt"; exit 6; }
+echo "v_gui_check: editor ok -- an edit, a chord and a margin click through Scintilla, each counted (8 frames)"
+
+# 15. a GUI program of two modules (examples/gui_modules_smoke.zbr with
+# examples/sci.zbr): an editor made in the used module and handed across,
+# its line count printed before the window, a one-variant union's message
+# counted by the GUI
+cp examples/sci.zbr "$OUT/sci.zbr"
+build_and_run modules examples/gui_modules_smoke.zbr "click:+1;tick;quit"
+fail=""
+grep -q "^lines=2$" "$OUT/modules_run.txt" || fail="the used module's line count should print lines=2 before the window"
+grep -q "text(modules: 2) button(+1)" "$OUT/modules_run.txt" || fail="${fail:-the +1 message should count to 2}"
+[ -z "$fail" ] || { echo "v_gui_check: modules FAILED -- $fail:"; cat "$OUT/modules_run.txt"; exit 6; }
+echo "v_gui_check: modules ok -- two modules, an editor handed across, a one-variant union counted"
 echo "v_gui_check: ok"

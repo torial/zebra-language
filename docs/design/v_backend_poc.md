@@ -1018,6 +1018,30 @@ model by one frame, which the witness expects. Two more witnesses:
 filled, cleared) and `examples/canvas_smoke.zbr` (a press near the dot,
 a drag moving it, a release, an enter, a key). Thirteen.
 
+The ninth batch: the CodeEditor, over the fork's Scintilla shim
+(`zig-libui-ng/libui_scintilla` with the vendored Scintilla 5, built
+ReleaseFast as `sci_native` -- which the fork's build did not install
+until a local `installArtifact` line, said in that checkout; six
+minutes of C++). The emission types a `CodeEditor?` as a value and
+calls methods on the unwrapped copy, so `CodeEditor` is a handle over
+a heap record, as `Gui` is: `CodeEditor.forZebra()` / `forFile` /
+`forLanguage` / `new` make one; `setText` / `getText` (the text lives
+in the Scintilla control while the window holds it and is pulled back
+into the record before a rebuild destroys the control); `setReadOnly`;
+the cursor's line and column and `setCursorPosition`; the three
+recorded events `takeModified` / `takeCharAdded` / `takeMarginClick`
+through the shim's notification hook (insert or delete, the character,
+the margin's line), and `hotkey` / `takeKey` through its key hook
+(chords as the Zig section packs them, mods above the key); `render`
+places it as a node keyed by the record's address, stretchy; the
+configuration is the Zig section's (UTF-8, Consolas 11, One Dark, a
+line-number margin, the caret line, a four-space tab). No syntax
+styling yet: the Zig section's own tokenizer is the next cut, and
+`setErrorMarkers` is accepted and said. Script verbs `edtype` (an edit
+appended through Scintilla, so the modified event fires), `edkey`,
+`edmargin`. The witness: `examples/editor_events_smoke.zbr` -- an edit,
+a Ctrl+S, a margin click, each taken by a tick and counted.
+
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
 the program's Msg is `i64`: four bytes copied, eight read back, the
@@ -1053,8 +1077,8 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the CodeEditor (Scintilla through the fork, the Zig
-section's largest piece) and window hotkeys, the tui backend on V, a
+What it is not: syntax styling in the editor, error markers, window
+hotkeys, the tui backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from

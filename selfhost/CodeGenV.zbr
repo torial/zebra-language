@@ -1455,6 +1455,11 @@ class VGen
             else
                 .line("struct " + vname + " {}")
             .line("")
+        if un.variants.count() == 1
+            # one variant: `type U = U_v` is an ALIAS to V, not a sum type, and a
+            # match on it cannot name the variant (gui_modules_smoke, 2026-10-14);
+            # a never-member makes it a sum type, and its match gains an else
+            names = names + " | ZUnionPad"
         .line("type " + un.name + " = " + names)
         .line("")
 
@@ -2231,9 +2236,30 @@ class VGen
                 .depth = .depth - 1
                 .line("}")
         else if not exhaustive
-            .line("else {}")
+            if .branchSubjectIsPaddedUnion(b)
+                # the padded one-variant union: its else can never run, and an
+                # empty one leaves V a path without a return when the arm returns
+                .line("else { panic('unreachable: the pad of a one-variant union') }")
+            else
+                .line("else {}")
         .depth = .depth - 1
         .line("}")
+
+    # the branch's subject is a union with one variant (padded with ZUnionPad)
+    def branchSubjectIsPaddedUnion(b: StmtBranch): bool
+        for arm in b.cases
+            for v in arm.values
+                branch v
+                    on Expr.member as m
+                        branch m.object
+                            on Expr.ident as id
+                                if .isUnionName(id.name) and (.member_counts.get(id.name) orelse 0) == 1
+                                    return true
+                            else
+                                pass
+                    else
+                        pass
+        return false
 
     def armsExhaustive(b: StmtBranch): bool
         var subject: str = ""
@@ -2259,6 +2285,8 @@ class VGen
                         pass
         if subject == ""
             return false
+        if .isUnionName(subject) and (.member_counts.get(subject) orelse 0) == 1
+            return false   # the one-variant union is padded with ZUnionPad: never exhaustive by its arms
         return seen.count() >= (.member_counts.get(subject) orelse 0)
 
     # an arm's value: a union variant (`U.v`, the variant's struct type), an

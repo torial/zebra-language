@@ -72,9 +72,19 @@
 // closure's captures cannot be compared (the Zig section redraws only when
 // they changed). The trace names what the last draw painted.
 //
-// Not here (the Zig section has it): the CodeEditor. A call to it is a V
-// compile error naming the method, not a silent no-op; hotkey, takeKey and
-// minSize are accepted and not acted on (said once each).
+// And the CodeEditor, over the fork's Scintilla shim (zig-libui-ng/
+// libui_scintilla, the sci_native archive): `CodeEditor.forZebra()` /
+// `forFile` / `forLanguage` / `new`, `setText` / `getText` (the text lives in
+// the control while the window holds it, and is pulled back before a rebuild
+// destroys it), `setReadOnly`, the cursor line and column, `setCursorPosition`,
+// the recorded events `takeModified` / `takeCharAdded` / `takeMarginClick`,
+// `hotkey` / `takeKey` (chords through the shim's key hook), `render` placing
+// it as a node keyed by the record's address. No syntax styling yet (the Zig
+// section's tokenizer is the next cut); `setErrorMarkers` is accepted and
+// said.
+//
+// hotkey, takeKey and minSize on the Gui are accepted and not acted on (said
+// once each).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
@@ -86,8 +96,10 @@
 // next file dialog returns; empty = cancelled), `cellcheck:<id>=<row>=<0|1>`,
 // `celledit:<id>=<row>=<text>`, `cellbutton:<id>=<row>`,
 // `mouse:<id>=<ev>,<x>,<y>,<b>` (an area: ev 1 is a click; a canvas: 1 press
-// 2 release 3 move 4 enter 5 leave), `key:<id>=<vk>,<mods>,<0|1>`, `tick`
-// (every timer fires once), `quit`.
+// 2 release 3 move 4 enter 5 leave), `key:<id>=<vk>,<mods>,<0|1>`,
+// `edtype:<text>` (appended to the first editor through Scintilla, so the
+// modified event fires), `edkey:<vk>,<mods>` (a chord to its key hook),
+// `edmargin:<line>` (a margin click), `tick` (every timer fires once), `quit`.
 // ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
 // what the window shows.
 
@@ -101,6 +113,16 @@
 // add the C++ runtime, and static keeps llvm-mingw's DLLs out of the exe)
 #flag windows -static -lc++ -luser32 -lkernel32 -lgdi32 -lcomctl32 -luxtheme -lmsimg32 -lcomdlg32 -ld2d1 -ldwrite -lole32 -loleaut32 -loleacc -luuid -lwindowscodecs
 #include "ui.h"
+// the Scintilla shim and Scintilla itself sit beside the fork checkout
+// (zig-libui-ng/libui_scintilla, zig-libui-ng/scintilla); the archive is
+// sci_native, installed by the fork's build into zig-out-fast/lib
+#flag -I $env('ZEBRA_LIBUI_NG')/../libui_scintilla/include
+#flag -I $env('ZEBRA_LIBUI_NG')/../scintilla/include
+#flag -L $env('ZEBRA_LIBUI_NG')/../zig-out-fast/lib
+#flag -lsci_native
+#flag windows -limm32
+#include "Scintilla.h"
+#include "ui_scintilla.h"
 
 struct C.uiInitOptions {
 	Size usize
@@ -155,6 +177,34 @@ struct C.uiTreeModel {}
 struct C.uiToolbar {}
 struct C.uiImage {}
 struct C.uiEditableCombobox {}
+struct C.uiScintilla {}
+
+struct C.Sci_NotifyHeader {
+pub mut:
+	hwndFrom voidptr
+	idFrom   usize
+	code     u32
+}
+
+// Scintilla's notification (the layout is the header's; these are the fields read)
+struct C.SCNotification {
+pub mut:
+	nmhdr            C.Sci_NotifyHeader
+	position         isize
+	ch               int
+	modifiers        int
+	modificationType int
+	text             &char
+	length           isize
+	linesAdded       isize
+	message          int
+	wParam           usize
+	lParam           isize
+	line             isize
+	foldLevelNow     int
+	foldLevelPrev    int
+	margin           int
+}
 struct C.uiArea {}
 struct C.uiDrawContext {}
 struct C.uiDrawPath {}
@@ -411,6 +461,48 @@ const zgui_line_join_round = 1 // uiDrawLineJoinRound
 const zgui_text_align_left = 0 // uiDrawTextAlignLeft
 const zgui_pi = 3.141592653589793
 
+fn C.uiNewScintilla() &C.uiScintilla
+fn C.uiScintillaSetText(s &C.uiScintilla, text &char, len u32)
+fn C.uiScintillaGetLength(s &C.uiScintilla) u32
+fn C.uiScintillaGetRange(s &C.uiScintilla, start u32, end u32, text &char)
+fn C.uiScintillaSendMessage(s &C.uiScintilla, code u32, w usize, l usize) usize
+fn C.uiScintillaOnNotify(s &C.uiScintilla, f fn (&C.uiScintilla, &C.SCNotification, voidptr), data voidptr)
+fn C.uiScintillaOnKey(s &C.uiScintilla, f fn (&C.uiScintilla, int, int, voidptr) int, data voidptr)
+
+// the Scintilla messages the editor sends (scintilla/include/Scintilla.h)
+const sci_setcodepage = u32(2037)
+const sci_stylesetfont = u32(2056)
+const sci_stylesetsize = u32(2055)
+const sci_stylesetfore = u32(2051)
+const sci_stylesetback = u32(2052)
+const sci_styleclearall = u32(2050)
+const sci_setmargintypen = u32(2240)
+const sci_setmarginwidthn = u32(2242)
+const sci_setmarginsensitiven = u32(2246)
+const sci_setcaretlinevisible = u32(2096)
+const sci_setcaretlineback = u32(2098)
+const sci_setselback = u32(2068)
+const sci_settabwidth = u32(2036)
+const sci_setreadonly = u32(2171)
+const sci_getcurrentpos = u32(2008)
+const sci_linefromposition = u32(2166)
+const sci_getcolumn = u32(2129)
+const sci_gotoline = u32(2024)
+const sci_appendtext = u32(2282)
+const sci_getlinecount = u32(2154)
+const scn_charadded = u32(2001)
+const scn_modified = u32(2008)
+const scn_marginclick = u32(2010)
+const sc_mod_inserttext = 0x1
+const sc_mod_deletetext = 0x2
+// the One Dark colours the Zig section configures, as Scintilla's 0xBBGGRR
+const sci_c_bg = usize(0x342c28)
+const sci_c_fg = usize(0xbfb2ab)
+const sci_c_lnfg = usize(0x63524b)
+const sci_c_lnbg = usize(0x2f2823)
+const sci_c_caretln = usize(0x3e3630)
+const sci_c_sel = usize(0x584c3f)
+
 fn C.uiNewEditableCombobox() &C.uiEditableCombobox
 fn C.uiEditableComboboxAppend(c &C.uiEditableCombobox, text &char)
 fn C.uiEditableComboboxText(c &C.uiEditableCombobox) &char
@@ -495,6 +587,8 @@ pub mut:
 	dialog_answers []string // scripted: what the next dialogs return (`dialog:<path>`; empty = cancelled)
 	dialogs_shown  []string // this frame's dialogs, for the trace
 	areas          map[string]&ZGuiArea
+	editors        map[string]&ZCodeEditor // by the node key `ed:<address>`
+	markers_said   bool
 	paint          &C.uiAreaDrawParams = unsafe { nil } // inside a draw: the context and size
 	paint_area     &ZGuiArea = unsafe { nil }
 }
@@ -613,6 +707,36 @@ pub mut:
 	painted  []string // the primitives of the last draw, for the trace
 	st       &ZGuiState = unsafe { nil }
 }
+
+// a code editor: one record for the program's life, a Scintilla control while
+// the window holds it (the text lives in the control then; it is pulled back
+// into `text` before a rebuild destroys the control)
+@[heap]
+struct ZCodeEditor {
+pub mut:
+	sci        &C.uiScintilla = unsafe { nil }
+	text       string
+	read_only  bool
+	lang       string = 'zebra'
+	ev_modified bool
+	ev_char    i64
+	ev_margin_line i64 = -1
+	hot        []u32 // registered chords, (mods << 16) | vk
+	keys       []u32 // chords pressed, taken by takeKey in order
+	st         &ZGuiState = unsafe { nil }
+}
+
+// the handle a program holds (`CodeEditor?` in Zebra; copies share the record)
+pub struct CodeEditor {
+pub mut:
+	ed &ZCodeEditor = unsafe { nil }
+}
+
+// `code_editor.for_zebra()` and the other constructors, as the emitter spells
+// Zebra's `CodeEditor.forZebra()`
+pub struct CodeEditorKind {}
+
+pub const code_editor = CodeEditorKind{}
 
 @[heap]
 struct ZGuiToolItem {
@@ -992,6 +1116,98 @@ fn zgui_painted(st &ZGuiState, what string) {
 		mut ar := st.paint_area
 		ar.painted << what
 	}
+}
+
+fn zgui_ce_notify(s &C.uiScintilla, n &C.SCNotification, data voidptr) {
+	mut ed := unsafe { &ZCodeEditor(data) }
+	match n.nmhdr.code {
+		scn_modified {
+			if n.modificationType & (sc_mod_inserttext | sc_mod_deletetext) != 0 {
+				ed.ev_modified = true
+			}
+		}
+		scn_charadded {
+			ed.ev_char = i64(n.ch)
+		}
+		scn_marginclick {
+			pos := if n.position > 0 { usize(n.position) } else { usize(0) }
+			ed.ev_margin_line = i64(C.uiScintillaSendMessage(s, sci_linefromposition, pos, 0))
+		}
+		else {}
+	}
+}
+
+fn zgui_ce_key(s &C.uiScintilla, vk int, mods int, data voidptr) int {
+	mut ed := unsafe { &ZCodeEditor(data) }
+	chord := (u32(mods & 0xffff) << 16) | u32(vk & 0xffff)
+	if chord in ed.hot {
+		ed.keys << chord
+		return 1
+	}
+	return 0
+}
+
+fn zgui_ce_send(ed &ZCodeEditor, code u32, w usize, l usize) usize {
+	if ed.sci == unsafe { nil } {
+		return 0
+	}
+	return C.uiScintillaSendMessage(ed.sci, code, w, l)
+}
+
+// the Zig section's configuration: UTF-8, Consolas 11, One Dark, a line-number
+// margin, the caret line, a four-space tab
+fn zgui_ce_configure(ed &ZCodeEditor) {
+	font := 'Consolas'
+	zgui_ce_send(ed, sci_setcodepage, 65001, 0)
+	zgui_ce_send(ed, sci_stylesetfont, 32, usize(voidptr(font.str)))
+	zgui_ce_send(ed, sci_stylesetsize, 32, 11)
+	zgui_ce_send(ed, sci_stylesetfore, 32, sci_c_fg)
+	zgui_ce_send(ed, sci_stylesetback, 32, sci_c_bg)
+	zgui_ce_send(ed, sci_styleclearall, 0, 0)
+	zgui_ce_send(ed, sci_stylesetfore, 33, sci_c_lnfg)
+	zgui_ce_send(ed, sci_stylesetback, 33, sci_c_lnbg)
+	zgui_ce_send(ed, sci_setmargintypen, 0, 1)
+	zgui_ce_send(ed, sci_setmarginwidthn, 0, 56)
+	zgui_ce_send(ed, sci_setmarginsensitiven, 0, 1)
+	zgui_ce_send(ed, sci_setcaretlinevisible, 1, 0)
+	zgui_ce_send(ed, sci_setcaretlineback, sci_c_caretln, 0)
+	zgui_ce_send(ed, sci_setselback, 1, sci_c_sel)
+	zgui_ce_send(ed, sci_settabwidth, 4, 0)
+}
+
+// the control over the record: made at the first render and again after a
+// rebuild, with the record's text
+fn zgui_ce_make_control(ed &ZCodeEditor) voidptr {
+	mut e := unsafe { ed }
+	sci := C.uiNewScintilla()
+	e.sci = sci
+	zgui_ce_configure(e)
+	C.uiScintillaOnNotify(sci, zgui_ce_notify, voidptr(e))
+	C.uiScintillaOnKey(sci, zgui_ce_key, voidptr(e))
+	if e.text.len > 0 {
+		C.uiScintillaSetText(sci, zgui_cstr(e.text), u32(e.text.len))
+	}
+	e.ev_modified = false // the set is not an edit
+	if e.read_only {
+		zgui_ce_send(e, sci_setreadonly, 1, 0)
+	}
+	return voidptr(sci)
+}
+
+// the control's text into the record (before the control goes, or on getText)
+fn zgui_ce_pull_text(ed &ZCodeEditor) {
+	mut e := unsafe { ed }
+	if e.sci == unsafe { nil } {
+		return
+	}
+	n := C.uiScintillaGetLength(e.sci)
+	if n == 0 {
+		e.text = ''
+		return
+	}
+	mut buf := []u8{len: int(n) + 1}
+	C.uiScintillaGetRange(e.sci, 0, n, unsafe { &char(buf.data) })
+	e.text = buf[..int(n)].bytestr()
 }
 
 fn zgui_on_editcombo_changed(c &C.uiEditableCombobox, data voidptr) {
@@ -1495,6 +1711,10 @@ fn zgui_build_control(n &ZGuiNode) voidptr {
 			ar.area = a
 			return voidptr(a)
 		}
+		'editor' {
+			ed := m.st.editors[n.label] or { panic('zgui: no editor ' + n.label) }
+			return zgui_ce_make_control(ed)
+		}
 		'editcombo' {
 			c := C.uiNewEditableCombobox()
 			for it in n.items {
@@ -1601,6 +1821,9 @@ fn zgui_commit(st &ZGuiState) {
 						C.uiAreaQueueRedrawAll(ar.area) // the draw closure is this frame's: redraw
 					}
 				}
+				'editor' {
+					// the control is the record's; nothing to bring up to date per frame
+				}
 				'editcombo' {
 					if p.text != n.text {
 						C.uiEditableComboboxSetText(unsafe { &C.uiEditableCombobox(n.ctl) }, zgui_cstr(n.text))
@@ -1643,6 +1866,11 @@ fn zgui_commit(st &ZGuiState) {
 		C.uiBoxSetPadded(s.root, 1)
 		C.uiWindowSetChild(s.window, unsafe { &C.uiControl(s.root) })
 	} else {
+		for _, mut ed in s.editors {
+			if ed.sci != unsafe { nil } {
+				zgui_ce_pull_text(ed) // before the destroy below takes the control
+			}
+		}
 		for i := s.root_kids.len - 1; i >= 0; i-- {
 			C.uiBoxDelete(s.root, i)
 			C.uiControlDestroy(unsafe { &C.uiControl(s.root_kids[i]) })
@@ -1665,6 +1893,12 @@ fn zgui_commit(st &ZGuiState) {
 		}
 		for _, mut ar in s.areas {
 			ar.area = unsafe { nil }
+		}
+		for _, mut ed in s.editors {
+			if ed.sci != unsafe { nil } {
+				zgui_ce_pull_text(ed) // the text lives in the control: keep it
+				ed.sci = unsafe { nil }
+			}
 		}
 	}
 	s.row = unsafe { nil }
@@ -1772,7 +2006,7 @@ fn zgui_commit(st &ZGuiState) {
 			C.uiFormAppend(unsafe { &C.uiForm(top) }, zgui_cstr(row_label), unsafe { &C.uiControl(ctl) }, 0)
 			continue
 		}
-		if n.kind == 'table' || n.kind == 'tree' || n.kind == 'area' {
+		if n.kind == 'table' || n.kind == 'tree' || n.kind == 'area' || n.kind == 'editor' {
 			zgui_place_stretchy(s, top_kind, top, unsafe { &C.uiControl(ctl) })
 			continue
 		}
@@ -1874,6 +2108,43 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 			}
 		}
 		panic('ZGUI_SCRIPT: no menu item labelled ' + label)
+	}
+	if verb == 'edtype' || verb == 'edkey' || verb == 'edmargin' {
+		// edtype:<text> (appended through Scintilla: an edit, so modified fires),
+		// edkey:<vk>,<mods> (a chord to the editor's key hook), edmargin:<line>
+		// (a margin click at that line's start); on the first editor placed
+		mut target := &ZCodeEditor(unsafe { nil })
+		for n in s.prev {
+			if n.kind == 'editor' {
+				target = s.editors[n.label] or { continue }
+				break
+			}
+		}
+		if target == unsafe { nil } || target.sci == unsafe { nil } {
+			panic('ZGUI_SCRIPT: ' + verb + ' with no editor placed')
+		}
+		match verb {
+			'edtype' {
+				C.uiScintillaSendMessage(target.sci, sci_appendtext, usize(rest.len), usize(voidptr(rest.str)))
+			}
+			'edkey' {
+				f := rest.split(',')
+				if f.len != 2 {
+					panic('ZGUI_SCRIPT: edkey wants <vk>,<mods>')
+				}
+				zgui_ce_key(target.sci, f[0].int(), f[1].int(), voidptr(target))
+			}
+			else {
+				mut n := C.SCNotification{
+					text: unsafe { nil }
+				}
+				n.nmhdr.code = scn_marginclick
+				n.margin = 0
+				n.position = isize(C.uiScintillaSendMessage(target.sci, u32(2167), usize(rest.int()), 0)) // SCI_POSITIONFROMLINE
+				zgui_ce_notify(target.sci, &n, voidptr(target))
+			}
+		}
+		return true
 	}
 	if verb == 'mouse' || verb == 'key' {
 		// mouse:<id>=<ev>,<x>,<y>,<b>  key:<id>=<vk>,<mods>,<0|1>
@@ -2117,6 +2388,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'table' { 'table(' + n.label + ' ' + zgui_table_words(s.tables[n.label] or { panic('no table') }) + ')' }
 			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
 			'area' { (if (s.areas[n.label] or { panic('no area') }).is_canvas { 'canvas(' } else { 'area(' }) + n.label + ' ' + (s.areas[n.label] or { panic('no area') }).painted.join(' ') + ')' }
+			'editor' { 'editor(' + zgui_ce_send(s.editors[n.label] or { panic('no editor') }, sci_getlinecount, 0, 0).str() + ' lines)' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
@@ -2536,6 +2808,155 @@ pub fn (g Gui) draw_text(x f64, y f64, text string, color i64, size f64) {
 	C.uiFreeFontDescriptor(&fd)
 	C.uiFreeAttributedString(astr)
 	zgui_painted(st, 'text')
+}
+
+// -- the code editor (Scintilla through the fork's shim) --
+
+fn zgui_ce_new(lang string) CodeEditor {
+	ed := &ZCodeEditor{
+		lang: lang
+		st: zgui_global_state()
+	}
+	return CodeEditor{
+		ed: ed
+	}
+}
+
+pub fn (k CodeEditorKind) new() CodeEditor {
+	return zgui_ce_new('zebra')
+}
+
+pub fn (k CodeEditorKind) for_zebra() CodeEditor {
+	return zgui_ce_new('zebra')
+}
+
+pub fn (k CodeEditorKind) for_language(name string) CodeEditor {
+	return zgui_ce_new(name)
+}
+
+pub fn (k CodeEditorKind) for_file(path string) CodeEditor {
+	lower := path.to_lower()
+	lang := if lower.ends_with('.c') || lower.ends_with('.h') {
+		'c'
+	} else if lower.ends_with('.zig') {
+		'zig'
+	} else if lower.ends_with('.zbr') {
+		'zebra'
+	} else {
+		'text'
+	}
+	return zgui_ce_new(lang)
+}
+
+pub fn (c CodeEditor) set_text(text string) {
+	mut ed := c.ed
+	ed.text = text
+	if ed.sci != unsafe { nil } {
+		C.uiScintillaSetText(ed.sci, zgui_cstr(text), u32(text.len))
+		ed.ev_modified = false // a set is not an edit
+	}
+}
+
+pub fn (c CodeEditor) get_text() string {
+	zgui_ce_pull_text(c.ed)
+	return c.ed.text
+}
+
+pub fn (c CodeEditor) set_read_only(v bool) {
+	mut ed := c.ed
+	ed.read_only = v
+	zgui_ce_send(ed, sci_setreadonly, if v { usize(1) } else { usize(0) }, 0)
+}
+
+pub fn (c CodeEditor) set_language(name string) {
+	mut ed := c.ed
+	ed.lang = name
+}
+
+pub fn (c CodeEditor) get_language() string {
+	return c.ed.lang
+}
+
+// no syntax styling on the V backend yet (the Zig section's tokenizer is the next cut)
+pub fn (c CodeEditor) restyle() {
+}
+
+pub fn (c CodeEditor) take_modified() bool {
+	mut ed := c.ed
+	v := ed.ev_modified
+	ed.ev_modified = false
+	return v
+}
+
+pub fn (c CodeEditor) take_char_added() i64 {
+	mut ed := c.ed
+	v := ed.ev_char
+	ed.ev_char = 0
+	return v
+}
+
+pub fn (c CodeEditor) take_margin_click() i64 {
+	mut ed := c.ed
+	v := ed.ev_margin_line
+	ed.ev_margin_line = -1
+	return v
+}
+
+pub fn (c CodeEditor) hotkey(vk i64, mods i64) {
+	mut ed := c.ed
+	chord := (u32(mods & 0xffff) << 16) | u32(vk & 0xffff)
+	if chord !in ed.hot {
+		ed.hot << chord
+	}
+}
+
+// the chords pressed, in order: (mods << 16) | vk, 0 when none
+pub fn (c CodeEditor) take_key() i64 {
+	mut ed := c.ed
+	if ed.keys.len == 0 {
+		return 0
+	}
+	v := ed.keys[0]
+	ed.keys = ed.keys[1..].clone()
+	return i64(v)
+}
+
+// the editor placed where the view says; one record, one control, whatever id
+// the view passes (the node is keyed by the record's address)
+pub fn (c CodeEditor) render(g Gui, id string, w f64, h f64) {
+	mut st := g.st
+	key := 'ed:' + u64(voidptr(c.ed)).hex()
+	st.editors[key] = c.ed
+	g.node('editor', key)
+}
+
+pub fn (c CodeEditor) set_error_markers[T](m T) {
+	mut st := c.ed.st
+	if !st.markers_said {
+		eprintln('[zgui] setErrorMarkers is accepted and not acted on by the V libui_ng backend yet')
+		st.markers_said = true
+	}
+}
+
+pub fn (c CodeEditor) get_cursor_line() i64 {
+	if c.ed.sci == unsafe { nil } {
+		return 1
+	}
+	pos := zgui_ce_send(c.ed, sci_getcurrentpos, 0, 0)
+	return i64(zgui_ce_send(c.ed, sci_linefromposition, pos, 0)) + 1
+}
+
+pub fn (c CodeEditor) get_cursor_col() i64 {
+	if c.ed.sci == unsafe { nil } {
+		return 1
+	}
+	pos := zgui_ce_send(c.ed, sci_getcurrentpos, 0, 0)
+	return i64(zgui_ce_send(c.ed, sci_getcolumn, pos, 0)) + 1
+}
+
+pub fn (c CodeEditor) set_cursor_position(line i64, col i64) {
+	l := if line > 1 { usize(line - 1) } else { usize(0) }
+	zgui_ce_send(c.ed, sci_gotoline, l, 0)
 }
 
 // -- the editable combobox and the dialogs --

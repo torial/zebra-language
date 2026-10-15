@@ -32,6 +32,10 @@ pub fn (mut l ZList[T]) add(x T) {
 	l.items << x
 }
 
+// a one-variant union's second member (a `type U = U_v` alone is an alias to V,
+// not a sum type): never constructed, never matched
+pub struct ZUnionPad {}
+
 // List.append: the same as add (the emitter maps methods by name, and a Zebra
 // list has both; 2026-10-14, tree_smoke)
 pub fn (mut l ZList[T]) append(x T) {
