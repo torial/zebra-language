@@ -801,6 +801,53 @@ the lanes gain a compiler V supports with no wrapper in the path
 controls), and the pin to 0.5.2 carries one more reason to move at
 0.5.3.
 
+The clang lanes (2026-10-14 evening): under 0.5.2 with llvm-mingw's
+clang at `-prod`, ten of the eleven programs are IDENTICAL and the
+demo is not -- it corrupts its heap between the designer's save and
+the "play here" lay (a segfault, a negative allocation size or a list
+that "cannot grow", a different one of the three on different runs of
+the SAME binary, which no deterministic fault does); under master's
+new backend the same program through the same clang is IDENTICAL,
+eleven of eleven. What the evening established, each by an instrument
+that proved it could see: the failure is clang 22 and 23 at `-O2` and
+`-O3`, not `-O1`, not clang 21 (zig cc), not tcc, not MSVC; the loop
+and SLP vectorisers off, or inlining off, or the machine scheduler off
+(`-mllvm -enable-misched=false`) each make it pass; strict aliasing is
+cleared (`-fno-strict-aliasing` changes the symptom, and an auto-init
+bisection under it names the same variable); the undefined-behaviour
+and address sanitizers are silent at every level (a planted shift and
+a planted heap overflow each fired); the random generator alone is
+identical at every level. LLVM's pass bisection (`-mllvm
+-opt-bisect-limit`, 20 builds) names `machine-scheduler on main__main`
+as the pass that turns it, and a diff of main's machine IR before and
+after that pass shows no store reordered against a load and nothing
+crossing a call -- the scheduler is correct, and what it changes is
+register assignment, which only matters to a program reading what it
+never wrote. Clang's `-ftrivial-auto-var-init=zero` with
+`-stop-after=N` is monotonic and sharp at N = 827: the 40-byte return
+slot of `strconv.atof64` (its success path declares `_result_f64 _t5`
+bare and lets `_result_ok` fill it through a `_result*` cast; the
+padding goes to the caller stale). But that variable is necessary,
+not sufficient: zeroing it by hand (kept past the optimiser), on
+every return path, building the result through its own type, or
+marking atof64 noinline, each still fails, and the bisection over the
+hand-zeroed C names the same N. Barriers inside main localise nothing
+(every subset of thirteen statements fails, all of them pass: the
+barriers perturb allocation function-wide). The honest end state: an
+uninitialised read, stack-content dependent, somewhere in 0.5.2's
+generated C or in a V 0.5.2 runtime path the demo exercises, that
+clang 22's codegen exposes and no instrument on Windows can name (a
+memory sanitizer would, on Linux). It does not touch master's C, and
+the pin moves off 0.5.2 at the next release; until then the 0.5.2
+clang lane reads ten of eleven and says why. The tools built for the
+hunt live in the session scratchpad: `opt_bisect.py` (pass
+bisection), `barrier_bisect.py` / `barrier_pair.py`,
+`autoinit_bisect.py`, `replay_rsp.py` / `replay_variant.py` (a
+response-file replay with extra flags or line edits),
+`mir_memorder.py` (store/load reorderings per block between two MIR
+dumps); each refuses to bisect when its controls do not read as
+expected.
+
 **What a V-built Zebra compiler is and is not.** It compiles Zebra to
 Zig exactly as the Zig-built one does, so it can stand in for it
 wherever `--emit-zig` is the job (the engine's regen, a `zebra build`
