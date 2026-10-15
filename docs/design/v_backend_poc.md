@@ -1275,6 +1275,16 @@ reproduces itself and reproduces the Zig-hosted compiler's output.
 `C:/Projects/v-dist/fixed/` keeps the generations; `vbin/
 zebra_v_none_debug.exe` is generation 2.
 
+Re-run on 2026-10-15 after the week's emitter changes (the chain, doc
+and raw strings, index assignment, the test runner, field defaults,
+Timer, the GUI section): generations 0 to 3 are one file again (sha256
+09c984e4..., 63,227 lines, fifteen refusals in main.zbr where there
+were sixteen), each V build of the compiler four seconds under tcc, and
+generation 2's `--emit-zig` of the whole compiler is 14/14 identical to
+the Zig-built compiler's. `C:/Projects/v-dist/fixed2/` keeps them; the
+script is the scratchpad's `fixed_point.sh` (emit, build, emit, three
+times, then the Zig comparison, refusing at the first step that fails).
+
 ## The engine's first modules (2026-10-13)
 
 Sean's stress test: the game engine (`C:\Projects\GameEngine`, `zbra/`
