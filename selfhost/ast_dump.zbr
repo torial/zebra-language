@@ -158,7 +158,7 @@ def main()
     dump("enum", "enum Suit\n    hearts\n    spades\n    clubs\n    diamonds\n")
     dump("union", "union Shape\n    circle: float\n    square: float\n    empty\n")
     dump("control", "def walk(xs: List(int)): int\n    var total: int = 0\n    for x in xs\n        if x > 10\n            total = total + x\n        else if x < 0\n            continue\n        else\n            pass\n    var i: int = 0\n    while i < 3\n        i = i + 1\n        if i == 2\n            break\n    for k in 0..3\n        total = total + k\n    print(\"done\", total)\n    assert total >= 0, \"total\"\n    return total\n")
-    dump("branch", "def kind(s: Shape): str\n    branch s\n        on Shape.circle as r\n            return \"circle\"\n        on Shape.square, Shape.empty\n            return \"other\"\n        else\n            return \"?\"\n")
+    dump("branch", "def kind(s: Shape): str\n    branch s\n        on Shape.circle as r\n            return \"circle\"\n        on Shape.square, Shape.empty\n            return \"other\"\n        else\n            return \"?\"\n")   # container-spelling-ok: `Shape.empty` is a union variant in a Zebra sample the dump parses, not an emitted container
     dump("errors", "def broken(a: int): int throws\n    if a < 0\n        raise \"no\"\n    return a\n\ndef safe(a: int): int\n    var n: int = broken(a)?\n    return n\ncatch |e|\n    return 0 - 1\n")
     dump("use", "use Token exposing TokenKind, Token\nuse Lexer\n\nvar LIMIT: int = 3\n\nsig Pred(c: char): bool\n")
     dump("bad", "class\n")
