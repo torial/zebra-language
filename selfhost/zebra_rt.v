@@ -658,7 +658,70 @@ pub fn (mut t ZTimer) reset() {
 
 // ── Json: Zebra's Json / JsonValue is json2.Any by value ──────────────────
 pub fn zjson_parse(s string) ?json2.Any {
-	return json2.decode[json2.Any](s) or { return none }
+	j := json2.decode[json2.Any](s) or { return none }
+	return zjson_fix_keys(j)
+}
+
+// V 0.5.2's decoder leaves a key's escape sequences in the key (a key
+// `Iron \"Spear\"` reads back with its backslashes, and encodes doubled);
+// master decodes them. Every object's keys unescaped after a decode, the
+// values walked; a key without a backslash is untouched.
+fn zjson_fix_keys(j json2.Any) json2.Any {
+	if j is map[string]json2.Any {
+		old := j as map[string]json2.Any
+		mut out := map[string]json2.Any{}
+		for k, v in old {
+			kk := if k.contains('\\') { zjson_unescape(k) } else { k }
+			out[kk] = zjson_fix_keys(v)
+		}
+		return json2.Any(out)
+	}
+	if j is []json2.Any {
+		old := j as []json2.Any
+		mut out := []json2.Any{cap: old.len}
+		for v in old {
+			out << zjson_fix_keys(v)
+		}
+		return json2.Any(out)
+	}
+	return j
+}
+
+fn zjson_unescape(s string) string {
+	mut b := []u8{cap: s.len}
+	mut i := 0
+	for i < s.len {
+		c := s[i]
+		if c == `\\` && i + 1 < s.len {
+			n := s[i + 1]
+			match n {
+				`"` { b << u8(`"`) }
+				`\\` { b << u8(`\\`) }
+				`/` { b << u8(`/`) }
+				`b` { b << u8(8) }
+				`f` { b << u8(12) }
+				`n` { b << u8(`\n`) }
+				`r` { b << u8(`\r`) }
+				`t` { b << u8(`\t`) }
+				`u` {
+					if i + 5 < s.len {
+						cp := strconv.parse_int(s[i + 2..i + 6], 16, 32) or { 0 }
+						b << utf32_to_str(u32(cp)).bytes()
+						i += 4
+					}
+				}
+				else {
+					b << u8(c)
+					b << u8(n)
+				}
+			}
+			i += 2
+			continue
+		}
+		b << u8(c)
+		i++
+	}
+	return b.bytestr()
 }
 
 pub fn zjson_object() json2.Any {

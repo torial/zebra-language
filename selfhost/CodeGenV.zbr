@@ -133,6 +133,7 @@ class VGen
     var union_payloads: HashMap(str, str)   # `U_v` -> the V type of the variant's payload
     var current_file: str             # the module being emitted (a refusal names it)
     var has_globals: bool             # a `__global` was emitted
+    var global_dedup: HashMap(str, str)   # a module-level var's numbered spelling when a sibling snake-cases alike
     var uses_gui: bool                # the program names Gui or CodeEditor: it needs a --gui-backend section
     var sig_conflicts: List(str)      # a callee name two declarations share with different parameters: called by position
     var rets: HashMap(str, str)       # the V return type of each def / method by name (`Owner.name` for a static), "" when two differ
@@ -235,6 +236,15 @@ class VGen
             out = out + "\t"
             i = i + 1
         out = out + s + "\n"
+        if .capturing
+            .captured.add(out)
+        else
+            .sb.append(out)
+
+    # a line already indented and ended (one caught by chainStr), re-emitted
+    # one level deeper
+    def lineRaw(s: str)
+        var out: str = "\t" + s
         if .capturing
             .captured.add(out)
         else
@@ -426,6 +436,8 @@ class VGen
     def staticOwner(obj: Expr): str
         branch obj
             on Expr.ident as id
+                if .isLocalName(id.name)
+                    return ""   # a local or a parameter named like a namespace (`sys` in a test) is the local
                 return id.name
             on Expr.member as m
                 branch m.object
@@ -588,16 +600,37 @@ class VGen
         for d in m.decls
             branch d
                 on Decl.var_ as gv
+                    # two names of one module that snake-case alike (`Workspace`
+                    # and `workspace` in robloxglobals_test): the later keeps a
+                    # numbered spelling, read back through gspell
+                    var sp: str = vSafe(gv.name)
+                    if .global_dedup.get(gv.name) == nil
+                        var taken: bool = false
+                        for g0 in .emitted_globals
+                            if g0 == sp
+                                taken = true
+                        if taken
+                            var n2: int = 2
+                            while .isEmittedGlobal(sp + "_" + n2.toString())
+                                n2 = n2 + 1
+                            .global_dedup.set(gv.name, sp + "_" + n2.toString())
                     if .global_modules.get(gv.name) as mods
                         if mods.count() > 1
                             for s in mods
-                                .emitted_globals.add(snakeCase(s) + "_" + vSafe(gv.name))
+                                .emitted_globals.add(snakeCase(s) + "_" + .gspell(gv.name))
                         else
-                            .emitted_globals.add(vSafe(gv.name))
+                            .emitted_globals.add(.gspell(gv.name))
                     else
-                        .emitted_globals.add(vSafe(gv.name))
+                        .emitted_globals.add(.gspell(gv.name))
                 else
                     pass
+
+    # a module-level var's own spelling: its V name, or the numbered one a
+    # same-spelled sibling forced (noteEmittedGlobals)
+    def gspell(name: str): str
+        if .global_dedup.get(name) as d
+            return d
+        return vSafe(name)
 
     def isEmittedGlobal(name: str): bool
         for g in .emitted_globals
@@ -743,6 +776,16 @@ class VGen
     def freeFnName(name: str): str
         if name == "main"
             return "main"   # the root's main is V's; the used modules' are not emitted
+        # a def whose snake name is a class's constructor name (`newSettingClass`
+        # beside `class SettingClass`: both `new_setting_class`) keeps its own
+        var sn0: str = vSafe(name)
+        if sn0.startsWith("new_")
+            for cn in .class_names
+                if "new_" + snakeCase(cn) == sn0
+                    return sn0 + "_fn"
+            for stn in .struct_names
+                if "new_" + snakeCase(stn) == sn0
+                    return sn0 + "_fn"
         if .def_modules.get(name) as mods
             if mods.count() > 1
                 for s in mods
@@ -767,17 +810,17 @@ class VGen
             if mods.count() > 1
                 for s in mods
                     if s == .current_stem
-                        return snakeCase(.current_stem) + "_" + vSafe(name)
+                        return snakeCase(.current_stem) + "_" + .gspell(name)
                 if .current_exposed.get(name) as est
                     for s3 in mods
                         if s3 == est
-                            return snakeCase(est) + "_" + vSafe(name)   # the use line that exposes the name
+                            return snakeCase(est) + "_" + .gspell(name)   # the use line that exposes the name
                 for u in .current_uses
                     for s2 in mods
                         if s2 == u
-                            return snakeCase(u) + "_" + vSafe(name)
-                return snakeCase(mods.at(0)) + "_" + vSafe(name)
-        return vSafe(name)
+                            return snakeCase(u) + "_" + .gspell(name)
+                return snakeCase(mods.at(0)) + "_" + .gspell(name)
+        return .gspell(name)
 
     def isGlobalName(name: str): bool
         return .global_modules.get(name) != nil
@@ -1604,6 +1647,12 @@ class VGen
                 if exprRootIsThis(m.object)
                     if .field_types.get(m.member) as ft
                         return ft
+                branch m.object
+                    on Expr.ident as eo
+                        if .isEnumName(eo.name)
+                            return eo.name   # `KeyCode.button_a`: the enum
+                    else
+                        pass
                 var ot: str = .vTypeOf(m.object)
                 if ot.startsWith("&")
                     ot = ot.substring(1, ot.len)
@@ -1743,8 +1792,8 @@ class VGen
                 return "u8"
             on Expr.index as ix
                 var ixo: str = .vTypeOf(ix.object)
-                if ixo == "json2.Any"
-                    return "!json2.Any"   # a subscript on a Json value is a result (`j[k]?`)
+                if ixo == "json2.Any" or ixo == "!json2.Any"
+                    return "!json2.Any"   # a subscript on a Json value is a result (`j[k]?`); a chain too
                 if ixo.startsWith("&ZList[")
                     return .elemOf(ixo)
                 if ixo == "string"
@@ -2130,6 +2179,7 @@ class VGen
                 .genStmts(fnum.stmts)
                 .depth = .depth - 1
                 .line("}")
+                .popLocal(fnum.var_)
             on Stmt.return_ as r
                 if r.value as rv
                     if .current_ret.startsWith("!?")
@@ -2502,6 +2552,8 @@ class VGen
         .genStmts(i.then_stmts)
         if ne_name != ""
             .unnarrow(ne_name)
+        if i.is_capture as capn
+            .popLocal(capn)
         .depth = .depth - 1
         for ei in i.else_ifs
             if ei.is_capture as ecap
@@ -2613,6 +2665,38 @@ class VGen
                 .line("if " + lead + vSafe(cap) + " := " + .exprStr(cond) + " {")
                 return ""
 
+    # a block-scoped name (a loop variable, an `if x as y` binding) leaves the
+    # local list at its block's end, as it leaves V's scope: a later
+    # declaration of the name is a declaration again, not an assignment
+    # (minigames_test: `for r in ...` then `capture var r = rec`, 2026-10-15)
+    def popLocal(name: str)
+        var last: int = -1
+        var i: int = 0
+        while i < .local_names.count()
+            if .local_names.at(i) == name
+                last = i
+            i = i + 1
+        if last < 0
+            return
+        var kept = List(str)()
+        i = 0
+        while i < .local_names.count()
+            if i != last
+                kept.add(.local_names.at(i))
+            i = i + 1
+        .local_names = kept
+
+    # a loop's body, behind its filter when the loop has one (`for x in xs if
+    # cond`: a continue at the head, V's own form)
+    def genFilteredBody(fi: StmtForIn)
+        if fi.filter as flt
+            .line("if !(" + .exprStr(flt) + ") {")
+            .depth = .depth + 1
+            .line("continue")
+            .depth = .depth - 1
+            .line("}")
+        .genStmts(fi.stmts)
+
     def genForIn(fi: StmtForIn)
         if fi.vars.count() == 2
             # `for k, v in m`: a map's entries; V iterates the runtime's inner map
@@ -2633,15 +2717,15 @@ class VGen
                 .line("_ = " + vSafe(kname))
             if not mightUseName(vname, fi.stmts)
                 .line("_ = " + vSafe(vname))
-            .genStmts(fi.stmts)
+            .genFilteredBody(fi)
             .depth = .depth - 1
             .line("}")
+            .popLocal(kname)
+            .popLocal(vname)
             return
         if fi.vars.count() != 1
             .refuse("for with " + fi.vars.count().toString() + " loop variables", fi.span)
             return
-        if fi.filter != nil
-            .refuse("for ... if (a filtered loop)", fi.span)
         var v = vSafe(fi.vars.at(0))
         .local_names.add(fi.vars.at(0))
         # `for i in a..b`: a numeric range
@@ -2650,9 +2734,10 @@ class VGen
                 if rb.op == BinaryOp.dotdot
                     .line("for " + v + " := i64(" + .exprStr(rb.left) + "); " + v + " < " + .exprStr(rb.right) + "; " + v + "++ {")
                     .depth = .depth + 1
-                    .genStmts(fi.stmts)
+                    .genFilteredBody(fi)
                     .depth = .depth - 1
                     .line("}")
+                    .popLocal(fi.vars.at(0))
                     return
             else
                 pass
@@ -2664,9 +2749,10 @@ class VGen
                         if m.member == "to" and c.args.count() == 1
                             .line("for " + v + " := i64(" + .exprStr(m.object) + "); " + v + " < " + .exprStr(c.args.at(0).value) + "; " + v + "++ {")
                             .depth = .depth + 1
-                            .genStmts(fi.stmts)
+                            .genFilteredBody(fi)
                             .depth = .depth - 1
                             .line("}")
+                            .popLocal(fi.vars.at(0))
                             return
                     else
                         pass
@@ -2690,9 +2776,10 @@ class VGen
                 .local_names.add(fi.vars.at(0))   # in scope: a module of its name is not meant
                 if v_unused
                     .line("_ = " + v)
-                .genStmts(fi.stmts)
+                .genFilteredBody(fi)
                 .depth = .depth - 1
                 .line("}")
+                .popLocal(fi.vars.at(0))
                 return
         var iter_s: str = .exprStr(fi.iter)
         if .vTypeOf(fi.iter) == "json2.Any"
@@ -2709,9 +2796,10 @@ class VGen
         .depth = .depth + 1
         if v_unused
             .line("_ = " + v)
-        .genStmts(fi.stmts)
+        .genFilteredBody(fi)
         .depth = .depth - 1
         .line("}")
+        .popLocal(fi.vars.at(0))
 
     def genPrint(p: StmtPrint)
         var fnname: str = "println"
@@ -2743,8 +2831,8 @@ class VGen
             on Expr.string_lit as sl
                 if sl.text.startsWith("\"\"\"")
                     return .vDocStringLit(sl.text)
-                if sl.kind == StringKind.raw
-                    return .vLiteralText(sl.text)   # r"...": every byte literal, the backslashes too
+                # (a raw string's text is kept pre-escaped by the lexer, for the Zig
+                # literal: it takes the escape path like any other)
                 return .vStringLit(sl.text)
             on Expr.string_interp as si
                 return .vInterp(si)
@@ -2768,11 +2856,16 @@ class VGen
                 return .callStr(c)
             on Expr.index as ix
                 var ixt: str = .vTypeOf(ix.object)
-                if ixt == "json2.Any"
+                if ixt == "json2.Any" or ixt == "!json2.Any"
+                    # a chained index (`j["a"]["b"]`): the inner is a result, propagated
+                    # with `!` -- the chain is one throwing expression under its one `?`
+                    var jobj: str = .exprStr(ix.object)
+                    if ixt == "!json2.Any"
+                        jobj = jobj + "!"
                     var kt: str = .vTypeOf(ix.index)
                     if kt == "string"
-                        return "zjson_idx(" + .exprStr(ix.object) + ", " + .exprStr(ix.index) + ")"   # Zebra's j[key]: a result
-                    return "zjson_idx_at(" + .exprStr(ix.object) + ", " + .exprStr(ix.index) + ")"
+                        return "zjson_idx(" + jobj + ", " + .exprStr(ix.index) + ")"   # Zebra's j[key]: a result
+                    return "zjson_idx_at(" + jobj + ", " + .exprStr(ix.index) + ")"
                 if ixt.startsWith("&ZList[")
                     return .exprStr(ix.object) + ".at(" + .exprStr(ix.index) + ")"   # the runtime's list
                 if ixt.startsWith("&ZMap[")
@@ -3521,6 +3614,7 @@ class VGen
             if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"
                 return "math." + name + "(" + .argsStr(args) + ")"
             if name == "round": return "zmath_round(" + .argsStr(args) + ")"
+            if name == "exp" or name == "log": return "math." + name + "(" + .argsStr(args) + ")"
             if name == "clamp": return "zmath_clamp(" + .argsStr(args) + ")"
             .refuse("Math." + name, span)
             return "math." + name + "(" + .argsStr(args) + ")"
@@ -3670,6 +3764,9 @@ class VGen
         if ns == "Timer"
             if name == "start": return "ztimer_start()"
             .refuse("Timer." + name, span)
+        if ns == "Tcp"
+            .refuse("Tcp." + name + " (no TCP client in the V runtime yet)", span)
+            return "0"
         if ns == "Dir"
             if name == "exists": return "os.is_dir(" + a + ")"
             if name == "createAll": return "os.mkdir_all(" + a + ") or {}"
@@ -3678,6 +3775,7 @@ class VGen
             if name == "deleteAll": return "os.rmdir_all(" + a + ") or {}"
             if name == "tryDeleteAll": return "zdir_try_delete_all(" + a + ")"
             if name == "walk": return "zdir_walk(" + a + ")"
+            if name == "delete": return "os.rmdir(" + a + ") or {}"
             .refuse("Dir." + name, span)
             return "zdir_" + snakeCase(name) + "(" + a + ")"
         if ns == "Terminal"
@@ -3904,7 +4002,40 @@ class VGen
                     l = .exprStr(b.left)
             else
                 l = .exprStr(b.left)
-        return l + " " + binaryOpV(b.op) + " " + .exprStr(b.right)
+        if b.op == BinaryOp.add or .in_cond
+            return l + " " + binaryOpV(b.op) + " " + .exprStr(b.right)
+        # the right term rendered with its hoisted lines caught: a temporary
+        # bound for it (a mutating call on a call's result, an unwrap) would
+        # otherwise stand BEFORE the statement -- ahead of the left terms' side
+        # effects and outside the short-circuit (character_test: play("lunge")
+        # and then tracks.get("swing")!; the get ran first, 2026-10-15). With
+        # lines caught, the chain so far is a bound boolean and the right term
+        # is evaluated inside an if on it, its lines there.
+        var outer: List(str) = .captured
+        var was: bool = .capturing
+        .captured = List(str)()
+        .capturing = true
+        var r: str = .exprStr(b.right)
+        var mine: List(str) = .captured
+        .captured = outer
+        .capturing = was
+        if mine.count() == 0
+            return l + " " + binaryOpV(b.op) + " " + r
+        .tmpN = .tmpN + 1
+        var cn: str = "zc" + .tmpN.toString()
+        .line("mut " + cn + " := " + l)
+        .local_names.add(cn)
+        if b.op == BinaryOp.and_
+            .line("if " + cn + " {")
+        else
+            .line("if !" + cn + " {")
+        .depth = .depth + 1
+        for ml in mine
+            .lineRaw(ml)
+        .line(cn + " = " + r)
+        .depth = .depth - 1
+        .line("}")
+        return cn
 
 def binaryOpV(op: BinaryOp): str
     if op == BinaryOp.add: return "+"
@@ -4281,7 +4412,7 @@ def condStr(s: str): str
 
 # the builtin namespaces a static access may name
 def isBuiltinNs(ns: str): bool
-    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer"
+    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp"
 
 def isFloatLit(e: Expr): bool
     branch e
