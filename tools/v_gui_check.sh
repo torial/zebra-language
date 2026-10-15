@@ -139,14 +139,14 @@ echo "v_gui_check: clip ok -- copied and pasted through the clipboard, a tree no
 # File cancelled (the status stays), Open Folder answered, an alert and an
 # error shown -- scripted, a dialog's answer comes from `dialog:` and the
 # trace records what opened
-build_and_run dialogs examples/file_dialog_smoke.zbr "dialog:C:/tmp/a.txt;click:Open File;tick;dialog:;click:Save File;tick;dialog:C:/tmp;click:Open Folder;tick;click:Show Alert;tick;click:Show Error;tick;quit"
+build_and_run dialogs examples/file_dialog_smoke.zbr "dialog:C:/tmp/a.txt;click:Open File;tick;dialog:;click:Save File;tick;dialog:C:/tmp;click:Open Folder;tick;click:Show Alert;tick;click:Show Error;tick;quit"   # hazard-ok:H12 a scripted dialog ANSWER (data the test asserts), not a scratch path anything writes
 d() { sed -n "$((1 + $1))p" "$OUT/dialogs_run.txt"; }
 fail=""
 [ "$(wc -l < "$OUT/dialogs_run.txt")" = 14 ] || fail="14 frames expected, $(wc -l < "$OUT/dialogs_run.txt") drawn"
 echo "$(d 3)" | grep -q "dialogs(open_file)" || fail="${fail:-frame 3 should record the open dialog}"
-echo "$(d 4)" | grep -q "text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 4 should show the opened path}"
-echo "$(d 6)" | grep -q "dialogs(save_file) text(File Dialog Smoke Test) text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 6 should record the save dialog with the status unchanged}"
-echo "$(d 7)" | grep -q "text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 7 should keep the status after the cancelled save}"
+echo "$(d 4)" | grep -q "text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 4 should show the opened path}"   # hazard-ok:H12 a scripted dialog ANSWER (data the test asserts), not a scratch path anything writes
+echo "$(d 6)" | grep -q "dialogs(save_file) text(File Dialog Smoke Test) text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 6 should record the save dialog with the status unchanged}"   # hazard-ok:H12 a scripted dialog ANSWER (data the test asserts), not a scratch path anything writes
+echo "$(d 7)" | grep -q "text(Status: Opened: C:/tmp/a.txt)" || fail="${fail:-frame 7 should keep the status after the cancelled save}"   # hazard-ok:H12 a scripted dialog ANSWER (data the test asserts), not a scratch path anything writes
 echo "$(d 10)" | grep -q "text(Status: Folder: C:/tmp)" || fail="${fail:-frame 10 should show the folder}"
 echo "$(d 11)" | grep -q "dialogs(msgbox(File Dialogs))" || fail="${fail:-frame 11 should record the alert}"
 echo "$(d 13)" | grep -q "dialogs(msgbox_error(Error))" || fail="${fail:-frame 13 should record the error box}"

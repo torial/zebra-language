@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+### Targets
+
+- **`zebra --target v` -- a V backend, a proof of concept (merged 2026-10-15).** It emits a
+  Zebra program as one V file over an inlined runtime (`selfhost/zebra_rt.v`), and with
+  `--gui-backend=libui_ng` appends the libui-ng section, CodeEditor included. `--gc` asks V
+  for its collector; without it nothing is freed, as Zebra's arena. The Zig backend remains
+  the default and the only one the gates cover; the V target has its own witnesses
+  (`tools/v_gui_check.sh`, `tools/v_ide_check.sh`) and design note,
+  `docs/design/v_backend_poc.md`.
+
 ### Language
 
 - **A newline inside `[ ]` or `{ }` continues the statement, as one inside `( )` always has

@@ -1,4 +1,5 @@
-<!-- doc-status: proof of concept (2026-10-13); the result sections carry what the run said -->
+<!-- doc-status: design -->
+<!-- Status: proof of concept (2026-10-13); the result sections carry what the run said -->
 # A V backend for Zebra — proof of concept (`zebra --target v`)
 
 *Written 2026-10-13 on branch `v-backend-poc` (worktree `C:/Projects/zebra-vbackend`),

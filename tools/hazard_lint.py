@@ -337,8 +337,14 @@ def check_h10(path, text, lines, tree=None):
             continue
         before = ln.split("$?")[0]
         prev = lines[i - 2] if i >= 2 else ""
-        # a pipeline on this line before the $?, or on the line above
-        cand = before if "|" in before else prev
+        # a pipeline on this line before the $?, or on the line above -- but the line above
+        # only when this line has not run a command of its own first. `exe > log; local
+        # rc=$?` and `out=$(...); rc=$?` read THAT command's status, whatever the previous
+        # line piped: the V GUI check scripts were flagged for a `| head` on the line above
+        # (2026-10-15). A command ends at `;` or `&&`; `rc=$?` or `if [ $? -ne 0 ]` alone on
+        # a line still read the line above, and stay flagged.
+        own_cmd = ";" in before or "&&" in before
+        cand = before if "|" in before else ("" if own_cmd else prev)
         cand = re.sub(r"\|\|", "", cand)                  # || is not a pipeline
         cand = re.sub(r"#.*$", "", cand)
         if re.search(r"[^|>]\|[^|]", cand):
