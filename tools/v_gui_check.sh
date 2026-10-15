@@ -267,4 +267,32 @@ echo "$(y 0)" | grep -q "page(main.c) editor(8 lines kw=22 cm=33 st=20 nu=6 ty=0
 echo "$(y 0)" | grep -q "page(main.zig) editor(9 lines kw=19 cm=0 st=25 nu=0 ty=0 fn=16 op=17 pp=0)" || fail="${fail:-the zig editor should style the multiline-string lines and @import}"
 [ -z "$fail" ] || { echo "v_gui_check: styler FAILED -- $fail:"; cat "$OUT/styler_run.txt"; exit 6; }
 echo "v_gui_check: styler ok -- zebra, c and zig styled as the IDE plan's three controls say (the tallies read back from Scintilla)"
+
+# 17. the hatch (examples/sci_hatch_smoke.zbr): sci() before the control
+# exists reads 0; Set sends SCI_SETTEXT through sciStr and reads
+# SCI_GETLENGTH back (14, the text's bytes); the set moved the end-styled
+# watermark back, so the commit's restyle styles the C comment: cm=13 (the
+# thirteen before the newline), read back from the control
+build_and_run hatch examples/sci_hatch_smoke.zbr "click:Set;tick;tick;quit"
+z() { sed -n "$((1 + $1))p" "$OUT/hatch_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/hatch_run.txt")" = 4 ] || fail="4 frames expected, $(wc -l < "$OUT/hatch_run.txt") drawn"
+echo "$(z 0)" | grep -q "text(early=0 len=-1) editor(1 lines kw=0 cm=0 " || fail="${fail:-frame 0 should read 0 from the hatch before the control and show the editor empty}"
+echo "$(z 2)" | grep -q "text(early=0 len=14) editor(2 lines kw=0 cm=13 st=0 " || fail="${fail:-frame 2 should show the length read back through the hatch and the set text restyled as a comment}"
+[ -z "$fail" ] || { echo "v_gui_check: hatch FAILED -- $fail:"; cat "$OUT/hatch_run.txt"; exit 6; }
+echo "v_gui_check: hatch ok -- a Scintilla message sent and one read back through sci / sciStr, the set text restyled (4 frames)"
+
+# 18. window hotkeys and minSize (examples/table_strip_smoke.zbr): a Ctrl+S
+# key-down to the window's hook is taken by the view and sent as a message
+# (saved 1 a frame later); the side pane's minSize is applied to the
+# container built the frame before (the trace says what was applied; the
+# control's own minimum is not read back)
+build_and_run strip examples/table_strip_smoke.zbr "winkey:83,1;tick;tick;quit"
+x() { sed -n "$((1 + $1))p" "$OUT/strip_run.txt"; }
+fail=""
+echo "$(x 0)" | grep -q "text(ticks 0  saved 0 " || fail="frame 0 should show nothing saved"
+echo "$(x 2)" | grep -q "saved 1 " || fail="${fail:-frame 2 should show the Ctrl+S chord taken and sent}"
+echo "$(x 1)" | grep -q "begin_vbox(##side min 240x0)" || fail="${fail:-frame 1 should say the side pane minimum size was applied}"
+[ -z "$fail" ] || { echo "v_gui_check: strip FAILED -- $fail:"; cat "$OUT/strip_run.txt"; exit 6; }
+echo "v_gui_check: strip ok -- a window chord taken through the hook, the side pane given its minimum (4 frames)"
 echo "v_gui_check: ok"

@@ -1073,6 +1073,32 @@ Zebra's `${}` inside its STRING with `#` a comment. Two reds seen:
 with the restyle gone the edit stays at 8; with the first styling gone
 every tally reads 0. Sixteen cases.
 
+The eleventh batch: the three Gui stubs become real, and the hatch.
+`g.hotkey(vk, mods)` registers a window chord ((mods << 16) | vk, Ctrl
+1 / Shift 2 / Alt 4, the fork's uiWindowOnKey bits) and the window's
+key hook, registered when the window is made, consumes a registered
+chord before the focused control sees it and queues it for
+`g.takeKey()` in order; `g.minSize(id, w, h)` finds the container the
+view keyed `id` in the last frame's nodes and sets its minimum through
+`uiControlSetMinSize` (the first frame's call finds nothing, as the Zig
+section's), and the trace says what was applied on the container's
+entry (`begin_vbox(##side min 240x0)`): what the backend did, not the
+control's own minimum read back, which the section cannot see without
+declaring uiControl's layout. The CodeEditor's hatch `sci(msg, w, l)`
+/ `sciStr(msg, w, text)` sends any Scintilla message to the control, 0
+before it exists (the Zig section's rule; a hatch call in init is
+dropped on both backends). Script verb `winkey:<vk>,<mods>` is a
+key-down to the window's hook; like `edkey`, it calls the hook, so the
+registration line (uiWindowOnKey to the callback) is the one link no
+script exercises -- a real keyboard would. Two more witnesses:
+`examples/sci_hatch_smoke.zbr` (0 before the control; SETTEXT through
+sciStr and GETLENGTH back, 14; the set text restyled as a C comment by
+the commit's dirty check, cm=13 read from the control) and the
+compiler's own `examples/table_strip_smoke.zbr` (Ctrl+S taken and sent,
+saved 1 a frame later; the side pane's minimum said). Two reds by hand:
+the chord not queued, saved stays 0; sciStr sending nothing, len 0 and
+one line. Eighteen cases.
+
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
 the program's Msg is `i64`: four bytes copied, eight read back, the
@@ -1108,8 +1134,8 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: error markers in the editor, window hotkeys, the tui
-backend on V, a
+What it is not: error markers in the editor (a stub on every backend,
+the Zig section's too), the tui backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from

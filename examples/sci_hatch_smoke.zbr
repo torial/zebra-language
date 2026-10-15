@@ -1,0 +1,36 @@
+# The CodeEditor's raw Scintilla hatch, after the control exists (2026-10-14).
+# A C editor rendered empty; "Set" sends SCI_SETTEXT (2181) through sciStr and
+# reads SCI_GETLENGTH (2006) back through sci. The set text is a `//` comment,
+# so the next frame's restyle (the end-styled watermark moved back to 0)
+# styles the thirteen bytes before the newline as a comment: cm=13 in the
+# trace, read back from the control (the newline is a default byte). Before
+# the window exists the hatch returns 0 (the Zig section's rule): the model
+# starts with that reading, which the view shows.
+#   zebra --target v --gui-backend=libui_ng examples/sci_hatch_smoke.zbr
+#   ZGUI_SCRIPT="click:Set;tick;quit" ZGUI_TRACE=1 ./sci_hatch_smoke.exe
+
+class Model
+    var ed: CodeEditor? = nil
+    var len: int = -1
+    var early: int = -1
+
+def hatchInit(): Model
+    var m = Model()
+    m.ed = CodeEditor.forC()
+    m.early = m.ed!.sci(2006, 0, 0)       # no control yet: 0
+    return m
+
+def update(m: Model, msg: int): Model
+    if msg == 1
+        m.ed!.sciStr(2181, 0, "// via sciStr\n")
+        m.len = m.ed!.sci(2006, 0, 0)
+    return m
+
+def view(g: Gui, m: Model)
+    using g.vbox("##root", true)
+        g.text("early=" + m.early.toString() + " len=" + m.len.toString())
+        m.ed!.render(g, "##code", 0, 0)
+        g.button("Set", 1)
+
+def main()
+    Gui.run("sci hatch smoke", 600, 400, hatchInit, update, view)

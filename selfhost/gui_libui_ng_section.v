@@ -86,8 +86,13 @@
 // says an edit moved it back, polled per frame); `setErrorMarkers` is
 // accepted and said.
 //
-// hotkey, takeKey and minSize on the Gui are accepted and not acted on (said
-// once each).
+// Window hotkeys: `g.hotkey(vk, mods)` registers a chord ((mods << 16) | vk,
+// Ctrl 1 / Shift 2 / Alt 4 as the fork's uiWindowOnKey passes them) and the
+// window's key hook consumes a registered one before the focused control
+// sees it, queued for `g.takeKey()` in order. `g.minSize(id, w, h)` sets the
+// minimum size of the keyed container built last frame (uiControlSetMinSize).
+// The CodeEditor's hatch `sci(msg, w, l)` / `sciStr(msg, w, text)` sends any
+// Scintilla message to the control (0 before it exists, as the Zig section).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
@@ -332,6 +337,7 @@ fn C.uiNewWindow(title &char, width int, height int, has_menubar int) &C.uiWindo
 fn C.uiWindowSetChild(w &C.uiWindow, child &C.uiControl)
 fn C.uiWindowSetMargined(w &C.uiWindow, margined int)
 fn C.uiWindowOnClosing(w &C.uiWindow, f fn (&C.uiWindow, voidptr) int, data voidptr)
+fn C.uiWindowOnKey(w &C.uiWindow, f fn (&C.uiWindow, int, int, voidptr) int, data voidptr)
 fn C.uiNewVerticalBox() &C.uiBox
 fn C.uiNewHorizontalBox() &C.uiBox
 fn C.uiBoxAppend(b &C.uiBox, child &C.uiControl, stretchy int)
@@ -818,7 +824,9 @@ pub mut:
 	tab_select   map[string]int // `g.selectTab(id, i)` requests, applied at the commit
 	tables       map[string]&ZGuiTable
 	cur_table    &ZGuiTable = unsafe { nil } // between beginTable and endTable: g.text is a cell
-	stubs_said   map[string]bool // hotkey / takeKey / minSize: accepted, not acted on, said once each
+	hot          []u32 // the window's registered chords, (mods << 16) | vk
+	keys         []u32 // the chords pressed, taken by takeKey in order
+	min_applied  map[string]string // minSize applied, by the container's id: "<w>x<h>" (the trace says it)
 	trees        map[string]&ZGuiTree
 	cur_tree     &ZGuiTree = unsafe { nil }
 	tool_items   []&ZGuiToolItem // this frame's toolbar
@@ -2167,6 +2175,7 @@ fn zgui_commit(st &ZGuiState) {
 		s.window = C.uiNewWindow(zgui_cstr(s.title), s.width, s.height, if s.menus.len > 0 { 1 } else { 0 })
 		C.uiWindowSetMargined(s.window, 1)
 		C.uiWindowOnClosing(s.window, zgui_on_closing, voidptr(s))
+		C.uiWindowOnKey(s.window, zgui_on_window_key, voidptr(s))
 	}
 	if s.root == unsafe { nil } {
 		s.root = C.uiNewVerticalBox()
@@ -2387,6 +2396,18 @@ fn zgui_place_stretchy(st &ZGuiState, top_kind string, top voidptr, ctl &C.uiCon
 	}
 }
 
+// the window's key hook: a registered chord is consumed and queued, any other
+// key passes to the focused control (the fork's uiWindowOnKey)
+fn zgui_on_window_key(w &C.uiWindow, vk int, mods int, data voidptr) int {
+	mut s := unsafe { &ZGuiState(data) }
+	chord := (u32(mods & 0xffff) << 16) | u32(vk & 0xffff)
+	if chord in s.hot {
+		s.keys << chord
+		return 1
+	}
+	return 0
+}
+
 fn zgui_script_action(st &ZGuiState, act string) bool {
 	mut s := unsafe { st }
 	if act == 'quit' {
@@ -2451,6 +2472,18 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 				zgui_ce_notify(target.sci, &n, voidptr(target))
 			}
 		}
+		return true
+	}
+	if verb == 'winkey' {
+		// winkey:<vk>,<mods>: a key-down to the window's hook
+		f := rest.split(',')
+		if f.len != 2 {
+			panic('ZGUI_SCRIPT: winkey wants <vk>,<mods>')
+		}
+		if s.window == unsafe { nil } {
+			panic('ZGUI_SCRIPT: winkey before the window exists')
+		}
+		zgui_on_window_key(s.window, f[0].int(), f[1].int(), voidptr(s))
 		return true
 	}
 	if verb == 'mouse' || verb == 'key' {
@@ -2692,6 +2725,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'combobox', 'radio' { n.kind + '(' + n.label + '=' + n.ival.str() + ')' }
 			'begin_tabs' { 'tabs(' + n.label + '=' + C.uiTabSelected(unsafe { &C.uiTab(n.ctl) }).str() + ')' }
 			'begin_tab_page' { 'page(' + n.text + ')' }
+			'begin_vbox', 'begin_hbox' { n.kind + '(' + n.label + (if n.label in s.min_applied { ' min ' + s.min_applied[n.label] } else { '' }) + ')' }
 			'table' { 'table(' + n.label + ' ' + zgui_table_words(s.tables[n.label] or { panic('no table') }) + ')' }
 			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
 			'area' { (if (s.areas[n.label] or { panic('no area') }).is_canvas { 'canvas(' } else { 'area(' }) + n.label + ' ' + (s.areas[n.label] or { panic('no area') }).painted.join(' ') + ')' }
@@ -3267,6 +3301,26 @@ pub fn (c CodeEditor) get_cursor_col() i64 {
 	return i64(zgui_ce_send(c.ed, sci_getcolumn, pos, 0)) + 1
 }
 
+// The hatch: any Scintilla message from Zebra (markers, folding, indicators,
+// find, zoom: a message and constants each). 0 before the control exists.
+// Scintilla ignores an unknown message (0), so a caller that can read a
+// value back should.
+pub fn (c CodeEditor) sci(msg i64, wparam i64, lparam i64) i64 {
+	if c.ed.sci == unsafe { nil } {
+		return 0
+	}
+	return i64(zgui_ce_send(c.ed, u32(msg), usize(wparam), usize(lparam)))
+}
+
+// the string-lParam form (SETTEXT, INSERTTEXT, SEARCHINTARGET, MARKERDEFINE
+// ...): a V string is NUL-terminated and outlives the call
+pub fn (c CodeEditor) sci_str(msg i64, wparam i64, text string) i64 {
+	if c.ed.sci == unsafe { nil } {
+		return 0
+	}
+	return i64(zgui_ce_send(c.ed, u32(msg), usize(wparam), usize(voidptr(text.str))))
+}
+
 pub fn (c CodeEditor) set_cursor_position(line i64, col i64) {
 	l := if line > 1 { usize(line - 1) } else { usize(0) }
 	zgui_ce_send(c.ed, sci_gotoline, l, 0)
@@ -3792,25 +3846,39 @@ pub fn (g Gui) table_activated_row(id string) i64 {
 	return i64(v)
 }
 
-fn (g Gui) stub(name string) {
+pub fn (g Gui) hotkey(vk i64, mods i64) {
 	mut st := g.st
-	if name !in st.stubs_said {
-		eprintln('[zgui] ' + name + ' is accepted and not acted on by the V libui_ng backend yet')
-		st.stubs_said[name] = true
+	chord := (u32(mods & 0xffff) << 16) | u32(vk & 0xffff)
+	if chord !in st.hot {
+		st.hot << chord
 	}
 }
 
-pub fn (g Gui) hotkey(vk i64, mods i64) {
-	g.stub('hotkey')
-}
-
+// the chords pressed since the last take, in order: (mods << 16) | vk, 0 when none
 pub fn (g Gui) take_key() i64 {
-	g.stub('takeKey')
-	return 0
+	mut st := g.st
+	if st.keys.len == 0 {
+		return 0
+	}
+	v := st.keys[0]
+	st.keys = st.keys[1..].clone()
+	return i64(v)
 }
 
+// the minimum size of the container the view keyed `id` last frame (its
+// control exists then; the first frame's call finds nothing, as the Zig
+// section's)
 pub fn (g Gui) min_size(id string, width i64, height i64) {
-	g.stub('minSize')
+	for n in g.st.prev {
+		if n.label == id && n.ctl != unsafe { nil } {
+			w := if width > 0 { int(width) } else { 0 }
+			h := if height > 0 { int(height) } else { 0 }
+			C.uiControlSetMinSize(unsafe { &C.uiControl(n.ctl) }, w, h)
+			mut st := g.st
+			st.min_applied[id] = '${w}x${h}'
+			return
+		}
+	}
 }
 
 pub fn (g Gui) begin_panel(label string) {
