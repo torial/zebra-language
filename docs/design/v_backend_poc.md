@@ -1166,7 +1166,19 @@ declared earlier, is fine; V master (d67ee55) is fine either way, so
 there is no ticket to file, only the 0.5.2 rule for the runtime: no
 `zlist_of[string]` call site may come before the first
 `zlist_of[json2.Any]` one in the file, and `zdir_walk` builds its list
-directly, as `zfile_list_dir` does. The pipeline's fifteen witnesses
+directly, as `zfile_list_dir` does. The mechanism, found later that
+night with an instrumented V build (wiki
+`fable/fieldnotes_v-heap-init-stale-expected_2026-10-15`): the checker
+re-checks a generic body once per concrete type set and writes each
+pass's `expected_type` onto the one shared struct-init node, last pass
+wins; cgen's plain `S{}` path recomputes it per instantiation, but the
+heap `&S{}` path (`gen/c/struct.v:592-633`) keeps it whenever it is
+nonzero, so the string instantiation inherits the sum type's and the
+array-to-sum-type promotion fires. Every runtime container is a heap
+init, which is why one call site reached every program; the condition
+is a `&Generic[T]{}` init in a generic function instantiated with a
+sum type and one of its variants, the variant's instantiation checked
+first. The pipeline's fifteen witnesses
 are the detector; v_poc2's names line was the one that spoke. One
 lesson about the A/B: the emitter reads `selfhost/zebra_rt.v` before
 the copy beside the exe, so a first A/B that swapped the copy beside
