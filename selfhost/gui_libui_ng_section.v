@@ -479,63 +479,63 @@ fn C.uiScintillaOnNotify(s &C.uiScintilla, f fn (&C.uiScintilla, &C.SCNotificati
 fn C.uiScintillaOnKey(s &C.uiScintilla, f fn (&C.uiScintilla, int, int, voidptr) int, data voidptr)
 
 // the Scintilla messages the editor sends (scintilla/include/Scintilla.h)
-const sci_setcodepage = u32(2037)
-const sci_stylesetfont = u32(2056)
-const sci_stylesetsize = u32(2055)
-const sci_stylesetfore = u32(2051)
-const sci_stylesetback = u32(2052)
-const sci_styleclearall = u32(2050)
-const sci_setmargintypen = u32(2240)
-const sci_setmarginwidthn = u32(2242)
-const sci_setmarginsensitiven = u32(2246)
-const sci_setcaretlinevisible = u32(2096)
-const sci_setcaretlineback = u32(2098)
-const sci_setselback = u32(2068)
-const sci_settabwidth = u32(2036)
-const sci_setreadonly = u32(2171)
-const sci_getcurrentpos = u32(2008)
-const sci_linefromposition = u32(2166)
-const sci_getcolumn = u32(2129)
-const sci_gotoline = u32(2024)
-const sci_appendtext = u32(2282)
-const sci_getlinecount = u32(2154)
-const sci_getendstyled = u32(2028)
-const sci_startstyling = u32(2032)
-const sci_setstylingex = u32(2073)
-const sci_getstyleat = u32(2010)
-const scn_charadded = u32(2001)
-const scn_modified = u32(2008)
-const scn_marginclick = u32(2010)
-const sc_mod_inserttext = 0x1
-const sc_mod_deletetext = 0x2
+const zsci_setcodepage = u32(2037)
+const zsci_stylesetfont = u32(2056)
+const zsci_stylesetsize = u32(2055)
+const zsci_stylesetfore = u32(2051)
+const zsci_stylesetback = u32(2052)
+const zsci_styleclearall = u32(2050)
+const zsci_setmargintypen = u32(2240)
+const zsci_setmarginwidthn = u32(2242)
+const zsci_setmarginsensitiven = u32(2246)
+const zsci_setcaretlinevisible = u32(2096)
+const zsci_setcaretlineback = u32(2098)
+const zsci_setselback = u32(2068)
+const zsci_settabwidth = u32(2036)
+const zsci_setreadonly = u32(2171)
+const zsci_getcurrentpos = u32(2008)
+const zsci_linefromposition = u32(2166)
+const zsci_getcolumn = u32(2129)
+const zsci_gotoline = u32(2024)
+const zsci_appendtext = u32(2282)
+const zsci_getlinecount = u32(2154)
+const zsci_getendstyled = u32(2028)
+const zsci_startstyling = u32(2032)
+const zsci_setstylingex = u32(2073)
+const zsci_getstyleat = u32(2010)
+const zscn_charadded = u32(2001)
+const zscn_modified = u32(2008)
+const zscn_marginclick = u32(2010)
+const zsc_mod_inserttext = 0x1
+const zsc_mod_deletetext = 0x2
 // the One Dark colours the Zig section configures, as Scintilla's 0xBBGGRR
-const sci_c_bg = usize(0x342c28)
-const sci_c_fg = usize(0xbfb2ab)
-const sci_c_lnfg = usize(0x63524b)
-const sci_c_lnbg = usize(0x2f2823)
-const sci_c_caretln = usize(0x3e3630)
-const sci_c_sel = usize(0x584c3f)
+const zsci_c_bg = usize(0x342c28)
+const zsci_c_fg = usize(0xbfb2ab)
+const zsci_c_lnfg = usize(0x63524b)
+const zsci_c_lnbg = usize(0x2f2823)
+const zsci_c_caretln = usize(0x3e3630)
+const zsci_c_sel = usize(0x584c3f)
 
 // style slots (32 and 33 are Scintilla's own: STYLE_DEFAULT, STYLE_LINENUMBER)
-const sci_s_default = u8(0)
-const sci_s_keyword = u8(1)
-const sci_s_comment = u8(2)
-const sci_s_string = u8(3)
-const sci_s_number = u8(4)
-const sci_s_type = u8(5)
-const sci_s_func = u8(6)
-const sci_s_op = u8(7)
-const sci_s_preproc = u8(8)
+const zsci_s_default = u8(0)
+const zsci_s_keyword = u8(1)
+const zsci_s_comment = u8(2)
+const zsci_s_string = u8(3)
+const zsci_s_number = u8(4)
+const zsci_s_type = u8(5)
+const zsci_s_func = u8(6)
+const zsci_s_op = u8(7)
+const zsci_s_preproc = u8(8)
 
 // Scintilla colours are 0xBBGGRR, not RGB (One Dark, as the Zig section)
-const sci_c_keyword = usize(0xdd78c6) // #c678dd
-const sci_c_comment = usize(0x70635c) // #5c6370
-const sci_c_string = usize(0x79c398) // #98c379
-const sci_c_number = usize(0x669ad1) // #d19a66
-const sci_c_type = usize(0x7bc0e5) // #e5c07b
-const sci_c_func = usize(0xefaf61) // #61afef
-const sci_c_op = usize(0xc2b656) // #56b6c2
-const sci_c_preproc = usize(0x9a7de0) // #e07d9a
+const zsci_c_keyword = usize(0xdd78c6) // #c678dd
+const zsci_c_comment = usize(0x70635c) // #5c6370
+const zsci_c_string = usize(0x79c398) // #98c379
+const zsci_c_number = usize(0x669ad1) // #d19a66
+const zsci_c_type = usize(0x7bc0e5) // #e5c07b
+const zsci_c_func = usize(0xefaf61) // #61afef
+const zsci_c_op = usize(0xc2b656) // #56b6c2
+const zsci_c_preproc = usize(0x9a7de0) // #e07d9a
 
 // A language is DATA: which comment and string forms exist and which words are
 // keywords. The one tokenizer (`zgui_ce_tokenize`) reads a spec; adding a
@@ -660,7 +660,7 @@ fn zgui_ce_tokenize(spec ZCeLangSpec, src string) []u8 {
 	for i < src.len {
 		start := i
 		c := src[i]
-		mut sty := sci_s_default
+		mut sty := zsci_s_default
 		if c == `\n` {
 			i++
 			line_start = true
@@ -670,13 +670,13 @@ fn zgui_ce_tokenize(spec ZCeLangSpec, src string) []u8 {
 			for i < src.len && src[i] != `\n` {
 				i++
 			}
-			sty = sci_s_preproc
+			sty = zsci_s_preproc
 			line_start = false
 		} else if zce_starts(src, i, spec.line_comment) {
 			for i < src.len && src[i] != `\n` {
 				i++
 			}
-			sty = sci_s_comment
+			sty = zsci_s_comment
 			line_start = false
 		} else if spec.block_comment && zce_starts(src, i, '/*') {
 			i += 2
@@ -686,13 +686,13 @@ fn zgui_ce_tokenize(spec ZCeLangSpec, src string) []u8 {
 			if i < src.len {
 				i += 2
 			}
-			sty = sci_s_comment
+			sty = zsci_s_comment
 			line_start = false
 		} else if spec.zig_multiline && zce_starts(src, i, '\\\\') {
 			for i < src.len && src[i] != `\n` {
 				i++
 			}
-			sty = sci_s_string
+			sty = zsci_s_string
 			line_start = false
 		} else if c == `"` || (spec.char_lit && c == `'`) {
 			q := c
@@ -706,20 +706,20 @@ fn zgui_ce_tokenize(spec ZCeLangSpec, src string) []u8 {
 			if i < src.len && src[i] == q {
 				i++
 			}
-			sty = sci_s_string
+			sty = zsci_s_string
 			line_start = false
 		} else if zce_digit(c) {
 			for i < src.len && (zce_digit(src[i]) || zce_alpha(src[i]) || src[i] == `.`) {
 				i++
 			}
-			sty = sci_s_number
+			sty = zsci_s_number
 			line_start = false
 		} else if spec.builtin_at && c == `@` && i + 1 < src.len && zce_alpha(src[i + 1]) {
 			i++
 			for i < src.len && (zce_alpha(src[i]) || zce_digit(src[i])) {
 				i++
 			}
-			sty = sci_s_func
+			sty = zsci_s_func
 			line_start = false
 		} else if zce_alpha(c) {
 			for i < src.len && (zce_alpha(src[i]) || zce_digit(src[i])) {
@@ -727,20 +727,20 @@ fn zgui_ce_tokenize(spec ZCeLangSpec, src string) []u8 {
 			}
 			w := src[start..i]
 			if w in spec.keywords {
-				sty = sci_s_keyword
+				sty = zsci_s_keyword
 			} else if spec.caps_are_types && w[0] >= `A` && w[0] <= `Z` {
-				sty = sci_s_type
+				sty = zsci_s_type
 			} else {
 				mut j := i
 				for j < src.len && src[j] == ` ` {
 					j++
 				}
-				sty = if j < src.len && src[j] == `(` { sci_s_func } else { sci_s_default }
+				sty = if j < src.len && src[j] == `(` { zsci_s_func } else { zsci_s_default }
 			}
 			line_start = false
 		} else if zce_opch(c) {
 			i++
-			sty = sci_s_op
+			sty = zsci_s_op
 			line_start = false
 		} else {
 			i++
@@ -1373,17 +1373,17 @@ fn zgui_painted(st &ZGuiState, what string) {
 fn zgui_ce_notify(s &C.uiScintilla, n &C.SCNotification, data voidptr) {
 	mut ed := unsafe { &ZCodeEditor(data) }
 	match n.nmhdr.code {
-		scn_modified {
-			if n.modificationType & (sc_mod_inserttext | sc_mod_deletetext) != 0 {
+		zscn_modified {
+			if n.modificationType & (zsc_mod_inserttext | zsc_mod_deletetext) != 0 {
 				ed.ev_modified = true
 			}
 		}
-		scn_charadded {
+		zscn_charadded {
 			ed.ev_char = i64(n.ch)
 		}
-		scn_marginclick {
+		zscn_marginclick {
 			pos := if n.position > 0 { usize(n.position) } else { usize(0) }
-			ed.ev_margin_line = i64(C.uiScintillaSendMessage(s, sci_linefromposition, pos, 0))
+			ed.ev_margin_line = i64(C.uiScintillaSendMessage(s, zsci_linefromposition, pos, 0))
 		}
 		else {}
 	}
@@ -1410,29 +1410,29 @@ fn zgui_ce_send(ed &ZCodeEditor, code u32, w usize, l usize) usize {
 // margin, the caret line, a four-space tab
 fn zgui_ce_configure(ed &ZCodeEditor) {
 	font := 'Consolas'
-	zgui_ce_send(ed, sci_setcodepage, 65001, 0)
-	zgui_ce_send(ed, sci_stylesetfont, 32, usize(voidptr(font.str)))
-	zgui_ce_send(ed, sci_stylesetsize, 32, 11)
-	zgui_ce_send(ed, sci_stylesetfore, 32, sci_c_fg)
-	zgui_ce_send(ed, sci_stylesetback, 32, sci_c_bg)
-	zgui_ce_send(ed, sci_styleclearall, 0, 0)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_keyword), sci_c_keyword)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_comment), sci_c_comment)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_string), sci_c_string)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_number), sci_c_number)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_type), sci_c_type)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_func), sci_c_func)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_op), sci_c_op)
-	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_preproc), sci_c_preproc)
-	zgui_ce_send(ed, sci_stylesetfore, 33, sci_c_lnfg)
-	zgui_ce_send(ed, sci_stylesetback, 33, sci_c_lnbg)
-	zgui_ce_send(ed, sci_setmargintypen, 0, 1)
-	zgui_ce_send(ed, sci_setmarginwidthn, 0, 56)
-	zgui_ce_send(ed, sci_setmarginsensitiven, 0, 1)
-	zgui_ce_send(ed, sci_setcaretlinevisible, 1, 0)
-	zgui_ce_send(ed, sci_setcaretlineback, sci_c_caretln, 0)
-	zgui_ce_send(ed, sci_setselback, 1, sci_c_sel)
-	zgui_ce_send(ed, sci_settabwidth, 4, 0)
+	zgui_ce_send(ed, zsci_setcodepage, 65001, 0)
+	zgui_ce_send(ed, zsci_stylesetfont, 32, usize(voidptr(font.str)))
+	zgui_ce_send(ed, zsci_stylesetsize, 32, 11)
+	zgui_ce_send(ed, zsci_stylesetfore, 32, zsci_c_fg)
+	zgui_ce_send(ed, zsci_stylesetback, 32, zsci_c_bg)
+	zgui_ce_send(ed, zsci_styleclearall, 0, 0)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_keyword), zsci_c_keyword)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_comment), zsci_c_comment)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_string), zsci_c_string)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_number), zsci_c_number)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_type), zsci_c_type)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_func), zsci_c_func)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_op), zsci_c_op)
+	zgui_ce_send(ed, zsci_stylesetfore, usize(zsci_s_preproc), zsci_c_preproc)
+	zgui_ce_send(ed, zsci_stylesetfore, 33, zsci_c_lnfg)
+	zgui_ce_send(ed, zsci_stylesetback, 33, zsci_c_lnbg)
+	zgui_ce_send(ed, zsci_setmargintypen, 0, 1)
+	zgui_ce_send(ed, zsci_setmarginwidthn, 0, 56)
+	zgui_ce_send(ed, zsci_setmarginsensitiven, 0, 1)
+	zgui_ce_send(ed, zsci_setcaretlinevisible, 1, 0)
+	zgui_ce_send(ed, zsci_setcaretlineback, zsci_c_caretln, 0)
+	zgui_ce_send(ed, zsci_setselback, 1, zsci_c_sel)
+	zgui_ce_send(ed, zsci_settabwidth, 4, 0)
 }
 
 // the control over the record: made at the first render and again after a
@@ -1450,7 +1450,7 @@ fn zgui_ce_make_control(ed &ZCodeEditor) voidptr {
 	}
 	e.ev_modified = false // the set is not an edit
 	if e.read_only {
-		zgui_ce_send(e, sci_setreadonly, 1, 0)
+		zgui_ce_send(e, zsci_setreadonly, 1, 0)
 	}
 	return voidptr(sci)
 }
@@ -1478,8 +1478,8 @@ fn zgui_ce_style(ed &ZCodeEditor) {
 		return
 	}
 	out := zgui_ce_tokenize(zgui_ce_spec_by_name(ed.lang), ed.text)
-	zgui_ce_send(ed, sci_startstyling, 0, 0)
-	zgui_ce_send(ed, sci_setstylingex, usize(out.len), usize(voidptr(out.data)))
+	zgui_ce_send(ed, zsci_startstyling, 0, 0)
+	zgui_ce_send(ed, zsci_setstylingex, usize(out.len), usize(voidptr(out.data)))
 }
 
 // an edit moves Scintilla's end-styled watermark back to where it happened:
@@ -1493,7 +1493,7 @@ fn zgui_ce_restyle_if_dirty(ed &ZCodeEditor) {
 	if n == 0 {
 		return
 	}
-	if zgui_ce_send(ed, sci_getendstyled, 0, 0) >= usize(n) {
+	if zgui_ce_send(ed, zsci_getendstyled, 0, 0) >= usize(n) {
 		return
 	}
 	zgui_ce_pull_text(ed)
@@ -1511,7 +1511,7 @@ fn zgui_ce_style_words(ed &ZCodeEditor) string {
 	lim := if n > 4096 { 4096 } else { n }
 	mut tally := []int{len: 9}
 	for i := 0; i < lim; i++ {
-		st := int(zgui_ce_send(ed, sci_getstyleat, usize(i), 0))
+		st := int(zgui_ce_send(ed, zsci_getstyleat, usize(i), 0))
 		if st >= 0 && st < 9 {
 			tally[st]++
 		}
@@ -2453,7 +2453,7 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 		}
 		match verb {
 			'edtype' {
-				C.uiScintillaSendMessage(target.sci, sci_appendtext, usize(rest.len), usize(voidptr(rest.str)))
+				C.uiScintillaSendMessage(target.sci, zsci_appendtext, usize(rest.len), usize(voidptr(rest.str)))
 			}
 			'edkey' {
 				f := rest.split(',')
@@ -2466,7 +2466,7 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 				mut n := C.SCNotification{
 					text: unsafe { nil }
 				}
-				n.nmhdr.code = scn_marginclick
+				n.nmhdr.code = zscn_marginclick
 				n.margin = 0
 				n.position = isize(C.uiScintillaSendMessage(target.sci, u32(2167), usize(rest.int()), 0)) // SCI_POSITIONFROMLINE
 				zgui_ce_notify(target.sci, &n, voidptr(target))
@@ -2729,7 +2729,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'table' { 'table(' + n.label + ' ' + zgui_table_words(s.tables[n.label] or { panic('no table') }) + ')' }
 			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
 			'area' { (if (s.areas[n.label] or { panic('no area') }).is_canvas { 'canvas(' } else { 'area(' }) + n.label + ' ' + (s.areas[n.label] or { panic('no area') }).painted.join(' ') + ')' }
-			'editor' { 'editor(' + zgui_ce_send(s.editors[n.label] or { panic('no editor') }, sci_getlinecount, 0, 0).str() + ' lines' + zgui_ce_style_words(s.editors[n.label] or { panic('no editor') }) + ')' }
+			'editor' { 'editor(' + zgui_ce_send(s.editors[n.label] or { panic('no editor') }, zsci_getlinecount, 0, 0).str() + ' lines' + zgui_ce_style_words(s.editors[n.label] or { panic('no editor') }) + ')' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
@@ -3206,7 +3206,7 @@ pub fn (c CodeEditor) get_text() string {
 pub fn (c CodeEditor) set_read_only(v bool) {
 	mut ed := c.ed
 	ed.read_only = v
-	zgui_ce_send(ed, sci_setreadonly, if v { usize(1) } else { usize(0) }, 0)
+	zgui_ce_send(ed, zsci_setreadonly, if v { usize(1) } else { usize(0) }, 0)
 }
 
 pub fn (c CodeEditor) set_language(name string) {
@@ -3289,16 +3289,16 @@ pub fn (c CodeEditor) get_cursor_line() i64 {
 	if c.ed.sci == unsafe { nil } {
 		return 1
 	}
-	pos := zgui_ce_send(c.ed, sci_getcurrentpos, 0, 0)
-	return i64(zgui_ce_send(c.ed, sci_linefromposition, pos, 0)) + 1
+	pos := zgui_ce_send(c.ed, zsci_getcurrentpos, 0, 0)
+	return i64(zgui_ce_send(c.ed, zsci_linefromposition, pos, 0)) + 1
 }
 
 pub fn (c CodeEditor) get_cursor_col() i64 {
 	if c.ed.sci == unsafe { nil } {
 		return 1
 	}
-	pos := zgui_ce_send(c.ed, sci_getcurrentpos, 0, 0)
-	return i64(zgui_ce_send(c.ed, sci_getcolumn, pos, 0)) + 1
+	pos := zgui_ce_send(c.ed, zsci_getcurrentpos, 0, 0)
+	return i64(zgui_ce_send(c.ed, zsci_getcolumn, pos, 0)) + 1
 }
 
 // The hatch: any Scintilla message from Zebra (markers, folding, indicators,
@@ -3323,7 +3323,7 @@ pub fn (c CodeEditor) sci_str(msg i64, wparam i64, text string) i64 {
 
 pub fn (c CodeEditor) set_cursor_position(line i64, col i64) {
 	l := if line > 1 { usize(line - 1) } else { usize(0) }
-	zgui_ce_send(c.ed, sci_gotoline, l, 0)
+	zgui_ce_send(c.ed, zsci_gotoline, l, 0)
 }
 
 // -- the editable combobox and the dialogs --

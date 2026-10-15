@@ -465,6 +465,194 @@ pub fn zsys_run(argv &ZList[string]) ZRunResult {
 	return ZRunResult{ exit_code: i64(code), stdout: out, stderr: errs }
 }
 
+// ── sys.spawnPiped: a conversation with a child over its three pipes ──────
+// The Zig preamble's _SysProcess: readAvailable / readErrAvailable drain what
+// the pipe already holds without blocking (V's stdout_read peeks first), write
+// is a blocking write of a small message, isRunning polls and reaps the exit
+// code. closeStdin is the one method V's os.Process cannot do (no per-pipe
+// close): it is accepted and said once, and a child waiting for EOF is ended
+// by the caller's kill, as zebra-ide's transport does after a short wait.
+@[heap]
+pub struct ZSysProcess {
+pub mut:
+	p         &os.Process = unsafe { nil }
+	alive     bool
+	exit_code i64 = -1 // -1 until the child has been seen to exit
+	close_said bool // closeStdin said once per process (a __global would need -enable-globals of every program)
+}
+
+pub fn zsys_spawn_piped(argv &ZList[string]) &ZSysProcess {
+	return zsys_spawn_piped_in(argv, '')
+}
+
+// cwd == '' inherits the parent's directory, else the child starts there
+pub fn zsys_spawn_piped_in(argv &ZList[string], cwd string) &ZSysProcess {
+	mut r := &ZSysProcess{}
+	if argv.count() == 0 {
+		return r
+	}
+	// resolved first: V's os.Process on Windows ends the whole program on a
+	// CreateProcess failure ("failed CreateProcess", exit 1), where Zebra's
+	// contract is a process that is not running (isRunning false, exitCode -1)
+	prog := zsys_resolve_program(argv.items[0])
+	if prog == '' {
+		return r
+	}
+	mut p := os.new_process(prog)
+	p.set_args(argv.items[1..].clone())
+	if cwd != '' {
+		p.set_work_folder(cwd)
+	}
+	p.set_redirect_stdio()
+	p.run()
+	r.p = p
+	r.alive = p.err == '' && p.status == .running
+	return r
+}
+
+// a bare name through PATH (with .exe on Windows when the name has no
+// extension), a path by its existence; '' when nothing is there
+fn zsys_resolve_program(name string) string {
+	if name.contains('/') || name.contains('\\') {
+		if os.exists(name) {
+			return name
+		}
+		$if windows {
+			if !name.to_lower().ends_with('.exe') && os.exists(name + '.exe') {
+				return name + '.exe'
+			}
+		}
+		return ''
+	}
+	found := os.find_abs_path_of_executable(name) or { '' }
+	if found != '' {
+		return found
+	}
+	$if windows {
+		if !name.to_lower().ends_with('.exe') {
+			return os.find_abs_path_of_executable(name + '.exe') or { '' }
+		}
+	}
+	return ''
+}
+
+pub fn (mut r ZSysProcess) is_running() bool {
+	if !r.alive {
+		return false
+	}
+	if r.p.is_alive() {
+		return true
+	}
+	r.alive = false
+	r.exit_code = i64(r.p.code)
+	return false
+}
+
+pub fn (mut r ZSysProcess) alive() bool {
+	return r.is_running()
+}
+
+pub fn (mut r ZSysProcess) kill() {
+	if !r.alive {
+		return
+	}
+	r.p.signal_kill()
+	r.alive = false
+}
+
+pub fn (mut r ZSysProcess) write(data string) bool {
+	if !r.alive {
+		return false
+	}
+	r.p.stdin_write(data)
+	return true
+}
+
+// whatever stdout already holds (a few blocks at most per call), '' when nothing is pending
+pub fn (mut r ZSysProcess) read_available() string {
+	if r.p == unsafe { nil } {
+		return ''
+	}
+	mut out := ''
+	for i := 0; i < 4; i++ {
+		c := r.p.stdout_read()
+		if c == '' {
+			break
+		}
+		out += c
+	}
+	return out
+}
+
+pub fn (mut r ZSysProcess) read_err_available() string {
+	if r.p == unsafe { nil } {
+		return ''
+	}
+	mut out := ''
+	for i := 0; i < 4; i++ {
+		c := r.p.stderr_read()
+		if c == '' {
+			break
+		}
+		out += c
+	}
+	return out
+}
+
+pub fn (mut r ZSysProcess) close_stdin() {
+	if !r.close_said {
+		eprintln('zebra: closeStdin is accepted and not acted on by the V runtime (os.Process has no per-pipe close): a child waiting for EOF is ended by kill')
+		r.close_said = true
+	}
+}
+
+pub fn (mut r ZSysProcess) exit_code() i64 {
+	if r.alive {
+		r.is_running()
+	}
+	return r.exit_code
+}
+
+// Dir.walk(root): every file under root, recursively, as root/relative with
+// forward slashes (the Zig backend's shape); dotfiles included, as its walker.
+// Built as zfile_list_dir builds its list, not through zlist_of: a second
+// zlist_of[string] call site here made V 0.5.2 generate that instantiation's
+// body converting the items to json2.Any, and every program's string-list
+// literal read as garbage (2026-10-15; a generic miscompile, to be reported).
+pub fn zdir_walk(root string) &ZList[string] {
+	mut out := os.walk_ext(root, '', hidden: true)
+	for i in 0 .. out.len {
+		out[i] = out[i].replace('\\', '/')
+	}
+	return &ZList[string]{
+		items: out
+	}
+}
+
+// ── Timer: the Zig preamble's TimerHandle (Timer.start(), elapsed ms as f64,
+// elapsedMicros, reset) ──────────────────────────────────────────────────────
+pub struct ZTimer {
+pub mut:
+	started time.Time
+}
+
+pub fn ztimer_start() ZTimer {
+	return ZTimer{ started: time.now() }
+}
+
+// milliseconds, as the Zig preamble's elapsed()
+pub fn (t ZTimer) elapsed() f64 {
+	return f64(time.since(t.started).microseconds()) / 1000.0
+}
+
+pub fn (t ZTimer) elapsed_micros() i64 {
+	return time.since(t.started).microseconds()
+}
+
+pub fn (mut t ZTimer) reset() {
+	t.started = time.now()
+}
+
 // ── Json: Zebra's Json / JsonValue is json2.Any by value ──────────────────
 pub fn zjson_parse(s string) ?json2.Any {
 	return json2.decode[json2.Any](s) or { return none }

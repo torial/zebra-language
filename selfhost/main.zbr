@@ -1664,6 +1664,10 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "")
                 print("    " + r)
         else
             print("  nothing refused: the whole file is in the subset")
+        if res.uses_gui and gui_backend == ""
+            # the Zig target's default section is the tui's headless Gui; the V
+            # target has none, so the file names types nothing defines
+            print("  this program names Gui or CodeEditor and no --gui-backend was given: the V target has no headless section, so the file will not build as it is; emit it with --gui-backend=libui_ng")
         # the collector is an explicit mode on this backend, not the default
         # (Sean, 2026-10-13: the language book tempers its line on GCs to
         # "available as an explicitly enabled mode"): -gc none frees nothing,

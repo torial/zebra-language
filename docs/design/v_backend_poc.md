@@ -1135,13 +1135,106 @@ the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
 What it is not: error markers in the editor (a stub on every backend,
-the Zig section's too), the tui backend on V, a
-manifest the compiler embeds, a `--gui-backend` build the compiler runs
-(it says the build line), a hand on a real mouse (every run so far is
-scripted; the event wait is libui's own). Each is a day or less from
-here, and none was in the question, which was whether a Zebra GUI
-program can reach a native window through V at all: it can, and the
-diff-over-retained shape is the same one the Zig section uses.
+the Zig section's too), the tui backend on V (forgone, Sean 2026-10-15:
+zigzag has not moved to Zig 0.17 yet, so the Zig one is in the air
+too), a manifest the compiler embeds, a `--gui-backend` build the
+compiler runs (it says the build line). The hand on a real mouse came
+on 2026-10-15: Sean ran three of the witness programs by hand and the
+keyboard and the mouse worked, which closes the one link no script
+exercises (the hooks' registration with libui). None of the rest was in
+the question, which was whether a Zebra GUI program can reach a native
+window through V at all: it can, and the diff-over-retained shape is
+the same one the Zig section uses.
+
+**A V 0.5.2 generic miscompile, found by the pipeline (2026-10-15).**
+Adding one line to the runtime -- `zlist_of[string](out)` in a new
+`zdir_walk`, with `out` a local `[]string` -- turned three pipeline
+witnesses red: every string-list literal in every program
+(`['x', 'y']`) read back as twenty-byte blobs. The emitted V text of
+the programs was unchanged (an A/B against the HEAD emitter through a
+stash, build, emit, pop), the C compiler was not it (tcc and clang
+alike), and the generated C of `main` was identical between the good
+and the bad build; what differed was the body V generated for the
+instantiation `zlist_of_T_string`: it converted the items to
+`json2.Any` (`string_to_sumtype_x__json2__Any` per element) before
+storing them, the body of the sum-type instantiation under the string
+instantiation's name. The minimal repro is twelve lines: a generic
+`of[T](items []T) &Box[T]`, a sum type `Any = int | string`, and in one
+function `of[string](['x', 'y'])` followed by `of[Any]([]Any{})`: the
+string list prints garbage. The sum-type call first, or in a function
+declared earlier, is fine; V master (d67ee55) is fine either way, so
+there is no ticket to file, only the 0.5.2 rule for the runtime: no
+`zlist_of[string]` call site may come before the first
+`zlist_of[json2.Any]` one in the file, and `zdir_walk` builds its list
+directly, as `zfile_list_dir` does. The pipeline's fifteen witnesses
+are the detector; v_poc2's names line was the one that spoke. One
+lesson about the A/B: the emitter reads `selfhost/zebra_rt.v` before
+the copy beside the exe, so a first A/B that swapped the copy beside
+the exe compared the new runtime with itself and said "not the
+runtime" -- an instrument that cannot see, reporting the reassuring
+answer, until the emission diff showed the runtime block as the only
+difference.
+
+**zebra-ide through the V target (2026-10-15).** The largest real GUI
+program there is -- Sean's IDE, 5,383 lines of Zebra over libui-ng and
+Scintilla, talking to `zebra lsp` and `zebra debug` over pipes -- was
+the next question, since the TUI was forgone and the mouse was proven.
+Its first emission refused seventeen constructs of three kinds: the
+optional chain `?.` (thirteen sites, all JSON reads), `sys.spawnPiped`
+/ `spawnPipedIn`, and `Dir.walk`; and five of its headless tests passed
+on V as they were (two of them, naming Gui, with the libui section).
+One of the others, `icons_test`, is a `zebra test` file -- test_ defs,
+no main -- and the V target built it and ran NOTHING, exit 0: a green
+from a runner that never ran. A root without main whose defs are tests
+now gets a main that runs them in order and reports as the Zig runner
+does (`3 passed, 0 failed` on stderr), saying first that a failing
+assert ends the run (a panic on V, where the Zig runner counts it and
+goes on). The chain is V's if-guard, bound on lines before its
+statement -- the base first, then the guarded read -- because V's guard
+takes a call or a name and `or { }` follows a call or a name, neither
+an if-expression; the read's temporary is typed as the base's inner
+type so a JSON read on it is spelled as one, and the chain's own type
+is an arm of `vTypeOf`, so a chain used as another chain's base is
+typed too; the else arm is a bare `none` when the read is a plain
+value (V infers the option, and a cast there is refused) and the read's
+own option type spelled when the read is an option already (V did not
+unify a bare `none` with `?&ZList[...]`). `sys.spawnPiped` is
+`ZSysProcess` over V's `os.Process` with redirected stdio: `write` is
+`stdin_write`, `readAvailable` drains `stdout_read` (which peeks first,
+so it never blocks) a few blocks per call, `isRunning` polls
+`is_alive` and reaps the code; `closeStdin` is the one method
+`os.Process` cannot do (no per-pipe close): accepted and said once per
+process, the child ended by the caller's kill, as the IDE's transport
+does after a short wait. And a program that is not there: V's
+`os.Process` on Windows prints "failed CreateProcess" and EXITS the
+whole program, which is what the IDE did at its first `zebra lsp`
+without a zebra on PATH; the runtime resolves the program first (a bare
+name through PATH, a path by its existence) and hands back a dead
+handle, Zebra's contract. `Dir.walk` is `os.walk_ext` with the slashes
+turned (the Zig shape), built directly rather than through `zlist_of`
+-- the generic miscompile above. Then the IDE itself: its own
+`sci.zbr` declares `SCI_SETCODEPAGE` and the rest, which snake-case to
+the section's own constant names, so the section's are `zsci_*` /
+`zscn_*` now; `Timer.start()` is `ZTimer` (`time.since`, microseconds
+and milliseconds); a struct's container field without an initializer
+is the empty container (V wants every reference field initialized;
+Zebra's zero value is the empty list); and `xs[i] = v` on a container
+was spelled as the read (`.at(i) = v`), which V refuses as an lvalue,
+and is `set()` now, a compound assignment reading through `at()`.
+`tools/v_ide_check.sh` is the witness: the IDE's seven headless tests
+pass through V exactly as the IDE's own gate expects them (sci,
+buffers, textops, ignore, keys, coverage's four, icons' three), the
+IDE builds (3.9 MB), and runs scripted from its own directory: without
+a compiler its status line says it could not start `zebra lsp` and it
+goes on; with `ZEBRA_COMPILER` naming the Zig-built compiler, the
+status line reaches "zebra lsp" by the fourth tick -- the LSP's
+initialize handshake over V's pipes. Not run on V: the IDE's tests that
+spawn the compiler for gates, tests and tools (gates_test, tests_test,
+tools_test, model_test on the tui backend, the LSP and DAP client
+tests): the next rung, each a process conversation through the same
+ZSysProcess. Not seen: the IDE with a hand on it through V (the window
+opens and paints; typing, squiggles and the debugger are a session with
+Sean).
 
 **The fixed point (2026-10-13).** `zebra_v --target v selfhost/main.zbr`
 is the V backend emitting itself. Generation 0 is the Zig-built

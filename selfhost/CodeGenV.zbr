@@ -44,12 +44,14 @@ class VResult
     var refused: List(str)
     var needs_math: bool
     var has_globals: bool    # a `__global` was emitted: the run needs -enable-globals
+    var uses_gui: bool       # Gui / CodeEditor named: the file needs a --gui-backend section to build
 
-    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false)
+    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false)
         .source = source
         .refused = refused
         .needs_math = needs_math
         .has_globals = has_globals
+        .uses_gui = uses_gui
 
 # "setAnimate" -> "set_animate"; "winDist" -> "win_dist"; "x" -> "x"
 def snakeCase(name: str): str
@@ -131,6 +133,7 @@ class VGen
     var union_payloads: HashMap(str, str)   # `U_v` -> the V type of the variant's payload
     var current_file: str             # the module being emitted (a refusal names it)
     var has_globals: bool             # a `__global` was emitted
+    var uses_gui: bool                # the program names Gui or CodeEditor: it needs a --gui-backend section
     var sig_conflicts: List(str)      # a callee name two declarations share with different parameters: called by position
     var rets: HashMap(str, str)       # the V return type of each def / method by name (`Owner.name` for a static), "" when two differ
     var struct_mut: bool              # the struct being emitted has a method that assigns a field: every method is `mut self`
@@ -328,6 +331,10 @@ class VGen
         if .sig_canon.get(name) as owner
             return owner   # a sig of a shape an earlier sig owns: that name (vlang/v#30282)
         if name == "SqliteDb": return "&ZSqliteDb"
+        if name == "Gui" or name == "CodeEditor"
+            .uses_gui = true
+        if name == "SysProcess": return "&ZSysProcess"
+        if name == "Timer": return "ZTimer"
         if name == "SqliteRow": return "&ZSqliteRow"
         if name == "Random": return "&ZRandom"
         if name == "DateTime": return "ZDateTime"
@@ -499,6 +506,36 @@ class VGen
             .line("fn zglobals_init() {")
             for gi in .global_inits
                 .line("\t" + gi)
+            .line("}")
+            .line("")
+        # a root without main whose defs are tests (`zebra test` on the Zig
+        # backend): a main that runs them in order and reports as the Zig runner
+        # does, on stderr. A failing assert is a panic on V, so it ends the run
+        # where the Zig runner counts it and goes on -- said at the start.
+        # Without this V built an exe that ran nothing and exited 0 (icons_test,
+        # 2026-10-15): a green from a runner that never ran.
+        var root_main: bool = false
+        var root_tests: List(str) = List(str)()
+        for d in ms.at(last).decls
+            branch d
+                on Decl.method as rm
+                    if rm.name == "main"
+                        root_main = true
+                    if rm.name.startsWith("test_")
+                        root_tests.add(rm.name)
+                else
+                    pass
+        if not root_main and root_tests.count() > 0
+            .line("// no main: the test_ defs run in order (zebra test on the V target)")
+            .line("fn main() {")
+            if .has_globals
+                .line("\tzglobals_init()")
+            .line("\teprintln('zebra test (V target): " + root_tests.count().toString() + " test(s); a failing assert ends the run')")
+            for tn in root_tests
+                .line("\t" + .freeFnName(tn) + "()")
+                .line("\teprintln('PASS: " + tn + "')")
+            .line("\teprintln('')")
+            .line("\teprintln('" + root_tests.count().toString() + " passed, 0 failed')")
             .line("}")
             .line("")
         return .sb.build()
@@ -1195,6 +1232,14 @@ class VGen
     def fieldDefault(f: DeclVar): str
         if f.init_expr as ie
             return " = " + .exprStr(ie)
+        # a container field without an initializer: the empty container, as
+        # Zebra's zero value (V wants every reference field initialized; the
+        # IDE's GateSpec.argv, 2026-10-15)
+        var vt: str = .vType(f.type_)
+        if vt.startsWith("&ZList["): return " = new_zlist" + vt.substring(6, vt.len) + "()"
+        if vt.startsWith("&ZMap["): return " = new_zmap" + vt.substring(5, vt.len) + "()"
+        if vt.startsWith("&ZSet["): return " = new_zset" + vt.substring(5, vt.len) + "()"
+        if vt == "&ZStringBuilder": return " = new_zstring_builder()"
         return ""
 
     def genFunction(m: DeclMethod)
@@ -1523,6 +1568,26 @@ class VGen
     # a field of the enclosing type (bare, or through self)
     def vTypeOf(e: Expr): str
         branch e
+            on Expr.opt_chain as oc
+                # the chain's type: the member's or the call's on the unwrapped base,
+                # as an option (one level: an optional result stays as it is)
+                var obt: str = .vTypeOf(oc.base)
+                var oinner: str = obt
+                if oinner.startsWith("?")
+                    oinner = oinner.substring(1, oinner.len)
+                .tmpN = .tmpN + 1
+                var otmp: str = "zoct" + .tmpN.toString()
+                if oinner != ""
+                    .local_types.set(otmp, oinner)
+                var otm = ExprMember(oc.span, Expr.ident(ExprIdent(oc.span, otmp)), oc.member)
+                var ort: str = ""
+                if oc.has_args
+                    ort = .vTypeOf(Expr.call(ExprCall(oc.span, Expr.member(otm), oc.args)))
+                else
+                    ort = .vTypeOf(Expr.member(otm))
+                if ort == "" or ort.startsWith("?")
+                    return ort
+                return "?" + ort
             on Expr.ident as id
                 if .local_types.get(id.name) as lt
                     if lt.startsWith("?") and .isNarrowed(id.name)
@@ -1570,19 +1635,28 @@ class VGen
                             return "ZArgs"
                         if jowner == "Random" and cm.member == "new"
                             return "&ZRandom"
+                        if jowner == "Timer" and cm.member == "start"
+                            return "ZTimer"
+                        if ot == "ZTimer"
+                            if cm.member == "elapsed"
+                                return "f64"
+                            if cm.member == "elapsedMicros"
+                                return "i64"
                         if jowner == "DateTime" and cm.member == "now"
                             return "ZDateTime"
                         if jowner == "Sqlite" and cm.member == "open"
                             return "?&ZSqliteDb"
                         if ot == "&ZSqliteDb" and cm.member == "query"
                             return "&ZList[&ZSqliteRow]"
-                        if jowner == "Dir" and cm.member == "list"
+                        if jowner == "Dir" and (cm.member == "list" or cm.member == "walk")
                             return "&ZList[string]"
                         if jowner == "File" and (cm.member == "listDir" or cm.member == "readLines")
                             return "&ZList[string]"
                         if jowner == "sys"
                             if cm.member == "run"
                                 return "ZRunResult"
+                            if cm.member == "spawnPiped" or cm.member == "spawnPipedIn"
+                                return "&ZSysProcess"
                             if cm.member == "args"
                                 return "&ZList[string]"
                             if cm.member == "getenv" or cm.member == "readLine"
@@ -2003,7 +2077,27 @@ class VGen
                     else
                         pass
                 var tt: str = .vTypeOf(a.target)
-                if isBareCtor(a.value) and tt != ""
+                # `xs[i] = v` / `m[k] = v` on the runtime's containers: a write is
+                # set(), never the read's at() (V refuses a call as an lvalue; the
+                # IDE's coverage.zbr, 2026-10-15); `xs[i] += v` reads then writes
+                var aix_done: bool = false
+                branch a.target
+                    on Expr.index as aix
+                        var aixt: str = .vTypeOf(aix.object)
+                        if aixt.startsWith("&ZList[") or aixt.startsWith("&ZMap[")
+                            var aobj: str = .exprStr(aix.object)
+                            var aidx: str = .exprStr(aix.index)
+                            var arhs: str = .coerced(a.value, tt)
+                            var aop: str = assignOpV(a.op)
+                            if aop != "="
+                                arhs = aobj + ".at(" + aidx + ") " + aop.substring(0, aop.len - 1) + " " + arhs
+                            .line(aobj + ".set(" + aidx + ", " + arhs + ")")
+                            aix_done = true
+                    else
+                        pass
+                if aix_done
+                    pass
+                else if isBareCtor(a.value) and tt != ""
                     .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + .zeroOf(tt))   # `out = List()`: the target's type
                 else
                     var rhs: str = .coerced(a.value, tt)
@@ -2788,8 +2882,66 @@ class VGen
                 .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
                 return "0"
             on Expr.opt_chain as oc
-                .refuse("an optional chain (?.)", oc.span)
-                return .exprStr(oc.base)
+                # `a?.b` / `a?.m(args)`: nil when the base is, else the member or the
+                # call, through V's if-guard as an expression -- V infers the option
+                # from the arms, and an arm that is an option already stays one level
+                # (`j.tryObj("a")?.tryInt("b")` is `?i64`, as Zebra types it). The
+                # unwrapped base is a temporary local typed as the base's inner type,
+                # so the member or the call is spelled as on any local.
+                var bt: str = .vTypeOf(oc.base)
+                if bt != "" and not bt.startsWith("?")
+                    # the base is not nilable here (narrowed, or never was): the plain access
+                    var bv: Expr = oc.base
+                    var pm = ExprMember(oc.span, bv, oc.member)
+                    if oc.has_args
+                        return .methodCallStr(pm, oc.args, oc.span)
+                    return .memberStr(pm)
+                .tmpN = .tmpN + 1
+                var tmp: str = "zoc" + .tmpN.toString()
+                .local_names.add(tmp)
+                if bt != ""
+                    .local_types.set(tmp, bt.substring(1, bt.len))
+                var tmem = ExprMember(oc.span, Expr.ident(ExprIdent(oc.span, tmp)), oc.member)
+                var tail: str = ""
+                if oc.has_args
+                    tail = .methodCallStr(tmem, oc.args, oc.span)
+                else
+                    tail = .memberStr(tmem)
+                var base_s: str = .exprStr(oc.base)
+                if .in_cond
+                    # a loop's condition: nothing can be bound before it; the inline
+                    # form, which V takes when the base is a name or a call
+                    return "(if " + tmp + " := " + base_s + " { " + tail + " } else { none })"
+                # V's if-guard takes a call or a name, and `or { }` follows a call or a
+                # name: the base is bound first, then the guarded read, on lines
+                # before the statement; the expression is the read's name (an
+                # `orelse` on it, a further `?.` on it, are then V's own forms)
+                .tmpN = .tmpN + 1
+                var basen: str = "zocb" + .tmpN.toString()
+                .line(basen + " := " + base_s)
+                .local_names.add(basen)
+                if bt != ""
+                    .local_types.set(basen, bt)
+                .tmpN = .tmpN + 1
+                var resn: str = "zocr" + .tmpN.toString()
+                var rt: str = .vTypeOf(Expr.opt_chain(oc))
+                # the else arm: a bare `none` when the read is a plain value (V
+                # infers the option; a cast there is refused as `int` against
+                # `?int`), the read's own option type spelled when the read is an
+                # option already (V did not unify a bare `none` with `?&ZList[...]`)
+                var ort: str = ""
+                if oc.has_args
+                    ort = .vTypeOf(Expr.call(ExprCall(oc.span, Expr.member(tmem), oc.args)))
+                else
+                    ort = .vTypeOf(Expr.member(tmem))
+                var none_s: str = "none"
+                if ort.startsWith("?")
+                    none_s = ort + "(none)"
+                .line(resn + " := if " + tmp + " := " + basen + " { " + tail + " } else { " + none_s + " }")
+                .local_names.add(resn)
+                if rt != ""
+                    .local_types.set(resn, rt)
+                return resn
             on Expr.old_ as ol
                 .refuse("an `old` expression (contracts)", ol.span)
                 return .exprStr(ol.operand)
@@ -3477,14 +3629,20 @@ class VGen
             if name == "readLine": return "zsys_readline()"
             if name == "exec_inherit": return "zsys_exec_inherit(" + a + ")"
             if name == "writeStdout": return "print(" + a + ")"
+            if name == "spawnPiped": return "zsys_spawn_piped(" + a + ")"
+            if name == "spawnPipedIn": return "zsys_spawn_piped_in(" + a + ")"
             .refuse("sys." + name, span)
             return "zsys_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Timer"
+            if name == "start": return "ztimer_start()"
+            .refuse("Timer." + name, span)
         if ns == "Dir"
             if name == "exists": return "os.is_dir(" + a + ")"
             if name == "createAll": return "os.mkdir_all(" + a + ") or {}"
             if name == "list": return "zdir_list(" + a + ")"
             if name == "deleteAll": return "os.rmdir_all(" + a + ") or {}"
             if name == "tryDeleteAll": return "zdir_try_delete_all(" + a + ")"
+            if name == "walk": return "zdir_walk(" + a + ")"
             .refuse("Dir." + name, span)
             return "zdir_" + snakeCase(name) + "(" + a + ")"
         if ns == "Terminal"
@@ -4088,7 +4246,7 @@ def condStr(s: str): str
 
 # the builtin namespaces a static access may name
 def isBuiltinNs(ns: str): bool
-    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime"
+    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer"
 
 def isFloatLit(e: Expr): bool
     branch e
@@ -4118,4 +4276,4 @@ def generateV(ms: List(Module), runtime: str): VResult
         if sa >= 0 and sb > sa
             rt_text = rt_text.substring(0, sa) + "// (the sqlite section is left out: the program has no database)\n" + rt_text.substring(sb + "// == sqlite end ==".len, rt_text.len)
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
-    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals)
+    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui)
