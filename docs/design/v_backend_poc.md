@@ -871,14 +871,35 @@ kinds and labels reuse their controls (a label's text updated in place),
 any difference rebuilds the window's content; a message is the Msg
 value's bytes (`memdup`, `sizeof(T)` in the generic `button[T]`) read
 back as G by the generic run loop; a click's callback carries the node
-holding the copy. Text, separator, sameLine (an open horizontal row) and
-button are the widgets; a call to any other is a V compile error naming
-the method. `ZGUI_SCRIPT="click:+;click:+;quit"` drives the window
-without a mouse (one action per frame, a click fires the named button's
-callback) and `ZGUI_TRACE=1` prints each frame's widgets, which is how
-`tools/v_gui_check.sh` witnesses it: `examples/counter.zbr` emitted,
-built, run with + + - Reset +, and the frames must draw the counts
-0 0 1 2 1 0.
+holding the copy. The widgets (the second batch, the same evening):
+text, separator, sameLine (an open horizontal row), button, send,
+toggle (a checkbox), field (an entry), spinbox, slider (0..1000
+underneath, mapped onto min..max), progressBar (0..1 as a percent),
+every (a libui timer that sends while the view keeps declaring it),
+and the containers beginForm / endForm (libui's uiForm, labels left and
+controls right), beginHBox / endHBox, beginVBox / endVBox, beginPanel /
+endPanel (a uiGroup); a control without a label of its own (field,
+spinbox, slider, progress) gets one beside it, or its form row's. A
+widget with a value takes the program's closure from the value to a
+Msg, wrapped in the generic method into a closure that sends. The
+rebuild keeps ONE root box as the window's child for the program's
+life and detaches each top-level child with uiBoxDelete before
+destroying it: libui refuses to destroy a control that still has a
+parent, and the first rebuild (a toggle adding a form row) crashed on
+exactly that. A call to any widget not listed is a V compile error
+naming the method; tooltip is accepted and dropped, said once.
+`ZGUI_SCRIPT` drives the window without a mouse, one action per frame
+after the first draw -- `click:<label>`, `toggle:<label>`,
+`set:<label>=<text>`, `spin:<label>=<n>`, `slide:<label>=<x>`, `tick`,
+`quit`; an action acts on the previous frame's widgets, so a row a
+toggle adds is there to act on a frame later -- and `ZGUI_TRACE=1`
+prints each frame's widgets with their values, which is how
+`tools/v_gui_check.sh` witnesses it: `examples/counter.zbr` run with
++ + - Reset + must draw the counts 0 0 1 2 1 0, and
+`examples/form_smoke.zbr` with a field set, the port spun, TLS toggled,
+Advanced toggled on (its Timeout row added through the rebuild), the
+timeout spun and Advanced toggled off again must draw each change in
+place and the row's arrival and departure, nine frames.
 
 What the first run taught, each a line in the section or the build:
 V reserves `init` and `cleanup` as module hooks (`fn init() Counter` is
@@ -902,13 +923,15 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the Zig section's other widgets (checkbox, slider,
-input, tables, trees, tabs, menus, toolbar, the CodeEditor, drawing),
-the tui backend on V, a manifest the compiler embeds, a `--gui-backend`
-build the compiler runs (it says the build line). Each is a day or
-less from here, and none was in the question, which was whether a
-Zebra GUI program can reach a native window through V at all: it can,
-and the diff-over-retained shape is the same one the Zig section uses.
+What it is not: the Zig section's remaining widgets (tables, trees,
+tabs, menus, toolbar, combobox, radio, the CodeEditor, drawing, the
+dialogs, the single-call vbox/hbox handles), the tui backend on V, a
+manifest the compiler embeds, a `--gui-backend` build the compiler runs
+(it says the build line), a hand on a real mouse (every run so far is
+scripted; the event wait is libui's own). Each is a day or less from
+here, and none was in the question, which was whether a Zebra GUI
+program can reach a native window through V at all: it can, and the
+diff-over-retained shape is the same one the Zig section uses.
 
 **The fixed point (2026-10-13).** `zebra_v --target v selfhost/main.zbr`
 is the V backend emitting itself. Generation 0 is the Zig-built

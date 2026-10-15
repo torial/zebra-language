@@ -1,10 +1,10 @@
 #!/bin/bash
-# The libui-ng proof of concept on the V target, witnessed (2026-10-14):
-# examples/counter.zbr emitted with `--target v --gui-backend=libui_ng`,
-# built with a mingw clang against libui-ng's ReleaseFast archive, run
-# headless by ZGUI_SCRIPT, and its per-frame trace compared with the counts
-# the clicks must produce. Exit 0 only when the window drew every expected
-# frame; anything else names the step.
+# The libui-ng backend on the V target, witnessed (2026-10-14): each example
+# emitted with `--target v --gui-backend=libui_ng`, built with a mingw clang
+# against libui-ng's ReleaseFast archive, run headless by ZGUI_SCRIPT, and its
+# per-frame trace compared with what the actions must produce. Exit 0 only
+# when every case drew what was expected; anything else names the case and
+# the step.
 #
 #   ZEBRA_LIBUI_NG=C:/Projects/libui-ng CLANG=C:/Projects/llvm-mingw/bin/clang.exe \
 #     bash tools/v_gui_check.sh
@@ -19,19 +19,44 @@ CLANG=${CLANG:-clang}
 : "${ZEBRA_LIBUI_NG:?set ZEBRA_LIBUI_NG to a libui-ng checkout with zig-out-fast/lib/ui.lib}"
 [ -f "$ZEBRA_LIBUI_NG/zig-out-fast/lib/ui.lib" ] || { echo "v_gui_check: no $ZEBRA_LIBUI_NG/zig-out-fast/lib/ui.lib (zig build -Doptimize=ReleaseFast -p zig-out-fast in libui-ng)"; exit 2; }
 OUT=${OUT:-.zig-cache/v_gui_check}; mkdir -p "$OUT"
-cp examples/counter.zbr "$OUT/counter.zbr"
-zig-out/bin/zebra.exe --target v --gui-backend=libui_ng "$OUT/counter.zbr" > "$OUT/emit.txt" 2>&1 || { echo "v_gui_check: the emit failed:"; head -5 "$OUT/emit.txt"; exit 3; }
-grep -q "the libui_ng section" "$OUT/emit.txt" || { echo "v_gui_check: the emit did not append the section:"; head -3 "$OUT/emit.txt"; exit 3; }
-# the Common-Controls v6 manifest, from the Zig scaffold's text in selfhost/main.zbr
-sed -n '/^def luiManifest/,/^def /p' selfhost/main.zbr | sed -n '/<?xml/,/<\/assembly>/p' | sed 's/^.*<?xml/<?xml/' > "$OUT/counter.exe.manifest"
-grep -q "Common-Controls" "$OUT/counter.exe.manifest" || { echo "v_gui_check: the manifest text was not found in selfhost/main.zbr"; exit 3; }
 export ZEBRA_LIBUI_NG
-"$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -subsystem console -gc none -enable-globals -o "$OUT/counter.exe" "$OUT/counter.v" > "$OUT/build.txt" 2>&1
-[ -f "$OUT/counter.exe" ] || { echo "v_gui_check: the V build failed:"; grep -E "error" "$OUT/build.txt" | head -6 | cut -c1-200; exit 4; }
-ZGUI_SCRIPT="click:+;click:+;click:-;click:Reset;click:+;quit" ZGUI_TRACE=1 "$OUT/counter.exe" > "$OUT/run.txt" 2> "$OUT/run_err.txt"; rc=$?
-[ $rc = 0 ] || { echo "v_gui_check: the program exited $rc:"; head -3 "$OUT/run_err.txt"; exit 5; }
-# the counts the clicks must draw: the first frame, then each click's effect a frame later
+# the Common-Controls v6 manifest, from the Zig scaffold's text in selfhost/main.zbr
+sed -n '/^def luiManifest/,/^def /p' selfhost/main.zbr | sed -n '/<?xml/,/<\/assembly>/p' | sed 's/^.*<?xml/<?xml/' > "$OUT/app.manifest"
+grep -q "Common-Controls" "$OUT/app.manifest" || { echo "v_gui_check: the manifest text was not found in selfhost/main.zbr"; exit 3; }
+
+# build_and_run <name> <example.zbr> <script>: the trace in $OUT/<name>_run.txt
+build_and_run() {
+  local name=$1 src=$2 script=$3
+  cp "$src" "$OUT/$name.zbr"
+  zig-out/bin/zebra.exe --target v --gui-backend=libui_ng "$OUT/$name.zbr" > "$OUT/${name}_emit.txt" 2>&1 || { echo "v_gui_check: $name: the emit failed:"; head -5 "$OUT/${name}_emit.txt"; exit 3; }
+  grep -q "the libui_ng section" "$OUT/${name}_emit.txt" || { echo "v_gui_check: $name: the emit did not append the section:"; head -3 "$OUT/${name}_emit.txt"; exit 3; }
+  cp "$OUT/app.manifest" "$OUT/$name.exe.manifest"
+  "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -subsystem console -gc none -enable-globals -o "$OUT/$name.exe" "$OUT/$name.v" > "$OUT/${name}_build.txt" 2>&1
+  [ -f "$OUT/$name.exe" ] || { echo "v_gui_check: $name: the V build failed:"; grep -E "error" "$OUT/${name}_build.txt" | head -6 | cut -c1-200; exit 4; }
+  ZGUI_SCRIPT="$script" ZGUI_TRACE=1 "$OUT/$name.exe" > "$OUT/${name}_run.txt" 2> "$OUT/${name}_err.txt"; local rc=$?
+  [ $rc = 0 ] || { echo "v_gui_check: $name: the program exited $rc:"; head -3 "$OUT/${name}_err.txt"; exit 5; }
+}
+
+# 1. the counter: + + - Reset +, the first frame then each click's effect a frame later
+build_and_run counter examples/counter.zbr "click:+;click:+;click:-;click:Reset;click:+;quit"
 expected="0 0 1 2 1 0"
-got=$(grep -oE "text\(Count: [0-9]+\)" "$OUT/run.txt" | grep -oE "[0-9]+" | tr '\n' ' ' | sed 's/ $//')
-if [ "$got" != "$expected" ]; then echo "v_gui_check: FAILED -- the frames drew counts [$got], expected [$expected]:"; cat "$OUT/run.txt"; exit 6; fi
-echo "v_gui_check: ok -- the counter through the V target and libui-ng drew counts [$got] for + + - Reset + ($(wc -l < "$OUT/run.txt") frames)"
+got=$(grep -oE "text\(Count: [0-9]+\)" "$OUT/counter_run.txt" | grep -oE "[0-9]+" | tr '\n' ' ' | sed 's/ $//')
+[ "$got" = "$expected" ] || { echo "v_gui_check: counter FAILED -- the frames drew counts [$got], expected [$expected]:"; cat "$OUT/counter_run.txt"; exit 6; }
+echo "v_gui_check: counter ok -- counts [$got] for + + - Reset + ($(wc -l < "$OUT/counter_run.txt") frames)"
+
+# 2. the form: a field set, a spinbox spun, a toggle flipped (each updated in
+# place), the Advanced toggle adding its row (a rebuild) and taking it away
+build_and_run form examples/form_smoke.zbr "set:Host name=box;spin:Port=443;toggle:Use TLS;toggle:Advanced;tick;spin:Timeout (s)=5;toggle:Advanced;tick;quit"
+f() { sed -n "$((1 + $1))p" "$OUT/form_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/form_run.txt")" = 9 ] || fail="9 frames expected, $(wc -l < "$OUT/form_run.txt") drawn"
+echo "$(f 2)" | grep -q "field(Host name=box)" || fail="${fail:-frame 2 should show the host name set}"
+echo "$(f 3)" | grep -q "spinbox(Port=443)" || fail="${fail:-frame 3 should show the port spun}"
+echo "$(f 4)" | grep -q "toggle(Use TLS=off)" || fail="${fail:-frame 4 should show TLS off}"
+echo "$(f 5)" | grep -q "spinbox(Timeout (s)=30) toggle(Use TLS=off) toggle(Advanced=on)" || fail="${fail:-frame 5 should show the Timeout row added by the rebuild}"
+echo "$(f 7)" | grep -q "spinbox(Timeout (s)=5)" || fail="${fail:-frame 7 should show the timeout spun}"
+echo "$(f 8)" | grep -q "toggle(Advanced=off)" && ! echo "$(f 8)" | grep -q "Timeout" || fail="${fail:-frame 8 should show the Timeout row gone}"
+echo "$(f 8)" | grep -q "text(box:443 tls=false)" || fail="${fail:-the text of frame 8 should carry every change}"
+[ -z "$fail" ] || { echo "v_gui_check: form FAILED -- $fail:"; cat "$OUT/form_run.txt"; exit 6; }
+echo "v_gui_check: form ok -- field, spinbox, toggle updated in place; the Advanced row added and removed through the rebuild (9 frames)"
+echo "v_gui_check: ok"
