@@ -1,0 +1,95 @@
+# v_poc4.zbr -- the V backend's fourth program: the type system's core
+# (2026-10-13). A value struct with defaults, named arguments, methods and
+# a `cue toString` with a format spec; an enum and a branch on it; a union
+# with payload and payload-less variants, a branch with bindings, `is ... as`;
+# a branch on an int with several values and an else; a function with a
+# default parameter called both ways. Runs on the Zig backend too.
+
+struct Vec2
+    var x: float
+    var y: float
+
+    cue init(x: float = 0.0, y: float = 0.0)
+        .x = x
+        .y = y
+
+    def add(other: Vec2): Vec2
+        return Vec2(x: .x + other.x, y: .y + other.y)
+
+    def scale(s: float): Vec2
+        return Vec2(x: .x * s, y: .y * s)
+
+    def lenSq(): float
+        return .x * .x + .y * .y
+
+    def bump()
+        .x = .x + 1.0
+
+    cue toString(): str
+        return "Vec2(${.x:.4f}, ${.y:.4f})"
+
+enum Suit
+    hearts
+    spades
+
+union Shape
+    circle: float
+    square: float
+    dot
+
+def area(s: Shape): float
+    branch s
+        on Shape.circle as r
+            return 3.0 * r * r
+        on Shape.square as side
+            return side * side
+        on Shape.dot
+            return 0.0
+    return 0.0 - 1.0
+
+def greet(name: str, excited: bool = false): str
+    if excited
+        return "Hello, " + name + "!"
+    return "Hello, " + name
+
+def main()
+    var a = Vec2(x: 1.0, y: 2.0)
+    var b = Vec2(y: 3.0)
+    var ab = a.add(b)   # (bound first: `a.add(b).scale(2.0)` reaches Zig as a method on a const temporary, the chain-temporary family -- told to the Zebra session)
+    var c = ab.scale(2.0)
+    assert c.lenSq() == 104.0, "add, scale, lenSq: " + c.lenSq().toString()
+    c.bump()
+    print("struct: " + c.toString() + " " + a.toString())
+
+    var s: Suit = Suit.spades
+    var suitName: str = "?"
+    branch s
+        on Suit.hearts
+            suitName = "hearts"
+        on Suit.spades
+            suitName = "spades"
+    print("enum: " + suitName)
+
+    var shapes: List(Shape) = [Shape.circle(1.0), Shape.square(2.0), Shape.dot()]
+    var total: float = 0.0
+    for sh in shapes
+        total = total + area(sh)
+    assert total == 7.0, "areas: " + total.toString()
+    var first: Shape = shapes.at(0)
+    if first is Shape.circle as r
+        print("union: circle of " + r.toString() + ", total " + total.toString())
+    var isDot: bool = shapes.at(2) is Shape.dot
+    print("is: " + isDot.toString())
+
+    var code: int = 3
+    var word: str = ""
+    branch code
+        on 1, 2
+            word = "low"
+        on 3
+            word = "three"
+        else
+            word = "other"
+    print("branch: " + word)
+    print(greet("Ada") + " / " + greet("Ada", excited: true))
+    print("v_poc4: all ok")

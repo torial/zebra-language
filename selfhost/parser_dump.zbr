@@ -1,0 +1,126 @@
+# parser_dump.zbr -- a driver for the Parser on the V backend (2026-10-13):
+# parses a few sources and prints the tree's shape (declaration kinds and
+# names, members, each method's statements by kind, nested), the same
+# under both backends, so the outputs diff. A source with an error prints
+# the parser's message.
+
+use Token exposing TokenKind
+use Lexer
+use Parser exposing PNode, PModule, PClass, PMethod, PField, PInit, PEnum, PUnionDecl, PUse, PSig, PVar, PIf, PWhile, PForIn, PReturn
+
+def pad(depth: int): str
+    var out: str = ""
+    var i: int = 0
+    while i < depth
+        out = out + "  "
+        i = i + 1
+    return out
+
+def dumpStmts(stmts: List(PNode), depth: int)
+    for s in stmts
+        dumpStmt(s, depth)
+
+def dumpStmt(n: PNode, depth: int)
+    branch n
+        on PNode.stmt_var as v
+            print(pad(depth) + "var " + v.name + " : " + v.type_name + " init=" + v.init_expr.len.toString())
+        on PNode.stmt_if as pif
+            print(pad(depth) + "if then=" + pif.then_stmts.len.toString() + " else=" + pif.else_stmts.len.toString())
+            dumpStmts(pif.then_stmts, depth + 1)
+            dumpStmts(pif.else_stmts, depth + 1)
+        on PNode.stmt_while as w
+            print(pad(depth) + "while body=" + w.stmts.len.toString())
+            dumpStmts(w.stmts, depth + 1)
+        on PNode.stmt_for_in as fi
+            print(pad(depth) + "for " + fi.var_names.len.toString() + " var(s) body=" + fi.stmts.len.toString())
+            dumpStmts(fi.stmts, depth + 1)
+        on PNode.stmt_return as r
+            print(pad(depth) + "return value=" + r.value.len.toString())
+        on PNode.stmt_assign
+            print(pad(depth) + "assign")
+        on PNode.stmt_expr
+            print(pad(depth) + "expr")
+        on PNode.stmt_print as ps
+            print(pad(depth) + "print args=" + ps.len.toString())
+        on PNode.stmt_assert
+            print(pad(depth) + "assert")
+        on PNode.stmt_raise
+            print(pad(depth) + "raise")
+        on PNode.stmt_pass
+            print(pad(depth) + "pass")
+        on PNode.stmt_break
+            print(pad(depth) + "break")
+        on PNode.stmt_continue
+            print(pad(depth) + "continue")
+        on PNode.stmt_try_catch
+            print(pad(depth) + "try/catch")
+        else
+            print(pad(depth) + "other-stmt")
+
+def dumpMember(n: PNode, depth: int)
+    branch n
+        on PNode.field_ as f
+            print(pad(depth) + "field " + f.name + " : " + f.type_name)
+        on PNode.method_ as m
+            var kind: str = "def"
+            if m.is_static
+                kind = "static def"
+            print(pad(depth) + kind + " " + m.name + " params=" + m.params.len.toString() + " ret=" + m.return_type + " stmts=" + m.stmts.len.toString())
+            dumpStmts(m.stmts, depth + 1)
+        on PNode.init_ as ini
+            print(pad(depth) + "init params=" + ini.params.len.toString() + " stmts=" + ini.stmts.len.toString())
+            dumpStmts(ini.stmts, depth + 1)
+        else
+            print(pad(depth) + "other-member")
+
+def dumpDecl(n: PNode, depth: int)
+    branch n
+        on PNode.use_ as u
+            print(pad(depth) + "use " + u.path + " exposing=" + u.exposed.len.toString())
+        on PNode.class_ as c
+            print(pad(depth) + "class " + c.name + " members=" + c.members.len.toString())
+            for mem in c.members
+                dumpMember(mem, depth + 1)
+        on PNode.struct_ as c
+            print(pad(depth) + "struct " + c.name + " members=" + c.members.len.toString())
+            for mem in c.members
+                dumpMember(mem, depth + 1)
+        on PNode.enum_ as e
+            print(pad(depth) + "enum " + e.name + " variants=" + e.variants.len.toString())
+        on PNode.union_decl as u
+            print(pad(depth) + "union " + u.name + " variants=" + u.variants.len.toString())
+        on PNode.sig_ as s
+            print(pad(depth) + "sig " + s.name + " params=" + s.params.len.toString())
+        on PNode.method_ as m
+            print(pad(depth) + "def " + m.name + " params=" + m.params.len.toString() + " ret=" + m.return_type + " stmts=" + m.stmts.len.toString())
+            dumpStmts(m.stmts, depth + 1)
+        on PNode.stmt_var as v
+            print(pad(depth) + "module var " + v.name + " : " + v.type_name)
+        else
+            print(pad(depth) + "other-decl")
+
+def dump(label: str, src: str)
+    var root: PNode = Parser.Parser.parse(src, label + ".zbr")?
+    branch root
+        on PNode.module_ as m
+            print("-- " + label + ": " + m.decls.len.toString() + " decl(s)")
+            for d in m.decls
+                dumpDecl(d, 1)
+        else
+            print("-- " + label + ": not a module")
+catch |e|
+    print("-- " + label + " FAILED: " + e.message)
+
+def main()
+    dump("empty", "")
+    dump("function", "def add(a: int, b: int): int\n    return a + b\n")
+    dump("class", "class Counter\n    var n: int\n\n    cue init(start: int)\n        .n = start\n\n    def bump(): int\n        .n = .n + 1\n        return .n\n\n    static def zero(): Counter\n        return Counter(0)\n")
+    dump("struct", "struct Vec2\n    var x: float\n    var y: float\n\n    def len(): float\n        return Math.sqrt(x * x + y * y)\n")
+    dump("enum", "enum Suit\n    hearts\n    spades\n    clubs\n    diamonds\n")
+    dump("union", "union Shape\n    circle: float\n    square: float\n    empty\n")
+    dump("control", "def walk(xs: List(int)): int\n    var total: int = 0\n    for x in xs\n        if x > 10\n            total = total + x\n        else if x < 0\n            continue\n        else\n            pass\n    var i: int = 0\n    while i < 3\n        i = i + 1\n        if i == 2\n            break\n    print(\"done\", total)\n    assert total >= 0, \"total\"\n    return total\n")
+    dump("use", "use Token exposing TokenKind, Token\nuse Lexer\n\nvar LIMIT: int = 3\n\nsig Pred(c: char): bool\n")
+    dump("errors", "def broken(a: int): int\n    raise \"no\"\ncatch |e|\n    return 0 - 1\n")
+    dump("bad", "class\n")
+    dump("bad2", "def f(\n")
+    print("parser_dump: done")

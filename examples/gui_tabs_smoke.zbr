@@ -1,0 +1,45 @@
+# gui_tabs_smoke.zbr -- tabs, a combobox, a radio and a menu in one window
+# (2026-10-14): the V target's libui_ng section is witnessed on it by
+# tools/v_gui_check.sh (a menu item sent, a page picked, a choice picked).
+# `using g.vbox` binds a box handle round the whole view (begin / end).
+struct Model
+    var opened: int
+    var colour: int
+    var size: int
+
+union Msg
+    open
+    set_colour: int
+    set_size: int
+
+def init(): Model
+    return Model(opened: 0, colour: 0, size: 1)
+
+def update(m: Model, msg: Msg): Model
+    branch msg
+        on Msg.open
+            return m except opened = m.opened + 1
+        on Msg.set_colour as c
+            return m except colour = c
+        on Msg.set_size as s
+            return m except size = s
+
+def view(g: Gui, m: Model)
+    g.beginMenu("File")
+    g.menuItem("Open", Msg.open)
+    g.menuSeparator()
+    g.menuQuit()
+    g.endMenu()
+    using g.vbox("##root", true)
+        g.text("opened " + m.opened.toString() + " colour " + m.colour.toString() + " size " + m.size.toString())
+        g.beginTabs("##tabs", true)
+        g.beginTabPage("##look", "Look")
+        g.combobox("Colour", ["red", "green", "blue"], m.colour, def(i: int): Msg = Msg.set_colour(i))
+        g.endTabPage()
+        g.beginTabPage("##fit", "Fit")
+        g.radio("Size", ["small", "medium", "large"], m.size, def(i: int): Msg = Msg.set_size(i))
+        g.endTabPage()
+        g.endTabs()
+
+def main()
+    Gui.run("tabs smoke", 360, 240, init, update, view)

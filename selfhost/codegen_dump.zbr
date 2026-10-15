@@ -1,0 +1,37 @@
+# codegen_dump.zbr -- a driver for CodeGen on the V backend (2026-10-13):
+# parses, resolves, builds and GENERATES three small sources through the
+# Zig code generator (the module's Zig without the preamble), and prints
+# the generated text whole, the same under both backends, so the outputs
+# diff byte for byte: the compiler's back end running on V, producing
+# what the Zig-built one produces.
+
+use Parser exposing PNode
+use Resolver
+use AstBuilder exposing ASTBuilder
+use Ast exposing Module
+use CodeGen exposing generateModule
+
+def gen(label: str, src: str)
+    var file: str = label + ".zbr"
+    var root: PNode = Parser.Parser.parse(src, file)?
+    var r = Resolver.Resolver(file, src)
+    r.resolve(root)?
+    if r.errorCount() > 0
+        print("-- " + label + ": resolve errors")
+        print(r.allErrorMessages())
+        return
+    if root is PNode.module_ as pm
+        var m: Module = ASTBuilder.build(pm, file)?
+        var zig: str = generateModule(m, file)
+        print("-- " + label + ": " + zig.lines().len.toString() + " line(s) of Zig")
+        print(zig)
+    else
+        print("-- " + label + ": not a module")
+catch |e|
+    print("-- " + label + " FAILED: " + e.message)
+
+def main()
+    gen("function", "def add(a: int, b: int): int\n    return a + b\n\ndef main()\n    print(add(1, 2))\n")
+    gen("class", "class Counter\n    var n: int\n\n    cue init(start: int)\n        .n = start\n\n    def bump(): int\n        .n = .n + 1\n        return .n\n\ndef main()\n    var c = Counter(3)\n    print(c.bump())\n")
+    gen("control", "def walk(xs: List(int)): int\n    var total: int = 0\n    for x in xs\n        if x > 10\n            total = total + x\n        else\n            total = total - 1\n    var i: int = 0\n    while i < 3\n        i = i + 1\n    return total\n\ndef main()\n    var xs: List(int) = [1, 20, 3]\n    print(walk(xs))\n")
+    print("codegen_dump: done")

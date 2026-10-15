@@ -43,9 +43,12 @@ use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
 use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
+use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
 use Checker exposing runCheck
+use Lexer
+use Token exposing TokenKind
 
 # ── Multi-file compiler ──────────────────────────────────────────────────────
 
@@ -1103,6 +1106,8 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
+    usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
+    usageLine("  zebra --target v --gc <source.zbr>       ... and say the run line with V's collector on (off by default: nothing is freed, as Zebra's arena)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
@@ -1424,6 +1429,267 @@ def defaultPreamblePath(): str
             pre_exe_dir = "."
         pp = pre_exe_dir + "/stdlib_preamble.zig"
     return pp
+
+# --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
+# .v beside the source, the refusals listed (never skipped silently), the run
+# line said. A resolver error stops it like any compile.
+# a module for the V target: parsed, resolved, built; the resolver's errors
+# raised (a def that is nilable AND throws has no V spelling, so this one
+# raises where it returned nil before, 2026-10-13)
+def vLoadModule(path: str): Module throws
+    var src: str = File.read(path)
+    return vLoadModuleText(src, path)?
+
+def vLoadModuleText(src: str, path: str): Module throws
+    var pm_node = Parser.Parser.parse(src, path)?
+    var resolver = Resolver.Resolver(path, src)
+    resolver.resolve(pm_node)?
+    if resolver.errorCount() > 0
+        raise resolver.allErrorMessages()
+    if pm_node is PNode.module_ as pm
+        return ASTBuilder.build(pm, path)?
+    raise path + ": not a module"
+
+# the used modules, transitively, each once: the file beside the root, else
+# under --module-path; dependencies before their users
+def vCollect(path: str, module_path: str, visited: List(str), out: List(Module)) throws
+    for v in visited
+        if v == path
+            return
+    visited.add(path)
+    var m: Module = vLoadModule(path)?
+    var dir: str = Path.dirname(path)
+    if dir == ""
+        dir = "."
+    for d in m.decls
+        branch d
+            on Decl.use_ as u
+                var dep: str = dir + "/" + u.path + ".zbr"
+                if not File.exists(dep) and module_path != ""
+                    dep = module_path + "/" + u.path + ".zbr"
+                if not File.exists(dep)
+                    var where_: str = " beside it"
+                    if module_path != ""
+                        where_ = where_ + " nor under --module-path " + module_path
+                    sys.errln("zebra --target v: `use " + u.path + "` in " + path + ": no " + u.path + ".zbr" + where_ + ": nothing written")
+                    sys.exit(1)
+                vCollect(dep, module_path, visited, out)?
+            else
+                pass
+    out.add(m)
+
+# V has one namespace per file; Zebra scopes a type to its module. A type
+# two modules of the program declare under one name (gui's TweenInfo struct,
+# tween's TweenInfo class) is renamed `<Stem>_<Name>` in each module's SOURCE
+# TEXT, which is parsed again -- in the module that declares it, and in every
+# module whose `use ... exposing` names it from that module (Zebra's own
+# resolution) -- so the parser, the resolver and the emitter never meet the
+# collision. The lexer's identifier tokens are the rename sites; a member
+# after `.` is not a type name and is left alone.
+def vTypeNames(m: Module): List(str)
+    var out = List(str)()
+    for d in m.decls
+        branch d
+            on Decl.class_ as c
+                out.add(c.name)
+            on Decl.struct_ as st
+                out.add(st.name)
+            on Decl.enum_ as en
+                out.add(en.name)
+            on Decl.union_ as un
+                out.add(un.name)
+            on Decl.interface_ as di
+                out.add(di.name)
+            on Decl.sig_ as sg
+                out.add(sg.name)
+            on Decl.type_alias_ as ta
+                out.add(ta.name)
+            else
+                pass
+    return out
+
+def vCapStem(stem: str): str
+    if stem.len == 0
+        return stem
+    var lower: str = "abcdefghijklmnopqrstuvwxyz"
+    var upper: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    var first: str = stem[0..1]
+    var idx: int = lower.indexOf(first)
+    if idx >= 0
+        first = upper[idx..idx + 1]
+    return first + stem[1..stem.len]
+
+def vRenameInText(src: str, map: HashMap(str, str)): str throws
+    var toks = Lexer.tokenize(src)?
+    var starts = List(int)()
+    starts.add(0)
+    var i: int = 0
+    while i < src.len
+        if src[i] == '\n'
+            starts.add(i + 1)
+        i = i + 1
+    var sb = StringBuilder()
+    var at: int = 0
+    var afterDot: bool = false
+    for t in toks
+        # a name is an `id`, or an `open_call` (a name the `(` follows at
+        # once: `TweenService()`, the word alone as its text)
+        var isName: bool = false
+        var isDot: bool = false
+        branch t.kind
+            on TokenKind.id
+                isName = true
+            on TokenKind.open_call
+                isName = true
+            on TokenKind.dot
+                isDot = true
+            else
+                pass
+        if isName and not afterDot
+            if map.get(t.text) as nn
+                var off: int = starts.at(t.line - 1) + t.col - 1
+                # the coordinates must point at the text (a token the lexer
+                # re-spelled would not): else it is left alone
+                if off + t.text.len <= src.len and src[off..off + t.text.len] == t.text and off >= at
+                    sb.append(src[at..off])
+                    sb.append(nn)
+                    at = off + t.text.len
+        afterDot = isDot
+    sb.append(src[at..src.len])
+    return sb.build()
+
+def vRenameCollisions(modules: List(Module)): List(Module) throws
+    var declared = HashMap(str, List(str))()
+    for m in modules
+        var stem: str = Path.stem(m.file)
+        for n in vTypeNames(m)
+            if declared.get(n) as have
+                have.add(stem)
+            else
+                var fresh = List(str)()
+                fresh.add(stem)
+                declared.set(n, fresh)
+    var colliding = List(str)()
+    for n in declared.keys()
+        if declared.get(n) as mods
+            if mods.count() > 1
+                colliding.add(n)
+    if colliding.count() == 0
+        return modules
+    var out = List(Module)()
+    for m in modules
+        var stem: str = Path.stem(m.file)
+        var own: List(str) = vTypeNames(m)
+        var map = HashMap(str, str)()
+        for n in colliding
+            if own.contains(n)
+                map.set(n, vCapStem(stem) + "_" + n)
+        for d in m.decls
+            branch d
+                on Decl.use_ as u
+                    for ex in u.exposed
+                        if colliding.contains(ex) and map.get(ex) == nil
+                            map.set(ex, vCapStem(Path.stem(u.path)) + "_" + ex)
+                else
+                    pass
+        if map.count() == 0
+            out.add(m)
+        else
+            var names: str = ""
+            for k in map.keys()
+                if names != ""
+                    names = names + ", "
+                if map.get(k) as nn
+                    names = names + k + " -> " + nn
+            print("zebra --target v: " + m.file + ": " + map.count().toString() + " type name(s) two modules declare, renamed in the source (V has one namespace per file): " + names)
+            var renamed: str = vRenameInText(File.read(m.file), map)?
+            out.add(vLoadModuleText(renamed, m.file)?)
+    return out
+
+def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "")
+    var modules = List(Module)()
+    var visited = List(str)()
+    vCollect(path, module_path, visited, modules)?
+    modules = vRenameCollisions(modules)?
+    if modules.count() > 0
+        # the V runtime (the boxed containers), inlined into the emitted file:
+        # in the repo, or next to an installed zebra.exe, as the preamble is
+        var rt_path: str = "selfhost/zebra_rt.v"
+        if not File.exists(rt_path)
+            var exe_dir: str = Path.dirname(sys.selfExe())
+            if exe_dir == ""
+                exe_dir = "."
+            rt_path = exe_dir + "/zebra_rt.v"
+        if not File.exists(rt_path)
+            sys.errln("zebra --target v: the V runtime zebra_rt.v is not at selfhost/zebra_rt.v nor beside zebra.exe: nothing written")
+            sys.exit(1)
+        var res: VResult = generateV(modules, File.read(rt_path))
+        # a GUI program: the libui-ng section (Gui, the run loop, the libui-ng
+        # bindings) appended, found as the runtime is (2026-10-14, a proof of
+        # concept: text, separator, sameLine, button; the Zig section's other
+        # widgets are a V compile error naming the method)
+        var gui_note: str = ""
+        if gui_backend == "libui_ng"
+            var sec_path: str = "selfhost/gui_libui_ng_section.v"
+            if not File.exists(sec_path)
+                var exe_dir2: str = Path.dirname(sys.selfExe())
+                if exe_dir2 == ""
+                    exe_dir2 = "."
+                sec_path = exe_dir2 + "/gui_libui_ng_section.v"
+            if not File.exists(sec_path)
+                sys.errln("zebra --target v --gui-backend=libui_ng: the section gui_libui_ng_section.v is not at selfhost/ nor beside zebra.exe: nothing written")
+                sys.exit(1)
+            res.source = res.source + "\n" + File.read(sec_path)
+            gui_note = " + the libui_ng section"
+        else if gui_backend != "" and gui_backend != "tui"
+            sys.errln("zebra --target v: --gui-backend=" + gui_backend + " is not a V-target backend (libui_ng is; tui is not yet)")
+            sys.exit(1)
+        else if gui_backend == "tui"
+            sys.errln("zebra --target v: --gui-backend=tui has no V-target section yet (libui_ng has)")
+            sys.exit(1)
+        var dir: str = Path.dirname(path)
+        if dir == ""
+            dir = "."
+        # (V reads a `*_test.v` as a test file and wants `test_` functions in
+        # it: a Zebra `*_test.zbr`, a program, is written as `*_test_prog.v`)
+        var stem: str = Path.stem(path)
+        if stem.endsWith("_test")
+            stem = stem + "_prog"
+        var out: str = dir + "/" + stem + ".v"
+        File.write(out, res.source)
+        print("zebra --target v: wrote " + out + " (" + res.source.len.toString() + " bytes; " + modules.count().toString() + " module(s) in one file" + gui_note + ")")
+        if res.refused.count() > 0
+            print("  refused " + res.refused.count().toString() + " construct(s) the subset does not spell (the V file is partial where they stood):")
+            for r in res.refused
+                print("    " + r)
+        else
+            print("  nothing refused: the whole file is in the subset")
+        if res.uses_gui and gui_backend == ""
+            # the Zig target's default section is the tui's headless Gui; the V
+            # target has none, so the file names types nothing defines
+            print("  this program names Gui or CodeEditor and no --gui-backend was given: the V target has no headless section, so the file will not build as it is; emit it with --gui-backend=libui_ng")
+        # the collector is an explicit mode on this backend, not the default
+        # (Sean, 2026-10-13: the language book tempers its line on GCs to
+        # "available as an explicitly enabled mode"): -gc none frees nothing,
+        # as Zebra's arena does today; --gc asks V for its Boehm collector
+        var globals_flag: str = ""
+        if res.has_globals
+            globals_flag = " -enable-globals"   # a mutable module-level var is a V __global
+        if gui_backend == "libui_ng"
+            # the GUI build: libui-ng's ReleaseFast archive (zig build -Doptimize=ReleaseFast
+            # -p zig-out-fast in libui-ng; the Debug one wants the sanitizer runtime), a
+            # mingw clang (the Windows backend has C++; -static keeps its runtime in),
+            # -subsystem console (V reads the gdi32 flag as a GUI app and emits a console
+            # attach mingw's headers lack), and the Common-Controls manifest beside the exe
+            print("  build it: set ZEBRA_LIBUI_NG=<libui-ng checkout>; v -cc clang -cflags -Wno-incompatible-pointer-types -subsystem console -gc none -enable-globals -o <app>.exe " + out)
+            print("  then copy the Common-Controls v6 manifest beside it as <app>.exe.manifest (the Zig scaffold's app.manifest), and run; ZGUI_SCRIPT=\"click:<label>;quit\" ZGUI_TRACE=1 drives it headless")
+        else if gc_on
+            print("  run it: v -gc boehm" + globals_flag + " run " + out + "   (--gc: V's collector on)")
+        else
+            print("  run it: v -gc none" + globals_flag + " run " + out + "   (no collector, as Zebra's arena; --gc turns V's on)")
+catch |e|
+    sys.errln("zebra --target v: " + e.message)
+    sys.exit(1)
 
 def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = false)
     var pm_node = Parser.Parser.parse(src, path)?
@@ -4147,7 +4413,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--gc --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4545,9 +4811,10 @@ def main()
     # --target node-addon: compile to a Node.js native addon (.node + .js + .d.ts)
     var target_opt: str      = args.option("--target", "")
     var mode_node            = target_opt == "node-addon" or target_opt == "node_addon"
+    var mode_v               = target_opt == "v"   # --target v: the V backend, a proof of concept (2026-10-13)
     # 2026-09-26: any other value was IGNORED -- `--target x86_64-linux` built for the host
     # and said nothing, so someone asking for a cross-compile shipped the wrong binary.
-    if target_opt != "" and not mode_node
+    if target_opt != "" and not mode_node and not mode_v
         sys.errln("zebra: unknown --target '" + target_opt + "': the only target is `node-addon` (a Node.js native addon). Cross-compiling is not supported; build on the target OS.")
         sys.exit(2)
     # node-addon emits N-API glue at file scope and is built by a separate driver that
@@ -4623,6 +4890,12 @@ def main()
     # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
     # Multi-file: discovers dependencies via `use` decls, compiles each to .zig.
     # Compile the root file and all its dependencies
+    # --target v (proof of concept, 2026-10-13): the same front end, a second
+    # emitter, the .v written beside the source; what the subset refused is
+    # printed by name and line. No Zig, no runtime module, no build.
+    if mode_v
+        vTarget(path, args.contains("--gc"), module_path, gui_backend)
+        sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo
     mc.library_mode = lib_mode

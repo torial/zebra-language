@@ -1,0 +1,33 @@
+# v_poc5.zbr -- the V backend's fifth program: errors (2026-10-13). A
+# throws def that raises, a `?` chain through a second throws def, a
+# def-level `catch |e|` on a plain def, and the expression-level catch both
+# ways. Runs on the Zig backend too.
+
+def parsePositive(s: str): int throws
+    var n: int = s.tryInt() orelse 0 - 1
+    if n < 0
+        raise "not a positive number: " + s
+    return n
+
+def sumAll(parts: List(str)): int throws
+    var total: int = 0
+    for p in parts
+        total = total + parsePositive(p)?
+    return total
+
+def safeSum(parts: List(str)): int
+    var total: int = sumAll(parts)?
+    return total
+catch |e|
+    print("caught: " + e.message)
+    return 0 - 1
+
+def main()
+    var good: List(str) = ["1", "2", "3"]
+    var bad: List(str) = ["1", "x"]
+    print("sum: " + safeSum(good).toString())
+    print("bad: " + safeSum(bad).toString())
+    var n: int = parsePositive("7") catch 0 - 1
+    var m: int = parsePositive("nope") catch |e| 0 - e.message.len   # (a capture must be used or omitted: Zebra's rule)
+    print("catch expr: " + n.toString() + " " + m.toString())
+    print("v_poc5: all ok")
