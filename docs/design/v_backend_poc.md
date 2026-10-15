@@ -1874,6 +1874,33 @@ and item 3 is now named.
   the other lags; the regen tooling and the drift alarm would have to grow a
   second target.
 
+## The decision, as it stands (2026-10-15)
+
+Sean, after the two merges: "I'm seriously considering V as the long
+term back-end once it gets to the 0.5.3 ... and the work you've done is
+significant step in that direction." So the pin moves at 0.5.3, and
+these are the 0.5.2 workarounds to re-test there, each with its
+witness, so the move retires what it can:
+
+- the generic heap-init order rule (`zlist_of[string]` after
+  `zlist_of[json2.Any]`; `fable/fieldnotes_v-heap-init-stale-expected`)
+  -- the pipeline's v_poc2 names line;
+- json2's escape sequences kept inside object keys (`zjson_fix_keys`
+  in the runtime) -- the engine ladder's player_store_test;
+- the C stage miscompiling an if-expression over a result guard with
+  a `none` arm (the two-line `catch nil`) -- tuon_data_test;
+- the `-cflags -Wno-incompatible-pointer-types` the clang 22+ build
+  needs (`u32*` as `LPDWORD`; vlang/v#30587 on master, fixed there) --
+  any GUI build;
+- MSVC's negated `_const_min_int` (vlang/v#30352, fixed on master; the
+  emitter's `int()` cast on slice bounds stays until then) -- the clang
+  and msvc lanes;
+- the demo's heap corruption under clang 22/23 at -O2 (parked;
+  `opt_bisect.py`) -- the `-prod` lane.
+
+Master is a different compiler (the flat AST, `cleanc`); 0.5.3 is the
+first release that will say which of these it carries.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
