@@ -79,9 +79,12 @@
 // destroys it), `setReadOnly`, the cursor line and column, `setCursorPosition`,
 // the recorded events `takeModified` / `takeCharAdded` / `takeMarginClick`,
 // `hotkey` / `takeKey` (chords through the shim's key hook), `render` placing
-// it as a node keyed by the record's address. No syntax styling yet (the Zig
-// section's tokenizer is the next cut); `setErrorMarkers` is accepted and
-// said.
+// it as a node keyed by the record's address. Syntax styling is the Zig
+// section's tokenizer ported (`zgui_ce_tokenize`: one tokenizer reading a
+// language spec -- zebra, c, zig, text -- one style byte per source byte,
+// sent as SCI_SETSTYLINGEX after a set and whenever the end-styled watermark
+// says an edit moved it back, polled per frame); `setErrorMarkers` is
+// accepted and said.
 //
 // hotkey, takeKey and minSize on the Gui are accepted and not acted on (said
 // once each).
@@ -490,6 +493,10 @@ const sci_getcolumn = u32(2129)
 const sci_gotoline = u32(2024)
 const sci_appendtext = u32(2282)
 const sci_getlinecount = u32(2154)
+const sci_getendstyled = u32(2028)
+const sci_startstyling = u32(2032)
+const sci_setstylingex = u32(2073)
+const sci_getstyleat = u32(2010)
 const scn_charadded = u32(2001)
 const scn_modified = u32(2008)
 const scn_marginclick = u32(2010)
@@ -502,6 +509,243 @@ const sci_c_lnfg = usize(0x63524b)
 const sci_c_lnbg = usize(0x2f2823)
 const sci_c_caretln = usize(0x3e3630)
 const sci_c_sel = usize(0x584c3f)
+
+// style slots (32 and 33 are Scintilla's own: STYLE_DEFAULT, STYLE_LINENUMBER)
+const sci_s_default = u8(0)
+const sci_s_keyword = u8(1)
+const sci_s_comment = u8(2)
+const sci_s_string = u8(3)
+const sci_s_number = u8(4)
+const sci_s_type = u8(5)
+const sci_s_func = u8(6)
+const sci_s_op = u8(7)
+const sci_s_preproc = u8(8)
+
+// Scintilla colours are 0xBBGGRR, not RGB (One Dark, as the Zig section)
+const sci_c_keyword = usize(0xdd78c6) // #c678dd
+const sci_c_comment = usize(0x70635c) // #5c6370
+const sci_c_string = usize(0x79c398) // #98c379
+const sci_c_number = usize(0x669ad1) // #d19a66
+const sci_c_type = usize(0x7bc0e5) // #e5c07b
+const sci_c_func = usize(0xefaf61) // #61afef
+const sci_c_op = usize(0xc2b656) // #56b6c2
+const sci_c_preproc = usize(0x9a7de0) // #e07d9a
+
+// A language is DATA: which comment and string forms exist and which words are
+// keywords. The one tokenizer (`zgui_ce_tokenize`) reads a spec; adding a
+// language is adding a spec, not a tokenizer. The Zig section's tables.
+struct ZCeLangSpec {
+	name          string
+	keywords      []string
+	line_comment  string // '#' or '//'; '' = none
+	block_comment bool   // C-style /* ... */
+	preproc       bool   // '#' at a line's start (after blanks) is a preprocessor line
+	char_lit      bool   // 'x' is a char literal (C, Zig), else ' is an operator
+	zig_multiline bool   // a `\\` line is a multiline-string line (Zig)
+	builtin_at    bool   // `@name` is a builtin call (Zig)
+	caps_are_types bool  // a capitalised identifier is a type (Zebra, Zig)
+}
+
+const zce_kw_zebra = ['abstract', 'adds', 'allocate', 'and', 'arena', 'as', 'assert', 'assert_eq',
+	'assert_false', 'assert_ne', 'assert_true', 'bool', 'branch', 'break', 'capture', 'catch',
+	'char', 'class', 'const', 'continue', 'cue', 'def', 'defer', 'else', 'ensure', 'enum',
+	'errdefer', 'except', 'export', 'exposing', 'extend', 'extern', 'false', 'float', 'for',
+	'guard', 'has', 'if', 'implements', 'implies', 'in', 'int', 'interface', 'invariant', 'is',
+	'mixin', 'namespace', 'nil', 'not', 'on', 'or', 'orelse', 'pass', 'print', 'private',
+	'public', 'raise', 'readonly', 'require', 'return', 'same', 'sig', 'static', 'struct',
+	'test', 'this', 'throws', 'to', 'true', 'type', 'uint', 'union', 'use', 'using', 'var',
+	'vari', 'where', 'while', 'with']
+const zce_kw_c = ['auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do', 'double', 'else',
+	'enum', 'extern', 'float', 'for', 'goto', 'if', 'inline', 'int', 'long', 'register',
+	'restrict', 'return', 'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'typedef',
+	'union', 'unsigned', 'void', 'volatile', 'while', '_Bool', '_Static_assert', 'bool', 'true',
+	'false', 'NULL', 'size_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'int8_t',
+	'int16_t', 'int32_t', 'int64_t', 'uintptr_t', 'intptr_t', 'ptrdiff_t', 'ssize_t']
+const zce_kw_zig = ['addrspace', 'align', 'allowzero', 'and', 'anyframe', 'anytype', 'asm', 'async', 'await',
+	'break', 'callconv', 'catch', 'comptime', 'const', 'continue', 'defer', 'else', 'enum',
+	'errdefer', 'error', 'export', 'extern', 'fn', 'for', 'if', 'inline', 'linksection',
+	'noalias', 'noinline', 'nosuspend', 'opaque', 'or', 'orelse', 'packed', 'pub', 'resume',
+	'return', 'struct', 'suspend', 'switch', 'test', 'threadlocal', 'try', 'union', 'unreachable',
+	'usingnamespace', 'var', 'volatile', 'while', 'true', 'false', 'null', 'undefined',
+	'void', 'bool', 'u8', 'i8', 'u16', 'i16', 'u32', 'i32', 'u64', 'i64', 'u128', 'i128',
+	'usize', 'isize', 'f16', 'f32', 'f64', 'f128', 'c_int', 'c_uint', 'c_long', 'c_ulong',
+	'c_char', 'c_void', 'anyerror', 'anyopaque', 'noreturn', 'comptime_int', 'comptime_float', 'type']
+
+const zce_lang_zebra = ZCeLangSpec{
+	name: 'zebra'
+	keywords: zce_kw_zebra
+	line_comment: '#'
+	caps_are_types: true
+}
+const zce_lang_c = ZCeLangSpec{
+	name: 'c'
+	keywords: zce_kw_c
+	line_comment: '//'
+	block_comment: true
+	preproc: true
+	char_lit: true
+}
+const zce_lang_zig = ZCeLangSpec{
+	name: 'zig'
+	keywords: zce_kw_zig
+	line_comment: '//'
+	char_lit: true
+	zig_multiline: true
+	builtin_at: true
+	caps_are_types: true
+}
+const zce_lang_plain = ZCeLangSpec{
+	name: 'text'
+}
+
+// a language name or a file extension to its spec; unknown = plain, never a guess
+fn zgui_ce_spec_by_name(n string) ZCeLangSpec {
+	if n == 'zebra' || n == 'zbr' {
+		return zce_lang_zebra
+	}
+	if n == 'c' || n == 'h' || n == 'cpp' || n == 'cxx' || n == 'cc' || n == 'hpp' {
+		return zce_lang_c
+	}
+	if n == 'zig' || n == 'zon' {
+		return zce_lang_zig
+	}
+	return zce_lang_plain
+}
+
+fn zgui_ce_spec_for_file(path string) ZCeLangSpec {
+	mut i := path.len
+	for i > 0 {
+		c := path[i - 1]
+		if c == `.` {
+			return zgui_ce_spec_by_name(path[i..])
+		}
+		if c == `/` || c == `\\` {
+			break
+		}
+		i--
+	}
+	return zce_lang_plain
+}
+
+fn zce_starts(src string, i int, pat string) bool {
+	return pat.len > 0 && i + pat.len <= src.len && src[i..i + pat.len] == pat
+}
+
+fn zce_alpha(c u8) bool {
+	return (c >= `a` && c <= `z`) || (c >= `A` && c <= `Z`) || c == `_`
+}
+
+fn zce_digit(c u8) bool {
+	return c >= `0` && c <= `9`
+}
+
+const zce_ops = '+-*/=<>!&|^~?:.,()[]{}'
+
+fn zce_opch(c u8) bool {
+	return zce_ops.index_u8(c) >= 0
+}
+
+// The tokenizer proper, the Zig section's verbatim in V: one style byte per
+// source byte. Pure: no Scintilla in it.
+fn zgui_ce_tokenize(spec ZCeLangSpec, src string) []u8 {
+	mut out := []u8{len: src.len}
+	mut i := 0
+	mut line_start := true // only blanks seen since the last newline
+	for i < src.len {
+		start := i
+		c := src[i]
+		mut sty := sci_s_default
+		if c == `\n` {
+			i++
+			line_start = true
+		} else if c == ` ` || c == `\t` || c == `\r` {
+			i++
+		} else if spec.preproc && line_start && c == `#` {
+			for i < src.len && src[i] != `\n` {
+				i++
+			}
+			sty = sci_s_preproc
+			line_start = false
+		} else if zce_starts(src, i, spec.line_comment) {
+			for i < src.len && src[i] != `\n` {
+				i++
+			}
+			sty = sci_s_comment
+			line_start = false
+		} else if spec.block_comment && zce_starts(src, i, '/*') {
+			i += 2
+			for i < src.len && !zce_starts(src, i, '*/') {
+				i++
+			}
+			if i < src.len {
+				i += 2
+			}
+			sty = sci_s_comment
+			line_start = false
+		} else if spec.zig_multiline && zce_starts(src, i, '\\\\') {
+			for i < src.len && src[i] != `\n` {
+				i++
+			}
+			sty = sci_s_string
+			line_start = false
+		} else if c == `"` || (spec.char_lit && c == `'`) {
+			q := c
+			i++
+			for i < src.len && src[i] != q && src[i] != `\n` {
+				if src[i] == `\\` && i + 1 < src.len {
+					i++
+				}
+				i++
+			}
+			if i < src.len && src[i] == q {
+				i++
+			}
+			sty = sci_s_string
+			line_start = false
+		} else if zce_digit(c) {
+			for i < src.len && (zce_digit(src[i]) || zce_alpha(src[i]) || src[i] == `.`) {
+				i++
+			}
+			sty = sci_s_number
+			line_start = false
+		} else if spec.builtin_at && c == `@` && i + 1 < src.len && zce_alpha(src[i + 1]) {
+			i++
+			for i < src.len && (zce_alpha(src[i]) || zce_digit(src[i])) {
+				i++
+			}
+			sty = sci_s_func
+			line_start = false
+		} else if zce_alpha(c) {
+			for i < src.len && (zce_alpha(src[i]) || zce_digit(src[i])) {
+				i++
+			}
+			w := src[start..i]
+			if w in spec.keywords {
+				sty = sci_s_keyword
+			} else if spec.caps_are_types && w[0] >= `A` && w[0] <= `Z` {
+				sty = sci_s_type
+			} else {
+				mut j := i
+				for j < src.len && src[j] == ` ` {
+					j++
+				}
+				sty = if j < src.len && src[j] == `(` { sci_s_func } else { sci_s_default }
+			}
+			line_start = false
+		} else if zce_opch(c) {
+			i++
+			sty = sci_s_op
+			line_start = false
+		} else {
+			i++
+			line_start = false
+		}
+		for k := start; k < i; k++ {
+			out[k] = sty
+		}
+	}
+	return out
+}
 
 fn C.uiNewEditableCombobox() &C.uiEditableCombobox
 fn C.uiEditableComboboxAppend(c &C.uiEditableCombobox, text &char)
@@ -1164,6 +1408,14 @@ fn zgui_ce_configure(ed &ZCodeEditor) {
 	zgui_ce_send(ed, sci_stylesetfore, 32, sci_c_fg)
 	zgui_ce_send(ed, sci_stylesetback, 32, sci_c_bg)
 	zgui_ce_send(ed, sci_styleclearall, 0, 0)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_keyword), sci_c_keyword)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_comment), sci_c_comment)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_string), sci_c_string)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_number), sci_c_number)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_type), sci_c_type)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_func), sci_c_func)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_op), sci_c_op)
+	zgui_ce_send(ed, sci_stylesetfore, usize(sci_s_preproc), sci_c_preproc)
 	zgui_ce_send(ed, sci_stylesetfore, 33, sci_c_lnfg)
 	zgui_ce_send(ed, sci_stylesetback, 33, sci_c_lnbg)
 	zgui_ce_send(ed, sci_setmargintypen, 0, 1)
@@ -1186,6 +1438,7 @@ fn zgui_ce_make_control(ed &ZCodeEditor) voidptr {
 	C.uiScintillaOnKey(sci, zgui_ce_key, voidptr(e))
 	if e.text.len > 0 {
 		C.uiScintillaSetText(sci, zgui_cstr(e.text), u32(e.text.len))
+		zgui_ce_style(e)
 	}
 	e.ev_modified = false // the set is not an edit
 	if e.read_only {
@@ -1208,6 +1461,58 @@ fn zgui_ce_pull_text(ed &ZCodeEditor) {
 	mut buf := []u8{len: int(n) + 1}
 	C.uiScintillaGetRange(e.sci, 0, n, unsafe { &char(buf.data) })
 	e.text = buf[..int(n)].bytestr()
+}
+
+// the record's text tokenized by its language and the style bytes sent to the
+// control (one per source byte, from 0)
+fn zgui_ce_style(ed &ZCodeEditor) {
+	if ed.sci == unsafe { nil } || ed.text.len == 0 {
+		return
+	}
+	out := zgui_ce_tokenize(zgui_ce_spec_by_name(ed.lang), ed.text)
+	zgui_ce_send(ed, sci_startstyling, 0, 0)
+	zgui_ce_send(ed, sci_setstylingex, usize(out.len), usize(voidptr(out.data)))
+}
+
+// an edit moves Scintilla's end-styled watermark back to where it happened:
+// when it is short of the length, pull the live text and restyle it (two
+// messages when nothing changed; libui routes no notification for it)
+fn zgui_ce_restyle_if_dirty(ed &ZCodeEditor) {
+	if ed.sci == unsafe { nil } {
+		return
+	}
+	n := C.uiScintillaGetLength(ed.sci)
+	if n == 0 {
+		return
+	}
+	if zgui_ce_send(ed, sci_getendstyled, 0, 0) >= usize(n) {
+		return
+	}
+	zgui_ce_pull_text(ed)
+	zgui_ce_style(ed)
+}
+
+// the trace's tally of the control's own style bytes (read back from
+// Scintilla, not from the tokenizer: what the control shows), the first
+// 4096 bytes at most
+fn zgui_ce_style_words(ed &ZCodeEditor) string {
+	if ed.sci == unsafe { nil } {
+		return ' (no control)'
+	}
+	n := int(C.uiScintillaGetLength(ed.sci))
+	lim := if n > 4096 { 4096 } else { n }
+	mut tally := []int{len: 9}
+	for i := 0; i < lim; i++ {
+		st := int(zgui_ce_send(ed, sci_getstyleat, usize(i), 0))
+		if st >= 0 && st < 9 {
+			tally[st]++
+		}
+	}
+	mut w := ' kw=${tally[1]} cm=${tally[2]} st=${tally[3]} nu=${tally[4]} ty=${tally[5]} fn=${tally[6]} op=${tally[7]} pp=${tally[8]}'
+	if n > lim {
+		w += ' (first ${lim})'
+	}
+	return w
 }
 
 fn zgui_on_editcombo_changed(c &C.uiEditableCombobox, data voidptr) {
@@ -1822,7 +2127,9 @@ fn zgui_commit(st &ZGuiState) {
 					}
 				}
 				'editor' {
-					// the control is the record's; nothing to bring up to date per frame
+					// the control is the record's; an edit since the last frame is restyled
+					ed := s.editors[n.label] or { panic('zgui: no editor ' + n.label) }
+					zgui_ce_restyle_if_dirty(ed)
 				}
 				'editcombo' {
 					if p.text != n.text {
@@ -2388,7 +2695,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'table' { 'table(' + n.label + ' ' + zgui_table_words(s.tables[n.label] or { panic('no table') }) + ')' }
 			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
 			'area' { (if (s.areas[n.label] or { panic('no area') }).is_canvas { 'canvas(' } else { 'area(' }) + n.label + ' ' + (s.areas[n.label] or { panic('no area') }).painted.join(' ') + ')' }
-			'editor' { 'editor(' + zgui_ce_send(s.editors[n.label] or { panic('no editor') }, sci_getlinecount, 0, 0).str() + ' lines)' }
+			'editor' { 'editor(' + zgui_ce_send(s.editors[n.label] or { panic('no editor') }, sci_getlinecount, 0, 0).str() + ' lines' + zgui_ce_style_words(s.editors[n.label] or { panic('no editor') }) + ')' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
@@ -2834,18 +3141,17 @@ pub fn (k CodeEditorKind) for_language(name string) CodeEditor {
 	return zgui_ce_new(name)
 }
 
+pub fn (k CodeEditorKind) for_c() CodeEditor {
+	return zgui_ce_new('c')
+}
+
+pub fn (k CodeEditorKind) for_zig() CodeEditor {
+	return zgui_ce_new('zig')
+}
+
+// by the extension; an unknown one is plain text, never a guess
 pub fn (k CodeEditorKind) for_file(path string) CodeEditor {
-	lower := path.to_lower()
-	lang := if lower.ends_with('.c') || lower.ends_with('.h') {
-		'c'
-	} else if lower.ends_with('.zig') {
-		'zig'
-	} else if lower.ends_with('.zbr') {
-		'zebra'
-	} else {
-		'text'
-	}
-	return zgui_ce_new(lang)
+	return zgui_ce_new(zgui_ce_spec_for_file(path.to_lower()).name)
 }
 
 pub fn (c CodeEditor) set_text(text string) {
@@ -2853,6 +3159,7 @@ pub fn (c CodeEditor) set_text(text string) {
 	ed.text = text
 	if ed.sci != unsafe { nil } {
 		C.uiScintillaSetText(ed.sci, zgui_cstr(text), u32(text.len))
+		zgui_ce_style(ed)
 		ed.ev_modified = false // a set is not an edit
 	}
 }
@@ -2871,14 +3178,20 @@ pub fn (c CodeEditor) set_read_only(v bool) {
 pub fn (c CodeEditor) set_language(name string) {
 	mut ed := c.ed
 	ed.lang = name
+	c.restyle()
 }
 
 pub fn (c CodeEditor) get_language() string {
 	return c.ed.lang
 }
 
-// no syntax styling on the V backend yet (the Zig section's tokenizer is the next cut)
+// the live text pulled and styled again (a language change, a program's ask)
 pub fn (c CodeEditor) restyle() {
+	if c.ed.sci == unsafe { nil } {
+		return
+	}
+	zgui_ce_pull_text(c.ed)
+	zgui_ce_style(c.ed)
 }
 
 pub fn (c CodeEditor) take_modified() bool {

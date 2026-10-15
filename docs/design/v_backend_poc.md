@@ -1036,11 +1036,42 @@ the margin's line), and `hotkey` / `takeKey` through its key hook
 places it as a node keyed by the record's address, stretchy; the
 configuration is the Zig section's (UTF-8, Consolas 11, One Dark, a
 line-number margin, the caret line, a four-space tab). No syntax
-styling yet: the Zig section's own tokenizer is the next cut, and
+styling in this batch (the tenth, below, is it);
 `setErrorMarkers` is accepted and said. Script verbs `edtype` (an edit
 appended through Scintilla, so the modified event fires), `edkey`,
 `edmargin`. The witness: `examples/editor_events_smoke.zbr` -- an edit,
 a Ctrl+S, a margin click, each taken by a tick and counted.
+
+The tenth batch: syntax styling, the Zig section's tokenizer ported.
+A language is data (`ZCeLangSpec`: the keyword list, the line and
+block comment forms, whether `#` at a line's start is a preprocessor
+line, whether `'x'` is a char literal, Zig's `\\` multiline-string
+lines and `@builtin` calls, whether a capitalised identifier is a
+type) and one tokenizer reads it, one style byte per source byte, the
+specs for zebra, c, zig and plain text; the eight style slots and
+their One Dark colours are the Zig section's (0xBBGGRR, the easy
+mistake). The bytes go to the control as `SCI_SETSTYLINGEX` after a
+`setText` and when the control is made over the record's text; an
+edit moves Scintilla's end-styled watermark back to where it
+happened, and the commit's in-place pass asks for it each frame
+(`SCI_GETENDSTYLED` short of the length: pull the live text, restyle;
+two messages when nothing changed, as the Zig section polls, since
+libui routes no notification for it). `forC` / `forZig` join the
+constructors and `forFile` picks by the spec table's extensions
+(`.hpp` is c, `.zon` is zig, an unknown one is text). The trace's
+editor entry carries a tally of the style bytes read back from the
+control with `SCI_GETSTYLEAT` (the first 4096), which is the
+instrument: it reads what the control shows, not what the tokenizer
+said. The witness counts by hand from the texts and the control agrees
+to the byte: the editor example's `def` and `print` as keywords (8),
+`main` as a function (4), the string (8), and an appended `def`
+restyled by the next frame (11); the styler smoke's three controls
+from the IDE plan -- C's `#` inside a string as STRING and `#include`
+as PREPROC (a comment count of 33, which a `#` read as a comment would
+make 48), Zig's two `\\` lines and `@import` as STRING and FUNC,
+Zebra's `${}` inside its STRING with `#` a comment. Two reds seen:
+with the restyle gone the edit stays at 8; with the first styling gone
+every tally reads 0. Sixteen cases.
 
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
@@ -1077,8 +1108,8 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: syntax styling in the editor, error markers, window
-hotkeys, the tui backend on V, a
+What it is not: error markers in the editor, window hotkeys, the tui
+backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from

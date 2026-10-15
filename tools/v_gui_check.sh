@@ -222,18 +222,23 @@ echo "v_gui_check: canvas ok -- press, drag, release, enter and a key through th
 # 14. the code editor (examples/editor_events_smoke.zbr), over the fork's
 # Scintilla shim (zig-libui-ng/zig-out-fast/lib/sci_native.lib): an edit
 # appended through Scintilla, a Ctrl+S chord, a margin click, each taken by a
-# tick and counted by the model
+# tick and counted by the model; the style tally is read back from the
+# control (SCI_GETSTYLEAT per byte: what it shows, not what the tokenizer
+# said) -- "def main()\n    print(\"events\")\n" is def and print as
+# keywords (8 bytes), main as a function (4), "events" as a string (8), four
+# brackets -- and the appended "def" is restyled by the next frame (11)
 [ -f "$ZEBRA_LIBUI_NG/../zig-out-fast/lib/sci_native.lib" ] || { echo "v_gui_check: no $ZEBRA_LIBUI_NG/../zig-out-fast/lib/sci_native.lib (zig build -Doptimize=ReleaseFast -p zig-out-fast in zig-libui-ng, with the install line for sci_native): the editor case needs it"; exit 2; }
-build_and_run editor examples/editor_events_smoke.zbr "edtype:x;click:tick;edkey:83,1;click:tick;edmargin:1;click:tick;tick;quit"
+build_and_run editor examples/editor_events_smoke.zbr "edtype:def;click:tick;edkey:83,1;click:tick;edmargin:1;click:tick;tick;quit"
 v() { sed -n "$((1 + $1))p" "$OUT/editor_run.txt"; }
 fail=""
 [ "$(wc -l < "$OUT/editor_run.txt")" = 8 ] || fail="8 frames expected, $(wc -l < "$OUT/editor_run.txt") drawn"
-echo "$(v 0)" | grep -q "text(modified=0  char=0  margin=-1  key=0 (mods<<16|vk)) editor(3 lines)" || fail="${fail:-frame 0 should show the editor with its three lines and no events}"
+echo "$(v 0)" | grep -q "text(modified=0  char=0  margin=-1  key=0 (mods<<16|vk)) editor(3 lines kw=8 cm=0 st=8 nu=0 ty=0 fn=4 op=4 pp=0)" || fail="${fail:-frame 0 should show the editor with its three lines styled and no events}"
+echo "$(v 1)" | grep -q "editor(3 lines kw=11 " || fail="${fail:-frame 1 should show the appended def restyled as a keyword}"
 echo "$(v 3)" | grep -q "text(modified=1 " || fail="${fail:-frame 3 should count the edit as modified}"
 echo "$(v 5)" | grep -q "key=65619 " || fail="${fail:-frame 5 should show the Ctrl+S chord}"
 echo "$(v 7)" | grep -q "margin=1 " || fail="${fail:-frame 7 should show the margin line clicked}"
 [ -z "$fail" ] || { echo "v_gui_check: editor FAILED -- $fail:"; cat "$OUT/editor_run.txt"; exit 6; }
-echo "v_gui_check: editor ok -- an edit, a chord and a margin click through Scintilla, each counted (8 frames)"
+echo "v_gui_check: editor ok -- an edit, a chord and a margin click through Scintilla, each counted; the text styled, the edit restyled (8 frames)"
 
 # 15. a GUI program of two modules (examples/gui_modules_smoke.zbr with
 # examples/sci.zbr): an editor made in the used module and handed across,
@@ -246,4 +251,20 @@ grep -q "^lines=2$" "$OUT/modules_run.txt" || fail="the used module's line count
 grep -q "text(modules: 2) button(+1)" "$OUT/modules_run.txt" || fail="${fail:-the +1 message should count to 2}"
 [ -z "$fail" ] || { echo "v_gui_check: modules FAILED -- $fail:"; cat "$OUT/modules_run.txt"; exit 6; }
 echo "v_gui_check: modules ok -- two modules, an editor handed across, a one-variant union counted"
+
+# 16. the styler's three controls (examples/styler_smoke.zbr, the IDE plan's):
+# each editor's style tally read back from its control. C: the # inside a
+# string is STRING and #include is PREPROC, never COMMENT (cm=33 is the block
+# comment and the trailing one; a # read as a comment would make it 48).
+# Zig: the two \\ lines are STRING (13 of the 25) and @import is FUNC (7 of
+# the 16). Zebra: the ${} interpolation stays inside the STRING (27 bytes)
+# and # is a comment (11). Counted by hand from the example's texts.
+build_and_run styler examples/styler_smoke.zbr "tick;quit"
+y() { sed -n "$((1 + $1))p" "$OUT/styler_run.txt"; }
+fail=""
+echo "$(y 0)" | grep -q "page(greet.zbr) editor(4 lines kw=9 cm=11 st=27 nu=0 ty=0 fn=5 op=4 pp=0)" || fail="the zebra editor should style def and return, the comment and the interpolated string"
+echo "$(y 0)" | grep -q "page(main.c) editor(8 lines kw=22 cm=33 st=20 nu=6 ty=0 fn=4 op=10 pp=18)" || fail="${fail:-the c editor should style #include as preproc and the # in the string as string}"
+echo "$(y 0)" | grep -q "page(main.zig) editor(9 lines kw=19 cm=0 st=25 nu=0 ty=0 fn=16 op=17 pp=0)" || fail="${fail:-the zig editor should style the multiline-string lines and @import}"
+[ -z "$fail" ] || { echo "v_gui_check: styler FAILED -- $fail:"; cat "$OUT/styler_run.txt"; exit 6; }
+echo "v_gui_check: styler ok -- zebra, c and zig styled as the IDE plan's three controls say (the tallies read back from Scintilla)"
 echo "v_gui_check: ok"
