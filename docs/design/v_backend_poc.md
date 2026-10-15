@@ -1259,6 +1259,78 @@ here too) and cross_lsp_test (clangd and zls). Not seen: the IDE with a
 hand on it through V (the window opens and paints; typing, squiggles
 and the debugger are a session with Sean).
 
+**The engine's headless tests as the ladder (2026-10-15).** After the
+IDE, the largest set of real programs there is: `tools/v_engine_check.py`
+takes every test root `build.zig` names (through the engine's own
+`tools/affected_tests.py`), keeps the 95 whose root is a Zebra source
+(the other 255 are Zig-rooted host tests, counted, never guessed), emits
+each from the engine root with `--module-path zbra`, moves the `.v` out of
+the engine tree at once, builds it with V, runs it from the engine root
+and diffs its stdout against the Zig-built test's (`zig build
+run-<name>`, or the executable the last suite left in the cache when
+there is no step), measured durations normalised, refusals and V errors
+ranked by the roots they touch. Five rungs in an afternoon: 70, 85 (a
+false 80 between, from a patch the regen had refused), 88, 89, then
+**92 of 95 identical**, the pipeline 15/15, the GUI witness 18/18 and
+the IDE check green at each. What the rungs found, in the order the
+counts chose:
+
+- **An evaluation-order bug in the emitter.** A temporary bound for a
+  mutating call on a call's result (`tracks.get("swing")!.isPlaying()`)
+  was hoisted before the whole statement -- ahead of the earlier terms'
+  side effects and outside the `and` / `or` short-circuit. character_test
+  read the track before `play("lunge")` made it; net_mirror_test fetched
+  the player before the pump rebuilt it; both looked like runtime
+  divergences and were one emitter fault. An `and` / `or` chain whose
+  later term hoists lines is now a bound boolean updated inside an `if`
+  with those lines inside it (`chainStr`); the same hazard in other
+  expression shapes is noted, not closed. The instrument that found the
+  unwrap: number every `zunwrap` in the emitted main (`zunwrap_at(N,
+  ...)`) and print the site -- V's own backtrace stops at the helper.
+- **A flat local list.** A loop variable, a for-num counter and an `if x
+  as y` binding stayed in the emitter's local list past their block, so
+  a later `capture var r = rec` in the same function read as a
+  re-declaration and was emitted as an assignment (minigames_test: `for
+  r in tremor.ranges` then the capture; the mutable-element loop added
+  its variable twice). Block-scoped names leave the list at their
+  block's end (`popLocal`).
+- **V 0.5.2's json2 keeps the escape sequences inside object keys** (a
+  key `Iron \"Spear\"` reads back with its backslashes and encodes
+  doubled); master is fine. The runtime unescapes keys after a decode.
+- **The engine's own test tool.** `tools/affected_tests.py` mapped
+  `.root_module = tmod` to the LAST definition of a module variable
+  `build.zig` reuses four times, so datastore_test's root read as
+  voting_test's (the F42 class): the nearest preceding definition now,
+  GameEngine 10b9f61.
+- The smaller ones: an enum member typed (an optional-vs-enum compare
+  through `zopt_eq`); a local named like a builtin namespace (`sys`) is
+  the local; `for ... if` emits a `continue` at the body's head in every
+  loop form (the list form was missed on the first pass: a filter a loop
+  silently drops is worse than a refusal, and the second pass asserts no
+  body is left unfiltered); the chained JSON index `j["a"]["b"]?`
+  propagates the inner result and is typed; `f() catch nil` is the option
+  declared by its type and set inside a guard on lines before the
+  statement (V takes no result type as a generic argument, and its C
+  stage miscompiles an if-expression over a result guard with a `none`
+  arm); a throwing call as a statement propagates; Math.exp / Math.log,
+  Dir.delete; Tcp refused by name; a def whose snake name is a class's
+  constructor name is suffixed; two module-level vars that snake-case
+  alike are numbered; a raw string takes the escape path (the lexer
+  keeps its text pre-escaped for the Zig literal; spelled byte for byte
+  it doubled every backslash, and tuon_story's 80-column rows read 11
+  per 9).
+
+The three that stay: net_figures_test prints a HashMap's entries in
+iteration order (Zig's unordered, V's insertion-ordered; Zebra does not
+specify one), tween_create_test wants a thread's Atomic and a call on a
+call's result, and the devtools inspector wants a TCP client the runtime
+does not have. Two lessons of the afternoon about the tooling: a Bash
+heredoc turns `\t` into a tab (twice, through the quoted form too), so
+a patch that carries an escape goes through a file the shell never
+reads; and a pipeline whose regen refuses leaves the previous compiler
+in place, so a ladder run after it measures the wrong build unless the
+refusal is read first.
+
 **The fixed point (2026-10-13).** `zebra_v --target v selfhost/main.zbr`
 is the V backend emitting itself. Generation 0 is the Zig-built
 compiler's emission of the backend's own source (61,627 lines of V);

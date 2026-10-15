@@ -2258,7 +2258,10 @@ class VGen
                         pass
             else
                 pass
-        .line(.exprStr(e))
+        var est: str = .exprStr(e)
+        if .vTypeOf(e).startsWith("!")
+            est = est + "!"   # a throwing call as a statement stands in a try body or a throwing def: propagated
+        .line(est)
 
     # `raise msg` -> `return error(msg)`; the details, when given, appended to
     # the message (V's error carries one string; nothing dropped)
@@ -2773,7 +2776,9 @@ class VGen
                 .line("for " + ix + " := 0; " + ix + " < " + it + ".count(); " + ix + "++ {")
                 .depth = .depth + 1
                 .line("mut " + v + " := unsafe { " + it + ".at(" + ix + ") }")   # (unsafe: master's "aliases mutable data from an immutable value" on the temporary)
-                .local_names.add(fi.vars.at(0))   # in scope: a module of its name is not meant
+                # (the variable is in the local list since the loop's head; a second
+                # add here left one behind the pop at the end -- minigames_test's
+                # later capture of the name read as an assignment, 2026-10-15)
                 if v_unused
                     .line("_ = " + v)
                 .genFilteredBody(fi)
@@ -3055,6 +3060,25 @@ class VGen
                     var out = "(" + .exprStr(c.expr) + " or {\n" + vSafe(ev) + " := err\n_ = " + vSafe(ev) + "\n" + .exprStr(c.fallback) + "\n})"
                     .catch_bindings = dropLast(.catch_bindings)
                     return out
+                if isNilLit(c.fallback)
+                    # `f() catch nil`: the result as an option. V takes no result type as
+                    # a generic argument (no helper), and its C stage miscompiles an
+                    # if-expression over a result guard with a `none` arm (tuon_data_test,
+                    # 2026-10-15): the option is declared by its type on a line before
+                    # the statement and set inside a guard; the expression is its name
+                    var crt: str = .vTypeOf(c.expr)
+                    .tmpN = .tmpN + 1
+                    var zr: str = "zr" + .tmpN.toString()
+                    if crt.startsWith("!") and not .in_cond
+                        var cot: str = "?" + crt.substring(1, crt.len)
+                        .line("mut " + zr + " := " + cot + "(none)")
+                        .local_names.add(zr)
+                        .local_types.set(zr, cot)
+                        .line("if " + zr + "v := " + .exprStr(c.expr) + " {")
+                        .line("\t" + zr + " = " + zr + "v")
+                        .line("}")
+                        return zr
+                    return "(if " + zr + " := " + .exprStr(c.expr) + " { " + zr + " } else { none })"
                 return "(" + .exprStr(c.expr) + " or { " + .exprStr(c.fallback) + " })"
             else
                 .refused.add("an expression kind the subset does not spell")
