@@ -544,6 +544,9 @@ pub fn (mut r ZSysProcess) is_running() bool {
 		return true
 	}
 	r.alive = false
+	// is_alive only looks; wait() fills p.code and closes the child's ends of
+	// the pipes (the parent's read ends stay: what the child wrote is still there)
+	r.p.wait()
 	r.exit_code = i64(r.p.code)
 	return false
 }

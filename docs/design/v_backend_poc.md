@@ -1228,13 +1228,23 @@ IDE builds (3.9 MB), and runs scripted from its own directory: without
 a compiler its status line says it could not start `zebra lsp` and it
 goes on; with `ZEBRA_COMPILER` naming the Zig-built compiler, the
 status line reaches "zebra lsp" by the fourth tick -- the LSP's
-initialize handshake over V's pipes. Not run on V: the IDE's tests that
-spawn the compiler for gates, tests and tools (gates_test, tests_test,
-tools_test, model_test on the tui backend, the LSP and DAP client
-tests): the next rung, each a process conversation through the same
-ZSysProcess. Not seen: the IDE with a hand on it through V (the window
-opens and paints; typing, squiggles and the debugger are a session with
-Sean).
+initialize handshake over V's pipes. The next rung came the same night:
+the tests that spawn the compiler -- gates_test, tests_test, tools_test,
+lsp_client_test and rename_workspace_test (the multi-file rename loop
+end to end) -- pass through V too, with ZEBRA_COMPILER naming the
+Zig-built compiler, after three more findings: a finished child read as
+exit -1 (V's `is_alive` only looks; `wait` fills the code, so the
+runtime waits once the child is seen gone), `Dir.create` (the Zig
+backend's createDirPath), and a triple-quoted Zebra string emitted with
+its `"""` delimiters kept (tools_test's manifest began with three
+quotes and would not parse; a doc string is now the Zig backend's
+content, the delimiters and the newline after the opening one off, and
+a raw string's backslashes are literal). Twelve of the IDE's gate
+steps run on V; the three that cannot are model_test (the tui backend,
+forgone), dap_client_test (lldb-dap, which the IDE's own gate skips
+here too) and cross_lsp_test (clangd and zls). Not seen: the IDE with a
+hand on it through V (the window opens and paints; typing, squiggles
+and the debugger are a session with Sean).
 
 **The fixed point (2026-10-13).** `zebra_v --target v selfhost/main.zbr`
 is the V backend emitting itself. Generation 0 is the Zig-built

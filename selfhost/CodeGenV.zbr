@@ -2741,6 +2741,10 @@ class VGen
                     return "true"
                 return "false"
             on Expr.string_lit as sl
+                if sl.text.startsWith("\"\"\"")
+                    return .vDocStringLit(sl.text)
+                if sl.kind == StringKind.raw
+                    return .vLiteralText(sl.text)   # r"...": every byte literal, the backslashes too
                 return .vStringLit(sl.text)
             on Expr.string_interp as si
                 return .vInterp(si)
@@ -3048,6 +3052,36 @@ class VGen
     # "text" -> 'text' with V's escapes: a $ or a ' inside is escaped
     def vStringLit(text: str): str
         return "'" + .vEscape(text) + "'"
+
+    # a doc string: the delimiters off, the newline after the opening one off
+    # (the Zig backend's genDocStringLit), the content literal
+    def vDocStringLit(text: str): str
+        var parts: List(str) = text.split("\"\"\"")
+        var content: str = ""
+        if parts.count() >= 2
+            content = parts.at(1)
+        if content.startsWith("\n")
+            content = content.substring(1, content.len)
+        return .vLiteralText(content)
+
+    # text taken byte for byte: a backslash, a quote and a dollar escaped for
+    # V's single-quoted literal (a newline byte may stand in one)
+    def vLiteralText(text: str): str
+        var out: str = "'"
+        var i: int = 0
+        var n: int = text.len
+        while i < n
+            var ch = text[i]
+            if ch == '\\'
+                out = out + "\\\\"
+            else if ch == '\''
+                out = out + "\\'"
+            else if ch == '$'
+                out = out + "\\$"
+            else
+                out = out + text.substring(i, i + 1)
+            i = i + 1
+        return out + "'"
 
     # the text of a Zebra string (its escapes raw, as the lexer keeps them)
     # as V's: `\"` is a plain quote, `\$` stays one escape (not an escaped
@@ -3639,6 +3673,7 @@ class VGen
         if ns == "Dir"
             if name == "exists": return "os.is_dir(" + a + ")"
             if name == "createAll": return "os.mkdir_all(" + a + ") or {}"
+            if name == "create": return "os.mkdir_all(" + a + ") or {}"   # the Zig backend's createDirPath: every segment
             if name == "list": return "zdir_list(" + a + ")"
             if name == "deleteAll": return "os.rmdir_all(" + a + ") or {}"
             if name == "tryDeleteAll": return "zdir_try_delete_all(" + a + ")"

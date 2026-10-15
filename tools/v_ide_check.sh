@@ -35,10 +35,10 @@ case_() {
   mv "$vf" "$OUT/${name}_prog.v"   # (a *_test.v is a V test file: the emitter names it _prog, and so does this)
   [ -z "$(cd "$IDE" && git status --short)" ] || { echo "FAIL -- the IDE tree is not clean after the emit"; (cd "$IDE" && git status --short); fail=1; return; }
   if grep -q "^  refused" "$OUT/${name}_emit.txt"; then echo "FAIL -- refused:"; grep -A6 refused "$OUT/${name}_emit.txt" | sed 's/^/    | /'; fail=1; return; fi
-  local bflags="-gc none"
+  local bflags="-gc none -enable-globals"
   if [ "$kind" = gui ]; then bflags="-subsystem console -gc none -enable-globals"; cp "$MANIFEST" "$OUT/$name.exe.manifest"; fi
   "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" $bflags -o "$OUT/$name.exe" "$OUT/${name}_prog.v" > "$OUT/${name}_build.txt" 2>&1
-  if [ ! -f "$OUT/$name.exe" ] || grep -q "error:" "$OUT/${name}_build.txt"; then echo "FAIL -- the V build:"; grep "error:" "$OUT/${name}_build.txt" | head -5 | cut -c1-200 | sed 's/^/    | /'; fail=1; return; fi
+  if [ ! -f "$OUT/$name.exe" ] || grep -qE "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/${name}_build.txt"; then echo "FAIL -- the V build:"; grep -E "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/${name}_build.txt" | head -5 | cut -c1-200 | sed 's/^/    | /'; fail=1; return; fi
   local out; out=$(cd "$IDE/src" && ZGUI_SCRIPT=quit "$OUT/$name.exe" 2>&1); local rc=$?
   local hay="$out"; [ "$mode" = last ] && hay=$(printf '%s\n' "$out" | grep -av "^\s*$" | tail -1)
   if printf '%s\n' "$hay" | grep -aq -- "$pat"; then echo "PASS ($pat)"; else echo "FAIL (exit $rc) -- expected $pat:"; printf '%s\n' "$out" | tail -8 | cut -c1-200 | sed 's/^/    | /'; fail=1; fi
@@ -50,6 +50,23 @@ case_ ignore_test   plain "ignore_test: ok"   last
 case_ keys_test     gui   "keys_test: ok"     last
 case_ coverage_test plain "^4 passed, 0 failed" any
 case_ icons_test    gui   "^3 passed, 0 failed" any
+# the tests that spawn the compiler (gates, the test runner, process tools,
+# the LSP client, the workspace rename): ZEBRA_COMPILER names it and PATH
+# carries it (the IDE's own gate has `zebra` on PATH); without one they are
+# SKIP, never PASS
+ZC=${ZEBRA_COMPILER:-/c/Projects/zebra-language/zig-out/bin/zebra.exe}
+if [ -f "$ZC" ]; then
+  export ZEBRA_COMPILER="$ZC"; export PATH="$(dirname "$ZC"):$PATH"
+  rm -rf "$IDE/src/tests_tmp" "$IDE/src/gates_tmp"
+  case_ gates_test            plain "gates_test: ok"            last
+  case_ tests_test            plain "tests_test: ok"            last
+  case_ tools_test            plain "tools_test: ok"            last
+  case_ lsp_client_test       plain "lsp_client_test: ok"       last
+  case_ rename_workspace_test plain "rename_workspace_test: ok" last
+  rm -rf "$IDE/src/tests_tmp" "$IDE/src/gates_tmp"
+else
+  echo "── gates_test tests_test tools_test lsp_client_test rename_workspace_test: SKIP (no compiler at $ZC; ZEBRA_COMPILER=<zebra.exe> names one)"
+fi
 echo "── ide.zbr: the IDE itself, emitted with the libui_ng section and built"
 (cd "$IDE" && "$ZEBRA" --target v --gui-backend=libui_ng src/ide.zbr > "$OUT/ide_emit.txt" 2>&1)
 if [ -f "$IDE/src/ide.v" ]; then mv "$IDE/src/ide.v" "$OUT/ide.v"; else echo "FAIL -- no emission"; fail=1; fi
@@ -58,7 +75,7 @@ if grep -q "^  refused" "$OUT/ide_emit.txt"; then echo "FAIL -- refused:"; grep 
 elif [ -f "$OUT/ide.v" ]; then
   cp "$MANIFEST" "$OUT/ide.exe.manifest"
   "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -subsystem console -gc none -enable-globals -o "$OUT/ide.exe" "$OUT/ide.v" > "$OUT/ide_build.txt" 2>&1
-  if [ ! -f "$OUT/ide.exe" ] || grep -q "error:" "$OUT/ide_build.txt"; then echo "FAIL -- the V build:"; grep "error:" "$OUT/ide_build.txt" | head -8 | cut -c1-200 | sed 's/^/    | /'; fail=1
+  if [ ! -f "$OUT/ide.exe" ] || grep -qE "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/ide_build.txt"; then echo "FAIL -- the V build:"; grep -E "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/ide_build.txt" | head -8 | cut -c1-200 | sed 's/^/    | /'; fail=1
   else
     echo "PASS -- $OUT/ide.exe ($(stat -c %s "$OUT/ide.exe") bytes)"
     # the IDE run scripted from its own directory: four ticks and quit. Without
