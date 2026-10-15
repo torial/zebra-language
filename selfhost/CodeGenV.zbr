@@ -1190,6 +1190,13 @@ class VGen
             return "!" + ret
         return ret
 
+    # a field's declared default, as V's own field default (`activated i64 = -1`):
+    # a class without an init was `&Model{}` before, every default zeroed
+    def fieldDefault(f: DeclVar): str
+        if f.init_expr as ie
+            return " = " + .exprStr(ie)
+        return ""
+
     def genFunction(m: DeclMethod)
         var ret = .retType(m)
         var head = "fn " + .freeFnName(m.name) + "(" + .genParams(m.params) + ")"
@@ -1223,7 +1230,7 @@ class VGen
         for mem in c.members
             branch mem
                 on Decl.var_ as f
-                    .line(vSafe(f.name) + " " + .vType(f.type_))
+                    .line(vSafe(f.name) + " " + .vType(f.type_) + .fieldDefault(f))
                 else
                     pass
         .depth = .depth - 1
@@ -1320,7 +1327,7 @@ class VGen
         for mem in st.members
             branch mem
                 on Decl.var_ as f
-                    .line(vSafe(f.name) + " " + .vType(f.type_))
+                    .line(vSafe(f.name) + " " + .vType(f.type_) + .fieldDefault(f))
                 else
                     pass
         .depth = .depth - 1

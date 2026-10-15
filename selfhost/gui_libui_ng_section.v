@@ -33,16 +33,23 @@
 // later declarations are ignored), and the vbox / hbox handles that `using`
 // binds (begin / end).
 //
-// Not here (the Zig section has them): tables, trees, toolbar, the editable
-// combobox, the CodeEditor, drawing, the dialogs. A call to one of those is a
-// V compile error naming the method, not a silent no-op; tooltip is accepted
-// and dropped (said once).
+// And tables: `beginTable(id, cols)` / `tableSetupColumn` / `tableNextRow` /
+// `tableNextColumn` / `g.text` as the cell / `endTable`, a uiTable over a model
+// whose rows the view fills each frame (libui told row by row what changed);
+// `tableSelectedRow`, `tableActivatedRow` (a double-click, read once).
+//
+// Not here (the Zig section has them): trees, toolbar, the editable combobox,
+// the check / edit / button table columns, the CodeEditor, drawing, the
+// dialogs. A call to one of those is a V compile error naming the method, not
+// a silent no-op; tooltip, hotkey, takeKey and minSize are accepted and not
+// acted on (said once each).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
 // `set:<label>=<text>` (a field), `spin:<label>=<n>`, `slide:<label>=<x>`,
 // `pick:<label>=<index>` (a combobox or radio), `tab:<id>=<index>`,
-// `menu:<label>` (a menu item), `tick` (every timer fires once), `quit`.
+// `menu:<label>` (a menu item), `dblclick:<table id>=<row>`,
+// `select:<table id>=<row>`, `tick` (every timer fires once), `quit`.
 // ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
 // what the window shows.
 
@@ -78,6 +85,33 @@ struct C.uiCombobox {}
 struct C.uiRadioButtons {}
 struct C.uiMenu {}
 struct C.uiMenuItem {}
+struct C.uiTable {}
+struct C.uiTableModel {}
+struct C.uiTableValue {}
+
+// libui's model handler: five function pointers in this order; the handler
+// is the FIRST field of ZGuiTable so a callback finds its table from the
+// handler pointer it is given
+struct C.uiTableModelHandler {
+pub mut:
+	NumColumns   fn (&C.uiTableModelHandler, &C.uiTableModel) int
+	ColumnType   fn (&C.uiTableModelHandler, &C.uiTableModel, int) int
+	NumRows      fn (&C.uiTableModelHandler, &C.uiTableModel) int
+	CellValue    fn (&C.uiTableModelHandler, &C.uiTableModel, int, int) &C.uiTableValue
+	SetCellValue fn (&C.uiTableModelHandler, &C.uiTableModel, int, int, &C.uiTableValue)
+}
+
+struct C.uiTableParams {
+pub mut:
+	Model                        &C.uiTableModel
+	RowBackgroundColorModelColumn int
+}
+
+struct C.uiTableSelection {
+pub mut:
+	NumRows int
+	Rows    &int
+}
 
 fn C.uiInit(o &C.uiInitOptions) &char
 fn C.uiFreeInitError(e &char)
@@ -146,6 +180,20 @@ fn C.uiMenuAppendQuitItem(m &C.uiMenu) &C.uiMenuItem
 fn C.uiMenuAppendSeparator(m &C.uiMenu)
 fn C.uiMenuItemOnClicked(mi &C.uiMenuItem, f fn (&C.uiMenuItem, &C.uiWindow, voidptr), data voidptr)
 fn C.uiOnShouldQuit(f fn (voidptr) int, data voidptr)
+fn C.uiNewTableValueString(str &char) &C.uiTableValue
+fn C.uiNewTableModel(mh &C.uiTableModelHandler) &C.uiTableModel
+fn C.uiFreeTableModel(m &C.uiTableModel)
+fn C.uiTableModelRowInserted(m &C.uiTableModel, new_index int)
+fn C.uiTableModelRowChanged(m &C.uiTableModel, index int)
+fn C.uiTableModelRowDeleted(m &C.uiTableModel, old_index int)
+fn C.uiNewTable(params &C.uiTableParams) &C.uiTable
+fn C.uiTableAppendTextColumn(t &C.uiTable, name &char, text_model_column int, text_editable_model_column int, text_params voidptr)
+fn C.uiTableOnRowDoubleClicked(t &C.uiTable, f fn (&C.uiTable, int, voidptr), data voidptr)
+fn C.uiTableGetSelection(t &C.uiTable) &C.uiTableSelection
+fn C.uiTableSetSelection(t &C.uiTable, sel &C.uiTableSelection)
+fn C.uiFreeTableSelection(sel &C.uiTableSelection)
+
+const zgui_table_value_string = 0 // uiTableValueTypeString, the enum's first
 
 const zgui_slider_steps = 1000 // a slider is 0..1000 under the hood; the value maps onto min..max
 
@@ -186,6 +234,8 @@ pub mut:
 	prev         []&ZGuiNode // last frame's widgets, in order
 	cur          []&ZGuiNode // this frame's
 	queue        []voidptr   // Msg copies sent this frame
+	queue_sizes  []int       // each copy's size: a literal message is a V int, the Msg may be i64
+	size_said    bool
 	sent         int  // messages sent since the frame began
 	redraw       bool // draw one more frame without waiting
 	closing      bool
@@ -201,6 +251,9 @@ pub mut:
 	cur_menu     &ZGuiMenu = unsafe { nil } // the menu being declared
 	menus_frozen bool // libui builds the menubar before the window: the first frame's menus are the menus
 	tab_select   map[string]int // `g.selectTab(id, i)` requests, applied at the commit
+	tables       map[string]&ZGuiTable
+	cur_table    &ZGuiTable = unsafe { nil } // between beginTable and endTable: g.text is a cell
+	stubs_said   map[string]bool // hotkey / takeKey / minSize: accepted, not acted on, said once each
 }
 
 // a menu declared in the first frame, and its items
@@ -232,6 +285,25 @@ pub mut:
 	st   &ZGuiState = unsafe { nil }
 }
 
+// a table, kept by id across frames: the rows the view fills each frame become
+// the model's rows (the model reports `shown`; changes are told to libui row
+// by row), the control is made at the first commit and again after a rebuild
+@[heap]
+struct ZGuiTable {
+pub mut:
+	handler   C.uiTableModelHandler // FIRST: a callback casts the handler pointer back to the table
+	id        string
+	ncols     int
+	names     []string
+	rows      [][]string // this frame's cells
+	shown     [][]string // what the model reports (the last committed rows)
+	cur_col   int
+	model     &C.uiTableModel = unsafe { nil }
+	table     &C.uiTable      = unsafe { nil }
+	activated int = -1 // a double-clicked row, read once by tableActivatedRow
+	st        &ZGuiState = unsafe { nil }
+}
+
 // the handle the program's view receives (by value; the state is shared)
 pub struct Gui {
 pub mut:
@@ -246,8 +318,13 @@ fn zgui_cstr(s string) &char {
 }
 
 fn zgui_push(st &ZGuiState, p voidptr) {
+	zgui_push_sized(st, p, 0)
+}
+
+fn zgui_push_sized(st &ZGuiState, p voidptr, size int) {
 	mut s := unsafe { st }
 	s.queue << p
+	s.queue_sizes << size
 	s.sent++
 }
 
@@ -260,7 +337,7 @@ fn zgui_on_closing(w &C.uiWindow, data voidptr) int {
 
 fn zgui_on_click(b &C.uiButton, data voidptr) {
 	n := unsafe { &ZGuiNode(data) }
-	zgui_push(n.st, n.msg)
+	zgui_push_sized(n.st, n.msg, n.size)
 }
 
 fn zgui_on_toggled(c &C.uiCheckbox, data voidptr) {
@@ -316,7 +393,7 @@ fn zgui_on_radio_selected(r &C.uiRadioButtons, data voidptr) {
 
 fn zgui_on_menu_clicked(mi &C.uiMenuItem, w &C.uiWindow, data voidptr) {
 	it := unsafe { &ZGuiMenuItem(data) }
-	zgui_push(it.st, it.msg)
+	zgui_push_sized(it.st, it.msg, it.size)
 }
 
 // the first frame's menus, built before the window (libui's order)
@@ -343,12 +420,98 @@ fn zgui_build_menus(st &ZGuiState) {
 	s.menus_frozen = true
 }
 
+fn zgui_tbl_num_columns(mh &C.uiTableModelHandler, m &C.uiTableModel) int {
+	t := unsafe { &ZGuiTable(mh) }
+	return t.ncols
+}
+
+fn zgui_tbl_column_type(mh &C.uiTableModelHandler, m &C.uiTableModel, column int) int {
+	return zgui_table_value_string
+}
+
+fn zgui_tbl_num_rows(mh &C.uiTableModelHandler, m &C.uiTableModel) int {
+	t := unsafe { &ZGuiTable(mh) }
+	return t.shown.len
+}
+
+fn zgui_tbl_cell_value(mh &C.uiTableModelHandler, m &C.uiTableModel, row int, column int) &C.uiTableValue {
+	t := unsafe { &ZGuiTable(mh) }
+	mut text := ''
+	if row >= 0 && row < t.shown.len && column >= 0 && column < t.shown[row].len {
+		text = t.shown[row][column]
+	}
+	return C.uiNewTableValueString(zgui_cstr(text))
+}
+
+fn zgui_tbl_set_cell_value(mh &C.uiTableModelHandler, m &C.uiTableModel, row int, column int, v &C.uiTableValue) {
+	// the columns are not editable: nothing to set
+}
+
+fn zgui_on_row_double_clicked(tb &C.uiTable, row int, data voidptr) {
+	mut t := unsafe { &ZGuiTable(data) }
+	t.activated = row
+	// a redraw, so the view reads it: a frame is drawn after any event anyway
+}
+
+// the table control over the model, with its columns
+fn zgui_make_table_control(t &ZGuiTable) voidptr {
+	mut tt := unsafe { t }
+	if tt.model == unsafe { nil } {
+		tt.handler = C.uiTableModelHandler{
+			NumColumns: zgui_tbl_num_columns
+			ColumnType: zgui_tbl_column_type
+			NumRows: zgui_tbl_num_rows
+			CellValue: zgui_tbl_cell_value
+			SetCellValue: zgui_tbl_set_cell_value
+		}
+		tt.shown = tt.rows.clone()
+		tt.model = C.uiNewTableModel(&tt.handler)
+	}
+	params := C.uiTableParams{
+		Model: tt.model
+		RowBackgroundColorModelColumn: -1
+	}
+	tb := C.uiNewTable(&params)
+	for c := 0; c < tt.ncols; c++ {
+		name := if c < tt.names.len { tt.names[c] } else { '' }
+		C.uiTableAppendTextColumn(tb, zgui_cstr(name), c, -1, unsafe { nil })
+	}
+	C.uiTableOnRowDoubleClicked(tb, zgui_on_row_double_clicked, voidptr(tt))
+	tt.table = tb
+	return voidptr(tb)
+}
+
+// this frame's rows into the model, row by row (libui is told what changed)
+fn zgui_table_update_rows(t &ZGuiTable) {
+	mut tt := unsafe { t }
+	if tt.model == unsafe { nil } {
+		return
+	}
+	old := tt.shown.len
+	new := tt.rows.len
+	common := if old < new { old } else { new }
+	for i := 0; i < common; i++ {
+		if tt.shown[i] != tt.rows[i] {
+			tt.shown[i] = tt.rows[i].clone()
+			C.uiTableModelRowChanged(tt.model, i)
+		}
+	}
+	for i := old - 1; i >= new; i-- {
+		tt.shown.delete_last()
+		C.uiTableModelRowDeleted(tt.model, i)
+	}
+	for i := old; i < new; i++ {
+		tt.shown << tt.rows[i].clone()
+		C.uiTableModelRowInserted(tt.model, i)
+	}
+}
+
 fn zgui_on_timer(data voidptr) int {
 	t := unsafe { &ZGuiTimer(data) }
 	if !t.seen || t.st.closing {
 		return 0 // the view stopped declaring it: the timer ends
 	}
-	zgui_push(t.st, t.msg)
+	zgui_push_sized(t.st, t.msg, t.size)
 	return 1
 }
 
@@ -413,6 +576,9 @@ fn zgui_same_shape(a &ZGuiNode, b &ZGuiNode) bool {
 	if (a.kind == 'combobox' || a.kind == 'radio') && a.items.join('\x01') != b.items.join('\x01') {
 		return false
 	}
+	if a.kind == 'table' && a.items.join('\x01') != b.items.join('\x01') {
+		return false // the columns changed
+	}
 	return true
 }
 
@@ -464,6 +630,10 @@ fn zgui_build_control(n &ZGuiNode) voidptr {
 			p := C.uiNewProgressBar()
 			C.uiProgressBarSetValue(p, int(n.ival))
 			return voidptr(p)
+		}
+		'table' {
+			t := m.st.tables[n.label] or { panic('zgui: no table ' + n.label) }
+			return zgui_make_table_control(t)
 		}
 		'combobox' {
 			c := C.uiNewCombobox()
@@ -545,6 +715,10 @@ fn zgui_commit(st &ZGuiState) {
 						C.uiProgressBarSetValue(unsafe { &C.uiProgressBar(n.ctl) }, int(n.ival))
 					}
 				}
+				'table' {
+					t := s.tables[n.label] or { panic('zgui: no table ' + n.label) }
+					zgui_table_update_rows(t)
+				}
 				'combobox' {
 					if p.ival != n.ival {
 						C.uiComboboxSetSelected(unsafe { &C.uiCombobox(n.ctl) }, int(n.ival))
@@ -585,6 +759,14 @@ fn zgui_commit(st &ZGuiState) {
 			C.uiControlDestroy(unsafe { &C.uiControl(s.root_kids[i]) })
 		}
 		s.root_kids = []voidptr{}
+		// the destroyed tables' models go too (a model can hold no table when freed)
+		for _, mut t in s.tables {
+			if t.table != unsafe { nil } {
+				t.table = unsafe { nil }
+				C.uiFreeTableModel(t.model)
+				t.model = unsafe { nil }
+			}
+		}
 	}
 	s.row = unsafe { nil }
 	mut stack := []&ZGuiNode{} // the open containers (begin_* nodes)
@@ -688,6 +870,10 @@ fn zgui_commit(st &ZGuiState) {
 			C.uiFormAppend(unsafe { &C.uiForm(top) }, zgui_cstr(row_label), unsafe { &C.uiControl(ctl) }, 0)
 			continue
 		}
+		if n.kind == 'table' {
+			zgui_place_stretchy(s, top_kind, top, unsafe { &C.uiControl(ctl) })
+			continue
+		}
 		if zgui_needs_label(n.kind) && n.label != '' && !n.label.starts_with('##') {
 			// a labelled row: [label] [control], joined to the open row if any
 			lab := C.uiNewLabel(zgui_cstr(n.label))
@@ -743,6 +929,20 @@ fn zgui_place(st &ZGuiState, top_kind string, top voidptr, ctl &C.uiControl, kee
 	}
 }
 
+// a control that takes the room it is given (a table): stretchy in its box
+fn zgui_place_stretchy(st &ZGuiState, top_kind string, top voidptr, ctl &C.uiControl) {
+	mut s := unsafe { st }
+	if top_kind == 'form' {
+		C.uiFormAppend(unsafe { &C.uiForm(top) }, zgui_cstr(''), ctl, 1)
+		return
+	}
+	s.row = unsafe { nil }
+	C.uiBoxAppend(unsafe { &C.uiBox(top) }, ctl, 1)
+	if top == voidptr(s.root) {
+		s.root_kids << voidptr(ctl)
+	}
+}
+
 fn zgui_script_action(st &ZGuiState, act string) bool {
 	mut s := unsafe { st }
 	if act == 'quit' {
@@ -751,7 +951,7 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 	if act == 'tick' {
 		for t in s.timers {
 			if t.seen {
-				zgui_push(s, t.msg)
+				zgui_push_sized(s, t.msg, t.size)
 			}
 		}
 		return true
@@ -765,12 +965,28 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 		for m in s.menus {
 			for it in m.items {
 				if it.kind == 'item' && it.label == label {
-					zgui_push(s, it.msg)
+					zgui_push_sized(s, it.msg, it.size)
 					return true
 				}
 			}
 		}
 		panic('ZGUI_SCRIPT: no menu item labelled ' + label)
+	}
+	if verb == 'dblclick' || verb == 'select' {
+		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <id>=<row>') }
+		mut t := s.tables[rest[..eq]] or { panic('ZGUI_SCRIPT: no table ' + rest[..eq]) }
+		row := rest[eq + 1..].int()
+		if verb == 'dblclick' {
+			zgui_on_row_double_clicked(t.table, row, voidptr(t))
+		} else {
+			mut rows := [row]
+			sel := C.uiTableSelection{
+				NumRows: 1
+				Rows: unsafe { &rows[0] }
+			}
+			C.uiTableSetSelection(t.table, &sel)
+		}
+		return true
 	}
 	if verb == 'set' || verb == 'spin' || verb == 'slide' || verb == 'pick' || verb == 'tab' {
 		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <label>=<value>') }
@@ -895,6 +1111,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'combobox', 'radio' { n.kind + '(' + n.label + '=' + n.ival.str() + ')' }
 			'begin_tabs' { 'tabs(' + n.label + '=' + C.uiTabSelected(unsafe { &C.uiTab(n.ctl) }).str() + ')' }
 			'begin_tab_page' { 'page(' + n.text + ')' }
+			'table' { 'table(' + n.label + ' ' + (s.tables[n.label] or { panic('no table') }).shown.len.str() + ' rows)' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
@@ -929,6 +1146,27 @@ fn (g Gui) node(kind string, label string) &ZGuiNode {
 }
 
 pub fn (g Gui) text(s string) {
+	mut st := g.st
+	if st.cur_table != unsafe { nil } {
+		// a cell: the current column of the current row (a second text in one
+		// cell joins with a space, as the Zig section does)
+		mut t := st.cur_table
+		if t.rows.len == 0 {
+			t.rows << []string{}
+		}
+		mut row := t.rows[t.rows.len - 1]
+		for row.len < t.cur_col {
+			row << ''
+		}
+		if row.len == t.cur_col {
+			row << s
+		} else {
+			row[t.cur_col] = row[t.cur_col] + ' ' + s
+		}
+		t.rows[t.rows.len - 1] = row
+		t.cur_col++
+		return
+	}
 	g.node('text', s)
 }
 
@@ -962,7 +1200,7 @@ pub fn (g Gui) button[T](label string, msg T) {
 // a message sent outright from the view
 pub fn (g Gui) send[T](msg T) {
 	p := unsafe { memdup(&msg, int(sizeof(T))) }
-	zgui_push(g.st, p)
+	zgui_push_sized(g.st, p, int(sizeof(T)))
 }
 
 pub fn (g Gui) toggle[G](label string, checked bool, on fn (bool) G) {
@@ -971,7 +1209,7 @@ pub fn (g Gui) toggle[G](label string, checked bool, on fn (bool) G) {
 	st := g.st
 	n.on_bool = fn [on, st] [G](b bool) {
 		m := on(b)
-		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
 	}
 }
 
@@ -981,7 +1219,7 @@ pub fn (g Gui) field[G](label string, text string, on fn (string) G) {
 	st := g.st
 	n.on_text = fn [on, st] [G](t string) {
 		m := on(t)
-		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
 	}
 }
 
@@ -993,7 +1231,7 @@ pub fn (g Gui) spinbox[G](label string, value i64, min i64, max i64, on fn (i64)
 	st := g.st
 	n.on_int = fn [on, st] [G](v i64) {
 		m := on(v)
-		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
 	}
 }
 
@@ -1005,7 +1243,7 @@ pub fn (g Gui) slider[G](label string, value f64, min f64, max f64, on fn (f64) 
 	st := g.st
 	n.on_f64 = fn [on, st] [G](v f64) {
 		m := on(v)
-		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
 	}
 }
 
@@ -1074,7 +1312,7 @@ pub fn (g Gui) combobox[G](label string, items &ZList[string], selected i64, on 
 	st := g.st
 	n.on_idx = fn [on, st] [G](i i64) {
 		m := on(i)
-		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
 	}
 }
 
@@ -1085,7 +1323,7 @@ pub fn (g Gui) radio[G](label string, items &ZList[string], selected i64, on fn 
 	st := g.st
 	n.on_idx = fn [on, st] [G](i i64) {
 		m := on(i)
-		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
 	}
 }
 
@@ -1233,6 +1471,109 @@ pub fn (b ZGuiBox) end() {
 	}
 }
 
+// a table: the view fills its rows between beginTable and endTable (g.text is a
+// cell); the control is one node, its rows the model's
+pub fn (g Gui) begin_table(id string, cols i64) bool {
+	mut st := g.st
+	mut t := st.tables[id] or {
+		nt := &ZGuiTable{
+			id: id
+			st: st
+		}
+		st.tables[id] = nt
+		nt
+	}
+	t.ncols = int(cols)
+	t.names = []string{}
+	t.rows = [][]string{}
+	t.cur_col = 0
+	st.cur_table = t
+	return true
+}
+
+pub fn (g Gui) table_setup_column(label string) {
+	mut t := g.st.cur_table
+	if t != unsafe { nil } {
+		t.names << label
+	}
+}
+
+pub fn (g Gui) table_headers_row() {
+	// the column names are the headers: nothing more to declare
+}
+
+pub fn (g Gui) table_next_row() {
+	mut t := g.st.cur_table
+	if t != unsafe { nil } {
+		t.rows << []string{}
+		t.cur_col = 0
+	}
+}
+
+pub fn (g Gui) table_next_column() {
+	mut t := g.st.cur_table
+	if t != unsafe { nil } && t.rows.len > 0 && t.rows[t.rows.len - 1].len > t.cur_col {
+		t.cur_col++
+	}
+}
+
+pub fn (g Gui) end_table() {
+	mut st := g.st
+	t := st.cur_table
+	if t == unsafe { nil } {
+		return
+	}
+	st.cur_table = unsafe { nil }
+	mut n := g.node('table', t.id)
+	n.items = t.names.clone() // the columns are the node's identity
+}
+
+pub fn (g Gui) table_selected_row(id string) i64 {
+	t := g.st.tables[id] or { return -1 }
+	if t.table == unsafe { nil } {
+		return -1
+	}
+	sel := C.uiTableGetSelection(t.table)
+	if sel == unsafe { nil } {
+		return -1
+	}
+	mut row := i64(-1)
+	if sel.NumRows > 0 && sel.Rows != unsafe { nil } {
+		row = i64(unsafe { *sel.Rows })
+	}
+	C.uiFreeTableSelection(sel)
+	return row
+}
+
+// the double-clicked row since the last read (-1 when none)
+pub fn (g Gui) table_activated_row(id string) i64 {
+	mut t := g.st.tables[id] or { return -1 }
+	v := t.activated
+	t.activated = -1
+	return i64(v)
+}
+
+fn (g Gui) stub(name string) {
+	mut st := g.st
+	if name !in st.stubs_said {
+		eprintln('[zgui] ' + name + ' is accepted and not acted on by the V libui_ng backend yet')
+		st.stubs_said[name] = true
+	}
+}
+
+pub fn (g Gui) hotkey(vk i64, mods i64) {
+	g.stub('hotkey')
+}
+
+pub fn (g Gui) take_key() i64 {
+	g.stub('takeKey')
+	return 0
+}
+
+pub fn (g Gui) min_size(id string, width i64, height i64) {
+	g.stub('minSize')
+}
+
 pub fn (g Gui) begin_panel(label string) {
 	g.node('begin_panel', label)
 }
@@ -1252,13 +1593,28 @@ pub fn (g Gui) run[M, G](title string, width int, height int, init_fn fn () M, u
 	mut model := init_fn()
 	for zgui_new_frame(st) {
 		view_fn(handle, model)
-		for p in st.queue {
+		for i, p in st.queue {
+			size := st.queue_sizes[i]
+			if size > 0 && size < int(sizeof(G)) {
+				// a smaller copy than the Msg: a literal message (`g.every(100, 1)`) is
+				// a V int where the program's Msg is i64; read zero-extended, said once
+				if !st.size_said {
+					eprintln('[zgui] a message of ' + size.str() + ' bytes read as a Msg of ' + int(sizeof(G)).str() + ' bytes (a literal message is a V int): zero-extended')
+					st.size_said = true
+				}
+				mut buf := []u8{len: int(sizeof(G)), init: 0}
+				unsafe { vmemcpy(&buf[0], p, size) }
+				gp := unsafe { &G(&buf[0]) }
+				model = update_fn(model, *gp)
+				continue
+			}
 			// (bound to a pointer first: `*(&G(p))` in one expression is emitted as
 			// void for a sum type G, 2026-10-14)
 			gp := unsafe { &G(p) }
 			model = update_fn(model, *gp)
 		}
 		st.queue = []voidptr{}
+		st.queue_sizes = []int{}
 		zgui_end_frame(st)
 	}
 }

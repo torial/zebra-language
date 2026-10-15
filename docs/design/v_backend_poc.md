@@ -919,6 +919,36 @@ radio under a `using g.vbox` block) with the menu item sent, the second
 page picked, the radio picked, the first page again and the combobox
 picked must draw each, seven frames.
 
+The fourth batch: tables. `beginTable(id, cols)` / `tableSetupColumn` /
+`tableNextRow` / `tableNextColumn` / `g.text` as the cell / `endTable`
+fill a `ZGuiTable` kept by id across frames; its rows are a libui
+model's (the handler's five function pointers sit first in the table
+record, so a callback casts the handler pointer it is given back to the
+table), the control is a uiTable over that model with a text column per
+`tableSetupColumn`, made at the first commit and again after a rebuild
+(the rebuild frees the destroyed tables' models: a model may hold no
+table when freed); each frame's rows are told to libui row by row as
+inserted, changed or deleted; `tableSelectedRow` reads the selection,
+`tableActivatedRow` the last double-click, once. `hotkey`, `takeKey`
+and `minSize` are accepted and not acted on, said once each. The
+witness: `examples/table_strip_smoke.zbr` (a table fed every tick, a
+tab strip, a window hotkey), the timer ticked twice, row 1
+double-clicked, row 2 selected: three rows, the ticks, the activation
+and the selection drawn, six frames.
+
+Two general things the table example found, neither about tables. A
+literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
+the program's Msg is `i64`: four bytes copied, eight read back, the
+upper four whatever the heap held -- the ticks arrived on one run and
+not the next. The queue carries each copy's size now and the run loop
+zero-extends a smaller copy into the Msg, saying so once; a sum-type
+Msg is never smaller. And a class field's declared default (`var
+activated: int = -1`) was dropped by the emitter for a class without an
+init: the constructor returned `&Model{}`, zeroed. A field's default is
+now V's own field default in the struct declaration (`activated i64 =
+-1`), at the class site and the struct site alike; the pipeline's
+fifteen witnesses unchanged.
+
 What the first run taught, each a line in the section or the build:
 V reserves `init` and `cleanup` as module hooks (`fn init() Counter` is
 "cannot have a return type"), so `vSafe` suffixes them; a generic
@@ -941,9 +971,10 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the Zig section's remaining widgets (tables, trees,
-toolbar, the editable combobox, the CodeEditor, drawing, the dialogs,
-tooltips, every), the tui backend on V, a
+What it is not: the Zig section's remaining widgets (trees, toolbar,
+the editable combobox, the check / edit / button table columns, the
+CodeEditor, drawing, the dialogs, tooltips, hotkeys), the tui backend
+on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from

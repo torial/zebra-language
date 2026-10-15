@@ -74,4 +74,19 @@ echo "$(t 6)" | grep -q "text(opened 1 colour 2 size 2)" || fail="${fail:-frame 
 echo "$(t 6)" | grep -q "combobox(Colour=2)" || fail="${fail:-the combobox of frame 6 should read 2}"
 [ -z "$fail" ] || { echo "v_gui_check: tabs FAILED -- $fail:"; cat "$OUT/tabs_run.txt"; exit 6; }
 echo "v_gui_check: tabs ok -- a menu item sent, pages switched, a radio and a combobox picked, through a using block (7 frames)"
+
+# 4. a table fed immediate-mode, a timer, a double-click and a selection
+# (examples/table_strip_smoke.zbr; its Msg is a plain int, its model a class
+# with field defaults): the timer ticked twice, row 1 double-clicked, row 2
+# selected, a frame to draw it, quit
+build_and_run table examples/table_strip_smoke.zbr "tick;tick;dblclick:##rows=1;select:##rows=2;tick;quit"
+r() { sed -n "$((1 + $1))p" "$OUT/table_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/table_run.txt")" = 6 ] || fail="6 frames expected, $(wc -l < "$OUT/table_run.txt") drawn"
+echo "$(r 0)" | grep -q "text(ticks 0  saved 0  tab -1) table(##rows 3 rows) text(selected -1  activated -1)" || fail="${fail:-frame 0 should show no ticks, three rows, nothing selected or activated (the class defaults)}"
+echo "$(r 3)" | grep -q "text(ticks 2 " || fail="${fail:-frame 3 should show two ticks}"
+echo "$(r 4)" | grep -q "activated 1)" || fail="${fail:-frame 4 should show row 1 activated}"
+echo "$(r 5)" | grep -q "text(selected 2  activated 1)" || fail="${fail:-frame 5 should show row 2 selected}"
+[ -z "$fail" ] || { echo "v_gui_check: table FAILED -- $fail:"; cat "$OUT/table_run.txt"; exit 6; }
+echo "v_gui_check: table ok -- three rows, the timer ticked, a row activated and another selected (6 frames)"
 echo "v_gui_check: ok"
