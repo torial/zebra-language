@@ -20,7 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
 # (and which are references, hence `mut`)
@@ -2070,8 +2070,12 @@ class VGen
                 .genRaise(r)
             on Stmt.try_catch as tc
                 .genTryCatch(tc)
+            on Stmt.in_scope as si
+                .genInScope(si)
+            on Stmt.with_ as ww
+                .genStmts(ww.stmts)   # a `with` block: its statements, as the Zig target emits them
             else
-                .refused.add("a statement kind the subset does not spell (with, in, destructure, allocate, copy-out, contract, yield)")
+                .refused.add("a statement kind the subset does not spell (destructure, allocate, copy-out, contract, yield)")
 
     # an expression statement; a mutating method on a call's RESULT binds a
     # temporary first (V: "cannot pass expression as mut"): `rows.at(0).add(7)`
@@ -2114,6 +2118,18 @@ class VGen
     # the def's parameters, the catch as its `or` block (V has no try
     # statement; a `return` inside the or block returns from the def, V's own
     # rule, so a value-returning def's catch must return or V says so)
+    # `using EXPR eol Block` -> a handle bound, begin(), the body, end(): as the
+    # Zig target's genInScope, except that V's defer is function-scoped, so the
+    # end() is written after the body (an early return inside skips it)
+    def genInScope(si: StmtIn)
+        .tmpN = .tmpN + 1
+        var tn: str = "zu" + .tmpN.toString()
+        .line(tn + " := " + .exprStr(si.expr))
+        .local_names.add(tn)
+        .line(tn + ".begin()")
+        .genStmts(si.stmts)
+        .line(tn + ".end()")
+
     def genTryCatch(tc: StmtTryCatch)
         if tc.clauses.count() != 1
             .refuse("a catch with " + tc.clauses.count().toString() + " clauses (one is the subset)", tc.span)

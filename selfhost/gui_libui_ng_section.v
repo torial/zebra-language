@@ -27,16 +27,24 @@
 // (a uiGroup). A control without its own label (field, spinbox, slider,
 // progress bar) gets a label beside it, or its form row's label inside a form.
 //
-// Not here (the Zig section has them): tables, trees, tabs, menus, toolbar,
-// combobox, radio, the CodeEditor, drawing, the dialogs, the single-call
-// vbox/hbox handles. A call to one of those is a V compile error naming the
-// method, not a silent no-op; tooltip is accepted and dropped (said once).
+// Also: tabs (a page is a box appended to a uiTab), combobox and radio (items,
+// a selection, a sender), menus (declared in the first frame and built BEFORE
+// the window, libui's order, so the window itself is made at the first commit;
+// later declarations are ignored), and the vbox / hbox handles that `using`
+// binds (begin / end).
+//
+// Not here (the Zig section has them): tables, trees, toolbar, the editable
+// combobox, the CodeEditor, drawing, the dialogs. A call to one of those is a
+// V compile error naming the method, not a silent no-op; tooltip is accepted
+// and dropped (said once).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
 // `set:<label>=<text>` (a field), `spin:<label>=<n>`, `slide:<label>=<x>`,
-// `tick` (every timer fires once), `quit`. ZGUI_TRACE=1 prints each frame's
-// widgets with their values, so a test reads what the window shows.
+// `pick:<label>=<index>` (a combobox or radio), `tab:<id>=<index>`,
+// `menu:<label>` (a menu item), `tick` (every timer fires once), `quit`.
+// ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
+// what the window shows.
 
 // the library: `zig build -Doptimize=ReleaseFast -p zig-out-fast` in libui-ng --
 // zig's Debug build instruments the C with the undefined-behaviour sanitizer, and
@@ -65,6 +73,11 @@ struct C.uiEntry {}
 struct C.uiSpinbox {}
 struct C.uiSlider {}
 struct C.uiProgressBar {}
+struct C.uiTab {}
+struct C.uiCombobox {}
+struct C.uiRadioButtons {}
+struct C.uiMenu {}
+struct C.uiMenuItem {}
 
 fn C.uiInit(o &C.uiInitOptions) &char
 fn C.uiFreeInitError(e &char)
@@ -112,6 +125,27 @@ fn C.uiSliderSetValue(s &C.uiSlider, value int)
 fn C.uiSliderOnChanged(s &C.uiSlider, f fn (&C.uiSlider, voidptr), data voidptr)
 fn C.uiNewProgressBar() &C.uiProgressBar
 fn C.uiProgressBarSetValue(p &C.uiProgressBar, n int)
+fn C.uiNewTab() &C.uiTab
+fn C.uiTabAppend(t &C.uiTab, name &char, c &C.uiControl)
+fn C.uiTabSetMargined(t &C.uiTab, index int, margined int)
+fn C.uiTabSelected(t &C.uiTab) int
+fn C.uiTabSetSelected(t &C.uiTab, index int)
+fn C.uiNewCombobox() &C.uiCombobox
+fn C.uiComboboxAppend(c &C.uiCombobox, text &char)
+fn C.uiComboboxSelected(c &C.uiCombobox) int
+fn C.uiComboboxSetSelected(c &C.uiCombobox, index int)
+fn C.uiComboboxOnSelected(c &C.uiCombobox, f fn (&C.uiCombobox, voidptr), data voidptr)
+fn C.uiNewRadioButtons() &C.uiRadioButtons
+fn C.uiRadioButtonsAppend(r &C.uiRadioButtons, text &char)
+fn C.uiRadioButtonsSelected(r &C.uiRadioButtons) int
+fn C.uiRadioButtonsSetSelected(r &C.uiRadioButtons, index int)
+fn C.uiRadioButtonsOnSelected(r &C.uiRadioButtons, f fn (&C.uiRadioButtons, voidptr), data voidptr)
+fn C.uiNewMenu(name &char) &C.uiMenu
+fn C.uiMenuAppendItem(m &C.uiMenu, name &char) &C.uiMenuItem
+fn C.uiMenuAppendQuitItem(m &C.uiMenu) &C.uiMenuItem
+fn C.uiMenuAppendSeparator(m &C.uiMenu)
+fn C.uiMenuItemOnClicked(mi &C.uiMenuItem, f fn (&C.uiMenuItem, &C.uiWindow, voidptr), data voidptr)
+fn C.uiOnShouldQuit(f fn (voidptr) int, data voidptr)
 
 const zgui_slider_steps = 1000 // a slider is 0..1000 under the hood; the value maps onto min..max
 
@@ -136,6 +170,8 @@ pub mut:
 	on_text fn (string) = unsafe { nil } // a field's
 	on_int  fn (i64)    = unsafe { nil } // a spinbox's
 	on_f64  fn (f64)    = unsafe { nil } // a slider's
+	on_idx  fn (i64)    = unsafe { nil } // a combobox's or radio's
+	items   []string // a combobox's or radio's choices
 	st      &ZGuiState = unsafe { nil }
 }
 
@@ -158,6 +194,31 @@ pub mut:
 	trace        bool
 	timers       []&ZGuiTimer
 	tooltip_said bool
+	title        string // the window's, until it exists (made at the first commit, after the menus)
+	width        int
+	height       int
+	menus        []&ZGuiMenu
+	cur_menu     &ZGuiMenu = unsafe { nil } // the menu being declared
+	menus_frozen bool // libui builds the menubar before the window: the first frame's menus are the menus
+	tab_select   map[string]int // `g.selectTab(id, i)` requests, applied at the commit
+}
+
+// a menu declared in the first frame, and its items
+@[heap]
+struct ZGuiMenu {
+pub mut:
+	name  string
+	items []&ZGuiMenuItem
+}
+
+@[heap]
+struct ZGuiMenuItem {
+pub mut:
+	kind  string // item | separator | quit
+	label string
+	msg   voidptr
+	size  int
+	st    &ZGuiState = unsafe { nil }
 }
 
 // a `g.every(ms, msg)`: one libui timer, the Msg copy it sends
@@ -233,6 +294,55 @@ fn zgui_on_slider_changed(s &C.uiSlider, data voidptr) {
 	n.on_f64(v)
 }
 
+fn zgui_on_should_quit(data voidptr) int {
+	mut st := unsafe { &ZGuiState(data) }
+	st.closing = true
+	return 1
+}
+
+fn zgui_on_combo_selected(c &C.uiCombobox, data voidptr) {
+	mut n := unsafe { &ZGuiNode(data) }
+	v := i64(C.uiComboboxSelected(c))
+	n.ival = v
+	n.on_idx(v)
+}
+
+fn zgui_on_radio_selected(r &C.uiRadioButtons, data voidptr) {
+	mut n := unsafe { &ZGuiNode(data) }
+	v := i64(C.uiRadioButtonsSelected(r))
+	n.ival = v
+	n.on_idx(v)
+}
+
+fn zgui_on_menu_clicked(mi &C.uiMenuItem, w &C.uiWindow, data voidptr) {
+	it := unsafe { &ZGuiMenuItem(data) }
+	zgui_push(it.st, it.msg)
+}
+
+// the first frame's menus, built before the window (libui's order)
+fn zgui_build_menus(st &ZGuiState) {
+	mut s := unsafe { st }
+	for m in s.menus {
+		um := C.uiNewMenu(zgui_cstr(m.name))
+		for it in m.items {
+			match it.kind {
+				'item' {
+					ui := C.uiMenuAppendItem(um, zgui_cstr(it.label))
+					C.uiMenuItemOnClicked(ui, zgui_on_menu_clicked, voidptr(it))
+				}
+				'separator' {
+					C.uiMenuAppendSeparator(um)
+				}
+				'quit' {
+					C.uiMenuAppendQuitItem(um)
+				}
+				else {}
+			}
+		}
+	}
+	s.menus_frozen = true
+}
+
 fn zgui_on_timer(data voidptr) int {
 	t := unsafe { &ZGuiTimer(data) }
 	if !t.seen || t.st.closing {
@@ -253,9 +363,11 @@ fn zgui_init(st &ZGuiState, title string, width int, height int) {
 		C.uiFreeInitError(err)
 		panic('libui init failed: ' + msg)
 	}
-	s.window = C.uiNewWindow(zgui_cstr(title), width, height, 0)
-	C.uiWindowSetMargined(s.window, 1)
-	C.uiWindowOnClosing(s.window, zgui_on_closing, voidptr(s))
+	// the window is made at the first commit, after the first frame's menus
+	s.title = title
+	s.width = width
+	s.height = height
+	C.uiOnShouldQuit(zgui_on_should_quit, voidptr(s))
 	s.script = zgui_env('ZGUI_SCRIPT').split(';').filter(it != '')
 	s.trace = zgui_env('ZGUI_TRACE') != ''
 }
@@ -296,6 +408,9 @@ fn zgui_same_shape(a &ZGuiNode, b &ZGuiNode) bool {
 		return false
 	}
 	if a.kind == 'spinbox' && (a.imin != b.imin || a.imax != b.imax) {
+		return false
+	}
+	if (a.kind == 'combobox' || a.kind == 'radio') && a.items.join('\x01') != b.items.join('\x01') {
 		return false
 	}
 	return true
@@ -349,6 +464,24 @@ fn zgui_build_control(n &ZGuiNode) voidptr {
 			p := C.uiNewProgressBar()
 			C.uiProgressBarSetValue(p, int(n.ival))
 			return voidptr(p)
+		}
+		'combobox' {
+			c := C.uiNewCombobox()
+			for it in n.items {
+				C.uiComboboxAppend(c, zgui_cstr(it))
+			}
+			C.uiComboboxSetSelected(c, int(n.ival))
+			C.uiComboboxOnSelected(c, zgui_on_combo_selected, voidptr(m))
+			return voidptr(c)
+		}
+		'radio' {
+			r := C.uiNewRadioButtons()
+			for it in n.items {
+				C.uiRadioButtonsAppend(r, zgui_cstr(it))
+			}
+			C.uiRadioButtonsSetSelected(r, int(n.ival))
+			C.uiRadioButtonsOnSelected(r, zgui_on_radio_selected, voidptr(m))
+			return voidptr(r)
 		}
 		else {
 			panic('zgui: no control for widget kind ' + n.kind)
@@ -412,10 +545,23 @@ fn zgui_commit(st &ZGuiState) {
 						C.uiProgressBarSetValue(unsafe { &C.uiProgressBar(n.ctl) }, int(n.ival))
 					}
 				}
+				'combobox' {
+					if p.ival != n.ival {
+						C.uiComboboxSetSelected(unsafe { &C.uiCombobox(n.ctl) }, int(n.ival))
+					}
+					C.uiComboboxOnSelected(unsafe { &C.uiCombobox(n.ctl) }, zgui_on_combo_selected, voidptr(n))
+				}
+				'radio' {
+					if p.ival != n.ival {
+						C.uiRadioButtonsSetSelected(unsafe { &C.uiRadioButtons(n.ctl) }, int(n.ival))
+					}
+					C.uiRadioButtonsOnSelected(unsafe { &C.uiRadioButtons(n.ctl) }, zgui_on_radio_selected, voidptr(n))
+				}
 				else {}
 			}
 		}
 		s.prev = s.cur
+		zgui_apply_tab_selects(s)
 		return
 	}
 	// rebuild: the window's content is one vertical box kept for the program's
@@ -423,6 +569,12 @@ fn zgui_commit(st &ZGuiState) {
 	// rebuild DETACHES each top-level child with uiBoxDelete, then destroys it);
 	// a container stack holds where the next control goes; a sameLine joins
 	// the open row
+	if s.window == unsafe { nil } {
+		zgui_build_menus(s)
+		s.window = C.uiNewWindow(zgui_cstr(s.title), s.width, s.height, if s.menus.len > 0 { 1 } else { 0 })
+		C.uiWindowSetMargined(s.window, 1)
+		C.uiWindowOnClosing(s.window, zgui_on_closing, voidptr(s))
+	}
 	if s.root == unsafe { nil } {
 		s.root = C.uiNewVerticalBox()
 		C.uiBoxSetPadded(s.root, 1)
@@ -462,6 +614,35 @@ fn zgui_commit(st &ZGuiState) {
 				s.row = unsafe { nil }
 				continue
 			}
+			'begin_tabs' {
+				t := C.uiNewTab()
+				zgui_place(s, top_kind, top, unsafe { &C.uiControl(t) }, false)
+				n.ctl = voidptr(t)
+				stack << n
+				top_kind = 'tabs'
+				top = voidptr(t)
+				s.row = unsafe { nil }
+				continue
+			}
+			'begin_tab_page' {
+				if top_kind != 'tabs' {
+					panic('zgui: beginTabPage outside beginTabs / endTabs')
+				}
+				page := C.uiNewVerticalBox()
+				C.uiBoxSetPadded(page, 1)
+				tab := unsafe { &C.uiTab(top) }
+				C.uiTabAppend(tab, zgui_cstr(n.text), unsafe { &C.uiControl(page) })
+				C.uiTabSetMargined(tab, int(n.ival), 1)
+				n.ctl = voidptr(page)
+				stack << n
+				top_kind = 'vbox'
+				top = voidptr(page)
+				s.row = unsafe { nil }
+				continue
+			}
+			'begin_menu', 'menu_item', 'menu_separator', 'menu_quit', 'end_menu' {
+				continue // the menubar is built before the window, from the first frame's declarations
+			}
 			'begin_panel' {
 				g := C.uiNewGroup(zgui_cstr(n.label))
 				C.uiGroupSetMargined(g, 1)
@@ -476,7 +657,7 @@ fn zgui_commit(st &ZGuiState) {
 				s.row = unsafe { nil }
 				continue
 			}
-			'end_form', 'end_hbox', 'end_vbox', 'end_panel' {
+			'end_form', 'end_hbox', 'end_vbox', 'end_panel', 'end_tabs', 'end_tab_page' {
 				if stack.len == 0 {
 					panic('zgui: ' + n.kind + ' without a begin')
 				}
@@ -491,6 +672,7 @@ fn zgui_commit(st &ZGuiState) {
 					top_kind = match last.kind {
 						'begin_form' { 'form' }
 						'begin_hbox' { 'hbox' }
+						'begin_tabs' { 'tabs' }
 						else { 'vbox' }
 					}
 				}
@@ -519,6 +701,21 @@ fn zgui_commit(st &ZGuiState) {
 		C.uiControlShow(unsafe { &C.uiControl(s.window) })
 	}
 	s.prev = s.cur
+	zgui_apply_tab_selects(s)
+}
+
+// `g.selectTab(id, i)` requests from the frame, applied to the built tabs
+fn zgui_apply_tab_selects(st &ZGuiState) {
+	mut s := unsafe { st }
+	if s.tab_select.len == 0 {
+		return
+	}
+	for n in s.prev {
+		if n.kind == 'begin_tabs' && n.label in s.tab_select {
+			C.uiTabSetSelected(unsafe { &C.uiTab(n.ctl) }, s.tab_select[n.label])
+		}
+	}
+	s.tab_select = map[string]int{}
 }
 
 // put a control into the open container: a vertical box gets rows (a sameLine
@@ -528,6 +725,9 @@ fn zgui_place(st &ZGuiState, top_kind string, top voidptr, ctl &C.uiControl, kee
 	if top_kind == 'hbox' {
 		C.uiBoxAppend(unsafe { &C.uiBox(top) }, ctl, 0)
 		return
+	}
+	if top_kind == 'tabs' {
+		panic('zgui: a widget directly inside beginTabs: declare it inside a beginTabPage')
 	}
 	if s.row == unsafe { nil } {
 		s.row = C.uiNewHorizontalBox()
@@ -561,7 +761,18 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 	rest := act[colon + 1..]
 	mut label := rest
 	mut value := ''
-	if verb == 'set' || verb == 'spin' || verb == 'slide' {
+	if verb == 'menu' {
+		for m in s.menus {
+			for it in m.items {
+				if it.kind == 'item' && it.label == label {
+					zgui_push(s, it.msg)
+					return true
+				}
+			}
+		}
+		panic('ZGUI_SCRIPT: no menu item labelled ' + label)
+	}
+	if verb == 'set' || verb == 'spin' || verb == 'slide' || verb == 'pick' || verb == 'tab' {
 		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <label>=<value>') }
 		label = rest[..eq]
 		value = rest[eq + 1..]
@@ -598,6 +809,26 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 					sp := unsafe { &C.uiSpinbox(n.ctl) }
 					C.uiSpinboxSetValue(sp, value.int())
 					zgui_on_spin_changed(sp, voidptr(n))
+					return true
+				}
+			}
+			'pick' {
+				if n.kind == 'combobox' {
+					c := unsafe { &C.uiCombobox(n.ctl) }
+					C.uiComboboxSetSelected(c, value.int())
+					zgui_on_combo_selected(c, voidptr(n))
+					return true
+				}
+				if n.kind == 'radio' {
+					r := unsafe { &C.uiRadioButtons(n.ctl) }
+					C.uiRadioButtonsSetSelected(r, value.int())
+					zgui_on_radio_selected(r, voidptr(n))
+					return true
+				}
+			}
+			'tab' {
+				if n.kind == 'begin_tabs' {
+					C.uiTabSetSelected(unsafe { &C.uiTab(n.ctl) }, value.int())
 					return true
 				}
 			}
@@ -661,6 +892,9 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'spinbox' { 'spinbox(' + n.label + '=' + n.ival.str() + ')' }
 			'slider' { 'slider(' + n.label + '=' + n.fval.str() + ')' }
 			'progress' { 'progress(' + n.label + '=' + n.ival.str() + '%)' }
+			'combobox', 'radio' { n.kind + '(' + n.label + '=' + n.ival.str() + ')' }
+			'begin_tabs' { 'tabs(' + n.label + '=' + C.uiTabSelected(unsafe { &C.uiTab(n.ctl) }).str() + ')' }
+			'begin_tab_page' { 'page(' + n.text + ')' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
@@ -831,6 +1065,172 @@ pub fn (g Gui) begin_vbox(id string, stretch bool) {
 
 pub fn (g Gui) end_vbox() {
 	g.node('end_vbox', '')
+}
+
+pub fn (g Gui) combobox[G](label string, items &ZList[string], selected i64, on fn (i64) G) {
+	mut n := g.node('combobox', label)
+	n.items = items.items.clone() // a Zebra list is the runtime's boxed ZList
+	n.ival = selected
+	st := g.st
+	n.on_idx = fn [on, st] [G](i i64) {
+		m := on(i)
+		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+	}
+}
+
+pub fn (g Gui) radio[G](label string, items &ZList[string], selected i64, on fn (i64) G) {
+	mut n := g.node('radio', label)
+	n.items = items.items.clone() // a Zebra list is the runtime's boxed ZList
+	n.ival = selected
+	st := g.st
+	n.on_idx = fn [on, st] [G](i i64) {
+		m := on(i)
+		zgui_push(st, unsafe { memdup(&m, int(sizeof(G))) })
+	}
+}
+
+pub fn (g Gui) begin_tabs(id string, stretch bool) {
+	g.node('begin_tabs', id)
+}
+
+pub fn (g Gui) begin_tab_page(id string, label string) {
+	mut n := g.node('begin_tab_page', id)
+	n.text = label
+	// the page's index among its tabs' pages, for the margin
+	mut idx := i64(0)
+	mut s := g.st
+	for i := s.cur.len - 2; i >= 0; i-- {
+		k := s.cur[i].kind
+		if k == 'begin_tabs' {
+			break
+		}
+		if k == 'begin_tab_page' {
+			idx++
+		}
+	}
+	n.ival = idx
+}
+
+pub fn (g Gui) end_tab_page() {
+	g.node('end_tab_page', '')
+}
+
+pub fn (g Gui) end_tabs() {
+	g.node('end_tabs', '')
+}
+
+// the selected page of the tabs with this id, as drawn last frame (-1 before)
+pub fn (g Gui) tab_selected(id string) i64 {
+	for n in g.st.prev {
+		if n.kind == 'begin_tabs' && n.label == id && n.ctl != unsafe { nil } {
+			return i64(C.uiTabSelected(unsafe { &C.uiTab(n.ctl) }))
+		}
+	}
+	return -1
+}
+
+pub fn (g Gui) select_tab(id string, index i64) {
+	mut s := g.st
+	s.tab_select[id] = int(index)
+}
+
+// menus: declared in the first frame, built before the window; later
+// declarations are accepted and ignored (the menubar is frozen, said here)
+pub fn (g Gui) begin_menu(name string) {
+	mut s := g.st
+	g.node('begin_menu', name)
+	if s.menus_frozen {
+		return
+	}
+	for m in s.menus {
+		if m.name == name {
+			s.cur_menu = m
+			return
+		}
+	}
+	m := &ZGuiMenu{
+		name: name
+	}
+	s.menus << m
+	s.cur_menu = m
+}
+
+pub fn (g Gui) menu_item[T](label string, msg T) {
+	mut s := g.st
+	g.node('menu_item', label)
+	if s.menus_frozen || s.cur_menu == unsafe { nil } {
+		return
+	}
+	s.cur_menu.items << &ZGuiMenuItem{
+		kind: 'item'
+		label: label
+		msg: unsafe { memdup(&msg, int(sizeof(T))) }
+		size: int(sizeof(T))
+		st: s
+	}
+}
+
+pub fn (g Gui) menu_separator() {
+	mut s := g.st
+	g.node('menu_separator', '')
+	if s.menus_frozen || s.cur_menu == unsafe { nil } {
+		return
+	}
+	s.cur_menu.items << &ZGuiMenuItem{
+		kind: 'separator'
+		st: s
+	}
+}
+
+pub fn (g Gui) menu_quit() {
+	mut s := g.st
+	g.node('menu_quit', '')
+	if s.menus_frozen || s.cur_menu == unsafe { nil } {
+		return
+	}
+	s.cur_menu.items << &ZGuiMenuItem{
+		kind: 'quit'
+		st: s
+	}
+}
+
+pub fn (g Gui) end_menu() {
+	mut s := g.st
+	g.node('end_menu', '')
+	s.cur_menu = unsafe { nil }
+}
+
+// the handles `using g.vbox(id, stretch)` binds: begin() / end()
+pub struct ZGuiBox {
+pub:
+	g        Gui
+	id       string
+	stretch  bool
+	vertical bool
+}
+
+pub fn (g Gui) vbox(id string, stretch bool) ZGuiBox {
+	return ZGuiBox{g, id, stretch, true}
+}
+
+pub fn (g Gui) hbox(id string, stretch bool) ZGuiBox {
+	return ZGuiBox{g, id, stretch, false}
+}
+
+pub fn (b ZGuiBox) begin() {
+	if b.vertical {
+		b.g.begin_vbox(b.id, b.stretch)
+	} else {
+		b.g.begin_hbox(b.id, b.stretch)
+	}
+}
+
+pub fn (b ZGuiBox) end() {
+	if b.vertical {
+		b.g.end_vbox()
+	} else {
+		b.g.end_hbox()
+	}
 }
 
 pub fn (g Gui) begin_panel(label string) {

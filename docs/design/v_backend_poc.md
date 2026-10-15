@@ -888,18 +888,36 @@ destroying it: libui refuses to destroy a control that still has a
 parent, and the first rebuild (a toggle adding a form row) crashed on
 exactly that. A call to any widget not listed is a V compile error
 naming the method; tooltip is accepted and dropped, said once.
-`ZGUI_SCRIPT` drives the window without a mouse, one action per frame
-after the first draw -- `click:<label>`, `toggle:<label>`,
-`set:<label>=<text>`, `spin:<label>=<n>`, `slide:<label>=<x>`, `tick`,
-`quit`; an action acts on the previous frame's widgets, so a row a
-toggle adds is there to act on a frame later -- and `ZGUI_TRACE=1`
-prints each frame's widgets with their values, which is how
-`tools/v_gui_check.sh` witnesses it: `examples/counter.zbr` run with
-+ + - Reset + must draw the counts 0 0 1 2 1 0, and
-`examples/form_smoke.zbr` with a field set, the port spun, TLS toggled,
-Advanced toggled on (its Timeout row added through the rebuild), the
-timeout spun and Advanced toggled off again must draw each change in
-place and the row's arrival and departure, nine frames.
+The third batch, the same night: tabs (a page is a box appended to a
+uiTab; `tabSelected` reads the control, `selectTab` is applied at the
+commit), combobox and radio (a Zebra list of choices -- the runtime's
+boxed `&ZList[string]` -- a selection, a sender), menus (libui builds
+the menubar BEFORE the window, so the window is now made at the first
+commit, after the first frame's menu declarations, as the Zig section
+does; later declarations are accepted and ignored, said in the
+section), and the `vbox` / `hbox` handles with `begin` / `end`. Those
+handles exist for Zebra's `using EXPR` block, which the emitter refused
+until tonight: it now spells the Zig target's lowering -- a handle
+bound, `begin()`, the body, `end()` -- with the end written after the
+body, since V's `defer` is function-scoped (an early return inside the
+block skips it; the Zig target's block-scoped defer does not). A
+`with` block is its statements. `ZGUI_SCRIPT` drives the window
+without a mouse, one action per frame after the first draw --
+`click:<label>`, `toggle:<label>`, `set:<label>=<text>`,
+`spin:<label>=<n>`, `slide:<label>=<x>`, `pick:<label>=<index>`,
+`tab:<id>=<index>`, `menu:<label>`, `tick`, `quit`; an action acts on
+the previous frame's widgets, so a row a toggle adds is there to act on
+a frame later -- and `ZGUI_TRACE=1` prints each frame's widgets with
+their values, which is how `tools/v_gui_check.sh` witnesses it:
+`examples/counter.zbr` run with + + - Reset + must draw the counts
+0 0 1 2 1 0; `examples/form_smoke.zbr` with a field set, the port spun,
+TLS toggled, Advanced toggled on (its Timeout row added through the
+rebuild), the timeout spun and Advanced toggled off again must draw
+each change in place and the row's arrival and departure, nine frames;
+and `examples/gui_tabs_smoke.zbr` (new: a menu, tabs, a combobox and a
+radio under a `using g.vbox` block) with the menu item sent, the second
+page picked, the radio picked, the first page again and the combobox
+picked must draw each, seven frames.
 
 What the first run taught, each a line in the section or the build:
 V reserves `init` and `cleanup` as module hooks (`fn init() Counter` is
@@ -924,8 +942,8 @@ the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
 What it is not: the Zig section's remaining widgets (tables, trees,
-tabs, menus, toolbar, combobox, radio, the CodeEditor, drawing, the
-dialogs, the single-call vbox/hbox handles), the tui backend on V, a
+toolbar, the editable combobox, the CodeEditor, drawing, the dialogs,
+tooltips, every), the tui backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from

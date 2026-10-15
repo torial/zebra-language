@@ -59,4 +59,19 @@ echo "$(f 8)" | grep -q "toggle(Advanced=off)" && ! echo "$(f 8)" | grep -q "Tim
 echo "$(f 8)" | grep -q "text(box:443 tls=false)" || fail="${fail:-the text of frame 8 should carry every change}"
 [ -z "$fail" ] || { echo "v_gui_check: form FAILED -- $fail:"; cat "$OUT/form_run.txt"; exit 6; }
 echo "v_gui_check: form ok -- field, spinbox, toggle updated in place; the Advanced row added and removed through the rebuild (9 frames)"
+
+# 3. tabs, a menu, a combobox and a radio (examples/gui_tabs_smoke.zbr, a `using`
+# block round the view): the menu item sent, the second page picked, the radio
+# picked, the first page again, the combobox picked, a frame to draw it, quit
+build_and_run tabs examples/gui_tabs_smoke.zbr "menu:Open;tab:##tabs=1;pick:Size=2;tab:##tabs=0;pick:Colour=2;tick;quit"
+t() { sed -n "$((1 + $1))p" "$OUT/tabs_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/tabs_run.txt")" = 7 ] || fail="7 frames expected, $(wc -l < "$OUT/tabs_run.txt") drawn"
+echo "$(t 0)" | grep -q "begin_menu(File) menu_item(Open) menu_separator() menu_quit() end_menu()" || fail="${fail:-frame 0 should declare the menu}"
+echo "$(t 2)" | grep -q "text(opened 1 colour 0 size 1) tabs(##tabs=1)" || fail="${fail:-frame 2 should show the menu item sent and the second page}"
+echo "$(t 4)" | grep -q "size 2) tabs(##tabs=0)" || fail="${fail:-frame 4 should show the radio picked and the first page again}"
+echo "$(t 6)" | grep -q "text(opened 1 colour 2 size 2)" || fail="${fail:-frame 6 should show the combobox picked}"
+echo "$(t 6)" | grep -q "combobox(Colour=2)" || fail="${fail:-the combobox of frame 6 should read 2}"
+[ -z "$fail" ] || { echo "v_gui_check: tabs FAILED -- $fail:"; cat "$OUT/tabs_run.txt"; exit 6; }
+echo "v_gui_check: tabs ok -- a menu item sent, pages switched, a radio and a combobox picked, through a using block (7 frames)"
 echo "v_gui_check: ok"
