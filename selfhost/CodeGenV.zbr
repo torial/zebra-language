@@ -92,8 +92,8 @@ def vSafe(name: str): str
     var s = snakeCase(name)
     if s.startsWith("_")
         s = "u" + s   # V refuses a name beginning with `_`
-    if s == "match" or s == "type" or s == "struct" or s == "fn" or s == "mut" or s == "pub" or s == "import" or s == "module" or s == "go" or s == "select" or s == "lock" or s == "rlock" or s == "shared" or s == "atomic" or s == "none" or s == "sizeof" or s == "typeof" or s == "unsafe" or s == "defer" or s == "goto" or s == "asm" or s == "union" or s == "interface" or s == "enum" or s == "const" or s == "in" or s == "is" or s == "as" or s == "or" or s == "isreftype" or s == "dump" or s == "spawn" or s == "volatile" or s == "static" or s == "nil" or s == "sql" or s == "likely" or s == "unlikely" or s == "implements" or s == "true" or s == "false"
-        return s + "_"
+    if s == "match" or s == "type" or s == "struct" or s == "fn" or s == "mut" or s == "pub" or s == "import" or s == "module" or s == "go" or s == "select" or s == "lock" or s == "rlock" or s == "shared" or s == "atomic" or s == "none" or s == "sizeof" or s == "typeof" or s == "unsafe" or s == "defer" or s == "goto" or s == "asm" or s == "union" or s == "interface" or s == "enum" or s == "const" or s == "in" or s == "is" or s == "as" or s == "or" or s == "isreftype" or s == "dump" or s == "spawn" or s == "volatile" or s == "static" or s == "nil" or s == "sql" or s == "likely" or s == "unlikely" or s == "implements" or s == "true" or s == "false" or s == "init" or s == "cleanup"
+        return s + "_"   # (init / cleanup: V's module hooks -- `fn init() Counter` is "cannot have a return type", 2026-10-14)
     # C's own words, which V emits verbatim into its C (tcc read a loop
     # variable `cdecl` as its calling-convention keyword)
     if s == "cdecl" or s == "stdcall" or s == "fastcall" or s == "int" or s == "char" or s == "float" or s == "double" or s == "long" or s == "short" or s == "void" or s == "signed" or s == "unsigned" or s == "auto" or s == "register" or s == "extern" or s == "inline" or s == "restrict" or s == "typedef" or s == "switch" or s == "case" or s == "default" or s == "do" or s == "while" or s == "for" or s == "if" or s == "else" or s == "break" or s == "continue" or s == "return" or s == "bool" or s == "near" or s == "far" or s == "pascal" or s == "huge"
@@ -2949,7 +2949,11 @@ class VGen
         if .isEnumName(owner)
             return owner + "." + vSafe(m.member)
         if .isUnionName(owner)
-            return owner + "_" + m.member + "{}"   # a payload-less variant as a value
+            # a payload-less variant as a value, spelled as the sum type: into a
+            # generic parameter V keeps the variant's own type (`g.button[T]` with
+            # T = Msg_inc), and a run loop reading it back as Msg read garbage
+            # (the libui PoC, 2026-10-14); everywhere else the wrap is a no-op
+            return owner + "(" + owner + "_" + m.member + "{})"
         if .isModuleIdent(m.object)
             return vSafe(m.member)   # `Mod.name`: the used module's declaration, in this file
         var obj = .exprStr(m.object)
@@ -3271,9 +3275,10 @@ class VGen
             return skey2 + "(" + .argsStr(args, skey2) + ")"
         # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
         if .isUnionName(owner)
+            # (wrapped as the sum type, as the bare-member form above: see there)
             if args.count() == 0
-                return owner + "_" + name + "{}"
-            return owner + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " }"
+                return owner + "(" + owner + "_" + name + "{})"
+            return owner + "(" + owner + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " })"
         if isMath
             .needs_math = true
             if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"

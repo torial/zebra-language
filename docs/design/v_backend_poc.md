@@ -854,6 +854,62 @@ wherever `--emit-zig` is the job (the engine's regen, a `zebra build`
 that only emits). It cannot build the Zig it emits (that needs Zig, as
 before), it has no LSP and no debugger bridge, and no HTTP.
 
+**A GUI program on the V target: the libui-ng section, a proof of concept
+(2026-10-14; Sean: "the libui back-end probably needs a proof of
+concept").** Zebra's Gui is immediate-mode over an MVU loop: each frame
+the program's `view(g, model)` declares its widgets, `g.button(label,
+msg)` sends a Msg, the loop runs `update` over what was sent. On the Zig
+target `selfhost/gui_libui_ng_section.zig` (3,400 lines) puts that over
+libui-ng's retained widgets. `selfhost/gui_libui_ng_section.v` (340
+lines) is the same contract for V, appended to the emission by `zebra
+--target v --gui-backend=libui_ng` (found beside the runtime, in the
+repo or beside zebra.exe): `Gui` is a handle over heap state; a frame
+runs after each event (`uiMainStep(1)`), and once more without waiting
+when the frame sent a message, so the updated model is drawn at once;
+the frame's widget list is diffed against the last in order -- the same
+kinds and labels reuse their controls (a label's text updated in place),
+any difference rebuilds the window's content; a message is the Msg
+value's bytes (`memdup`, `sizeof(T)` in the generic `button[T]`) read
+back as G by the generic run loop; a click's callback carries the node
+holding the copy. Text, separator, sameLine (an open horizontal row) and
+button are the widgets; a call to any other is a V compile error naming
+the method. `ZGUI_SCRIPT="click:+;click:+;quit"` drives the window
+without a mouse (one action per frame, a click fires the named button's
+callback) and `ZGUI_TRACE=1` prints each frame's widgets, which is how
+`tools/v_gui_check.sh` witnesses it: `examples/counter.zbr` emitted,
+built, run with + + - Reset +, and the frames must draw the counts
+0 0 1 2 1 0.
+
+What the first run taught, each a line in the section or the build:
+V reserves `init` and `cleanup` as module hooks (`fn init() Counter` is
+"cannot have a return type"), so `vSafe` suffixes them; a generic
+read-back of a sum type from copied bytes must bind the pointer first
+(`*(&G(p))` in one expression is emitted as void); a variant value
+`Msg_inc{}` passed into a generic parameter keeps the variant's own type
+and the loop read garbage as Msg, so the emitter now spells a variant
+value as the sum type `Msg(Msg_inc{})` (a no-op everywhere a Msg was
+already wanted; the pipeline's fifteen witnesses unchanged); V reads a
+`gdi32` link flag as "a GUI app" and then emits a console attach with
+`freopen_s`, which mingw's headers do not declare at C99
+(`-subsystem console`); the `ui.lib` zig builds in Debug carries 284
+calls into the undefined-behaviour sanitizer's runtime, so the section
+links `zig-out-fast/lib` (`zig build -Doptimize=ReleaseFast -p
+zig-out-fast` in libui-ng, 3m50); libui-ng's Windows backend has C++ in
+it (`-lc++`), and `-static` keeps llvm-mingw's runtime out of the exe's
+DLL list (without it: libunwind.dll not found); and the static build
+needs the Common-Controls v6 manifest beside the exe, the Zig scaffold's
+text. The compiler is the mingw clang (llvm-mingw): tcc stops before
+the archive, unable to find V's own `dbghelp` library once `-static` is
+among the flags (not pursued), and MSVC was not tried.
+
+What it is not: the Zig section's other widgets (checkbox, slider,
+input, tables, trees, tabs, menus, toolbar, the CodeEditor, drawing),
+the tui backend on V, a manifest the compiler embeds, a `--gui-backend`
+build the compiler runs (it says the build line). Each is a day or
+less from here, and none was in the question, which was whether a
+Zebra GUI program can reach a native window through V at all: it can,
+and the diff-over-retained shape is the same one the Zig section uses.
+
 **The fixed point (2026-10-13).** `zebra_v --target v selfhost/main.zbr`
 is the V backend emitting itself. Generation 0 is the Zig-built
 compiler's emission of the backend's own source (61,627 lines of V);
