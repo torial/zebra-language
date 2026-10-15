@@ -19,7 +19,12 @@ ENGINE = os.environ.get('ENGINE', 'C:/Projects/GameEngine')
 HERE = os.path.dirname(os.path.abspath(__file__))
 ZEBRA = os.environ.get('ZEBRA', os.path.join(HERE, '..', 'zig-out', 'bin', 'zebra.exe'))
 V = os.environ.get('V', 'C:/Projects/v-dist/v/v.exe')
-OUT = os.environ.get('OUT', 'C:/tmp/v_engine_check')
+# Per-CHECKOUT scratch, as tools/scratch_paths.sh does for the shell gates (BUG-521): main and
+# the v-backend worktree both carry this tool, and one fixed C:/tmp path let two runs clobber
+# each other's emits and builds (hazard_lint H12).
+import hashlib, tempfile  # noqa: E402
+_CHECKOUT = os.path.realpath(os.path.join(HERE, '..'))
+OUT = os.environ.get('OUT', os.path.join(tempfile.gettempdir(), 'v_engine_check-' + hashlib.md5(_CHECKOUT.encode()).hexdigest()[:8]))
 sys.path.insert(0, os.path.join(ENGINE, 'tools'))
 import affected_tests  # noqa: E402
 
