@@ -936,6 +936,39 @@ tab strip, a window hotkey), the timer ticked twice, row 1
 double-clicked, row 2 selected: three rows, the ticks, the activation
 and the selection drawn, six frames.
 
+The fifth batch needs the FORK checkout (`C:/Projects/zig-libui-ng/libui`,
+Sean's libui-ng with trees, a toolbar, tooltips and the clipboard; the
+plain `C:/Projects/libui-ng` has none of them, which the first grep of
+its header said), built ReleaseFast the same way (12 minutes on a
+saturated host). Trees: `beginTree(id, onSelect, onActivate, onExpand)`
+takes the program's three closures; `treeNode` / `treeLeaf` and their
+Icon forms declare this frame's nodes under a stack `treePop` pops;
+`endTree` makes the node whose identity is the keys and their nesting,
+so the same structure updates labels and expansion in place (the
+fork's `uiTreeModelNodeChanged`, `uiTreeSetExpanded` against
+`uiTreeExpanded`) and a changed one rebuilds; the fork's keyed model
+handler sits first in the tree record, as the table's does; the three
+callbacks deliver the node's key to the program's closures and the
+model decides (the example's "Close all" folds every folder with no
+click). The toolbar is a strip the window holds: declared every frame,
+its items re-appended whenever the labels change, each item's enabled
+state applied per frame, a click sending the item's Msg by its index.
+A tooltip goes on the widget declared just before. `Gui.setClipboardText`
+and `Gui.clipboardText` are the fork's two calls. `Gui.registerIcon`
+runs before `Gui.run`, before libui is initialised, so the requests
+queue and the images are made at init (one process-wide state, made by
+the first call that needs it); an unregistered icon name is drawn
+without and said once: the Zig section's built-in set is not here.
+Three more witnesses: `examples/tree_smoke.zbr` (a node selected,
+another activated, a folder expanded through the model, all closed),
+`examples/toolbar_smoke.zbr` (Build, Run with Stop enabled only while
+running, Stop, the Clear item appearing and going) and
+`examples/tooltip_clipboard_smoke.zbr` (the field set, copied, pasted
+back through the system clipboard -- which that case overwrites -- and
+a node of an iconed tree picked). Two runtime gaps they found: a Zebra
+list's `append` (the emitter maps methods by name; the runtime had only
+`add`) and a StringBuilder's `appendChar`, both added to `zebra_rt.v`.
+
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
 the program's Msg is `i64`: four bytes copied, eight read back, the
@@ -971,9 +1004,9 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the Zig section's remaining widgets (trees, toolbar,
-the editable combobox, the check / edit / button table columns, the
-CodeEditor, drawing, the dialogs, tooltips, hotkeys), the tui backend
+What it is not: the Zig section's remaining widgets (the editable
+combobox, the check / edit / button table columns, the CodeEditor,
+drawing, the dialogs, the built-in icon set, hotkeys), the tui backend
 on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is

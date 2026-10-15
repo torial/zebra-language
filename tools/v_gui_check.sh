@@ -89,4 +89,49 @@ echo "$(r 4)" | grep -q "activated 1)" || fail="${fail:-frame 4 should show row 
 echo "$(r 5)" | grep -q "text(selected 2  activated 1)" || fail="${fail:-frame 5 should show row 2 selected}"
 [ -z "$fail" ] || { echo "v_gui_check: table FAILED -- $fail:"; cat "$OUT/table_run.txt"; exit 6; }
 echo "v_gui_check: table ok -- three rows, the timer ticked, a row activated and another selected (6 frames)"
+
+# the cases from here need the FORK checkout (zig-libui-ng/libui: trees, the
+# toolbar, tooltips, the clipboard); the plain libui-ng has none of them
+if ! grep -q "uiNewTree" "$ZEBRA_LIBUI_NG/ui.h"; then
+  echo "v_gui_check: $ZEBRA_LIBUI_NG is not the fork (no uiNewTree in its ui.h): the tree, toolbar and clipboard cases need C:/Projects/zig-libui-ng/libui"; exit 2
+fi
+
+# 5. a tree (examples/tree_smoke.zbr): a node selected, another activated, a
+# folder expanded through the model, then Close all folding every folder
+build_and_run tree examples/tree_smoke.zbr "treesel:files=src/main.zbr;treeact:files=docs/README.md;treeexp:files=docs=1;click:Close all;tick;quit"
+u() { sed -n "$((1 + $1))p" "$OUT/tree_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/tree_run.txt")" = 6 ] || fail="6 frames expected, $(wc -l < "$OUT/tree_run.txt") drawn"
+echo "$(u 0)" | grep -q "tree(files src/\[+main.zbr Parser.zbr gui/\[-tree.zbr\]\] docs/\[-README.md\] build.zbr)" || fail="${fail:-frame 0 should draw the tree with src open and the rest closed}"
+echo "$(u 2)" | grep -q "text(selected: src/main.zbr  opened: )" || fail="${fail:-frame 2 should show the selection}"
+echo "$(u 3)" | grep -q "opened: docs/README.md)" || fail="${fail:-frame 3 should show the activation}"
+echo "$(u 4)" | grep -q "docs/\[+README.md\]" || fail="${fail:-frame 4 should show docs expanded through the model}"
+echo "$(u 5)" | grep -q "src/\[-main.zbr Parser.zbr gui/\[-tree.zbr\]\] docs/\[-README.md\]" || fail="${fail:-frame 5 should show every folder closed}"
+[ -z "$fail" ] || { echo "v_gui_check: tree FAILED -- $fail:"; cat "$OUT/tree_run.txt"; exit 6; }
+echo "v_gui_check: tree ok -- selected, activated, expanded through the model, all closed (6 frames)"
+
+# 6. the toolbar (examples/toolbar_smoke.zbr): Build, Run (Stop enabled while
+# running), Stop, then Clear (the item that appears after the first click)
+build_and_run toolbar examples/toolbar_smoke.zbr "tool:Build;tool:Run;tool:Stop;tick;tool:Clear;tick;quit"
+w() { sed -n "$((1 + $1))p" "$OUT/toolbar_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/toolbar_run.txt")" = 7 ] || fail="7 frames expected, $(wc -l < "$OUT/toolbar_run.txt") drawn"
+echo "$(w 0)" | grep -q "toolbar(Build Run Stop(off)) text(state: idle)" || fail="${fail:-frame 0 should show Stop disabled and the state idle}"
+echo "$(w 2)" | grep -q "toolbar(Build Run Stop(off) | Clear) text(state: built) text(clicks: 1)" || fail="${fail:-frame 2 should show the Clear item appear after Build}"
+echo "$(w 3)" | grep -q "toolbar(Build Run Stop | Clear) text(state: running)" || fail="${fail:-frame 3 should show Stop enabled while running}"
+echo "$(w 6)" | grep -q "toolbar(Build Run Stop(off)) text(state: ) text(clicks: 0)" || fail="${fail:-frame 6 should show the strip cleared}"
+[ -z "$fail" ] || { echo "v_gui_check: toolbar FAILED -- $fail:"; cat "$OUT/toolbar_run.txt"; exit 6; }
+echo "v_gui_check: toolbar ok -- items sent, enabled per frame, an item appearing and going (7 frames)"
+
+# 7. tooltips and the clipboard (examples/tooltip_clipboard_smoke.zbr): the
+# field set, copied, pasted back through the system clipboard (which this
+# case OVERWRITES with the text), a node of an iconed tree picked
+build_and_run clip examples/tooltip_clipboard_smoke.zbr "set:Text=zebra on v;click:Copy;click:Paste;tick;treesel:files=src/todo;tick;quit"
+c() { sed -n "$((1 + $1))p" "$OUT/clip_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/clip_run.txt")" = 7 ] || fail="7 frames expected, $(wc -l < "$OUT/clip_run.txt") drawn"
+echo "$(c 4)" | grep -q "text(pasted: zebra on v)" || fail="${fail:-frame 4 should show the text pasted back from the clipboard}"
+echo "$(c 6)" | grep -q "text(picked: src/todo)" || fail="${fail:-frame 6 should show the tree node picked}"
+[ -z "$fail" ] || { echo "v_gui_check: clip FAILED -- $fail:"; cat "$OUT/clip_run.txt"; exit 6; }
+echo "v_gui_check: clip ok -- copied and pasted through the clipboard, a tree node picked (7 frames)"
 echo "v_gui_check: ok"

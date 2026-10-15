@@ -38,18 +38,30 @@
 // whose rows the view fills each frame (libui told row by row what changed);
 // `tableSelectedRow`, `tableActivatedRow` (a double-click, read once).
 //
-// Not here (the Zig section has them): trees, toolbar, the editable combobox,
-// the check / edit / button table columns, the CodeEditor, drawing, the
-// dialogs. A call to one of those is a V compile error naming the method, not
-// a silent no-op; tooltip, hotkey, takeKey and minSize are accepted and not
-// acted on (said once each).
+// And, on the FORK checkout (zig-libui-ng/libui, which has them; the plain
+// libui-ng does not): trees (`beginTree` with the three closures, `treeNode`,
+// `treeLeaf`, their Icon forms, `treePop`, `endTree`: the fork's keyed model
+// over this frame's nodes, the same structure updated in place, a changed one
+// rebuilt), the toolbar (a strip the window holds, its items re-appended when
+// the labels change, enabled per frame), tooltips on the widget declared just
+// before, the clipboard (`Gui.setClipboardText` / `clipboardText`) and
+// `Gui.registerIcon` (queued until libui is initialised; an unregistered icon
+// name is drawn without and said once: the Zig section's built-in set is not
+// here).
+//
+// Not here (the Zig section has them): the editable combobox, the check / edit
+// / button table columns, the CodeEditor, drawing, the dialogs. A call to one
+// of those is a V compile error naming the method, not a silent no-op; hotkey,
+// takeKey and minSize are accepted and not acted on (said once each).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
 // `set:<label>=<text>` (a field), `spin:<label>=<n>`, `slide:<label>=<x>`,
 // `pick:<label>=<index>` (a combobox or radio), `tab:<id>=<index>`,
 // `menu:<label>` (a menu item), `dblclick:<table id>=<row>`,
-// `select:<table id>=<row>`, `tick` (every timer fires once), `quit`.
+// `select:<table id>=<row>`, `tool:<label>`, `treesel:<id>=<key>`,
+// `treeact:<id>=<key>`, `treeexp:<id>=<key>=<0|1>`, `tick` (every timer
+// fires once), `quit`.
 // ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
 // what the window shows.
 
@@ -111,6 +123,20 @@ struct C.uiTableSelection {
 pub mut:
 	NumRows int
 	Rows    &int
+}
+struct C.uiTree {}
+struct C.uiTreeModel {}
+struct C.uiToolbar {}
+struct C.uiImage {}
+
+// the fork's tree model handler: five function pointers, first in ZGuiTree
+struct C.uiTreeModelHandler {
+pub mut:
+	NumChildren fn (&C.uiTreeModelHandler, &C.uiTreeModel, voidptr) int
+	Child       fn (&C.uiTreeModelHandler, &C.uiTreeModel, voidptr, int) voidptr
+	Text        fn (&C.uiTreeModelHandler, &C.uiTreeModel, voidptr) &char
+	HasChildren fn (&C.uiTreeModelHandler, &C.uiTreeModel, voidptr) int
+	Icon        fn (&C.uiTreeModelHandler, &C.uiTreeModel, voidptr) &C.uiImage
 }
 
 fn C.uiInit(o &C.uiInitOptions) &char
@@ -195,6 +221,30 @@ fn C.uiFreeTableSelection(sel &C.uiTableSelection)
 
 const zgui_table_value_string = 0 // uiTableValueTypeString, the enum's first
 
+fn C.uiNewTreeModel(mh &C.uiTreeModelHandler) &C.uiTreeModel
+fn C.uiFreeTreeModel(m &C.uiTreeModel)
+fn C.uiTreeModelNodeChanged(m &C.uiTreeModel, node voidptr)
+fn C.uiNewTree(m &C.uiTreeModel) &C.uiTree
+fn C.uiTreeSetExpanded(t &C.uiTree, node voidptr, expanded int)
+fn C.uiTreeExpanded(t &C.uiTree, node voidptr) int
+fn C.uiTreeSelection(t &C.uiTree) voidptr
+fn C.uiTreeSetSelection(t &C.uiTree, node voidptr)
+fn C.uiTreeOnSelectionChanged(t &C.uiTree, f fn (&C.uiTree, voidptr), data voidptr)
+fn C.uiTreeOnNodeActivated(t &C.uiTree, f fn (&C.uiTree, voidptr, voidptr), data voidptr)
+fn C.uiTreeOnNodeExpanded(t &C.uiTree, f fn (&C.uiTree, voidptr, int, voidptr), data voidptr)
+fn C.uiControlSetTooltip(c &C.uiControl, text &char)
+fn C.uiClipboardText() &char
+fn C.uiClipboardSetText(text &char)
+fn C.uiNewToolbar() &C.uiToolbar
+fn C.uiWindowSetToolbar(w &C.uiWindow, t &C.uiToolbar)
+fn C.uiToolbarAppendItem(t &C.uiToolbar, label &char, icon &C.uiImage, tooltip &char) int
+fn C.uiToolbarAppendSeparator(t &C.uiToolbar) int
+fn C.uiToolbarClear(t &C.uiToolbar)
+fn C.uiToolbarSetItemEnabled(t &C.uiToolbar, index int, enabled int)
+fn C.uiToolbarOnClicked(t &C.uiToolbar, f fn (&C.uiToolbar, int, voidptr), data voidptr)
+fn C.uiNewImage(width f64, height f64) &C.uiImage
+fn C.uiImageAppend(i &C.uiImage, pixels voidptr, pixel_width int, pixel_height int, byte_stride int)
+
 const zgui_slider_steps = 1000 // a slider is 0..1000 under the hood; the value maps onto min..max
 
 // one widget the view declared this frame
@@ -220,6 +270,7 @@ pub mut:
 	on_f64  fn (f64)    = unsafe { nil } // a slider's
 	on_idx  fn (i64)    = unsafe { nil } // a combobox's or radio's
 	items   []string // a combobox's or radio's choices
+	tip     string   // a tooltip declared after the widget
 	st      &ZGuiState = unsafe { nil }
 }
 
@@ -254,6 +305,23 @@ pub mut:
 	tables       map[string]&ZGuiTable
 	cur_table    &ZGuiTable = unsafe { nil } // between beginTable and endTable: g.text is a cell
 	stubs_said   map[string]bool // hotkey / takeKey / minSize: accepted, not acted on, said once each
+	trees        map[string]&ZGuiTree
+	cur_tree     &ZGuiTree = unsafe { nil }
+	tool_items   []&ZGuiToolItem // this frame's toolbar
+	tool_next_on bool = true // toolEnabled: the next item's state
+	toolbar      &C.uiToolbar = unsafe { nil }
+	tool_built   []string // the labels the strip holds now
+	icons        map[string]&C.uiImage
+	icon_queue   []ZGuiIconReq // registerIcon runs before Gui.run, before uiInit: queued
+	icon_said    map[string]bool
+}
+
+struct ZGuiIconReq {
+pub mut:
+	name string
+	w    int
+	h    int
+	rgba string
 }
 
 // a menu declared in the first frame, and its items
@@ -304,6 +372,51 @@ pub mut:
 	st        &ZGuiState = unsafe { nil }
 }
 
+// a node of a tree, declared this frame or shown by the model
+@[heap]
+struct ZGuiTNode {
+pub mut:
+	key      string
+	label    string
+	icon     string
+	is_node  bool // a node (may have children) against a leaf
+	expanded bool
+	children []&ZGuiTNode
+	parent   &ZGuiTNode = unsafe { nil }
+}
+
+// a tree kept by id: the frame's nodes become the model's when the structure
+// (the keys and their nesting) is the same; otherwise the frame rebuilds
+@[heap]
+struct ZGuiTree {
+pub mut:
+	handler     C.uiTreeModelHandler // FIRST: a callback casts the handler pointer back
+	id          string
+	roots       []&ZGuiTNode // this frame's
+	shown       []&ZGuiTNode // the model's
+	stack       []&ZGuiTNode // the open nodes while declaring
+	structure   string // the keys with their depth, this frame
+	model       &C.uiTreeModel = unsafe { nil }
+	tree        &C.uiTree      = unsafe { nil }
+	on_select   fn (string) = unsafe { nil }
+	on_activate fn (string) = unsafe { nil }
+	on_expand   fn (string, bool) = unsafe { nil }
+	st          &ZGuiState = unsafe { nil }
+}
+
+@[heap]
+struct ZGuiToolItem {
+pub mut:
+	kind    string // item | separator
+	label   string
+	icon    string
+	tip     string
+	msg     voidptr
+	size    int
+	enabled bool
+	index   int = -1 // libui's, once appended
+}
+
 // the handle the program's view receives (by value; the state is shared)
 pub struct Gui {
 pub mut:
@@ -312,6 +425,17 @@ pub mut:
 
 // `gui.run(...)` is how the emitter spells Zebra's `Gui.run(...)`
 pub const gui = Gui{}
+
+// the one state: made by the first call that needs it (registerIcon runs
+// before Gui.run), used by run
+__global zgui_state = &ZGuiState(unsafe { nil })
+
+fn zgui_global_state() &ZGuiState {
+	if zgui_state == unsafe { nil } {
+		zgui_state = &ZGuiState{}
+	}
+	return zgui_state
+}
 
 fn zgui_cstr(s string) &char {
 	return unsafe { &char(s.str) }
@@ -506,6 +630,208 @@ fn zgui_table_update_rows(t &ZGuiTable) {
 	}
 }
 
+fn zgui_tree_num_children(mh &C.uiTreeModelHandler, m &C.uiTreeModel, parent voidptr) int {
+	t := unsafe { &ZGuiTree(mh) }
+	if parent == unsafe { nil } {
+		return t.shown.len
+	}
+	pn := unsafe { &ZGuiTNode(parent) }
+	return pn.children.len
+}
+
+fn zgui_tree_child(mh &C.uiTreeModelHandler, m &C.uiTreeModel, parent voidptr, index int) voidptr {
+	t := unsafe { &ZGuiTree(mh) }
+	if parent == unsafe { nil } {
+		if index >= 0 && index < t.shown.len {
+			return voidptr(t.shown[index])
+		}
+		return voidptr(0)
+	}
+	pn := unsafe { &ZGuiTNode(parent) }
+	if index >= 0 && index < pn.children.len {
+		return voidptr(pn.children[index])
+	}
+	return voidptr(0)
+}
+
+fn zgui_tree_text(mh &C.uiTreeModelHandler, m &C.uiTreeModel, node voidptr) &char {
+	n := unsafe { &ZGuiTNode(node) }
+	return zgui_cstr(n.label) // a V string is NUL-terminated and lives with the shown node
+}
+
+fn zgui_tree_has_children(mh &C.uiTreeModelHandler, m &C.uiTreeModel, node voidptr) int {
+	n := unsafe { &ZGuiTNode(node) }
+	return if n.is_node { 1 } else { 0 }
+}
+
+fn zgui_tree_icon(mh &C.uiTreeModelHandler, m &C.uiTreeModel, node voidptr) &C.uiImage {
+	t := unsafe { &ZGuiTree(mh) }
+	n := unsafe { &ZGuiTNode(node) }
+	if n.icon == '' {
+		return unsafe { nil }
+	}
+	if img := t.st.icons[n.icon] {
+		return img
+	}
+	mut st := t.st
+	if n.icon !in st.icon_said {
+		eprintln('[zgui] icon "' + n.icon + '" is not registered (Gui.registerIcon) and the built-in set is not on the V backend yet: drawn without')
+		st.icon_said[n.icon] = true
+	}
+	return unsafe { nil }
+}
+
+fn zgui_on_tree_selection(tr &C.uiTree, data voidptr) {
+	t := unsafe { &ZGuiTree(data) }
+	p := C.uiTreeSelection(tr)
+	if p == unsafe { nil } {
+		return
+	}
+	n := unsafe { &ZGuiTNode(p) }
+	t.on_select(n.key)
+}
+
+fn zgui_on_tree_activated(tr &C.uiTree, node voidptr, data voidptr) {
+	t := unsafe { &ZGuiTree(data) }
+	n := unsafe { &ZGuiTNode(node) }
+	t.on_activate(n.key)
+}
+
+fn zgui_on_tree_expanded(tr &C.uiTree, node voidptr, expanded int, data voidptr) {
+	t := unsafe { &ZGuiTree(data) }
+	n := unsafe { &ZGuiTNode(node) }
+	t.on_expand(n.key, expanded != 0)
+}
+
+fn zgui_tree_set_expanded(t &ZGuiTree, nodes []&ZGuiTNode) {
+	for n in nodes {
+		if n.is_node {
+			C.uiTreeSetExpanded(t.tree, voidptr(n), if n.expanded { 1 } else { 0 })
+			zgui_tree_set_expanded(t, n.children)
+		}
+	}
+}
+
+// the tree control over the model, from this frame's nodes
+fn zgui_make_tree_control(t &ZGuiTree) voidptr {
+	mut tt := unsafe { t }
+	tt.handler = C.uiTreeModelHandler{
+		NumChildren: zgui_tree_num_children
+		Child: zgui_tree_child
+		Text: zgui_tree_text
+		HasChildren: zgui_tree_has_children
+		Icon: zgui_tree_icon
+	}
+	tt.shown = tt.roots
+	tt.model = C.uiNewTreeModel(&tt.handler)
+	tr := C.uiNewTree(tt.model)
+	tt.tree = tr
+	C.uiTreeOnSelectionChanged(tr, zgui_on_tree_selection, voidptr(tt))
+	C.uiTreeOnNodeActivated(tr, zgui_on_tree_activated, voidptr(tt))
+	C.uiTreeOnNodeExpanded(tr, zgui_on_tree_expanded, voidptr(tt))
+	zgui_tree_set_expanded(tt, tt.shown)
+	return voidptr(tr)
+}
+
+// the same structure: labels and expansion brought up to the frame's, in place
+fn zgui_tree_update_nodes(t &ZGuiTree, shown []&ZGuiTNode, cur []&ZGuiTNode) {
+	for i in 0 .. shown.len {
+		mut sn := shown[i]
+		cn := cur[i]
+		if sn.label != cn.label || sn.icon != cn.icon {
+			sn.label = cn.label
+			sn.icon = cn.icon
+			C.uiTreeModelNodeChanged(t.model, voidptr(sn))
+		}
+		if sn.is_node {
+			open := C.uiTreeExpanded(t.tree, voidptr(sn)) != 0
+			if open != cn.expanded {
+				C.uiTreeSetExpanded(t.tree, voidptr(sn), if cn.expanded { 1 } else { 0 })
+			}
+			sn.expanded = cn.expanded
+			zgui_tree_update_nodes(t, sn.children, cn.children)
+		}
+	}
+}
+
+fn zgui_tree_find(nodes []&ZGuiTNode, key string) &ZGuiTNode {
+	for n in nodes {
+		if n.key == key {
+			return n
+		}
+		if n.is_node {
+			f := zgui_tree_find(n.children, key)
+			if f != unsafe { nil } {
+				return f
+			}
+		}
+	}
+	return unsafe { nil }
+}
+
+fn zgui_on_tool_clicked(tb &C.uiToolbar, index int, data voidptr) {
+	st := unsafe { &ZGuiState(data) }
+	for it in st.tool_items {
+		if it.kind == 'item' && it.index == index {
+			zgui_push_sized(st, it.msg, it.size)
+			return
+		}
+	}
+}
+
+// the window's toolbar: the strip's items re-appended when the labels changed,
+// each item's enabled state brought up to the frame's
+fn zgui_sync_toolbar(st &ZGuiState) {
+	mut s := unsafe { st }
+	if s.window == unsafe { nil } {
+		return
+	}
+	if s.tool_items.len == 0 && s.toolbar == unsafe { nil } {
+		return
+	}
+	if s.toolbar == unsafe { nil } {
+		s.toolbar = C.uiNewToolbar()
+		C.uiToolbarOnClicked(s.toolbar, zgui_on_tool_clicked, voidptr(s))
+		C.uiWindowSetToolbar(s.window, s.toolbar)
+	}
+	mut labels := []string{}
+	for it in s.tool_items {
+		labels << it.kind + ':' + it.label
+	}
+	if labels != s.tool_built {
+		C.uiToolbarClear(s.toolbar)
+		for mut it in s.tool_items {
+			if it.kind == 'separator' {
+				it.index = C.uiToolbarAppendSeparator(s.toolbar)
+				continue
+			}
+			mut img := &C.uiImage(unsafe { nil })
+			if it.icon != '' {
+				if found := s.icons[it.icon] {
+					img = found
+				} else if it.icon !in s.icon_said {
+					eprintln('[zgui] icon "' + it.icon + '" is not registered (Gui.registerIcon) and the built-in set is not on the V backend yet: drawn without')
+					s.icon_said[it.icon] = true
+				}
+			}
+			it.index = C.uiToolbarAppendItem(s.toolbar, zgui_cstr(it.label), img, zgui_cstr(it.tip))
+		}
+		s.tool_built = labels
+	} else {
+		// the same strip: the indices are the built ones, by position
+		mut idx := 0
+		for mut it in s.tool_items {
+			it.index = idx
+			idx++
+		}
+	}
+	for it in s.tool_items {
+		if it.kind == 'item' && it.index >= 0 {
+			C.uiToolbarSetItemEnabled(s.toolbar, it.index, if it.enabled { 1 } else { 0 })
+		}
+	}
+}
+
 fn zgui_on_timer(data voidptr) int {
 	t := unsafe { &ZGuiTimer(data) }
 	if !t.seen || t.st.closing {
@@ -526,6 +852,12 @@ fn zgui_init(st &ZGuiState, title string, width int, height int) {
 		C.uiFreeInitError(err)
 		panic('libui init failed: ' + msg)
 	}
+	for r in s.icon_queue {
+		img := C.uiNewImage(f64(r.w), f64(r.h))
+		C.uiImageAppend(img, voidptr(r.rgba.str), r.w, r.h, r.w * 4)
+		s.icons[r.name] = img
+	}
+	s.icon_queue = []ZGuiIconReq{}
 	// the window is made at the first commit, after the first frame's menus
 	s.title = title
 	s.width = width
@@ -578,6 +910,9 @@ fn zgui_same_shape(a &ZGuiNode, b &ZGuiNode) bool {
 	}
 	if a.kind == 'table' && a.items.join('\x01') != b.items.join('\x01') {
 		return false // the columns changed
+	}
+	if a.kind == 'tree' && a.text != b.text {
+		return false // the keys or their nesting changed
 	}
 	return true
 }
@@ -635,6 +970,10 @@ fn zgui_build_control(n &ZGuiNode) voidptr {
 			t := m.st.tables[n.label] or { panic('zgui: no table ' + n.label) }
 			return zgui_make_table_control(t)
 		}
+		'tree' {
+			t := m.st.trees[n.label] or { panic('zgui: no tree ' + n.label) }
+			return zgui_make_tree_control(t)
+		}
 		'combobox' {
 			c := C.uiNewCombobox()
 			for it in n.items {
@@ -677,6 +1016,9 @@ fn zgui_commit(st &ZGuiState) {
 		for i, mut n in s.cur {
 			p := s.prev[i]
 			n.ctl = p.ctl
+			if n.tip != p.tip && n.ctl != unsafe { nil } {
+				C.uiControlSetTooltip(unsafe { &C.uiControl(n.ctl) }, zgui_cstr(n.tip))
+			}
 			match n.kind {
 				'text' {
 					if p.label != n.label {
@@ -719,6 +1061,10 @@ fn zgui_commit(st &ZGuiState) {
 					t := s.tables[n.label] or { panic('zgui: no table ' + n.label) }
 					zgui_table_update_rows(t)
 				}
+				'tree' {
+					t := s.trees[n.label] or { panic('zgui: no tree ' + n.label) }
+					zgui_tree_update_nodes(t, t.shown, t.roots)
+				}
 				'combobox' {
 					if p.ival != n.ival {
 						C.uiComboboxSetSelected(unsafe { &C.uiCombobox(n.ctl) }, int(n.ival))
@@ -736,6 +1082,7 @@ fn zgui_commit(st &ZGuiState) {
 		}
 		s.prev = s.cur
 		zgui_apply_tab_selects(s)
+		zgui_sync_toolbar(s)
 		return
 	}
 	// rebuild: the window's content is one vertical box kept for the program's
@@ -759,11 +1106,18 @@ fn zgui_commit(st &ZGuiState) {
 			C.uiControlDestroy(unsafe { &C.uiControl(s.root_kids[i]) })
 		}
 		s.root_kids = []voidptr{}
-		// the destroyed tables' models go too (a model can hold no table when freed)
+		// the destroyed tables' and trees' models go too (a model can hold no control when freed)
 		for _, mut t in s.tables {
 			if t.table != unsafe { nil } {
 				t.table = unsafe { nil }
 				C.uiFreeTableModel(t.model)
+				t.model = unsafe { nil }
+			}
+		}
+		for _, mut t in s.trees {
+			if t.tree != unsafe { nil } {
+				t.tree = unsafe { nil }
+				C.uiFreeTreeModel(t.model)
 				t.model = unsafe { nil }
 			}
 		}
@@ -864,13 +1218,16 @@ fn zgui_commit(st &ZGuiState) {
 		}
 		ctl := zgui_build_control(n)
 		n.ctl = ctl
+		if n.tip != '' {
+			C.uiControlSetTooltip(unsafe { &C.uiControl(ctl) }, zgui_cstr(n.tip))
+		}
 		if top_kind == 'form' {
 			// a form row: the widget's label on the left, the control on the right
 			row_label := if n.kind == 'toggle' { '' } else { n.label }
 			C.uiFormAppend(unsafe { &C.uiForm(top) }, zgui_cstr(row_label), unsafe { &C.uiControl(ctl) }, 0)
 			continue
 		}
-		if n.kind == 'table' {
+		if n.kind == 'table' || n.kind == 'tree' {
 			zgui_place_stretchy(s, top_kind, top, unsafe { &C.uiControl(ctl) })
 			continue
 		}
@@ -888,6 +1245,7 @@ fn zgui_commit(st &ZGuiState) {
 	}
 	s.prev = s.cur
 	zgui_apply_tab_selects(s)
+	zgui_sync_toolbar(s)
 }
 
 // `g.selectTab(id, i)` requests from the frame, applied to the built tabs
@@ -971,6 +1329,39 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 			}
 		}
 		panic('ZGUI_SCRIPT: no menu item labelled ' + label)
+	}
+	if verb == 'tool' {
+		for it in s.tool_items {
+			if it.kind == 'item' && it.label == label {
+				zgui_push_sized(s, it.msg, it.size)
+				return true
+			}
+		}
+		panic('ZGUI_SCRIPT: no tool labelled ' + label)
+	}
+	if verb == 'treesel' || verb == 'treeact' || verb == 'treeexp' {
+		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <id>=<key>') }
+		t := s.trees[rest[..eq]] or { panic('ZGUI_SCRIPT: no tree ' + rest[..eq]) }
+		mut key := rest[eq + 1..]
+		mut open := true
+		if verb == 'treeexp' {
+			eq2 := key.index('=') or { panic('ZGUI_SCRIPT: treeexp wants <id>=<key>=<0|1>') }
+			open = key[eq2 + 1..] == '1'
+			key = key[..eq2]
+		}
+		n := zgui_tree_find(t.shown, key)
+		if n == unsafe { nil } {
+			panic('ZGUI_SCRIPT: no tree node keyed ' + key)
+		}
+		match verb {
+			'treesel' {
+				C.uiTreeSetSelection(t.tree, voidptr(n))
+				t.on_select(n.key)
+			}
+			'treeact' { t.on_activate(n.key) }
+			else { t.on_expand(n.key, open) }
+		}
+		return true
 	}
 	if verb == 'dblclick' || verb == 'select' {
 		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <id>=<row>') }
@@ -1093,6 +1484,8 @@ fn zgui_new_frame(st &ZGuiState) bool {
 	s.sent = 0
 	s.cur = []&ZGuiNode{}
 	s.same = false
+	s.tool_items = []&ZGuiToolItem{}
+	s.tool_next_on = true
 	for mut t in s.timers {
 		t.seen = false
 	}
@@ -1112,7 +1505,21 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'begin_tabs' { 'tabs(' + n.label + '=' + C.uiTabSelected(unsafe { &C.uiTab(n.ctl) }).str() + ')' }
 			'begin_tab_page' { 'page(' + n.text + ')' }
 			'table' { 'table(' + n.label + ' ' + (s.tables[n.label] or { panic('no table') }).shown.len.str() + ' rows)' }
+			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
 			else { n.kind + '(' + n.label + ')' }
+		}
+	}
+	return parts.join(' ')
+}
+
+// a tree's nodes as words: `src/[+main.zbr Parser.zbr gui/[-tree.zbr]] docs/[-README.md] build.zbr`
+fn zgui_tree_words(nodes []&ZGuiTNode) string {
+	mut parts := []string{}
+	for n in nodes {
+		if n.is_node {
+			parts << n.label + '[' + (if n.expanded { '+' } else { '-' }) + zgui_tree_words(n.children) + ']'
+		} else {
+			parts << n.label
 		}
 	}
 	return parts.join(' ')
@@ -1122,7 +1529,15 @@ fn zgui_end_frame(st &ZGuiState) {
 	mut s := unsafe { st }
 	zgui_commit(s)
 	if s.trace {
-		println('[zgui] frame ' + s.frame.str() + ': ' + zgui_trace_line(s))
+		mut tb := ''
+		if s.tool_items.len > 0 {
+			mut ws := []string{}
+			for it in s.tool_items {
+				ws << if it.kind == 'separator' { '|' } else { it.label + (if it.enabled { '' } else { '(off)' }) }
+			}
+			tb = 'toolbar(' + ws.join(' ') + ') '
+		}
+		println('[zgui] frame ' + s.frame.str() + ': ' + tb + zgui_trace_line(s))
 	}
 	s.frame++
 	s.redraw = s.sent > 0
@@ -1183,11 +1598,183 @@ pub fn (g Gui) spacing() {
 	g.node('text', '')
 }
 
+// a tooltip on the widget declared just before
 pub fn (g Gui) tooltip(tip string) {
 	mut s := g.st
-	if !s.tooltip_said {
-		eprintln('[zgui] tooltip is not on the V libui_ng backend yet (dropped: ' + tip + ')')
-		s.tooltip_said = true
+	if s.cur.len == 0 {
+		return
+	}
+	mut last := s.cur[s.cur.len - 1]
+	last.tip = tip
+}
+
+// -- trees (the fork's uiTree): the view declares the whole tree each frame --
+
+pub fn (g Gui) begin_tree[G](id string, on_select fn (string) G, on_activate fn (string) G, on_expand fn (string, bool) G) {
+	mut st := g.st
+	mut t := st.trees[id] or {
+		nt := &ZGuiTree{
+			id: id
+			st: st
+		}
+		st.trees[id] = nt
+		nt
+	}
+	t.roots = []&ZGuiTNode{}
+	t.stack = []&ZGuiTNode{}
+	t.on_select = fn [on_select, st] [G](k string) {
+		m := on_select(k)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+	t.on_activate = fn [on_activate, st] [G](k string) {
+		m := on_activate(k)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+	t.on_expand = fn [on_expand, st] [G](k string, open bool) {
+		m := on_expand(k, open)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+	st.cur_tree = t
+}
+
+fn (g Gui) tree_add(key string, label string, is_node bool, expanded bool, icon string) {
+	mut t := g.st.cur_tree
+	if t == unsafe { nil } {
+		panic('zgui: a tree node outside beginTree / endTree')
+	}
+	mut n := &ZGuiTNode{
+		key: key
+		label: label
+		icon: icon
+		is_node: is_node
+		expanded: expanded
+	}
+	if t.stack.len > 0 {
+		mut parent := t.stack[t.stack.len - 1]
+		n.parent = parent
+		parent.children << n
+	} else {
+		t.roots << n
+	}
+	if is_node {
+		t.stack << n
+	}
+}
+
+pub fn (g Gui) tree_node(key string, label string, expanded bool) {
+	g.tree_add(key, label, true, expanded, '')
+}
+
+pub fn (g Gui) tree_node_icon(key string, label string, expanded bool, icon string) {
+	g.tree_add(key, label, true, expanded, icon)
+}
+
+pub fn (g Gui) tree_leaf(key string, label string) {
+	g.tree_add(key, label, false, false, '')
+}
+
+pub fn (g Gui) tree_leaf_icon(key string, label string, icon string) {
+	g.tree_add(key, label, false, false, icon)
+}
+
+pub fn (g Gui) tree_pop() {
+	mut t := g.st.cur_tree
+	if t != unsafe { nil } && t.stack.len > 0 {
+		t.stack.delete_last()
+	}
+}
+
+fn zgui_tree_structure(nodes []&ZGuiTNode, depth int) string {
+	mut parts := []string{}
+	for n in nodes {
+		parts << depth.str() + ':' + n.key
+		if n.is_node {
+			parts << zgui_tree_structure(n.children, depth + 1)
+		}
+	}
+	return parts.join('\x01')
+}
+
+pub fn (g Gui) end_tree() {
+	mut st := g.st
+	mut t := st.cur_tree
+	if t == unsafe { nil } {
+		return
+	}
+	st.cur_tree = unsafe { nil }
+	t.structure = zgui_tree_structure(t.roots, 0)
+	mut n := g.node('tree', t.id)
+	n.text = t.structure // the keys and their nesting are the node's identity
+}
+
+// -- the toolbar: a strip under the menubar, declared every frame --
+
+pub fn (g Gui) begin_toolbar() {
+	mut s := g.st
+	s.tool_items = []&ZGuiToolItem{}
+	s.tool_next_on = true
+}
+
+pub fn (g Gui) tool_icon[T](label string, icon string, tip string, msg T) {
+	mut s := g.st
+	s.tool_items << &ZGuiToolItem{
+		kind: 'item'
+		label: label
+		icon: icon
+		tip: tip
+		msg: unsafe { memdup(&msg, int(sizeof(T))) }
+		size: int(sizeof(T))
+		enabled: s.tool_next_on
+	}
+	s.tool_next_on = true
+}
+
+pub fn (g Gui) tool[T](label string, msg T) {
+	g.tool_icon(label, '', '', msg)
+}
+
+pub fn (g Gui) tool_separator() {
+	mut s := g.st
+	s.tool_items << &ZGuiToolItem{
+		kind: 'separator'
+		enabled: true
+	}
+}
+
+// the next item's enabled state
+pub fn (g Gui) tool_enabled(enabled bool) {
+	mut s := g.st
+	s.tool_next_on = enabled
+}
+
+pub fn (g Gui) end_toolbar() {
+}
+
+// -- the clipboard and the icons (Gui.setClipboardText / clipboardText / registerIcon) --
+
+pub fn (g Gui) set_clipboard_text(text string) {
+	C.uiClipboardSetText(zgui_cstr(text))
+}
+
+pub fn (g Gui) clipboard_text() string {
+	p := C.uiClipboardText()
+	if p == unsafe { nil } {
+		return ''
+	}
+	t := unsafe { cstring_to_vstring(p) }
+	C.uiFreeText(p)
+	return t
+}
+
+// straight-alpha RGBA, w*h*4 bytes; called before Gui.run, so the image is
+// made once libui is initialised
+pub fn (g Gui) register_icon(name string, w i64, h i64, rgba string) {
+	mut s := zgui_global_state()
+	s.icon_queue << ZGuiIconReq{
+		name: name
+		w: int(w)
+		h: int(h)
+		rgba: rgba
 	}
 }
 
@@ -1585,7 +2172,7 @@ pub fn (g Gui) end_panel(label string) {
 // -- the run loop (Zebra's Gui.run) -----------------------------------------------
 
 pub fn (g Gui) run[M, G](title string, width int, height int, init_fn fn () M, update_fn fn (M, G) M, view_fn fn (Gui, M)) {
-	mut st := &ZGuiState{}
+	mut st := zgui_global_state()
 	handle := Gui{
 		st: st
 	}
@@ -1604,7 +2191,7 @@ pub fn (g Gui) run[M, G](title string, width int, height int, init_fn fn () M, u
 				}
 				mut buf := []u8{len: int(sizeof(G)), init: 0}
 				unsafe { vmemcpy(&buf[0], p, size) }
-				gp := unsafe { &G(&buf[0]) }
+				gp := unsafe { &G(voidptr(&buf[0])) }
 				model = update_fn(model, *gp)
 				continue
 			}

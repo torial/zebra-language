@@ -32,6 +32,12 @@ pub fn (mut l ZList[T]) add(x T) {
 	l.items << x
 }
 
+// List.append: the same as add (the emitter maps methods by name, and a Zebra
+// list has both; 2026-10-14, tree_smoke)
+pub fn (mut l ZList[T]) append(x T) {
+	l.items << x
+}
+
 pub fn (l &ZList[T]) at(i i64) T {
 	return l.items[i]
 }
@@ -196,6 +202,11 @@ pub fn new_zstring_builder() &ZStringBuilder {
 
 pub fn (mut b ZStringBuilder) append(s string) {
 	b.parts << s
+}
+
+// StringBuilder.appendChar(byte): one byte (2026-10-14, toolbar_smoke's RGBA icons)
+pub fn (mut b ZStringBuilder) append_char(c i64) {
+	b.parts << [u8(c)].bytestr()
 }
 
 pub fn (mut b ZStringBuilder) append_int(x i64) {
