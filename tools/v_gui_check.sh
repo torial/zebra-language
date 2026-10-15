@@ -188,4 +188,34 @@ echo "$(j 3)" | grep -q "text(3 names; empty name refused for row 0)" || fail="$
 echo "$(j 4)" | grep -q "table(##names 2 rows: \[alpha Remove\] \[delta Remove\]) text(2 names; removed row 2)" || fail="${fail:-frame 4 should show the row removed}"
 [ -z "$fail" ] || { echo "v_gui_check: tedit FAILED -- $fail:"; cat "$OUT/tedit_run.txt"; exit 6; }
 echo "v_gui_check: tedit ok -- a cell renamed, an empty rename refused, a row removed by its button (5 frames)"
+
+# 12. an area (examples/area_smoke.zbr): the board painted (a fill, four
+# lines, a text), a click in the middle cell, Clear. libui paints
+# asynchronously, so the painted words lag the model by one frame: the
+# circle the click adds is in the trace the frame after the model shows it
+build_and_run area examples/area_smoke.zbr "mouse:board=1,120,120,1;tick;click:Clear;tick;quit"
+p() { sed -n "$((1 + $1))p" "$OUT/area_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/area_run.txt")" = 5 ] || fail="5 frames expected, $(wc -l < "$OUT/area_run.txt") drawn"
+echo "$(p 0)" | grep -q "area(board fillRect line line line line text)" || fail="${fail:-frame 0 should show the board painted}"
+echo "$(p 2)" | grep -q "text(clicks: 1)" || fail="${fail:-frame 2 should count the click}"
+grep -q "fillCircle" "$OUT/area_run.txt" || fail="${fail:-some frame should paint the clicked cell}"
+echo "$(p 4)" | grep -q "text(clicks: 0)" || fail="${fail:-frame 4 should show the board cleared}"
+[ -z "$fail" ] || { echo "v_gui_check: area FAILED -- $fail:"; cat "$OUT/area_run.txt"; exit 6; }
+echo "v_gui_check: area ok -- the board painted, a cell clicked and filled, cleared (5 frames)"
+
+# 13. a canvas (examples/canvas_smoke.zbr): a press near the dot, a drag, a
+# release, an enter, a key (A with ctrl), each named by the model
+build_and_run canvas examples/canvas_smoke.zbr "mouse:dot=1,62,58,1;mouse:dot=3,100,90,1;mouse:dot=2,100,90,1;mouse:dot=4,-1,-1,0;key:dot=65,1,1;tick;quit"
+q() { sed -n "$((1 + $1))p" "$OUT/canvas_run.txt"; }
+fail=""
+[ "$(wc -l < "$OUT/canvas_run.txt")" = 7 ] || fail="7 frames expected, $(wc -l < "$OUT/canvas_run.txt") drawn"
+echo "$(q 0)" | grep -q "canvas(dot fillRect fillCircle) text(last: nothing yet  at 60.0,60.0)" || fail="${fail:-frame 0 should paint the dot}"
+echo "$(q 2)" | grep -q "text(last: press " || fail="${fail:-frame 2 should show the press}"
+echo "$(q 3)" | grep -q "text(last: drag  at 100.0,90.0)" || fail="${fail:-frame 3 should show the drag moving the dot}"
+echo "$(q 4)" | grep -q "text(last: release " || fail="${fail:-frame 4 should show the release}"
+echo "$(q 5)" | grep -q "text(last: enter " || fail="${fail:-frame 5 should show the enter}"
+echo "$(q 6)" | grep -q "text(last: key 65 " || fail="${fail:-frame 6 should show the key}"
+[ -z "$fail" ] || { echo "v_gui_check: canvas FAILED -- $fail:"; cat "$OUT/canvas_run.txt"; exit 6; }
+echo "v_gui_check: canvas ok -- press, drag, release, enter and a key through the canvas's closures (7 frames)"
 echo "v_gui_check: ok"

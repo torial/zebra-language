@@ -62,9 +62,19 @@
 // changed there -- the message goes to update and the next frame's rows carry
 // the answer.
 //
-// Not here (the Zig section has them): the CodeEditor, drawing. A call to one
-// of those is a V compile error naming the method, not a silent no-op; hotkey,
-// takeKey and minSize are accepted and not acted on (said once each).
+// And drawing: `area(id, w, h, draw, onClick)` and `canvas(id, w, h, draw,
+// onMouse, onKey)`, the draw closure run inside libui's draw callback with the
+// paint context and the area's size held in the state, `line` / `rect` /
+// `fillRect` / `circle` / `fillCircle` / `drawText` as paths with a solid
+// brush and round strokes (a 0xRRGGBB colour), text through an attributed
+// string and the control font; mouse and key events to the program's closures
+// as the Zig section numbers them; a redraw queued every frame, since a V
+// closure's captures cannot be compared (the Zig section redraws only when
+// they changed). The trace names what the last draw painted.
+//
+// Not here (the Zig section has it): the CodeEditor. A call to it is a V
+// compile error naming the method, not a silent no-op; hotkey, takeKey and
+// minSize are accepted and not acted on (said once each).
 //
 // Test hook: ZGUI_SCRIPT drives the window without a mouse, one action per
 // frame after the first draw: `click:<label>`, `toggle:<label>`,
@@ -74,8 +84,10 @@
 // `select:<table id>=<row>`, `tool:<label>`, `treesel:<id>=<key>`,
 // `treeact:<id>=<key>`, `treeexp:<id>=<key>=<0|1>`, `dialog:<path>` (what the
 // next file dialog returns; empty = cancelled), `cellcheck:<id>=<row>=<0|1>`,
-// `celledit:<id>=<row>=<text>`, `cellbutton:<id>=<row>`, `tick` (every timer
-// fires once), `quit`.
+// `celledit:<id>=<row>=<text>`, `cellbutton:<id>=<row>`,
+// `mouse:<id>=<ev>,<x>,<y>,<b>` (an area: ev 1 is a click; a canvas: 1 press
+// 2 release 3 move 4 enter 5 leave), `key:<id>=<vk>,<mods>,<0|1>`, `tick`
+// (every timer fires once), `quit`.
 // ZGUI_TRACE=1 prints each frame's widgets with their values, so a test reads
 // what the window shows.
 
@@ -143,6 +155,107 @@ struct C.uiTreeModel {}
 struct C.uiToolbar {}
 struct C.uiImage {}
 struct C.uiEditableCombobox {}
+struct C.uiArea {}
+struct C.uiDrawContext {}
+struct C.uiDrawPath {}
+struct C.uiAttributedString {}
+struct C.uiAttribute {}
+struct C.uiDrawTextLayout {}
+
+// libui's area handler: five function pointers, first in ZGuiArea
+struct C.uiAreaHandler {
+pub mut:
+	Draw         fn (&C.uiAreaHandler, &C.uiArea, &C.uiAreaDrawParams)
+	MouseEvent   fn (&C.uiAreaHandler, &C.uiArea, &C.uiAreaMouseEvent)
+	MouseCrossed fn (&C.uiAreaHandler, &C.uiArea, int)
+	DragBroken   fn (&C.uiAreaHandler, &C.uiArea)
+	KeyEvent     fn (&C.uiAreaHandler, &C.uiArea, &C.uiAreaKeyEvent) int
+}
+
+struct C.uiAreaDrawParams {
+pub mut:
+	Context    &C.uiDrawContext
+	AreaWidth  f64
+	AreaHeight f64
+	ClipX      f64
+	ClipY      f64
+	ClipWidth  f64
+	ClipHeight f64
+}
+
+struct C.uiAreaMouseEvent {
+pub mut:
+	X          f64
+	Y          f64
+	AreaWidth  f64
+	AreaHeight f64
+	Down       int
+	Up         int
+	Count      int
+	Modifiers  int
+	Held1To64  u64
+}
+
+struct C.uiAreaKeyEvent {
+pub mut:
+	Key       i8
+	ExtKey    int
+	Modifier  int
+	Modifiers int
+	Up        int
+}
+
+struct C.uiDrawBrushGradientStop {
+pub mut:
+	Pos f64
+	R   f64
+	G   f64
+	B   f64
+	A   f64
+}
+
+struct C.uiDrawBrush {
+pub mut:
+	Type        int
+	R           f64
+	G           f64
+	B           f64
+	A           f64
+	X0          f64
+	Y0          f64
+	X1          f64
+	Y1          f64
+	OuterRadius f64
+	Stops       &C.uiDrawBrushGradientStop
+	NumStops    usize
+}
+
+struct C.uiDrawStrokeParams {
+pub mut:
+	Cap        int
+	Join       int
+	Thickness  f64
+	MiterLimit f64
+	Dashes     &f64
+	NumDashes  usize
+}
+
+struct C.uiFontDescriptor {
+pub mut:
+	Family  &char
+	Size    f64
+	Weight  int
+	Italic  int
+	Stretch int
+}
+
+struct C.uiDrawTextLayoutParams {
+pub mut:
+	String      &C.uiAttributedString
+	DefaultFont &C.uiFontDescriptor
+	Width       f64
+	Align       int
+}
 
 // the fork's tree model handler: five function pointers, first in ZGuiTree
 struct C.uiTreeModelHandler {
@@ -267,6 +380,37 @@ fn C.uiToolbarClear(t &C.uiToolbar)
 fn C.uiToolbarSetItemEnabled(t &C.uiToolbar, index int, enabled int)
 fn C.uiToolbarOnClicked(t &C.uiToolbar, f fn (&C.uiToolbar, int, voidptr), data voidptr)
 fn C.uiNewImage(width f64, height f64) &C.uiImage
+fn C.uiNewArea(ah &C.uiAreaHandler) &C.uiArea
+fn C.uiAreaQueueRedrawAll(a &C.uiArea)
+fn C.uiControlSetMinSize(c &C.uiControl, width int, height int)
+fn C.uiDrawNewPath(fill_mode int) &C.uiDrawPath
+fn C.uiDrawFreePath(p &C.uiDrawPath)
+fn C.uiDrawPathNewFigure(p &C.uiDrawPath, x f64, y f64)
+fn C.uiDrawPathNewFigureWithArc(p &C.uiDrawPath, x_center f64, y_center f64, radius f64, start_angle f64, sweep f64, negative int)
+fn C.uiDrawPathLineTo(p &C.uiDrawPath, x f64, y f64)
+fn C.uiDrawPathCloseFigure(p &C.uiDrawPath)
+fn C.uiDrawPathAddRectangle(p &C.uiDrawPath, x f64, y f64, width f64, height f64)
+fn C.uiDrawPathEnd(p &C.uiDrawPath)
+fn C.uiDrawStroke(c &C.uiDrawContext, path &C.uiDrawPath, b &C.uiDrawBrush, p &C.uiDrawStrokeParams)
+fn C.uiDrawFill(c &C.uiDrawContext, path &C.uiDrawPath, b &C.uiDrawBrush)
+fn C.uiNewAttributedString(initial &char) &C.uiAttributedString
+fn C.uiFreeAttributedString(s &C.uiAttributedString)
+fn C.uiAttributedStringLen(s &C.uiAttributedString) usize
+fn C.uiAttributedStringSetAttribute(s &C.uiAttributedString, a &C.uiAttribute, start usize, end usize)
+fn C.uiNewColorAttribute(r f64, g f64, b f64, a f64) &C.uiAttribute
+fn C.uiLoadControlFont(f &C.uiFontDescriptor)
+fn C.uiFreeFontDescriptor(desc &C.uiFontDescriptor)
+fn C.uiDrawNewTextLayout(params &C.uiDrawTextLayoutParams) &C.uiDrawTextLayout
+fn C.uiDrawFreeTextLayout(tl &C.uiDrawTextLayout)
+fn C.uiDrawText(c &C.uiDrawContext, tl &C.uiDrawTextLayout, x f64, y f64)
+
+const zgui_draw_fill_winding = 0 // uiDrawFillModeWinding
+const zgui_brush_solid = 0 // uiDrawBrushTypeSolid
+const zgui_line_cap_round = 1 // uiDrawLineCapRound
+const zgui_line_join_round = 1 // uiDrawLineJoinRound
+const zgui_text_align_left = 0 // uiDrawTextAlignLeft
+const zgui_pi = 3.141592653589793
+
 fn C.uiNewEditableCombobox() &C.uiEditableCombobox
 fn C.uiEditableComboboxAppend(c &C.uiEditableCombobox, text &char)
 fn C.uiEditableComboboxText(c &C.uiEditableCombobox) &char
@@ -350,6 +494,9 @@ pub mut:
 	icon_said    map[string]bool
 	dialog_answers []string // scripted: what the next dialogs return (`dialog:<path>`; empty = cancelled)
 	dialogs_shown  []string // this frame's dialogs, for the trace
+	areas          map[string]&ZGuiArea
+	paint          &C.uiAreaDrawParams = unsafe { nil } // inside a draw: the context and size
+	paint_area     &ZGuiArea = unsafe { nil }
 }
 
 struct ZGuiIconReq {
@@ -444,6 +591,27 @@ pub mut:
 	on_activate fn (string) = unsafe { nil }
 	on_expand   fn (string, bool) = unsafe { nil }
 	st          &ZGuiState = unsafe { nil }
+}
+
+// an area or canvas: the handler first (a callback casts back), the program's
+// closures for this frame (the draw closure captures the model's values, so a
+// new one each frame; a redraw is queued every frame since the captures
+// cannot be compared, which the Zig section does only when they changed)
+@[heap]
+struct ZGuiArea {
+pub mut:
+	handler  C.uiAreaHandler
+	id       string
+	w        int
+	h        int
+	draw     fn (Gui)           = unsafe { nil }
+	on_click fn (f64, f64, i64) = unsafe { nil }      // an area's click: x, y, button
+	on_mouse fn (i64, f64, f64, i64) = unsafe { nil } // a canvas's: ev (1 press 2 release 3 move 4 enter 5 leave), x, y, buttons
+	on_key   fn (i64, i64, bool) = unsafe { nil }     // a canvas's: vk, mods (1 ctrl 2 shift 4 alt), down
+	area     &C.uiArea = unsafe { nil }
+	is_canvas bool
+	painted  []string // the primitives of the last draw, for the trace
+	st       &ZGuiState = unsafe { nil }
 }
 
 @[heap]
@@ -667,6 +835,163 @@ fn zgui_paint_icon(name string) []u8 {
 		else {}
 	}
 	return buf
+}
+
+fn zgui_area_draw(h &C.uiAreaHandler, a &C.uiArea, p &C.uiAreaDrawParams) {
+	mut ar := unsafe { &ZGuiArea(h) }
+	if ar.draw == unsafe { nil } {
+		return
+	}
+	mut st := ar.st
+	unsafe {
+		st.paint = p // libui's, valid for this call: V's escape rule wants the unsafe
+	}
+	st.paint_area = ar
+	ar.painted = []string{}
+	ar.draw(Gui{ st: st })
+	st.paint = unsafe { nil }
+	st.paint_area = unsafe { nil }
+}
+
+fn zgui_area_mouse(h &C.uiAreaHandler, a &C.uiArea, e &C.uiAreaMouseEvent) {
+	ar := unsafe { &ZGuiArea(h) }
+	if ar.is_canvas {
+		if ar.on_mouse == unsafe { nil } {
+			return
+		}
+		if e.Down != 0 {
+			ar.on_mouse(1, e.X, e.Y, i64(e.Down))
+		} else if e.Up != 0 {
+			ar.on_mouse(2, e.X, e.Y, i64(e.Up))
+		} else {
+			ar.on_mouse(3, e.X, e.Y, i64(e.Held1To64 & 0xffff))
+		}
+		return
+	}
+	if e.Down == 0 || ar.on_click == unsafe { nil } {
+		return
+	}
+	ar.on_click(e.X, e.Y, i64(e.Down))
+}
+
+fn zgui_area_crossed(h &C.uiAreaHandler, a &C.uiArea, left int) {
+	ar := unsafe { &ZGuiArea(h) }
+	if ar.is_canvas && ar.on_mouse != unsafe { nil } {
+		ar.on_mouse(if left != 0 { 5 } else { 4 }, -1, -1, 0)
+	}
+}
+
+fn zgui_area_drag_broken(h &C.uiAreaHandler, a &C.uiArea) {
+}
+
+// libui's key event as the hotkey vocabulary (letters upper-case ASCII, digits,
+// F1..F12 at 0x70.., the navigation keys' VK codes); unmapped is 0, not delivered
+fn zgui_key_vk(e &C.uiAreaKeyEvent) i64 {
+	if e.Key != 0 {
+		c := i64(u8(e.Key))
+		if c >= 97 && c <= 122 {
+			return c - 32
+		}
+		if c == 10 || c == 13 {
+			return 0x0D
+		}
+		if c == 9 {
+			return 0x09
+		}
+		if c == 8 || c == 127 {
+			return 0x08
+		}
+		return c
+	}
+	k := e.ExtKey
+	if k >= 12 && k <= 23 {
+		return 0x70 + i64(k - 12)
+	}
+	if k >= 24 && k <= 33 {
+		return 48 + i64(k - 24)
+	}
+	return match k {
+		1 { 0x1B }
+		2 { 0x2D }
+		3 { 0x2E }
+		4 { 0x24 }
+		5 { 0x23 }
+		6 { 0x21 }
+		7 { 0x22 }
+		8 { 0x26 }
+		9 { 0x28 }
+		10 { 0x25 }
+		11 { 0x27 }
+		34 { 46 }
+		35 { 0x0D }
+		36 { 43 }
+		37 { 45 }
+		38 { 42 }
+		39 { 47 }
+		else { 0 }
+	}
+}
+
+fn zgui_area_key(h &C.uiAreaHandler, a &C.uiArea, e &C.uiAreaKeyEvent) int {
+	ar := unsafe { &ZGuiArea(h) }
+	if !ar.is_canvas || ar.on_key == unsafe { nil } {
+		return 0
+	}
+	vk := zgui_key_vk(e)
+	if vk == 0 {
+		return 0
+	}
+	mut mods := i64(0)
+	if e.Modifiers & 1 != 0 {
+		mods |= 1 // ctrl
+	}
+	if e.Modifiers & 4 != 0 {
+		mods |= 2 // shift
+	}
+	if e.Modifiers & 2 != 0 {
+		mods |= 4 // alt
+	}
+	ar.on_key(vk, mods, e.Up == 0)
+	return 1
+}
+
+fn zgui_brush(color i64) C.uiDrawBrush {
+	c := u32(color & 0xffffff)
+	return C.uiDrawBrush{
+		Type: zgui_brush_solid
+		R: f64((c >> 16) & 0xff) / 255.0
+		G: f64((c >> 8) & 0xff) / 255.0
+		B: f64(c & 0xff) / 255.0
+		A: 1.0
+		Stops: unsafe { nil }
+		NumStops: 0
+	}
+}
+
+fn zgui_stroke_path(st &ZGuiState, path &C.uiDrawPath, color i64, thickness f64) {
+	mut b := zgui_brush(color)
+	mut sp := C.uiDrawStrokeParams{
+		Cap: zgui_line_cap_round
+		Join: zgui_line_join_round
+		Thickness: if thickness > 0 { thickness } else { 1.0 }
+		MiterLimit: 10.0
+		Dashes: unsafe { nil }
+		NumDashes: 0
+	}
+	C.uiDrawStroke(st.paint.Context, path, &b, &sp)
+}
+
+fn zgui_fill_path(st &ZGuiState, path &C.uiDrawPath, color i64) {
+	mut b := zgui_brush(color)
+	C.uiDrawFill(st.paint.Context, path, &b)
+}
+
+// the primitives record what they painted, for the trace
+fn zgui_painted(st &ZGuiState, what string) {
+	if st.paint_area != unsafe { nil } {
+		mut ar := st.paint_area
+		ar.painted << what
+	}
 }
 
 fn zgui_on_editcombo_changed(c &C.uiEditableCombobox, data voidptr) {
@@ -1093,6 +1418,9 @@ fn zgui_same_shape(a &ZGuiNode, b &ZGuiNode) bool {
 	if a.kind == 'tree' && a.text != b.text {
 		return false // the keys or their nesting changed
 	}
+	if a.kind == 'area' && (a.imin != b.imin || a.imax != b.imax) {
+		return false // the size changed
+	}
 	return true
 }
 
@@ -1152,6 +1480,20 @@ fn zgui_build_control(n &ZGuiNode) voidptr {
 		'tree' {
 			t := m.st.trees[n.label] or { panic('zgui: no tree ' + n.label) }
 			return zgui_make_tree_control(t)
+		}
+		'area' {
+			mut ar := m.st.areas[n.label] or { panic('zgui: no area ' + n.label) }
+			ar.handler = C.uiAreaHandler{
+				Draw: zgui_area_draw
+				MouseEvent: zgui_area_mouse
+				MouseCrossed: zgui_area_crossed
+				DragBroken: zgui_area_drag_broken
+				KeyEvent: zgui_area_key
+			}
+			a := C.uiNewArea(&ar.handler)
+			C.uiControlSetMinSize(unsafe { &C.uiControl(a) }, ar.w, ar.h)
+			ar.area = a
+			return voidptr(a)
 		}
 		'editcombo' {
 			c := C.uiNewEditableCombobox()
@@ -1253,6 +1595,12 @@ fn zgui_commit(st &ZGuiState) {
 					t := s.trees[n.label] or { panic('zgui: no tree ' + n.label) }
 					zgui_tree_update_nodes(t, t.shown, t.roots)
 				}
+				'area' {
+					ar := s.areas[n.label] or { panic('zgui: no area ' + n.label) }
+					if ar.area != unsafe { nil } {
+						C.uiAreaQueueRedrawAll(ar.area) // the draw closure is this frame's: redraw
+					}
+				}
 				'editcombo' {
 					if p.text != n.text {
 						C.uiEditableComboboxSetText(unsafe { &C.uiEditableCombobox(n.ctl) }, zgui_cstr(n.text))
@@ -1314,6 +1662,9 @@ fn zgui_commit(st &ZGuiState) {
 				C.uiFreeTreeModel(t.model)
 				t.model = unsafe { nil }
 			}
+		}
+		for _, mut ar in s.areas {
+			ar.area = unsafe { nil }
 		}
 	}
 	s.row = unsafe { nil }
@@ -1421,7 +1772,7 @@ fn zgui_commit(st &ZGuiState) {
 			C.uiFormAppend(unsafe { &C.uiForm(top) }, zgui_cstr(row_label), unsafe { &C.uiControl(ctl) }, 0)
 			continue
 		}
-		if n.kind == 'table' || n.kind == 'tree' {
+		if n.kind == 'table' || n.kind == 'tree' || n.kind == 'area' {
 			zgui_place_stretchy(s, top_kind, top, unsafe { &C.uiControl(ctl) })
 			continue
 		}
@@ -1523,6 +1874,31 @@ fn zgui_script_action(st &ZGuiState, act string) bool {
 			}
 		}
 		panic('ZGUI_SCRIPT: no menu item labelled ' + label)
+	}
+	if verb == 'mouse' || verb == 'key' {
+		// mouse:<id>=<ev>,<x>,<y>,<b>  key:<id>=<vk>,<mods>,<0|1>
+		eq := rest.index('=') or { panic('ZGUI_SCRIPT: ' + verb + ' wants <id>=...') }
+		ar := s.areas[rest[..eq]] or { panic('ZGUI_SCRIPT: no area ' + rest[..eq]) }
+		f := rest[eq + 1..].split(',')
+		if verb == 'mouse' {
+			if f.len != 4 {
+				panic('ZGUI_SCRIPT: mouse wants <id>=<ev>,<x>,<y>,<b>')
+			}
+			ev := f[0].int()
+			if ar.is_canvas {
+				ar.on_mouse(i64(ev), f[1].f64(), f[2].f64(), i64(f[3].int()))
+			} else if ev == 1 {
+				ar.on_click(f[1].f64(), f[2].f64(), i64(f[3].int()))
+			}
+		} else {
+			if f.len != 3 {
+				panic('ZGUI_SCRIPT: key wants <id>=<vk>,<mods>,<0|1>')
+			}
+			if ar.is_canvas {
+				ar.on_key(i64(f[0].int()), i64(f[1].int()), f[2] == '1')
+			}
+		}
+		return true
 	}
 	if verb == 'dialog' {
 		// the next dialog's answer (an empty path: cancelled)
@@ -1740,6 +2116,7 @@ fn zgui_trace_line(s &ZGuiState) string {
 			'begin_tab_page' { 'page(' + n.text + ')' }
 			'table' { 'table(' + n.label + ' ' + zgui_table_words(s.tables[n.label] or { panic('no table') }) + ')' }
 			'tree' { 'tree(' + n.label + ' ' + zgui_tree_words((s.trees[n.label] or { panic('no tree') }).shown) + ')' }
+			'area' { (if (s.areas[n.label] or { panic('no area') }).is_canvas { 'canvas(' } else { 'area(' }) + n.label + ' ' + (s.areas[n.label] or { panic('no area') }).painted.join(' ') + ')' }
 			else { n.kind + '(' + n.label + ')' }
 		}
 	}
@@ -1996,6 +2373,169 @@ pub fn (g Gui) tool_enabled(enabled bool) {
 }
 
 pub fn (g Gui) end_toolbar() {
+}
+
+// -- drawing: an area (a click) or a canvas (mouse and keys), painted by the
+// draw closure inside libui's draw callback --
+
+fn (g Gui) area_node(id string, w i64, h i64, draw fn (Gui), is_canvas bool) &ZGuiArea {
+	mut st := g.st
+	mut ar := st.areas[id] or {
+		na := &ZGuiArea{
+			id: id
+			st: st
+			is_canvas: is_canvas
+		}
+		st.areas[id] = na
+		na
+	}
+	ar.w = int(w)
+	ar.h = int(h)
+	ar.draw = draw
+	ar.is_canvas = is_canvas
+	mut n := g.node('area', id)
+	n.imin = w
+	n.imax = h
+	return ar
+}
+
+pub fn (g Gui) area[G](id string, w i64, h i64, draw fn (Gui), on fn (f64, f64, i64) G) {
+	mut ar := g.area_node(id, w, h, draw, false)
+	st := g.st
+	ar.on_click = fn [on, st] [G](x f64, y f64, b i64) {
+		m := on(x, y, b)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+}
+
+pub fn (g Gui) canvas[G](id string, w i64, h i64, draw fn (Gui), on_mouse fn (i64, f64, f64, i64) G, on_key fn (i64, i64, bool) G) {
+	mut ar := g.area_node(id, w, h, draw, true)
+	st := g.st
+	ar.on_mouse = fn [on_mouse, st] [G](ev i64, x f64, y f64, b i64) {
+		m := on_mouse(ev, x, y, b)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+	ar.on_key = fn [on_key, st] [G](vk i64, mods i64, down bool) {
+		m := on_key(vk, mods, down)
+		zgui_push_sized(st, unsafe { memdup(&m, int(sizeof(G))) }, int(sizeof(G)))
+	}
+}
+
+// the drawing primitives: valid inside a draw closure, nothing elsewhere
+pub fn (g Gui) canvas_width() f64 {
+	if g.st.paint == unsafe { nil } {
+		return 0.0
+	}
+	return g.st.paint.AreaWidth
+}
+
+pub fn (g Gui) canvas_height() f64 {
+	if g.st.paint == unsafe { nil } {
+		return 0.0
+	}
+	return g.st.paint.AreaHeight
+}
+
+pub fn (g Gui) line(x1 f64, y1 f64, x2 f64, y2 f64, color i64, thickness f64) {
+	st := g.st
+	if st.paint == unsafe { nil } {
+		return
+	}
+	path := C.uiDrawNewPath(zgui_draw_fill_winding)
+	C.uiDrawPathNewFigure(path, x1, y1)
+	C.uiDrawPathLineTo(path, x2, y2)
+	C.uiDrawPathEnd(path)
+	zgui_stroke_path(st, path, color, thickness)
+	C.uiDrawFreePath(path)
+	zgui_painted(st, 'line')
+}
+
+pub fn (g Gui) rect(x f64, y f64, w f64, h f64, color i64, thickness f64) {
+	st := g.st
+	if st.paint == unsafe { nil } {
+		return
+	}
+	path := C.uiDrawNewPath(zgui_draw_fill_winding)
+	C.uiDrawPathAddRectangle(path, x, y, w, h)
+	C.uiDrawPathEnd(path)
+	zgui_stroke_path(st, path, color, thickness)
+	C.uiDrawFreePath(path)
+	zgui_painted(st, 'rect')
+}
+
+pub fn (g Gui) fill_rect(x f64, y f64, w f64, h f64, color i64) {
+	st := g.st
+	if st.paint == unsafe { nil } {
+		return
+	}
+	path := C.uiDrawNewPath(zgui_draw_fill_winding)
+	C.uiDrawPathAddRectangle(path, x, y, w, h)
+	C.uiDrawPathEnd(path)
+	zgui_fill_path(st, path, color)
+	C.uiDrawFreePath(path)
+	zgui_painted(st, 'fillRect')
+}
+
+pub fn (g Gui) circle(cx f64, cy f64, r f64, color i64, thickness f64) {
+	st := g.st
+	if st.paint == unsafe { nil } {
+		return
+	}
+	path := C.uiDrawNewPath(zgui_draw_fill_winding)
+	C.uiDrawPathNewFigureWithArc(path, cx, cy, r, 0.0, 2.0 * zgui_pi, 0)
+	C.uiDrawPathCloseFigure(path)
+	C.uiDrawPathEnd(path)
+	zgui_stroke_path(st, path, color, thickness)
+	C.uiDrawFreePath(path)
+	zgui_painted(st, 'circle')
+}
+
+pub fn (g Gui) fill_circle(cx f64, cy f64, r f64, color i64) {
+	st := g.st
+	if st.paint == unsafe { nil } {
+		return
+	}
+	path := C.uiDrawNewPath(zgui_draw_fill_winding)
+	C.uiDrawPathNewFigureWithArc(path, cx, cy, r, 0.0, 2.0 * zgui_pi, 0)
+	C.uiDrawPathCloseFigure(path)
+	C.uiDrawPathEnd(path)
+	zgui_fill_path(st, path, color)
+	C.uiDrawFreePath(path)
+	zgui_painted(st, 'fillCircle')
+}
+
+pub fn (g Gui) draw_text(x f64, y f64, text string, color i64, size f64) {
+	st := g.st
+	if st.paint == unsafe { nil } {
+		return
+	}
+	astr := C.uiNewAttributedString(zgui_cstr(text))
+	c := u32(color & 0xffffff)
+	attr := C.uiNewColorAttribute(f64((c >> 16) & 0xff) / 255.0, f64((c >> 8) & 0xff) / 255.0, f64(c & 0xff) / 255.0, 1.0)
+	C.uiAttributedStringSetAttribute(astr, attr, 0, C.uiAttributedStringLen(astr))
+	mut fd := C.uiFontDescriptor{
+		Family: unsafe { nil }
+	}
+	C.uiLoadControlFont(&fd)
+	if size > 0 {
+		fd.Size = size
+	}
+	mut width := st.paint.AreaWidth - x
+	if width < 1.0 {
+		width = 1.0
+	}
+	params := C.uiDrawTextLayoutParams{
+		String: astr
+		DefaultFont: &fd
+		Width: width
+		Align: zgui_text_align_left
+	}
+	tl := C.uiDrawNewTextLayout(&params)
+	C.uiDrawText(st.paint.Context, tl, x, y)
+	C.uiDrawFreeTextLayout(tl)
+	C.uiFreeFontDescriptor(&fd)
+	C.uiFreeAttributedString(astr)
+	zgui_painted(st, 'text')
 }
 
 // -- the editable combobox and the dialogs --

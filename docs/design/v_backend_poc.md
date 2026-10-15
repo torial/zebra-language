@@ -999,6 +999,25 @@ trace now prints a table's rows as words. Two more witnesses:
 then None and All) and `table_edit_smoke.zbr` (a rename, the refused
 empty rename, a row removed by its button). Eleven.
 
+The eighth batch: drawing. `area(id, w, h, draw, onClick)` and
+`canvas(id, w, h, draw, onMouse, onKey)` keep a record by id with
+libui's five-pointer area handler first (the pointer-first trick a
+fourth time); the draw closure runs inside libui's draw callback with
+the paint context and the area's size held in the state, and the six
+primitives -- `line`, `rect`, `fillRect`, `circle`, `fillCircle`,
+`drawText` -- are paths with a solid brush and round strokes (a
+0xRRGGBB colour), text through an attributed string and the control
+font, nothing outside a draw; mouse and key events reach the program's
+closures as the Zig section numbers them (press, release, move, enter,
+leave; the hotkey vocabulary for keys). A V closure's captures cannot
+be compared, so a redraw is queued every frame where the Zig section
+redraws only when the captures changed. The trace names what the last
+draw painted, and libui paints asynchronously, so those words lag the
+model by one frame, which the witness expects. Two more witnesses:
+`examples/area_smoke.zbr` (the board painted, a cell clicked and
+filled, cleared) and `examples/canvas_smoke.zbr` (a press near the dot,
+a drag moving it, a release, an enter, a key). Thirteen.
+
 Two general things the table example found, neither about tables. A
 literal message (`g.every(100, 1)` with `Msg = int`) is a V `int` where
 the program's Msg is `i64`: four bytes copied, eight read back, the
@@ -1034,8 +1053,8 @@ text. The compiler is the mingw clang (llvm-mingw): tcc stops before
 the archive, unable to find V's own `dbghelp` library once `-static` is
 among the flags (not pursued), and MSVC was not tried.
 
-What it is not: the Zig section's remaining widgets (the CodeEditor,
-drawing, hotkeys), the tui backend on V, a
+What it is not: the CodeEditor (Scintilla through the fork, the Zig
+section's largest piece) and window hotkeys, the tui backend on V, a
 manifest the compiler embeds, a `--gui-backend` build the compiler runs
 (it says the build line), a hand on a real mouse (every run so far is
 scripted; the event wait is libui's own). Each is a day or less from
