@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-596. Next new bug: BUG-597.**
+**Last bug number generated: BUG-598. Next new bug: BUG-599.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,7 +46,21 @@
 
 ---
 
-### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passes `zebra -c` and fails inside zig "no field named 'bump'" -- OPEN (found 2026-10-16)
+### BUG-598: `adds` on a GENERIC class is accepted and the mixin's methods are never emitted -- zig "no field or member function named 'tag' in 'Box(i64)'" -- OPEN (found 2026-10-16)
+- **Found by:** checking BUG-595's edges. `class Box(T) adds Tagged`, `Box(int)().tag("g")`:
+  `zebra -c` passes, and `genGenericClass` returns before `genClass`'s mixin loop, so neither
+  the mixin's methods nor (since BUG-595) its fields reach the instantiated struct. Pre-existing
+  on 746847a for the methods.
+- **Fix direction:** route both mixin loops (methods, and `mixinFieldDecls`) through the generic
+  emitter, or refuse `adds` on a generic class until then. Control: the probe prints `g`.
+
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passes `zebra -c` and fails inside zig "no field named 'bump'" -- OPEN, DECIDED: support it, by reference (found 2026-10-16)
+- **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
+  functional approaches". A bound method is a closure over its receiver. For a STRUCT
+  receiver it refers to the VARIABLE, not a copy (Sean chose this over C#'s copy semantics),
+  consistent with BUG-569's by-reference capture -- so a bound struct method that outlives
+  its variable needs the escaping-capture boxing BUG-569 still owes. Class receivers can
+  land first; struct receivers with BUG-569's design.
 - **Found by:** writing BUG-594's positive control. `c.bump` with `bump` a method of C, bound
   to a `sig` variable: the front end accepts it (BUG-594 deliberately does not refuse a
   method's name as a member, since it IS a member) and codegen has no bound-method form, so it
@@ -54,15 +68,6 @@
 - **Decision needed:** support it (a closure over the receiver -- C#'s method-group
   conversion, which Sean's by-reference capture decision, BUG-569, points toward) or refuse
   it in the front end naming the lambda spelling (`def(): int  return c.bump()`).
-
-### BUG-595: a `var` declared in a MIXIN is accepted and never emitted -- reading it fails inside zig "no field named" -- OPEN (found 2026-10-16)
-- **Found by:** BUG-594's positive control. `mixin Named` with `var label: str = "m"`,
-  `class C adds Named`, `c.label`: `zebra -c` passes (the checker merges the mixin's members,
-  fields included), and the class is emitted without the field. QUICKSTART §16 says `adds`
-  "includes methods from a mixin declaration" -- fields are not documented either way.
-- **Decision needed:** emit mixin fields into each class that `adds` the mixin, or refuse a
-  `var` in a mixin at its declaration. Until then BUG-594's member check accepts the name
-  (the checker's table has it), so this stays a zig error.
 
 ### BUG-592: a field default that uses a module-level function or constant inside an expression is refused -- "cannot infer the type of `B`, an operand of `+`" -- OPEN (found 2026-10-16)
 - **Found by:** writing BUG-519's fixture. One file, no modules:

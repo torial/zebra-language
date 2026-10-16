@@ -4132,6 +4132,20 @@ struct Generator
         genType(ta.base)
         w.emit(";\n")
 
+    # BUG-595: the fields of every mixin class `n` adds (already named by
+    # AstBuilder.mixinFieldName), in mixin order then declaration order.
+    def mixinFieldDecls(n: DeclClass): List(Decl)
+        var out = List(Decl)()
+        for mixin_ref in n.mixins
+            if mixin_ref is TypeRef.named as nr
+                for mdecl in module_decls
+                    if mdecl is Decl.mixin_ as mx
+                        if mx.name == nr.name
+                            for mmem in mx.members
+                                if mmem is Decl.var_
+                                    out.add(mmem)
+        return out
+
     # BUG-576: a class's type tag. `_ttag_<C>` is a FILE-PRIVATE constant of the module
     # that declares C, so `x is Dog` with Dog from a used module named an undeclared
     # identifier. The tag is `_zbr_hash` of the bare class name wherever it is computed,
@@ -5695,14 +5709,24 @@ struct Generator
         w.emit("pub const ")
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(" = struct {\n")
+        # BUG-595: the class's members plus the FIELDS of every mixin it `adds` (stored
+        # under AstBuilder.mixinFieldName, private to the mixin). They are fields of this
+        # class: emitted below and filled by both constructor paths (the synthetic `init`
+        # and a `cue init`'s prologue walk `owner_members`). Until 2026-10-16 a mixin `var`
+        # was dropped here and every read of it failed inside zig.
+        var all_members = List(Decl)()
+        for am in n.members
+            all_members.add(am)
+        for mxf in mixinFieldDecls(n)
+            all_members.add(mxf)
         var ig0 = indented()
         var ig1 = ig0.withOwner(n.name)
-        var ig2 = ig1.withOwnerMembers(n.members)
+        var ig2 = ig1.withOwnerMembers(all_members)
         var ig  = ig2.withOwnerInvariants(n.invariants)
         ig.line("_type_tag: u64 = _ttag_${n.name},")
         # Pass 1 — all struct FIELDS first (Zig rejects a declaration between
         # fields): instance fields (skip static) + @once cache fields.
-        for decl in n.members
+        for decl in all_members
             if decl is Decl.var_ as fld
                 if not fld.mods.is_static
                     ig.genFieldDecl(fld)
@@ -5755,7 +5779,7 @@ struct Generator
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
-            for fdecl in n.members
+            for fdecl in all_members                       # BUG-595: mixin fields too
                 if fdecl is Decl.var_ as fld
                     if dig.needsPrefill(fld)
                         dig.genFieldPrefill("self.", fld)     # BUG-501 1c

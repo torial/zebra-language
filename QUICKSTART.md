@@ -1904,6 +1904,29 @@ if obj is Printable
 - `implements` declares interface conformance — the compiler verifies all
   required methods exist via `comptime { Iface.check(@This()); }`.
 - `adds Mixin` includes methods from a mixin declaration.
+- **A mixin may keep state.** A `var` in a mixin becomes a field of every class that `adds`
+  it, and it is PRIVATE to the mixin: only the mixin's own methods name it (`.label`,
+  `this.label`, or a bare `label` the method does not declare itself). The class, and code
+  outside it, reach that state through the mixin's methods; naming the field directly is
+  refused (`field 'label' belongs to mixin 'Tagged' and is private to it`). A mixin has no
+  constructor, so each field needs a default -- except a container, which starts empty:
+  ```zebra
+  mixin Tagged
+      var label: str = "none"
+      var history: List(str)
+
+      def tag(t: str)
+          .history.add(.label)
+          .label = t
+
+      def describe(): str
+          return "${.label} after ${.history.count()} tag(s)"
+
+  class Box adds Tagged
+      var w: int = 1
+  ```
+  A mixin's methods are checked once on their own and once as each class that adds them, so
+  a method of the host they call resolves, and another mixin's private field does not.
 - `is Iface` checks interface conformance.  For a statically-typed value this is
   resolved at compile time (interfaces are structurally verified at `implements`):
   an interface-typed value satisfies its own interface, and a concrete class

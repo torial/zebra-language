@@ -1,0 +1,40 @@
+# BUG-595: a mixin may keep STATE. Each `var` in a mixin is a field of every class that
+# `adds` it, private to the mixin (Sean, 2026-10-16): only the mixin's methods name it, the
+# class reaches it through them. Until 2026-10-16 the field was dropped and every read of it
+# failed inside zig. Typed state on purpose -- a str in interpolation, a List, a condition, an
+# assignment -- because an int-only fixture passes even when inference misses the field
+# (BUG-226's class). Both reference forms (`.f`, `this.f`, bare `f`), a local that shadows a
+# field, two adopting classes (one with `cue init`, one without), and two instances to show
+# the state is per instance.
+mixin Tagged
+    var label: str = "none"
+    var history: List(str)
+    var hits: int = 0
+
+    def tag(t: str)
+        .history.add(label)
+        label = t
+        this.hits += 1
+
+    def describe(): str
+        var label = "shadow"
+        if .hits == 0
+            return "untagged (" + label + ")"
+        return "${.label} after ${this.history.count()} tag(s), hits ${hits}"
+
+class Box adds Tagged
+    var w: int = 1
+
+class Crate adds Tagged
+    var size: int
+    cue init(size: int)
+        .size = size
+
+def main()
+    var a = Box()
+    var b = Box()
+    a.tag("red")
+    a.tag("blue")
+    var c = Crate(3)
+    c.tag("heavy")
+    print("bug595: ${a.describe()} | ${b.describe()} | ${c.describe()} | ${c.size}")

@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-597: a mixin's method bodies were never type-checked -- an unknown method or a type mismatch in one passed `zebra -c` -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** working on BUG-595: the checker's mixin arms looked at type NAMES and
+  shadowing only; `checkDecl` had no mixin arm, so `s.toUpperX()` or `var n: int = "x"`
+  inside a mixin method reached zig, once per class that `adds` it. The shape of BUG-508
+  (struct methods) and BUG-572 (`extend` bodies), the third member of the family.
+- **Fix:** a mixin's members are checked like a class's, with the mixin as the current class
+  (its own fields resolve; a host method it calls on `this` is not refused). And each mixin's
+  methods are checked AGAIN as every class that adds it (checkModule), which is how they are
+  emitted: the host's members resolve there, and another mixin's private field is refused.
+  The 5 mixin-using files in this repo report the same error counts before and after (none in
+  zebra-ide or the GameEngine). Fixture `test/fail_fixtures/bug597_mixin_body_checked_test.zbr`.
+
+### BUG-595: a `var` declared in a MIXIN was accepted and never emitted -- reading it failed inside zig "no field named" -- FIXED 2026-10-16 (found 2026-10-16)
+- **Decision (Sean, 2026-10-16):** a mixin may keep state; its fields are ADDED to each class
+  that `adds` it, under a mangled name, PRIVATE to the mixin -- "functions/methods are the way
+  to expose state to the class".
+- **Fix, at ONE point:** AstBuilder.buildMixin stores mixin M's field `f` as `_mx_M__f` and
+  builds every reference in M's methods with that name -- `.f`, `this.f`, and a bare `f` the
+  method does not declare itself (parameters, locals, loop / `as` / catch / branch bindings;
+  a lambda's parameters and captures and a postfix `catch e` shadow it where they apply). So
+  the checker, codegen's inference and scanners and the emitter all see one spelling; genClass
+  emits the fields with the class's own and both constructor paths fill them (defaults, and
+  containers built empty). Naming the field from the class or from outside is refused --
+  `field 'count' belongs to mixin 'Counted' and is private to it -- reach it through the
+  mixin's methods` -- including from ANOTHER mixin's method (BUG-597's per-adopter check). A
+  mixin field with no default is refused at its declaration (a mixin has no constructor); a
+  container needs none. A `static` mixin field is refused by the parser already. QUICKSTART §16.
+- **Fixtures:** `test/bug595_mixin_fields_test.zbr` (typed state -- a str read in
+  interpolation, a List, a condition, an assignment -- all three reference forms, a local that
+  shadows a field, two adopting classes, one with `cue init`, and two instances; the old
+  compiler failed it inside zig) and `test/fail_fixtures/bug595_mixin_field_private_test.zbr`
+  (four refusals). Measured first: no mixin in this repo, zebra-ide or the GameEngine declares
+  a `var`, so no program could change. Not covered: a generic class that `adds` a mixin --
+  BUG-598, pre-existing.
+
 ### BUG-594: reading or assigning a field a user class or struct does not have passed `zebra -c` -- zig refused "no field named" -- FIXED 2026-10-16 (found 2026-10-16)
 - **Found by:** a typo in the BUG-593 change (`wi.expr` on a `PWith`, which has no such field):
   the regeneration accepted it and zig refused the compiler's own emit. Read and write, class

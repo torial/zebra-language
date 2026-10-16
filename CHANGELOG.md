@@ -110,6 +110,11 @@ confirmed via `tools/bootstrap_check.sh`.
   inside zig. And an undefined name inside a numeric `for`, an `allocate` or `in` block, a
   `require` / `ensure`, a `<<-` or a `for ... if` filter is reported too (BUG-593); they were
   never checked.
+- **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that
+  `adds` it, private to the mixin: its methods use it, and the class reaches it through
+  them; naming it from outside is refused, saying so. It used to be dropped, and every read
+  of it failed inside zig. A mixin's methods are now type-checked too (BUG-597) -- they never
+  were, so a mistake in one surfaced inside zig once per class using it.
 - **A misspelled field is reported by the front end (BUG-594):** reading or assigning a member
   a class or struct does not have -- `c.nothere`, `c.alsonot = 3` -- is refused by `zebra -c`
   (and so by the editor) naming the type's fields, instead of failing later inside zig.

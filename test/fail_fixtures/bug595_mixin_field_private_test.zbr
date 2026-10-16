@@ -1,0 +1,23 @@
+# BUG-595: a mixin's field is PRIVATE to the mixin -- the adopting class's own methods and
+# outside code are refused, saying so, and so is ANOTHER mixin's method naming it, and a
+# mixin field with no default (a mixin has no constructor; nothing else could set it). (A `static` mixin
+# field is refused by the parser.)
+mixin Counted
+    var count: int = 0
+    var name: str
+
+    def bump()
+        .count += 1
+
+mixin Snoop
+    def spy(): int
+        return .count
+
+class Thing adds Counted, Snoop
+    def peek(): int
+        return .count
+
+def main()
+    var t = Thing()
+    t.bump()
+    print(t.count)

@@ -3221,8 +3221,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # a dep's from its own table), so an unknown name is refused here, naming the
                 # fields. A method read as a value is not a field and is not refused.
                 if unknownUserMember(tn, m.member, ctx)
-                    ctx.addErr(ctx.file, m.span.line, m.span.col,
-                               "'" + tn + "' has no field '" + m.member + "'" + fieldListHint(tn, ctx))
+                    var owning_mixin: str = mixinOwningField(tn, m.member, ctx)
+                    if owning_mixin != ""
+                        # BUG-595: the state is the mixin's; the class reaches it by methods.
+                        ctx.addErr(ctx.file, m.span.line, m.span.col,
+                                   "field '" + m.member + "' belongs to mixin '" + owning_mixin + "' and is private to it -- reach it through the mixin's methods")
+                    else
+                        ctx.addErr(ctx.file, m.span.line, m.span.col,
+                                   "'" + tn + "' has no field '" + m.member + "'" + fieldListHint(tn, ctx))
                     return Type_.unknown_
             # Tuple element access: t.0, t.1, … — any index, parsed rather than
             # enumerated. This used to test `m.member` against the four literals
@@ -7291,6 +7297,28 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 checkSelfNamedMethod(m, file, ctx)
                 checkDecl(m, file, ctx, tc_result)
             ctx.current_class = saved_class
+        on Decl.mixin_ as dmx
+            # BUG-597: a mixin's method bodies were never checked -- checkDecl had no arm for
+            # a mixin, so an unknown method or a type mismatch in one passed `zebra -c` and
+            # failed inside zig, once per class that `adds` it. Checked like a class's, with
+            # the mixin as the current class (its table has its own fields; a host method it
+            # calls on `this` is not refused -- a mixin is written against classes it cannot
+            # name).
+            var saved_mclass: str = ctx.current_class
+            ctx.current_class = dmx.name
+            for mm in dmx.members
+                if mm is Decl.var_ as mdv
+                    # BUG-595: a mixin field is private to the mixin and a mixin has no
+                    # constructor, so nothing could ever give one without a default a value
+                    # -- it would start `undefined` (BUG-591's garbage read, guaranteed). A
+                    # container is built empty and needs none.
+                    if mdv.init_expr == nil and not builtAtConstruction(mdv.type_) and not mdv.mods.is_static
+                        ctx.addErr(file, mdv.span.line, mdv.span.col, "mixin field `" + mixinFieldPlainName(mdv.name) + "` needs a default -- a mixin has no constructor and its fields are private to it, so nothing else can set it (a container field starts empty and needs none)")
+                    checkVarDecl(mdv, file, ctx)
+                else if mm is Decl.method as mmd
+                    checkSelfNamedMethod(mm, file, ctx)
+                    checkDecl(mm, file, ctx, tc_result)
+            ctx.current_class = saved_mclass
         on Decl.struct_ as ds
             # BUG-359: struct FIELDS collide the same way class fields do (below).
             # BUG-508 (2026-09-30): a struct's METHOD bodies were never checked -- every
@@ -7533,9 +7561,34 @@ def fieldListHint(tn: str, ctx: InferCtx): str
     if ct_opt == nil
         ct_opt = ctx.dep_types.classOf(tn)
     if ct_opt as ct
-        if ct.field_order.len > 0
-            return " (fields: " + ct.field_order.join("/") + ")"
+        var shown: List(str) = List(str)()
+        for fname in ct.field_order
+            if not fname.startsWith("_mx_")           # a mixin's private state (BUG-595)
+                shown.add(fname)
+        if shown.len > 0
+            return " (fields: " + shown.join("/") + ")"
     return ""
+
+# BUG-595: AstBuilder.mixinFieldName stores mixin M's field f as `_mx_M__f` in every class
+# that `adds` M. The mixin's name when `tn` holds such a field for `member`, else "".
+def mixinOwningField(tn: str, member: str, ctx: InferCtx): str
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt as ct
+        var tail: str = "__" + member
+        for fname in ct.field_order
+            if fname.startsWith("_mx_") and fname.endsWith(tail) and fname.len > 4 + tail.len
+                return fname.substring(4, fname.len - tail.len)
+    return ""
+
+# BUG-595: the name a user wrote for a mixin field (`_mx_M__f` -> `f`).
+def mixinFieldPlainName(stored: str): str
+    if stored.startsWith("_mx_")
+        var sep: int = stored.indexOf("__")
+        if sep > 0
+            return stored.substring(sep + 2, stored.len)
+    return stored
 
 def methodListHint(ct: ClassTypes): str
     var names: List(str) = List(str)()
@@ -8155,6 +8208,24 @@ def checkModule(m: Module, file: str, ctx: InferCtx): TcResult
     var tc_result: TcResult = TcResult()
     for decl in m.decls
         checkDecl(decl, file, ctx, tc_result)
+    # BUG-595: a mixin's methods are emitted INTO each class that adds it, so they are also
+    # checked AS that class -- `this` is the host, its fields and methods resolve, and another
+    # mixin's private field is refused naming its owner. Checked on its own, a mixin cannot
+    # know its host, so unknown names there are left alone. A site wrong for two hosts the
+    # same way is reported once (addErr's exact-duplicate filter, BUG-319).
+    for cdecl in m.decls
+        if cdecl is Decl.class_ as mc
+            for mref in mc.mixins
+                if mref is TypeRef.named as mrn
+                    for mdecl in m.decls
+                        if mdecl is Decl.mixin_ as mxd
+                            if mxd.name == mrn.name
+                                var mx_saved: str = ctx.current_class
+                                ctx.current_class = mc.name
+                                for mm in mxd.members
+                                    if mm is Decl.method
+                                        checkDecl(mm, file, ctx, tc_result)
+                                ctx.current_class = mx_saved
     return tc_result
 
 

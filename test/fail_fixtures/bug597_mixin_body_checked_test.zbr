@@ -1,0 +1,17 @@
+# BUG-597: a mixin's method bodies were never type-checked, so these passed `zebra -c` and
+# failed inside zig, once per adopting class. Checked now like a class's.
+mixin M
+    def f(): int
+        var s: str = "x"
+        return s.toUpperX()
+
+    def g(): int
+        var n: int = "notanint"
+        return n
+
+class C adds M
+    var k: int = 0
+
+def main()
+    var c = C()
+    print(c.f())
