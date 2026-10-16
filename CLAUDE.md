@@ -753,7 +753,13 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   every checkout, so a rebuild in one tree restored
                                 #   another tree's generated files; per-checkout
                                 #   `${ZBR_BS}-*` or per-process `$$` instead. Run
-                                #   against HEAD's tools it named 42 sites).
+                                #   against HEAD's tools it named 42 sites);
+                                #   H13 an unescaped backtick inside "..." in a shell
+                                #   script -- a COMMAND SUBSTITUTION (2026-10-16: two smoke
+                                #   expectations quoting a field in backticks became
+                                #   "no value for field  of ...", one failing the FULL tier
+                                #   on a correct compiler, the other silently asserting less
+                                #   and still passing; `--rev 1bd2b14` names both).
                                 #   Suppress with
                                 #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
                                 #   because an unexplained suppression is how a gate goes
@@ -1821,6 +1827,20 @@ python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUI
                                 #   bearing / `expr_int` leaf, and it REFUSES if either tree has
                                 #   no walker opted in. Red-checked with the REAL attacker: the
                                 #   pre-fix Resolver, marked, gives 12 findings and exit 1.
+                                #   THREE TREES SINCE 2026-10-16 (BUG-593): the STATEMENT half
+                                #   (`stmt_*`, marker `# pnode-stmt-walker: exhaustive`, waiver
+                                #   `# pnode-stmt-walker-ok:`). `resolveStmt` ended in
+                                #   `else pass` and never walked a numeric `for`, `allocate`,
+                                #   `in`, `require`, `ensure` or `<<-`, so an undefined name in
+                                #   one passed `-c`. A payload is read WHOLE now
+                                #   (`stmt_require: List(PNode)` reaches PNode through its
+                                #   argument) and a payload-less variant is a leaf: without
+                                #   that the leaf control `stmt_pass` was not in the set and
+                                #   passed vacuously. Controls `stmt_for_num` / `stmt_pass`;
+                                #   a control not extracted REFUSES. Red-checked with the
+                                #   pre-fix Resolver: 7 findings, one per skipped kind. CANNOT
+                                #   SEE a field skipped inside a handled arm (the `for ... if`
+                                #   filter was one).
 bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK tier):
                                 #   `use foo` resolving to a prebuilt `foo.lib`/`.a` must
                                 #   LINK and the foreign call must return the right value.

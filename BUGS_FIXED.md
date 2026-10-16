@@ -6,6 +6,33 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-593: an undefined name inside a numeric `for`, an `allocate` / `in` block, a `require` / `ensure`, a `<<-` or a `for ... if` filter passed `zebra -c` -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** reading the Resolver's statement walker while fixing BUG-589: it ended in
+  `else pass` and handled 16 of the 24 statement kinds. A numeric `for` was not walked at all
+  -- bounds or body. zig refused the build with "use of undeclared identifier"; the front end
+  and the editor said nothing. BUG-571's shape (the expression half, fixed 2026-10-13) one
+  level up, invisible to `lint_expr_walkers` because it checked `expr_*` only.
+- **Fix:** every kind is walked except `with`'s body, whose top-level bare calls and
+  assignments are a rewrite to `obj.name` (QUICKSTART §39) this walker cannot tell from an
+  undefined name -- waived by name, its target walked. The INSTRUMENT: lint_expr_walkers has a
+  third tree, the `stmt_*` variants (`# pnode-stmt-walker: exhaustive`), reads a payload whole
+  (`List(PNode)`) and extracts payload-less variants as leaves (its leaf control had been
+  absent from the set, so it passed vacuously); red-checked with the pre-fix Resolver: 7
+  findings, one per skipped kind. Fixture `test/fail_fixtures/bug593_unwalked_stmt_test.zbr`.
+
+### BUG-589: a local declared inside one block was accepted when read from a SIBLING block -- FIXED 2026-10-16 (found 2026-10-15)
+- **Cause and fix:** the Resolver kept ONE flat `method_scope` per function, so a name declared
+  in an `if` stayed visible to the rest of it, while the Zig it emits is block-scoped. Every
+  nested statement list is a scope now (a snapshot of the table, restored after), and so is
+  every binding a construct introduces: `if x as y`, loop variables, a catch binding, a branch
+  arm's, a lambda's parameters and captures, a postfix `catch e`. Fixtures
+  `test/fail_fixtures/bug589_sibling_block_local_test.zbr` and `..._binding_scope_test.zbr`.
+- **Measured before landing (with BUG-593):** `zebra -c` error counts, old against new, over
+  2,931 files -- this repo, zebra-ide, the GameEngine. 63 differ, ALL in the engine's
+  `ported_scripts/` (machine-ported Lua, where a block's local is visible after it): every
+  added error is an "undefined name", and the sampled ones do not build with the old compiler
+  either. Nothing in this repo, the IDE or the engine's own code moved.
+
 ### BUG-591: a struct with no `cue init`, built with a field left out that has NO default, read undefined memory -- FIXED 2026-10-16 (found 2026-10-16)
 - **Found by:** BUG-519's probe. `struct R` (`var k: int`, others defaulted), `R()`: the field
   was emitted `= undefined` and left out of the literal, so `r.k` printed 0 in one module by

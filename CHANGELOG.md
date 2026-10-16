@@ -104,6 +104,12 @@ confirmed via `tools/bootstrap_check.sh`.
   as is a named argument that names no field. Such a field (in a struct with no `cue init`)
   used to be left undefined, so the program read whatever was in memory. A container field
   is still fine to leave out: it starts empty.
+- **A block is a scope in the front end too (BUG-589),** as it already was in the program: a
+  local declared inside an `if` (or a loop variable, an `as` binding, a catch binding) read
+  after its block is reported by `zebra -c` as an undefined name, instead of failing later
+  inside zig. And an undefined name inside a numeric `for`, an `allocate` or `in` block, a
+  `require` / `ensure`, a `<<-` or a `for ... if` filter is reported too (BUG-593); they were
+  never checked.
 - **A diagnostic inside a function body is reported once (BUG-578),** not twice.
 - **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
   list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a

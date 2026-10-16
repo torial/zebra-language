@@ -260,6 +260,19 @@ class Resolver
         for stmt in stmts
             .resolveStmt(stmt)?
 
+    # BUG-589: a BLOCK is a scope. `method_scope` was one flat table per function, so a
+    # local declared inside an `if` stayed visible to the rest of the function -- `zebra -c`
+    # accepted a read of it from a SIBLING block, and zig, whose blocks are scopes, refused
+    # "use of undeclared identifier". Every nested statement list -- and every binding a
+    # construct introduces (`if x as y`, loop variables, a catch binding, a branch arm's) --
+    # now lives in a scope that ends with its block: a snapshot of the table, restored after.
+    def resolveBlock(stmts: List(PNode)) throws
+        var saved = .method_scope.copy()
+        .resolveStmts(stmts)?
+        .method_scope = saved
+
+    # pnode-stmt-walker: exhaustive
+    # pnode-stmt-walker-ok: stmt_with its TOP-LEVEL bare calls and assignments are a rewrite to `obj.name` (QUICKSTART §39), which this walker cannot tell from an undefined name -- the body is not walked; its target is
     def resolveStmt(stmt: PNode) throws
         branch stmt
             on PNode.stmt_var as v
@@ -283,22 +296,42 @@ class Resolver
             on PNode.stmt_if as i
                 for expr in i.cond
                     .resolveExpr(expr)?
+                var if_saved = .method_scope.copy()
                 if i.is_capture as ic
                     .method_scope.put(ic, 4)
                     .symbol_count = .symbol_count + 1
                 .resolveStmts(i.then_stmts)?
-                .resolveStmts(i.else_stmts)?
+                .method_scope = if_saved
+                .resolveBlock(i.else_stmts)?
             on PNode.stmt_while as w
                 for expr in w.cond
                     .resolveExpr(expr)?
-                .resolveStmts(w.stmts)?
+                .resolveBlock(w.stmts)?
             on PNode.stmt_for_in as f
                 for expr in f.iter
                     .resolveExpr(expr)?
+                var fi_saved = .method_scope.copy()
                 for var_name in f.var_names
                     .method_scope.put(var_name, 4)
+                # BUG-593: the `for x in xs if <filter>` condition was never walked.
+                for expr in f.filter
+                    .resolveExpr(expr)?
                 .resolveStmts(f.stmts)?
-                .resolveStmts(f.else_stmts)?
+                .method_scope = fi_saved
+                .resolveBlock(f.else_stmts)?
+            on PNode.stmt_for_num as fnum
+                # BUG-593: a numeric `for` was not walked at all -- bounds or body.
+                for expr in fnum.start
+                    .resolveExpr(expr)?
+                for expr in fnum.stop_
+                    .resolveExpr(expr)?
+                for expr in fnum.step
+                    .resolveExpr(expr)?
+                var fn_saved = .method_scope.copy()
+                .method_scope.put(fnum.var_name, 4)
+                .resolveStmts(fnum.stmts)?
+                .method_scope = fn_saved
+                .resolveBlock(fnum.else_stmts)?
             on PNode.stmt_assign as a
                 for expr in a.target
                     .resolveExpr(expr)?
@@ -313,18 +346,47 @@ class Resolver
                 for expr in r.message
                     .resolveExpr(expr)?
             on PNode.stmt_try_catch as tc
-                .resolveStmts(tc.body_stmts)?
+                .resolveBlock(tc.body_stmts)?
+                var tc_saved = .method_scope.copy()
                 if tc.catch_binding != ""
                     .method_scope.put(tc.catch_binding, 4)
                 .resolveStmts(tc.catch_stmts)?
+                .method_scope = tc_saved
             on PNode.stmt_branch as br
                 for expr in br.subject
                     .resolveExpr(expr)?
                 for arm in br.arms
+                    var arm_saved = .method_scope.copy()
                     if arm.binding != ""
                         .method_scope.put(arm.binding, 4)
                     .resolveStmts(arm.stmts)?
-                .resolveStmts(br.else_stmts)?
+                    .method_scope = arm_saved
+                .resolveBlock(br.else_stmts)?
+            on PNode.stmt_with as wi
+                # The body is NOT walked (see the waiver above); its target is.
+                for expr in wi.target
+                    .resolveExpr(expr)?
+            on PNode.stmt_in as ins
+                # BUG-593: `in EXPR` and its block were not walked.
+                for expr in ins.expr
+                    .resolveExpr(expr)?
+                .resolveBlock(ins.stmts)?
+            on PNode.stmt_allocate as al
+                # BUG-593: `allocate SOURCE` and its block were not walked.
+                for expr in al.source
+                    .resolveExpr(expr)?
+                .resolveBlock(al.stmts)?
+            on PNode.stmt_require as rq
+                for expr in rq
+                    .resolveExpr(expr)?
+            on PNode.stmt_ensure as en
+                for expr in en
+                    .resolveExpr(expr)?
+            on PNode.stmt_copy_out as co
+                for expr in co.target
+                    .resolveExpr(expr)?
+                for expr in co.value
+                    .resolveExpr(expr)?
             on PNode.stmt_expr as inner
                 .resolveExpr(inner)?
             on PNode.stmt_print as arg_nodes
@@ -360,10 +422,12 @@ class Resolver
             on PNode.expr_catch as pca
                 for e in pca.expr
                     .resolveExpr(e)?
+                var pca_saved = .method_scope.copy()          # BUG-589: the binding is the fallback's
                 if pca.binding != ""
                     .method_scope.put(pca.binding, 4)
                 for e in pca.fallback
                     .resolveExpr(e)?
+                .method_scope = pca_saved
             on PNode.expr_chained_cmp as pcc
                 for e in pcc.operands
                     .resolveExpr(e)?
@@ -393,6 +457,7 @@ class Resolver
                 for e in pna.value
                     .resolveExpr(e)?
             on PNode.expr_lambda as plm
+                var plm_saved = .method_scope.copy()          # BUG-589: a lambda's names are its own
                 for lp in plm.params
                     .method_scope.put(lp.name, 3)
                 for lc in plm.captures
@@ -402,6 +467,7 @@ class Resolver
                 for e in plm.body_expr
                     .resolveExpr(e)?
                 .resolveStmts(plm.body_stmts)?
+                .method_scope = plm_saved
             on PNode.expr_id as id
                 if not .isInScope(id.name)
                     .errors.add(ResolveError(.fmtErrAt(id.line, id.col, "undefined name: '" + id.name + "'")))

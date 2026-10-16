@@ -1,0 +1,10 @@
+# BUG-593: the Resolver's statement walker skipped a numeric `for`, `allocate`, `in`,
+# `require` / `ensure` and the `for ... if` filter, so an undefined name inside any of them
+# passed `zebra -c` and failed inside zig. One per kind that a plain program can hold.
+def main()
+    for i in 0 .. 3
+        print(nope_fornum)
+    allocate Arena()
+        print(nope_allocate)
+    for x in [1, 2] if x > nope_filter
+        print(x)

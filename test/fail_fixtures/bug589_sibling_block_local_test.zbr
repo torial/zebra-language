@@ -1,0 +1,10 @@
+# BUG-589: a local declared inside one block, read from a SIBLING block. The Resolver kept one
+# flat scope per function, so `zebra -c` accepted this and zig refused "use of undeclared
+# identifier 'ft'". Each block is a scope now; so is each binding a construct introduces.
+def main()
+    var b = true
+    if b
+        var ft: int = 3
+        print(ft)
+    if b
+        print(ft)

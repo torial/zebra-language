@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-592. Next new bug: BUG-593.**
+**Last bug number generated: BUG-594. Next new bug: BUG-595.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,34 @@
 
 ---
 
+### BUG-594: reading or assigning a field a user class or struct does not have passes `zebra -c` -- zig refuses "no field named" -- OPEN (found 2026-10-16)
+- **Found by:** a typo in the BUG-593 change itself (`wi.expr` on a `PWith`, which has no
+  such field): the regeneration accepted it and zig refused the compiler's own emit.
+- **Repro:** one file, no modules:
+  ```zebra
+  class W
+      var target: int = 1
+
+  struct S
+      var a: int
+
+  def main()
+      var c = W()
+      var s = S(a: 1)
+      var x: int = c.nothere
+      print(s.nope)
+      c.alsonot = 3
+      print(x)
+  ```
+  `zebra -c` exits 0; the build fails inside zig at line 10. Read and write, class and struct,
+  and through a union payload binding (`on U.w as wi` then `wi.expr`). Loud but wrong: the
+  front end (and so the editor) says nothing about a misspelled field.
+- **Not fixed with BUG-589/593 on purpose:** the refusal needs every way a member can exist --
+  mixins merged in, dep types, generic classes, namespaced types, `with` bodies, reflection,
+  methods read as values -- and a corpus measurement over the engine first, like BUG-591's.
+- **Control when fixing:** the repro refused at each of its three sites, naming the type and
+  its fields; a mixin field, a dep struct's field and a generic class's field still accepted.
+
 ### BUG-592: a field default that uses a module-level function or constant inside an expression is refused -- "cannot infer the type of `B`, an operand of `+`" -- OPEN (found 2026-10-16)
 - **Found by:** writing BUG-519's fixture. One file, no modules:
   ```zebra
@@ -77,26 +105,6 @@
   WITH the value (its tag, or the vtable), rather than a per-interface list.
 - **Control when fixing:** the probe above must print `true` from `isShow`; a `Rock` that
   implements only `Named` must stay `false` from both sites.
-
-### BUG-589: a local declared inside one block is accepted when read from a SIBLING block -- `zebra -c` passes and zig refuses "use of undeclared identifier" -- OPEN (found 2026-10-15)
-- **Found by:** the BUG-584 edit misplaced an `if` and moved a use of `ft` out of the block that
-  declares it; the regeneration accepted it and zig failed on the compiler's own emit.
-- **Repro:**
-  ```zebra
-  def main()
-      var b = true
-      if b
-          var ft: int = 3
-          print(ft)
-      if b
-          print(ft)
-  ```
-  `zebra -c` exits 0; `zebra` fails inside zig at line 7. Loud but wrong: the user gets a Zig
-  diagnostic about a name Zebra should have refused, at the right line but in Zig's words.
-- **Likely cause:** the resolver's scope for an `if` body does not pop the names it declared
-  (or the checker's local table is function-wide), so the second block sees the first's local.
-- **Control when fixing:** the repro refused in the front end naming `ft`; a name declared
-  before both blocks still readable in each; shadowing in a nested block unchanged.
 
 ### BUG-583: one name, two types in SIBLING blocks -- the second binding is judged by the first: a destructure is refused, an `is ... as x` payload and a re-annotated `List` print with the wrong format -- OPEN (found 2026-10-14)
 - **Found by:** pattern search 3 -- a generator that declares `x` in two sibling scopes of one

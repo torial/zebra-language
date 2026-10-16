@@ -407,8 +407,49 @@ def check_h12(path, text, lines, tree=None):
     return out
 
 
+# --------------------------------------------------------------------------- H13
+# RECEIPT (2026-10-16): two smoke registrations expected a diagnostic quoting a field name in
+# backticks -- "no value for field `x` of struct 'P'..." -- inside DOUBLE quotes, where a
+# backtick is a command substitution. `x` ran as a command, the expectation became
+# "no value for field  of struct 'P'...", and the FULL tier went red on a correct compiler.
+# Its sibling was worse: "...has no field named `z`" lost its tail and still MATCHED, so the
+# registration silently asserted less than it said. Escape it (\`) or single-quote the text.
+def _dq_backticks(line):
+    """True when an unescaped backtick sits inside "..." (single quotes and comments respected)."""
+    dq = sq = esc = False
+    for i, ch in enumerate(line):
+        if esc:
+            esc = False
+            continue
+        if ch == "\\" and not sq:
+            esc = True
+            continue
+        if ch == "'" and not dq:
+            sq = not sq
+            continue
+        if ch == '"' and not sq:
+            dq = not dq
+            continue
+        if ch == "#" and not dq and not sq and (i == 0 or line[i - 1] in " \t"):
+            return False
+        if ch == "`" and dq:
+            return True
+    return False
+
+
+def check_h13(path, text, lines, tree=None):
+    out = []
+    for i, ln in enumerate(lines, 1):
+        if _dq_backticks(ln):
+            out.append(Hazard("H13", path, i,
+                              "an unescaped backtick inside \"...\" is a COMMAND SUBSTITUTION: "
+                              "the text between the backticks runs and is replaced by its "
+                              "output (usually nothing). Escape it (\\`) or use single quotes"))
+    return out
+
+
 PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6, check_h12]
-SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12]
+SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12, check_h13]
 
 
 def scan_text(path, text):
@@ -461,6 +502,7 @@ CONTROLS = {
     "H10": ("ctl_h10.sh", 'bash gates.sh | tail -5\nrc=$?\n'),
     "H11": ("ctl_h11.sh", 'comm -23 a.txt b.txt\n'),
     "H12": ("ctl_h12.sh", 'BS_PRE=/tmp/bs-pre\nrm -rf "$BS_PRE"\n'),
+    "H13": ("ctl_h13.sh", 'smoke_tc_fail t.zbr "has no field named `z`"\n'),
 }
 
 

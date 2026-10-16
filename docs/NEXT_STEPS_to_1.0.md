@@ -52,8 +52,10 @@ as they land, so this list stays the one place that says what is left.
      them BUG-519. Filed: BUG-590 (an `is Iface` inside the interface's own module misses
      classes from modules importing it), BUG-589 (a sibling block's local accepted).
      2026-10-16: BUG-519 FIXED (with BUG-591, an omitted no-default field now refused); the six
-     remaining diffs are same. Left: turn the transform into a tool, and the must-fail half
-     (messages must still map).
+     remaining diffs are same; the full re-sweep is 247/247. BUG-589 FIXED with BUG-593 (the
+     Resolver's statement walker skipped seven kinds; lint_expr_walkers checks `stmt_*` now).
+     Filed BUG-594 (an unknown field passes `-c`) -- loud-but-wrong, next. Left: turn the
+     transform into a tool, and the must-fail half (messages must still map).
    - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381).
      STARTED 2026-10-14: one name, two types, sibling scopes, 10 binding sites x 30 type pairs
      (3,000 programs): BUG-583 (destructure and `is ... as` bindings) and BUG-582 (an
