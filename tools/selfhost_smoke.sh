@@ -1027,7 +1027,7 @@ smoke_tc_fail test/arg_anchor_test.zbr "type mismatch: expected int"
 # BUG-369 (2026-09-09): this is a FRONT-END refusal now, not a build failure -- the
 # audit's ask ("reads in Zebra terms, no generated-.zig leak") is met one phase earlier.
 smoke_tc_fail test/method_not_found_test.zbr "'str' has no method 'shout'"
-smoke_run_fail test/field_not_found_test.zbr "in struct 'P'"
+smoke_run_fail test/field_not_found_test.zbr "field_not_found_test.zbr:10:13: error: 'P' has no field 'y' (fields: x)"
 # Caret-specific: asserts the rendered source line appears in the TypeChecker's
 # type-mismatch diagnostic (only emitted when caretSuffix() works).
 smoke_tc_fail test/diag_type_mismatch_test.zbr 'var count: int = "not a number"'
@@ -1345,6 +1345,10 @@ smoke_tc_fail test/fail_fixtures/bug589_binding_scope_test.zbr "bug589_binding_s
 smoke_tc_fail test/fail_fixtures/bug593_unwalked_stmt_test.zbr "undefined name: 'nope_fornum'"
 smoke_tc_fail test/fail_fixtures/bug593_unwalked_stmt_test.zbr "undefined name: 'nope_allocate'"
 smoke_tc_fail test/fail_fixtures/bug593_unwalked_stmt_test.zbr "undefined name: 'nope_filter'"
+smoke_run test/bug594_member_accept_test.zbr "bug594: m 3 1 42 7 3 1 1"
+smoke_tc_fail test/fail_fixtures/bug594_unknown_field_test.zbr "bug594_unknown_field_test.zbr:12:20: error: 'W' has no field 'nothere' (fields: target)"
+smoke_tc_fail test/fail_fixtures/bug594_unknown_field_test.zbr "bug594_unknown_field_test.zbr:13:13: error: 'S' has no field 'nope' (fields: a)"
+smoke_tc_fail test/fail_fixtures/bug594_unknown_field_test.zbr "bug594_unknown_field_test.zbr:14:7: error: 'W' has no field 'alsonot' (fields: target)"
 smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:9:18: error: 'str' has no method 'toUpper'"
 smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:13:14: error: 'str' has no method 'toLower2'"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"

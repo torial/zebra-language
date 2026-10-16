@@ -1,0 +1,35 @@
+# BUG-594's control: the members the new "has no field" refusal must still ACCEPT -- a
+# mixin's METHOD, a static field, an extension method on a user struct, a private field
+# read inside its own class, a dep struct's and a dep class's fields and method. The
+# refusal itself is test/fail_fixtures/bug594_unknown_field_test.zbr.
+use bug594_member_accept_lib exposing DepPt, DepBox
+
+mixin Named
+    def label(): str
+        return "m"
+
+class Counter adds Named
+    static var created: int = 0
+    var n: int = 0
+    private var secret: int = 7
+    def bump(): int
+        .n += 1
+        return .n
+    def peek(): int
+        return .secret
+
+struct Q
+    var a: int
+
+extend Q
+    def twice(): int
+        return this.a * 2
+
+def main()
+    var c = Counter()
+    Counter.created = 3
+    var q = Q(a: 21)
+    var d = DepPt(x: 1, y: 2)
+    var b = DepBox()
+    b.items.add(9)
+    print("bug594: ${c.label()} ${Counter.created} ${c.bump()} ${q.twice()} ${c.peek()} ${d.x + d.y} ${b.items.count()} ${b.size()}")

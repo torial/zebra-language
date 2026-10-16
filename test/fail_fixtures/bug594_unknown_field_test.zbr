@@ -1,0 +1,15 @@
+# BUG-594: a member a user class or struct does not have, read or assigned, passed `zebra -c`
+# and failed inside zig ("no field named"). Refused now at each site, naming the fields.
+class W
+    var target: int = 1
+
+struct S
+    var a: int
+
+def main()
+    var c = W()
+    var s = S(a: 1)
+    var x: int = c.nothere
+    print(s.nope)
+    c.alsonot = 3
+    print(x)

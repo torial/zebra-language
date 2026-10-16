@@ -1,5 +1,6 @@
 # Audit #4: a field-not-found error names the Zebra class ('P', not 'mod.P') and
-# suppresses the generated-.zig note. Expected to fail at build.
+# suppresses the generated-.zig note. Since BUG-594 (2026-10-16) the FRONT END refuses it,
+# naming the fields; it used to fail at build with zig's remapped "no field named".
 class P
     var x: int
     cue init()

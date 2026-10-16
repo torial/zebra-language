@@ -3214,6 +3214,16 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if ctx.current_class != tn
                             ctx.addErr(ctx.file, m.span.line, m.span.col, "'" + m.member + "' is private")
                     return ft_v
+                # BUG-594: a member a USER class or struct does not have -- read or assigned
+                # (`c.nothere`, `c.alsonot = 3`) -- passed the front end and reached zig as
+                # "no field named". Its whole member set is known (fields and methods from
+                # populateModuleTypes, mixins merged, an `extend`'s methods under `$extend:`,
+                # a dep's from its own table), so an unknown name is refused here, naming the
+                # fields. A method read as a value is not a field and is not refused.
+                if unknownUserMember(tn, m.member, ctx)
+                    ctx.addErr(ctx.file, m.span.line, m.span.col,
+                               "'" + tn + "' has no field '" + m.member + "'" + fieldListHint(tn, ctx))
+                    return Type_.unknown_
             # Tuple element access: t.0, t.1, … — any index, parsed rather than
             # enumerated. This used to test `m.member` against the four literals
             # "0".."3", so `t.4` on a 5-tuple silently fell through to the generic
@@ -7497,6 +7507,35 @@ def interfaceHasMethod(ctx: InferCtx, iface: str, method: str, depth: int): bool
         if interfaceHasMethod(ctx, ifaceKeyBase(p), method, depth - 1)
             return true
     return false
+
+# BUG-594: `member` is not a field, method or extension of `tn`, a user class or struct whose
+# member set is fully known. False for anything else (interfaces, unions, enums, aliases,
+# generic instantiations, builtin-backed names) -- those are left to the arms that know them.
+def unknownUserMember(tn: str, member: str, ctx: InferCtx): bool
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt == nil
+        return false
+    var ct: ClassTypes = ct_opt!
+    if not (ct.is_class or ct.is_struct) or ct.is_interface
+        return false
+    if ctx.fieldTypeAny(tn, member) != nil
+        return false
+    if ctx.methodReturnAny(tn, member) != nil
+        return false
+    if ctx.methodReturnAny("$extend:" + tn, member) != nil
+        return false
+    return true
+
+def fieldListHint(tn: str, ctx: InferCtx): str
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt as ct
+        if ct.field_order.len > 0
+            return " (fields: " + ct.field_order.join("/") + ")"
+    return ""
 
 def methodListHint(ct: ClassTypes): str
     var names: List(str) = List(str)()

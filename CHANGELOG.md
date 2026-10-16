@@ -110,6 +110,9 @@ confirmed via `tools/bootstrap_check.sh`.
   inside zig. And an undefined name inside a numeric `for`, an `allocate` or `in` block, a
   `require` / `ensure`, a `<<-` or a `for ... if` filter is reported too (BUG-593); they were
   never checked.
+- **A misspelled field is reported by the front end (BUG-594):** reading or assigning a member
+  a class or struct does not have -- `c.nothere`, `c.alsonot = 3` -- is refused by `zebra -c`
+  (and so by the editor) naming the type's fields, instead of failing later inside zig.
 - **A diagnostic inside a function body is reported once (BUG-578),** not twice.
 - **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
   list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a

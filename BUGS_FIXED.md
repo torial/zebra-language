@@ -6,6 +6,30 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-594: reading or assigning a field a user class or struct does not have passed `zebra -c` -- zig refused "no field named" -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** a typo in the BUG-593 change (`wi.expr` on a `PWith`, which has no such field):
+  the regeneration accepted it and zig refused the compiler's own emit. Read and write, class
+  and struct, this module or a used one, and through a union payload binding.
+- **Fix:** the checker's member-read arm returned `unresolved` for a member it did not know,
+  silently, even when the receiver was a user class or struct whose whole member set is known
+  (fields and methods from populateModuleTypes, mixins merged, `extend` methods under
+  `$extend:`, a dep's own table). It refuses now -- `'W' has no field 'nothere' (fields:
+  target)` -- unless the name is a field, a method (a method read as a value is BUG-596) or
+  an extension. Interfaces, unions, enums, aliases and generic instantiations are left alone.
+  Fixtures `test/fail_fixtures/bug594_unknown_field_test.zbr` (three sites) and
+  `test/bug594_member_accept_test.zbr` (+ `_lib`: a mixin method, a static field, an
+  extension, a private field inside its class, a dep struct's and class's members -- the
+  same output on the compiler before and after). `field_not_found_test`'s expectation moved
+  from zig's remapped message to the front end's.
+- **Measured before landing:** the whole compiler's own source passed the new check (a full
+  rebuild). `zebra -c` error counts, before and after, over 2,937 files (this repo, zebra-ide,
+  the GameEngine): 26 differ -- the two fixtures above, and 24 of the engine's machine-ported
+  `ported_scripts/`, each a real missing member (`PlayersSvc` has no `LocalPlayer`;
+  `WorkspaceSvc` no `CurrentCamera`). Nothing in the engine's own code or the IDE moved. The
+  first attempt at this measurement used a copied compiler that could not find its runtime
+  files outside the repo and "counted" its panic line as an error; caught by reading a
+  sample, re-run with the compiler beside its installed preamble.
+
 ### BUG-593: an undefined name inside a numeric `for`, an `allocate` / `in` block, a `require` / `ensure`, a `<<-` or a `for ... if` filter passed `zebra -c` -- FIXED 2026-10-16 (found 2026-10-16)
 - **Found by:** reading the Resolver's statement walker while fixing BUG-589: it ended in
   `else pass` and handled 16 of the 24 statement kinds. A numeric `for` was not walked at all

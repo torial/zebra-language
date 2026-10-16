@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-594. Next new bug: BUG-595.**
+**Last bug number generated: BUG-596. Next new bug: BUG-597.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,33 +46,23 @@
 
 ---
 
-### BUG-594: reading or assigning a field a user class or struct does not have passes `zebra -c` -- zig refuses "no field named" -- OPEN (found 2026-10-16)
-- **Found by:** a typo in the BUG-593 change itself (`wi.expr` on a `PWith`, which has no
-  such field): the regeneration accepted it and zig refused the compiler's own emit.
-- **Repro:** one file, no modules:
-  ```zebra
-  class W
-      var target: int = 1
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passes `zebra -c` and fails inside zig "no field named 'bump'" -- OPEN (found 2026-10-16)
+- **Found by:** writing BUG-594's positive control. `c.bump` with `bump` a method of C, bound
+  to a `sig` variable: the front end accepts it (BUG-594 deliberately does not refuse a
+  method's name as a member, since it IS a member) and codegen has no bound-method form, so it
+  emits `c.bump` and zig refuses it as a field.
+- **Decision needed:** support it (a closure over the receiver -- C#'s method-group
+  conversion, which Sean's by-reference capture decision, BUG-569, points toward) or refuse
+  it in the front end naming the lambda spelling (`def(): int  return c.bump()`).
 
-  struct S
-      var a: int
-
-  def main()
-      var c = W()
-      var s = S(a: 1)
-      var x: int = c.nothere
-      print(s.nope)
-      c.alsonot = 3
-      print(x)
-  ```
-  `zebra -c` exits 0; the build fails inside zig at line 10. Read and write, class and struct,
-  and through a union payload binding (`on U.w as wi` then `wi.expr`). Loud but wrong: the
-  front end (and so the editor) says nothing about a misspelled field.
-- **Not fixed with BUG-589/593 on purpose:** the refusal needs every way a member can exist --
-  mixins merged in, dep types, generic classes, namespaced types, `with` bodies, reflection,
-  methods read as values -- and a corpus measurement over the engine first, like BUG-591's.
-- **Control when fixing:** the repro refused at each of its three sites, naming the type and
-  its fields; a mixin field, a dep struct's field and a generic class's field still accepted.
+### BUG-595: a `var` declared in a MIXIN is accepted and never emitted -- reading it fails inside zig "no field named" -- OPEN (found 2026-10-16)
+- **Found by:** BUG-594's positive control. `mixin Named` with `var label: str = "m"`,
+  `class C adds Named`, `c.label`: `zebra -c` passes (the checker merges the mixin's members,
+  fields included), and the class is emitted without the field. QUICKSTART §16 says `adds`
+  "includes methods from a mixin declaration" -- fields are not documented either way.
+- **Decision needed:** emit mixin fields into each class that `adds` the mixin, or refuse a
+  `var` in a mixin at its declaration. Until then BUG-594's member check accepts the name
+  (the checker's table has it), so this stays a zig error.
 
 ### BUG-592: a field default that uses a module-level function or constant inside an expression is refused -- "cannot infer the type of `B`, an operand of `+`" -- OPEN (found 2026-10-16)
 - **Found by:** writing BUG-519's fixture. One file, no modules:

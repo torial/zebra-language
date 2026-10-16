@@ -32,6 +32,7 @@ bug586_dep_struct_receiver_lib  # helper module imported by bug586_dep_struct_re
 bug587_dep_keyword_names_lib  # helper module imported by bug587_dep_keyword_names_test; has no main()
 bug588_dep_json_typed_lib  # helper module imported by bug588_dep_json_typed_test; has no main()
 bug519_dep_struct_defaults_lib  # helper module imported by bug519_dep_struct_defaults_test; has no main()
+bug594_member_accept_lib  # helper module imported by bug594_member_accept_test; has no main()
 bug238_except_lib  # helper module imported by other tests; has no main()
 bug476_sig_import_lib  # helper module imported by bug476_sig_import_test; has no main()
 bug496_module_init_lib  # helper module imported by bug496_module_runtime_init_test; has no main()

@@ -1,0 +1,9 @@
+# Helper module for bug594_member_accept_test: a struct and a class from ANOTHER module.
+struct DepPt
+    var x: int
+    var y: int
+
+class DepBox
+    var items: List(int) = List(int)()
+    def size(): int
+        return .items.count()
