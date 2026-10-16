@@ -2395,6 +2395,21 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-15 (both v-backend-poc merges, bee5556 / a11ac77, and their integration
+fixes 679f625 / 44d4119 / 06235b7 / fb60c45): 56/57 in ONE invocation at JOBS=2 on `fb60c45`, ~3 h,
+then `release-mode` green standalone -- ASSEMBLED.** smoke 719/719, round-trip byte-identical,
+`output_sweep` 466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `gramgen`, `leakgen` 100/0, `libui-section` 21/21, `libui-pin-build`, `node-addon`.
+**The red was `release-mode`'s GUI leg for the THIRD tier in two days, each green standalone (this
+time 1735 vs 5637 KB at 5% CPU)** -- and the gate could not say why: on a GUI failure it printed
+the RELEASE build's log whatever happened, and here the DEBUG build was the one that failed, so the
+evidence shown was a successful compile and the failing build's own log was deleted with its
+scratch dir. It now names the failed build, its exit code (124 = the 900 s timeout, said in words)
+and that build's log; red-checked with the debug build's timeout cut to 5 s. The likely cause --
+each run scaffolds into a fresh dir with a LOCAL .zig-cache, so libui-ng's C is compiled cold every
+time, under whatever load the tier carries -- is now checkable on the next occurrence rather than
+assumed.
+
 **DAILY tier 2026-10-14 (closing the night: BUG-570/571 `02042a4`, BUG-572..578 `48c5399`,
 filings `d84f772`): 56/57 in ONE invocation at JOBS=2 on the committed tree, ~74 min on a
 near-idle host.** smoke 719/719, round-trip byte-identical, `output_sweep` 466 identical,
