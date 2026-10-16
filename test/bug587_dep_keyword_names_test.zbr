@@ -1,0 +1,21 @@
+# BUG-587: names BUG-280 freed, exposed from a USED module. A lowercase exposed name was
+# taken for a function, so `class error` was bound as `_zbr_fn_error` ("undeclared
+# identifier"); and `Shape.volatile(12)` -- a union variant whose name the dep also uses
+# for a class -- was emitted as the cross-module constructor `Shape._zbr_ty_volatile`. A
+# namespace named for a Zig keyword (`opaque`, BUG-286 across a module) was bound and
+# referenced unescaped.
+use bug587_dep_keyword_names_lib exposing error, try, volatile, Shape, opaque
+
+def main()
+    var e = error()
+    var t = try(n: 3)
+    var s = Shape.volatile(12)
+    var k = 0
+    branch s
+        on Shape.volatile as v
+            k = v
+        on Shape.noalias as na
+            k = na.len
+    var vv = volatile()
+    var oh = opaque.Holder()
+    print("bug587: ${e.code()} ${t.n} ${k} ${vv.v} ${oh.bump()}")

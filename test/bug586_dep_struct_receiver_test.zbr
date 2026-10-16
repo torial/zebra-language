@@ -1,0 +1,13 @@
+# BUG-586: a mutating method of a USED module's struct, named like a builtin reader
+# (`count`), left the caller's local `const` -- BUG-455's exact receiver table was built
+# from THIS module's declarations, so a dep struct fell back to the name heuristic and zig
+# refused "expected type '*T', found '*const T'". Control: a same-named method that does
+# not mutate keeps the local `const` (zig refuses a `var` never mutated).
+use bug586_dep_struct_receiver_lib exposing Counter, Reader
+
+def main()
+    var c = Counter(n: 0)
+    var a = c.count()
+    var b = c.count()
+    var r = Reader(n: 1)
+    print("bug586: ${a} ${b} ${r.count()}")

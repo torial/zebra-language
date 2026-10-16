@@ -1,0 +1,16 @@
+# Helper module for bug581_dep_closure_factory_test: the closure factories live HERE.
+sig IntFn(): int
+sig StepFn(n: int): int
+
+def makeCounter(start: int): IntFn
+    return def(): int
+        capture
+            var count: int = start
+        count += 1
+        return count
+
+def makeAdder(base: int): StepFn
+    return def(n: int): int
+        capture
+            var b: int = base
+        return b + n

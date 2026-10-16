@@ -1,0 +1,41 @@
+# BUG-584: a VALUE into a `^T` / `^T?` slot of a USED module's struct is boxed. The field
+# types and the positional constructor of a struct with no `cue init` were known for THIS
+# module only, so a field assignment and a constructor argument handed zig a bare value,
+# "expected type '?*T', found 'T'". Struct and union payloads, both positions, and the
+# module-qualified spelling (`lib.Holder(lib.Pair(..))`, `x.s = lib.Shape.box(..)`), where
+# the dep's bare type name is not in scope here.
+use bug584_dep_boxed_slot_lib exposing Pair, Holder, Shape, SBox
+
+def main()
+    var h = Holder(opt_pair: nil)
+    h.opt_pair = Pair(3, 4)
+    var sum = 0
+    if h.opt_pair as p
+        sum = p.a + p.b
+    var c = Holder(Pair(5, 6))
+    var csum = 0
+    if c.opt_pair as cp
+        csum = cp.a + cp.b
+    var sb = SBox(s: nil)
+    sb.s = Shape.box(9)
+    var n = 0
+    if sb.s as sh
+        if sh is Shape.box as v
+            n = v
+    var sb2 = SBox(Shape.box(2))
+    var n2 = 0
+    if sb2.s as sh2
+        if sh2 is Shape.box as v2
+            n2 = v2
+    var q = bug584_dep_boxed_slot_lib.Holder(bug584_dep_boxed_slot_lib.Pair(1, 1))
+    var qsum = 0
+    if q.opt_pair as qp
+        qsum = qp.a + qp.b
+    var sb3 = SBox(s: nil)
+    sb3.s = bug584_dep_boxed_slot_lib.Shape.dot
+    sb3.s = bug584_dep_boxed_slot_lib.Shape.box(4)
+    var n3 = 0
+    if sb3.s as sh3
+        if sh3 is Shape.box as v3
+            n3 = v3
+    print("bug584: ${sum} ${csum} ${n} ${n2} ${qsum} ${n3}")

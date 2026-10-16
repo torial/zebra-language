@@ -1,0 +1,32 @@
+# BUG-580: `v is Show` on an interface VALUE with `Show` declared in a USED module. The
+# check called `_zbr_implements_Show`, a file-private function of the interface's module
+# that lists only ITS classes -- zig refused the undeclared name, and once reachable it
+# would have answered false for Cat, which implements Show HERE. Decided at the call site
+# now, over every class this module sees; Bell conforms through Loud (a dep interface that
+# extends Show).
+use bug580_dep_iface_is_lib exposing Named, Show, Loud, Dog, Rock
+
+class Cat implements Named, Show
+    def name(): str
+        return "cat"
+    def show(): str
+        return "a cat"
+
+class Bell implements Named, Loud
+    def name(): str
+        return "bell"
+    def show(): str
+        return "ding"
+    def shout(): str
+        return "DING"
+
+def main()
+    var xs = List(Named)()
+    xs.add(Dog("rex"))
+    xs.add(Rock())
+    xs.add(Cat())
+    xs.add(Bell())
+    var out: str = ""
+    for x in xs
+        out = out + " " + x.name() + "=" + (x is Show).toString()
+    print("bug580:" + out)

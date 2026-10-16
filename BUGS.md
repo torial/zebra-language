@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-588. Next new bug: BUG-589.**
+**Last bug number generated: BUG-590. Next new bug: BUG-591.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,39 +46,38 @@
 
 ---
 
-### BUG-588: `Json.parse(Point, s)` with `Point` from a USED module fails inside zig "expected type 'str', found 'type'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (json_parse_typed_test split): the typed-parse dispatch
-  recognises a target type declared in this module only.
+### BUG-590: an `is <Interface>` test INSIDE the interface's module misses implementers declared in modules that use it -- OPEN (found 2026-10-15)
+- **Found by:** probing BUG-580's fix. A dep declares `interface Show` and `def isShow(x:
+  Named): bool  return x is Show`; the main module declares `class Cat implements Named, Show`
+  and calls `isShow(c)`: prints `false`. `c is Show` in main prints `true`.
+- **Cause:** `_zbr_implements_<I>` is emitted by the interface's module and enumerates the
+  classes IT can see; a class in a module that imports that one is not among them. BUG-580
+  moved the decision to the `is` site, which helps exactly when the site is downstream of the
+  implementer. A site upstream of it can only be answered by whole-program knowledge: the
+  root module (which sees every module) or a per-class list of implemented interfaces carried
+  WITH the value (its tag, or the vtable), rather than a per-interface list.
+- **Control when fixing:** the probe above must print `true` from `isShow`; a `Rock` that
+  implements only `Named` must stay `false` from both sites.
 
-### BUG-587: a USED module's union with a keyword-named variant, and a top-level `def error()` exposed from a used module, name undeclared identifiers -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (bug280_keyword_idents: `Shape.volatile(12)` -> "use of
-  undeclared identifier 'Shape'"; bug280_freed_words_test: `error()` -> "use of undeclared
-  identifier 'error'"). BUG-280/281's escaping and prefixing of keyword-named things is not
-  applied to the exposed-name bindings genUse emits.
-
-
-### BUG-586: a mutating method of a USED module's struct, named like a builtin reader (`count`, `hash`), leaves the receiver `const` -- zig "expected '*T', found '*const T'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (bug455_struct_method_named_like_builtin,
-  bug453_cue_field_call_map_key split).
-- **Cause:** BUG-455's `_struct_recv` table (the exact `*` / `*const` receiver of every struct
-  method) is built from THIS module's declarations; a dep struct falls back to the method-name
-  heuristic, which calls `count` a reader. The dep's receivers have to cross the boundary
-  (ModuleTypes), as BUG-574..577 did for interfaces, generics, tags and aliases.
-
-
-### BUG-585: `[]` passed to a USED module's generic function -- zig "expected type '*T', found 'T'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (bug463_empty_list_arg, bug501_generic_empty_list split):
-  `first(int)([])`, `count(int)([])` with the generic function in the dep. BUG-463/501's
-  parameter-typed empty list covers this module's functions only.
-
-
-### BUG-584: a value into a `^T` slot of a USED module's struct is not boxed -- zig "expected type '?*T', found 'T'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2, the move-to-module transform: bug299_struct_into_boxed_slot,
-  bug473_boxed_union_tag and bug507_hat_optional_capture split into two modules. A field
-  assignment (`holder.opt_pair = Pair(...)`, `sb.s = Shape.box(9)`) and a constructor argument
-  (`Holder(Shape.square(2.0))`) into a dep type's `^T` / `^T?` field. BUG-299/473/507 fixed
-  these for types declared in the same module.
-
+### BUG-589: a local declared inside one block is accepted when read from a SIBLING block -- `zebra -c` passes and zig refuses "use of undeclared identifier" -- OPEN (found 2026-10-15)
+- **Found by:** the BUG-584 edit misplaced an `if` and moved a use of `ft` out of the block that
+  declares it; the regeneration accepted it and zig failed on the compiler's own emit.
+- **Repro:**
+  ```zebra
+  def main()
+      var b = true
+      if b
+          var ft: int = 3
+          print(ft)
+      if b
+          print(ft)
+  ```
+  `zebra -c` exits 0; `zebra` fails inside zig at line 7. Loud but wrong: the user gets a Zig
+  diagnostic about a name Zebra should have refused, at the right line but in Zig's words.
+- **Likely cause:** the resolver's scope for an `if` body does not pop the names it declared
+  (or the checker's local table is function-wide), so the second block sees the first's local.
+- **Control when fixing:** the repro refused in the front end naming `ft`; a name declared
+  before both blocks still readable in each; shadowing in a nested block unchanged.
 
 ### BUG-583: one name, two types in SIBLING blocks -- the second binding is judged by the first: a destructure is refused, an `is ... as x` payload and a re-annotated `List` print with the wrong format -- OPEN (found 2026-10-14)
 - **Found by:** pattern search 3 -- a generator that declares `x` in two sibling scopes of one
@@ -109,38 +108,6 @@
   literal. No collision is needed: `for i, x in ["ab", "cd"]` alone fails; the same loop over a
   variable (`var xs = [...]` / `for i, x in xs`) prints `0 ab` / `1 cd`. A half-built
   construct (shape 4): the index form's emit assumes a named list.
-
-
-### BUG-581: a capture closure returned by a USED module's factory fails inside zig "expected type '*T', found '*const T'" when called -- OPEN (found 2026-10-13)
-- **Found by:** pattern search 2 (closure_factory_test, fn_type_annotation_test split into
-  two modules): `var c = makeCounter(10)` / `c()` with `makeCounter` in the dep.
-- **Cause:** a capture closure mutates its own state when called, so its local must be `var`.
-  Codegen knows a function is a closure FACTORY only from THIS module's declarations
-  (`collectClosureFactories`), so a dep factory's result is emitted `const` and the runtime's
-  call helper takes `*T`. Same shape as BUG-575/576/577/579: a registry filled from the root
-  module only.
-- **Fix direction:** carry "returns a capture closure" across the boundary (ModuleTypes), or
-  decide `var` from the inferred type of the value rather than from the callee's name.
-
-### BUG-580: `v is Show` on an interface VALUE, with `Show` declared in a USED module, names an undeclared `_zbr_implements_Show` -- OPEN (found 2026-10-13)
-- **Found by:** pattern search 2 (generic_class_iface_test split into two modules).
-- **Cause:** `_zbr_implements_<I>` is a file-private function of the interface's module, and it
-  enumerates the classes declared IN THAT MODULE. Making it reachable is not enough: a class in
-  another module that implements `Show` would answer false.
-- **Fix direction:** membership has to be decided where all implementers are known -- e.g. a
-  per-class list of implemented interfaces carried with the type tag, or the vtable -- rather
-  than per interface module. The class-tag half (`x is Dog`) was BUG-576.
-
-
-### BUG-579: exposing a NAMESPACE from a used module fails inside zig "has no member named '_zbr_ty_Outer'" -- OPEN (found 2026-10-13)
-- **Found by:** pattern search 2, the move-to-module transform (nested_namespace_dotted_test,
-  nested_namespace_nested_test split into two modules).
-- **Cause:** `genUse` prefixes every exposed uppercase name as a type (`_zbr_ty_`), but a
-  namespace is emitted unprefixed (`pub const Outer = struct`). `namespace_names` is filled from
-  THIS module's declarations only, and the dep ModuleTypes do not record namespace names, so
-  genUse cannot tell an exposed namespace from a type.
-- **Fix direction:** carry namespace names in the dep tables (buildModuleTypes), and skip the
-  prefix for them in genUse as for sigs and interfaces. Control: the two fixtures above, split.
 
 
 ### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)

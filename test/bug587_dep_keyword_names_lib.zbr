@@ -1,0 +1,21 @@
+# Helper module for bug587_dep_keyword_names_test: keyword-named things live HERE.
+class error
+    def code(): int
+        return 7
+
+struct try
+    var n: int
+
+class volatile
+    var v: int = 1
+
+union Shape
+    volatile: int
+    noalias: str
+
+namespace opaque
+    class Holder
+        var k: int = 5
+
+        def bump(): int
+            return .k + 1

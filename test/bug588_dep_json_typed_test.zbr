@@ -1,0 +1,19 @@
+# BUG-588: `Json.parse(Point, s)` with Point from a USED module. The typed overload was
+# recognised only for a class declared in THIS module, so the call fell to the untyped
+# `_json_parse(Point)` and zig refused "expected type 'str', found 'type'". The declaring
+# module's strict parser is `pub` now and travels with the exposed type; parseStrict too,
+# and the module-qualified spelling `Json.parse(lib.Point, s)`.
+use bug588_dep_json_typed_lib exposing Point
+
+def main()
+    var out: str = "bug588:"
+    var p = Json.parse(Point, "{\"x\":3,\"y\":7}")
+    if p as pt
+        out = out + " ${pt.x} ${pt.y}"
+    var q = Json.parseStrict(Point, "{\"x\":1,\"y\":2}")
+    if q as qt
+        out = out + " ${qt.x} ${qt.y}"
+    var r = Json.parse(bug588_dep_json_typed_lib.Point, "{\"x\":5,\"y\":6}")
+    if r as rt
+        out = out + " ${rt.x}"
+    print(out)

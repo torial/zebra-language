@@ -87,6 +87,16 @@ confirmed via `tools/bootstrap_check.sh`.
   refinement type compiles (BUG-577). `x?.bump()` on an optional struct from a used module
   updates `x` (BUG-570's follow-up). Still open: an exposed namespace (BUG-579), `v is Iface`
   on an interface value (BUG-580), and a closure returned by a used module's factory (BUG-581).
+- **...and the rest of that sweep's findings (2026-10-15).** From a used module: an exposed
+  namespace (BUG-579); `v is Show` on an interface value, counting this module's classes too
+  (BUG-580); a closure from a factory, called repeatedly (BUG-581); a value assigned or passed
+  into a `^T` / `^T?` field, also when the module is used without `exposing` (`lib.Holder(
+  lib.Pair(1, 2))`) (BUG-584); `[]` passed to a generic function (BUG-585); a mutating struct
+  method named like a builtin reader such as `count` (BUG-586); a class named `error` or `try`,
+  and a union variant named like a class (BUG-587); and `Json.parse(Point, s)` /
+  `Json.parse(lib.Point, s)` (BUG-588). Each failed inside zig before. Still open: an `is
+  Iface` test inside the interface's own module misses classes from modules that import it
+  (BUG-590).
 - **A diagnostic inside a function body is reported once (BUG-578),** not twice.
 - **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
   list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a

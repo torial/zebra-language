@@ -1,0 +1,11 @@
+# Helper module for bug579_dep_namespace_test: the namespaces live HERE.
+namespace Outer
+    namespace Inner
+        static def greet(): str
+            return "hi"
+    static def twice(n: int): int
+        return n * 2
+
+namespace Tools.Text
+    static def shout(s: str): str
+        return s.upper()

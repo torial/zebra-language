@@ -1,0 +1,14 @@
+# Helper module for bug584_dep_boxed_slot_test: the `^T` slots live HERE.
+struct Pair
+    var a: int
+    var b: int
+
+struct Holder
+    var opt_pair: ^Pair?
+
+union Shape
+    dot
+    box: int
+
+struct SBox
+    var s: ^Shape?

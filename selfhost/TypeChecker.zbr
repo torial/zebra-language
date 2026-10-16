@@ -249,6 +249,14 @@ class ClassTypes
     # BUG-484: a method DECLARED `throws`, so a caller in another module knows its call
     # needs routing (the body alone misses a throws method that only propagates `?`).
     var throws_names: HashMap(str, bool)
+    # BUG-584: each field's DECLARED TypeRef. The Type_ above loses what codegen needs
+    # to box a value into a `^T` / `^T?` slot of a type declared in ANOTHER module (the
+    # spelling of the slot, not just what it holds); fn_param_lists carries parameters
+    # across the boundary for the same reason.
+    var field_refs: HashMap(str, TypeRef)
+    # BUG-584: instance field names in declaration order -- a struct with no `cue init`
+    # is constructed positionally, so a module that USES it maps an argument to its slot.
+    var field_order: List(str)
 
     cue init(name: str)
         .name = internString(name)
@@ -264,6 +272,21 @@ class ClassTypes
         fn_bodies = HashMap()
         method_deprecated = HashMap()
         throws_names = HashMap()
+        field_refs = HashMap()
+        field_order = List(str)()
+
+    def fieldNameAt(idx: int): str?
+        if idx < 0 or idx >= .field_order.len
+            return nil
+        return .field_order.at(idx)
+
+    def setFieldRef(field_name: str, tr: TypeRef)
+        .field_refs.put(internString(field_name), tr)
+
+    def fieldRef(field_name: str): TypeRef?
+        if .field_refs.contains(field_name)
+            return .field_refs.fetch(field_name)
+        return nil
 
     def setMethodThrows(method_name: str)
         .throws_names.put(internString(method_name), true)
@@ -414,6 +437,13 @@ class ModuleTypes
     # BUG-158: names of top-level module `var`/`const` declarations. Used by codegen
     # so an exposed cross-module module var is referenced as `alias._zbr_mv_name`.
     var module_vars: HashMap(str, bool)
+    # BUG-586: the DEPENDENCIES' struct receiver table (CodeGen.structReceiverTable's
+    # " Type.method+ " / "- " form), appended per dep by CodeGen.noteDepCodegenFacts.
+    var dep_struct_recv: str
+    # BUG-585: a generic function's type-parameter names ("T,U"), keyed as
+    # generic_fn_names is ("f" / "Class.m"), so a module CALLING a dep's generic
+    # function can substitute the call's type arguments into its parameter types.
+    var generic_fn_tparams: HashMap(str, str)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -435,6 +465,8 @@ class ModuleTypes
         all_enum_member_keys = List()
         generic_fn_names = HashMap()
         module_vars = HashMap()
+        dep_struct_recv = ""
+        generic_fn_tparams = HashMap()
 
     def addModuleVar(name: str)
         .module_vars.put(internString(name), true)
@@ -591,6 +623,23 @@ class ModuleTypes
 
     def hasGenericFn(fn_name: str): bool
         return .generic_fn_names.contains(fn_name)
+
+    def addGenericFnTypeParams(fn_name: str, tps: List(str))
+        var joined: str = ""
+        for tp in tps
+            if joined != ""
+                joined = joined + ","
+            joined = joined + tp
+        .generic_fn_tparams.put(internString(fn_name), internString(joined))
+
+    # The type-parameter names, or nil when `fn_name` is not a generic function here.
+    def genericFnTypeParams(fn_name: str): List(str)?
+        if not .generic_fn_tparams.contains(fn_name)
+            return nil
+        var out: List(str) = List(str)()
+        for part in .generic_fn_tparams.fetch(fn_name).split(",")
+            out.add(part)
+        return out
 
     def hasClass(class_name: str): bool
         return .classes.contains(class_name)
@@ -926,10 +975,13 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
             on Decl.var_ as v
                 if v.mods.is_private
                     mt.addPrivateMemberKey(ct.name, v.name)
+                if not v.mods.is_static
+                    ct.field_order.add(internString(v.name))       # BUG-584
                 if v.type_ != nil
                     var vt = v.type_!
                     var ft: Type_ = typeFromRef(vt)
                     ct.setField(v.name, ft)
+                    ct.setFieldRef(v.name, vt)                     # BUG-584
                     if isStrSetOrWrapped(ft)
                         mt.addStrSetField(v.name)
                     if isHashMapTypeRef(vt)
@@ -958,6 +1010,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 # top-level `identity(int)(42)` does rather than reaching Zig verbatim.
                 if m.type_params.len > 0
                     mt.addGenericFn(ct.name + "." + m.name)
+                    mt.addGenericFnTypeParams(ct.name + "." + m.name, m.type_params)   # BUG-585
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
                 else
@@ -1036,6 +1089,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 ct.is_class = true
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
+                # BUG-588: `Json.parse(Point, s)` in a module that USES this one needs to
+                # know Point is @reflectable (its declaring module emits the strict parser).
+                if c.mods.is_reflectable
+                    mt.addClass(ClassTypes("$refl:" + c.name))
                 var gcs: str = ""
                 var gps: str = ""
                 for tp in c.type_params
@@ -1207,6 +1264,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.len > 0
                     mt.addGenericFn(topfn.name)
+                    mt.addGenericFnTypeParams(topfn.name, topfn.type_params)   # BUG-585
             on Decl.var_ as mv
                 # BUG-158: record the module-var name so an exposed cross-module
                 # reference emits `alias._zbr_mv_name`.
@@ -1243,6 +1301,12 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Dotted name "Outer.Inner" → create ClassTypes for each path
                 # prefix; set each component as a named field of its parent.
                 var ns_parts: List(str) = ns_decl.name.split(".")
+                # BUG-579: the TOP-level namespace name crosses the module boundary under
+                # a `$ns:` pseudo-class (the `$sig:` shape), so a module that `use`s this
+                # one `exposing` the namespace can tell it from a type: a namespace is
+                # emitted unprefixed, a type under `_zbr_ty_`.
+                if mt.classOf("$ns:" + ns_parts.at(0)) == nil
+                    mt.addClass(ClassTypes("$ns:" + ns_parts.at(0)))
                 var ns_cur: str = ""
                 var ns_pi: int = 0
                 while ns_pi < ns_parts.len

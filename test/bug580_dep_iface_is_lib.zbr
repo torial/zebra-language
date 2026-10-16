@@ -1,0 +1,22 @@
+# Helper module for bug580_dep_iface_is_test: the interfaces live HERE.
+interface Named
+    def name(): str
+
+interface Show
+    def show(): str
+
+interface Loud implements Show
+    def shout(): str
+
+class Dog implements Named, Show
+    var n: str
+    cue init(n: str)
+        .n = n
+    def name(): str
+        return .n
+    def show(): str
+        return "dog " + .n
+
+class Rock implements Named
+    def name(): str
+        return "rock"

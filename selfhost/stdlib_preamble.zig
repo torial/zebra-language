@@ -129,6 +129,14 @@ pub fn _zbr_boxed(v: anytype) _ZbrBoxOf(@TypeOf(v)) {
     p.* = v;
     return p;
 }
+// BUG-584: the value type a `*T` / `?*T` slot points at -- how a value is boxed into a
+// `^T` field of a type declared in ANOTHER module, whose name may not be in scope here
+// (`x.s = lib.Shape.dot`: a payload-less variant is an enum literal, so @TypeOf(value)
+// would name the tag type, not the union).
+pub fn _ZbrSlotChild(comptime S: type) type {
+    const P = if (@typeInfo(S) == .optional) @typeInfo(S).optional.child else S;
+    return @typeInfo(P).pointer.child;
+}
 pub fn _ZbrBoxOf(comptime T: type) type {
     return if (@typeInfo(T) == .pointer) T else *T;
 }

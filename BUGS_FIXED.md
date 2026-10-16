@@ -6,6 +6,92 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-588: `Json.parse(Point, s)` with `Point` from a USED module failed inside zig "expected type 'str', found 'type'" -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** the typed overload was recognised only for a class declared in THIS module.
+  `@reflectable` now crosses the boundary (`$refl:<Class>` in the dep tables), the declaring
+  module's `_json_parse_strict_<Class>` is `pub`, an exposed reflectable class binds it beside
+  its type, and the module-qualified spelling `Json.parse(lib.Point, s)` reaches it through the
+  module binding (that spelling failed the same way before, exposing or not). `parseStrict` too.
+  Fixture `test/bug588_dep_json_typed_test.zbr` (+ `_lib`).
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-587: a USED module's keyword-named things (`class error`, a union variant `volatile`) named undeclared identifiers -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** two classification guesses. A LOWERCASE exposed name was taken for a
+  function (`const _zbr_fn_error = ...`) -- a lowercase dep CLASS/STRUCT is now asked of the dep
+  tables first and bound as a type. And `Shape.volatile(12)` was taken for the cross-module
+  constructor `module.Class(..)` because the dep also declares `class volatile` -- that path
+  now requires the object NOT to be a type or a local. Found by the full re-sweep: a dep
+  `namespace opaque` (BUG-286's keyword half, across a module) was bound and referenced
+  unescaped; both now take `@"opaque"`. Fixture `test/bug587_dep_keyword_names_test.zbr`
+  (+ `_lib`).
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-586: a mutating method of a USED module's struct, named like a builtin reader, left the receiver `const` -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** BUG-455's exact receiver table (`*` / `*const` per struct method) was built
+  from THIS module's declarations. Each dep's table is now computed by the same function, with
+  the same `--turbo` flag, and appended (`ModuleTypes.dep_struct_recv`, filled by
+  `CodeGen.noteDepCodegenFacts`, which main.zbr calls beside `populateModuleTypes` for every
+  dep). Fixture `test/bug586_dep_struct_receiver_test.zbr` (+ `_lib`), with a non-mutating
+  same-named control that must stay `const`.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-585: `[]` passed to a USED module's generic function failed inside zig "expected type '*T', found 'T'" -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** BUG-463/501's empty-list-for-a-generic-parameter looks the callee's type
+  parameters up to substitute them; `lookupFnTypeParams` searched THIS module only (its
+  sibling `lookupFnParams` already fell back to the dep tables). The type-parameter names now
+  cross with `generic_fn_names` (`ModuleTypes.genericFnTypeParams`). Fixture
+  `test/bug585_dep_generic_empty_list_test.zbr` (+ `_lib`): function, nested element, static.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-584: a value into a `^T` slot of a USED module's struct was not boxed -- zig "expected type '?*T', found 'T'" -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** three module-local lookups. A dep type's FIELD TypeRefs did not cross the
+  boundary (only their `Type_`), so `h.opt_pair = Pair(..)` found no `^T` slot -- `ClassTypes`
+  now carries each field's declared TypeRef and the declaration ORDER (a struct with no `cue
+  init` is constructed positionally, so its constructor arguments map to fields); the box
+  predicates accept a dep struct or union; and the `module.Class(args)` constructor gave its
+  arguments no parameter hint at all. A dep type's bare name is not in scope in a module that
+  uses it without `exposing`, so that box is spelled from the SLOT's type: a new runtime type
+  function `_ZbrSlotChild(@TypeOf(target))` (the value's own type is the TAG type for a
+  payload-less variant, `lib.Shape.dot`). Fixture `test/bug584_dep_boxed_slot_test.zbr` (+
+  `_lib`): struct and union, assignment and constructor, exposed and qualified.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-581: a capture closure returned by a USED module's factory failed inside zig "expected type '*T', found '*const T'" when called -- FIXED 2026-10-15 (found 2026-10-13)
+- **Cause and fix:** a closure that assigns its captures is called through `*T`, so its local
+  must be `var`; "this function is such a factory" was known from THIS module's declarations
+  only. `noteDepCodegenFacts` records `$cfm:<fn>` for each dep factory whose closure mutates,
+  with the root module's own two detectors (so the answers cannot drift). Fixture
+  `test/bug581_dep_closure_factory_test.zbr` (+ `_lib`), with a non-mutating control.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-580: `v is Show` on an interface value, with `Show` from a USED module, named an undeclared `_zbr_implements_Show` -- FIXED 2026-10-15 (found 2026-10-13); residual filed as BUG-590
+- **Cause and fix:** the membership function is file-private to the interface's module and
+  lists only ITS classes. For a dep interface the `is` site now decides inline, over every
+  class this module can see (its own and its deps'), conformance walked through BOTH tables
+  (a class here implementing a dep interface that extends `Show`), tags compared as
+  `_zbr_hash(<bare name>)` (BUG-576's spelling). Fixture `test/bug580_dep_iface_is_test.zbr`
+  (+ `_lib`): a dep class, a dep non-implementer, a class HERE, and one conforming through a
+  dep interface's `implements` -- the last two are what making the old function reachable
+  would have answered wrong.
+- **Not covered, BUG-590:** an `is` test inside the interface's OWN module still misses
+  implementers declared in modules that import it.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-579: exposing a NAMESPACE from a used module failed inside zig "has no member named '_zbr_ty_Outer'" -- FIXED 2026-10-15 (found 2026-10-13)
+- **Cause and fix:** genUse bound every exposed uppercase name as a type; a namespace is emitted
+  unprefixed. Top-level namespace names now cross the boundary (`$ns:<Name>`, the `$sig:`
+  shape), genUse binds them bare, and the using module registers them as namespaces rather than
+  struct types. Fixture `test/bug579_dep_namespace_test.zbr` (+ `_lib`): nested and dotted.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
 ### BUG-578: a diagnostic inside a function body printed TWICE -- FIXED 2026-10-13 (found 2026-10-13)
 - **Found by:** BUG-572's fixture reported its one error twice at the same line and column.
   Not extend-specific: a top-level `def` and a struct method did the same on HEAD.
