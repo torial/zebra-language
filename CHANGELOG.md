@@ -97,6 +97,13 @@ confirmed via `tools/bootstrap_check.sh`.
   `Json.parse(lib.Point, s)` (BUG-588). Each failed inside zig before. Still open: an `is
   Iface` test inside the interface's own module misses classes from modules that import it
   (BUG-590).
+- **A struct from a used module can be built with fields left out (BUG-519)** -- `R(k: 3)`
+  was refused inside zig "expected 3 argument(s), found 1"; its defaults now apply, computed
+  by the module that declares them. With it, the move-to-module sweep is clean.
+- **Leaving out a struct field that has no default is refused (BUG-591),** naming the field,
+  as is a named argument that names no field. Such a field (in a struct with no `cue init`)
+  used to be left undefined, so the program read whatever was in memory. A container field
+  is still fine to leave out: it starts empty.
 - **A diagnostic inside a function body is reported once (BUG-578),** not twice.
 - **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
   list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a

@@ -50,8 +50,10 @@ as they land, so this list stays the one place that says what is left.
      FIXED BUG-579/580/581/584..588 (plus a keyword-named dep namespace, and the qualified
      `lib.X` spellings of 584/588); the re-sweep is 7 diffs of 247 (was 30), none new, six of
      them BUG-519. Filed: BUG-590 (an `is Iface` inside the interface's own module misses
-     classes from modules importing it), BUG-589 (a sibling block's local accepted). Left:
-     BUG-519, turn the transform into a tool, and the must-fail half (messages must still map).
+     classes from modules importing it), BUG-589 (a sibling block's local accepted).
+     2026-10-16: BUG-519 FIXED (with BUG-591, an omitted no-default field now refused); the six
+     remaining diffs are same. Left: turn the transform into a tool, and the must-fail half
+     (messages must still map).
    - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381).
      STARTED 2026-10-14: one name, two types, sibling scopes, 10 binding sites x 30 type pairs
      (3,000 programs): BUG-583 (destructure and `is ... as` bindings) and BUG-582 (an
@@ -69,8 +71,8 @@ as they land, so this list stays the one place that says what is left.
 1b. **Loud but wrong** -- the user gets a refusal or a Zig error for a program that is fine.
    - [x] BUG-527 (FIXED 2026-10-10) -- `h.listener = v` inside a method, `h` a class from another module with an
      interface-typed field, is typed by the enclosing class's same-named field; zig refuses.
-   - [ ] BUG-519 -- another module's struct built by named arguments ignores its defaults
-     (refused "expected 2 argument(s)").
+   - [x] BUG-519 (FIXED 2026-10-16) -- another module's struct built by named arguments ignores its defaults
+     (refused "expected 2 argument(s)"). With it BUG-591: an omitted no-default field read undefined memory.
    - [ ] BUG-237 -- a union used without `exposing` mis-emits `^T` payloads (zig refuses).
    - [ ] The "fails inside zig" class: BUG-546, 531, 534.
    - [ ] The cue leaks the book audit found (2026-10-10), each `-c` rc=0 then a zig error:

@@ -2395,6 +2395,17 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-16 (closing the evening of 10-15: the dep-module boundary pass, BUG-579..588,
+`09ca5ea`): 57/57 PASS in ONE invocation at JOBS=2 on the committed tree, 71 min, pushed on green.**
+smoke 727/727, round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical (466 cache
+misses -- the pass moved every emit), `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `release-mode` all checks including the GUI leg that had failed three tiers running,
+`gramgen` 0/0, `leakgen` 100/0, `node-addon`. **The first daily after a REBOOT, and the timing is the
+receipt for the 10-15 A/B:** the previous daily took ~3 h on the same machine. That evening the same 60
+build-and-run fixtures took 350 s before a reboot (16 days up, ~11 GB of RAM unaccounted for) and 81 s
+after, Defender on both times; Defender itself costs ~14% on a freshly booted host. **When the tiers
+run 3x slow at low CPU, check uptime and free RAM before suspecting the change.**
+
 **DAILY tier 2026-10-15 (both v-backend-poc merges, bee5556 / a11ac77, and their integration
 fixes 679f625 / 44d4119 / 06235b7 / fb60c45): 56/57 in ONE invocation at JOBS=2 on `fb60c45`, ~3 h,
 then `release-mode` green standalone -- ASSEMBLED.** smoke 719/719, round-trip byte-identical,
@@ -3326,7 +3337,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **827** <!-- doc-gen: 827 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **829** <!-- doc-gen: 829 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

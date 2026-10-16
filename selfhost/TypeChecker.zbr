@@ -257,6 +257,11 @@ class ClassTypes
     # BUG-584: instance field names in declaration order -- a struct with no `cue init`
     # is constructed positionally, so a module that USES it maps an argument to its slot.
     var field_order: List(str)
+    # BUG-519: instance fields CONSTRUCTION SUPPLIES -- declared with a default, or an
+    # uninitialised container (BUG-501 1c builds it empty). A call may leave them out; the
+    # declaring module computes the value (`_zbr_dflt_<field>()`), and BUG-591's refusal
+    # applies to every other omitted field.
+    var field_defaults: HashMap(str, bool)
 
     cue init(name: str)
         .name = internString(name)
@@ -274,6 +279,10 @@ class ClassTypes
         throws_names = HashMap()
         field_refs = HashMap()
         field_order = List(str)()
+        field_defaults = HashMap()
+
+    def fieldHasDefault(field_name: str): bool
+        return .field_defaults.contains(field_name)
 
     def fieldNameAt(idx: int): str?
         if idx < 0 or idx >= .field_order.len
@@ -969,6 +978,18 @@ def isListTypeRef(tr: TypeRef): bool
         else
             return false
 
+# BUG-519 / BUG-591: a field type construction always builds (BUG-501 1c) -- the same
+# set as CgHelpers.isContainerTypeRef, which this module cannot import.
+def builtAtConstruction(tr: TypeRef?): bool
+    if tr == nil
+        return false
+    var t: TypeRef = tr!
+    if t is TypeRef.generic as g
+        return g.name == "List" or g.name == "HashMap" or g.name == "Set"
+    if t is TypeRef.named as n
+        return n.name == "StringBuilder"
+    return false
+
 def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
     for member in members
         branch member
@@ -977,6 +998,8 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     mt.addPrivateMemberKey(ct.name, v.name)
                 if not v.mods.is_static
                     ct.field_order.add(internString(v.name))       # BUG-584
+                    if v.init_expr != nil or builtAtConstruction(v.type_)
+                        ct.field_defaults.put(internString(v.name), true)   # BUG-519
                 if v.type_ != nil
                     var vt = v.type_!
                     var ft: Type_ = typeFromRef(vt)
@@ -5699,6 +5722,65 @@ def checkNamedArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
         if p2.default_ == nil
             ctx.addErr(file, cline, ccol, "no argument for parameter `" + p2.name + "` of " + what + ", which has no default -- it takes " + takes)
 
+# BUG-591: a struct with no `cue init` is built from its fields -- positionally in
+# declaration order, or by name. A field the call leaves out takes its declared default;
+# one with NO default was left `undefined` by the emit, so the program read whatever was in
+# memory (a local construction happened to print 0; the same construction from another
+# module printed 5371104312). BUG-540's rule for parameters, applied to fields: an omitted
+# field must have a default, and a name must name a field.
+def checkStructCtorFields(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if call.callee is Expr.ident as cid
+        checkStructCtorFieldsOf(cid.name, cid.span.line, cid.span.col, call, file, line, ctx)
+
+def checkStructCtorFieldsOf(sname: str, sline: int, scol: int, call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if ctx.hasLocal(sname)
+        return
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(sname)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(sname)
+    if ct_opt == nil
+        return
+    var ct: ClassTypes = ct_opt!
+    if not ct.is_struct or ct.fnParamList("init") != nil
+        return
+    var cline: int = line
+    var ccol: int = scol
+    if sline > 0
+        cline = sline
+    var fields: str = ""
+    for fl in ct.field_order
+        if fields != ""
+            fields = fields + ", "
+        fields = fields + fl
+    if fields == ""
+        fields = "none"
+    var npos: int = 0
+    for a1 in call.args
+        if a1.name == nil
+            npos = npos + 1
+        else
+            var known: bool = false
+            for f1 in ct.field_order
+                if f1 == a1.name!
+                    known = true
+            if not known
+                var al: int = cline
+                var ac: int = ccol
+                if a1.span.line > 0
+                    al = a1.span.line
+                    ac = a1.span.col
+                ctx.addErr(file, al, ac, "struct '" + sname + "' has no field named `" + a1.name! + "` -- its fields are " + fields)
+    var fi: int = 0
+    for f2 in ct.field_order
+        var given: bool = fi < npos
+        for a2 in call.args
+            if a2.name != nil
+                if a2.name! == f2
+                    given = true
+        if not given and not ct.fieldHasDefault(f2)
+            ctx.addErr(file, cline, ccol, "no value for field `" + f2 + "` of struct '" + sname + "', which has no default -- pass it (`" + sname + "(" + f2 + ": ...)`) or give the field a default")
+        fi = fi + 1
+
 def namedArgsIsStruct(name: str, ctx: InferCtx): bool
     if ctx.module_types.classOf(name) as mct
         return mct.is_struct
@@ -6025,6 +6107,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
             checkNamedArgs(c, file, line, ctx)    # BUG-540
+            checkStructCtorFields(c, file, line, ctx)   # BUG-591
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
             checkDeprecatedCall(c, ctx)
             if c.callee is Expr.member as cm

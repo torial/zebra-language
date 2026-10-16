@@ -842,6 +842,14 @@ var p2 = Point(y: 5)              # x=0 (default), y=5 (named)
 var p3 = Point(3, 4)              # positional — x=3, y=4
 ```
 
+- **A struct with no `cue init` is built from its fields** — positionally in declaration
+  order, or by name. A field may be left out only if construction supplies it: it has a
+  default (`var name: str = "r"`), or it is a container (`List`, `HashMap`, `Set`,
+  `StringBuilder`), which starts empty. Leaving out any other field is refused — `no value
+  for field 'k' of struct 'R', which has no default` — and so is a name that is not a field.
+  The same holds when the struct comes from a module you `use`; its defaults are computed in
+  the module that declares them.
+
 - `.field` is the canonical receiver-field access (works regardless of local
   shadowing).  Bare `field` is legal when no local shadows it but is more
   fragile to future edits.  `this.field` is non-canonical — see §26.

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-590. Next new bug: BUG-591.**
+**Last bug number generated: BUG-592. Next new bug: BUG-593.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,25 @@
 > measured in.
 
 ---
+
+### BUG-592: a field default that uses a module-level function or constant inside an expression is refused -- "cannot infer the type of `B`, an operand of `+`" -- OPEN (found 2026-10-16)
+- **Found by:** writing BUG-519's fixture. One file, no modules:
+  ```zebra
+  def base(): int
+      return 40
+
+  const B: int = 1
+
+  struct R
+      var bump: int = base() + 2
+      var c: int = B + 1
+  ```
+  Both defaults are refused naming `base(...)` / `B` (the same for a class field). A bare
+  `var bump: int = base()` is accepted, so the field-default context sees the name and does
+  not TYPE it inside an operator -- the shape BUG-306 records for module-scope declarations.
+  An over-refusal of valid code; the workaround is a `cue init`.
+- **Control when fixing:** the probe prints `42 2`; a default naming an undefined name is
+  still refused.
 
 ### BUG-590: an `is <Interface>` test INSIDE the interface's module misses implementers declared in modules that use it -- OPEN (found 2026-10-15)
 - **Found by:** probing BUG-580's fix. A dep declares `interface Show` and `def isShow(x:
@@ -372,12 +391,6 @@
 - `extern def f(p: ^byte, len: uint64): uint32` called as `f(p, text.len)` -> zig
   "expected type 'u64', found 'i64'"; `var u: uint64 = n` builds fine, and `int` has no
   unsigned conversion method. Reported by the book agent; NOT re-run here (needs a C dep).
-
-### BUG-519: constructing a struct from ANOTHER module by named arguments ignores its field defaults -- `R(k: 3)` is refused "expected 2 argument(s), found 1" -- OPEN (found 2026-10-03)
-- **Severity:** Low-Medium (a front-end refusal, not a leak, but wrong: the same construction works inside the struct's own module, so a default is usable only locally)
-- **Repro:** `fdep.zbr`: `struct R` with `var xs: List(int) = List(int)()` and `var k: int`; root: `use fdep exposing R` then `var r = R(k: 3)`.
-- **Found by:** BUG-501 1c's probes (2026-10-03). It also bounds 1c: since cross-module construction must pass every field, a struct literal never has to fill an omitted field of another module's struct -- the fill uses the module-local struct registry.
-- **Fix direction:** the arity check for a struct constructor should count only fields WITHOUT a default; the dep's struct decl (fields + which have defaults) must reach the root's checker. Then 1c's literal fill needs the dep's container fields too -- extend it with the same data.
 
 ---
 

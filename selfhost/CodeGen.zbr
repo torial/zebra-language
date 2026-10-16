@@ -4916,6 +4916,33 @@ struct Generator
                 w.emit(" };\n")
             ig.writeIndent()
             w.emit("}\n\n")
+            # BUG-519: a module that USES this one and constructs the struct by named
+            # arguments leaves defaulted fields out; their values are computed HERE, in
+            # the declaring module's scope (a default may name something private to it).
+            for df_decl in n.members
+                if df_decl is Decl.var_ as df_fld
+                    if not needsPrefill(df_fld)             # a default, or a container 1c builds
+                        continue
+                    ig.writeIndent()
+                    w.emit("pub fn _zbr_dflt_" + df_fld.name + "() ")
+                    if df_fld.type_ != nil
+                        ig.genType(df_fld.type_!)
+                    else
+                        w.emit("@TypeOf(")
+                        ig.genExpr(df_fld.init_expr!)
+                        w.emit(")")
+                    w.emit(" {\n")
+                    sig_ig.writeIndent()
+                    w.emit("return ")
+                    if df_fld.init_expr != nil
+                        sig_ig.genFieldInitExpr(df_fld.init_expr!, df_fld.type_)
+                    else
+                        w.emit("_zbr_new(")
+                        sig_ig.genType(df_fld.type_!)
+                        w.emit(")")
+                    w.emit(";\n")
+                    ig.writeIndent()
+                    w.emit("}\n\n")
         if n.invariants.len > 0 and not strip_contracts
             ig.genInvariantCheckFn()
         if n.ifaces.len > 0
@@ -15256,6 +15283,9 @@ struct Generator
             # BUG-587: `Shape.volatile(12)` -- a union variant whose name a dep ALSO
             # declares as a class -- is not `module.Class(..)`: the object must not be a type.
             var is_xm_ctor = isCrossModuleCtorCall(c.callee) or (.dep_types.hasClass(cm_mem!) and not isUserTypeName(cm_obj!) and not isLocalOrParamName(cm_obj!))
+            if is_xm_ctor and not unwrapped_imports.contains_(cm_obj!) and not namespace_names.contains_(cm_obj!)
+                if emitDepStructLiteral(cm_mem!, c.args, cm_obj!)   # BUG-519
+                    return
             if is_xm_ctor
                 # If genUse unwrapped this module (class_names), emit ClassName.init()
                 # Otherwise emit ModuleName.ClassName.init()
@@ -15527,6 +15557,8 @@ struct Generator
             # constructor call takes exactly the path it did before.
             var ctor_shadowed: bool = in_method and owner != "" and isOwnerMethod(id.name)
             if (class_names.contains_(id.name) or struct_with_init.contains_(id.name)) and not ctor_shadowed
+                if emitDepStructLiteral(id.name, c.args, "")   # BUG-519
+                    return
                 emitTypeName(id.name)                       # BUG-281 B
                 w.emit(".init(")
                 # Named-arg / default-fill path: any arg has a name, or caller passed
@@ -20397,6 +20429,65 @@ struct Generator
             return
         # BuildTarget methods chain — any unknown method returns self
         genExpr(obj)
+
+    # BUG-519: `R(k: 3)` with R a struct of a USED module that has no `cue init`. Its
+    # synthetic `init` takes every field, and a call that leaves some out reached zig as
+    # "expected 3 argument(s), found 1" -- defaults worked only inside R's own module. A
+    # call that omits fields is emitted as the struct literal the local path emits: the
+    # given fields, then each omitted DEFAULTED field from the declaring module's
+    # `_zbr_dflt_<field>()`. An omitted field with no default is left to the struct's own
+    # `= undefined`, exactly as a local construction leaves it (BUG-591). `mod` is the
+    # import alias for `lib.R(..)`, "" for an exposed name. False when nothing applies.
+    def emitDepStructLiteral(name: str, args: List(Arg), mod: str): bool
+        if mod == "" and isDeclaredHere(name)
+            return false
+        var dct_opt = .dep_types.classOf(name)
+        if dct_opt == nil
+            return false
+        var dct = dct_opt!
+        if not dct.is_struct or dct.fnParamList("init") != nil
+            return false
+        var named_any = false
+        var npos: int = 0
+        for a0 in args
+            if a0.name != nil
+                named_any = true
+            else
+                npos += 1
+        if not named_any and args.len >= dct.field_order.len
+            return false
+        var tsp: str = zbrTypeSymbol(name)
+        if mod != ""
+            tsp = modRef(mod) + "." + tsp
+        w.emit(tsp + "{")
+        var first = true
+        var fi: int = 0
+        for fname in dct.field_order
+            var given: Expr? = nil
+            if fi < npos
+                given = args.at(fi).value
+            else
+                for a1 in args
+                    if a1.name != nil and a1.name! == fname
+                        given = a1.value
+            if given != nil or dct.fieldHasDefault(fname)
+                if not first
+                    w.emit(",")
+                first = false
+                w.emit(" .")
+                emitName(fname)
+                w.emit(" = ")
+                if given as gv
+                    if dct.fieldRef(fname) as fpt
+                        if not genInterfaceArgCoercion(gv, fpt)
+                            genCallWithTypeHint(gv, fpt)
+                    else
+                        genExpr(gv)
+                else
+                    w.emit(tsp + "._zbr_dflt_" + fname + "()")
+            fi += 1
+        w.emit(" }")
+        return true
 
     # BUG-588: the type argument spelled through a module used WITHOUT `exposing`
     # (`Json.parse(lib.Point, s)`): the declaring module's `pub` strict parser, reached

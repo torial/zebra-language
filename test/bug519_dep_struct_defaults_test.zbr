@@ -1,0 +1,17 @@
+# BUG-519: a struct from a USED module with no `cue init`, built with some fields left out.
+# Its synthetic `init` takes every field, so the call reached zig as "expected 4
+# argument(s), found 1" -- defaults worked only inside the struct's own module. A call
+# that omits fields is the struct literal now, each omitted default computed by the
+# declaring module (`bump` names a constant private to it). Named, positional, mixed, and
+# the module-qualified spelling; a full positional call keeps `init`.
+use bug519_dep_struct_defaults_lib exposing R
+
+def main()
+    var a = R(k: 3)
+    a.xs.add(1)
+    a.tags.add("t")
+    var b = R(k: 4, name: "two")
+    var c = R(xs: [7, 8], k: 5)
+    var d = R([1], 6, "full", 0, ["x", "y"])
+    var e = bug519_dep_struct_defaults_lib.R(k: 9)
+    print("bug519: ${a.k} ${a.xs.count()} ${a.tags.count()} ${a.name} ${a.bump} | ${b.name} | ${c.xs.count()} | ${d.name} ${d.bump} ${d.tags.count()} | ${e.k} ${e.bump}")

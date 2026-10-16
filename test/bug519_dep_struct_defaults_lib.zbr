@@ -1,0 +1,12 @@
+# Helper module for bug519_dep_struct_defaults_test: the init-less struct lives HERE, with a
+# default that calls a function of THIS module (it must be evaluated here), and an
+# uninitialised container, which construction builds empty (BUG-501 1c).
+def base(): int
+    return 40
+
+struct R
+    var xs: List(int) = List(int)()
+    var k: int
+    var name: str = "r"
+    var bump: int = base()
+    var tags: List(str)

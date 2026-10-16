@@ -6,6 +6,33 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-591: a struct with no `cue init`, built with a field left out that has NO default, read undefined memory -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** BUG-519's probe. `struct R` (`var k: int`, others defaulted), `R()`: the field
+  was emitted `= undefined` and left out of the literal, so `r.k` printed 0 in one module by
+  luck and 5371104312 when R came from another. `zebra -c` accepted it. A fabricated value,
+  silently.
+- **Fix:** the checker refuses it -- `no value for field `k` of struct 'R', which has no
+  default -- pass it (`R(k: ...)`) or give the field a default` -- and a named argument that
+  names no field (`struct 'P' has no field named `z` -- its fields are x, y`; it reached zig
+  as "no field named"). BUG-540's rule for `cue init` parameters, applied to the fields of an
+  init-less struct. An uninitialised CONTAINER field is exempt: BUG-501 1c builds it empty,
+  which is defined. Measured before landing: across 1052 files in this repo, zebra-ide's 29
+  and the GameEngine's 1847, the only refusal was a container field (since exempt), and a
+  49-file engine sample reported the same error count before and after. Fixture
+  `test/fail_fixtures/bug591_struct_field_no_default_test.zbr` (both messages).
+
+### BUG-519: constructing a struct from ANOTHER module with fields left out ignored its defaults -- refused inside zig "expected 3 argument(s), found 1" -- FIXED 2026-10-16 (found 2026-10-03)
+- **Cause and fix:** the struct's module emits a synthetic `init` taking EVERY field, and a
+  caller that left some out passed fewer. A call that omits fields is now the struct literal
+  the local path emits: the given fields (with their slot types as hints, so a `^T` field
+  boxes and an interface field converts), and each omitted field construction supplies from
+  the DECLARING module's new `pub fn _zbr_dflt_<field>()` -- its default, evaluated where it
+  was written (a default may call something private there), or an empty container (BUG-501
+  1c). Which fields those are crosses in the dep tables (`ClassTypes.field_defaults`). A full
+  positional call keeps `init`. Fixture `test/bug519_dep_struct_defaults_test.zbr` (+ `_lib`):
+  named, positional, mixed, a private-function default, an uninitialised container, and the
+  qualified `lib.R(k: 9)`. The move-to-module sweep's six remaining diffs were all this.
+
 ### BUG-588: `Json.parse(Point, s)` with `Point` from a USED module failed inside zig "expected type 'str', found 'type'" -- FIXED 2026-10-15 (found 2026-10-14)
 - **Cause and fix:** the typed overload was recognised only for a class declared in THIS module.
   `@reflectable` now crosses the boundary (`$refl:<Class>` in the dep tables), the declaring
