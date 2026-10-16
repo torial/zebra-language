@@ -2415,6 +2415,20 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-16, second run (BUG-519/591 `1bd2b14`, BUG-589/593 `bf2f9db`, BUG-594
+`746847a`): 56/57 in ONE invocation at JOBS=2, 51 min, then `library-mode` green standalone twice
+-- ASSEMBLED.** smoke 739/739, round-trip byte-identical, `output_sweep` 466 identical,
+`full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover`, `release-mode`,
+`leakgen` 100/0. The red was BUG-302 (zig could not read std/deque.zig) in `library-mode`'s leg-2
+CONTROL, the one zig call in that gate without the retry -- so it said "the DebugAllocator
+reported no leak, so it cannot see one" about a host that never compiled. Both legs share one
+retrying runner now; red-checked with a `zig` that fails once with that error on leg 2 (the
+pre-fix gate refuses exactly as the daily did; the fixed one passes, `infra-retries=1`). The
+FULL on `1bd2b14` before it was 45/46, the red its own smoke registration: an unescaped
+backtick in a double-quoted expectation (hazard_lint H13 now). Each of the three refusals was
+measured first -- `-c` error counts before and after over ~2,930 files of this repo, zebra-ide
+and the GameEngine -- and only the engine's machine-ported `ported_scripts/` moved.
+
 **DAILY tier 2026-10-16 (closing the evening of 10-15: the dep-module boundary pass, BUG-579..588,
 `09ca5ea`): 57/57 PASS in ONE invocation at JOBS=2 on the committed tree, 71 min, pushed on green.**
 smoke 727/727, round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical (466 cache
