@@ -24,6 +24,14 @@ export ZEBRA_LIBUI_NG
 # the Common-Controls v6 manifest, from the Zig scaffold's text in selfhost/main.zbr
 sed -n '/^def luiManifest/,/^def /p' selfhost/main.zbr | sed -n '/<?xml/,/<\/assembly>/p' | sed 's/^.*<?xml/<?xml/' > "$OUT/app.manifest"
 grep -q "Common-Controls" "$OUT/app.manifest" || { echo "v_gui_check: the manifest text was not found in selfhost/main.zbr"; exit 3; }
+# embedded as an RT_MANIFEST resource, not laid beside the exe: V master embeds its
+# own (longPathAware) manifest after the link, and Windows then ignores a side file
+# (vlang/v#30968); a manifest the linker embedded is kept, on 0.5.2 and master alike
+WINDRES="$(dirname "$CLANG")/llvm-windres.exe"; [ -x "$WINDRES" ] || WINDRES=$(command -v llvm-windres || command -v windres || true)
+[ -n "$WINDRES" ] || { echo "v_gui_check: no llvm-windres beside $CLANG and none on PATH (the manifest must be embedded)"; exit 3; }
+printf '1 24 "app.manifest"\n' > "$OUT/app.rc"
+(cd "$OUT" && "$WINDRES" -i app.rc -o app_manifest.o -O coff) || { echo "v_gui_check: windres refused the manifest resource"; exit 3; }
+MANIFEST_OBJ="$(cd "$OUT" && pwd -W 2>/dev/null || pwd)/app_manifest.o"
 
 # build_and_run <name> <example.zbr> <script>: the trace in $OUT/<name>_run.txt
 build_and_run() {
@@ -31,8 +39,8 @@ build_and_run() {
   cp "$src" "$OUT/$name.zbr"
   zig-out/bin/zebra.exe --target v --gui-backend=libui_ng "$OUT/$name.zbr" > "$OUT/${name}_emit.txt" 2>&1 || { echo "v_gui_check: $name: the emit failed:"; head -5 "$OUT/${name}_emit.txt"; exit 3; }
   grep -q "the libui_ng section" "$OUT/${name}_emit.txt" || { echo "v_gui_check: $name: the emit did not append the section:"; head -3 "$OUT/${name}_emit.txt"; exit 3; }
-  cp "$OUT/app.manifest" "$OUT/$name.exe.manifest"
-  "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -subsystem console -gc none -enable-globals -o "$OUT/$name.exe" "$OUT/$name.v" > "$OUT/${name}_build.txt" 2>&1
+  rm -f "$OUT/$name.exe.manifest"   # (an older run's side file: the embedded one is the truth)
+  "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -ldflags "$MANIFEST_OBJ" -subsystem console -gc none -enable-globals -o "$OUT/$name.exe" "$OUT/$name.v" > "$OUT/${name}_build.txt" 2>&1
   [ -f "$OUT/$name.exe" ] || { echo "v_gui_check: $name: the V build failed:"; grep -E "error" "$OUT/${name}_build.txt" | head -6 | cut -c1-200; exit 4; }
   ZGUI_SCRIPT="$script" ZGUI_TRACE=1 "$OUT/$name.exe" > "$OUT/${name}_run.txt" 2> "$OUT/${name}_err.txt"; local rc=$?
   [ $rc = 0 ] || { echo "v_gui_check: $name: the program exited $rc:"; head -3 "$OUT/${name}_err.txt"; exit 5; }
