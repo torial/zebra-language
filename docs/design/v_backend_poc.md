@@ -1994,6 +1994,68 @@ re-test list there gains nothing from this round (none of the five is
 a 0.5.2 workaround), and the three master-only shapes above are the
 new entries to re-test when the pin moves.
 
+## The cost matrix re-measured, master against 0.5.2 (2026-10-20)
+
+Sean asked for the week-old numbers re-taken. The host was quiet (27
+percent CPU, 17 GB free), each build timed once, each emit of
+`selfhost/main.zbr` (the whole compiler, fourteen `.zig` files, 105,366
+lines) three times, the peak the OS's own PeakWorkingSetSize read
+through the process handle after exit (`C:/Projects/v-dist/measure.py`;
+the fresh ReleaseFast control took 136 s to build). Every V-built
+compiler's emit was byte-identical to the Zig control's.
+
+| compiler | build of zebra_v.exe (65,336-line main.v) | emit of main.zbr | peak |
+|---|---|---|---|
+| Zig Debug (the control) | -- | 12.7 s | 390 MB |
+| Zig ReleaseFast | 136 s | 1.57 s | 360 MB |
+| V 0.5.2, tcc, no collector | 3.3 s | 6.1 s | 588 MB |
+| V 0.5.2, tcc, Boehm | 4.0 s | 7.1 s | 209 MB |
+| V 0.5.2, clang 23 `-prod` | 49.6 s | 2.78 s | 585 MB |
+| V 0.5.2, MSVC `-prod` | 68.4 s | 2.60 s | 588 MB |
+| V master 7940bb1, any C compiler | refused: over 10 GB (14.3 GB when the limit is lifted, then killed) | -- | -- |
+
+So on 0.5.2 the optimized V-built compiler is 1.7x the Zig ReleaseFast
+build on the emit and 1.6x its memory, with Boehm the smallest process
+of all at the cost of a tenth in time -- the week-old ratios, re-read
+on a quiet host.
+
+Master could not build the compiler route at all, and the week-old row
+that said it could (1,096 MB under MSVC `-prod`, 2026-10-13) does not
+reproduce: the same 37b596b binary over its own vlib, on the Oct 12
+emission, trips the 10 GiB guard today, and `-check` alone does (0.5.2:
+481 MB). I cannot say what that row measured; the fallback to an old
+compiler the driver tries on failure (`v_old.exe`, dated Oct 14, is on
+this host now and was not then) is the candidate I would bet on, and
+the row is struck. The ladder's largest program (demo_test_prog.v,
+37,826 lines) builds under master at 9.8 GB in 29.7 s against 0.5.2's
+1.07 GB in 5.0 s; the curve on four smaller roots:
+
+| emitted program | lines | 0.5.2 peak | master peak | 0.5.2 / master wall |
+|---|---|---|---|---|
+| abbreviate_number_test | 1,430 | 216 MB | 301 MB | 1.5 / 4.3 s |
+| physics_test | 4,870 | 266 MB | 380 MB | 1.5 / 4.8 s |
+| net_figures_test | 11,871 | 447 MB | 931 MB | 2.3 / 10.4 s |
+| map_library_test | 14,295 | 473 MB | 1,405 MB | 2.3 / 11.2 s |
+| demo_test | 37,826 | 1,067 MB | 9,819 MB | 5.0 / 29.7 s |
+| main (the compiler) | 65,336 | 796 MB | over 14 GB | 3.3 s / refused |
+
+A synthetic program says what drives it: N small structs, each holding
+one `&ZList[string]` (one generic struct, one instantiation) and
+calling its methods. Master's `-check`: 100 structs 307 MB, 250
+structs 3.8 GB, 500 structs over 10 GB; the same program with the
+generic replaced by a plain `Strs` struct: 97 MB and 123 MB. V 0.5.2:
+72 to 157 MB either way. One generic instantiation used from N places
+costs master something far worse than linear in N -- the sixth ticket
+of the day (`repro_v13/gen_generic_curve.py`).
+
+The instrument hung itself once on the way: the first measure.py piped
+the child's stderr and drained it only after exit, and under its
+watchdog loop a compiler that printed more than the pipe's 64 KB of
+notices blocked on its own stderr -- which read as a V master hang for
+twenty minutes, across two builds, until 0.5.2 "hung" the same way. The
+stderr goes to a file now. A hang in the subject is the instrument
+until proven otherwise.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
