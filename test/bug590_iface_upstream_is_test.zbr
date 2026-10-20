@@ -1,0 +1,48 @@
+# BUG-590: `x is Show` INSIDE the interface's module answered false for an implementer
+# declared in a module that USES it -- the per-interface membership list could only name the
+# classes its own module could see. The value now carries its class's interfaces (in its
+# vtable), so the answer is the same from every module.
+use bug590_lib exposing Named, Show, Pet, isShow, isPet
+
+class Cat implements Named, Show
+    def name(): str
+        return "cat"
+
+    def show(): str
+        return "=^.^="
+
+class Rock implements Named
+    def name(): str
+        return "rock"
+
+class Dog implements Named, Pet
+    def name(): str
+        return "dog"
+
+    def show(): str
+        return "woof"
+
+    def legs(): int
+        return 4
+
+class Box(T) implements Named, Show
+    var v: T
+
+    cue init(v: T)
+        .v = v
+
+    def name(): str
+        return "box"
+
+    def show(): str
+        return "[]"
+
+def here(x: Named): bool
+    return x is Show
+
+def main()
+    var c: Named = Cat()
+    var r: Named = Rock()
+    var d: Named = Dog()
+    var b: Named = Box(int)(1)
+    print("bug590: ${isShow(c)} ${here(c)} | ${isShow(r)} ${here(r)} | ${isShow(d)} ${isPet(d)} ${isPet(c)} | ${isShow(b)} ${here(b)}")

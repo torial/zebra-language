@@ -1,0 +1,16 @@
+# BUG-590 helper: interfaces, and an `is` test, in a module that knows NONE of the classes.
+
+interface Named
+    def name(): str
+
+interface Show
+    def show(): str
+
+interface Pet implements Show
+    def legs(): int
+
+def isShow(x: Named): bool
+    return x is Show
+
+def isPet(x: Named): bool
+    return x is Pet

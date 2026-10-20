@@ -69,19 +69,6 @@
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
 
-### BUG-590: an `is <Interface>` test INSIDE the interface's module misses implementers declared in modules that use it -- OPEN (found 2026-10-15)
-- **Found by:** probing BUG-580's fix. A dep declares `interface Show` and `def isShow(x:
-  Named): bool  return x is Show`; the main module declares `class Cat implements Named, Show`
-  and calls `isShow(c)`: prints `false`. `c is Show` in main prints `true`.
-- **Cause:** `_zbr_implements_<I>` is emitted by the interface's module and enumerates the
-  classes IT can see; a class in a module that imports that one is not among them. BUG-580
-  moved the decision to the `is` site, which helps exactly when the site is downstream of the
-  implementer. A site upstream of it can only be answered by whole-program knowledge: the
-  root module (which sees every module) or a per-class list of implemented interfaces carried
-  WITH the value (its tag, or the vtable), rather than a per-interface list.
-- **Control when fixing:** the probe above must print `true` from `isShow`; a `Rock` that
-  implements only `Named` must stay `false` from both sites.
-
 ### BUG-583: one name, two types in SIBLING blocks -- the second binding is judged by the first: a destructure is refused, an `is ... as x` payload and a re-annotated `List` print with the wrong format -- OPEN (found 2026-10-14)
 - **Found by:** pattern search 3 -- a generator that declares `x` in two sibling scopes of one
   function with different types and uses it in a type-dependent way (10 binding sites x 30

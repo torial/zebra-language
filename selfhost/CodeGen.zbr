@@ -1344,8 +1344,6 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 g.genTypeAliasDecl(tal)
             else
                 pass
-    # Interface RTTI: `_zbr_implements_<Iface>` membership fns (runtime `is`).
-    g.emitInterfaceMembershipFns(m)
     # Emit Reflect runtime lookup functions
     var reflect_classes = List(str)()
     for decl in m.decls
@@ -5194,6 +5192,9 @@ struct Generator
                     has_init = true
                 else
                     pass
+        var ifs_g: str = ifaceSetText(n.name)               # BUG-590 (vtablePtr reads it via @hasDecl)
+        if ifs_g != ""
+            ig.line("pub const _zbr_ifaces: []const u64 = " + ifs_g + ";")
         for gmx_ref in n.mixins                             # BUG-598: the mixin's methods
             if gmx_ref is TypeRef.named as gmx_nr
                 for gmx_decl in module_decls
@@ -5361,80 +5362,41 @@ struct Generator
             else
                 return nil
 
-    # BUG-580: `v is Show` on an interface value, with `Show` declared in a USED module.
-    # `_zbr_implements_Show` is a file-private function of Show's module, and it lists the
-    # classes declared THERE -- so a class of this module implementing Show would answer
-    # false even if the symbol were reachable. The check is decided here instead, over
-    # every class this module can see (its own and its dependencies'), comparing tags
-    # inline: a class tag is `_zbr_hash` of its bare name wherever it is computed (BUG-576).
-    # Still blind to a class from a module this one does not import (recorded on BUG-580).
-    def emitDepIfaceMembership(iface: str, tag: str)
+    # BUG-590: `&.{ <hash>, ... }` -- every interface class `cls` implements, transitively
+    # through super-interfaces, over this module's and its dependencies' tables (the class's
+    # OWN module always sees all of them). Bare base names, hashed like class tags. Emitted
+    # once, as the class's `_zbr_ifaces`; every vtable of the class points at that.
+    def ifaceSetText(cls: str): str
         var seen = StrSet()
+        var work = List(str)()
+        work.add(cls)
+        var wi = 0
         var names = List(str)()
-        for ck, cv in .module_types.class_interfaces
-            if not seen.contains_(ck)
-                seen.add(ck)
-                names.add(ck)
-        for dk, dv in .dep_types.class_interfaces
-            if not seen.contains_(dk)
-                seen.add(dk)
-                names.add(dk)
-        w.emit("(")
-        var any = false
-        for cn in names
-            if .module_types.isInterface(cn) or .dep_types.isInterface(cn)
-                continue
-            if conformsAcross(cn, iface, 16)
-                if any
-                    w.emit(" or ")
-                any = true
-                w.emit("((" + tag + " & 0xFFFFFFFF) == (comptime _zbr_hash(\"" + cn + "\")))")
-        if not any
-            w.emit(tag + " != " + tag)              # no implementer visible: false, tag still read
-        w.emit(")")
-
-    # BUG-580: conformance over BOTH tables -- `class Dog implements Pet` here, with
-    # `interface Pet implements Show` in a dep, needs one hop through each.
-    def conformsAcross(cls: str, iface: str, depth: int): bool
-        if depth <= 0
-            return false
-        if cls == iface
-            return true
-        var lists: str = ""
-        if .module_types.class_interfaces.contains(cls)
-            lists = .module_types.class_interfaces.fetch(cls)
-        if .dep_types.class_interfaces.contains(cls)
-            lists = lists + "|" + .dep_types.class_interfaces.fetch(cls)
-        if lists == ""
-            return false
-        for ifc in lists.split("|")
-            if ifc != ""
-                var ib: str = ifaceKeyBase(ifc)
-                if ifc == iface or ib == iface
-                    return true
-                if conformsAcross(ib, iface, depth - 1)
-                    return true
-        return false
-
-    # Interface RTTI: emit `fn _zbr_implements_<Iface>(_tag: u64) bool` per
-    # interface — true iff the concrete class identified by `_tag`'s low 32 bits
-    # implements it (transitively).  Drives runtime `is` on interface-typed
-    # values.  Dead-stripped by Zig if unused.  Mirrors src/CodeGen.zig.
-    def emitInterfaceMembershipFns(m: Module)
-        for decl in m.decls
-            if decl is Decl.interface_ as ifc
-                w.emit("fn _zbr_implements_" + ifc.name + "(_tag: u64) bool {\n")
-                var any = false
-                for cdecl in m.decls
-                    if cdecl is Decl.class_ as cls
-                        # Generic classes too (2026-09-16): `_ttag_<Class>` is emitted at
-                        # file scope for them since the in-struct vtable pass.
-                        if module_types.classConformsTo(cls.name, ifc.name)
-                            w.emit("    if ((_tag & 0xFFFFFFFF) == _ttag_" + cls.name + ") return true;\n")
-                            any = true
-                if not any
-                    w.emit("    _ = _tag;\n")
-                w.emit("    return false;\n}\n")
+        while wi < work.len
+            var cur = work.at(wi)
+            wi += 1
+            var lists: str = ""
+            if .module_types.class_interfaces.contains(cur)
+                lists = .module_types.class_interfaces.fetch(cur)
+            if .dep_types.class_interfaces.contains(cur)
+                lists = lists + "|" + .dep_types.class_interfaces.fetch(cur)
+            for ifc in lists.split("|")
+                if ifc != ""
+                    var ib: str = ifaceKeyBase(ifc)
+                    if not seen.contains_(ib)
+                        seen.add(ib)
+                        names.add(ib)
+                        work.add(ib)
+        if names.len == 0
+            return ""                                       # implements nothing: no declaration
+        var out = "&.{"
+        var first = true
+        for nm in names
+            if not first
+                out = out + ","
+            first = false
+            out = out + " _zbr_hash(\"" + nm + "\")"
+        return out + " }"
 
     # Concrete class name of an expr being assigned to an interface-typed var
     # (constructor, ident, or method-call RHS), or nil if the expr is not a
@@ -5638,6 +5600,7 @@ struct Generator
                     w.emit(", " + p.name)
                 w.emit("); }\n")
         w.emit("const _vtable_${class_name}_${iname} = ${ir.zig}.VTable{")
+        w.emit(" ._ifaces = " + zbrTypeSymbol(class_name) + "._zbr_ifaces,")   # BUG-590
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${class_name}_${iname}_${meth.name},")
@@ -5716,6 +5679,7 @@ struct Generator
                 w.emit("); }\n")
         writeIndent()
         w.emit("const _vtable_${iname} = ${ir.zig}.VTable{")
+        w.emit(" ._ifaces = @This()._zbr_ifaces,")         # BUG-590: this instantiation
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${iname}_${meth.name},")
@@ -5796,6 +5760,9 @@ struct Generator
                     has_init = true
                 else
                     pass
+        var ifs_c: str = ifaceSetText(n.name)               # BUG-590 (vtablePtr reads it via @hasDecl)
+        if ifs_c != ""
+            ig.line("pub const _zbr_ifaces: []const u64 = " + ifs_c + ";")
         # BUG-089: generate methods from added mixins.
         for mixin_ref in n.mixins
             if mixin_ref is TypeRef.named as nr
@@ -7089,6 +7056,11 @@ struct Generator
         # ── VTable inner struct ──────────────────────────────────────────
         ig.writeIndent()
         w.emit("pub const VTable = struct {\n")
+        # BUG-590: the CONCRETE class's interfaces (name hashes, transitive), so `v is Show`
+        # on an interface value is answered by the value itself, from any module. No
+        # default on purpose: a vtable built without it does not compile.
+        vtig.writeIndent()
+        w.emit("_ifaces: []const u64,\n")
         for mem in ifc.members
             if mem is Decl.method as mth
                 vtig.writeIndent()
@@ -7168,6 +7140,10 @@ struct Generator
         vpg.writeIndent()
         w.emit("const vt: VTable = .{\n")
         var vpm = vpg.indented()
+        # BUG-590: a class carries its interface set as `_zbr_ifaces`; a type that is not a
+        # Zebra class implements no Zebra interface, so its set is empty.
+        vpm.writeIndent()
+        w.emit("._ifaces = if (@hasDecl(_T, \"_zbr_ifaces\")) _T._zbr_ifaces else &.{},\n")
         for vmem in ifc.members
             if vmem is Decl.method as vmth
                 vpm.writeIndent()
@@ -14026,12 +14002,15 @@ struct Generator
                         var isuid = w.nextUid().toString()
                         w.emit("(_zbr_isblk_${isuid}: { const _isv_${isuid} = ")
                         genExpr(tc2.expr)
-                        w.emit("; const _tag_${isuid} = @as(*const u64, @ptrCast(@alignCast(_isv_${isuid}.ptr))).*; break :_zbr_isblk_${isuid} ")
-                        if target_iface and findInterfaceDecl(tc2.type_name) == nil
-                            emitDepIfaceMembership(tc2.type_name, "_tag_${isuid}")   # BUG-580
-                        else if target_iface
-                            w.emit("_zbr_implements_" + tc2.type_name + "(_tag_${isuid})")
+                        if target_iface
+                            # BUG-590: the value's own vtable lists its class's interfaces.
+                            # A per-interface `_zbr_implements_<I>` (and BUG-580's per-site
+                            # list) could name only the classes visible WHERE it was emitted,
+                            # so an `is` in the interface's own module missed an implementer
+                            # declared in a module that uses it.
+                            w.emit("; break :_zbr_isblk_${isuid} (std.mem.indexOfScalar(u64, _isv_${isuid}.vtable._ifaces, comptime _zbr_hash(\"" + ifaceKeyBase(tc2.type_name) + "\")) != null)")
                         else
+                            w.emit("; const _tag_${isuid} = @as(*const u64, @ptrCast(@alignCast(_isv_${isuid}.ptr))).*; break :_zbr_isblk_${isuid} ")
                             w.emit("((_tag_${isuid} & 0xFFFFFFFF) == ")
                             emitTypeTag(tc2.type_name)
                             w.emit(")")

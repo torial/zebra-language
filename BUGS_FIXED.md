@@ -6,6 +6,28 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-590: an `is <Interface>` test INSIDE the interface's module missed implementers declared in modules that use it -- FIXED 2026-10-20 (found 2026-10-15)
+- **Found by:** probing BUG-580's fix: a dep's `def isShow(x: Named): bool  return x is Show`
+  answered `false` for a `Cat implements Named, Show` declared in the main module, where
+  `c is Show` answered `true`.
+- **Cause:** the answer lived in a per-INTERFACE list -- `_zbr_implements_<I>`, emitted by the
+  interface's module over the classes IT could see, and BUG-580's per-site list over the
+  classes the `is` site could see. A class in a module downstream of both was in neither.
+- **Fix:** the list moved to the CLASS, where it is always complete -- a class's own module sees
+  every interface it implements, through every super. Each class carries
+  `pub const _zbr_ifaces` (interface name hashes, transitive), every interface `VTable` has an
+  `_ifaces` field pointing at it -- the plain vtable, a generic instantiation's in-struct one,
+  and `vtablePtr(T)` for a cross-module coercion -- and `v is Show` on an interface value is a
+  membership test on `v.vtable._ifaces`. The field has NO default on purpose: the first build
+  found `vtablePtr`, a construction site the change had missed, as a zig compile error rather
+  than a silent `false`. `_zbr_implements_<I>`, BUG-580's per-site list and its conformance
+  walk are deleted; nothing else called them.
+- **Regression fixture:** `test/bug590_iface_upstream_is_test.zbr` (+ `test/bug590_lib.zbr`) --
+  the same test from the interface's module and from main, for a direct implementer, a
+  non-implementer, one through a super-interface (`Pet implements Show`) and a generic class.
+  Prints `true true | false false | true true false | true true`; the pre-fix compiler printed
+  `false true | false false | false false false | false true`.
+
 ### BUG-603: a STRUCT field default that allocates (`var s: str = "a" + NAME`) passed `zebra -c` and failed inside zig "unable to resolve comptime value" -- FIXED 2026-10-20 (found 2026-10-20)
 - **Found by:** BUG-592's edges; failing on the pre-BUG-592 compiler too, so not a regression.
 - **Cause:** the default was a comptime field default in the struct's field list, and zig

@@ -55,7 +55,11 @@ as they land, so this list stays the one place that says what is left.
      remaining diffs are same; the full re-sweep is 247/247. BUG-589 FIXED with BUG-593 (the
      Resolver's statement walker skipped seven kinds; lint_expr_walkers checks `stmt_*` now).
      BUG-594 FIXED (an unknown field passes `-c`); filed BUG-595 (mixin `var`) and 596 (a
-     method read as a value), both decisions. Left: turn the
+     method read as a value), both decisions. 2026-10-19/20: 595/597 FIXED, 596 FIXED for
+     classes (structs wait on BUG-569), and the follow-ups it surfaced, 598..603; BUG-590 FIXED
+     -- an interface value's vtable now carries its class's interface set, so `is Iface` is
+     answered by the value from any module. Engine witness at 27b98d9 green (Zig 0.16 only:
+     the engine does not build on 0.17 yet). Left: turn the
      transform into a tool, and the must-fail half (messages must still map).
    - [ ] **Name-keyed state where the language has scopes** (BUG-566, 560; 138/140/181/294/332/381).
      STARTED 2026-10-14: one name, two types, sibling scopes, 10 binding sites x 30 type pairs

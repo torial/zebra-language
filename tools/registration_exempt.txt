@@ -36,6 +36,7 @@ bug594_member_accept_lib  # helper module imported by bug594_member_accept_test;
 bug596_bound_method_lib  # helper module imported by bug596_bound_method_test; has no main()
 bug599_generic_lib  # helper module imported by bug599_600_601_test and the bug599 dep/qual refusals; has no main()
 bug603_lib  # helper module imported by bug603_struct_alloc_default_test; has no main()
+bug590_lib  # helper module imported by bug590_iface_upstream_is_test; has no main()
 bug238_except_lib  # helper module imported by other tests; has no main()
 bug476_sig_import_lib  # helper module imported by bug476_sig_import_test; has no main()
 bug496_module_init_lib  # helper module imported by bug496_module_runtime_init_test; has no main()
