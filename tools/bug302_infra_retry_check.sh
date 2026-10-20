@@ -71,6 +71,43 @@ check attack   "$(run_leg attack)"  "PASS 1"
 check negative "$(run_leg real)"    "CFAIL 0"
 check persist  "$(run_leg persist)" "INFRA 2"
 
+# zbr_run_retrying (2026-10-20): the wrapper the smoke suite runs every compile through. A stub
+# COMMAND, the shipped function. Each leg reports "rc runs retries-logged out-ok err-ok".
+make_cmd() {  # $1 = mode
+  cat > "$TMP/cmd" <<STUB
+#!/usr/bin/env bash
+c="$TMP/ccount"
+n=\$(cat "\$c" 2>/dev/null || echo 0); n=\$((n+1)); echo "\$n" > "\$c"
+case "$1" in
+  attack)  if [ "\$n" -le 1 ]; then echo "$INFRA_ERR" >&2; exit 1; fi; echo OUT-MARK; echo ERR-MARK >&2; exit 0 ;;
+  real)    echo "$REAL_ERR" >&2; exit 1 ;;
+  persist) echo "$INFRA_ERR" >&2; exit 1 ;;
+  success) echo "$INFRA_ERR"; exit 0 ;;
+esac
+STUB
+  chmod +x "$TMP/cmd"; rm -f "$TMP/ccount" "$TMP/rlog"
+}
+wrap_leg() {  # $1 = mode
+  make_cmd "$1"
+  local rc
+  ZBR_RUN_RETRY_FILE="$TMP/rlog" zbr_run_retrying "$TMP/cmd" >"$TMP/wo" 2>"$TMP/we"; rc=$?
+  local runs logged ook=no eok=no
+  runs=$(cat "$TMP/ccount" 2>/dev/null || echo 0)
+  logged=$( [ -f "$TMP/rlog" ] && wc -l < "$TMP/rlog" | tr -d ' ' || echo 0)
+  case "$1" in
+    attack)  grep -q OUT-MARK "$TMP/wo" && ! grep -q OUT-MARK "$TMP/we" && ook=yes
+             grep -q ERR-MARK "$TMP/we" && ! grep -q ERR-MARK "$TMP/wo" && eok=yes ;;
+    real)    ook=yes; grep -q "expected type" "$TMP/we" && eok=yes ;;
+    persist) ook=yes; grep -q "unable to load" "$TMP/we" && eok=yes ;;
+    success) grep -q "unable to load" "$TMP/wo" && ook=yes; eok=yes ;;
+  esac
+  echo "$rc $runs $logged $ook $eok"
+}
+check wrap-attack   "$(wrap_leg attack)"  "0 2 1 yes yes"
+check wrap-negative "$(wrap_leg real)"    "1 1 0 yes yes"
+check wrap-persist  "$(wrap_leg persist)" "1 3 2 yes yes"
+check wrap-success  "$(wrap_leg success)" "0 1 0 yes yes"
+
 # The predicate must also discriminate on REAL captured evidence, not just stub text.
 EV="${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}/Temp/zebra_full_sweep/evidence"
 if [ -d "$EV" ]; then

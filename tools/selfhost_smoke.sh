@@ -33,6 +33,10 @@ fi
 # twice at once made tests fail for no reason and looked exactly like a real
 # regression. $$ keeps concurrent invocations independent.
 TMPDIR_OUT="/tmp/selfhost-smoke-$$"
+# BUG-302 for the smoke suite (2026-10-20): every compiler run that builds through zig goes
+# through zbr_run_retrying, which retries ONLY zig failing to read its own installation.
+source "$REPO/tools/zig_build_lib.sh"
+export ZBR_RUN_RETRY_FILE="$TMPDIR_OUT/infra-retries"
 rm -rf "$TMPDIR_OUT"
 mkdir -p "$TMPDIR_OUT"
 trap 'rm -rf "$TMPDIR_OUT"' EXIT
@@ -44,7 +48,7 @@ smoke() {
     local zbr="$1"
     local label
     label="$(basename "$zbr" .zbr)"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+    if zbr_run_retrying "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         echo "  PASS: $label"
         PASS=$((PASS + 1))
     else
@@ -61,7 +65,7 @@ smoke_turbo() {
     local zbr="$1"
     local label
     label="$(basename "$zbr" .zbr)_turbo"
-    if "$ZEBRA" --turbo --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+    if zbr_run_retrying "$ZEBRA" --turbo --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
         if grep -qE "_check_invariant|require failed|ensure failed" "$zig_out" 2>/dev/null; then
             echo "  FAIL: $label (contract strings found in turbo output)" >&2
@@ -88,7 +92,7 @@ smoke_gui_emit_contains() {
     local zbr="$1"; local backend="$2"; local expected="$3"
     local label; label="$(basename "$zbr" .zbr)_${backend}emit"
     local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
-    if "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
+    if zbr_run_retrying "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
         if grep -qF -- "$expected" "$zig_out" 2>/dev/null; then
             echo "  PASS: $label"; PASS=$((PASS + 1))
         else
@@ -106,7 +110,7 @@ smoke_gui_emit_contains() {
 smoke_gui_refused() {
     local zbr="$1"; local backend="$2"; local reason="$3"
     local label; label="$(basename "$zbr" .zbr)_${backend}pin"
-    if ! "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/refused.err" \
+    if ! zbr_run_retrying "$ZEBRA" --emit-zig --gui-backend="$backend" "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/refused.err" \
        && grep -qF -- "$reason" "$TMPDIR_OUT/refused.err"; then
         echo "  PASS: $label ($backend refused naming '$reason' -- restore the real check when it returns)"; PASS=$((PASS + 1))
     else
@@ -120,7 +124,7 @@ smoke_test() {
     local zbr="$1"
     local label
     label="$(basename "$zbr" .zbr)_test"
-    if "$ZEBRA" test "$zbr" >"$TMPDIR_OUT/smoke-test-out" 2>&1; then
+    if zbr_run_retrying "$ZEBRA" test "$zbr" >"$TMPDIR_OUT/smoke-test-out" 2>&1; then
         if grep -qF "FAIL:" "$TMPDIR_OUT/smoke-test-out"; then
             echo "  FAIL: $label (some tests failed)" >&2
             cat "$TMPDIR_OUT/smoke-test-out" >&2
@@ -145,7 +149,7 @@ smoke_test_verdicts() {
     local expected="$2"
     local label
     label="$(basename "$zbr" .zbr)"
-    "$ZEBRA" test "$zbr" >"$TMPDIR_OUT/smoke-test-out" 2>&1 || true
+    zbr_run_retrying "$ZEBRA" test "$zbr" >"$TMPDIR_OUT/smoke-test-out" 2>&1 || true
     if grep -qF -- "$expected" "$TMPDIR_OUT/smoke-test-out" && grep -qE "^[0-9]+ passed, [0-9]+ failed" "$TMPDIR_OUT/smoke-test-out"; then
         echo "  PASS: $label"
         PASS=$((PASS + 1))
@@ -168,7 +172,7 @@ smoke_emit_contains() {
     local label
     label="$(basename "$zbr" .zbr)_emit"
     local zig_out="$TMPDIR_OUT/$(basename "$zbr" .zbr).zig"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
+    if zbr_run_retrying "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>&1; then
         if grep -qF -- "$expected" "$zig_out"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
@@ -190,7 +194,7 @@ smoke_warn() {
     local expected_msg="$2"
     local label
     label="$(basename "$zbr" .zbr)_warn"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+    if zbr_run_retrying "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         if grep -qF -- "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
@@ -214,7 +218,7 @@ smoke_run_fail() {
     local label
     label="$(basename "$zbr" .zbr)_runfail"
     local got
-    if got=$("$ZEBRA" "$zbr" 2>&1); then
+    if got=$(zbr_run_retrying "$ZEBRA" "$zbr" 2>&1); then
         echo "  FAIL: $label (expected failure, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
@@ -242,7 +246,7 @@ smoke_run_fail_once() {
     local label
     label="$(basename "$zbr" .zbr)_runfail_once"
     local got n
-    if got=$("$ZEBRA" "$zbr" 2>&1); then
+    if got=$(zbr_run_retrying "$ZEBRA" "$zbr" 2>&1); then
         echo "  FAIL: $label (expected failure, got exit 0)" >&2
         FAIL=$((FAIL + 1))
         return
@@ -264,7 +268,7 @@ smoke_tc_fail() {
     local expected_msg="$2"
     local label
     label="$(basename "$zbr" .zbr)"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+    if zbr_run_retrying "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         echo "  FAIL: $label (expected TC failure, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
@@ -289,7 +293,7 @@ smoke_multi_parse_fail() {
     local expected2="$3"
     local label
     label="$(basename "$zbr" .zbr)"
-    if "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+    if zbr_run_retrying "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
         echo "  FAIL: $label (expected parse failures, got exit 0)" >&2
         FAIL=$((FAIL + 1))
     else
@@ -642,7 +646,7 @@ smoke_run() {
     local label
     label="$(basename "$zbr" .zbr)_run"
     local got
-    if got=$("$ZEBRA" "$zbr" 2>&1); then
+    if got=$(zbr_run_retrying "$ZEBRA" "$zbr" 2>&1); then
         if echo "$got" | grep -qF -- "$expected"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
@@ -669,7 +673,7 @@ smoke_run_flag() {
     local label
     label="$(basename "$zbr" .zbr)_run"
     local got
-    if got=$("$ZEBRA" "$flag" "$zbr" 2>&1); then
+    if got=$(zbr_run_retrying "$ZEBRA" "$flag" "$zbr" 2>&1); then
         if echo "$got" | grep -qF -- "$expected"; then
             echo "  PASS: $label"
             PASS=$((PASS + 1))
@@ -1627,7 +1631,7 @@ smoke_run test/bug352_loop_var_shadows_field_test.zbr "bug352: ok"
 smoke_run test/bug353_file_write_order_test.zbr "bug353: ok"
 smoke_run_bounded test/sys_process_exit_code_test.zbr "sys_process_exit_code_test: ok" 120
 # BUG-347: program-argument passthrough after `--` (inline: smoke_run has no argv slot)
-if got=$("$ZEBRA" test/prog_args_passthrough_test.zbr -- alpha "b c" --verbose 2>&1) && echo "$got" | grep -qF "prog_args: alpha|b c|--verbose|"; then
+if got=$(zbr_run_retrying "$ZEBRA" test/prog_args_passthrough_test.zbr -- alpha "b c" --verbose 2>&1) && echo "$got" | grep -qF "prog_args: alpha|b c|--verbose|"; then
     echo "  PASS: prog_args_passthrough_test_run"; PASS=$((PASS + 1))
 else
     echo "  FAIL: prog_args_passthrough_test_run" >&2; echo "    got: $got" >&2; FAIL=$((FAIL + 1))
@@ -2353,8 +2357,8 @@ smoke_run test/bug548_module_const_list_test.zbr "bug548: 0.25 0.5 y 2 42"
 
 echo ""
 if [[ $FAIL -eq 0 ]]; then
-    echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed"
+    echo "selfhost smoke: $PASS/$((PASS + FAIL)) passed (infra-retries=$( [ -f "$ZBR_RUN_RETRY_FILE" ] && wc -l < "$ZBR_RUN_RETRY_FILE" | tr -d ' ' || echo 0))"
 else
-    echo "selfhost smoke: $PASS passed, $FAIL FAILED" >&2
+    echo "selfhost smoke: $PASS passed, $FAIL FAILED (infra-retries=$( [ -f "$ZBR_RUN_RETRY_FILE" ] && wc -l < "$ZBR_RUN_RETRY_FILE" | tr -d ' ' || echo 0))" >&2
     exit 1
 fi

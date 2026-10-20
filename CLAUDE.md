@@ -2276,6 +2276,17 @@ a stub `zig` emitting the verbatim error, failing once then succeeding. Four leg
 retry masks breakage and triples runtime. It sources the SHIPPED predicate, so it cannot
 pass against logic the gates do not have.
 
+**The smoke suite retries it too (2026-10-20)**, through `zbr_run_retrying` in the same
+library: every compiler run that builds through zig goes through it (15 sites; the one under
+`timeout` cannot), it retries only a FAILED run carrying the signature, and smoke's terminal
+line now ends `(infra-retries=N)`, zero included. Receipt: a smoke run failed a `runfail`
+fixture on zig reading its own `std/debug/Info.zig` while a FULL ran in the other checkout.
+The wrapper replays stdout and stderr whole, stdout first, so a `2>&1` capture sees both but
+not their interleaving. `bug302-control` gained four legs for it: a retried infra failure
+whose final run's streams arrive on the right streams, a genuine error run once, a
+persistent one tried three times, a successful run that merely PRINTS the signature not
+retried. Watched red against a never-retry and a retry-anything wrapper.
+
 ### The daily is CACHED where the answer cannot have changed (2026-09-26)
 
 The daily was 110 minutes and ~85% of it was zig compiling what we emit: `divergence` 38

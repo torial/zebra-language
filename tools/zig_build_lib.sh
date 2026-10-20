@@ -34,6 +34,33 @@ zbr_zig_infra_error() {   # $1 = stderr file
   grep -qE "unable to load .*: (Unexpected|AccessDenied|SharingViolation|Busy)" "$1"
 }
 
+# zbr_run_retrying CMD ARGS... -- run a COMPILER invocation that builds through zig (the
+# smoke suite's `zebra foo.zbr`, `zebra test`, `--emit-zig`), retrying up to three tries in
+# all when it FAILED and its output carries the infra signature above -- never otherwise,
+# so a genuine refusal costs one run and is reported as it was. Its stdout and stderr are
+# captured and replayed to the caller's own streams (each whole, stdout first), so a caller
+# capturing `2>&1` still sees both; only their interleaving is not kept. Each retry is
+# appended to $ZBR_RUN_RETRY_FILE when set: the caller is usually a `$(...)` subshell, where
+# a shell counter would be lost (cross_sema's counter printed 0 that way).
+# RECEIPT (2026-10-20): a smoke run failed bug568_dep_missing_return_test_runfail on
+# "unable to load "Info.zig": Unexpected" -- zig reading its OWN std while a FULL ran in the
+# other checkout; by hand the fixture refused exactly as registered. Smoke had no retry.
+zbr_run_retrying() {
+  local d n=0 rc
+  d=$(mktemp -d 2>/dev/null) || { "$@"; return $?; }
+  while :; do
+    "$@" >"$d/o" 2>"$d/e"; rc=$?
+    if [ "$rc" -ne 0 ] && [ "$n" -lt 2 ] && { zbr_zig_infra_error "$d/o" || zbr_zig_infra_error "$d/e"; }; then
+      n=$((n + 1))
+      [ -n "${ZBR_RUN_RETRY_FILE:-}" ] && echo "$*" >> "$ZBR_RUN_RETRY_FILE"
+      continue
+    fi
+    cat "$d/o"; cat "$d/e" >&2
+    rm -rf "$d"
+    return "$rc"
+  done
+}
+
 # ── The VERDICT CACHE (2026-09-26) ──────────────────────────────────────────────────────
 # zig's answer to `build-exe -fno-emit-bin` is a pure function of what it reads: the
 # emitted files in the program's directory, the zig installation, and the flags. So the
