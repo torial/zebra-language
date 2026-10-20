@@ -2059,6 +2059,91 @@ twenty minutes, across two builds, until 0.5.2 "hung" the same way. The
 stderr goes to a file now. A hang in the subject is the instrument
 until proven otherwise.
 
+## Sean's five, answered with measurements (2026-10-20, evening)
+
+Asked what keeps V from replacing Zig entirely, the five answers were:
+the host is Zig; the emitter's refusals (concurrency, piped processes,
+Http); V's maturity; the 1.7x on the emit; the tooling built around the
+Zig output. Sean's replies, each taken up:
+
+**1. The host.** `vlang/raylib` exists (untried here), and V's own
+library carries the rest of what the host leans on: `net.websocket`
+(the wire), `db.sqlite` (the datastore), `x.json2`, `sync`,
+`clipboard`, `term`. The hand-written host is about twelve thousand
+lines of Zig outside the emitted modules: main.zig 3,712, devtools.zig
+3,986, camera_system 830, net_host 507, mesh_gltf 398, shapes 383,
+navmesh 358, particle 342, shadow 341, devtools_server 305, cvar 288,
+dialogue_tree 282. A V host is a port of those over V's raylib binding,
+not a design; its cost is weeks, its risk the binding's coverage of
+what the host calls (shaders, render textures, the shadow map, model
+loading, the frame grab). The first step, when it comes, is a one-file
+spike: the sandbox scene (a window, a box, a camera) through
+vlang/raylib, timed against the Zig host's.
+
+**2. Http.** The emitter's refusal ("V's net.http needs socket headers
+tcc does not ship on Windows") is stale: V 0.5.2's bundled tcc carries
+winsock2.h, ws2tcpip.h, wincrypt.h and schannel.h, and a `net.http`
+GET builds and runs under tcc and under clang today (status 200 from
+example.com, both). No header needs adding to the Zebra toolchain;
+the refusal is lifted by mapping `Http` onto `net.http`, an emitter
+task on the docket below. The route's updater fetch comes back with
+it.
+
+**3. V's maturity.** Reassessed in a few days, as Sean said; Alex M is
+on the checker's memory (#30975), and BUG-604 on the Zebra side was
+fixed the same evening it was filed.
+
+**4. The perf gap.** One lever closes most of it: V's `-prealloc` (a
+bump allocator, the nearest thing V has to Zebra's arena) with
+`-prod` under clang. The same emit of the whole compiler, three runs,
+byte-identical output:
+
+| build | emit | peak |
+|---|---|---|
+| Zig ReleaseFast (the control) | 1.57 s | 360 MB |
+| V 0.5.2, clang `-prod` | 2.78 s | 585 MB |
+| V 0.5.2, clang `-prod -prealloc` | 1.76 s (min 1.59) | 402 MB |
+
+So 1.1x the Zig build in time and memory, from 1.7x and 1.6x. The
+price: a prealloc build never frees -- it is right for a compiler run
+and for a test, wrong for a game server that runs for hours, where
+Boehm (209 MB on the emit, a tenth slower) or an arena the runtime
+resets per frame would be the shape. tcc cannot compile the prealloc
+C (it falls back to gcc, absent here), so the lever is clang's and
+MSVC's. Not yet tried: PGO (master's `-prod` has a profile-guided
+build script), and the runtime's own hot spots (the boxed `ZList` /
+`ZMap`, string concatenation) under a profiler -- the next steps if
+1.1x is not enough.
+
+**5. Tooling parity.** On the docket, below.
+
+## The V target's docket (2026-10-20)
+
+In the order they pay, each with the witness that says it is done:
+
+1. **`Http` onto `net.http`** (the stale refusal above): the route's
+   updater fetch runs through V; `--emit-zig` unchanged. Small.
+2. **The release lane**: `-cc clang -prod -prealloc` as the V side's
+   optimized build in `v_clang_lane.sh`, with Boehm as the long-running
+   shape; the cost matrix re-taken with it. Small.
+3. **Tooling parity**, the instruments the Zig output has and the V
+   output lacks, in the order the engine needed them: source locations
+   in a panic (`assert failed at x.zbr:12`) -- V's `-g` names the V
+   line, the emitter can carry the `.zbr` line in the message as the
+   Zig emitter does; the drift alarm (`regen --check` for the V side:
+   every emitted `.v` against the committed one); the affected-tests
+   graph over `use` lines for the V witnesses; the profiler's section
+   report (`--profile`) and the budget guard, when a V host exists to
+   hang them on; the input recorder and the error overlay, the same.
+   The first two are a day; the rest follow the host.
+4. **Concurrency**: channels, atomics, goroutines (the LSP's `run_lsp`
+   stub) onto V's `chan`, `sync.atomic` and `spawn`; piped processes
+   and stdin polling (the debugger bridge) onto `os.Process`. The
+   route's two stubs go; `zebra_v lsp` answers an editor. Medium.
+5. **The V host spike**: the sandbox scene through vlang/raylib,
+   timed; then the decision whether the host moves. Large, and the
+   one that decides "completely".
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
