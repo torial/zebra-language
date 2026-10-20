@@ -1,0 +1,5 @@
+# BUG-604 helper: uses bug604_clips, so its swingClip is loaded into the program.
+use bug604_clips exposing clipsTag
+
+def attrOr(): int
+    return clipsTag()

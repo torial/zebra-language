@@ -15974,7 +15974,13 @@ struct Generator
         # BUG-498, broken since BUG-220 prefixed the declaration.
         if m.object is Expr.ident as mod_id
             if import_aliases.contains_(mod_id.name) and not unwrapped_imports.contains_(mod_id.name) and not isLocalOrParamName(mod_id.name)
-                if .dep_types.classOf("") as dep_fns
+                # BUG-604: `$fns:<mod>` is THIS module's defs; the shared "" table holds
+                # whichever dependency registered the name last (a 0-parameter `swingClip`
+                # from a module loaded only transitively dropped both arguments here).
+                var dep_fns_opt = .dep_types.classOf("$fns:" + mod_id.name)
+                if dep_fns_opt == nil
+                    dep_fns_opt = .dep_types.classOf("")
+                if dep_fns_opt as dep_fns
                     if dep_fns.fnParamList(mname) as dep_ps
                         var dep_throws: bool = false
                         if dep_fns.fnBody(mname) as dep_body0
@@ -19711,6 +19717,10 @@ struct Generator
         # classOf/fnParamList are cross-module methods returning optionals; the
         # bootstrap now preserves the `?T` on cross-module returns (BUG-133), so
         # bind the unwrapped values directly with `if … as …`.
+        if cm_class == "" and .infer_ctx != nil
+            if (.infer_ctx!).freeFnTypes(cm_method) as ff_ct  # BUG-604: what this file exposes
+                if ff_ct.fnParamList(cm_method) as ff_ps
+                    return ff_ps
         if .dep_types.classOf(cm_class) as cm_ct
             if cm_ct.fnParamList(cm_method) as cm_ps
                 return cm_ps

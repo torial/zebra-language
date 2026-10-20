@@ -1,0 +1,8 @@
+# BUG-604 helper: a same-named function in a module the test never uses -- loaded only
+# transitively, through bug604_comps.
+
+def swingClip(): int
+    return 0
+
+def clipsTag(): int
+    return 9

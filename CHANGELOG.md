@@ -128,6 +128,9 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **`use M exposing f` means M's `f`, whatever else the program loads (BUG-604).** A
+  same-named function in a module loaded only transitively took its place (a false "too many
+  arguments"), and a qualified `M.f(...)` could lose its arguments in the emitted code.
 - **A name may be declared again, with another type, in a sibling block (BUG-583).** A
   destructure there was refused against the earlier type, and an `is ... as x` capture or a
   re-declared List printed with the earlier type's format.

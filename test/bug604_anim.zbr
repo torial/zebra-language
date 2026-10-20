@@ -1,0 +1,4 @@
+# BUG-604 helper: the function the test EXPOSES.
+
+def swingClip(a: int, b: int): int
+    return a + b

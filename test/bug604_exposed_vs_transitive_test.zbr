@@ -1,0 +1,9 @@
+# BUG-604: a free function from a module loaded only TRANSITIVELY (bug604_clips, reached
+# through bug604_comps) won over the one this file EXPOSES from bug604_anim: "too many
+# arguments to 'swingClip': expected at most 0". The qualified call was worse -- it passed
+# the front end and emitted with zero arguments. Both now resolve to bug604_anim.
+use bug604_anim exposing swingClip
+use bug604_comps exposing attrOr
+
+def main()
+    print("bug604: ${swingClip(3, 4)} ${bug604_anim.swingClip(1, 2)} ${attrOr()}")

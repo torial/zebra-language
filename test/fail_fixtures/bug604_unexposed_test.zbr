@@ -1,0 +1,6 @@
+# BUG-604 control: a function no `use` of this file exposes is not in scope, even though a
+# module loaded transitively (bug604_clips, through bug604_comps) declares it.
+use bug604_comps exposing attrOr
+
+def main()
+    print("${swingClip()} ${attrOr()}")

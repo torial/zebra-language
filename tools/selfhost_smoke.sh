@@ -1371,6 +1371,8 @@ smoke_run test/bug603_struct_alloc_default_test.zbr "bug603: azz 3 zz! 80 | q 3 
 smoke_run test/bug590_iface_upstream_is_test.zbr "bug590: true true | false false | true true false | true true"
 smoke_run test/bug582_for_index_any_list_test.zbr "bug582: 0ab 1cd 0p 1q 0:8 1:9 0u k=5"
 smoke_run test/bug583_sibling_rebind_test.zbr "bug583: 6 AB0 s [1, 2] ef cd1 1.5"
+smoke_run test/bug604_exposed_vs_transitive_test.zbr "bug604: 7 3 9"
+smoke_tc_fail test/fail_fixtures/bug604_unexposed_test.zbr "bug604_unexposed_test.zbr:6:14: error: undefined name: 'swingClip'"
 smoke_tc_fail test/fail_fixtures/bug602_field_default_undefined_test.zbr "bug602_field_default_undefined_test.zbr:6:18: error: undefined name: 'NOPE'"
 smoke_tc_fail test/fail_fixtures/bug599_generic_ctor_test.zbr "bug599_generic_ctor_test.zbr:12:13: error: \`Box\` is a generic class: pass its type argument(s) first"
 smoke_tc_fail test/bug599_generic_ctor_dep_test.zbr "bug599_generic_ctor_dep_test.zbr:5:13: error: \`Cell\` is a generic class"

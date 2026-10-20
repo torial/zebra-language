@@ -462,6 +462,10 @@ class ModuleTypes
     # generic_fn_names is ("f" / "Class.m"), so a module CALLING a dep's generic
     # function can substitute the call's type arguments into its parameter types.
     var generic_fn_tparams: HashMap(str, str)
+    # BUG-604: this FILE's `use M exposing f` -- f -> M's stem. Filled only for a module's
+    # own table (buildModuleTypes), never for the merged dependency table, so one module's
+    # imports cannot leak into another's lookups.
+    var exposed_from: HashMap(str, str)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -485,6 +489,7 @@ class ModuleTypes
         module_vars = HashMap()
         dep_struct_recv = ""
         generic_fn_tparams = HashMap()
+        exposed_from = HashMap()
 
     def addModuleVar(name: str)
         .module_vars.put(internString(name), true)
@@ -638,6 +643,11 @@ class ModuleTypes
 
     def addGenericFn(fn_name: str)
         .generic_fn_names.put(internString(fn_name), true)
+
+    def exposedOwner(name: str): str?
+        if .exposed_from.contains(name)
+            return .exposed_from.fetch(name)
+        return nil
 
     def hasGenericFn(fn_name: str): bool
         return .generic_fn_names.contains(fn_name)
@@ -1295,6 +1305,25 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # cross-module container out-param case actually travels.
                 if topfn.stmts as topfn_body
                     module_fns.setFnBody(topfn.name, topfn_body)
+                # BUG-604: the same facts under this MODULE's own pseudo-class. The "" entry
+                # is shared by every dependency, so a same-named def in a module loaded only
+                # transitively replaced this one there; an `exposing` or a qualified
+                # `mod.f()` reads `$fns:<mod>` instead.
+                var own_key: str = "$fns:" + moduleStemOf(m.file)
+                if mt.classOf(own_key) == nil
+                    mt.addClass(ClassTypes(own_key))
+                var own_fns: ClassTypes = mt.classOf(own_key)!
+                if module_fns.methodReturn(topfn.name) as own_rt
+                    own_fns.setMethodReturn(topfn.name, own_rt)
+                if tl_ptypes != ""
+                    own_fns.setMethodParamTypes(topfn.name, tl_ptypes)
+                own_fns.setFnParamList(topfn.name, topfn.params)
+                if topfn.throws_
+                    own_fns.setMethodThrows(topfn.name)
+                if topfn.stmts as own_body
+                    own_fns.setFnBody(topfn.name, own_body)
+                if topfn.deprecated != ""
+                    own_fns.setDeprecated(topfn.name, topfn.deprecated)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.len > 0
                     mt.addGenericFn(topfn.name)
@@ -1421,7 +1450,23 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
 def buildModuleTypes(m: Module): ModuleTypes
     var mt = ModuleTypes()
     populateModuleTypes(mt, m)
+    for d in m.decls                                    # BUG-604
+        if d is Decl.use_ as du
+            var stem: str = moduleStemOf(du.path)
+            for xn in du.exposed
+                mt.exposed_from.put(internString(xn), internString(stem))
     return mt
+
+# BUG-604: a module's stem -- the last path component without `.zbr` -- for a source file
+# (`C:/x/anim.zbr`) and for a `use` path (`anim`, `pkg/anim`) alike.
+def moduleStemOf(path: str): str
+    var p: str = path.replace("\\", "/")
+    var slash: int = p.lastIndexOf("/")
+    if slash >= 0
+        p = p.substring(slash + 1, p.len)
+    if p.endsWith(".zbr")
+        p = p.substring(0, p.len - 4)
+    return p
 
 # ── Diagnostic ───────────────────────────────────────────────────────────────
 # Mirrors the Binder.Diagnostic shape used by the bootstrap backend.
@@ -1668,6 +1713,9 @@ class InferCtx
 
     # The `@deprecated` message on a method / free fn in this module or a dep, "" if none.
     def deprecatedAny(class_name: str, method_name: str): str
+        if class_name == ""
+            if .freeFnTypes(method_name) as ffd
+                return ffd.deprecatedMsg(method_name)       # BUG-604: the exposed module's word
         var dm: str = .module_types.deprecatedMsg(class_name, method_name)
         if dm != ""
             return dm
@@ -1768,7 +1816,22 @@ class InferCtx
             return .dep_types.fieldType(bare, field_name)
         return nil
 
+    # BUG-604: the `$fns:<module>` entry of the module this file EXPOSES `name` from, when it
+    # is not a def of this file itself -- or nil. A bare free-function lookup consults it
+    # before the "" table every dependency shares.
+    def freeFnTypes(name: str): ClassTypes?
+        if .module_types.classOf("") as own
+            if own.methodReturn(name) != nil
+                return nil
+        if .module_types.exposedOwner(name) as stem
+            return .dep_types.classOf("$fns:" + stem)
+        return nil
+
     def methodReturnAny(class_name: str, method_name: str): Type_?
+        if class_name == ""
+            if .freeFnTypes(method_name) as ffr
+                if ffr.methodReturn(method_name) as ffr_t
+                    return ffr_t
         var mr: Type_? = .module_types.methodReturn(class_name, method_name)
         if mr != nil
             return mr
@@ -1786,6 +1849,10 @@ class InferCtx
     # BUG-142: full Param list for a method / free fn, searching module then deps
     # then the bare (module-prefix-stripped) class name. Mirrors methodReturnAny.
     def fnParamListAny(class_name: str, method_name: str): List(Param)?
+        if class_name == ""
+            if .freeFnTypes(method_name) as ffp
+                if ffp.fnParamList(method_name) as ffp_ps
+                    return ffp_ps
         var ps: List(Param)? = .module_types.fnParamList(class_name, method_name)
         if ps != nil
             return ps
@@ -1801,6 +1868,9 @@ class InferCtx
         return nil
 
     def methodParamTypeAtAny(class_name: str, method_name: str, idx: int): Type_?
+        if class_name == ""
+            if .freeFnTypes(method_name) as ffa
+                return ffa.methodParamTypeAt(method_name, idx)   # BUG-604
         var pt: Type_? = .module_types.methodParamTypeAt(class_name, method_name, idx)
         if pt != nil
             return pt

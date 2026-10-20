@@ -6,6 +6,36 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-604: a free function from a module loaded only TRANSITIVELY won over the same-named function a file explicitly `exposing`-imports -- and a QUALIFIED call to it emitted with no arguments -- FIXED 2026-10-20 (found 2026-10-20)
+- **Found by:** Fable, porting in the GameEngine (`game/mm/door.zbr` exposes a 7-parameter
+  `swingClip`; a module it uses gained a `use` whose graph reaches a zero-argument
+  `swingClip`): "too many arguments to 'swingClip': expected at most 0, found 7". Reduced to
+  four modules. Worse, found while reducing: the QUALIFIED call `anim.swingClip(1, 2)` passed
+  the front end and reached zig as `swingClip()` -- "expected 2 argument(s), found 0".
+- **Cause:** every dependency's top-level defs are merged into ONE pseudo-class, `""`, keyed by
+  bare name, so a same-named def from any module in the graph replaced another -- the last one
+  registered won. The checker's arity, return-type, parameter-type and deprecation lookups and
+  codegen's argument filling (`lookupFnParams`, and the module-qualified call in
+  `genMemberCall`, which read `""` directly) all took it.
+- **Fix:** each module's defs are also registered under `$fns:<module stem>`, copied from the
+  `""` entry as it is written so the two cannot disagree. A file's own table records its
+  `use M exposing f` (`exposed_from`; built only for the file's OWN module types, never the
+  merged dependency table, so one module's imports cannot leak into another's lookups).
+  `InferCtx.freeFnTypes(name)` -- the exposing module's `$fns:` entry, unless the file declares
+  `name` itself -- is consulted first by `methodReturnAny`, `fnParamListAny`,
+  `methodParamTypeAtAny` and `deprecatedAny` for a free function, and by codegen's
+  `lookupFnParams`; a qualified `mod.f(...)` reads `$fns:mod`.
+- **Not changed:** a bare name that NO `use` of the file exposes is still not in scope (the
+  Resolver refuses it; the control fixture pins that). Same-named CLASSES across modules were
+  probed in both `use` orders and resolve correctly; they are keyed differently and not changed.
+- **It depended on LOAD ORDER**, which is why it surfaced only when a module gained a `use`:
+  with the two `use` lines swapped, the pre-fix compiler printed the right answer -- the
+  exposed module happened to register last.
+- **Regression fixtures:** `test/bug604_exposed_vs_transitive_test.zbr` (+ `bug604_anim`,
+  `bug604_clips`, `bug604_comps`) prints `7 3 9` -- the exposed call, the qualified call, and the
+  transitive module's own function; `test/fail_fixtures/bug604_unexposed_test.zbr` (6:14,
+  "undefined name"). Red on the pre-fix compiler (9:22).
+
 ### BUG-583: one name, two types in SIBLING blocks -- the second binding was judged by the first (a destructure refused, an `is ... as x` payload and a re-declared `List` printed with the wrong format) -- FIXED 2026-10-20 (found 2026-10-14)
 - **Found by:** pattern search 3's collision matrix (3,000 programs, 1,105 BAD; 570 of them were
   BUG-582). The rest came down to three places that keep state BY NAME in a scope the language
