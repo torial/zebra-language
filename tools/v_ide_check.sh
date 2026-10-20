@@ -24,6 +24,12 @@ mkdir -p "$OUT"
 MANIFEST="$OUT/app.manifest"
 sed -n '/<?xml/,/<\/assembly>/p' "$(dirname "$ZEBRA")/../../selfhost/main.zbr" | sed 's/^.*<?xml/<?xml/' > "$MANIFEST"
 grep -q "Common-Controls" "$MANIFEST" || { echo "v_ide_check: the manifest text was not found in selfhost/main.zbr"; exit 3; }
+# embedded as an RT_MANIFEST resource (see v_gui_check.sh: vlang/v#30968)
+WINDRES="$(dirname "$CLANG")/llvm-windres.exe"; [ -x "$WINDRES" ] || WINDRES=$(command -v llvm-windres || command -v windres || true)
+[ -n "$WINDRES" ] || { echo "v_ide_check: no llvm-windres beside $CLANG and none on PATH (the manifest must be embedded)"; exit 3; }
+printf '1 24 "app.manifest"\n' > "$OUT/app.rc"
+(cd "$OUT" && "$WINDRES" -i app.rc -o app_manifest.o -O coff) || { echo "v_ide_check: windres refused the manifest resource"; exit 3; }
+MANIFEST_OBJ="$(cd "$OUT" && pwd -W 2>/dev/null || pwd)/app_manifest.o"
 fail=0
 # case <name> <gui|plain> <expect-regex> <mode last|any> [--test]
 case_() {
@@ -37,7 +43,7 @@ case_() {
   [ -z "$(cd "$IDE" && git status --short)" ] || { echo "FAIL -- the IDE tree is not clean after the emit"; (cd "$IDE" && git status --short); fail=1; return; }
   if grep -q "^  refused" "$OUT/${name}_emit.txt"; then echo "FAIL -- refused:"; grep -A6 refused "$OUT/${name}_emit.txt" | sed 's/^/    | /'; fail=1; return; fi
   local bflags="-gc none -enable-globals"
-  if [ "$kind" = gui ]; then bflags="-subsystem console -gc none -enable-globals"; cp "$MANIFEST" "$OUT/$name.exe.manifest"; fi
+  if [ "$kind" = gui ]; then bflags="-ldflags $MANIFEST_OBJ -subsystem console -gc none -enable-globals"; rm -f "$OUT/$name.exe.manifest"; fi
   "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" $bflags -o "$OUT/$name.exe" "$OUT/${name}_prog.v" > "$OUT/${name}_build.txt" 2>&1
   if [ ! -f "$OUT/$name.exe" ] || grep -qE "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/${name}_build.txt"; then echo "FAIL -- the V build:"; grep -E "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/${name}_build.txt" | head -5 | cut -c1-200 | sed 's/^/    | /'; fail=1; return; fi
   local out; out=$(cd "$IDE/src" && ZGUI_SCRIPT=quit "$OUT/$name.exe" 2>&1); local rc=$?
@@ -74,8 +80,8 @@ if [ -f "$IDE/src/ide.v" ]; then mv "$IDE/src/ide.v" "$OUT/ide.v"; else echo "FA
 [ -z "$(cd "$IDE" && git status --short)" ] || { echo "FAIL -- the IDE tree is not clean after the emit"; fail=1; }
 if grep -q "^  refused" "$OUT/ide_emit.txt"; then echo "FAIL -- refused:"; grep -A20 refused "$OUT/ide_emit.txt" | sed 's/^/    | /'; fail=1
 elif [ -f "$OUT/ide.v" ]; then
-  cp "$MANIFEST" "$OUT/ide.exe.manifest"
-  "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -subsystem console -gc none -enable-globals -o "$OUT/ide.exe" "$OUT/ide.v" > "$OUT/ide_build.txt" 2>&1
+  rm -f "$OUT/ide.exe.manifest"
+  "$V" -cc "$CLANG" -cflags "-Wno-incompatible-pointer-types" -ldflags "$MANIFEST_OBJ" -subsystem console -gc none -enable-globals -o "$OUT/ide.exe" "$OUT/ide.v" > "$OUT/ide_build.txt" 2>&1
   if [ ! -f "$OUT/ide.exe" ] || grep -qE "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/ide_build.txt"; then echo "FAIL -- the V build:"; grep -E "^[^ ]+:[0-9]+:[0-9]+: error:" "$OUT/ide_build.txt" | head -8 | cut -c1-200 | sed 's/^/    | /'; fail=1
   else
     echo "PASS -- $OUT/ide.exe ($(stat -c %s "$OUT/ide.exe") bytes)"

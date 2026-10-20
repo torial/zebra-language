@@ -1874,6 +1874,126 @@ and item 3 is now named.
   the other lags; the regen tooling and the drift alarm would have to grow a
   second target.
 
+## The decision, as it stands (2026-10-15)
+
+Sean, after the two merges: "I'm seriously considering V as the long
+term back-end once it gets to the 0.5.3 ... and the work you've done is
+significant step in that direction." So the pin moves at 0.5.3, and
+these are the 0.5.2 workarounds to re-test there, each with its
+witness, so the move retires what it can:
+
+- the generic heap-init order rule (`zlist_of[string]` after
+  `zlist_of[json2.Any]`; `fable/fieldnotes_v-heap-init-stale-expected`)
+  -- the pipeline's v_poc2 names line;
+- json2's escape sequences kept inside object keys (`zjson_fix_keys`
+  in the runtime) -- the engine ladder's player_store_test;
+- the C stage miscompiling an if-expression over a result guard with
+  a `none` arm (the two-line `catch nil`) -- tuon_data_test;
+- the `-cflags -Wno-incompatible-pointer-types` the clang 22+ build
+  needs (`u32*` as `LPDWORD`; vlang/v#30587 on master, fixed there) --
+  any GUI build;
+- MSVC's negated `_const_min_int` (vlang/v#30352, fixed on master; the
+  emitter's `int()` cast on slice bounds stays until then) -- the clang
+  and msvc lanes;
+- the demo's heap corruption under clang 22/23 at -O2 (parked;
+  `opt_bisect.py`) -- the `-prod` lane.
+
+Master is a different compiler (the flat AST, `cleanc`); 0.5.3 is the
+first release that will say which of these it carries.
+
+## The re-evaluation under master 7940bb1 (2026-10-20)
+
+Sean asked (2026-10-20) for the V tree brought up to date and the state
+re-read, since a run of the tickets had been fixed. V master 7940bb1 was
+bootstrapped (`makev.bat -clang` under the zvm shim), with d67ee55 and
+37b596b kept beside it as a cheap regression window; all thirty earlier
+tickets were closed on vlang/v. Then the three witnesses ran under it,
+against the 0.5.2 lane as the control. What master changed, and what
+each change turned out to be:
+
+| witness | 0.5.2 7647ce1 | master 7940bb1, first run | cause |
+|---|---|---|---|
+| `tools/v_gui_check.sh` (18 cases) | ok | dialogs exits 0xc0000139 | #30968: the post-link `longPathAware` manifest hides the side-by-side manifest; `TaskDialog` needs Common-Controls v6 |
+| `tools/v_ide_check.sh` (12 gates + ide.exe) | ok | coverage_test (a V build error), gates_test and tools_test (asserts), ide.exe does not start | #30970, #30967 twice, #30968 |
+| `tools/v_engine_check.py` (95 Zebra roots) | 92 identical, 2 refused, 1 differs | 84 identical, 8 V build, 2 refused, 1 differs | #30966 on seven roots (`jv_opt = zunwrap(zopt_id(fresh))` over `json2.Any`), one root a param named like a global (master refuses, 0.5.2 noticed), the differs the Zig control's hash order |
+
+Five tickets came out of it, each through one Opus 5.5 review round
+whose key claims I re-ran before posting (the pattern held every time:
+my draft named a construct one step too specific, the reviewer found a
+smaller program):
+
+- **vlang/v#30965** -- a parenthesized value converted to `?I` / `!I`
+  is boxed twice (the surviving shape behind #30470's comment).
+- **vlang/v#30966** -- a generic call assigned to an existing `?T`
+  lvalue infers `T` as the option itself (`o = id(Any(3))` instantiates
+  `id_T_Option_Any`); int payloads carry the same wrong instantiation
+  silently; `id[Any](...)` works. The emitter's every map read.
+- **vlang/v#30967** -- a bare `join_path` call in `main` is lowered to
+  `os.join_path_single` whatever it names (`transform/fn.v` keys on the
+  spelling; a one-argument user `join_path` returns its argument with
+  no error). The IDE's own `join_path(root, rel)` helper.
+- **vlang/v#30968** -- V embeds a `longPathAware` manifest after the
+  link, so a side-by-side `<exe>.manifest` is ignored; a program
+  needing Common-Controls v6 fails to start. No flag to opt out.
+- **vlang/v#30970** -- an `if mut e := opt()` binding over a reference
+  is refused as immutable in `f(mut e).method()` when `f` returns a
+  generic struct; `v -check` accepts it, the full compile refuses it.
+
+What the backend adapted, all of it harmless on 0.5.2 (the pipeline's
+every diff identical after the change):
+
+- a narrowed read spells the payload type on the runtime generics when
+  the emitter knows it, `zunwrap[T](zopt_id[T](x))` (`narrowedRead`
+  takes the nilable's V type; the three callers pass what they have);
+  the generic form stays where the type is unknown;
+- a parameter named like an emitted module-level var or const is
+  renamed `_v`, as a local already was (`genParams` spells it,
+  `resetLocals` re-makes the rename per def -- and now clears the
+  table per def, which it never did);
+- the two GUI witnesses embed the Common-Controls manifest as an
+  RT_MANIFEST resource (`1 24 "app.manifest"` through `llvm-windres`
+  beside clang, the object on V's link line through `-ldflags`),
+  instead of laying the side file: V keeps a manifest the linker
+  embedded, on both compilers; the price is `longPathAware`, which our
+  manifest does not declare.
+
+Not adapted, on purpose: the `join_path` lowering (#30967) and the
+`if mut` refusal (#30970) are V's to fix, and renaming the IDE's helper
+or re-shaping every `if x as y` to dodge them would hide the witness
+that will say when they are fixed. The IDE check stays red under master
+on those three gates until then.
+
+After the adaptation: GUI witness ok under both; IDE check 15/15 under
+0.5.2, 12/15 under master with ide.exe built and running (the three
+reds are #30967 x2 and #30970); the ladders' numbers below.
+
+The engine ladder after the adaptation, both compilers (one run each,
+the same OUT shape, the Zig controls re-run):
+
+| compiler | identical | refused | differs | V build |
+|---|---|---|---|---|
+| 0.5.2 7647ce1 | 92 | 2 | 1 | 0 |
+| master 7940bb1 | 92 | 2 | 1 | 0 |
+
+The two refusals are the emitter's own (a call on a call's result and
+the generic `Atomic` in tween_create_test; `Tcp.connect` in the
+devtools), the differs is net_figures_test's drop tally, where the Zig
+control iterates a HashMap in hash order and V in insertion order
+(`respawn 1 left 1 gone 1` is the order the test drops them; the
+control says `left` first). Master's seven #30966 roots build with the
+typed `zunwrap`, and robloxglobals_test with the renamed param. So on
+the engine's 95 Zebra roots master and 0.5.2 now read the same; what
+separates them is the IDE's three gates (#30967, #30970) and the
+manifest (#30968), each with a ticket and a witness that will say when
+it closes. Master took 1038 s to 0.5.2's 346 s for the same ladder:
+the new compiler is three times slower on these builds on this host
+(one reading, the host otherwise quiet).
+
+The decision above stands: the pin stays on 0.5.2 until 0.5.3; the
+re-test list there gains nothing from this round (none of the five is
+a 0.5.2 workaround), and the three master-only shapes above are the
+new entries to re-test when the pin moves.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

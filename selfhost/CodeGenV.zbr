@@ -395,7 +395,10 @@ class VGen
     # generic in the path (master's new compiler miscompiles a reference that
     # comes out of a generic function into an interface: repro_v8), panicking
     # in the Zig backend's words when the narrowing was wrong
-    def narrowedRead(rendered: str, what: str): str
+    # `vt`: the V type of the nilable ("?T", or "" when unknown): spelled on the
+    # runtime generics when known, since V master infers a generic's T from an
+    # assignment target of type ?T (vlang/v#30966); the explicit argument is the fix
+    def narrowedRead(rendered: str, what: str, vt: str): str
         if .iface_target
             # into an interface: V's own unwrap, no generic in the path -- master
             # infers a generic's T from the assignment target and boxes without a
@@ -404,6 +407,9 @@ class VGen
             return "(" + rendered + " or { panic(" + .vStringLit("narrowed read of " + what + " is none at " + .current_file) + ") })"
         # elsewhere the function form: 0.5.2 miscompiles an `or` expression used
         # directly as a call argument of a generic-struct pointer type
+        if vt.startsWith("?") and vt.len > 1
+            var payload: str = vt.substring(1, vt.len)
+            return "zunwrap[" + payload + "](zopt_id[" + payload + "](" + rendered + "))"
         return "zunwrap(zopt_id(" + rendered + "))"
 
     def jsonTry(kind: str, obj: str, args: List(Arg), ja: str): str
@@ -1253,7 +1259,11 @@ class VGen
                 mut_ = "mut "
                 if pt.startsWith("&")
                     pt = pt.substring(1, pt.len)   # (an interface's value is passed plain)
-            out = out + mut_ + vSafe(p.name) + " " + pt
+            var pn: str = vSafe(p.name)
+            if .isEmittedGlobal(pn)
+                pn = pn + "_v"   # a param shadowing a module-level var / const: V master refuses it
+                .renames.set(p.name, pn)
+            out = out + mut_ + pn + " " + pt
         return out
 
     # a `throws` def returns V's result (`!T`, `!` for none); `raise` is
@@ -1590,8 +1600,11 @@ class VGen
     def resetLocals(params: List(Param))
         .local_names = List(str)()
         .local_types = HashMap(str, str)()
+        .renames = HashMap(str, str)()   # a def's renames start empty; a param's (genParams) is re-made here
         for p in params
             .local_names.add(p.name)
+            if .isEmittedGlobal(vSafe(p.name))
+                .renames.set(p.name, vSafe(p.name) + "_v")
             var pt: str = .vType(p.type_)
             if pt != ""
                 .local_types.set(p.name, pt)
@@ -2846,7 +2859,7 @@ class VGen
             on Expr.ident as id
                 if .isNarrowed(id.name)
                     if .local_types.get(id.name) as nlt
-                        return .narrowedRead(.localName(id.name), id.name)   # Zebra reads it narrowed; V never narrows here
+                        return .narrowedRead(.localName(id.name), id.name, nlt)   # Zebra reads it narrowed; V never narrows here
                 if .renames.get(id.name) as rn
                     if .isLocalName(id.name)
                         return rn
@@ -2915,7 +2928,7 @@ class VGen
                         pass
                 var ot: str = .vTypeOf(tnn.expr)
                 if ot.startsWith("?")
-                    return .narrowedRead(.exprStr(tnn.expr), "a value")
+                    return .narrowedRead(.exprStr(tnn.expr), "a value", ot)
                 return "zunwrap(" + .exprStr(tnn.expr) + ")"
             on Expr.dict_lit as dl
                 .refuse("a dict literal (maps are next)", dl.span)
@@ -3325,7 +3338,7 @@ class VGen
         var plain: str = obj + "." + vSafe(m.member)
         if exprRootIsThis(m.object) and .isNarrowed(plain)
             if .field_types.get(m.member) as nft
-                return .narrowedRead(plain, m.member)   # Zebra reads the field narrowed
+                return .narrowedRead(plain, m.member, nft)   # Zebra reads the field narrowed
         return plain
 
     def isCatchBinding(name: str): bool
