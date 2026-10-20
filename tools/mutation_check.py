@@ -46,7 +46,8 @@ import argparse
 import atexit, json, os, pathlib, random, re, shutil, subprocess, sys, time
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-ZIG = r"C:\Users\Sean\.zvm\bin\zig.exe"
+import zig_pin  # noqa: E402
+ZIG = zig_pin.apply()   # the PINNED zig (it named the shared 0.16 default here; hazard_lint H15)
 # GIT BASH, spelled out. A bare "bash" launched from Python resolves to WSL's bash on
 # this machine, which rewrites C:\ as /mnt/c/ — and the Windows zebra.exe then reports
 # "source file not found: '/mnt/c/...'" for every probe. The boundary detector went RED

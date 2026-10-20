@@ -42,7 +42,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'fuzz'))
+sys.path.insert(0, str(ROOT / 'tools'))
 import gen  # noqa: E402
+import zig_pin  # noqa: E402
 
 def _find_zebra():
     for c in (ROOT / 'zig-out' / 'bin' / 'zebra', ROOT / 'zig-out' / 'bin' / 'zebra.exe'):
@@ -51,7 +53,7 @@ def _find_zebra():
     return None
 
 ZEBRA = _find_zebra()
-ZIG = os.environ.get('ZIG', shutil.which('zig') or r'C:\Users\Sean\.zvm\bin\zig.exe')
+ZIG = os.environ.get('ZIG') or zig_pin.apply()   # an explicit ZIG= is intent; else the PIN, never PATH's (H14/H15)
 WORK = Path(os.environ.get('FUZZ_WORK', str(ROOT / '.fuzz_tmp'))) / 'leakgen'
 BASELINE = ROOT / 'fuzz' / 'leak_baseline.txt'
 FINDINGS = ROOT / 'fuzz' / 'findings' / 'leakgen'

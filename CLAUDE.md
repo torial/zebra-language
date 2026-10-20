@@ -773,7 +773,20 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   sources the pin by the `$(dirname ...)` spelling.
                                 #   Red-checked with the real attacker: a failing zig.exe first
                                 #   on PATH sinks the pre-fix stream_check and styler_test and
-                                #   not the fixed ones. CANNOT SEE: Python tools.
+                                #   not the fixed ones. PYTHON TOO since 2026-10-20: a tool that
+                                #   names the compiler path or runs zig imports tools/zig_pin.py
+                                #   (the Python half of zig_toolchain.sh: same resolution, same
+                                #   refusal unless `zig version` equals the pin) and calls
+                                #   `zig_pin.apply()`. `--rev 27b98d9` over the 15 changed files
+                                #   names all 15; standalone with 0.16 first on PATH the old
+                                #   lint_zig_keywords judged "Zig 0.16.0", the new one "0.17.0".
+                                #   v_engine_check is suppressed: it builds the ENGINE, whose own
+                                #   pin is 0.16. An explicit `ZIG=` is still honoured (intent);
+                                #   H15 a hard-coded path into the shared zvm `bin` -- the
+                                #   machine's DEFAULT zig. leakgen, fuzz/harness.py and
+                                #   mutation_check named it as a literal, and harness and
+                                #   mutation_check used it even UNDER a tier, since a literal path
+                                #   beats PATH; none moved when the pin went to 0.17.
                                 #   Suppress with
                                 #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
                                 #   because an unexplained suppression is how a gate goes
@@ -2393,7 +2406,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 112 scripts | <!-- doc-gen: 112 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 113 scripts | <!-- doc-gen: 113 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 44 tracked documents <!-- doc-gen: 44 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

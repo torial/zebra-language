@@ -11,6 +11,8 @@ import os
 import subprocess
 import sys
 import time
+import zig_pin  # noqa: E402
+zig_pin.apply()   # the PINNED zig for every zig this tool or the compiler runs, standalone too (hazard_lint H14)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ZEBRA = os.path.join(ROOT, "zig-out", "bin", "zebra.exe")

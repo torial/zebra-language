@@ -59,6 +59,8 @@ import subprocess
 import sys
 import pathlib
 import tempfile
+import zig_pin  # noqa: E402
+zig_pin.apply()   # the PINNED zig for every zig this tool or the compiler runs, standalone too (hazard_lint H14)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TSV = ROOT / "tools" / "stdlib_signatures.tsv"

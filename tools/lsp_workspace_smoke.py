@@ -17,6 +17,8 @@ other.zbr exclusion were written with the fix and not flipped):
 Exit 0 on all-pass; 1 otherwise. Stdlib only.
 """
 import json, os, subprocess, sys, tempfile
+import zig_pin  # noqa: E402
+zig_pin.apply()   # the PINNED zig for every zig this tool or the compiler runs, standalone too (hazard_lint H14)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 zebra = sys.argv[1] if len(sys.argv) > 1 else next(

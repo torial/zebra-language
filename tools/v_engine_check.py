@@ -17,7 +17,7 @@ import os, re, subprocess, sys, time, shutil, argparse, collections
 
 ENGINE = os.environ.get('ENGINE', 'C:/Projects/GameEngine')
 HERE = os.path.dirname(os.path.abspath(__file__))
-ZEBRA = os.environ.get('ZEBRA', os.path.join(HERE, '..', 'zig-out', 'bin', 'zebra.exe'))
+ZEBRA = os.environ.get('ZEBRA', os.path.join(HERE, '..', 'zig-out', 'bin', 'zebra.exe'))   # hazard-ok:H14 it builds the ENGINE with the engine's own toolchain (pinned 0.16 there); the repo pin would be the wrong zig
 V = os.environ.get('V', 'C:/Projects/v-dist/v/v.exe')
 # Per-CHECKOUT scratch, as tools/scratch_paths.sh does for the shell gates (BUG-521): main and
 # the v-backend worktree both carry this tool, and one fixed C:/tmp path let two runs clobber

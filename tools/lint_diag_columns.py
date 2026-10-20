@@ -56,6 +56,8 @@ import re
 import subprocess
 import sys
 import pathlib
+import zig_pin  # noqa: E402
+zig_pin.apply()   # the PINNED zig for every zig this tool or the compiler runs, standalone too (hazard_lint H14)
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 SMOKE = REPO / "tools" / "selfhost_smoke.sh"

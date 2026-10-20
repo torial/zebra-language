@@ -466,24 +466,57 @@ _COMPILER_PATH = "zig" + "-out/bin/zebra"
 _ZIG_BUILD = "zig" + " build"
 COMPILER_RUN = re.compile(re.escape(_COMPILER_PATH) + r"\b")
 PIN_SOURCED = re.compile(r"^\s*(?:source|\.)\s+[^#\n]*zig_toolchain\.sh", re.M)
+# The Python half (2026-10-20): a tool spells the compiler path in SEGMENTS
+# (`REPO / <out> / "bin" / <the exe>`, `os.path.join(ROOT, <out>, ...)`) and runs zig
+# from an argv list or a variable; it pins by importing tools/zig_pin.py.
+COMPILER_RUN_PY = re.compile("zig" + r"""-out['"]?\s*[,/]\s*['"]?bin['"]?\s*[,/]\s*\(?\s*['"]?zebra""")
+ZIG_RUN_PY = re.compile(r"""[\[(,]\s*['"]zig(?:\.exe)?['"]\s*,|which\(\s*['"]zig['"]\s*\)|=\s*['"]zig(?:\.exe)?['"]\s*$""")
+PIN_IMPORTED = re.compile(r"^\s*(?:import\s+zig_pin\b|from\s+zig_pin\s+import)", re.M)
 
 
 def check_h14(path, text, lines, tree=None):
-    if path.endswith("zig_toolchain.sh") or PIN_SOURCED.search(text):
+    py = path.endswith(".py")
+    if path.endswith(("zig_toolchain.sh", "zig_pin.py", "hazard_lint.py")):
         return []
+    if (PIN_IMPORTED if py else PIN_SOURCED).search(text):
+        return []
+    run, comp = (ZIG_RUN_PY, COMPILER_RUN_PY) if py else (ZIG_RUN, COMPILER_RUN)
+    fix = ("`import zig_pin` (tools/) and call `zig_pin.apply()` before the first use" if py else
+           "`source \"$REPO/tools/zig_toolchain.sh\"` before the first use")
     for i, ln in enumerate(lines, 1):
         code = re.sub(r"(^|\s)#.*$", "", ln)
-        if ZIG_RUN.search(code) or COMPILER_RUN.search(code):
+        if run.search(code) or comp.search(code):
             return [Hazard("H14", path, i,
                            "runs zig or the compiler without the PINNED toolchain: standalone it "
                            "gets whatever zig is first on PATH (the shared 0.16 here), so it can "
-                           "pass what the tier fails. Add `source \"$REPO/tools/zig_toolchain.sh\"` "
-                           "before the first use")]
+                           "pass what the tier fails. Add " + fix)]
     return []
 
 
-PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6, check_h12]
-SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12, check_h13, check_h14]
+# --------------------------------------------------------------------------- H15
+# RECEIPT (2026-10-20): fuzz/leakgen.py, fuzz/harness.py and tools/mutation_check.py NAMED the
+# machine's shared zvm default -- `...\.zvm\bin\zig.exe`, 0.16 here -- as a literal: harness
+# and mutation_check used it even UNDER a tier, where the pin is on PATH, because a hard-coded
+# path beats PATH. A fallback that names one machine's DEFAULT toolchain is a constant that
+# reads as an answer (the pin moved to 0.17 on 2026-10-04 and these never did). Resolve the pin
+# (tools/zig_pin.py, tools/zig_toolchain.sh) instead.
+SHARED_ZIG = re.compile(r"\.zvm[\\/]+bin\b")
+
+
+def check_h15(path, text, lines, tree=None):
+    out = []
+    for i, ln in enumerate(lines, 1):
+        code = re.sub(r"(^|\s)#.*$", "", ln)
+        if SHARED_ZIG.search(code):
+            out.append(Hazard("H15", path, i,
+                              "a hard-coded path into the shared zvm `bin` (the machine's DEFAULT "
+                              "zig, not the repo's pin): it wins over PATH even under a tier. "
+                              "Resolve the pin (zig_pin.apply() / zig_toolchain.sh)"))
+    return out
+
+
+PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6, check_h12, check_h14, check_h15]
+SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12, check_h13, check_h14, check_h15]
 
 
 def scan_text(path, text):
@@ -538,6 +571,10 @@ CONTROLS = {
     "H12": ("ctl_h12.sh", 'BS_PRE=/tmp/bs-pre\nrm -rf "$BS_PRE"\n'),
     "H13": ("ctl_h13.sh", 'smoke_tc_fail t.zbr "has no field named `z`"\n'),
     "H14": ("ctl_h14.sh", 'ZEBRA="$REPO/' + _COMPILER_PATH + '.exe"\n"$ZEBRA" t.zbr\n' + _ZIG_BUILD + '-exe x.zig\n'),
+    "H14py": ("ctl_h14.py", 'import os, subprocess\nZEBRA = os.path.join(ROOT, "zig' + '-out", "bin", "zebra" + ".exe")\n'),
+    "H14pyzig": ("ctl_h14z.py", 'import subprocess\nsubprocess.run(["zig", "env"])\n'),
+    "H15": ("ctl_h15.sh", 'ZIG=/c/Users/x/.zvm/bin/zig.exe\n'),
+    "H15py": ("ctl_h15.py", "ZIG = os.environ.get('ZIG', r'C:\\Users\\x\\.zvm\\bin\\zig.exe')\n"),
 }
 
 
@@ -547,7 +584,7 @@ def selftest(verbose=False):
     for code, (name, src) in CONTROLS.items():
         fired = {h.code for h in scan_text(name, src)}
         # Some controls exercise a distinct ARM of a check and share its code.
-        want = code.rstrip("open") if code.endswith("open") else code
+        want = re.match(r"H\d+", code).group(0)   # `H3open`, `H14py`: an arm of a check shares its code
         if want not in fired:
             dead.add(code)
         if verbose:
@@ -575,6 +612,11 @@ CLEAN_CONTROLS = [
      'source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"\n' + _ZIG_BUILD + '-exe x.zig\n'),
     # unpinned, but zig is only named in comments -- it runs nothing
     ("H14", "ctl_h14_comment.sh", '# rebuild first: ' + _ZIG_BUILD + '\necho ok  # ' + _COMPILER_PATH + '.exe is not run here\n'),
+    # Python, pinned by importing zig_pin
+    ("H14", "ctl_h14_pinned.py",
+     'import zig_pin\nzig_pin.apply()\nZEBRA = REPO / "zig' + '-out" / "bin" / "zebra" + ".exe"\nsubprocess.run(["zig", "env"])\n'),
+    # the PIN's own directory (~/.zvm/<version>) and a comment naming the shared default are fine
+    ("H15", "ctl_h15_clean.sh", 'D="$HOME/.zvm/$ZIG_PIN"   # never the shared ~/.zvm/bin default\n'),
 ]
 
 

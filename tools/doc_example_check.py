@@ -62,6 +62,8 @@ import pathlib
 import re
 import subprocess
 import sys
+import zig_pin  # noqa: E402
+zig_pin.apply()   # the PINNED zig for every zig this tool or the compiler runs, standalone too (hazard_lint H14)
 
 
 def block_key(doc_name, body):

@@ -26,7 +26,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SELF = ROOT / 'zig-out' / 'bin' / ('zebra.exe' if os.name == 'nt' else 'zebra')
-ZIG  = os.environ.get('ZIG', r'C:\Users\Sean\.zvm\bin\zig.exe')
+import sys  # noqa: E402
+sys.path.insert(0, str(ROOT / 'tools'))
+import zig_pin  # noqa: E402
+ZIG  = os.environ.get('ZIG') or zig_pin.apply()   # an explicit ZIG= is intent; else the PIN, never PATH's (H14/H15)
 WORK = Path(os.environ.get('FUZZ_WORK', str(ROOT / '.fuzz_tmp')))
 WORK.mkdir(exist_ok=True)
 TIMEOUT = 20

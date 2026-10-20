@@ -42,6 +42,8 @@ import subprocess
 import sys
 import pathlib
 
+import zig_pin  # noqa: E402
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 # This console is cp1252, and every message below carries an em-dash.  lint_bug_numbers
@@ -67,11 +69,9 @@ def fail_refuse(msg):
 
 def zig_lib_dir():
     """Resolve Zig's lib dir via `zig env`.  Output is ZON, not JSON."""
-    exe = "zig"
-    for cand in (os.environ.get("ZIG_EXE"), os.environ.get("ZEBRA_ZIG")):   # the pinned zig (tools/zig_toolchain.sh)
-        if cand and pathlib.Path(cand).exists():
-            exe = cand
-            break
+    # ZIG_EXE is an explicit choice; otherwise the PINNED zig -- standalone this read PATH's
+    # `zig`, i.e. judged the keyword table of the shared default, not the pin (hazard_lint H14).
+    exe = os.environ.get("ZIG_EXE") or zig_pin.apply()
     try:
         out = subprocess.run([exe, "env"], capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError) as e:

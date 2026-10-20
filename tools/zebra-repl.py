@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 import os
 from pathlib import Path
+import zig_pin  # noqa: E402
+zig_pin.apply()   # the PINNED zig for every zig this tool or the compiler runs, standalone too (hazard_lint H14)
 
 
 class ZebraREPL:
