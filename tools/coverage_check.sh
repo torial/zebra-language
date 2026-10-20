@@ -18,6 +18,7 @@
 # REFUSES (exit 2) below 10 labelled lines or if the JSON is missing/unparseable,
 # because every absence assertion is vacuous without a denominator.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"

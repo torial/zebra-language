@@ -32,6 +32,7 @@
 # does not have). Reported by the GameEngine session 2026-10-12; zebra_rt.zig is now
 # validated and installed with the modules.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"

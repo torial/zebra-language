@@ -49,7 +49,7 @@ run_leg() {   # $1 = mode  -> echoes "VERDICT retries"
   make_stub "$1"
   local berr="$TMP/build.err" attempt=1 rc=0 retries=0
   while :; do
-    PATH="$TMP/bin:$PATH" zig build-exe -fno-emit-bin -lc "$TMP/x.zig" >/dev/null 2>"$berr"
+    PATH="$TMP/bin:$PATH" zig build-exe -fno-emit-bin -lc "$TMP/x.zig" >/dev/null 2>"$berr"   # hazard-ok:H14 runs only a STUB zig, put first on PATH per command; the real one is never invoked
     rc=$?
     [ $rc -eq 0 ] && break
     if [ $attempt -lt 3 ] && zbr_zig_infra_error "$berr"; then

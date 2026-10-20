@@ -26,6 +26,7 @@
 #
 # Usage: bash tools/measure_selfhost_guess.sh [--per-file-timeout SECONDS]  (from repo root)
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 ZEB="zig-out/bin/zebra.exe"

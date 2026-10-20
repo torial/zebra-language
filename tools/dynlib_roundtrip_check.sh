@@ -21,6 +21,7 @@
 # module var) so this gate would notice it regressing.
 # pins: BUG-356 this gate IS the shared-library round trip QUICKSTART §44 promised
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"
 [ -x "$ZEBRA" ] || { echo "FAIL: zebra not built"; exit 1; }

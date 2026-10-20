@@ -22,6 +22,7 @@
 #
 # Exit 0 = built; 1 = the stranger's build FAILED (errors printed); 2 = could not run.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"
 [ -x "$ZEBRA" ] || { echo "libui-pin-build: REFUSED -- no built compiler in zig-out/bin"; exit 2; }

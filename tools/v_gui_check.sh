@@ -13,6 +13,7 @@
 # zig-out-fast/lib/ui.lib (`zig build -Doptimize=ReleaseFast -p zig-out-fast`
 # there), a V (v.exe on PATH or $V), a mingw-targeted clang ($CLANG).
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 cd "$(dirname "$0")/.." || exit 9
 V=${V:-v}
 CLANG=${CLANG:-clang}

@@ -21,6 +21,7 @@
 # tooltip_clipboard_smoke.zbr: uiControlSetTooltip, uiClipboardText/SetText, the tree handler's Icon slot + uiImage (2026-09-23)
 # pins: BUG-343 gui_modules_smoke.zbr `use`s a module named `sci`, compiled against the real libui_ng section
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 cd "$(dirname "$0")/.."
 ZEBRA=${ZEBRA:-./zig-out/bin/zebra}
 [ -x "$ZEBRA" ] || ZEBRA=./zig-out/bin/zebra.exe

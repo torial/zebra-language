@@ -21,6 +21,7 @@
 # COMPILES). The bootstrap is gone -- bootstrap_sunset.md Step 3 -- so the `boot`
 # leg went with it; the loops below keep their shape for one compiler.
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 cd "$(dirname "$0")/.."
 
 SELF="zig-out/bin/zebra.exe"; [ -x "$SELF" ] || SELF="zig-out/bin/zebra"

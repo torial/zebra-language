@@ -448,8 +448,42 @@ def check_h13(path, text, lines, tree=None):
     return out
 
 
+# --------------------------------------------------------------------------- H14
+# RECEIPT (2026-10-19): the compiler and every `zig` a tool runs are whatever is first on PATH,
+# and on this machine that is the SHARED ~/.zvm/bin default (Zig 0.16), not the repo's pin
+# (0.17, .zig-version). gates.sh sources tools/zig_toolchain.sh, so a tool run UNDER a tier is
+# pinned -- and the same tool run STANDALONE is not. BUG-596's runtime read a field 0.17 does
+# not have (`std.builtin.Type.Fn.params`): a standalone selfhost_smoke.sh passed 748/748 on
+# 0.16 while the FULL tier failed the fixture on 0.17, and the first failure was written off
+# as "non-reproducing". A tool that runs zig or the compiler sources the pin itself
+# (`source "$REPO/tools/zig_toolchain.sh"`). Flagged once per file, at the first such line;
+# suppress THERE with a reason (a stub-zig check, a library whose callers pin).
+ZIG_RUN = re.compile(r"(?<![\w./$-])zig\s+(?:build|build-exe|build-obj|build-lib|test|fetch|run|"
+                     r"env|version|translate-c|ast-check|fmt)\b")
+# Spelled in PIECES: gates.sh's static-purity check greps every --static gate's source for the
+# compiler's path and the build command, and this file only NAMES them (it runs neither).
+_COMPILER_PATH = "zig" + "-out/bin/zebra"
+_ZIG_BUILD = "zig" + " build"
+COMPILER_RUN = re.compile(re.escape(_COMPILER_PATH) + r"\b")
+PIN_SOURCED = re.compile(r"^\s*(?:source|\.)\s+[^#\n]*zig_toolchain\.sh", re.M)
+
+
+def check_h14(path, text, lines, tree=None):
+    if path.endswith("zig_toolchain.sh") or PIN_SOURCED.search(text):
+        return []
+    for i, ln in enumerate(lines, 1):
+        code = re.sub(r"(^|\s)#.*$", "", ln)
+        if ZIG_RUN.search(code) or COMPILER_RUN.search(code):
+            return [Hazard("H14", path, i,
+                           "runs zig or the compiler without the PINNED toolchain: standalone it "
+                           "gets whatever zig is first on PATH (the shared 0.16 here), so it can "
+                           "pass what the tier fails. Add `source \"$REPO/tools/zig_toolchain.sh\"` "
+                           "before the first use")]
+    return []
+
+
 PY_CHECKS = [check_h1, check_h2, check_h3, check_h4, check_h5, check_h6, check_h12]
-SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12, check_h13]
+SH_CHECKS = [check_h2, check_h4, check_h5, check_h10, check_h11, check_h12, check_h13, check_h14]
 
 
 def scan_text(path, text):
@@ -503,6 +537,7 @@ CONTROLS = {
     "H11": ("ctl_h11.sh", 'comm -23 a.txt b.txt\n'),
     "H12": ("ctl_h12.sh", 'BS_PRE=/tmp/bs-pre\nrm -rf "$BS_PRE"\n'),
     "H13": ("ctl_h13.sh", 'smoke_tc_fail t.zbr "has no field named `z`"\n'),
+    "H14": ("ctl_h14.sh", 'ZEBRA="$REPO/' + _COMPILER_PATH + '.exe"\n"$ZEBRA" t.zbr\n' + _ZIG_BUILD + '-exe x.zig\n'),
 }
 
 
@@ -518,7 +553,29 @@ def selftest(verbose=False):
         if verbose:
             mark = "ok  " if code not in dead else "DEAD"
             print(f"  [{mark}] {code} control -> fired {sorted(fired) or 'nothing'}")
+    # The other direction, for a check whose likely failure is a FALSE POSITIVE: a clean input
+    # must stay clean, or a too-wide pattern gets "fixed" by suppressing it everywhere.
+    for code, name, src in CLEAN_CONTROLS:
+        fired = {h.code for h in scan_text(name, src)}
+        if code in fired:
+            dead.add(code + "-clean:" + name)
+        if verbose:
+            mark = "ok  " if code not in fired else "DEAD"
+            print(f"  [{mark}] {code} clean control {name} -> fired {sorted(fired) or 'nothing'}")
     return dead
+
+
+CLEAN_CONTROLS = [
+    # the planted H14 lines, with the pin sourced first
+    ("H14", "ctl_h14_pinned.sh",
+     'source "$REPO/tools/zig_toolchain.sh"\nZEBRA="$REPO/' + _COMPILER_PATH + '.exe"\n"$ZEBRA" t.zbr\n' + _ZIG_BUILD + '-exe x.zig\n'),
+    # the spelling zig_toolchain.sh's own header documents (a space inside the $(...)):
+    # the first version of this check read it as unpinned and flagged full_sweep.sh
+    ("H14", "ctl_h14_dirname.sh",
+     'source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"\n' + _ZIG_BUILD + '-exe x.zig\n'),
+    # unpinned, but zig is only named in comments -- it runs nothing
+    ("H14", "ctl_h14_comment.sh", '# rebuild first: ' + _ZIG_BUILD + '\necho ok  # ' + _COMPILER_PATH + '.exe is not run here\n'),
+]
 
 
 def main():

@@ -759,7 +759,21 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   expectations quoting a field in backticks became
                                 #   "no value for field  of ...", one failing the FULL tier
                                 #   on a correct compiler, the other silently asserting less
-                                #   and still passing; `--rev 1bd2b14` names both).
+                                #   and still passing; `--rev 1bd2b14` names both);
+                                #   H14 a tools/*.sh that runs zig or the compiler WITHOUT
+                                #   sourcing tools/zig_toolchain.sh (2026-10-19: standalone it
+                                #   gets whatever zig is first on PATH -- the shared 0.16 here --
+                                #   so a standalone selfhost_smoke passed a BUG-596 fixture the
+                                #   0.17 tier failed, and the failure was called a flake). It
+                                #   named 24 tools on the day; 21 now source the pin, 3 are
+                                #   suppressed with reasons (two stub-zig checks, and
+                                #   zig_build_lib.sh, a library pinning would break the stubs
+                                #   of). Its self-test also runs CLEAN controls that must NOT
+                                #   fire -- the first draft flagged full_sweep.sh, which
+                                #   sources the pin by the `$(dirname ...)` spelling.
+                                #   Red-checked with the real attacker: a failing zig.exe first
+                                #   on PATH sinks the pre-fix stream_check and styler_test and
+                                #   not the fixed ones. CANNOT SEE: Python tools.
                                 #   Suppress with
                                 #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
                                 #   because an unexplained suppression is how a gate goes

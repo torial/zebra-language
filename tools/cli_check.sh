@@ -41,6 +41,7 @@
 # THE BUG IS FIXED -- which is the signal to promote it to a real assertion. Excluding
 # them instead is how node-addon rotted for two weeks.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ZEBRA="$REPO/zig-out/bin/zebra.exe"
