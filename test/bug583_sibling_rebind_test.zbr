@@ -1,0 +1,36 @@
+# BUG-583: one name bound in two SIBLING blocks of one function, with different types. The
+# second binding was judged by the first: inference is flat per function, the reporting pass
+# rebound a `var` but not a destructure (so `x.upper()` was refused on an `int`), codegen kept
+# a name in its "is a str" set after it was redeclared as a List (printed with `{s}`), and an
+# `is ... as x` capture or a destructure took the name's other type for its format. Both
+# orders, since the stale binding came from the earlier block in one case and the later in another.
+
+union U
+    v: str
+    n: int
+
+def main()
+    var c = 1
+    var u = U.v("ef")
+    var out = StringBuilder()
+    if c > 0
+        var x: int = 5
+        out.append("${x + 1} ")
+    if c > 0
+        var (x, z) = ("ab", 0)
+        out.append("${x.upper()}${z} ")
+    if c > 0
+        var x: str = "s"
+        out.append("${x} ")
+    if c > 0
+        var x: List(int) = [1, 2]
+        out.append("${x} ")
+    if u is U.v as x
+        out.append("${x} ")
+    if c > 0
+        var (x, z) = ("cd", 1)
+        out.append("${x}${z} ")
+    if c > 0
+        var x: float = 1.5
+        out.append("${x}")
+    print("bug583: " + out.toString())

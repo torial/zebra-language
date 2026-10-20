@@ -6,6 +6,31 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-583: one name, two types in SIBLING blocks -- the second binding was judged by the first (a destructure refused, an `is ... as x` payload and a re-declared `List` printed with the wrong format) -- FIXED 2026-10-20 (found 2026-10-14)
+- **Found by:** pattern search 3's collision matrix (3,000 programs, 1,105 BAD; 570 of them were
+  BUG-582). The rest came down to three places that keep state BY NAME in a scope the language
+  does not have -- inference is flat per function (BUG-566's class):
+  1. **The reporting pass** (`checkStmt1`) rebound a name on a `var` and had NO destructure arm,
+     so `var (x, z) = ("ab", 0)` after a sibling block's `var x: int` refused `x.upper()` as
+     "'int' has no method 'upper'" -- a false refusal.
+  2. **Codegen's name-keyed sets** (`str_params` and nine like it) were added to on a
+     declaration and never cleared when the name was declared again, so `var x: List(int)` after
+     a sibling `var x: str` printed with `{s}`.
+  3. **Codegen's inference context** was not rebound for an `is ... as x` capture or a
+     destructure, so either took the name's other type for its print format.
+- **Fix:** (1) the destructure's bindings are one function, `bindDestructNames`, called by
+  `walkStmt` (which keeps the arity/shape diagnostics) and by `checkStmt1`; (2)
+  `forgetLocalFacts(name)` clears every name-keyed set before a `var` or a destructure re-adds
+  what is true of the new declaration; (3) the destructure rebinds its names in codegen's
+  inference context as a `var` does, and an `is ... as x` capture is bound to its payload type
+  for its block, the previous binding restored after.
+- **Measured:** `tools/sibling_rebind_matrix.py` -- the matrix's distilled core, 8 binding forms
+  in sibling blocks, every ordered pair, expected output by construction -- 7 BAD of 64 on the
+  pre-fix compiler, 0 after.
+- **Regression fixture:** `test/bug583_sibling_rebind_test.zbr` -- every shape above, both orders
+  for the destructure. Prints `6 AB0 s [1, 2] ef cd1 1.5`; the pre-fix compiler refused it at
+  21:25.
+
 ### BUG-582: `for i, x in <list>` failed inside zig "no field or member function named 'iterator' in 'List(str)'" unless the list was a named local -- FIXED 2026-10-20 (found 2026-10-14)
 - **Found by:** pattern search 3's collision generator, over a literal (`for i, x in ["ab",
   "cd"]`). Broader than filed: a FIELD (`for i, x in b.names`) failed the same way, and so did

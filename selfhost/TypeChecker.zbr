@@ -4836,6 +4836,37 @@ def copyReceiverName(recv: Expr, ctx: InferCtx): str
         return "<at>"
     return ""
 
+# BUG-583: bind the names a destructure declares -- tuple elements by position, a struct's
+# fields by name, `unknown_` where neither is known. Shared by walkStmt (which also reports
+# arity and shape errors) and checkStmt1, the reporting pass: that one rebound a plain `var`
+# and had no destructure arm, so `var (x, z) = ("ab", 0)` in a sibling block kept the earlier
+# block's `var x: int` and `x.upper()` was refused.
+def bindDestructNames(sds: StmtDestruct, ctx: InferCtx)
+    var rt: Type_ = inferExpr(sds.init_expr, ctx)
+    if rt is Type_.ref_to as dr
+        rt = dr
+    if rt is Type_.tuple_ as tupt
+        var tdi: int = 0
+        for nm in sds.names
+            var tde: Type_? = tupt.at(tdi)
+            if tde as tde_v
+                ctx.bind(nm, tde_v)
+            else
+                ctx.bind(nm, Type_.unknown_)
+            tdi = tdi + 1
+        return
+    var dc: str = ""
+    if rt is Type_.named as dtn
+        dc = dtn
+    for nm in sds.names
+        var nm_s: str = nm
+        var ftype: Type_ = Type_.unknown_
+        if dc != ""
+            var ft: Type_? = ctx.fieldTypeAny(dc, nm_s)
+            if ft as ft2
+                ftype = ft2
+        ctx.bind(nm_s, ftype)
+
 def walkStmts(stmts: List(Stmt), ctx: InferCtx)
     # EARLY-EXIT NARROWING (Sean, 2026-09-30): after `if a == nil` whose body always
     # leaves, `a` is its non-optional type for the rest of this list -- unless the list
@@ -5223,14 +5254,6 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 # arity to measure against.
                 if tupt.len > 0 and tupt.len != sds.names.len
                     ctx.addErr(ctx.file, anchorLine(sds.init_expr, sds.span.line), anchorCol(sds.init_expr, sds.span.col), "destructuring expects " + sds.names.len.toString() + " names but tuple has " + tupt.len.toString() + " elements")
-                var tdi: int = 0
-                for nm in sds.names
-                    var tde: Type_? = tupt.at(tdi)
-                    if tde as tde_v
-                        ctx.bind(nm, tde_v)
-                    else
-                        ctx.bind(nm, Type_.unknown_)
-                    tdi = tdi + 1
             else
                 # A positional destructure (`var (a, b) = …`) of something that
                 # is not a tuple at all. Ported from src/TypeChecker.zig:2054.
@@ -5247,18 +5270,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 # Zig, and so does this.
                 if sds.is_struct and isConcretePrimitive(destruct_recv_t)
                     ctx.addErr(ctx.file, anchorLine(sds.init_expr, sds.span.line), anchorCol(sds.init_expr, sds.span.col), "struct destructuring requires a class or struct, got '" + typeTag(destruct_recv_t) + "'")
-                # Struct destructuring: var {x, y} = struct_expr
-                var destruct_class: str = ""
-                if destruct_recv_t is Type_.named as dtn
-                    destruct_class = dtn
-                for nm in sds.names
-                    var nm_s: str = nm
-                    var ftype: Type_ = Type_.unknown_
-                    if destruct_class != ""
-                        var ft: Type_? = ctx.fieldTypeAny(destruct_class, nm_s)
-                        if ft as ft2
-                            ftype = ft2
-                    ctx.bind(nm_s, ftype)
+            bindDestructNames(sds, ctx)                     # BUG-583: shared with checkStmt1
         on Stmt.allocate_ as sal
             walkExpr(sal.source, ctx)
             walkStmts(sal.stmts, ctx)
@@ -6752,6 +6764,8 @@ def noteCtorArgs(e: Expr, file: str, line: int, ctx: InferCtx)
 
 def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
     noteContainerCopies(s, file, ctx)
+    if s is Stmt.destruct as c_ds
+        bindDestructNames(c_ds, ctx)                        # BUG-583: rebind, as a `var` does
     if true
         branch s
             on Stmt.var_ as dv

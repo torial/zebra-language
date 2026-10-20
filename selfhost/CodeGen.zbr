@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ClassTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ClassTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -7707,6 +7707,14 @@ struct Generator
             on Stmt.copy_out as co
                 genCopyOut(co)
             on Stmt.destruct as d
+                # BUG-583: a destructure DECLARES its names, as genLocalVar's `var` does:
+                # rebind them in the inference context (inference is flat per function,
+                # so a sibling block's `var x: int` otherwise typed this `x`) and drop what
+                # the name-keyed sets said about the previous declaration.
+                for dn583 in d.names
+                    forgetLocalFacts(dn583)
+                if .infer_ctx as ic_d583
+                    bindDestructNames(d, ic_d583)
                 genDestruct(d)
             on Stmt.expr as e
                 # BUG-027 fix (statement-position): hoist f().method(args)
@@ -7782,7 +7790,30 @@ struct Generator
 
     # ── genLocalVar ───────────────────────────────────────────────────────────
 
+    # BUG-583: what the name-keyed sets below say about `name` belongs to its PREVIOUS
+    # declaration. A name declared again in a sibling block (`var x: str` in one `if`,
+    # `var x: List(int)` in the next) kept being "a str" and printed with `{s}`. Every set
+    # genLocalVar adds to is cleared here first; the new declaration re-adds what is true.
+    def forgetLocalFacts(name: str)
+        str_params.removeOne(name)
+        strset_locals.removeOne(name)
+        list_tuple_locals.removeOne(name)
+        chan_locals.removeOne(name)
+        atomic_locals.removeOne(name)
+        thread_pool_locals.removeOne(name)
+        closure_vars.removeOne(name)
+        dynlib_vars.removeOne(name)
+        datetime_vars.removeOne(name)
+        var tp: int = 0
+        while tp < 8
+            list_tuple_str_pos.removeOne(name + ":" + tp.toString())
+            tp += 1
+
     def genLocalVar(n: DeclVar)
+        # BUG-583: FIRST, before anything below records a fact about this declaration (the
+        # closure-var tracking does, well above the str/List block) -- placed lower, it erased
+        # `closure_vars` for the very declaration that set it.
+        forgetLocalFacts(n.name)
         if n.type_ != nil and n.init_expr != nil
             armJsonWant(n.init_expr!, typeFromRef(n.type_!))
         # `var _ = expr` is the discard idiom (QUICKSTART): Zig rejects a `const`/`var`
@@ -10034,7 +10065,29 @@ struct Generator
                     if cap != "_" and not mightUseName(cap, stmts)
                         ig.writeIndent()
                         ig.w.emit("_ = " + cap + ";\n")
+                    # BUG-583: inference is flat per function, so inside this block the
+                    # capture would be typed by the name's LAST binding (a sibling block's
+                    # `var x: int` printed this str payload with `{}`). Bind it to the
+                    # payload for the block and put the previous binding back after.
+                    var cap_vp: Type_? = .module_types.variantPayload(union_nm, variant)
+                    if cap_vp == nil
+                        cap_vp = .dep_types.variantPayload(union_nm, variant)
+                    var cap_rebound: bool = false
+                    var cap_had: bool = false
+                    var cap_prev: Type_ = Type_.unknown_
+                    if .infer_ctx != nil and cap != "_"
+                        if cap_vp as cap_t
+                            cap_had = (.infer_ctx!).hasLocal(cap)
+                            if cap_had
+                                cap_prev = (.infer_ctx!).localType(cap)
+                            (.infer_ctx!).bind(cap, cap_t)
+                            cap_rebound = true
                     ig.genStmts(stmts)
+                    if cap_rebound
+                        if cap_had
+                            (.infer_ctx!).bind(cap, cap_prev)
+                        else
+                            (.infer_ctx!).unbind(cap)
                     var ckey = makeDottedKey(cap, "")
                     ig.ptr_field_bindings.removeStartingWith(ckey)
                     ig.opt_ptr_field_bindings.removeStartingWith(ckey)

@@ -69,30 +69,6 @@
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
 
-### BUG-583: one name, two types in SIBLING blocks -- the second binding is judged by the first: a destructure is refused, an `is ... as x` payload and a re-annotated `List` print with the wrong format -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 3 -- a generator that declares `x` in two sibling scopes of one
-  function with different types and uses it in a type-dependent way (10 binding sites x 30
-  type pairs, one program each, expected output derived by construction). Shapes seen:
-  - `var x: int` in one `if`, `var (x, z) = ("ab", 0)` in a sibling: the checker refuses
-    `x.upper()` -- "'int' has no method 'upper'" (a FALSE refusal: the destructure does not
-    rebind the name).
-  - the same with `if u is U_str.v as x`: zig "cannot format slice without a specifier" (the
-    print chose the int format).
-  - `var x: str` then `var x: List(int)` in a sibling block -- at nearly every site pair the
-    list prints with `{s}`, zig "expected type '[]const u8', found '*array_list...'".
-- **Cause (to confirm per shape):** BUG-566's class -- state keyed by NAME in a scope the
-  language does not have (inference is flat per function; codegen's string-local name sets
-  are not cleared when a name is rebound). BUG-566 fixed the for-in binding only.
-- **The matrix, 2026-10-14:** 3,000 programs, 1,105 BAD. 570 are BUG-582 (any pair with the
-  literal-enumerate site). Of the other 536, nearly all involve a DESTRUCTURE (`var (x, z) =`)
-  or an `is ... as x` binding, in EITHER position and against almost every other site (18-22
-  of 30 type pairs each); `def(x: T)` lambda parameters, `branch ... on V as x` arms and
-  for-in rebind correctly (about 1 per pair: the str -> List print format). So the two binding
-  forms neither rebind a stale name nor shadow it for what follows.
-- **The generator** was a scratch tool at the time of filing; it becomes a tool with pattern
-  search 3.
-
-
 ### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)
 - **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
   should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
