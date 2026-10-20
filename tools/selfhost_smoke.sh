@@ -1356,6 +1356,8 @@ smoke_tc_fail test/fail_fixtures/bug595_mixin_field_private_test.zbr "bug595_mix
 smoke_tc_fail test/fail_fixtures/bug595_mixin_field_private_test.zbr "bug595_mixin_field_private_test.zbr:23:13: error: field 'count' belongs to mixin 'Counted' and is private to it"
 smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixin_body_checked_test.zbr:6:18: error: 'str' has no method 'toUpperX'"
 smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixin_body_checked_test.zbr:9:22: error: type mismatch: expected int, found str"
+smoke_run test/bug596_bound_method_test.zbr "bug596: 1113 12 112 1112 1113 [false, false, false] [5000, 9999] 6678 hi, zebra 9"
+smoke_tc_fail test/fail_fixtures/bug596_struct_bound_method_test.zbr "bug596_struct_bound_method_test.zbr:12:15: error: a method of a STRUCT cannot be used as a value yet"
 smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:9:18: error: 'str' has no method 'toUpper'"
 smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:13:14: error: 'str' has no method 'toLower2'"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"

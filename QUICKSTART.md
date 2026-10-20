@@ -2253,6 +2253,36 @@ result = outer(def()
 - Nesting is unlimited — each inner `def(` starts its own indented body.
 - Named keyword arguments work the same way: `f(key: def() body )`.
 
+### §19.5 A method as a value — bound to its object
+
+A class's method read without calling it is a function bound to that object: call it later,
+store it, pass it, or hand it to `map` / `filter` / `reduce`. It refers to the object, so
+calls through it and calls on the object see one state.
+
+```zebra
+sig StepFn(n: int): int
+
+class Counter
+    var n: int = 0
+    def add(k: int): int
+        .n += k
+        return .n
+
+def apply(f: StepFn, x: int): int
+    return f(x)
+
+def main()
+    var c = Counter()
+    var g = c.add                   # bound -- nothing runs yet
+    g(10)
+    print(apply(c.add, 5))          # 15: the same counter
+    print([1, 2, 3].map(c.add))     # [16, 18, 21]
+```
+
+A STRUCT's method cannot be used as a value yet: it would bind the struct variable itself,
+which needs the escaping-capture design still owed (BUG-569). Call it in place, or make the
+type a class.
+
 ---
 
 ## 20. `sig` — function type aliases

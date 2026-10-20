@@ -3387,12 +3387,17 @@ class Writer
     # in the fields pass so all struct fields stay contiguous). On the Writer
     # (shared, mutable) so `except`-derived Generators all see it.
     var suppress_once_field: bool
+    # BUG-596: the next genExpr is a CALLEE (`c.bump` in `c.bump()`), not a value. Set by
+    # genCalleeExpr, consumed by the very next genExpr, so a method read as a value binds
+    # (`_zbr_bind`) and a method called does not.
+    var callee_next: bool
 
     cue init()
         _buf = StringBuilder()
         _uid = 0
         cur_line = 0
         suppress_once_field = false
+        callee_next = false
 
     def emit(s: str)
         _buf.append(s)
@@ -10939,7 +10944,7 @@ struct Generator
                     on Expr.member as m
                         genExpr(m.object)
                     else
-                        genExpr(c.callee)
+                        genCalleeExpr(c.callee)
             else
                 genExpr(e)
 
@@ -13166,7 +13171,31 @@ struct Generator
 
     # ── genExpr ───────────────────────────────────────────────────────────────
 
+    def genCalleeExpr(e: Expr)
+        w.callee_next = true
+        genExpr(e)
+
+    # BUG-596: the class whose METHOD `m` reads as a value (`c.bump`, `this.bump`), or "".
+    # A user class of this module or a used one; a field of the same name wins (it is read).
+    def boundMethodClass(m: ExprMember): str
+        if .infer_ctx == nil
+            return ""
+        var rt: Type_ = inferExpr(m.object, .infer_ctx!)
+        if rt is Type_.ref_to as rr
+            rt = rr
+        if rt is Type_.named as rn
+            var ct_opt = .module_types.classOf(rn)
+            if ct_opt == nil
+                ct_opt = .dep_types.classOf(rn)
+            if ct_opt as ct
+                if ct.is_class and not ct.is_interface
+                    if (.infer_ctx!).fieldTypeAny(rn, m.member) == nil and (.infer_ctx!).methodReturnAny(rn, m.member) != nil
+                        return rn
+        return ""
+
     def genExpr(e: Expr)
+        var is_callee: bool = w.callee_next                # BUG-596
+        w.callee_next = false
         branch e
             on Expr.int_lit as il
                 w.emit(hexLitZig(il.text))
@@ -13219,6 +13248,12 @@ struct Generator
             on Expr.ident as id
                 genIdent(id)
             on Expr.member as m
+                # BUG-596: a method read as a VALUE binds to its receiver. Not as a callee.
+                if not is_callee and boundMethodClass(m) != ""
+                    w.emit("_zbr_bind(")
+                    genExpr(m.object)
+                    w.emit(", \"" + m.member + "\")")
+                    return
                 # Catch-variable member: e.message → _zbr_error_msg(), e.details → _error_ctx.details
                 if catch_var != ""
                     if m.object is Expr.ident as mid
@@ -14697,6 +14732,10 @@ struct Generator
                         if nt.name == "str"
                             return true
             on Expr.member as m
+                # BUG-596: a method read as a value is a callable, whatever it is called --
+                # the name list below took a bound `n.name` for a string.
+                if boundMethodClass(m) != ""
+                    return false
                 # Common string field names
                 if m.member == "text" or m.member == "name" or m.member == "message" or m.member == "path" or m.member == "stdout" or m.member == "stderr" or m.member == "src" or m.member == "member"
                     return true
@@ -15231,7 +15270,7 @@ struct Generator
                 if gf_cls != ""
                     var gf_key = gf_cls + "." + gf_mem.member
                     if .module_types.hasGenericFn(gf_key) or .dep_types.hasGenericFn(gf_key)
-                        genExpr(gf_inner.callee)
+                        genCalleeExpr(gf_inner.callee)
                         w.emit("(")
                         var gm_first = true
                         for ta in gf_inner.args
@@ -15266,7 +15305,7 @@ struct Generator
             # `error()` the constructor (test/bug280_freed_words_test).
             if isLocalOrParamName(cid.name) and localMayBeCallable(cid.name)
                 w.emit("_zbr_invoke(&")
-                genExpr(c.callee)
+                genCalleeExpr(c.callee)
                 w.emit(", .{")
                 genArgList(c.args)
                 w.emit("})")
@@ -15277,7 +15316,7 @@ struct Generator
         if (c.callee is Expr.call or c.callee is Expr.index) and .infer_ctx != nil
             if isSigType(inferExpr(c.callee, .infer_ctx!))
                 w.emit("_zbr_invoke(&(")
-                genExpr(c.callee)
+                genCalleeExpr(c.callee)
                 w.emit("), .{")
                 genArgList(c.args)
                 w.emit("})")
@@ -15751,7 +15790,7 @@ struct Generator
         if reg_throws and try_block_label == nil and not in_try_expr
             recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("try ")
-        genExpr(c.callee)
+        genCalleeExpr(c.callee)
         w.emit("(")
         var reg_params: List(Param)? = nil
         if c.callee is Expr.ident as reg_id
@@ -19444,7 +19483,7 @@ struct Generator
                 w.emit("; ")
             j += 1
         w.emit("break :" + lbl + " ")
-        genExpr(c.callee)
+        genCalleeExpr(c.callee)
         w.emit("(")
         var k: int = 0
         while k < ps.len

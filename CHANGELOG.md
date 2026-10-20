@@ -110,6 +110,11 @@ confirmed via `tools/bootstrap_check.sh`.
   inside zig. And an undefined name inside a numeric `for`, an `allocate` or `in` block, a
   `require` / `ensure`, a `<<-` or a `for ... if` filter is reported too (BUG-593); they were
   never checked.
+- **A class's method can be used as a value (BUG-596)** -- `var g = c.add`, `apply(c.add, 5)`,
+  `xs.map(c.big)`, a `List` of sigs -- bound to its object, so calls through it share the
+  object's state (QUICKSTART §19.5). It failed inside zig. `map` / `filter` / `reduce` / `any`
+  / `all` / `find` take any callable now, not only a bare function. A STRUCT's method as a
+  value is refused for now, naming why (it waits on BUG-569's capture design).
 - **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that
   `adds` it, private to the mixin: its methods use it, and the class reaches it through
   them; naming it from outside is refused, saying so. It used to be dropped, and every read

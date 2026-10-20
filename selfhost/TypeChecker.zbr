@@ -262,6 +262,9 @@ class ClassTypes
     # declaring module computes the value (`_zbr_dflt_<field>()`), and BUG-591's refusal
     # applies to every other omitted field.
     var field_defaults: HashMap(str, bool)
+    # BUG-596: each method's declared return TypeRef, so a method read as a VALUE
+    # (`var f = c.name`) is typed as a callable returning it -- `f()` then types as it.
+    var method_return_refs: HashMap(str, TypeRef)
 
     cue init(name: str)
         .name = internString(name)
@@ -280,6 +283,12 @@ class ClassTypes
         field_refs = HashMap()
         field_order = List(str)()
         field_defaults = HashMap()
+        method_return_refs = HashMap()
+
+    def methodReturnRef(method_name: str): TypeRef?
+        if .method_return_refs.contains(method_name)
+            return .method_return_refs.fetch(method_name)
+        return nil
 
     def fieldHasDefault(field_name: str): bool
         return .field_defaults.contains(field_name)
@@ -1036,6 +1045,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     mt.addGenericFnTypeParams(ct.name + "." + m.name, m.type_params)   # BUG-585
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
+                    ct.method_return_refs.put(internString(m.name), m.return_type!)   # BUG-596
                 else
                     ct.setMethodReturn(m.name, Type_.void_)
                 # Collect param names as CSV for named-arg reordering in codegen.
@@ -3220,6 +3230,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # populateModuleTypes, mixins merged, an `extend`'s methods under `$extend:`,
                 # a dep's from its own table), so an unknown name is refused here, naming the
                 # fields. A method read as a value is not a field and is not refused.
+                # BUG-596: a METHOD read as a value (`c.bump`, `xs.map(p.score)`). On a class
+                # it binds to the object (CodeGen `_zbr_bind`) and is typed as a callable
+                # returning what the method returns. On a STRUCT it would bind the VARIABLE by
+                # reference (Sean, 2026-10-16) -- which needs the escaping-capture design
+                # BUG-569 still owes -- so it is refused for now rather than reaching zig.
+                if boundMethodRet(tn, m.member, m.span.line, m.span.col, ctx) as bm_ret
+                    return bm_ret
                 if unknownUserMember(tn, m.member, ctx)
                     var owning_mixin: str = mixinOwningField(tn, m.member, ctx)
                     if owning_mixin != ""
@@ -7535,6 +7552,28 @@ def interfaceHasMethod(ctx: InferCtx, iface: str, method: str, depth: int): bool
         if interfaceHasMethod(ctx, ifaceKeyBase(p), method, depth - 1)
             return true
     return false
+
+# BUG-596: the type of METHOD `member` of user class `tn` read as a value -- a callable
+# returning the method's declared type (unknown_ for a method declared without one) -- or
+# nil when `member` is not such a method (a field of that name wins: it is what is read).
+# A struct's method read as a value is refused here (BUG-596's struct half waits on BUG-569).
+def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Type_?
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt == nil
+        return nil
+    var ct: ClassTypes = ct_opt!
+    if ct.is_interface or not (ct.is_class or ct.is_struct)
+        return nil
+    if ctx.fieldTypeAny(tn, member) != nil or ctx.methodReturnAny(tn, member) == nil
+        return nil
+    if ct.is_struct
+        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which needs the escaping-capture design BUG-569 still owes -- call it in place, or make '" + tn + "' a class to pass its methods around")
+        return Type_.unknown_
+    if ct.methodReturnRef(member) as rr
+        return Type_.fn_type_(rr)
+    return Type_.unknown_
 
 # BUG-594: `member` is not a field, method or extension of `tn`, a user class or struct whose
 # member set is fully known. False for anything else (interfaces, unions, enums, aliases,

@@ -1,0 +1,8 @@
+# Helper module for bug596_bound_method_test: a class from ANOTHER module whose method is
+# bound (`_zbr_bind` reads its signature by reflection, so nothing is spelled here).
+class Greeter
+    var greeting: str
+    cue init(greeting: str)
+        .greeting = greeting
+    def greet(who: str): str
+        return .greeting + ", " + who

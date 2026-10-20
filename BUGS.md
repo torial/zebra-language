@@ -54,20 +54,28 @@
 - **Fix direction:** route both mixin loops (methods, and `mixinFieldDecls`) through the generic
   emitter, or refuse `adds` on a generic class until then. Control: the probe prints `g`.
 
-### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passes `zebra -c` and fails inside zig "no field named 'bump'" -- OPEN, DECIDED: support it, by reference (found 2026-10-16)
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
+<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
-  functional approaches". A bound method is a closure over its receiver. For a STRUCT
-  receiver it refers to the VARIABLE, not a copy (Sean chose this over C#'s copy semantics),
-  consistent with BUG-569's by-reference capture -- so a bound struct method that outlives
-  its variable needs the escaping-capture boxing BUG-569 still owes. Class receivers can
-  land first; struct receivers with BUG-569's design.
-- **Found by:** writing BUG-594's positive control. `c.bump` with `bump` a method of C, bound
-  to a `sig` variable: the front end accepts it (BUG-594 deliberately does not refuse a
-  method's name as a member, since it IS a member) and codegen has no bound-method form, so it
-  emits `c.bump` and zig refuses it as a field.
-- **Decision needed:** support it (a closure over the receiver -- C#'s method-group
-  conversion, which Sean's by-reference capture decision, BUG-569, points toward) or refuse
-  it in the front end naming the lambda spelling (`def(): int  return c.bump()`).
+  functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
+  it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
+  BUG-569's by-reference capture.
+- **Class receivers, FIXED:** `c.bump` read as a value emits `_zbr_bind(c, "bump")` -- a runtime
+  helper that reads the method's signature by reflection and returns a struct holding the
+  receiver with a `call` of the method's arity, which a sig slot's `.from` and an untyped
+  local's `_zbr_invoke` already take. Nothing about the method is spelled at the bind, so a
+  used module's class binds the same way. A callee is not a value: codegen marks callee
+  position (`genCalleeExpr`) so `c.bump()` is untouched. The checker types the value as a
+  callable returning the method's type (`f()` then types), and codegen's string-shape name
+  list no longer takes a bound `n.name` for a str. The list helpers (`map`, `filter`,
+  `reduce`, `any`, `all`, `find`) took only bare functions; they apply a function OR a value
+  with `call` now (`_zbr_apply1` / `_zbr_apply2`, the spelling `Result.map` already used).
+  Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
+- **Struct receivers, OPEN:** refused, naming the reason and the alternatives (call it in
+  place, or make the type a class). Binding the variable by reference needs the variable to
+  outlive the closure -- BUG-569's escaping-capture boxing. Fixture
+  `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
+  positive fixture when this half lands.
 
 ### BUG-592: a field default that uses a module-level function or constant inside an expression is refused -- "cannot infer the type of `B`, an operand of `+`" -- OPEN (found 2026-10-16)
 - **Found by:** writing BUG-519's fixture. One file, no modules:
