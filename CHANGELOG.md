@@ -128,6 +128,9 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A struct field default may allocate (BUG-603).** `var s: str = "a" + NAME` or an
+  interpolation in a struct failed inside zig ("unable to resolve comptime value"), even when
+  every construction gave the field; it is built when the struct is.
 - **A generic class can `add` a mixin (BUG-598).** `class Box(T) adds Tagged` was accepted
   and the mixin's methods and state were never emitted, so calling one failed inside zig.
 - **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that

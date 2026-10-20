@@ -1,0 +1,31 @@
+# BUG-603: a STRUCT field default that allocates (`"a" + NAME`, an interpolation) reached zig
+# as a comptime field default -- "unable to resolve comptime value", even when every
+# construction gave the field. It is built where the struct is: a literal that omits it, a
+# `cue init` prologue, and a used module's struct through its `_zbr_dflt_` function.
+use bug603_lib exposing D
+
+const NAME: str = "zz"
+
+def base(): int
+    return 40
+
+struct S
+    var s: str = "a" + NAME
+    var n: int = 3
+    var t: str = "${NAME}!"
+    var m: int = base() * 2
+
+struct T
+    var label: str = "t-" + NAME
+    var x: int
+
+    cue init(x: int)
+        .x = x
+
+def main()
+    var a = S()
+    var b = S(s: "q")
+    var c = T(7)
+    var d = D()
+    var e = D(k: 9)
+    print("bug603: ${a.s} ${a.n} ${a.t} ${a.m} | ${b.s} ${b.n} | ${c.label} ${c.x} | ${d.name} ${d.k} ${e.name} ${e.k}")

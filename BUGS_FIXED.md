@@ -6,6 +6,25 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-603: a STRUCT field default that allocates (`var s: str = "a" + NAME`) passed `zebra -c` and failed inside zig "unable to resolve comptime value" -- FIXED 2026-10-20 (found 2026-10-20)
+- **Found by:** BUG-592's edges; failing on the pre-BUG-592 compiler too, so not a regression.
+- **Cause:** the default was a comptime field default in the struct's field list, and zig
+  evaluates a field default with the struct TYPE -- measured: a program that GIVES the field
+  at every construction (`S(s: "q", n: 1)`) failed the same way, so filling omitted fields at
+  the call site alone could not have fixed it.
+- **Fix:** the container rule (BUG-501 1c / BUG-518), extended. A struct field whose default
+  `isDeferredFieldInit` (a call, an operator over one, a string `+`, an interpolation) is
+  `= undefined` in the field list, and every construction builds it: a struct literal that
+  omits it emits the default in place, a `cue init`'s prologue prefills it, and a used
+  module's literal calls the declaring module's `_zbr_dflt_<field>()` (BUG-519).
+- **Regression fixture:** `test/bug603_struct_alloc_default_test.zbr` (+ `test/bug603_lib.zbr`)
+  -- `S()` and `S(s: "q")` over `"a" + NAME`, `"${NAME}!"` and `base() * 2`; a struct with a
+  `cue init`; a used module's struct built empty and with one named field. Prints
+  `azz 3 zz! 80 | q 3 | t-zz 7 | dzz 1 dzz 9`; red on the pre-fix compiler.
+- **What else this moves:** a struct whose default is a plain call (`= base()`), which zig
+  could evaluate at comptime, is now built at construction too -- same value, different emit.
+  See the commit for the measured set.
+
 ### BUG-602: an undefined name in a FIELD DEFAULT passed `zebra -c` and failed inside zig, pointing into the generated file -- FIXED 2026-10-20 (found 2026-10-20)
 - **Found by:** BUG-592's control ("a default naming an undefined name is still refused").
   With an operator it was -- but by the codegen's inference guess, as "cannot infer the type

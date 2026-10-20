@@ -46,28 +46,6 @@
 
 ---
 
-### BUG-603: a STRUCT field default that allocates (`var s: str = "a" + NAME`) passes `zebra -c` and `S()` fails inside zig "unable to resolve comptime value" -- OPEN (found 2026-10-20)
-- **Found by:** BUG-592's edges, on the pre-fix compiler too (not a regression):
-  ```zebra
-  const NAME: str = "zz"
-
-  struct S
-      var s: str = "a" + NAME
-      var n: int = 3
-
-  def main()
-      var x = S()
-      var y = S(s: "q")
-      print("${x.s} ${y.s} ${x.n}")
-  ```
-- **Cause:** the default is emitted as a comptime field default
-  (`s: []const u8 = _str_concat(...)`), and a zero-argument `S()` emits `_zbr_ty_S{}`, which
-  evaluates it. BUG-519's `_zbr_dflt_s()` functions already exist beside it and are what
-  `S(n: 1)` uses for an omitted field.
-- **Fix direction:** when any field's default is deferred (`isDeferredFieldInit`, extended by
-  BUG-592), build `S()` through the same per-field `_zbr_dflt_*` path and emit no comptime
-  default for that field. Control: the probe prints `azz q 3`.
-
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any

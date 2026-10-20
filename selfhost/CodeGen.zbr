@@ -4801,6 +4801,13 @@ struct Generator
             w.emit("anytype")
         if n.init_expr != nil and ownerIsClass() and isDeferredFieldInit(n.init_expr!)
             w.emit(" = undefined")   # BUG-339: assigned in the constructor
+        else if n.init_expr != nil and struct_names.contains_(owner) and isDeferredFieldInit(n.init_expr!)
+            # BUG-603: a STRUCT default that cannot be comptime (`"a" + NAME` allocates) is
+            # evaluated by zig with the struct TYPE, used or not -- "unable to resolve comptime
+            # value" even when every construction gives the field. Like a container (below):
+            # a struct literal that omits it builds it, a dependency's literal calls
+            # `_zbr_dflt_<field>()`, and a `cue init` prefills it.
+            w.emit(" = undefined")
         else if isContainerField(n)
             # BUG-501 1c: a container is built at CONSTRUCTION, never as a comptime field
             # default -- a map could not be (BUG-518: `unable to resolve comptime value`), and
@@ -15831,7 +15838,8 @@ struct Generator
                         if sfs.name == id.name
                             for sfm in sfs.members
                                 if sfm is Decl.var_ as sff
-                                    if isContainerField(sff) and not sf_given.contains(sff.name)
+                                    var sf_deferred: bool = sff.init_expr != nil and isDeferredFieldInit(sff.init_expr!)   # BUG-603
+                                    if (isContainerField(sff) or sf_deferred) and not sf_given.contains(sff.name)
                                         if first_sf
                                             w.emit(" ")
                                         else

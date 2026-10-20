@@ -1,0 +1,7 @@
+# BUG-603 helper: a struct of a USED module whose default allocates.
+
+const TAG: str = "zz"
+
+struct D
+    var name: str = "d" + TAG
+    var k: int = 1
