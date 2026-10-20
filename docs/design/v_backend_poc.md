@@ -2045,8 +2045,11 @@ calling its methods. Master's `-check`: 100 structs 307 MB, 250
 structs 3.8 GB, 500 structs over 10 GB; the same program with the
 generic replaced by a plain `Strs` struct: 97 MB and 123 MB. V 0.5.2:
 72 to 157 MB either way. One generic instantiation used from N places
-costs master something far worse than linear in N -- the sixth ticket
-of the day (`repro_v13/gen_generic_curve.py`).
+costs master something far worse than linear in N -- vlang/v#30975,
+whose reviewer found the trigger smaller still: top-level declarations
+alone (500 structs with the field, an empty main: 2.4 GB; 1000: over
+the guard; 0.5.2: 66 MB), the peak in the checker's `check` stage, not
+the monomorphizer, and distinct instantiations or in-body uses cheap.
 
 The instrument hung itself once on the way: the first measure.py piped
 the child's stderr and drained it only after exit, and under its
