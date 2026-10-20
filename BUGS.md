@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-603. Next new bug: BUG-604.**
+**Last bug number generated: BUG-604. Next new bug: BUG-605.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,40 @@
 > measured in.
 
 ---
+
+### BUG-604: a free function from a module loaded only TRANSITIVELY wins over the same-named function a file explicitly `exposing`-imports -- "too many arguments to 'swingClip': expected at most 0" -- OPEN (found 2026-10-20)
+- **Found by:** Fable, porting in the GameEngine (`game/mm/door.zbr` exposes a 7-parameter
+  `swingClip` from `animated_model`; a module it uses gained a `use` whose graph reaches
+  `zbra/character_clips.zbr`, which defines a zero-argument `swingClip`). Reduced:
+  ```zebra
+  # anim.zbr
+  def swingClip(a: int, b: int): int
+      return a + b
+  # clips.zbr
+  def swingClip(): int
+      return 0
+  def clipsTag(): int
+      return 9
+  # comps.zbr
+  use clips exposing clipsTag
+  def attrOr(): int
+      return clipsTag()
+  # door.zbr
+  use anim exposing swingClip
+  use comps exposing attrOr
+  def main()
+      print("${swingClip(3, 4)} ${attrOr()}")
+  ```
+  `zebra -c door.zbr`: "door.zbr:5:22: error: too many arguments to 'swingClip': expected at
+  most 0, found 2". `door` never `use`s `clips`; it exposes `anim`'s `swingClip` explicitly.
+- **Cause (to confirm):** the dependency facts are merged into one `dep_types` table keyed by
+  bare name (the BUG-580/585 boundary pass carries them across), so the arity lookup for a free
+  function takes whichever dependency registered the name last, not the one this file's
+  `exposing` names. The same keying likely affects a transitive dep's CLASS of the same name.
+- **Fix direction:** a bare name in a file resolves through that file's own `use ... exposing`
+  list first; a transitive module's names are not in scope at all (they are reachable only
+  qualified through the module that uses them). Control: the reduction prints `7 9`, and a
+  file that names `swingClip` without exposing it from anywhere is still refused.
 
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
