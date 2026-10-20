@@ -29,6 +29,7 @@
 #
 # Usage: bash tools/check_inference_guess.sh [--full]   (run from repo root)
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 BOOT="zig-out/bin/zebra.exe"; [[ -x "$BOOT" ]] || BOOT="zig-out/bin/zebra"

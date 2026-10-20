@@ -1,0 +1,35 @@
+# BUG-598: a GENERIC class that `adds` a mixin gets the mixin's methods and its (private)
+# state, per instantiation, as a plain class does (BUG-089 / BUG-595). `genGenericClass`
+# emitted neither, so `Box(int)(4).tag("g")` passed `zebra -c` and failed inside zig "no
+# field or member function named 'tag' in 'Box(i64)'". A synthesized init (Bag) and a
+# `cue init` (Box) both have to fill the mixin's field.
+
+mixin Tagged
+    var tag_count: int = 0
+
+    def tag(s: str): str
+        .tag_count += 1
+        return "[" + s + "]"
+
+    def tags(): int
+        return .tag_count
+
+class Box(T) adds Tagged
+    var v: T
+
+    cue init(v: T)
+        .v = v
+
+class Bag(T) adds Tagged
+    var items: List(T)
+
+def main()
+    var b = Box(int)(4)
+    var t1 = b.tag("g")
+    var t2 = b.tag("h")
+    var s = Box(str)("x")
+    var t3 = s.tag("k")
+    var bag = Bag(int)()
+    bag.items.add(3)
+    var t4 = bag.tag("z")
+    print("bug598: ${t1}${t2} ${b.tags()} ${b.v} ${t3} ${s.tags()} ${s.v} ${t4} ${bag.tags()} ${bag.items.len}")

@@ -24,6 +24,7 @@
 # executable path under $REPO, and doctor --fix clears scratch; a reference build inside
 # the repo would be caught by both. It is a sibling directory, like zebra-mutants.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE_ROOT="$(cd "$REPO/.." && pwd)/zebra-n1-cache"

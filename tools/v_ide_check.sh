@@ -10,6 +10,7 @@
 #   IDE=<zebra-ide checkout> ZEBRA=<zebra.exe> V=<v.exe> CLANG=<clang.exe>
 #   ZEBRA_LIBUI_NG=<the fork's libui> bash tools/v_ide_check.sh
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 IDE=${IDE:-/c/Projects/zebra-ide}
 ZEBRA=${ZEBRA:-$(cd "$(dirname "$0")/.." && pwd)/zig-out/bin/zebra.exe}
 V=${V:-v}

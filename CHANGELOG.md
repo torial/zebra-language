@@ -87,6 +87,57 @@ confirmed via `tools/bootstrap_check.sh`.
   refinement type compiles (BUG-577). `x?.bump()` on an optional struct from a used module
   updates `x` (BUG-570's follow-up). Still open: an exposed namespace (BUG-579), `v is Iface`
   on an interface value (BUG-580), and a closure returned by a used module's factory (BUG-581).
+- **...and the rest of that sweep's findings (2026-10-15).** From a used module: an exposed
+  namespace (BUG-579); `v is Show` on an interface value, counting this module's classes too
+  (BUG-580); a closure from a factory, called repeatedly (BUG-581); a value assigned or passed
+  into a `^T` / `^T?` field, also when the module is used without `exposing` (`lib.Holder(
+  lib.Pair(1, 2))`) (BUG-584); `[]` passed to a generic function (BUG-585); a mutating struct
+  method named like a builtin reader such as `count` (BUG-586); a class named `error` or `try`,
+  and a union variant named like a class (BUG-587); and `Json.parse(Point, s)` /
+  `Json.parse(lib.Point, s)` (BUG-588). Each failed inside zig before. Still open: an `is
+  Iface` test inside the interface's own module misses classes from modules that import it
+  (BUG-590).
+- **A struct from a used module can be built with fields left out (BUG-519)** -- `R(k: 3)`
+  was refused inside zig "expected 3 argument(s), found 1"; its defaults now apply, computed
+  by the module that declares them. With it, the move-to-module sweep is clean.
+- **Leaving out a struct field that has no default is refused (BUG-591),** naming the field,
+  as is a named argument that names no field. Such a field (in a struct with no `cue init`)
+  used to be left undefined, so the program read whatever was in memory. A container field
+  is still fine to leave out: it starts empty.
+- **A block is a scope in the front end too (BUG-589),** as it already was in the program: a
+  local declared inside an `if` (or a loop variable, an `as` binding, a catch binding) read
+  after its block is reported by `zebra -c` as an undefined name, instead of failing later
+  inside zig. And an undefined name inside a numeric `for`, an `allocate` or `in` block, a
+  `require` / `ensure`, a `<<-` or a `for ... if` filter is reported too (BUG-593); they were
+  never checked.
+- **A class's method can be used as a value (BUG-596)** -- `var g = c.add`, `apply(c.add, 5)`,
+  `xs.map(c.big)`, a `List` of sigs -- bound to its object, so calls through it share the
+  object's state (QUICKSTART §19.5). It failed inside zig. `map` / `filter` / `reduce` / `any`
+  / `all` / `find` take any callable now, not only a bare function. A STRUCT's method as a
+  value is refused for now, naming why (it waits on BUG-569's capture design).
+- **`x -> f` pipes into a function or method named bare (BUG-600)** -- `x -> f` is `f(x)`,
+  `x -> c.scale` is `c.scale(x)`, as QUICKSTART's `a + b -> f` example always said. It was
+  refused with an internal message and no position; any other right side of `->` is now
+  refused at its own position, naming the three accepted forms.
+- **A generic class built without its type argument is refused by name (BUG-599)** --
+  `Box(41)` for `class Box(T)`, here, through `exposing`, or as `lib.Box(41)`. It failed
+  inside zig. The qualified form the refusal suggests, `lib.Box(int)(7)`, compiles now; it
+  never had. And `List(Box(int))()` builds a List of a generic class (BUG-601); it emitted a
+  bare `Box` zig could not find.
+- **A field default may use an operator (BUG-592).** `var bump: int = base() + 2`, `B + 1`,
+  even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
+  now, in a struct and in a class. And an undefined name in a field default is reported by
+  `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A generic class can `add` a mixin (BUG-598).** `class Box(T) adds Tagged` was accepted
+  and the mixin's methods and state were never emitted, so calling one failed inside zig.
+- **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that
+  `adds` it, private to the mixin: its methods use it, and the class reaches it through
+  them; naming it from outside is refused, saying so. It used to be dropped, and every read
+  of it failed inside zig. A mixin's methods are now type-checked too (BUG-597) -- they never
+  were, so a mistake in one surfaced inside zig once per class using it.
+- **A misspelled field is reported by the front end (BUG-594):** reading or assigning a member
+  a class or struct does not have -- `c.nothere`, `c.alsonot = 3` -- is refused by `zebra -c`
+  (and so by the editor) naming the type's fields, instead of failing later inside zig.
 - **A diagnostic inside a function body is reported once (BUG-578),** not twice.
 - **An undefined name is reported by the front end wherever it appears (BUG-571)** -- inside a
   list, dict, set, tuple or `@[...]` literal, an `orelse` or `catch`, a chained comparison, a

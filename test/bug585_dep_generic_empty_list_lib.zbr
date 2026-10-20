@@ -1,0 +1,11 @@
+# Helper module for bug585_dep_generic_empty_list_test: the generic functions live HERE.
+def count(T)(xs: List(T)): int
+    return xs.count()
+
+def rows(T)(xss: List(List(T))): int
+    return xss.count()
+
+class Kit
+    static
+        def size(T)(xs: List(T)): int
+            return xs.count()

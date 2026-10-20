@@ -753,7 +753,27 @@ python tools/hazard_lint.py        # THE TOOLING GATE (static, instant, no build
                                 #   every checkout, so a rebuild in one tree restored
                                 #   another tree's generated files; per-checkout
                                 #   `${ZBR_BS}-*` or per-process `$$` instead. Run
-                                #   against HEAD's tools it named 42 sites).
+                                #   against HEAD's tools it named 42 sites);
+                                #   H13 an unescaped backtick inside "..." in a shell
+                                #   script -- a COMMAND SUBSTITUTION (2026-10-16: two smoke
+                                #   expectations quoting a field in backticks became
+                                #   "no value for field  of ...", one failing the FULL tier
+                                #   on a correct compiler, the other silently asserting less
+                                #   and still passing; `--rev 1bd2b14` names both);
+                                #   H14 a tools/*.sh that runs zig or the compiler WITHOUT
+                                #   sourcing tools/zig_toolchain.sh (2026-10-19: standalone it
+                                #   gets whatever zig is first on PATH -- the shared 0.16 here --
+                                #   so a standalone selfhost_smoke passed a BUG-596 fixture the
+                                #   0.17 tier failed, and the failure was called a flake). It
+                                #   named 24 tools on the day; 21 now source the pin, 3 are
+                                #   suppressed with reasons (two stub-zig checks, and
+                                #   zig_build_lib.sh, a library pinning would break the stubs
+                                #   of). Its self-test also runs CLEAN controls that must NOT
+                                #   fire -- the first draft flagged full_sweep.sh, which
+                                #   sources the pin by the `$(dirname ...)` spelling.
+                                #   Red-checked with the real attacker: a failing zig.exe first
+                                #   on PATH sinks the pre-fix stream_check and styler_test and
+                                #   not the fixed ones. CANNOT SEE: Python tools.
                                 #   Suppress with
                                 #   `# hazard-ok:<code> <reason>` — a reason is REQUIRED,
                                 #   because an unexplained suppression is how a gate goes
@@ -1821,6 +1841,20 @@ python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUI
                                 #   bearing / `expr_int` leaf, and it REFUSES if either tree has
                                 #   no walker opted in. Red-checked with the REAL attacker: the
                                 #   pre-fix Resolver, marked, gives 12 findings and exit 1.
+                                #   THREE TREES SINCE 2026-10-16 (BUG-593): the STATEMENT half
+                                #   (`stmt_*`, marker `# pnode-stmt-walker: exhaustive`, waiver
+                                #   `# pnode-stmt-walker-ok:`). `resolveStmt` ended in
+                                #   `else pass` and never walked a numeric `for`, `allocate`,
+                                #   `in`, `require`, `ensure` or `<<-`, so an undefined name in
+                                #   one passed `-c`. A payload is read WHOLE now
+                                #   (`stmt_require: List(PNode)` reaches PNode through its
+                                #   argument) and a payload-less variant is a leaf: without
+                                #   that the leaf control `stmt_pass` was not in the set and
+                                #   passed vacuously. Controls `stmt_for_num` / `stmt_pass`;
+                                #   a control not extracted REFUSES. Red-checked with the
+                                #   pre-fix Resolver: 7 findings, one per skipped kind. CANNOT
+                                #   SEE a field skipped inside a handled arm (the `for ... if`
+                                #   filter was one).
 bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK tier):
                                 #   `use foo` resolving to a prebuilt `foo.lib`/`.a` must
                                 #   LINK and the foreign call must return the right value.
@@ -2394,6 +2428,46 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-10-16, second run (BUG-519/591 `1bd2b14`, BUG-589/593 `bf2f9db`, BUG-594
+`746847a`): 56/57 in ONE invocation at JOBS=2, 51 min, then `library-mode` green standalone twice
+-- ASSEMBLED.** smoke 739/739, round-trip byte-identical, `output_sweep` 466 identical,
+`full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover`, `release-mode`,
+`leakgen` 100/0. The red was BUG-302 (zig could not read std/deque.zig) in `library-mode`'s leg-2
+CONTROL, the one zig call in that gate without the retry -- so it said "the DebugAllocator
+reported no leak, so it cannot see one" about a host that never compiled. Both legs share one
+retrying runner now; red-checked with a `zig` that fails once with that error on leg 2 (the
+pre-fix gate refuses exactly as the daily did; the fixed one passes, `infra-retries=1`). The
+FULL on `1bd2b14` before it was 45/46, the red its own smoke registration: an unescaped
+backtick in a double-quoted expectation (hazard_lint H13 now). Each of the three refusals was
+measured first -- `-c` error counts before and after over ~2,930 files of this repo, zebra-ide
+and the GameEngine -- and only the engine's machine-ported `ported_scripts/` moved.
+
+**DAILY tier 2026-10-16 (closing the evening of 10-15: the dep-module boundary pass, BUG-579..588,
+`09ca5ea`): 57/57 PASS in ONE invocation at JOBS=2 on the committed tree, 71 min, pushed on green.**
+smoke 727/727, round-trip byte-identical, `boundary` 36/0, `output_sweep` 466 identical (466 cache
+misses -- the pass moved every emit), `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `release-mode` all checks including the GUI leg that had failed three tiers running,
+`gramgen` 0/0, `leakgen` 100/0, `node-addon`. **The first daily after a REBOOT, and the timing is the
+receipt for the 10-15 A/B:** the previous daily took ~3 h on the same machine. That evening the same 60
+build-and-run fixtures took 350 s before a reboot (16 days up, ~11 GB of RAM unaccounted for) and 81 s
+after, Defender on both times; Defender itself costs ~14% on a freshly booted host. **When the tiers
+run 3x slow at low CPU, check uptime and free RAM before suspecting the change.**
+
+**DAILY tier 2026-10-15 (both v-backend-poc merges, bee5556 / a11ac77, and their integration
+fixes 679f625 / 44d4119 / 06235b7 / fb60c45): 56/57 in ONE invocation at JOBS=2 on `fb60c45`, ~3 h,
+then `release-mode` green standalone -- ASSEMBLED.** smoke 719/719, round-trip byte-identical,
+`output_sweep` 466 identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `gramgen`, `leakgen` 100/0, `libui-section` 21/21, `libui-pin-build`, `node-addon`.
+**The red was `release-mode`'s GUI leg for the THIRD tier in two days, each green standalone (this
+time 1735 vs 5637 KB at 5% CPU)** -- and the gate could not say why: on a GUI failure it printed
+the RELEASE build's log whatever happened, and here the DEBUG build was the one that failed, so the
+evidence shown was a successful compile and the failing build's own log was deleted with its
+scratch dir. It now names the failed build, its exit code (124 = the 900 s timeout, said in words)
+and that build's log; red-checked with the debug build's timeout cut to 5 s. The likely cause --
+each run scaffolds into a fresh dir with a LOCAL .zig-cache, so libui-ng's C is compiled cold every
+time, under whatever load the tier carries -- is now checkable on the next occurrence rather than
+assumed.
 
 **DAILY tier 2026-10-14 (closing the night: BUG-570/571 `02042a4`, BUG-572..578 `48c5399`,
 filings `d84f772`): 56/57 in ONE invocation at JOBS=2 on the committed tree, ~74 min on a
@@ -3311,7 +3385,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **811** <!-- doc-gen: 811 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **840** <!-- doc-gen: 840 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

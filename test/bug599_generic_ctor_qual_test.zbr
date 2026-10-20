@@ -1,0 +1,6 @@
+# BUG-599: the same refusal for a used module's generic class named QUALIFIED.
+use bug599_generic_lib
+
+def main()
+    var c = bug599_generic_lib.Cell(7)
+    print("${c.get()}")

@@ -1,0 +1,9 @@
+# BUG-585: `[]` passed to a USED module's generic function. The empty list takes the
+# parameter's `List(...)` with the call's type arguments substituted, but the callee's
+# type parameters were looked up in THIS module only, so the literal fell back to
+# `.empty` and zig refused "expected type '*T', found 'T'". Function, nested element
+# type, static method.
+use bug585_dep_generic_empty_list_lib exposing count, rows, Kit
+
+def main()
+    print("bug585: ${count(int)([])} ${count(str)([])} ${rows(float)([])} ${Kit.size(bool)([])} ${count(int)([1, 2])}")

@@ -494,9 +494,10 @@ error: bitwise '&' requires integer operands, got 'float'
 
 `orelse` and `catch` have the same precedence (level 9); they associate left-to-right.
 `->`  (pipeline) is the lowest non-assignment operator, so `a + b -> f` means `f(a + b)`.
-Its right side is either a call — `x -> f(y)` is `f(x, y)` — or a leading-dot method
+Its right side is a call — `x -> f(y)` is `f(x, y)` —, a function or method named bare —
+`x -> f` is `f(x)`, `x -> c.scale` is `c.scale(x)` (BUG-600) — or a leading-dot method
 call — `x -> .lower()` is `x.lower()`, chains included: `text -> .lower() -> .split(" ") -> .at(0)`
-(BUG-417). A multi-line pipeline needs parentheses.
+(BUG-417). Anything else is refused at its position. A multi-line pipeline needs parentheses.
 
 ---
 
@@ -841,6 +842,14 @@ var p1 = Point()                  # x=0, y=0 (all defaults)
 var p2 = Point(y: 5)              # x=0 (default), y=5 (named)
 var p3 = Point(3, 4)              # positional — x=3, y=4
 ```
+
+- **A struct with no `cue init` is built from its fields** — positionally in declaration
+  order, or by name. A field may be left out only if construction supplies it: it has a
+  default (`var name: str = "r"`), or it is a container (`List`, `HashMap`, `Set`,
+  `StringBuilder`), which starts empty. Leaving out any other field is refused — `no value
+  for field 'k' of struct 'R', which has no default` — and so is a name that is not a field.
+  The same holds when the struct comes from a module you `use`; its defaults are computed in
+  the module that declares them.
 
 - `.field` is the canonical receiver-field access (works regardless of local
   shadowing).  Bare `field` is legal when no local shadows it but is more
@@ -1895,7 +1904,31 @@ if obj is Printable
 
 - `implements` declares interface conformance — the compiler verifies all
   required methods exist via `comptime { Iface.check(@This()); }`.
-- `adds Mixin` includes methods from a mixin declaration.
+- `adds Mixin` includes methods from a mixin declaration. A generic class `adds` one the
+  same way (`class Box(T) adds Tagged`); each instantiation has its own copy of the state.
+- **A mixin may keep state.** A `var` in a mixin becomes a field of every class that `adds`
+  it, and it is PRIVATE to the mixin: only the mixin's own methods name it (`.label`,
+  `this.label`, or a bare `label` the method does not declare itself). The class, and code
+  outside it, reach that state through the mixin's methods; naming the field directly is
+  refused (`field 'label' belongs to mixin 'Tagged' and is private to it`). A mixin has no
+  constructor, so each field needs a default -- except a container, which starts empty:
+  ```zebra
+  mixin Tagged
+      var label: str = "none"
+      var history: List(str)
+
+      def tag(t: str)
+          .history.add(.label)
+          .label = t
+
+      def describe(): str
+          return "${.label} after ${.history.count()} tag(s)"
+
+  class Box adds Tagged
+      var w: int = 1
+  ```
+  A mixin's methods are checked once on their own and once as each class that adds them, so
+  a method of the host they call resolves, and another mixin's private field does not.
 - `is Iface` checks interface conformance.  For a statically-typed value this is
   resolved at compile time (interfaces are structurally verified at `implements`):
   an interface-typed value satisfies its own interface, and a concrete class
@@ -1934,7 +1967,8 @@ s.push(2)
 var top = s.pop()
 ```
 
-- Generic class instantiation: `Stack(int)()` — type arg, then constructor args.
+- Generic class instantiation: `Stack(int)()` — type arg, then constructor args. The type
+  argument is not inferred: `Box(41)` for a generic `Box(T)` is refused, naming `Box(int)(...)` (BUG-599).
 - The constraint clause is `T where T implements InterfaceName` (full form, not
   the shorthand `T where Comparable`). Enforced at instantiation and at an annotation
   (2026-09-16): `SortedList(Plain)()` is refused unless `Plain implements Comparable(Plain)`,
@@ -2221,6 +2255,36 @@ result = outer(def()
 - The call's closing `)` must be dedented to the level of the **call site** (not the lambda body).
 - Nesting is unlimited — each inner `def(` starts its own indented body.
 - Named keyword arguments work the same way: `f(key: def() body )`.
+
+### §19.5 A method as a value — bound to its object
+
+A class's method read without calling it is a function bound to that object: call it later,
+store it, pass it, or hand it to `map` / `filter` / `reduce`. It refers to the object, so
+calls through it and calls on the object see one state.
+
+```zebra
+sig StepFn(n: int): int
+
+class Counter
+    var n: int = 0
+    def add(k: int): int
+        .n += k
+        return .n
+
+def apply(f: StepFn, x: int): int
+    return f(x)
+
+def main()
+    var c = Counter()
+    var g = c.add                   # bound -- nothing runs yet
+    g(10)
+    print(apply(c.add, 5))          # 15: the same counter
+    print([1, 2, 3].map(c.add))     # [16, 18, 21]
+```
+
+A STRUCT's method cannot be used as a value yet: it would bind the struct variable itself,
+which needs the escaping-capture design still owed (BUG-569). Call it in place, or make the
+type a class.
 
 ---
 

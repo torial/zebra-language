@@ -1,0 +1,6 @@
+# BUG-599: the same refusal for a generic class declared in a USED module.
+use bug599_generic_lib exposing Cell
+
+def main()
+    var c = Cell(7)
+    print("${c.get()}")

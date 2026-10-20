@@ -129,6 +129,14 @@ pub fn _zbr_boxed(v: anytype) _ZbrBoxOf(@TypeOf(v)) {
     p.* = v;
     return p;
 }
+// BUG-584: the value type a `*T` / `?*T` slot points at -- how a value is boxed into a
+// `^T` field of a type declared in ANOTHER module, whose name may not be in scope here
+// (`x.s = lib.Shape.dot`: a payload-less variant is an enum literal, so @TypeOf(value)
+// would name the tag type, not the union).
+pub fn _ZbrSlotChild(comptime S: type) type {
+    const P = if (@typeInfo(S) == .optional) @typeInfo(S).optional.child else S;
+    return @typeInfo(P).pointer.child;
+}
 pub fn _ZbrBoxOf(comptime T: type) type {
     return if (@typeInfo(T) == .pointer) T else *T;
 }
@@ -885,37 +893,48 @@ pub fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void 
     };
     std.mem.sort(T, items, {}, _I.less);
 }
+// BUG-596: a list helper's function argument is a function OR a value with a `call` -- a
+// method bound to its receiver (`xs.map(c.scale)`), a sig. These six called it directly,
+// which only a function survives. The spelling `Result(T).map` already used, shared.
+pub inline fn _zbr_apply1(f: anytype, a: anytype) @TypeOf(if (comptime _zbr_is_fnlike(@TypeOf(f))) f(a) else f.call(a)) {
+    if (comptime _zbr_is_fnlike(@TypeOf(f))) return f(a);
+    return f.call(a);
+}
+pub inline fn _zbr_apply2(f: anytype, a: anytype, b: anytype) @TypeOf(if (comptime _zbr_is_fnlike(@TypeOf(f))) f(a, b) else f.call(a, b)) {
+    if (comptime _zbr_is_fnlike(@TypeOf(f))) return f(a, b);
+    return f.call(a, b);
+}
 // `list: anytype` (2026-09-24): a boxed inner list (`*ArrayList`) reaches these too; `.items` derefs.
 pub fn _zebra_list_any(comptime T: type, pred: anytype, list: anytype) bool {
-    for (list.items) |item| { if (pred(@as(T, item))) return true; }
+    for (list.items) |item| { if (_zbr_apply1(pred, @as(T, item))) return true; }
     return false;
 }
 pub fn _zebra_list_all(comptime T: type, pred: anytype, list: anytype) bool {
-    for (list.items) |item| { if (!pred(@as(T, item))) return false; }
+    for (list.items) |item| { if (!_zbr_apply1(pred, @as(T, item))) return false; }
     return true;
 }
 pub fn _zebra_list_find(comptime T: type, pred: anytype, list: anytype) ?T {
-    for (list.items) |item| { if (pred(item)) return item; }
+    for (list.items) |item| { if (_zbr_apply1(pred, item)) return item; }
     return null;
 }
-pub fn _zebra_list_map(comptime T: type, pred: anytype, list: anytype) _ZbrList(@TypeOf(pred(@as(T, undefined)))) {
-    var out = _zbr_new(_ZbrList(@TypeOf(pred(@as(T, undefined)))));
-    for (list.items) |item| out.append(_allocator, pred(item)) catch @panic("OOM");
+pub fn _zebra_list_map(comptime T: type, pred: anytype, list: anytype) _ZbrList(@TypeOf(_zbr_apply1(pred, @as(T, undefined)))) {
+    var out = _zbr_new(_ZbrList(@TypeOf(_zbr_apply1(pred, @as(T, undefined)))));
+    for (list.items) |item| out.append(_allocator, _zbr_apply1(pred, item)) catch @panic("OOM");
     return out;
 }
 pub fn _zebra_list_filter(comptime T: type, pred: anytype, list: anytype) _ZbrList(T) {
     var out = _zbr_new(_ZbrList(T));
-    for (list.items) |item| { if (pred(item)) out.append(_allocator, item) catch @panic("OOM"); }
+    for (list.items) |item| { if (_zbr_apply1(pred, item)) out.append(_allocator, item) catch @panic("OOM"); }
     return out;
 }
-pub fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: anytype) @TypeOf(f(init_val, @as(T, undefined))) {
+pub fn _zebra_list_reduce(comptime T: type, init_val: anytype, f: anytype, list: anytype) @TypeOf(_zbr_apply2(f, init_val, @as(T, undefined))) {
     // Accumulator type = the fold function's result type (concrete, since it
     // combines with the runtime element T), so a `comptime_int` init like `0`
     // coerces to it instead of leaving the return type comptime-only.
     // (Param named `init_val`, not `init`, so it never shadows a user-emitted
     // top-level `pub fn init` — e.g. an MVU GUI model's `init()` — BUG-184.)
-    var acc: @TypeOf(f(init_val, @as(T, undefined))) = init_val;
-    for (list.items) |item| acc = f(acc, item);
+    var acc: @TypeOf(_zbr_apply2(f, init_val, @as(T, undefined))) = init_val;
+    for (list.items) |item| acc = _zbr_apply2(f, acc, item);
     return acc;
 }
 // §28f: HashMap.keys()/values() — snapshot the map's keys/values into a new List.
@@ -3187,6 +3206,48 @@ pub fn _ZbrFn(comptime F: type) type {
             }.e };
         }
     };
+}
+
+// BUG-596: a METHOD used as a value -- `c.bump`, `xs.map(p.score)` -- bound to its receiver
+// (Sean, 2026-10-16: supported, not refused; "refusing would not be good for any functional
+// approaches"). The receiver is a class instance, a pointer, so the binding refers to the
+// object (by reference). `call`'s parameters are the method's after `self`, read by
+// reflection, so codegen spells nothing about the method and a used module's class binds
+// the same way. A sig slot takes it through `_ZbrFn.from` (a struct with `.call`); an
+// untyped local is called through `_zbr_invoke`.
+pub fn _ZbrBound(comptime Recv: type, comptime name: []const u8) type {
+    const Base = switch (@typeInfo(Recv)) {
+        .pointer => |pi| pi.child,
+        else => Recv,
+    };
+    const I = @typeInfo(@TypeOf(@field(Base, name))).@"fn";
+    const R = I.return_type.?;
+    const P = struct {
+        fn at(comptime k: usize) type {
+            return _zbr_fn_info_param(I, k + 1);
+        }
+    };
+    return switch (_zbr_fn_info_arity(I) - 1) {   // dual-version: 0.17 has `param_types`, not `params`
+        0 => struct { recv: Recv, pub fn call(self: @This()) R { return @field(Base, name)(self.recv); } },
+        1 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0)) R { return @field(Base, name)(self.recv, a0); } },
+        2 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0), a1: P.at(1)) R { return @field(Base, name)(self.recv, a0, a1); } },
+        3 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0), a1: P.at(1), a2: P.at(2)) R { return @field(Base, name)(self.recv, a0, a1, a2); } },
+        4 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0), a1: P.at(1), a2: P.at(2), a3: P.at(3)) R { return @field(Base, name)(self.recv, a0, a1, a2, a3); } },
+        5 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0), a1: P.at(1), a2: P.at(2), a3: P.at(3), a4: P.at(4)) R { return @field(Base, name)(self.recv, a0, a1, a2, a3, a4); } },
+        6 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0), a1: P.at(1), a2: P.at(2), a3: P.at(3), a4: P.at(4), a5: P.at(5)) R { return @field(Base, name)(self.recv, a0, a1, a2, a3, a4, a5); } },
+        else => @compileError("a bound method takes at most 6 parameters: " ++ name),
+    };
+}
+// A class receiver is a reference: a method that does not mutate gets a `*const` self in
+// the emit, but the bound call may reach one that does, so the binding holds `*T`.
+pub fn _ZbrBindRecv(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .pointer => |pi| *pi.child,
+        else => T,
+    };
+}
+pub fn _zbr_bind(recv: anytype, comptime name: []const u8) _ZbrBound(_ZbrBindRecv(@TypeOf(recv)), name) {
+    return .{ .recv = if (comptime @typeInfo(@TypeOf(recv)) == .pointer) @constCast(recv) else recv };
 }
 
 // BUG-479: `==` between strings where either side is `str?`. Nil never equals a value

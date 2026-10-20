@@ -38,6 +38,7 @@
 # pins: BUG-257 its contracts). There is no test/bug257_*.zbr because the claim is about
 # pins: BUG-257 FLAG COMBINATIONS, which only a driver script can exercise.
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 cd "$(dirname "$0")/.."
 ZEBRA="zig-out/bin/zebra.exe"
 [ -x "$ZEBRA" ] || { echo "contract-mode: $ZEBRA not built"; exit 1; }

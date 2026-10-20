@@ -32,16 +32,22 @@ source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the
 # other zig-invoking gate; only that failure is retried, and the count is printed.
 . "$REPO/tools/zig_build_lib.sh"
 INFRA_RETRIES=0
-run_host() {   # $1 = log file
+# BOTH legs run the host through this one function. Leg 2 (added 2026-10-05) called
+# `zig run` directly, without the retry, and the 2026-10-16 daily refused on exactly that:
+# zig could not read std/deque.zig in leg 2's control and the gate said "the
+# DebugAllocator reported no leak, so it cannot see one" -- a confident sentence about a
+# program that never compiled. Passed twice standalone straight after.
+run_zig_host() {   # $1 = dir holding host.zig, $2 = log file
     local tries=0
     while :; do
-        ( cd out && zig run host.zig ) > "$1" 2>&1
-        if zbr_zig_infra_error "$1" && [ $tries -lt 2 ]; then
+        ( cd "$1" && zig run host.zig ) > "$2" 2>&1
+        if zbr_zig_infra_error "$2" && [ $tries -lt 2 ]; then
             tries=$((tries + 1)); INFRA_RETRIES=$((INFRA_RETRIES + 1)); continue
         fi
         break
     done
 }
+run_host() { run_zig_host out "$1"; }   # $1 = log file
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -103,7 +109,7 @@ pub fn main(init: std.process.Init) !void {
 }
 EOF
 }
-run_free_host() { ( cd outf && zig run host.zig ) > "$1" 2>&1; }
+run_free_host() { run_zig_host outf "$1"; }
 write_free_host none; run_free_host free_none.log
 if ! grep -q "leaked: true" free_none.log; then
     echo "library-mode: REFUSING -- with nothing freed the DebugAllocator reported no leak, so it cannot see one"; tail -5 free_none.log; exit 2

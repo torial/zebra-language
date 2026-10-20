@@ -16,6 +16,7 @@
 #   tools/node_addon_test.sh            # uses zig-out/bin/zebra.exe
 #   ZEBRA=zig-out/bin/zebra-bootstrap.exe tools/node_addon_test.sh
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 
 ZEBRA="${ZEBRA:-zig-out/bin/zebra.exe}"
 DIR="test/node_addon"

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-588. Next new bug: BUG-589.**
+**Last bug number generated: BUG-603. Next new bug: BUG-604.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,39 +46,63 @@
 
 ---
 
-### BUG-588: `Json.parse(Point, s)` with `Point` from a USED module fails inside zig "expected type 'str', found 'type'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (json_parse_typed_test split): the typed-parse dispatch
-  recognises a target type declared in this module only.
+### BUG-603: a STRUCT field default that allocates (`var s: str = "a" + NAME`) passes `zebra -c` and `S()` fails inside zig "unable to resolve comptime value" -- OPEN (found 2026-10-20)
+- **Found by:** BUG-592's edges, on the pre-fix compiler too (not a regression):
+  ```zebra
+  const NAME: str = "zz"
 
-### BUG-587: a USED module's union with a keyword-named variant, and a top-level `def error()` exposed from a used module, name undeclared identifiers -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (bug280_keyword_idents: `Shape.volatile(12)` -> "use of
-  undeclared identifier 'Shape'"; bug280_freed_words_test: `error()` -> "use of undeclared
-  identifier 'error'"). BUG-280/281's escaping and prefixing of keyword-named things is not
-  applied to the exposed-name bindings genUse emits.
+  struct S
+      var s: str = "a" + NAME
+      var n: int = 3
 
+  def main()
+      var x = S()
+      var y = S(s: "q")
+      print("${x.s} ${y.s} ${x.n}")
+  ```
+- **Cause:** the default is emitted as a comptime field default
+  (`s: []const u8 = _str_concat(...)`), and a zero-argument `S()` emits `_zbr_ty_S{}`, which
+  evaluates it. BUG-519's `_zbr_dflt_s()` functions already exist beside it and are what
+  `S(n: 1)` uses for an omitted field.
+- **Fix direction:** when any field's default is deferred (`isDeferredFieldInit`, extended by
+  BUG-592), build `S()` through the same per-field `_zbr_dflt_*` path and emit no comptime
+  default for that field. Control: the probe prints `azz q 3`.
 
-### BUG-586: a mutating method of a USED module's struct, named like a builtin reader (`count`, `hash`), leaves the receiver `const` -- zig "expected '*T', found '*const T'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (bug455_struct_method_named_like_builtin,
-  bug453_cue_field_call_map_key split).
-- **Cause:** BUG-455's `_struct_recv` table (the exact `*` / `*const` receiver of every struct
-  method) is built from THIS module's declarations; a dep struct falls back to the method-name
-  heuristic, which calls `count` a reader. The dep's receivers have to cross the boundary
-  (ModuleTypes), as BUG-574..577 did for interfaces, generics, tags and aliases.
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
+<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
+- **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
+  functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
+  it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
+  BUG-569's by-reference capture.
+- **Class receivers, FIXED:** `c.bump` read as a value emits `_zbr_bind(c, "bump")` -- a runtime
+  helper that reads the method's signature by reflection and returns a struct holding the
+  receiver with a `call` of the method's arity, which a sig slot's `.from` and an untyped
+  local's `_zbr_invoke` already take. Nothing about the method is spelled at the bind, so a
+  used module's class binds the same way. A callee is not a value: codegen marks callee
+  position (`genCalleeExpr`) so `c.bump()` is untouched. The checker types the value as a
+  callable returning the method's type (`f()` then types), and codegen's string-shape name
+  list no longer takes a bound `n.name` for a str. The list helpers (`map`, `filter`,
+  `reduce`, `any`, `all`, `find`) took only bare functions; they apply a function OR a value
+  with `call` now (`_zbr_apply1` / `_zbr_apply2`, the spelling `Result.map` already used).
+  Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
+- **Struct receivers, OPEN:** refused, naming the reason and the alternatives (call it in
+  place, or make the type a class). Binding the variable by reference needs the variable to
+  outlive the closure -- BUG-569's escaping-capture boxing. Fixture
+  `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
+  positive fixture when this half lands.
 
-
-### BUG-585: `[]` passed to a USED module's generic function -- zig "expected type '*T', found 'T'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2 (bug463_empty_list_arg, bug501_generic_empty_list split):
-  `first(int)([])`, `count(int)([])` with the generic function in the dep. BUG-463/501's
-  parameter-typed empty list covers this module's functions only.
-
-
-### BUG-584: a value into a `^T` slot of a USED module's struct is not boxed -- zig "expected type '?*T', found 'T'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 2, the move-to-module transform: bug299_struct_into_boxed_slot,
-  bug473_boxed_union_tag and bug507_hat_optional_capture split into two modules. A field
-  assignment (`holder.opt_pair = Pair(...)`, `sb.s = Shape.box(9)`) and a constructor argument
-  (`Holder(Shape.square(2.0))`) into a dep type's `^T` / `^T?` field. BUG-299/473/507 fixed
-  these for types declared in the same module.
-
+### BUG-590: an `is <Interface>` test INSIDE the interface's module misses implementers declared in modules that use it -- OPEN (found 2026-10-15)
+- **Found by:** probing BUG-580's fix. A dep declares `interface Show` and `def isShow(x:
+  Named): bool  return x is Show`; the main module declares `class Cat implements Named, Show`
+  and calls `isShow(c)`: prints `false`. `c is Show` in main prints `true`.
+- **Cause:** `_zbr_implements_<I>` is emitted by the interface's module and enumerates the
+  classes IT can see; a class in a module that imports that one is not among them. BUG-580
+  moved the decision to the `is` site, which helps exactly when the site is downstream of the
+  implementer. A site upstream of it can only be answered by whole-program knowledge: the
+  root module (which sees every module) or a per-class list of implemented interfaces carried
+  WITH the value (its tag, or the vtable), rather than a per-interface list.
+- **Control when fixing:** the probe above must print `true` from `isShow`; a `Rock` that
+  implements only `Named` must stay `false` from both sites.
 
 ### BUG-583: one name, two types in SIBLING blocks -- the second binding is judged by the first: a destructure is refused, an `is ... as x` payload and a re-annotated `List` print with the wrong format -- OPEN (found 2026-10-14)
 - **Found by:** pattern search 3 -- a generator that declares `x` in two sibling scopes of one
@@ -109,38 +133,6 @@
   literal. No collision is needed: `for i, x in ["ab", "cd"]` alone fails; the same loop over a
   variable (`var xs = [...]` / `for i, x in xs`) prints `0 ab` / `1 cd`. A half-built
   construct (shape 4): the index form's emit assumes a named list.
-
-
-### BUG-581: a capture closure returned by a USED module's factory fails inside zig "expected type '*T', found '*const T'" when called -- OPEN (found 2026-10-13)
-- **Found by:** pattern search 2 (closure_factory_test, fn_type_annotation_test split into
-  two modules): `var c = makeCounter(10)` / `c()` with `makeCounter` in the dep.
-- **Cause:** a capture closure mutates its own state when called, so its local must be `var`.
-  Codegen knows a function is a closure FACTORY only from THIS module's declarations
-  (`collectClosureFactories`), so a dep factory's result is emitted `const` and the runtime's
-  call helper takes `*T`. Same shape as BUG-575/576/577/579: a registry filled from the root
-  module only.
-- **Fix direction:** carry "returns a capture closure" across the boundary (ModuleTypes), or
-  decide `var` from the inferred type of the value rather than from the callee's name.
-
-### BUG-580: `v is Show` on an interface VALUE, with `Show` declared in a USED module, names an undeclared `_zbr_implements_Show` -- OPEN (found 2026-10-13)
-- **Found by:** pattern search 2 (generic_class_iface_test split into two modules).
-- **Cause:** `_zbr_implements_<I>` is a file-private function of the interface's module, and it
-  enumerates the classes declared IN THAT MODULE. Making it reachable is not enough: a class in
-  another module that implements `Show` would answer false.
-- **Fix direction:** membership has to be decided where all implementers are known -- e.g. a
-  per-class list of implemented interfaces carried with the type tag, or the vtable -- rather
-  than per interface module. The class-tag half (`x is Dog`) was BUG-576.
-
-
-### BUG-579: exposing a NAMESPACE from a used module fails inside zig "has no member named '_zbr_ty_Outer'" -- OPEN (found 2026-10-13)
-- **Found by:** pattern search 2, the move-to-module transform (nested_namespace_dotted_test,
-  nested_namespace_nested_test split into two modules).
-- **Cause:** `genUse` prefixes every exposed uppercase name as a type (`_zbr_ty_`), but a
-  namespace is emitted unprefixed (`pub const Outer = struct`). `namespace_names` is filled from
-  THIS module's declarations only, and the dep ModuleTypes do not record namespace names, so
-  genUse cannot tell an exposed namespace from a type.
-- **Fix direction:** carry namespace names in the dep tables (buildModuleTypes), and skip the
-  prefix for them in genUse as for sigs and interfaces. Control: the two fixtures above, split.
 
 
 ### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)
@@ -405,12 +397,6 @@
 - `extern def f(p: ^byte, len: uint64): uint32` called as `f(p, text.len)` -> zig
   "expected type 'u64', found 'i64'"; `var u: uint64 = n` builds fine, and `int` has no
   unsigned conversion method. Reported by the book agent; NOT re-run here (needs a C dep).
-
-### BUG-519: constructing a struct from ANOTHER module by named arguments ignores its field defaults -- `R(k: 3)` is refused "expected 2 argument(s), found 1" -- OPEN (found 2026-10-03)
-- **Severity:** Low-Medium (a front-end refusal, not a leak, but wrong: the same construction works inside the struct's own module, so a default is usable only locally)
-- **Repro:** `fdep.zbr`: `struct R` with `var xs: List(int) = List(int)()` and `var k: int`; root: `use fdep exposing R` then `var r = R(k: 3)`.
-- **Found by:** BUG-501 1c's probes (2026-10-03). It also bounds 1c: since cross-module construction must pass every field, a struct literal never has to fill an omitted field of another module's struct -- the fill uses the module-local struct registry.
-- **Fix direction:** the arity check for a struct constructor should count only fields WITHOUT a default; the dep's struct decl (fields + which have defaults) must reach the root's checker. Then 1c's literal fill needs the dep's container fields too -- extend it with the same data.
 
 ---
 

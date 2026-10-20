@@ -29,6 +29,7 @@
 # wrong), and a file with no markers must report zero — which proves the count is
 # a measurement and not a constant.
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"

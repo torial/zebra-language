@@ -1,0 +1,10 @@
+# BUG-602: an undefined name in a FIELD DEFAULT passed `zebra -c` and failed inside zig
+# ("use of undeclared identifier 'NOPE'"), pointing into the generated file: the Resolver
+# walked methods and constructors but never a field's initializer.
+
+struct R
+    var c: int = NOPE
+
+def main()
+    var r = R()
+    print("${r.c}")

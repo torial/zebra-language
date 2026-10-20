@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ClassTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -549,6 +549,18 @@ def getIdentName(e: Expr): str?
             pass
     return nil
 
+# BUG-587: a dep declares `name` as a class or struct (its ClassTypes, not a pseudo-entry).
+def depDeclaresType(mt: ModuleTypes, name: str): bool
+    if mt.classOf(name) as ct
+        return ct.is_class or ct.is_struct
+    return false
+
+# BUG-584: a dep declares `name` as a STRUCT (a value type -- what a `^T` slot boxes).
+def depDeclaresStruct(mt: ModuleTypes, name: str): bool
+    if mt.classOf(name) as ct
+        return ct.is_struct
+    return false
+
 def isCrossModuleCtorCall(callee: Expr): bool
     # Check if call is Module.ClassName() where module == class name
     if callee is Expr.member as m
@@ -1000,6 +1012,33 @@ def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
                 pass
     return nil
 
+# Facts a DEPENDENCY's emit decides that a module calling into it must agree with, recorded
+# in the dep tables (main.zbr calls this beside populateModuleTypes for every dep).
+#
+# BUG-586: its struct receivers. A struct method takes `*const` or `*` by what its body
+# does (structReceiverTable), and a caller's local must be `var` exactly when it is `*`.
+# The table was built from THIS module's declarations, so a dep struct fell back to the
+# method-name heuristic, which calls `count` / `hash` readers.
+#
+# BUG-581: its closure factories, so the module that
+# calls one knows its result. `collectClosureFactories` reads THIS module's declarations, so
+# `var c = makeCounter(10)` with the factory in a used module bound `c` as `const`, and the
+# runtime's call helper, which takes `*T` for a closure that mutates its captures, was handed
+# `*const T`. `$cfm:<fn>` = the fn returns a capture closure that assigns one of its captures.
+# Same two detectors as the root module's, so the two answers cannot drift.
+def noteDepCodegenFacts(mt: ModuleTypes, m: Module, strip_contracts: bool)
+    mt.dep_struct_recv = mt.dep_struct_recv + structReceiverTable(m.decls, strip_contracts)
+    for decl in m.decls
+        if decl is Decl.method as fmth
+            if fmth.return_type != nil and fmth.stmts != nil
+                if returnedCaptureLambda(fmth.stmts!) as flam
+                    if flam.body_ is LambdaBody.stmts as fbody
+                        var fmuts = StrSet()
+                        collectAssignedIdents(fbody, fmuts)
+                        for fcv in flam.captures
+                            if fmuts.contains_(fcv.name)
+                                mt.addClass(ClassTypes("$cfm:" + fmth.name))
+
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
 
@@ -1092,7 +1131,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     if tc_result as tcr
         g = g.withTcResult(tcr)
     g.library_mode = library_mode
-    setStructReceivers(structReceiverTable(m.decls, strip_contracts))   # BUG-455
+    setStructReceivers(structReceiverTable(m.decls, strip_contracts) + deps_mt.dep_struct_recv)   # BUG-455, BUG-586
     setExtReceivers(extReceiverTable(m.decls))                           # BUG-573
     # BUG-294: register THIS module's `^T` / `^T?` fields BEFORE any decl is emitted.
     #
@@ -1189,6 +1228,17 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                         g.addExposedModuleVar(exposed_name, imp.path)
                     else if deps_mt.hasUnion(exposed_name)
                         g.union_names.add(exposed_name)
+                    else if not isUpperCase(exposed_name) and depDeclaresType(deps_mt, exposed_name)
+                        # BUG-587: a dep TYPE whose name is lowercase (`class error`,
+                        # `struct try` -- names BUG-280 freed) is a type, registered as the
+                        # uppercase default below registers one. The case heuristic would
+                        # call it a function and bind `_zbr_fn_error`, which the dep never emits.
+                        g.struct_names.add(exposed_name)
+                        g.struct_with_init.add(exposed_name)
+                    else if deps_mt.hasClass("$ns:" + exposed_name)
+                        # BUG-579: an exposed NAMESPACE is not a struct type -- the dep
+                        # emits it unprefixed, and a reference starts with its bare name.
+                        g.namespace_names.add(exposed_name)
                     else if isEnumLikeName(exposed_name)
                         g.enum_names.add(exposed_name)
                     else if isUnionLikeName(exposed_name)
@@ -3337,12 +3387,17 @@ class Writer
     # in the fields pass so all struct fields stay contiguous). On the Writer
     # (shared, mutable) so `except`-derived Generators all see it.
     var suppress_once_field: bool
+    # BUG-596: the next genExpr is a CALLEE (`c.bump` in `c.bump()`), not a value. Set by
+    # genCalleeExpr, consumed by the very next genExpr, so a method read as a value binds
+    # (`_zbr_bind`) and a method called does not.
+    var callee_next: bool
 
     cue init()
         _buf = StringBuilder()
         _uid = 0
         cur_line = 0
         suppress_once_field = false
+        callee_next = false
 
     def emit(s: str)
         _buf.append(s)
@@ -4082,6 +4137,20 @@ struct Generator
         genType(ta.base)
         w.emit(";\n")
 
+    # BUG-595: the fields of every mixin class `n` adds (already named by
+    # AstBuilder.mixinFieldName), in mixin order then declaration order.
+    def mixinFieldDecls(n: DeclClass): List(Decl)
+        var out = List(Decl)()
+        for mixin_ref in n.mixins
+            if mixin_ref is TypeRef.named as nr
+                for mdecl in module_decls
+                    if mdecl is Decl.mixin_ as mx
+                        if mx.name == nr.name
+                            for mmem in mx.members
+                                if mmem is Decl.var_
+                                    out.add(mmem)
+        return out
+
     # BUG-576: a class's type tag. `_ttag_<C>` is a FILE-PRIVATE constant of the module
     # that declares C, so `x is Dog` with Dog from a used module named an undeclared
     # identifier. The tag is `_zbr_hash` of the bare class name wherever it is computed,
@@ -4586,8 +4655,12 @@ struct Generator
                     # BUG-281 B: an exposed TYPE is emitted by its defining module under
                     # the `_zbr_ty_` prefix, for the same reason and with the same
                     # both-halves rule as the `_zbr_fn_` case above.
-                    else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename)   # BUG-476 / BUG-490: sigs and interfaces are unprefixed
+                    else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename) and not isNamespaceName(ename)   # BUG-476 / BUG-490 / BUG-579: sigs, interfaces and namespaces are unprefixed
                         uname = zbrTypeSymbol(ename)
+                    # BUG-587 (BUG-286's namespace half, across a module): a namespace keeps
+                    # its own name, escaped as its defining module escaped it (`opaque`).
+                    else if isNamespaceName(ename)
+                        uname = zigSafeName(ename)
                     w.emit("const ")
                     w.emit(uname)
                     w.emit(" = ")
@@ -4595,6 +4668,12 @@ struct Generator
                     w.emit(".")
                     w.emit(uname)
                     w.emit(";\n")
+                    # BUG-588: an exposed @reflectable class brings its strict JSON parser
+                    # with it, so `Json.parse(Point, s)` here names the same symbol.
+                    if .dep_types.hasClass("$refl:" + ename)
+                        w.emit("const _json_parse_strict_" + ename + " = ")
+                        w.emit(modAliasSymbol(alias))
+                        w.emit("._json_parse_strict_" + ename + ";\n")
                 i = i + 1
 
     # ── genFieldDecl ──────────────────────────────────────────────────────────
@@ -4605,6 +4684,21 @@ struct Generator
     # that emit a field initialiser and the other four kept the bug, so every site now
     # calls this one function.
     def genFieldInitExpr(fexpr: Expr, tr: TypeRef?)
+        # BUG-592: a field default is emitted OUTSIDE any function -- in the struct's field
+        # list -- where no inference context is attached, so every operand typed as unknown
+        # and every `+` in one (`base() + 2`, `B + 1`, even `2 + 3`) was a guess, refused.
+        # The module-level context a module var's initializer gets (BUG-496): it binds no
+        # locals, and a default has none to bind. Inside a constructor's prologue the
+        # constructor's own context is already attached and is kept.
+        if .infer_ctx == nil
+            var fctx = InferCtx(.module_types, "")
+            fctx.withDepTypes(.dep_types)
+            var fg = withInferCtx(fctx)
+            fg.genFieldInitExprIn(fexpr, tr)
+            return
+        genFieldInitExprIn(fexpr, tr)
+
+    def genFieldInitExprIn(fexpr: Expr, tr: TypeRef?)
         if tr != nil and isBareCollectionCtor(fexpr)
             genCallWithTypeHint(fexpr, tr!)
         else
@@ -4856,6 +4950,33 @@ struct Generator
                 w.emit(" };\n")
             ig.writeIndent()
             w.emit("}\n\n")
+            # BUG-519: a module that USES this one and constructs the struct by named
+            # arguments leaves defaulted fields out; their values are computed HERE, in
+            # the declaring module's scope (a default may name something private to it).
+            for df_decl in n.members
+                if df_decl is Decl.var_ as df_fld
+                    if not needsPrefill(df_fld)             # a default, or a container 1c builds
+                        continue
+                    ig.writeIndent()
+                    w.emit("pub fn _zbr_dflt_" + df_fld.name + "() ")
+                    if df_fld.type_ != nil
+                        ig.genType(df_fld.type_!)
+                    else
+                        w.emit("@TypeOf(")
+                        ig.genExpr(df_fld.init_expr!)
+                        w.emit(")")
+                    w.emit(" {\n")
+                    sig_ig.writeIndent()
+                    w.emit("return ")
+                    if df_fld.init_expr != nil
+                        sig_ig.genFieldInitExpr(df_fld.init_expr!, df_fld.type_)
+                    else
+                        w.emit("_zbr_new(")
+                        sig_ig.genType(df_fld.type_!)
+                        w.emit(")")
+                    w.emit(";\n")
+                    ig.writeIndent()
+                    w.emit("}\n\n")
         if n.invariants.len > 0 and not strip_contracts
             ig.genInvariantCheckFn()
         if n.ifaces.len > 0
@@ -5040,11 +5161,20 @@ struct Generator
         var fg = indented()
         fg.writeIndent()
         fg.w.emit("return struct {\n")
+        # BUG-598: a generic class `adds` a mixin too -- its fields and methods, as
+        # genClass emits them for a plain class (BUG-089 / BUG-595). This emitter had
+        # neither, so `Box(int)().tag("g")` failed inside zig.
+        var all_members = List(Decl)()
+        for am in n.members
+            all_members.add(am)
+        for mxf in mixinFieldDecls(n)
+            all_members.add(mxf)
         var ig0 = fg.indented()
         var ig1 = ig0.withOwner(n.name)
-        var ig  = ig1.withGeneric(n)
+        var ig2 = ig1.withGeneric(n)
+        var ig  = ig2.withOwnerMembers(all_members)     # after withGeneric, which sets n.members
         ig.line("_type_tag: u64 = _ttag_${n.name},")
-        for decl in n.members
+        for decl in all_members
             if decl is Decl.var_ as fld
                 ig.genFieldDecl(fld)
         var has_init = false
@@ -5057,6 +5187,14 @@ struct Generator
                     has_init = true
                 else
                     pass
+        for gmx_ref in n.mixins                             # BUG-598: the mixin's methods
+            if gmx_ref is TypeRef.named as gmx_nr
+                for gmx_decl in module_decls
+                    if gmx_decl is Decl.mixin_ as gmx
+                        if gmx.name == gmx_nr.name
+                            for gmx_mem in gmx.members
+                                if gmx_mem is Decl.method as gmx_m
+                                    ig.genMethod(gmx_m)
         if not has_init
             # 2026-09-24: the same synthesized init a non-generic class gets -- a HEAP
             # instance (a class is a pointer; this returned `@This()` by value and every
@@ -5074,7 +5212,7 @@ struct Generator
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
-            for gfdecl in n.members
+            for gfdecl in all_members                      # BUG-598: mixin fields too
                 if gfdecl is Decl.var_ as gfld
                     if dig.needsPrefill(gfld)
                         dig.genFieldPrefill("self.", gfld)    # BUG-501 1c
@@ -5215,6 +5353,61 @@ struct Generator
                 return IfaceRef(key, g.name, zigTypeText(tr), ifaceVtSuffix(key), g.args)
             else
                 return nil
+
+    # BUG-580: `v is Show` on an interface value, with `Show` declared in a USED module.
+    # `_zbr_implements_Show` is a file-private function of Show's module, and it lists the
+    # classes declared THERE -- so a class of this module implementing Show would answer
+    # false even if the symbol were reachable. The check is decided here instead, over
+    # every class this module can see (its own and its dependencies'), comparing tags
+    # inline: a class tag is `_zbr_hash` of its bare name wherever it is computed (BUG-576).
+    # Still blind to a class from a module this one does not import (recorded on BUG-580).
+    def emitDepIfaceMembership(iface: str, tag: str)
+        var seen = StrSet()
+        var names = List(str)()
+        for ck, cv in .module_types.class_interfaces
+            if not seen.contains_(ck)
+                seen.add(ck)
+                names.add(ck)
+        for dk, dv in .dep_types.class_interfaces
+            if not seen.contains_(dk)
+                seen.add(dk)
+                names.add(dk)
+        w.emit("(")
+        var any = false
+        for cn in names
+            if .module_types.isInterface(cn) or .dep_types.isInterface(cn)
+                continue
+            if conformsAcross(cn, iface, 16)
+                if any
+                    w.emit(" or ")
+                any = true
+                w.emit("((" + tag + " & 0xFFFFFFFF) == (comptime _zbr_hash(\"" + cn + "\")))")
+        if not any
+            w.emit(tag + " != " + tag)              # no implementer visible: false, tag still read
+        w.emit(")")
+
+    # BUG-580: conformance over BOTH tables -- `class Dog implements Pet` here, with
+    # `interface Pet implements Show` in a dep, needs one hop through each.
+    def conformsAcross(cls: str, iface: str, depth: int): bool
+        if depth <= 0
+            return false
+        if cls == iface
+            return true
+        var lists: str = ""
+        if .module_types.class_interfaces.contains(cls)
+            lists = .module_types.class_interfaces.fetch(cls)
+        if .dep_types.class_interfaces.contains(cls)
+            lists = lists + "|" + .dep_types.class_interfaces.fetch(cls)
+        if lists == ""
+            return false
+        for ifc in lists.split("|")
+            if ifc != ""
+                var ib: str = ifaceKeyBase(ifc)
+                if ifc == iface or ib == iface
+                    return true
+                if conformsAcross(ib, iface, depth - 1)
+                    return true
+        return false
 
     # Interface RTTI: emit `fn _zbr_implements_<Iface>(_tag: u64) bool` per
     # interface — true iff the concrete class identified by `_tag`'s low 32 bits
@@ -5553,14 +5746,24 @@ struct Generator
         w.emit("pub const ")
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(" = struct {\n")
+        # BUG-595: the class's members plus the FIELDS of every mixin it `adds` (stored
+        # under AstBuilder.mixinFieldName, private to the mixin). They are fields of this
+        # class: emitted below and filled by both constructor paths (the synthetic `init`
+        # and a `cue init`'s prologue walk `owner_members`). Until 2026-10-16 a mixin `var`
+        # was dropped here and every read of it failed inside zig.
+        var all_members = List(Decl)()
+        for am in n.members
+            all_members.add(am)
+        for mxf in mixinFieldDecls(n)
+            all_members.add(mxf)
         var ig0 = indented()
         var ig1 = ig0.withOwner(n.name)
-        var ig2 = ig1.withOwnerMembers(n.members)
+        var ig2 = ig1.withOwnerMembers(all_members)
         var ig  = ig2.withOwnerInvariants(n.invariants)
         ig.line("_type_tag: u64 = _ttag_${n.name},")
         # Pass 1 — all struct FIELDS first (Zig rejects a declaration between
         # fields): instance fields (skip static) + @once cache fields.
-        for decl in n.members
+        for decl in all_members
             if decl is Decl.var_ as fld
                 if not fld.mods.is_static
                     ig.genFieldDecl(fld)
@@ -5613,7 +5816,7 @@ struct Generator
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
-            for fdecl in n.members
+            for fdecl in all_members                       # BUG-595: mixin fields too
                 if fdecl is Decl.var_ as fld
                     if dig.needsPrefill(fld)
                         dig.genFieldPrefill("self.", fld)     # BUG-501 1c
@@ -5791,7 +5994,7 @@ struct Generator
                     return
                 f_names.add(fld.name)
                 f_kinds.add(kind)
-        w.emit("fn _json_parse_strict_")
+        w.emit("pub fn _json_parse_strict_")                # BUG-588: a using module binds it
         w.emit(n.name)                                      # SYMBOL — already prefixed
         w.emit("(_src: []const u8) ?*")
         emitTypeName(n.name)                                # BUG-281 B: the TYPE
@@ -7770,6 +7973,8 @@ struct Generator
                         closure_vars.add(n.name)
                         if not n.is_const and closure_ret_mutates.contains_(fcid.name)
                             is_mut = true
+                    else if not n.is_const and .dep_types.hasClass("$cfm:" + fcid.name) and not isLocalOrParamName(fcid.name)
+                        is_mut = true                       # BUG-581: a dep module's factory
         if is_mut and n.init_expr != nil and not n.is_const and n.type_ == nil
             if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name) and not isLocalOrParamName(fid.name)   # BUG-427
@@ -8685,6 +8890,22 @@ struct Generator
                                     w.emit("anytype")
                                 w.emit(", void)")
                             return
+                        # BUG-601: a GENERIC user type as a type argument, `List(Box(int))()`,
+                        # emitted a bare `Box` (no prefix, no argument); zig "use of undeclared
+                        # identifier". The annotation form's spelling: `*_zbr_ty_Box(i64)`.
+                        if class_names.contains_(id.name) or isUserTypeName(id.name)
+                            if class_names.contains_(id.name)
+                                w.emit("*")
+                            emitTypeName(id.name)
+                            w.emit("(")
+                            var gfi = true
+                            for gta in c.args
+                                if not gfi
+                                    w.emit(", ")
+                                gfi = false
+                                genTypeFromExpr(gta.value)
+                            w.emit(")")
+                            return
                         w.emit(id.name)
                     else
                         genExpr(e)
@@ -8931,8 +9152,22 @@ struct Generator
                         # must NOT fire when the RHS is already a ref (`^T`/`^T?`) — e.g.
                         # `cue init(opt_val: ^Val?) { .opt_val = opt_val }` is a direct
                         # pointer copy, not a box (BUG: union-box regressed val_test here).
-                        if (struct_names.contains_(tn) or .module_types.hasUnion(tn)) and not rhsIsAlreadyRef(a.value)
+                        if (isDeclaredHere(tn) or .module_types.hasUnion(tn)) and not rhsIsAlreadyRef(a.value)
                             w.emit("{ const _rp = _allocator.create(" + typeZigName(tn) + ") catch @panic(\"OOM\"); _rp.* = ")
+                            genExpr(a.value)
+                            w.emit("; ")
+                            genExpr(a.target)
+                            w.emit(" = _rp; }\n")
+                            return
+                        # BUG-584: a struct or union of a USED module (or one declared inside a
+                        # namespace). Its name is the DEP's spelling, not in scope here when the
+                        # module is used without `exposing` (`lib.SBox`), so the box is spelled
+                        # from the SLOT's own type (`_ZbrSlotChild`) -- the value's type would be
+                        # the tag type for a payload-less variant (`lib.Shape.dot`).
+                        if (struct_names.contains_(tn) or .dep_types.hasUnion(tn) or depDeclaresStruct(.dep_types, tn)) and not rhsIsAlreadyRef(a.value)
+                            w.emit("{ const _rp = _allocator.create(_ZbrSlotChild(@TypeOf(")
+                            genExpr(a.target)
+                            w.emit("))) catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
                             genExpr(a.target)
@@ -9294,6 +9529,10 @@ struct Generator
                         if mem is Decl.var_ as fld2
                             if fld2.name == field_name
                                 return fld2.type_
+        # BUG-584: a struct / class of a USED module -- its declared field types cross the
+        # boundary in the dep tables, so `h.opt_pair = Pair(..)` boxes into its `^T?` slot.
+        if .dep_types.classOf(type_name) as ldt
+            return ldt.fieldRef(field_name)
         return nil
 
     # BUG-299: the struct/union name `S` when `tr` is `^S` or `^S?` for a VALUE type of this
@@ -9306,7 +9545,8 @@ struct Generator
             else if bt_inner is TypeRef.nilable as bt_nil
                 if bt_nil is TypeRef.named as bt_n2
                     bt_name = bt_n2.name
-            if bt_name != "" and (struct_names.contains_(bt_name) or .module_types.hasUnion(bt_name))
+            # BUG-584: a value type of a USED module too (a dep struct or union).
+            if bt_name != "" and (struct_names.contains_(bt_name) or .module_types.hasUnion(bt_name) or .dep_types.hasUnion(bt_name) or depDeclaresStruct(.dep_types, bt_name))
                 return bt_name
         return nil
 
@@ -9345,6 +9585,10 @@ struct Generator
                     return true
                 return lt is Type_.unknown_ or lt is Type_.unresolved
         return true
+
+    # BUG-579: a top-level namespace of this module or of a used one (declared unprefixed).
+    def isNamespaceName(name: str): bool
+        return .module_types.hasClass("$ns:" + name) or .dep_types.hasClass("$ns:" + name)
 
     # BUG-490: an interface of this module or of a used one (declared unprefixed).
     def isIfaceName(name: str): bool
@@ -10748,7 +10992,7 @@ struct Generator
                     on Expr.member as m
                         genExpr(m.object)
                     else
-                        genExpr(c.callee)
+                        genCalleeExpr(c.callee)
             else
                 genExpr(e)
 
@@ -10792,7 +11036,29 @@ struct Generator
                 if bid.name == "List" or bid.name == "StringBuilder"
                     return false
             return true
+        # BUG-592: an operator over such an operand (`base() * 2`) is deferred too, and so
+        # is one that ALLOCATES -- `+` joining strings, an interpolation -- which no comptime
+        # field default can do. A class's constructor fills every defaulted field anyway
+        # (the prefill), so `= undefined` in the field list costs nothing there.
+        if e is Expr.binary as db
+            if isDeferredFieldInit(db.left) or isDeferredFieldInit(db.right)
+                return true
+            if db.op == BinaryOp.add and (fieldInitIsStr(db.left) or fieldInitIsStr(db.right))
+                return true
+            return false
+        if e is Expr.unary as du
+            return isDeferredFieldInit(du.operand)
+        if e is Expr.string_interp
+            return true
         return false
+
+    # BUG-592: is a field default's operand a str (a literal, or typed so by the module context)?
+    def fieldInitIsStr(e: Expr): bool
+        if e is Expr.string_lit or e is Expr.string_interp
+            return true
+        var sctx = InferCtx(.module_types, "")
+        sctx.withDepTypes(.dep_types)
+        return inferExpr(e, sctx) is Type_.string_
 
     # BUG-501 1c: is this field a Zebra container -- by its declared type, or (untyped) by a
     # container-constructing initialiser?
@@ -12975,7 +13241,31 @@ struct Generator
 
     # ── genExpr ───────────────────────────────────────────────────────────────
 
+    def genCalleeExpr(e: Expr)
+        w.callee_next = true
+        genExpr(e)
+
+    # BUG-596: the class whose METHOD `m` reads as a value (`c.bump`, `this.bump`), or "".
+    # A user class of this module or a used one; a field of the same name wins (it is read).
+    def boundMethodClass(m: ExprMember): str
+        if .infer_ctx == nil
+            return ""
+        var rt: Type_ = inferExpr(m.object, .infer_ctx!)
+        if rt is Type_.ref_to as rr
+            rt = rr
+        if rt is Type_.named as rn
+            var ct_opt = .module_types.classOf(rn)
+            if ct_opt == nil
+                ct_opt = .dep_types.classOf(rn)
+            if ct_opt as ct
+                if ct.is_class and not ct.is_interface
+                    if (.infer_ctx!).fieldTypeAny(rn, m.member) == nil and (.infer_ctx!).methodReturnAny(rn, m.member) != nil
+                        return rn
+        return ""
+
     def genExpr(e: Expr)
+        var is_callee: bool = w.callee_next                # BUG-596
+        w.callee_next = false
         branch e
             on Expr.int_lit as il
                 w.emit(hexLitZig(il.text))
@@ -13028,6 +13318,12 @@ struct Generator
             on Expr.ident as id
                 genIdent(id)
             on Expr.member as m
+                # BUG-596: a method read as a VALUE binds to its receiver. Not as a callee.
+                if not is_callee and boundMethodClass(m) != ""
+                    w.emit("_zbr_bind(")
+                    genExpr(m.object)
+                    w.emit(", \"" + m.member + "\")")
+                    return
                 # Catch-variable member: e.message → _zbr_error_msg(), e.details → _error_ctx.details
                 if catch_var != ""
                     if m.object is Expr.ident as mid
@@ -13724,7 +14020,9 @@ struct Generator
                         w.emit("(_zbr_isblk_${isuid}: { const _isv_${isuid} = ")
                         genExpr(tc2.expr)
                         w.emit("; const _tag_${isuid} = @as(*const u64, @ptrCast(@alignCast(_isv_${isuid}.ptr))).*; break :_zbr_isblk_${isuid} ")
-                        if target_iface
+                        if target_iface and findInterfaceDecl(tc2.type_name) == nil
+                            emitDepIfaceMembership(tc2.type_name, "_tag_${isuid}")   # BUG-580
+                        else if target_iface
                             w.emit("_zbr_implements_" + tc2.type_name + "(_tag_${isuid})")
                         else
                             w.emit("((_tag_${isuid} & 0xFFFFFFFF) == ")
@@ -14504,6 +14802,10 @@ struct Generator
                         if nt.name == "str"
                             return true
             on Expr.member as m
+                # BUG-596: a method read as a value is a callable, whatever it is called --
+                # the name list below took a bound `n.name` for a string.
+                if boundMethodClass(m) != ""
+                    return false
                 # Common string field names
                 if m.member == "text" or m.member == "name" or m.member == "message" or m.member == "path" or m.member == "stdout" or m.member == "stderr" or m.member == "src" or m.member == "member"
                     return true
@@ -15038,7 +15340,7 @@ struct Generator
                 if gf_cls != ""
                     var gf_key = gf_cls + "." + gf_mem.member
                     if .module_types.hasGenericFn(gf_key) or .dep_types.hasGenericFn(gf_key)
-                        genExpr(gf_inner.callee)
+                        genCalleeExpr(gf_inner.callee)
                         w.emit("(")
                         var gm_first = true
                         for ta in gf_inner.args
@@ -15073,7 +15375,7 @@ struct Generator
             # `error()` the constructor (test/bug280_freed_words_test).
             if isLocalOrParamName(cid.name) and localMayBeCallable(cid.name)
                 w.emit("_zbr_invoke(&")
-                genExpr(c.callee)
+                genCalleeExpr(c.callee)
                 w.emit(", .{")
                 genArgList(c.args)
                 w.emit("})")
@@ -15084,7 +15386,7 @@ struct Generator
         if (c.callee is Expr.call or c.callee is Expr.index) and .infer_ctx != nil
             if isSigType(inferExpr(c.callee, .infer_ctx!))
                 w.emit("_zbr_invoke(&(")
-                genExpr(c.callee)
+                genCalleeExpr(c.callee)
                 w.emit("), .{")
                 genArgList(c.args)
                 w.emit("})")
@@ -15111,23 +15413,38 @@ struct Generator
         var cm_obj = getMemberObjectIdent(c.callee)
         var cm_mem = getMemberName(c.callee)
         if cm_obj != nil and cm_mem != nil
-            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or .dep_types.hasClass(cm_mem!)
+            # BUG-587: `Shape.volatile(12)` -- a union variant whose name a dep ALSO
+            # declares as a class -- is not `module.Class(..)`: the object must not be a type.
+            var is_xm_ctor = isCrossModuleCtorCall(c.callee) or (.dep_types.hasClass(cm_mem!) and not isUserTypeName(cm_obj!) and not isLocalOrParamName(cm_obj!))
+            if is_xm_ctor and not unwrapped_imports.contains_(cm_obj!) and not namespace_names.contains_(cm_obj!)
+                if emitDepStructLiteral(cm_mem!, c.args, cm_obj!)   # BUG-519
+                    return
             if is_xm_ctor
                 # If genUse unwrapped this module (class_names), emit ClassName.init()
                 # Otherwise emit ModuleName.ClassName.init()
                 if unwrapped_imports.contains_(cm_obj!)
                     emitTypeName(cm_mem!)                   # BUG-281 B
                 else
-                    w.emit(modRef(cm_obj!))                 # import alias, not a type (BUG-483)
+                    if namespace_names.contains_(cm_obj!)
+                        emitName(cm_obj!)                   # BUG-587: a dep namespace, escaped (`opaque`)
+                    else
+                        w.emit(modRef(cm_obj!))             # import alias, not a type (BUG-483)
                     w.emit(".")
                     w.emit(zbrTypeSymbol(cm_mem!))          # BUG-281 B
                 w.emit(".init(")
                 var fc = true
+                var xm_ai: int = 0
                 for a in c.args
                     if not fc
                         w.emit(", ")
                     fc = false
-                    genExpr(a.value)
+                    # BUG-584: the parameter's declared type, as the unqualified constructor
+                    # path uses it -- `lib.Holder(lib.Pair(5, 6))` into a `^Pair?` slot boxes.
+                    if lookupCtorParamType(cm_mem!, a.name, xm_ai) as xm_pt
+                        genCallWithTypeHint(a.value, xm_pt)
+                    else
+                        genExpr(a.value)
+                    xm_ai += 1
                 w.emit(")")
                 return
         # BUG-286: `Namespace.Class(args)` — a class declared inside a `namespace`.
@@ -15293,6 +15610,35 @@ struct Generator
         # Generic stdlib ctor: List(T)(), HashMap(K,V)()
         # Generic class ctor: ClassName(TypeArg)(initArgs) → ClassName(*TypeArg).init(initArgs)
         if c.callee is Expr.call as inner
+            # BUG-599: a used module's generic class named qualified, `lib.Box(int)(7)` --
+            # the form the BUG-599 refusal names. It emitted `lib.Box.init(int)(7)`. The
+            # cross-module ctor's predicate and spelling (below), with the type applied.
+            if inner.callee is Expr.member as gqm
+                if gqm.object is Expr.ident as gqo
+                    if .dep_types.classOf(gqm.member) as gq_ct
+                        if gq_ct.is_class and not isUserTypeName(gqo.name) and not isLocalOrParamName(gqo.name) and not namespace_names.contains_(gqo.name)
+                            if unwrapped_imports.contains_(gqo.name)
+                                emitTypeName(gqm.member)
+                            else
+                                w.emit(modRef(gqo.name))
+                                w.emit(".")
+                                w.emit(zbrTypeSymbol(gqm.member))
+                            w.emit("(")
+                            var gqi = true
+                            for gqa in inner.args
+                                if not gqi
+                                    w.emit(", ")
+                                gqi = false
+                                genTypeFromExpr(gqa.value)
+                            w.emit(").init(")
+                            var gqi2 = true
+                            for gqb in c.args
+                                if not gqi2
+                                    w.emit(", ")
+                                gqi2 = false
+                                genExpr(gqb.value)
+                            w.emit(")")
+                            return
             if inner.callee is Expr.ident as id
                 if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool" or id.name == "ObjectPool" or id.name == "Set"
                     genGenericCtorCall(id.name, inner.args, c.args)
@@ -15373,6 +15719,8 @@ struct Generator
             # constructor call takes exactly the path it did before.
             var ctor_shadowed: bool = in_method and owner != "" and isOwnerMethod(id.name)
             if (class_names.contains_(id.name) or struct_with_init.contains_(id.name)) and not ctor_shadowed
+                if emitDepStructLiteral(id.name, c.args, "")   # BUG-519
+                    return
                 emitTypeName(id.name)                       # BUG-281 B
                 w.emit(".init(")
                 # Named-arg / default-fill path: any arg has a name, or caller passed
@@ -15541,7 +15889,7 @@ struct Generator
         if reg_throws and try_block_label == nil and not in_try_expr
             recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("try ")
-        genExpr(c.callee)
+        genCalleeExpr(c.callee)
         w.emit("(")
         var reg_params: List(Param)? = nil
         if c.callee is Expr.ident as reg_id
@@ -19139,7 +19487,9 @@ struct Generator
                         var skey: str = sname + "." + sm.name
                         if skey == key
                             return sm.type_params
-        return nil
+        # BUG-585: a generic function of a USED module (`count(int)([])` with `count` in
+        # the dep) -- its type parameters cross the boundary in the dep tables.
+        return .dep_types.genericFnTypeParams(key)
 
     def genArgList(args: List(Arg))
         var first = true
@@ -19232,7 +19582,7 @@ struct Generator
                 w.emit("; ")
             j += 1
         w.emit("break :" + lbl + " ")
-        genExpr(c.callee)
+        genCalleeExpr(c.callee)
         w.emit("(")
         var k: int = 0
         while k < ps.len
@@ -19321,6 +19671,15 @@ struct Generator
     def lookupCtorParamType(ctor_name: str, arg_name: str?, arg_idx: int): TypeRef?
         var ps_raw = lookupFnParams(ctor_name + ".init")
         if ps_raw == nil
+            # BUG-584: a STRUCT of a used module with no `cue init` is constructed from its
+            # fields in order; their declared types are the parameter types.
+            if .dep_types.classOf(ctor_name) as dct
+                if dct.is_struct
+                    var dfn: str? = arg_name
+                    if dfn == nil
+                        dfn = dct.fieldNameAt(arg_idx)
+                    if dfn as dfname
+                        return dct.fieldRef(dfname)
             return nil
         return lookupParamType(ps_raw!, arg_name, arg_idx)
 
@@ -20233,12 +20592,86 @@ struct Generator
         # BuildTarget methods chain — any unknown method returns self
         genExpr(obj)
 
+    # BUG-519: `R(k: 3)` with R a struct of a USED module that has no `cue init`. Its
+    # synthetic `init` takes every field, and a call that leaves some out reached zig as
+    # "expected 3 argument(s), found 1" -- defaults worked only inside R's own module. A
+    # call that omits fields is emitted as the struct literal the local path emits: the
+    # given fields, then each omitted DEFAULTED field from the declaring module's
+    # `_zbr_dflt_<field>()`. An omitted field with no default is left to the struct's own
+    # `= undefined`, exactly as a local construction leaves it (BUG-591). `mod` is the
+    # import alias for `lib.R(..)`, "" for an exposed name. False when nothing applies.
+    def emitDepStructLiteral(name: str, args: List(Arg), mod: str): bool
+        if mod == "" and isDeclaredHere(name)
+            return false
+        var dct_opt = .dep_types.classOf(name)
+        if dct_opt == nil
+            return false
+        var dct = dct_opt!
+        if not dct.is_struct or dct.fnParamList("init") != nil
+            return false
+        var named_any = false
+        var npos: int = 0
+        for a0 in args
+            if a0.name != nil
+                named_any = true
+            else
+                npos += 1
+        if not named_any and args.len >= dct.field_order.len
+            return false
+        var tsp: str = zbrTypeSymbol(name)
+        if mod != ""
+            tsp = modRef(mod) + "." + tsp
+        w.emit(tsp + "{")
+        var first = true
+        var fi: int = 0
+        for fname in dct.field_order
+            var given: Expr? = nil
+            if fi < npos
+                given = args.at(fi).value
+            else
+                for a1 in args
+                    if a1.name != nil and a1.name! == fname
+                        given = a1.value
+            if given != nil or dct.fieldHasDefault(fname)
+                if not first
+                    w.emit(",")
+                first = false
+                w.emit(" .")
+                emitName(fname)
+                w.emit(" = ")
+                if given as gv
+                    if dct.fieldRef(fname) as fpt
+                        if not genInterfaceArgCoercion(gv, fpt)
+                            genCallWithTypeHint(gv, fpt)
+                    else
+                        genExpr(gv)
+                else
+                    w.emit(tsp + "._zbr_dflt_" + fname + "()")
+            fi += 1
+        w.emit(" }")
+        return true
+
+    # BUG-588: the type argument spelled through a module used WITHOUT `exposing`
+    # (`Json.parse(lib.Point, s)`): the declaring module's `pub` strict parser, reached
+    # through the module binding. False when `t` is not such a reference.
+    def emitDepStrictParse(t: Expr, src: Expr): bool
+        if t is Expr.member as tm
+            if tm.object is Expr.ident as tmo
+                if import_aliases.contains_(tmo.name) and not isLocalOrParamName(tmo.name) and .dep_types.hasClass("$refl:" + tm.member)
+                    w.emit(modRef(tmo.name) + "._json_parse_strict_" + tm.member + "(")
+                    genExpr(src)
+                    w.emit(")")
+                    return true
+        return false
+
     # ── genJsonCall ──────────────────────────────────────────────────────────
     def genJsonCall(mname: str, args: List(Arg))
         if mname == "parse"
             # Json.parse(T, src) overload — first arg is a class ident → strict parser.
             if args.len >= 2
                 var first_arg = args.at(0).value
+                if emitDepStrictParse(first_arg, args.at(1).value)   # BUG-588: `lib.Point`
+                    return
                 if first_arg is Expr.ident as id_ref
                     var class_name2: str = id_ref.name
                     var found2: bool = false
@@ -20249,6 +20682,9 @@ struct Generator
                                 found2 = true
                                 if cls2.mods.is_reflectable
                                     refl2 = true
+                    if not found2 and .dep_types.hasClass("$refl:" + class_name2)   # BUG-588
+                        found2 = true
+                        refl2 = true
                     if found2
                         if not refl2
                             w.emit("@compileError(\"Json.parse(")
@@ -20276,6 +20712,8 @@ struct Generator
                 w.emit("@compileError(\"Json.parseStrict requires (T, src)\")")
                 return
             var first = args.at(0).value
+            if emitDepStrictParse(first, args.at(1).value)   # BUG-588: `lib.Point`
+                return
             var class_name: str = ""
             if first is Expr.ident as id_ref
                 class_name = id_ref.name
@@ -20290,6 +20728,9 @@ struct Generator
                         found = true
                         if cls.mods.is_reflectable
                             reflectable = true
+            if not found and .dep_types.hasClass("$refl:" + class_name)   # BUG-588
+                found = true
+                reflectable = true
             if not found
                 w.emit("@compileError(\"Json.parseStrict: '")
                 w.emit(class_name)

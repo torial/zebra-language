@@ -1,0 +1,13 @@
+# BUG-581: a capture closure returned by a USED module's factory. A closure that mutates
+# its captures is called through `*T`, so its local must be `var`; codegen knew a function
+# was a factory only from THIS module's declarations, bound `c` as `const`, and zig refused
+# "expected type '*T', found '*const T'". Control: a factory whose closure does not mutate
+# keeps a `const` local (zig refuses a `var` never mutated).
+use bug581_dep_closure_factory_lib exposing IntFn, StepFn, makeCounter, makeAdder
+
+def main()
+    var c = makeCounter(10)
+    var a = c()
+    var b = c()
+    var add = makeAdder(100)
+    print("bug581: ${a} ${b} ${add(5)}")

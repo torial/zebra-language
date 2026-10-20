@@ -1,0 +1,12 @@
+# BUG-591: a struct with no `cue init`, built with a field left out that has NO default.
+# The emit left the field `undefined` and the program read whatever was in memory (0 here
+# by luck; 5371104312 from another module). Refused now, naming the field -- and a
+# named argument that names no field is refused too.
+struct P
+    var x: int
+    var y: int = 2
+
+def main()
+    var a = P(y: 5)
+    var b = P(x: 1, z: 3)
+    print("${a.x} ${b.y}")

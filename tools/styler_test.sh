@@ -4,6 +4,7 @@
 # selfhost/gui_libui_ng_section.zig VERBATIM (no copy to drift), appends the
 # controls from the IDE plan, and runs `zig test`. Runs anywhere Zig runs; no GUI.
 set -eu
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 cd "$(dirname "$0")/.."
 SEC=selfhost/gui_libui_ng_section.zig
 OUT=${TMPDIR:-/tmp}/zebra_styler_test.zig

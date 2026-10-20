@@ -19,6 +19,7 @@
 # Usage: bash tools/measure_container_copy.sh [DIR_OR_FILE ...]
 #        (default: selfhost test examples). Run from the repo root.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 ZEB="zig-out/bin/zebra.exe"; [[ -x "$ZEB" ]] || ZEB="zig-out/bin/zebra"

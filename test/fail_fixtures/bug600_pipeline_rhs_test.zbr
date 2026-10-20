@@ -1,0 +1,6 @@
+# BUG-600: the right side of `->` that is not a call, a bare function/method name, or a
+# leading-dot form was an internal "buildExpr:" raise with no position.
+
+def main()
+    var a = 5 -> 3
+    print("${a}")

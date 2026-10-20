@@ -81,6 +81,8 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig, also when run standalone: on 2026-10-19 a
+# standalone smoke ran the shared ~/.zvm/bin 0.16 and passed a fixture the tier (0.17) failed
 cd "$REPO"
 source "$REPO/tools/scratch_paths.sh"   # BUG-521: per-checkout ${ZBR_BS}-* scratch
 

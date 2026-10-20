@@ -1,0 +1,13 @@
+# BUG-596's struct half: a method of a STRUCT used as a value binds the VARIABLE by reference
+# (Sean, 2026-10-16), which needs BUG-569's escaping-capture design -- refused until then,
+# naming the alternatives, instead of failing inside zig.
+struct P
+    var x: int
+    def move(): int
+        .x += 1
+        return .x
+
+def main()
+    var p = P(x: 1)
+    var f = p.move
+    print(p.move())

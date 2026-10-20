@@ -249,6 +249,22 @@ class ClassTypes
     # BUG-484: a method DECLARED `throws`, so a caller in another module knows its call
     # needs routing (the body alone misses a throws method that only propagates `?`).
     var throws_names: HashMap(str, bool)
+    # BUG-584: each field's DECLARED TypeRef. The Type_ above loses what codegen needs
+    # to box a value into a `^T` / `^T?` slot of a type declared in ANOTHER module (the
+    # spelling of the slot, not just what it holds); fn_param_lists carries parameters
+    # across the boundary for the same reason.
+    var field_refs: HashMap(str, TypeRef)
+    # BUG-584: instance field names in declaration order -- a struct with no `cue init`
+    # is constructed positionally, so a module that USES it maps an argument to its slot.
+    var field_order: List(str)
+    # BUG-519: instance fields CONSTRUCTION SUPPLIES -- declared with a default, or an
+    # uninitialised container (BUG-501 1c builds it empty). A call may leave them out; the
+    # declaring module computes the value (`_zbr_dflt_<field>()`), and BUG-591's refusal
+    # applies to every other omitted field.
+    var field_defaults: HashMap(str, bool)
+    # BUG-596: each method's declared return TypeRef, so a method read as a VALUE
+    # (`var f = c.name`) is typed as a callable returning it -- `f()` then types as it.
+    var method_return_refs: HashMap(str, TypeRef)
 
     cue init(name: str)
         .name = internString(name)
@@ -264,6 +280,31 @@ class ClassTypes
         fn_bodies = HashMap()
         method_deprecated = HashMap()
         throws_names = HashMap()
+        field_refs = HashMap()
+        field_order = List(str)()
+        field_defaults = HashMap()
+        method_return_refs = HashMap()
+
+    def methodReturnRef(method_name: str): TypeRef?
+        if .method_return_refs.contains(method_name)
+            return .method_return_refs.fetch(method_name)
+        return nil
+
+    def fieldHasDefault(field_name: str): bool
+        return .field_defaults.contains(field_name)
+
+    def fieldNameAt(idx: int): str?
+        if idx < 0 or idx >= .field_order.len
+            return nil
+        return .field_order.at(idx)
+
+    def setFieldRef(field_name: str, tr: TypeRef)
+        .field_refs.put(internString(field_name), tr)
+
+    def fieldRef(field_name: str): TypeRef?
+        if .field_refs.contains(field_name)
+            return .field_refs.fetch(field_name)
+        return nil
 
     def setMethodThrows(method_name: str)
         .throws_names.put(internString(method_name), true)
@@ -414,6 +455,13 @@ class ModuleTypes
     # BUG-158: names of top-level module `var`/`const` declarations. Used by codegen
     # so an exposed cross-module module var is referenced as `alias._zbr_mv_name`.
     var module_vars: HashMap(str, bool)
+    # BUG-586: the DEPENDENCIES' struct receiver table (CodeGen.structReceiverTable's
+    # " Type.method+ " / "- " form), appended per dep by CodeGen.noteDepCodegenFacts.
+    var dep_struct_recv: str
+    # BUG-585: a generic function's type-parameter names ("T,U"), keyed as
+    # generic_fn_names is ("f" / "Class.m"), so a module CALLING a dep's generic
+    # function can substitute the call's type arguments into its parameter types.
+    var generic_fn_tparams: HashMap(str, str)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -435,6 +483,8 @@ class ModuleTypes
         all_enum_member_keys = List()
         generic_fn_names = HashMap()
         module_vars = HashMap()
+        dep_struct_recv = ""
+        generic_fn_tparams = HashMap()
 
     def addModuleVar(name: str)
         .module_vars.put(internString(name), true)
@@ -591,6 +641,23 @@ class ModuleTypes
 
     def hasGenericFn(fn_name: str): bool
         return .generic_fn_names.contains(fn_name)
+
+    def addGenericFnTypeParams(fn_name: str, tps: List(str))
+        var joined: str = ""
+        for tp in tps
+            if joined != ""
+                joined = joined + ","
+            joined = joined + tp
+        .generic_fn_tparams.put(internString(fn_name), internString(joined))
+
+    # The type-parameter names, or nil when `fn_name` is not a generic function here.
+    def genericFnTypeParams(fn_name: str): List(str)?
+        if not .generic_fn_tparams.contains(fn_name)
+            return nil
+        var out: List(str) = List(str)()
+        for part in .generic_fn_tparams.fetch(fn_name).split(",")
+            out.add(part)
+        return out
 
     def hasClass(class_name: str): bool
         return .classes.contains(class_name)
@@ -920,16 +987,33 @@ def isListTypeRef(tr: TypeRef): bool
         else
             return false
 
+# BUG-519 / BUG-591: a field type construction always builds (BUG-501 1c) -- the same
+# set as CgHelpers.isContainerTypeRef, which this module cannot import.
+def builtAtConstruction(tr: TypeRef?): bool
+    if tr == nil
+        return false
+    var t: TypeRef = tr!
+    if t is TypeRef.generic as g
+        return g.name == "List" or g.name == "HashMap" or g.name == "Set"
+    if t is TypeRef.named as n
+        return n.name == "StringBuilder"
+    return false
+
 def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
     for member in members
         branch member
             on Decl.var_ as v
                 if v.mods.is_private
                     mt.addPrivateMemberKey(ct.name, v.name)
+                if not v.mods.is_static
+                    ct.field_order.add(internString(v.name))       # BUG-584
+                    if v.init_expr != nil or builtAtConstruction(v.type_)
+                        ct.field_defaults.put(internString(v.name), true)   # BUG-519
                 if v.type_ != nil
                     var vt = v.type_!
                     var ft: Type_ = typeFromRef(vt)
                     ct.setField(v.name, ft)
+                    ct.setFieldRef(v.name, vt)                     # BUG-584
                     if isStrSetOrWrapped(ft)
                         mt.addStrSetField(v.name)
                     if isHashMapTypeRef(vt)
@@ -958,8 +1042,10 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                 # top-level `identity(int)(42)` does rather than reaching Zig verbatim.
                 if m.type_params.len > 0
                     mt.addGenericFn(ct.name + "." + m.name)
+                    mt.addGenericFnTypeParams(ct.name + "." + m.name, m.type_params)   # BUG-585
                 if m.return_type != nil
                     ct.setMethodReturn(m.name, typeFromRef(m.return_type!))
+                    ct.method_return_refs.put(internString(m.name), m.return_type!)   # BUG-596
                 else
                     ct.setMethodReturn(m.name, Type_.void_)
                 # Collect param names as CSV for named-arg reordering in codegen.
@@ -1036,6 +1122,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 ct.is_class = true
                 addClassMembers(mt, ct, c.members)
                 mt.addClass(ct)
+                # BUG-588: `Json.parse(Point, s)` in a module that USES this one needs to
+                # know Point is @reflectable (its declaring module emits the strict parser).
+                if c.mods.is_reflectable
+                    mt.addClass(ClassTypes("$refl:" + c.name))
                 var gcs: str = ""
                 var gps: str = ""
                 for tp in c.type_params
@@ -1048,7 +1138,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         gcs = gcs + tp.name + "=" + tpc
                 if gcs != ""
                     mt.addGenericConstraints(c.name, gcs)
-                    mt.addGenericParams(c.name, gps)
+                if gps != ""
+                    mt.addGenericParams(c.name, gps)   # BUG-599: every generic class, for the ctor check
                 if c.type_params.len > 0 and not (("|" + c.name + "|") in _generic_classes)
                     _generic_classes = _generic_classes + c.name + "|"
                 if c.ifaces.len > 0
@@ -1207,6 +1298,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Register as generic function if it declares type params.
                 if topfn.type_params.len > 0
                     mt.addGenericFn(topfn.name)
+                    mt.addGenericFnTypeParams(topfn.name, topfn.type_params)   # BUG-585
             on Decl.var_ as mv
                 # BUG-158: record the module-var name so an exposed cross-module
                 # reference emits `alias._zbr_mv_name`.
@@ -1243,6 +1335,12 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # Dotted name "Outer.Inner" → create ClassTypes for each path
                 # prefix; set each component as a named field of its parent.
                 var ns_parts: List(str) = ns_decl.name.split(".")
+                # BUG-579: the TOP-level namespace name crosses the module boundary under
+                # a `$ns:` pseudo-class (the `$sig:` shape), so a module that `use`s this
+                # one `exposing` the namespace can tell it from a type: a namespace is
+                # emitted unprefixed, a type under `_zbr_ty_`.
+                if mt.classOf("$ns:" + ns_parts.at(0)) == nil
+                    mt.addClass(ClassTypes("$ns:" + ns_parts.at(0)))
                 var ns_cur: str = ""
                 var ns_pi: int = 0
                 while ns_pi < ns_parts.len
@@ -3127,6 +3225,29 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         if ctx.current_class != tn
                             ctx.addErr(ctx.file, m.span.line, m.span.col, "'" + m.member + "' is private")
                     return ft_v
+                # BUG-594: a member a USER class or struct does not have -- read or assigned
+                # (`c.nothere`, `c.alsonot = 3`) -- passed the front end and reached zig as
+                # "no field named". Its whole member set is known (fields and methods from
+                # populateModuleTypes, mixins merged, an `extend`'s methods under `$extend:`,
+                # a dep's from its own table), so an unknown name is refused here, naming the
+                # fields. A method read as a value is not a field and is not refused.
+                # BUG-596: a METHOD read as a value (`c.bump`, `xs.map(p.score)`). On a class
+                # it binds to the object (CodeGen `_zbr_bind`) and is typed as a callable
+                # returning what the method returns. On a STRUCT it would bind the VARIABLE by
+                # reference (Sean, 2026-10-16) -- which needs the escaping-capture design
+                # BUG-569 still owes -- so it is refused for now rather than reaching zig.
+                if boundMethodRet(tn, m.member, m.span.line, m.span.col, ctx) as bm_ret
+                    return bm_ret
+                if unknownUserMember(tn, m.member, ctx)
+                    var owning_mixin: str = mixinOwningField(tn, m.member, ctx)
+                    if owning_mixin != ""
+                        # BUG-595: the state is the mixin's; the class reaches it by methods.
+                        ctx.addErr(ctx.file, m.span.line, m.span.col,
+                                   "field '" + m.member + "' belongs to mixin '" + owning_mixin + "' and is private to it -- reach it through the mixin's methods")
+                    else
+                        ctx.addErr(ctx.file, m.span.line, m.span.col,
+                                   "'" + tn + "' has no field '" + m.member + "'" + fieldListHint(tn, ctx))
+                    return Type_.unknown_
             # Tuple element access: t.0, t.1, … — any index, parsed rather than
             # enumerated. This used to test `m.member` against the four literals
             # "0".."3", so `t.4` on a 5-tuple silently fell through to the generic
@@ -5635,6 +5756,65 @@ def checkNamedArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
         if p2.default_ == nil
             ctx.addErr(file, cline, ccol, "no argument for parameter `" + p2.name + "` of " + what + ", which has no default -- it takes " + takes)
 
+# BUG-591: a struct with no `cue init` is built from its fields -- positionally in
+# declaration order, or by name. A field the call leaves out takes its declared default;
+# one with NO default was left `undefined` by the emit, so the program read whatever was in
+# memory (a local construction happened to print 0; the same construction from another
+# module printed 5371104312). BUG-540's rule for parameters, applied to fields: an omitted
+# field must have a default, and a name must name a field.
+def checkStructCtorFields(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if call.callee is Expr.ident as cid
+        checkStructCtorFieldsOf(cid.name, cid.span.line, cid.span.col, call, file, line, ctx)
+
+def checkStructCtorFieldsOf(sname: str, sline: int, scol: int, call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if ctx.hasLocal(sname)
+        return
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(sname)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(sname)
+    if ct_opt == nil
+        return
+    var ct: ClassTypes = ct_opt!
+    if not ct.is_struct or ct.fnParamList("init") != nil
+        return
+    var cline: int = line
+    var ccol: int = scol
+    if sline > 0
+        cline = sline
+    var fields: str = ""
+    for fl in ct.field_order
+        if fields != ""
+            fields = fields + ", "
+        fields = fields + fl
+    if fields == ""
+        fields = "none"
+    var npos: int = 0
+    for a1 in call.args
+        if a1.name == nil
+            npos = npos + 1
+        else
+            var known: bool = false
+            for f1 in ct.field_order
+                if f1 == a1.name!
+                    known = true
+            if not known
+                var al: int = cline
+                var ac: int = ccol
+                if a1.span.line > 0
+                    al = a1.span.line
+                    ac = a1.span.col
+                ctx.addErr(file, al, ac, "struct '" + sname + "' has no field named `" + a1.name! + "` -- its fields are " + fields)
+    var fi: int = 0
+    for f2 in ct.field_order
+        var given: bool = fi < npos
+        for a2 in call.args
+            if a2.name != nil
+                if a2.name! == f2
+                    given = true
+        if not given and not ct.fieldHasDefault(f2)
+            ctx.addErr(file, cline, ccol, "no value for field `" + f2 + "` of struct '" + sname + "', which has no default -- pass it (`" + sname + "(" + f2 + ": ...)`) or give the field a default")
+        fi = fi + 1
+
 def namedArgsIsStruct(name: str, ctx: InferCtx): bool
     if ctx.module_types.classOf(name) as mct
         return mct.is_struct
@@ -5662,6 +5842,12 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 cline = cid.span.line
             # A class name used as a call is a constructor — different arity rules.
             if ctx.hasClassAny(cid.name)
+                # BUG-599: a GENERIC class constructed without its type argument
+                # (`Box(41)`) emitted `Box.init(41)` and failed inside zig. The curried
+                # form's inner `Box(int)` is never walked here (BUG-460's note), so
+                # reaching this is the direct call.
+                if ctx.genericParamNames(cid.name).len > 0 and not ctx.hasLocal(cid.name)
+                    ctx.addErr(file, cline, ccol, "`" + cid.name + "` is a generic class: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
                 return
             # BUG-469: a runtime object type called like a constructor it does not have.
             if not ctx.hasLocal(cid.name)
@@ -5676,6 +5862,14 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 ctx.addErr(file, cline, ccol, "`" + cid.name + "` is generic: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the arguments")
                 return
         on Expr.member as mem
+            # BUG-599: `lib.Box(41)` -- a used module's GENERIC class, named qualified,
+            # constructed without its type argument (the same predicate inferExpr uses
+            # for a cross-module constructor).
+            if mem.object is Expr.ident as gq_oid
+                if not ctx.hasLocal(gq_oid.name) and not ctx.hasClassAny(gq_oid.name) and ctx.dep_types.hasClass(mem.member) and ctx.genericParamNames(mem.member).len > 0
+                    var gq: str = gq_oid.name + "." + mem.member
+                    ctx.addErr(file, mem.span.line, mem.span.col, "`" + gq + "` is a generic class: pass its type argument(s) first, `" + gq + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
+                    return
             var gm_cls: str = ""
             if mem.object is Expr.ident as gm_oid
                 if ctx.hasClassAny(gm_oid.name) and not ctx.hasLocal(gm_oid.name)
@@ -5961,6 +6155,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
             checkNamedArgs(c, file, line, ctx)    # BUG-540
+            checkStructCtorFields(c, file, line, ctx)   # BUG-591
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
             checkDeprecatedCall(c, ctx)
             if c.callee is Expr.member as cm
@@ -7134,6 +7329,28 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                 checkSelfNamedMethod(m, file, ctx)
                 checkDecl(m, file, ctx, tc_result)
             ctx.current_class = saved_class
+        on Decl.mixin_ as dmx
+            # BUG-597: a mixin's method bodies were never checked -- checkDecl had no arm for
+            # a mixin, so an unknown method or a type mismatch in one passed `zebra -c` and
+            # failed inside zig, once per class that `adds` it. Checked like a class's, with
+            # the mixin as the current class (its table has its own fields; a host method it
+            # calls on `this` is not refused -- a mixin is written against classes it cannot
+            # name).
+            var saved_mclass: str = ctx.current_class
+            ctx.current_class = dmx.name
+            for mm in dmx.members
+                if mm is Decl.var_ as mdv
+                    # BUG-595: a mixin field is private to the mixin and a mixin has no
+                    # constructor, so nothing could ever give one without a default a value
+                    # -- it would start `undefined` (BUG-591's garbage read, guaranteed). A
+                    # container is built empty and needs none.
+                    if mdv.init_expr == nil and not builtAtConstruction(mdv.type_) and not mdv.mods.is_static
+                        ctx.addErr(file, mdv.span.line, mdv.span.col, "mixin field `" + mixinFieldPlainName(mdv.name) + "` needs a default -- a mixin has no constructor and its fields are private to it, so nothing else can set it (a container field starts empty and needs none)")
+                    checkVarDecl(mdv, file, ctx)
+                else if mm is Decl.method as mmd
+                    checkSelfNamedMethod(mm, file, ctx)
+                    checkDecl(mm, file, ctx, tc_result)
+            ctx.current_class = saved_mclass
         on Decl.struct_ as ds
             # BUG-359: struct FIELDS collide the same way class fields do (below).
             # BUG-508 (2026-09-30): a struct's METHOD bodies were never checked -- every
@@ -7350,6 +7567,82 @@ def interfaceHasMethod(ctx: InferCtx, iface: str, method: str, depth: int): bool
         if interfaceHasMethod(ctx, ifaceKeyBase(p), method, depth - 1)
             return true
     return false
+
+# BUG-596: the type of METHOD `member` of user class `tn` read as a value -- a callable
+# returning the method's declared type (unknown_ for a method declared without one) -- or
+# nil when `member` is not such a method (a field of that name wins: it is what is read).
+# A struct's method read as a value is refused here (BUG-596's struct half waits on BUG-569).
+def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Type_?
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt == nil
+        return nil
+    var ct: ClassTypes = ct_opt!
+    if ct.is_interface or not (ct.is_class or ct.is_struct)
+        return nil
+    if ctx.fieldTypeAny(tn, member) != nil or ctx.methodReturnAny(tn, member) == nil
+        return nil
+    if ct.is_struct
+        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which needs the escaping-capture design BUG-569 still owes -- call it in place, or make '" + tn + "' a class to pass its methods around")
+        return Type_.unknown_
+    if ct.methodReturnRef(member) as rr
+        return Type_.fn_type_(rr)
+    return Type_.unknown_
+
+# BUG-594: `member` is not a field, method or extension of `tn`, a user class or struct whose
+# member set is fully known. False for anything else (interfaces, unions, enums, aliases,
+# generic instantiations, builtin-backed names) -- those are left to the arms that know them.
+def unknownUserMember(tn: str, member: str, ctx: InferCtx): bool
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt == nil
+        return false
+    var ct: ClassTypes = ct_opt!
+    if not (ct.is_class or ct.is_struct) or ct.is_interface
+        return false
+    if ctx.fieldTypeAny(tn, member) != nil
+        return false
+    if ctx.methodReturnAny(tn, member) != nil
+        return false
+    if ctx.methodReturnAny("$extend:" + tn, member) != nil
+        return false
+    return true
+
+def fieldListHint(tn: str, ctx: InferCtx): str
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt as ct
+        var shown: List(str) = List(str)()
+        for fname in ct.field_order
+            if not fname.startsWith("_mx_")           # a mixin's private state (BUG-595)
+                shown.add(fname)
+        if shown.len > 0
+            return " (fields: " + shown.join("/") + ")"
+    return ""
+
+# BUG-595: AstBuilder.mixinFieldName stores mixin M's field f as `_mx_M__f` in every class
+# that `adds` M. The mixin's name when `tn` holds such a field for `member`, else "".
+def mixinOwningField(tn: str, member: str, ctx: InferCtx): str
+    var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+    if ct_opt == nil
+        ct_opt = ctx.dep_types.classOf(tn)
+    if ct_opt as ct
+        var tail: str = "__" + member
+        for fname in ct.field_order
+            if fname.startsWith("_mx_") and fname.endsWith(tail) and fname.len > 4 + tail.len
+                return fname.substring(4, fname.len - tail.len)
+    return ""
+
+# BUG-595: the name a user wrote for a mixin field (`_mx_M__f` -> `f`).
+def mixinFieldPlainName(stored: str): str
+    if stored.startsWith("_mx_")
+        var sep: int = stored.indexOf("__")
+        if sep > 0
+            return stored.substring(sep + 2, stored.len)
+    return stored
 
 def methodListHint(ct: ClassTypes): str
     var names: List(str) = List(str)()
@@ -7969,6 +8262,24 @@ def checkModule(m: Module, file: str, ctx: InferCtx): TcResult
     var tc_result: TcResult = TcResult()
     for decl in m.decls
         checkDecl(decl, file, ctx, tc_result)
+    # BUG-595: a mixin's methods are emitted INTO each class that adds it, so they are also
+    # checked AS that class -- `this` is the host, its fields and methods resolve, and another
+    # mixin's private field is refused naming its owner. Checked on its own, a mixin cannot
+    # know its host, so unknown names there are left alone. A site wrong for two hosts the
+    # same way is reported once (addErr's exact-duplicate filter, BUG-319).
+    for cdecl in m.decls
+        if cdecl is Decl.class_ as mc
+            for mref in mc.mixins
+                if mref is TypeRef.named as mrn
+                    for mdecl in m.decls
+                        if mdecl is Decl.mixin_ as mxd
+                            if mxd.name == mrn.name
+                                var mx_saved: str = ctx.current_class
+                                ctx.current_class = mc.name
+                                for mm in mxd.members
+                                    if mm is Decl.method
+                                        checkDecl(mm, file, ctx, tc_result)
+                                ctx.current_class = mx_saved
     return tc_result
 
 

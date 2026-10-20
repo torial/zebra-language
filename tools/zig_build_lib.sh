@@ -59,7 +59,7 @@ export ZBR_VCACHE_DIR
 
 # `zig version` is read once per gate (exported), not per lookup: 84 ms x ~1000 lookups.
 # An explicit ZBR_ZIG_VERSION wins, so the control can play a new zig.
-if [ -z "${ZBR_ZIG_VERSION:-}" ]; then ZBR_ZIG_VERSION="$(zig version 2>/dev/null)"; fi
+if [ -z "${ZBR_ZIG_VERSION:-}" ]; then ZBR_ZIG_VERSION="$(zig version 2>/dev/null)"; fi   # hazard-ok:H14 a LIBRARY: every gate that sources it pins first, and the stub-zig checks source it AFTER putting their stub first -- pinning here would shadow the stub
 export ZBR_ZIG_VERSION
 
 zbr_verdict_key() {       # $1 = main.zig  -> echoes a hex key, or nothing if it cannot

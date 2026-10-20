@@ -1,0 +1,10 @@
+# BUG-599 helper: a generic class declared in a used module.
+
+class Cell(T)
+    var v: T
+
+    cue init(v: T)
+        .v = v
+
+    def get(): T
+        return .v

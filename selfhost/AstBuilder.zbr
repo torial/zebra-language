@@ -270,11 +270,72 @@ def isScopedAllocatorExpr(e: Expr): bool
 
 # ── ASTBuilder ────────────────────────────────────────────────────────────────
 
+# BUG-595: the name a mixin's field is stored under in every class that `adds` the mixin.
+# The field is PRIVATE to the mixin (Sean, 2026-10-16): only the mixin's own methods name it,
+# so it is renamed HERE, at the one point every later phase reads -- the checker, codegen's
+# inference and scanners and the emitter all see one spelling. `__` separates the two names
+# so the checker can say which mixin a refused name belongs to.
+def mixinFieldName(mixin_name: str, field_name: str): str
+    return "_mx_" + mixin_name + "__" + field_name
+
+# BUG-595: every name a method body DECLARES at statement level (locals, loop variables,
+# `as` / catch / branch-arm bindings), so a bare reference to one of them is not taken for
+# a mixin field. A lambda's parameters are handled where the lambda is built.
+def pnDeclaredNames(stmts: List(PNode), out: HashMap(str, bool))
+    for st in stmts
+        branch st
+            on PNode.stmt_var as v
+                out.put(v.name, true)
+            on PNode.stmt_destruct as d
+                for nm in d.names
+                    out.put(nm, true)
+            on PNode.stmt_if as i
+                if i.is_capture as ic
+                    out.put(ic, true)
+                pnDeclaredNames(i.then_stmts, out)
+                pnDeclaredNames(i.else_stmts, out)
+            on PNode.stmt_while as w
+                pnDeclaredNames(w.stmts, out)
+            on PNode.stmt_for_in as f
+                for vn in f.var_names
+                    out.put(vn, true)
+                pnDeclaredNames(f.stmts, out)
+                pnDeclaredNames(f.else_stmts, out)
+            on PNode.stmt_for_num as fnum
+                out.put(fnum.var_name, true)
+                pnDeclaredNames(fnum.stmts, out)
+                pnDeclaredNames(fnum.else_stmts, out)
+            on PNode.stmt_try_catch as tc
+                if tc.catch_binding != ""
+                    out.put(tc.catch_binding, true)
+                pnDeclaredNames(tc.body_stmts, out)
+                pnDeclaredNames(tc.catch_stmts, out)
+            on PNode.stmt_branch as br
+                for arm in br.arms
+                    if arm.binding != ""
+                        out.put(arm.binding, true)
+                    pnDeclaredNames(arm.stmts, out)
+                pnDeclaredNames(br.else_stmts, out)
+            on PNode.stmt_with as wi
+                pnDeclaredNames(wi.stmts, out)
+            on PNode.stmt_in as ins
+                pnDeclaredNames(ins.stmts, out)
+            on PNode.stmt_allocate as al
+                pnDeclaredNames(al.stmts, out)
+            else
+                pass
+
 class ASTBuilder
     var next_old_uid: int
+    # BUG-595: while a mixin is built, its field names -> their stored names, and the subset
+    # a BARE reference in the current method means (those the method does not declare itself).
+    var mx_fields: HashMap(str, str)
+    var mx_bare: HashMap(str, bool)
 
     cue init()
         .next_old_uid = 0
+        .mx_fields = HashMap()
+        .mx_bare = HashMap()
 
     # Entry point: convert a parsed PModule into a full Ast.zbr Module.
     static def build(pm: PModule, file: str): Module throws
@@ -373,9 +434,36 @@ class ASTBuilder
     # ── Mixin ─────────────────────────────────────────────────────────────────
 
     def buildMixin(c: PClass): Decl throws
+        # BUG-595: a mixin's fields are stored under mixinFieldName in every adopting class,
+        # and every reference in the mixin's methods -- `.f`, `this.f`, and a bare `f` the
+        # method does not declare itself -- is built with that name.
+        .mx_fields = HashMap()
+        for pn0 in c.members
+            if pn0 is PNode.field_ as f0
+                .mx_fields.put(f0.name, mixinFieldName(c.name, f0.name))
         var members: List(Decl) = List(Decl)()
         for pn in c.members
-            members.add(.buildMember(pn)?)
+            branch pn
+                on PNode.field_ as f
+                    var fd = .buildMember(pn)?
+                    if fd is Decl.var_ as fdv
+                        members.add(Decl.var_(DeclVar(fdv.span, fdv.mods, .mx_fields.fetch(f.name), fdv.type_, fdv.init_expr, fdv.is_const)))
+                    else
+                        members.add(fd)
+                on PNode.method_ as pm
+                    var shadow = HashMap(str, bool)()
+                    for pp in pm.params
+                        shadow.put(pp.name, true)
+                    pnDeclaredNames(pm.stmts, shadow)
+                    .mx_bare = HashMap()
+                    for fk, fv in .mx_fields
+                        if not shadow.contains(fk)
+                            .mx_bare.put(fk, true)
+                    members.add(.buildMember(pn)?)
+                    .mx_bare = HashMap()
+                else
+                    members.add(.buildMember(pn)?)
+        .mx_fields = HashMap()
         return Decl.mixin_(DeclMixin(zspan(), zmods(), c.name, members))
 
     # ── Extend ────────────────────────────────────────────────────────────────
@@ -980,6 +1068,13 @@ class ASTBuilder
 
     # ── Expressions ───────────────────────────────────────────────────────────
 
+    # BUG-600: `lhs -> f` / `lhs -> obj.m` -- the bare right side is the callee, `lhs` its one argument.
+    def pipeBare(lhs_expr: Expr, rhs_node: PNode): Expr throws
+        const callee_expr = .buildExpr(rhs_node)?
+        var args: List(Arg) = List(Arg)()
+        args.add(Arg(spanOf(lhs_expr), nil, lhs_expr))
+        return Expr.call(ExprCall(spanOf(lhs_expr), callee_expr, args))
+
     # BUG-417 helper: walk the rhs spine (call -> callee, member -> base) to the
     # self-member with an EMPTY base and rebuild the spine with `lhs` as that base.
     # nil when the spine has no self-member (an ordinary `x -> f(args)` pipeline).
@@ -1056,19 +1151,27 @@ class ASTBuilder
             on PNode.expr_id as id
                 # Propagate the identifier's real source position (diagnostics): the
                 # parser already captured it in PExprId — don't discard it to zspan().
-                return Expr.ident(ExprIdent(Span(id.line, id.col, id.line, id.col), id.name))
+                var id_span = Span(id.line, id.col, id.line, id.col)
+                if .mx_bare.contains(id.name)            # BUG-595: a mixin's own field
+                    return Expr.member(ExprMember(id_span, Expr.this_(id_span), .mx_fields.fetch(id.name)))
+                return Expr.ident(ExprIdent(id_span, id.name))
 
             on PNode.expr_member as pm
                 # pm.base has 0 elements for self (.field), 1 element for obj.field
                 # Propagate the member token's real position (precise-span work):
                 # diagnostics on `obj.method(...)` now anchor at `method`.
                 var pm_span = Span(pm.line, pm.col, pm.line, pm.col)
+                var pm_name: str = pm.member
                 if pm.base.len == 0
                     # self-member: .field → Expr.member(this, "field")
+                    if .mx_fields.contains(pm_name)       # BUG-595: a mixin's own field
+                        pm_name = .mx_fields.fetch(pm_name)
                     var this_expr = Expr.this_(zspan())
-                    return Expr.member(ExprMember(pm_span, this_expr, pm.member))
+                    return Expr.member(ExprMember(pm_span, this_expr, pm_name))
+                if pm.base.at(0) is PNode.expr_this and .mx_fields.contains(pm_name)
+                    pm_name = .mx_fields.fetch(pm_name)   # BUG-595: `this.f` in a mixin
                 const base_expr = .buildExpr(pm.base.at(0))?
-                return Expr.member(ExprMember(pm_span, base_expr, pm.member))
+                return Expr.member(ExprMember(pm_span, base_expr, pm_name))
 
             on PNode.expr_call as pc
                 const callee_expr = .buildExpr(pc.callee.at(0))?
@@ -1145,8 +1248,14 @@ class ASTBuilder
                                 const av = .buildExpr(arg_pn)?
                                 args.add(Arg(spanOf(av), nil, av))
                         return Expr.call(ExprCall(spanOf(lhs_expr), callee_expr, args))
+                    on PNode.expr_id
+                        # BUG-600: `x -> f` is `f(x)` -- QUICKSTART's own example (`a + b -> f`).
+                        return .pipeBare(lhs_expr, rhs_node)?
+                    on PNode.expr_member
+                        # BUG-600: `x -> c.scale` is `c.scale(x)`.
+                        return .pipeBare(lhs_expr, rhs_node)?
                     else
-                        raise "buildExpr: pipeline RHS must be a call expression"
+                        raise "buildExpr: pipeline RHS must be a call expression"   # the parser refuses it first
 
             on PNode.expr_unary as pu
                 const operand_expr = .buildExpr(pu.operand.at(0))?
@@ -1163,7 +1272,12 @@ class ASTBuilder
 
             on PNode.expr_catch as pc
                 const expr_val = .buildExpr(pc.expr.at(0))?
+                # BUG-595: a `catch e` binding shadows a mixin field of the same name.
+                var pc_saved = .mx_bare.copy()
+                if pc.binding != ""
+                    .mx_bare.remove(pc.binding)
                 const fb_val = .buildExpr(pc.fallback.at(0))?
+                .mx_bare = pc_saved
                 var ev: str? = nil
                 if pc.binding != ""
                     ev = pc.binding
@@ -1217,7 +1331,15 @@ class ASTBuilder
                 return Expr.string_interp(ExprStringInterp(zspan(), parts))
 
             on PNode.expr_lambda as pl
-                return .buildLambdaExpr(pl)?
+                # BUG-595: a lambda's parameters and captures shadow a mixin field.
+                var pl_saved = .mx_bare.copy()
+                for plp in pl.params
+                    .mx_bare.remove(plp.name)
+                for plc in pl.captures
+                    .mx_bare.remove(plc.name)
+                var pl_built = .buildLambdaExpr(pl)?
+                .mx_bare = pl_saved
+                return pl_built
 
             on PNode.expr_tuple_lit as pt
                 var elems: List(Expr) = List(Expr)()

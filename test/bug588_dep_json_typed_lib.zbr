@@ -1,0 +1,8 @@
+# Helper module for bug588_dep_json_typed_test: the @reflectable class lives HERE.
+@reflectable
+class Point
+    var x: int
+    var y: int
+    cue init(x: int, y: int)
+        .x = x
+        .y = y

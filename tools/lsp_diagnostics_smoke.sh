@@ -4,6 +4,7 @@
 # issues and checks the emitted JSON.  Uses --out (a file) rather than stdout,
 # because `print` lands on stderr on the Windows fast-backend build.
 set -u
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZEBRA="$ROOT/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$ROOT/zig-out/bin/zebra"
 TMP="${TMPDIR:-/tmp}/lsp_diag_$$"

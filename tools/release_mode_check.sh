@@ -266,6 +266,7 @@ _gui_build() {   # $1 = subdir, $2.. = extra flags; prints the app's size, or no
     mkdir -p "$_gui_dir/$1"
     (cd "$_gui_dir/$1" && timeout 900 "$ZEBRA" -c --check-full "${@:2}" --gui-backend=libui_ng \
         --output-dir . "$REPO/examples/counter.zbr" >build.log 2>&1)
+    echo $? > "$_gui_dir/$1/build.rc"
     local app
     for app in "$_gui_dir/$1/counter_gui_libui_ng/zig-out/bin/app.exe" "$_gui_dir/$1/counter_gui_libui_ng/zig-out/bin/app"; do
         [[ -f "$app" ]] && { stat -c %s "$app"; return; }
@@ -275,7 +276,18 @@ g_dbg="$(_gui_build dbg)"
 g_rel="$(_gui_build rel --release)"
 if [[ -z "$g_dbg" || -z "$g_rel" ]]; then
     say FAIL "GUI (libui_ng) build produced no app (debug='$g_dbg' release='$g_rel') -- the GUI size check could not run, so this gate knows NOTHING about GUI --release"
-    tail -5 "$_gui_dir/rel/build.log" 2>/dev/null | sed 's/^/        /'
+    # Name the build that FAILED and show ITS log (2026-10-15). This used to print the release
+    # log whatever happened, so when the debug build was the one that failed -- three tiers in
+    # two days, each green standalone -- the gate showed a successful compile and the failing
+    # build's own account was deleted with $_gui_dir. Exit 124 is the 900 s timeout.
+    for _which in dbg rel; do
+        _app="$g_dbg"; [ "$_which" = rel ] && _app="$g_rel"
+        [ -n "$_app" ] && continue
+        _rc="$(cat "$_gui_dir/$_which/build.rc" 2>/dev/null || echo '?')"
+        _why="exit $_rc"; [ "$_rc" = 124 ] && _why="TIMED OUT after 900 s (exit 124) -- a slow host, not a failed build; re-run alone"
+        echo "        the $_which build: $_why; the end of its log:"
+        tail -12 "$_gui_dir/$_which/build.log" 2>/dev/null | sed 's/^/          | /'
+    done
     fail=$((fail + 1))
 elif [[ $(( g_rel * 100 / g_dbg )) -gt 75 ]]; then
     say FAIL "GUI release app is $((g_rel/1024)) KB vs $((g_dbg/1024)) KB without --release -- the optimize flag does not reach the GUI build (BUG-451)"

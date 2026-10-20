@@ -1,0 +1,6 @@
+# BUG-589: a name a construct BINDS lives only in its block -- here a loop variable read
+# after its loop. Accepted by `zebra -c`, refused by zig.
+def main()
+    for i in [1, 2]
+        print(i)
+    print(i)

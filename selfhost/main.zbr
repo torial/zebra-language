@@ -42,7 +42,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
+use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage
 use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
@@ -512,6 +512,7 @@ class MultiCompiler
                 # are harmless but unused.
                 if not is_root
                     populateModuleTypes(dep_types, module)
+                    noteDepCodegenFacts(dep_types, module, strip_contracts)   # BUG-581 / BUG-586
                 # BUG-295 (b): does this module declare module-level state? Derived
                 # from the AST, not guessed from a name -- a top-level `var` is the
                 # only thing that makes a shared module worth mentioning.
@@ -744,6 +745,7 @@ class MultiCompiler
                 var merged_pm = .mergePartials_pmodule(pm, zbr_path)?
                 const module = ASTBuilder.build(merged_pm, zbr_path)?
                 populateModuleTypes(dep_types, module)
+                noteDepCodegenFacts(dep_types, module, strip_contracts)   # BUG-581 / BUG-586
             else
                 pass
 

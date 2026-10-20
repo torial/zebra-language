@@ -6,6 +6,311 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-602: an undefined name in a FIELD DEFAULT passed `zebra -c` and failed inside zig, pointing into the generated file -- FIXED 2026-10-20 (found 2026-10-20)
+- **Found by:** BUG-592's control ("a default naming an undefined name is still refused").
+  With an operator it was -- but by the codegen's inference guess, as "cannot infer the type
+  of `NOPE`". Without one (`var c: int = NOPE`, `var d: int = nosuch()`), `-c` exited 0 and
+  zig reported "use of undeclared identifier" at a line of the emitted `.zig`.
+- **Cause:** the Resolver's `resolveMember` walked methods and constructors and skipped
+  `field_`, so a field's initializer was never resolved. (A module var's initializer was
+  added for the same reason earlier; fields were not.)
+- **Fix:** a field's initializer is resolved with the class's own names in scope and no
+  locals. MIXIN fields and methods are still not resolved by the Resolver: a mixin's method
+  may name a member of the class that adopts it, so resolving it alone would refuse valid
+  code; BUG-597's per-class re-check in the checker covers those.
+- **Regression fixture:** `test/fail_fixtures/bug602_field_default_undefined_test.zbr`
+  (6:18, "undefined name: 'NOPE'").
+
+### BUG-592: a field default with an OPERATOR in it was refused -- "cannot infer the type of `B`, an operand of `+`" -- even `2 + 3` -- FIXED 2026-10-20 (found 2026-10-16)
+- **Found by:** writing BUG-519's fixture: `var bump: int = base() + 2` and `var c: int = B + 1`
+  refused. Broader than first recorded: `var lit: int = 2 + 3` is refused too, in a struct
+  and in a class.
+- **Cause:** a field default is emitted in the struct's FIELD LIST, outside any function,
+  where codegen had no inference context -- so `isPrimType` answered false for every
+  operand, and every `+` was a guess (§28a) and refused. A bare `= base()` was accepted only
+  because it has no operator.
+- **Fix:** `genFieldInitExpr`, the one path every field default is emitted through, attaches
+  the module-level context a module var's initializer already gets (BUG-496) when none is
+  attached; inside a constructor's prologue the constructor's own context is kept.
+- **And what that let through had to be placed.** Once accepted, a class default like
+  `base() * 2` or `"k" + B.toString()` reached zig as a COMPTIME field default -- "unable to
+  resolve comptime value", and an allocating string `+` can never be comptime. BUG-339 already
+  defers a bare call to the constructor (`= undefined` in the field list; the prefill assigns
+  it); `isDeferredFieldInit` now also defers an operator over such an operand, a string `+`,
+  and an interpolation. A class's constructor fills every defaulted field anyway, so this
+  costs nothing there.
+- **Regression fixture:** `test/bug592_field_default_expr_test.zbr` -- a struct (`base() + 2`,
+  `B + 1`, `2 + 3`), a class with a `cue init` (`base() * 2`, `B > 0`, `"k" + B.toString()`)
+  and one with the synthesized init (`1.5 * 2.0`); prints `42 2 5 80 true k1 3.0`. Red on the
+  pre-fix compiler (three refusals).
+- **Not covered:** a STRUCT default that allocates (`var s: str = "a" + NAME`) -- BUG-603,
+  filed open; it fails inside zig on the pre-fix compiler too.
+
+### BUG-598: `adds` on a GENERIC class was accepted and the mixin's methods and fields were never emitted -- zig "no field or member function named 'tag' in 'Box(i64)'" -- FIXED 2026-10-20 (found 2026-10-16)
+- **Found by:** checking BUG-595's edges. `class Box(T) adds Tagged`, `Box(int)(4).tag("g")`
+  passed `zebra -c`; `genGenericClass` returns from `genClass` before either mixin loop
+  (BUG-089's methods, BUG-595's fields).
+- **Fix:** the generic emitter does both, as `genClass` does: the mixin's fields join the
+  member list the struct's fields, the synthesized init's prefill and a `cue init`'s prologue
+  are emitted from, and its methods follow the class's own.
+- **The half that looked done and was not:** with the fields emitted, a class with a `cue
+  init` read the mixin's counter as `-6148914691236517204` -- Zig's 0xAA undefined fill. The
+  prologue walks `owner_members`, and `withGeneric` SETS `owner_members` to the class's own
+  members, so the list carrying the mixin fields was overwritten by the call after it. The
+  context is now applied in the other order. Only the `cue init` instantiation could show it:
+  the synthesized init prefills from its own list.
+- **Regression fixture:** `test/bug598_generic_mixin_test.zbr` -- two instantiations of one
+  generic class with a `cue init` (each its own counter) and one with the synthesized init.
+  Red on the pre-fix compiler (the zig error above).
+
+### BUG-601: a generic class as a container's type argument, `List(Box(int))()`, emitted a bare `Box` -- zig "use of undeclared identifier 'Box'" -- FIXED 2026-10-19 (found 2026-10-19)
+- **Found by:** writing BUG-599's positive fixture. The annotation form
+  (`var b: List(Box(int)) = []`) was right; only the constructor EXPRESSION was wrong.
+- **Cause:** `genTypeFromExpr`'s call arm knew `List` / `HashMap` / `Set` and emitted any
+  other callee's name verbatim, dropping both the `_zbr_ty_` prefix (BUG-281 B) and the type
+  argument: `_ZbrList(Box)`.
+- **Fix:** a user type there emits the annotation's spelling, `*_zbr_ty_Box(i64)` (the `*`
+  for a class), its arguments through `genTypeFromExpr` again.
+- **Regression fixture:** `test/bug599_600_601_test.zbr` (`List(Box(int))()`). Red on the
+  pre-fix compiler.
+
+### BUG-600: `x -> f` with a bare function name was refused with an internal `buildExpr:` message and no position -- QUICKSTART's own example -- FIXED 2026-10-19 (found 2026-10-19)
+- **Found by:** probing BUG-596 (`5 -> s.scale`). QUICKSTART §3 says `a + b -> f` means
+  `f(a + b)`; the compiler said "buildExpr: pipeline RHS must be a call expression", no file,
+  no line, for that exact shape. The doc and the compiler disagreed, and the refusal was an
+  internal raise rather than a diagnostic.
+- **Fix:** the right side may also be a function or method named BARE: `x -> f` is `f(x)`,
+  `x -> c.scale` is `c.scale(x)` (a callee, so BUG-596's binding is not involved). The PARSER
+  now refuses any other right side at its own position, naming the three accepted forms; the
+  builder's raise stays as an internal guard it can no longer reach.
+- **Regression fixtures:** `test/bug599_600_601_test.zbr` (`1 + 4 -> twice`, `6 -> f` through a
+  function value, `5 -> s.scale`, `2 -> twice -> s.scale`) and
+  `test/fail_fixtures/bug600_pipeline_rhs_test.zbr` (`5 -> 3`, refused at 5:18).
+
+### BUG-599: a GENERIC class constructed without its type argument, `Box(41)`, passed `zebra -c` and failed inside zig "no field or member function named 'init' in 'fn (comptime type) type'" -- FIXED 2026-10-19 (found 2026-10-19)
+- **Found by:** an adversarial probe for BUG-596 that spelled the constructor wrong. The
+  generic-FUNCTION form of this leak was BUG-460, refused at the same site; the class arm
+  returned before reaching it.
+- **Fix:** refused in the front end, here, from a used module (`use lib exposing Box`), and
+  named qualified (`lib.Box(41)`): "`Box` is a generic class: pass its type argument(s)
+  first, `Box(int)(...)` -- Zebra does not infer them". Every generic class's parameter names
+  are registered now (they were recorded only for a class with a constraint), which is what
+  carries the fact across the module boundary.
+- **The suggested fix had to be made to work.** `lib.Box(int)(7)`, the qualified form the
+  refusal names, emitted `lib.Box.init(int)(7)` -- the inner call taken as a cross-module
+  constructor with `int` as its argument. It never worked. It emits `lib._zbr_ty_Box(i64).init(7)`
+  now (the cross-module constructor's predicate and spelling, with the type applied).
+- **Measured before landing (with BUG-600's parser refusal):** `-c` error count AND exit
+  code, old compiler vs new, over 1,073 repo files, 29 zebra-ide files and 1,847 GameEngine
+  files (`--module-path zbra`). Only the five new fixtures moved, each the expected way; the
+  engine's results were sampled first (17 of 31 clean, the rest refused) so its zero is a
+  measurement, not a corpus that failed identically on both sides.
+- **Not done:** inferring the type argument from the constructor's arguments. Zebra does not
+  infer generic-function arguments either (BUG-460); the two should move together if ever.
+- **Regression fixtures:** `test/fail_fixtures/bug599_generic_ctor_test.zbr` (12:13),
+  `test/bug599_generic_ctor_dep_test.zbr`, `test/bug599_generic_ctor_qual_test.zbr` (with
+  `test/bug599_generic_lib.zbr`), and the positive `test/bug599_600_601_test.zbr`, which builds
+  `Cell(str)` through `exposing` and `bug599_generic_lib.Cell(int)` qualified.
+
+### BUG-597: a mixin's method bodies were never type-checked -- an unknown method or a type mismatch in one passed `zebra -c` -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** working on BUG-595: the checker's mixin arms looked at type NAMES and
+  shadowing only; `checkDecl` had no mixin arm, so `s.toUpperX()` or `var n: int = "x"`
+  inside a mixin method reached zig, once per class that `adds` it. The shape of BUG-508
+  (struct methods) and BUG-572 (`extend` bodies), the third member of the family.
+- **Fix:** a mixin's members are checked like a class's, with the mixin as the current class
+  (its own fields resolve; a host method it calls on `this` is not refused). And each mixin's
+  methods are checked AGAIN as every class that adds it (checkModule), which is how they are
+  emitted: the host's members resolve there, and another mixin's private field is refused.
+  The 5 mixin-using files in this repo report the same error counts before and after (none in
+  zebra-ide or the GameEngine). Fixture `test/fail_fixtures/bug597_mixin_body_checked_test.zbr`.
+
+### BUG-595: a `var` declared in a MIXIN was accepted and never emitted -- reading it failed inside zig "no field named" -- FIXED 2026-10-16 (found 2026-10-16)
+- **Decision (Sean, 2026-10-16):** a mixin may keep state; its fields are ADDED to each class
+  that `adds` it, under a mangled name, PRIVATE to the mixin -- "functions/methods are the way
+  to expose state to the class".
+- **Fix, at ONE point:** AstBuilder.buildMixin stores mixin M's field `f` as `_mx_M__f` and
+  builds every reference in M's methods with that name -- `.f`, `this.f`, and a bare `f` the
+  method does not declare itself (parameters, locals, loop / `as` / catch / branch bindings;
+  a lambda's parameters and captures and a postfix `catch e` shadow it where they apply). So
+  the checker, codegen's inference and scanners and the emitter all see one spelling; genClass
+  emits the fields with the class's own and both constructor paths fill them (defaults, and
+  containers built empty). Naming the field from the class or from outside is refused --
+  `field 'count' belongs to mixin 'Counted' and is private to it -- reach it through the
+  mixin's methods` -- including from ANOTHER mixin's method (BUG-597's per-adopter check). A
+  mixin field with no default is refused at its declaration (a mixin has no constructor); a
+  container needs none. A `static` mixin field is refused by the parser already. QUICKSTART §16.
+- **Fixtures:** `test/bug595_mixin_fields_test.zbr` (typed state -- a str read in
+  interpolation, a List, a condition, an assignment -- all three reference forms, a local that
+  shadows a field, two adopting classes, one with `cue init`, and two instances; the old
+  compiler failed it inside zig) and `test/fail_fixtures/bug595_mixin_field_private_test.zbr`
+  (four refusals). Measured first: no mixin in this repo, zebra-ide or the GameEngine declares
+  a `var`, so no program could change. Not covered: a generic class that `adds` a mixin --
+  BUG-598, pre-existing.
+
+### BUG-594: reading or assigning a field a user class or struct does not have passed `zebra -c` -- zig refused "no field named" -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** a typo in the BUG-593 change (`wi.expr` on a `PWith`, which has no such field):
+  the regeneration accepted it and zig refused the compiler's own emit. Read and write, class
+  and struct, this module or a used one, and through a union payload binding.
+- **Fix:** the checker's member-read arm returned `unresolved` for a member it did not know,
+  silently, even when the receiver was a user class or struct whose whole member set is known
+  (fields and methods from populateModuleTypes, mixins merged, `extend` methods under
+  `$extend:`, a dep's own table). It refuses now -- `'W' has no field 'nothere' (fields:
+  target)` -- unless the name is a field, a method (a method read as a value is BUG-596) or
+  an extension. Interfaces, unions, enums, aliases and generic instantiations are left alone.
+  Fixtures `test/fail_fixtures/bug594_unknown_field_test.zbr` (three sites) and
+  `test/bug594_member_accept_test.zbr` (+ `_lib`: a mixin method, a static field, an
+  extension, a private field inside its class, a dep struct's and class's members -- the
+  same output on the compiler before and after). `field_not_found_test`'s expectation moved
+  from zig's remapped message to the front end's.
+- **Measured before landing:** the whole compiler's own source passed the new check (a full
+  rebuild). `zebra -c` error counts, before and after, over 2,937 files (this repo, zebra-ide,
+  the GameEngine): 26 differ -- the two fixtures above, and 24 of the engine's machine-ported
+  `ported_scripts/`, each a real missing member (`PlayersSvc` has no `LocalPlayer`;
+  `WorkspaceSvc` no `CurrentCamera`). Nothing in the engine's own code or the IDE moved. The
+  first attempt at this measurement used a copied compiler that could not find its runtime
+  files outside the repo and "counted" its panic line as an error; caught by reading a
+  sample, re-run with the compiler beside its installed preamble.
+
+### BUG-593: an undefined name inside a numeric `for`, an `allocate` / `in` block, a `require` / `ensure`, a `<<-` or a `for ... if` filter passed `zebra -c` -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** reading the Resolver's statement walker while fixing BUG-589: it ended in
+  `else pass` and handled 16 of the 24 statement kinds. A numeric `for` was not walked at all
+  -- bounds or body. zig refused the build with "use of undeclared identifier"; the front end
+  and the editor said nothing. BUG-571's shape (the expression half, fixed 2026-10-13) one
+  level up, invisible to `lint_expr_walkers` because it checked `expr_*` only.
+- **Fix:** every kind is walked except `with`'s body, whose top-level bare calls and
+  assignments are a rewrite to `obj.name` (QUICKSTART §39) this walker cannot tell from an
+  undefined name -- waived by name, its target walked. The INSTRUMENT: lint_expr_walkers has a
+  third tree, the `stmt_*` variants (`# pnode-stmt-walker: exhaustive`), reads a payload whole
+  (`List(PNode)`) and extracts payload-less variants as leaves (its leaf control had been
+  absent from the set, so it passed vacuously); red-checked with the pre-fix Resolver: 7
+  findings, one per skipped kind. Fixture `test/fail_fixtures/bug593_unwalked_stmt_test.zbr`.
+
+### BUG-589: a local declared inside one block was accepted when read from a SIBLING block -- FIXED 2026-10-16 (found 2026-10-15)
+- **Cause and fix:** the Resolver kept ONE flat `method_scope` per function, so a name declared
+  in an `if` stayed visible to the rest of it, while the Zig it emits is block-scoped. Every
+  nested statement list is a scope now (a snapshot of the table, restored after), and so is
+  every binding a construct introduces: `if x as y`, loop variables, a catch binding, a branch
+  arm's, a lambda's parameters and captures, a postfix `catch e`. Fixtures
+  `test/fail_fixtures/bug589_sibling_block_local_test.zbr` and `..._binding_scope_test.zbr`.
+- **Measured before landing (with BUG-593):** `zebra -c` error counts, old against new, over
+  2,931 files -- this repo, zebra-ide, the GameEngine. 63 differ, ALL in the engine's
+  `ported_scripts/` (machine-ported Lua, where a block's local is visible after it): every
+  added error is an "undefined name", and the sampled ones do not build with the old compiler
+  either. Nothing in this repo, the IDE or the engine's own code moved.
+
+### BUG-591: a struct with no `cue init`, built with a field left out that has NO default, read undefined memory -- FIXED 2026-10-16 (found 2026-10-16)
+- **Found by:** BUG-519's probe. `struct R` (`var k: int`, others defaulted), `R()`: the field
+  was emitted `= undefined` and left out of the literal, so `r.k` printed 0 in one module by
+  luck and 5371104312 when R came from another. `zebra -c` accepted it. A fabricated value,
+  silently.
+- **Fix:** the checker refuses it -- `no value for field `k` of struct 'R', which has no
+  default -- pass it (`R(k: ...)`) or give the field a default` -- and a named argument that
+  names no field (`struct 'P' has no field named `z` -- its fields are x, y`; it reached zig
+  as "no field named"). BUG-540's rule for `cue init` parameters, applied to the fields of an
+  init-less struct. An uninitialised CONTAINER field is exempt: BUG-501 1c builds it empty,
+  which is defined. Measured before landing: across 1052 files in this repo, zebra-ide's 29
+  and the GameEngine's 1847, the only refusal was a container field (since exempt), and a
+  49-file engine sample reported the same error count before and after. Fixture
+  `test/fail_fixtures/bug591_struct_field_no_default_test.zbr` (both messages).
+
+### BUG-519: constructing a struct from ANOTHER module with fields left out ignored its defaults -- refused inside zig "expected 3 argument(s), found 1" -- FIXED 2026-10-16 (found 2026-10-03)
+- **Cause and fix:** the struct's module emits a synthetic `init` taking EVERY field, and a
+  caller that left some out passed fewer. A call that omits fields is now the struct literal
+  the local path emits: the given fields (with their slot types as hints, so a `^T` field
+  boxes and an interface field converts), and each omitted field construction supplies from
+  the DECLARING module's new `pub fn _zbr_dflt_<field>()` -- its default, evaluated where it
+  was written (a default may call something private there), or an empty container (BUG-501
+  1c). Which fields those are crosses in the dep tables (`ClassTypes.field_defaults`). A full
+  positional call keeps `init`. Fixture `test/bug519_dep_struct_defaults_test.zbr` (+ `_lib`):
+  named, positional, mixed, a private-function default, an uninitialised container, and the
+  qualified `lib.R(k: 9)`. The move-to-module sweep's six remaining diffs were all this.
+
+### BUG-588: `Json.parse(Point, s)` with `Point` from a USED module failed inside zig "expected type 'str', found 'type'" -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** the typed overload was recognised only for a class declared in THIS module.
+  `@reflectable` now crosses the boundary (`$refl:<Class>` in the dep tables), the declaring
+  module's `_json_parse_strict_<Class>` is `pub`, an exposed reflectable class binds it beside
+  its type, and the module-qualified spelling `Json.parse(lib.Point, s)` reaches it through the
+  module binding (that spelling failed the same way before, exposing or not). `parseStrict` too.
+  Fixture `test/bug588_dep_json_typed_test.zbr` (+ `_lib`).
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-587: a USED module's keyword-named things (`class error`, a union variant `volatile`) named undeclared identifiers -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** two classification guesses. A LOWERCASE exposed name was taken for a
+  function (`const _zbr_fn_error = ...`) -- a lowercase dep CLASS/STRUCT is now asked of the dep
+  tables first and bound as a type. And `Shape.volatile(12)` was taken for the cross-module
+  constructor `module.Class(..)` because the dep also declares `class volatile` -- that path
+  now requires the object NOT to be a type or a local. Found by the full re-sweep: a dep
+  `namespace opaque` (BUG-286's keyword half, across a module) was bound and referenced
+  unescaped; both now take `@"opaque"`. Fixture `test/bug587_dep_keyword_names_test.zbr`
+  (+ `_lib`).
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-586: a mutating method of a USED module's struct, named like a builtin reader, left the receiver `const` -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** BUG-455's exact receiver table (`*` / `*const` per struct method) was built
+  from THIS module's declarations. Each dep's table is now computed by the same function, with
+  the same `--turbo` flag, and appended (`ModuleTypes.dep_struct_recv`, filled by
+  `CodeGen.noteDepCodegenFacts`, which main.zbr calls beside `populateModuleTypes` for every
+  dep). Fixture `test/bug586_dep_struct_receiver_test.zbr` (+ `_lib`), with a non-mutating
+  same-named control that must stay `const`.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-585: `[]` passed to a USED module's generic function failed inside zig "expected type '*T', found 'T'" -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** BUG-463/501's empty-list-for-a-generic-parameter looks the callee's type
+  parameters up to substitute them; `lookupFnTypeParams` searched THIS module only (its
+  sibling `lookupFnParams` already fell back to the dep tables). The type-parameter names now
+  cross with `generic_fn_names` (`ModuleTypes.genericFnTypeParams`). Fixture
+  `test/bug585_dep_generic_empty_list_test.zbr` (+ `_lib`): function, nested element, static.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-584: a value into a `^T` slot of a USED module's struct was not boxed -- zig "expected type '?*T', found 'T'" -- FIXED 2026-10-15 (found 2026-10-14)
+- **Cause and fix:** three module-local lookups. A dep type's FIELD TypeRefs did not cross the
+  boundary (only their `Type_`), so `h.opt_pair = Pair(..)` found no `^T` slot -- `ClassTypes`
+  now carries each field's declared TypeRef and the declaration ORDER (a struct with no `cue
+  init` is constructed positionally, so its constructor arguments map to fields); the box
+  predicates accept a dep struct or union; and the `module.Class(args)` constructor gave its
+  arguments no parameter hint at all. A dep type's bare name is not in scope in a module that
+  uses it without `exposing`, so that box is spelled from the SLOT's type: a new runtime type
+  function `_ZbrSlotChild(@TypeOf(target))` (the value's own type is the TAG type for a
+  payload-less variant, `lib.Shape.dot`). Fixture `test/bug584_dep_boxed_slot_test.zbr` (+
+  `_lib`): struct and union, assignment and constructor, exposed and qualified.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-581: a capture closure returned by a USED module's factory failed inside zig "expected type '*T', found '*const T'" when called -- FIXED 2026-10-15 (found 2026-10-13)
+- **Cause and fix:** a closure that assigns its captures is called through `*T`, so its local
+  must be `var`; "this function is such a factory" was known from THIS module's declarations
+  only. `noteDepCodegenFacts` records `$cfm:<fn>` for each dep factory whose closure mutates,
+  with the root module's own two detectors (so the answers cannot drift). Fixture
+  `test/bug581_dep_closure_factory_test.zbr` (+ `_lib`), with a non-mutating control.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-580: `v is Show` on an interface value, with `Show` from a USED module, named an undeclared `_zbr_implements_Show` -- FIXED 2026-10-15 (found 2026-10-13); residual filed as BUG-590
+- **Cause and fix:** the membership function is file-private to the interface's module and
+  lists only ITS classes. For a dep interface the `is` site now decides inline, over every
+  class this module can see (its own and its deps'), conformance walked through BOTH tables
+  (a class here implementing a dep interface that extends `Show`), tags compared as
+  `_zbr_hash(<bare name>)` (BUG-576's spelling). Fixture `test/bug580_dep_iface_is_test.zbr`
+  (+ `_lib`): a dep class, a dep non-implementer, a class HERE, and one conforming through a
+  dep interface's `implements` -- the last two are what making the old function reachable
+  would have answered wrong.
+- **Not covered, BUG-590:** an `is` test inside the interface's OWN module still misses
+  implementers declared in modules that import it.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
+### BUG-579: exposing a NAMESPACE from a used module failed inside zig "has no member named '_zbr_ty_Outer'" -- FIXED 2026-10-15 (found 2026-10-13)
+- **Cause and fix:** genUse bound every exposed uppercase name as a type; a namespace is emitted
+  unprefixed. Top-level namespace names now cross the boundary (`$ns:<Name>`, the `$sig:`
+  shape), genUse binds them bare, and the using module registers them as namespaces rather than
+  struct types. Fixture `test/bug579_dep_namespace_test.zbr` (+ `_lib`): nested and dotted.
+- **Gated with the rest of the 2026-10-15 boundary pass** (BUG-579/580/581/584..588): see the
+  commit; every fixture watched red on the compiler built from `eed735b` first.
+
 ### BUG-578: a diagnostic inside a function body printed TWICE -- FIXED 2026-10-13 (found 2026-10-13)
 - **Found by:** BUG-572's fixture reported its one error twice at the same line and column.
   Not extend-specific: a top-level `def` and a struct method did the same on HEAD.

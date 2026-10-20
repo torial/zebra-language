@@ -1,0 +1,11 @@
+# Helper module for bug586_dep_struct_receiver_test: the structs live HERE.
+struct Counter
+    var n: int
+    def count(): int
+        .n += 1
+        return .n
+
+struct Reader
+    var n: int
+    def count(): int
+        return .n + 100

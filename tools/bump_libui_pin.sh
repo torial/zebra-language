@@ -9,6 +9,7 @@
 # Why a script: the hash is Zig's, not git's; guessing it produces a project that
 # fails to fetch with a message that names neither file.
 set -eu
+source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 export PYTHONIOENCODING=utf-8   # the heredoc prints a box-drawing dash; a cp1252 console took the whole script down on it
 cd "$(dirname "$0")/.."
 sha=${1:?usage: bump_libui_pin.sh <commit-sha>}

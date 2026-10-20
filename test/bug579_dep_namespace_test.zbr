@@ -1,0 +1,8 @@
+# BUG-579: exposing a NAMESPACE from a used module. genUse bound every exposed uppercase
+# name as a TYPE (`const _zbr_ty_Outer = lib._zbr_ty_Outer;`), but a namespace is emitted
+# unprefixed, so zig refused "has no member named '_zbr_ty_Outer'". The namespace names now
+# cross the boundary in the dep tables. Both spellings: nested and dotted.
+use bug579_dep_namespace_lib exposing Outer, Tools
+
+def main()
+    print("bug579: ${Outer.Inner.greet()} ${Outer.twice(21)} ${Tools.Text.shout("ok")}")

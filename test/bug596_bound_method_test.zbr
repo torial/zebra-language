@@ -1,0 +1,51 @@
+# BUG-596: a method used as a VALUE -- bound to its receiver (Sean, 2026-10-16: supported,
+# "refusing would not be good for any functional approaches"). A class receiver is a
+# reference, so the binding refers to the object: calls through it and through the object
+# see one state. Typed into a sig, untyped, passed, returned (bound inside the class with
+# `.add`), stored in a List of sigs, through map / filter / reduce / any, a str-returning
+# method, and a used module's class. It failed inside zig "no field named" before.
+use bug596_bound_method_lib exposing Greeter
+
+sig IntFn(): int
+sig StepFn(n: int): int
+sig Join(acc: int, n: int): int
+
+class Counter
+    var n: int = 0
+    def bump(): int
+        .n += 1
+        return .n
+    def add(k: int): int
+        .n += k
+        return .n
+    def adder(): StepFn
+        return .add
+    def fold(acc: int, x: int): int
+        return acc + x * .n
+    def big(x: int): bool
+        return x > .n
+
+def apply(f: StepFn, x: int): int
+    return f(x)
+
+def main()
+    var c = Counter()
+    var f: IntFn = c.bump
+    f()
+    f()
+    var g = c.add
+    var a = g(10)
+    var b = apply(c.add, 100)
+    var h = c.adder()
+    var hv = h(1000)
+    var fs = List(StepFn)()
+    fs.add(c.add)
+    var fv = fs.at(0)(1)
+    var xs = [1, 2, 3]
+    var ys = xs.map(c.big)
+    var zs = [5000, 9999].filter(c.big)
+    var r = xs.reduce(0, c.fold)
+    var hi = Greeter("hi")
+    var say = hi.greet
+    var s = say("zebra")
+    print("bug596: ${c.n} ${a} ${b} ${hv} ${fv} ${ys} ${zs} ${r} ${s} ${s.len}")

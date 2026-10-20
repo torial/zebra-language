@@ -110,6 +110,15 @@ TREES = [
          # the parse-tree spellings of the same two: an identifier, and zig"..." text
          semantic={"expr_id", "expr_zig_lit"},
          bearing_ctl="expr_list_lit", leaf_ctl="expr_int"),
+    # BUG-593 (2026-10-16): the STATEMENT half of the parse tree. The Resolver's statement
+    # walker ended in `else pass` and skipped seven kinds -- a numeric `for`, `allocate`,
+    # `in`, `require`, `ensure`, `<<-`, and the `for ... if` filter -- so an undefined name
+    # inside any of them passed `zebra -c`. BUG-571 had found the expression half; this one
+    # was invisible because the gate looked only at `expr_*`. A statement is "bearing" when
+    # it holds an expression or a statement list; `pass` / `break` / `continue` are leaves.
+    dict(name="PNode-stmt", oracle="selfhost/Parser.zbr", root="PNode", prefix="stmt_",
+         tag="PNode", marker="pnode-stmt-walker", min_variants=18,
+         semantic=set(), bearing_ctl="stmt_for_num", leaf_ctl="stmt_pass"),
 ]
 
 
@@ -180,14 +189,23 @@ def check_tree(t):
     if not body:
         return refuse(f"could not find `union {t['root']}` in {t['oracle']}")
 
+    # The variant's WHOLE payload type: `stmt_require: List(PNode)` must reach the root
+    # through its type argument. Reading only the first word (`List`) classified it as a
+    # leaf -- harmless while every checked variant was `^PSomething`, wrong the day the
+    # statement half was added.
+    # A variant with NO payload (`stmt_pass`) is a leaf, and it must be extracted as one:
+    # skipping it made the leaf control pass vacuously (the control was not IN the set).
     variants = {}
     for line in body.split("\n"):
-        m = re.match(r"^\s+(\w+)\s*:\s*\^?(\w+)", line)
-        if m and m.group(1).startswith(t["prefix"]):
-            variants[m.group(1)] = m.group(2)
+        m = re.match(r"^\s+(\w+)\s*(?::\s*(.+?))?\s*(?:#.*)?$", line)
+        if m and not line.strip().startswith("#") and m.group(1).startswith(t["prefix"]):
+            variants[m.group(1)] = m.group(2) or ""
 
-    required = {v for v, p in variants.items()
-                if bearing(p, structs, unions, t["root"])} | t["semantic"]
+    def reaches(ptext):
+        return any(n == t["root"] or bearing(n, structs, unions, t["root"])
+                   for n in type_names(ptext))
+
+    required = {v for v, p in variants.items() if reaches(p)} | t["semantic"]
     leaves = set(variants) - required
 
     # ── Controls, run before reporting ────────────────────────────────────────
@@ -198,6 +216,10 @@ def check_tree(t):
     if len(variants) < t["min_variants"]:
         return refuse(f"only {len(variants)} {t['name']} variants extracted (expected "
                       f"{t['min_variants']}+); the extractor is broken, not the code")
+    for ctl in (t["bearing_ctl"], t["leaf_ctl"]):
+        if ctl not in variants:
+            return refuse(f"control variant {ctl} was not extracted from {t['root']} -- "
+                          f"a control that is not in the set cannot fail")
     if t["bearing_ctl"] not in required:
         return refuse(f"control failed — {t['bearing_ctl']} did not classify as "
                       f"expression-bearing")

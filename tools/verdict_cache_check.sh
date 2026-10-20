@@ -85,7 +85,7 @@ check "2 changed dep: miss" $([ "$c" = 2 ]; echo $?) "zig started $c times (want
 
 # 3. a new zig
 ZBR_ZIG_VERSION=0.17.0 STUB_VER=0.17.0 STUB_MODE=pass zbr_zig_build "$TMP/a/p.zig" "$TMP/a/build.err" 30; c=$(count)
-check "3 new zig version: miss" $([ "$c" = 3 ]; echo $?) "zig started $c times (want 3)"
+check "3 new zig version: miss" $([ "$c" = 3 ]; echo $?) "zig started $c times (want 3)"   # hazard-ok:H14 its zig is a STUB on PATH; the one real-compile leg runs output_sweep.sh, which sources the pin itself
 
 # 4. a genuine failure is cached with its stderr
 mkprog "$TMP/b"; printf '// b\n' >> "$TMP/b/p.zig"
