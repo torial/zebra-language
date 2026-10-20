@@ -1,0 +1,27 @@
+# BUG-582: `for i, x in <list>` took the indexed path only when the list was a NAMED LOCAL;
+# a literal, a field or a call result fell through to the HashMap form and failed inside zig
+# ("no field or member function named 'iterator' in 'List(str)'"). The two named forms that
+# worked must keep working: a local list (indexed) and a map (key, value).
+
+class Bag
+    var names: List(str) = ["p", "q"]
+
+def mk(): List(int)
+    return [7, 8]
+
+def main()
+    var out = StringBuilder()
+    for i, x in ["ab", "cd"]
+        out.append("${i}${x} ")
+    var b = Bag()
+    for i, x in b.names
+        out.append("${i}${x} ")
+    for i, n in mk()
+        out.append("${i}:${n + 1} ")
+    var xs = ["u"]
+    for i, x in xs
+        out.append("${i}${x} ")
+    var m: HashMap(str, int) = {"k": 5}
+    for k, v in m
+        out.append("${k}=${v}")
+    print("bug582: " + out.toString())

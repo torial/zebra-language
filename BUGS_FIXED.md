@@ -6,6 +6,19 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-582: `for i, x in <list>` failed inside zig "no field or member function named 'iterator' in 'List(str)'" unless the list was a named local -- FIXED 2026-10-20 (found 2026-10-14)
+- **Found by:** pattern search 3's collision generator, over a literal (`for i, x in ["ab",
+  "cd"]`). Broader than filed: a FIELD (`for i, x in b.names`) failed the same way, and so did
+  any other iterable that was not a local the codegen had recorded as a list.
+- **Cause:** the two-variable loop chose the indexed form only for an identifier in the
+  codegen's list-local set; everything else fell through to the HashMap form (`.iterator()`).
+- **Fix:** decided by TYPE as well: an iterable that infers to a `List` whose elements are not
+  tuples takes the indexed form (`for (<expr>.items, 0..)`), which already emitted any
+  expression. A list of tuples keeps its destructuring meaning; a map is not a list.
+- **Regression fixture:** `test/bug582_for_index_any_list_test.zbr` -- a literal, a class field
+  and a call result, plus a named local list and a map as controls that must not move. Prints
+  `0ab 1cd 0p 1q 0:8 1:9 0u k=5`; red on the pre-fix compiler.
+
 ### BUG-590: an `is <Interface>` test INSIDE the interface's module missed implementers declared in modules that use it -- FIXED 2026-10-20 (found 2026-10-15)
 - **Found by:** probing BUG-580's fix: a dep's `def isShow(x: Named): bool  return x is Show`
   answered `false` for a `Cat implements Named, Show` declared in the main module, where

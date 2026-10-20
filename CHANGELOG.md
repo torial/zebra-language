@@ -128,6 +128,8 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **`for i, x in` works over any list (BUG-582)** -- a literal, a field, a call's result.
+  Only a named local list worked; the rest failed inside zig.
 - **`x is SomeInterface` gives the same answer from every module (BUG-590).** Asked inside
   the interface's own module, it answered `false` for a class declared in a module that uses
   it. An interface value now carries its class's interfaces in its vtable.

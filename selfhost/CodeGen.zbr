@@ -10291,6 +10291,17 @@ struct Generator
             if fi.iter is Expr.ident as il_id
                 if localIsList(il_id.name)
                     is_indexed = true
+            # BUG-582: a list LITERAL, a field or a call result is a List too -- they fell
+            # through to the HashMap form below and failed inside zig ("no member
+            # 'iterator' in List(str)"). Decided by type; a list of TUPLES keeps the
+            # destructuring meaning, and a map is not a list.
+            if not is_indexed and .infer_ctx != nil
+                var it582: Type_ = inferExpr(fi.iter, .infer_ctx!)
+                if it582 is Type_.ref_to as itr582
+                    it582 = itr582
+                if it582 is Type_.list_ as el582
+                    if not (el582 is Type_.tuple_)
+                        is_indexed = true
             if is_indexed
                 genForInIndexedList(fi)
                 return

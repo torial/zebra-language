@@ -1365,6 +1365,7 @@ smoke_run test/bug598_generic_mixin_test.zbr "bug598: [g][h] 2 4 [k] 1 x [z] 1 1
 smoke_run test/bug592_field_default_expr_test.zbr "bug592: 42 2 5 80 true k1 3.0"
 smoke_run test/bug603_struct_alloc_default_test.zbr "bug603: azz 3 zz! 80 | q 3 | t-zz 7 | dzz 1 dzz 9"
 smoke_run test/bug590_iface_upstream_is_test.zbr "bug590: true true | false false | true true false | true true"
+smoke_run test/bug582_for_index_any_list_test.zbr "bug582: 0ab 1cd 0p 1q 0:8 1:9 0u k=5"
 smoke_tc_fail test/fail_fixtures/bug602_field_default_undefined_test.zbr "bug602_field_default_undefined_test.zbr:6:18: error: undefined name: 'NOPE'"
 smoke_tc_fail test/fail_fixtures/bug599_generic_ctor_test.zbr "bug599_generic_ctor_test.zbr:12:13: error: \`Box\` is a generic class: pass its type argument(s) first"
 smoke_tc_fail test/bug599_generic_ctor_dep_test.zbr "bug599_generic_ctor_dep_test.zbr:5:13: error: \`Cell\` is a generic class"

@@ -93,13 +93,6 @@
   search 3.
 
 
-### BUG-582: `for i, x in <list literal>` fails inside zig "no field or member function named 'iterator' in 'List(str)'" -- OPEN (found 2026-10-14)
-- **Found by:** pattern search 3's collision generator, whose enumerate site was written over a
-  literal. No collision is needed: `for i, x in ["ab", "cd"]` alone fails; the same loop over a
-  variable (`var xs = [...]` / `for i, x in xs`) prints `0 ab` / `1 cd`. A half-built
-  construct (shape 4): the index form's emit assumes a named list.
-
-
 ### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)
 - **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
   should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
