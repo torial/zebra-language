@@ -18,6 +18,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig, also when run standalone: on 2026-10-19 a
+# standalone smoke ran the shared ~/.zvm/bin 0.16 and passed a fixture the tier (0.17) failed
 cd "$REPO"
 
 ZEBRA="$REPO/zig-out/bin/zebra.exe"; [ -x "$ZEBRA" ] || ZEBRA="$REPO/zig-out/bin/zebra"
@@ -1358,6 +1360,11 @@ smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixi
 smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixin_body_checked_test.zbr:9:22: error: type mismatch: expected int, found str"
 smoke_run test/bug596_bound_method_test.zbr "bug596: 1113 12 112 1112 1113 [false, false, false] [5000, 9999] 6678 hi, zebra 9"
 smoke_tc_fail test/fail_fixtures/bug596_struct_bound_method_test.zbr "bug596_struct_bound_method_test.zbr:12:15: error: a method of a STRUCT cannot be used as a value yet"
+smoke_run test/bug599_600_601_test.zbr "bug599_600: 41 seven 2 10 12 15 12 3"
+smoke_tc_fail test/fail_fixtures/bug599_generic_ctor_test.zbr "bug599_generic_ctor_test.zbr:12:13: error: \`Box\` is a generic class: pass its type argument(s) first"
+smoke_tc_fail test/bug599_generic_ctor_dep_test.zbr "bug599_generic_ctor_dep_test.zbr:5:13: error: \`Cell\` is a generic class"
+smoke_tc_fail test/bug599_generic_ctor_qual_test.zbr "bug599_generic_ctor_qual_test.zbr:5:32: error: \`bug599_generic_lib.Cell\` is a generic class"
+smoke_tc_fail test/fail_fixtures/bug600_pipeline_rhs_test.zbr "bug600_pipeline_rhs_test.zbr:5:18: error: the right side of \`->\` must be a call"
 smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:9:18: error: 'str' has no method 'toUpper'"
 smoke_run_fail_once test/fail_fixtures/bug578_body_diag_once_test.zbr "bug578_body_diag_once_test.zbr:13:14: error: 'str' has no method 'toLower2'"
 smoke_warn test/cue_using_def_deprecated_test.zbr "they are cues now -- write \`cue begin()\` and \`cue end()\`"

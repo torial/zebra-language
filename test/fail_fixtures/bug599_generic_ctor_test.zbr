@@ -1,0 +1,13 @@
+# BUG-599: a GENERIC class constructed without its type argument emitted `Box.init(41)`
+# and failed inside zig ("no field or member function named 'init' in 'fn (comptime
+# type) type'"). Refused in the front end, naming the curried form.
+
+class Box(T)
+    var v: T
+
+    cue init(v: T)
+        .v = v
+
+def main()
+    var b = Box(41)
+    print("${b.v}")

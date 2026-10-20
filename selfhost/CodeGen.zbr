@@ -8858,6 +8858,22 @@ struct Generator
                                     w.emit("anytype")
                                 w.emit(", void)")
                             return
+                        # BUG-601: a GENERIC user type as a type argument, `List(Box(int))()`,
+                        # emitted a bare `Box` (no prefix, no argument); zig "use of undeclared
+                        # identifier". The annotation form's spelling: `*_zbr_ty_Box(i64)`.
+                        if class_names.contains_(id.name) or isUserTypeName(id.name)
+                            if class_names.contains_(id.name)
+                                w.emit("*")
+                            emitTypeName(id.name)
+                            w.emit("(")
+                            var gfi = true
+                            for gta in c.args
+                                if not gfi
+                                    w.emit(", ")
+                                gfi = false
+                                genTypeFromExpr(gta.value)
+                            w.emit(")")
+                            return
                         w.emit(id.name)
                     else
                         genExpr(e)
@@ -15540,6 +15556,35 @@ struct Generator
         # Generic stdlib ctor: List(T)(), HashMap(K,V)()
         # Generic class ctor: ClassName(TypeArg)(initArgs) → ClassName(*TypeArg).init(initArgs)
         if c.callee is Expr.call as inner
+            # BUG-599: a used module's generic class named qualified, `lib.Box(int)(7)` --
+            # the form the BUG-599 refusal names. It emitted `lib.Box.init(int)(7)`. The
+            # cross-module ctor's predicate and spelling (below), with the type applied.
+            if inner.callee is Expr.member as gqm
+                if gqm.object is Expr.ident as gqo
+                    if .dep_types.classOf(gqm.member) as gq_ct
+                        if gq_ct.is_class and not isUserTypeName(gqo.name) and not isLocalOrParamName(gqo.name) and not namespace_names.contains_(gqo.name)
+                            if unwrapped_imports.contains_(gqo.name)
+                                emitTypeName(gqm.member)
+                            else
+                                w.emit(modRef(gqo.name))
+                                w.emit(".")
+                                w.emit(zbrTypeSymbol(gqm.member))
+                            w.emit("(")
+                            var gqi = true
+                            for gqa in inner.args
+                                if not gqi
+                                    w.emit(", ")
+                                gqi = false
+                                genTypeFromExpr(gqa.value)
+                            w.emit(").init(")
+                            var gqi2 = true
+                            for gqb in c.args
+                                if not gqi2
+                                    w.emit(", ")
+                                gqi2 = false
+                                genExpr(gqb.value)
+                            w.emit(")")
+                            return
             if inner.callee is Expr.ident as id
                 if id.name == "List" or id.name == "HashMap" or id.name == "Chan" or id.name == "Atomic" or id.name == "ThreadPool" or id.name == "ObjectPool" or id.name == "Set"
                     genGenericCtorCall(id.name, inner.args, c.args)

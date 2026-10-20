@@ -494,9 +494,10 @@ error: bitwise '&' requires integer operands, got 'float'
 
 `orelse` and `catch` have the same precedence (level 9); they associate left-to-right.
 `->`  (pipeline) is the lowest non-assignment operator, so `a + b -> f` means `f(a + b)`.
-Its right side is either a call — `x -> f(y)` is `f(x, y)` — or a leading-dot method
+Its right side is a call — `x -> f(y)` is `f(x, y)` —, a function or method named bare —
+`x -> f` is `f(x)`, `x -> c.scale` is `c.scale(x)` (BUG-600) — or a leading-dot method
 call — `x -> .lower()` is `x.lower()`, chains included: `text -> .lower() -> .split(" ") -> .at(0)`
-(BUG-417). A multi-line pipeline needs parentheses.
+(BUG-417). Anything else is refused at its position. A multi-line pipeline needs parentheses.
 
 ---
 
@@ -1965,7 +1966,8 @@ s.push(2)
 var top = s.pop()
 ```
 
-- Generic class instantiation: `Stack(int)()` — type arg, then constructor args.
+- Generic class instantiation: `Stack(int)()` — type arg, then constructor args. The type
+  argument is not inferred: `Box(41)` for a generic `Box(T)` is refused, naming `Box(int)(...)` (BUG-599).
 - The constraint clause is `T where T implements InterfaceName` (full form, not
   the shorthand `T where Comparable`). Enforced at instantiation and at an annotation
   (2026-09-16): `SortedList(Plain)()` is refused unless `Plain implements Comparable(Plain)`,

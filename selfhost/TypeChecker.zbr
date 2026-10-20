@@ -1138,7 +1138,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         gcs = gcs + tp.name + "=" + tpc
                 if gcs != ""
                     mt.addGenericConstraints(c.name, gcs)
-                    mt.addGenericParams(c.name, gps)
+                if gps != ""
+                    mt.addGenericParams(c.name, gps)   # BUG-599: every generic class, for the ctor check
                 if c.type_params.len > 0 and not (("|" + c.name + "|") in _generic_classes)
                     _generic_classes = _generic_classes + c.name + "|"
                 if c.ifaces.len > 0
@@ -5841,6 +5842,12 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 cline = cid.span.line
             # A class name used as a call is a constructor — different arity rules.
             if ctx.hasClassAny(cid.name)
+                # BUG-599: a GENERIC class constructed without its type argument
+                # (`Box(41)`) emitted `Box.init(41)` and failed inside zig. The curried
+                # form's inner `Box(int)` is never walked here (BUG-460's note), so
+                # reaching this is the direct call.
+                if ctx.genericParamNames(cid.name).len > 0 and not ctx.hasLocal(cid.name)
+                    ctx.addErr(file, cline, ccol, "`" + cid.name + "` is a generic class: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
                 return
             # BUG-469: a runtime object type called like a constructor it does not have.
             if not ctx.hasLocal(cid.name)
@@ -5855,6 +5862,14 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 ctx.addErr(file, cline, ccol, "`" + cid.name + "` is generic: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the arguments")
                 return
         on Expr.member as mem
+            # BUG-599: `lib.Box(41)` -- a used module's GENERIC class, named qualified,
+            # constructed without its type argument (the same predicate inferExpr uses
+            # for a cross-module constructor).
+            if mem.object is Expr.ident as gq_oid
+                if not ctx.hasLocal(gq_oid.name) and not ctx.hasClassAny(gq_oid.name) and ctx.dep_types.hasClass(mem.member) and ctx.genericParamNames(mem.member).len > 0
+                    var gq: str = gq_oid.name + "." + mem.member
+                    ctx.addErr(file, mem.span.line, mem.span.col, "`" + gq + "` is a generic class: pass its type argument(s) first, `" + gq + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
+                    return
             var gm_cls: str = ""
             if mem.object is Expr.ident as gm_oid
                 if ctx.hasClassAny(gm_oid.name) and not ctx.hasLocal(gm_oid.name)

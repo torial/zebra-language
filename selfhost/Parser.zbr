@@ -2965,7 +2965,16 @@ class Parser
         var left = .parseOr()?
         while .textIs("->")
             .advance()
+            var rhs_tok = .peek()
             const rhs = .parseOr()?
+            # BUG-600: the right side is a call (`x -> f(y)`), a function or method named
+            # bare (`x -> f`, `x -> c.scale`), or a leading-dot form (`x -> .lower()`).
+            # Anything else was an internal "buildExpr:" raise with no position.
+            var rhs_ok: bool = false
+            if rhs is PNode.expr_call or rhs is PNode.expr_id or rhs is PNode.expr_member
+                rhs_ok = true
+            if not rhs_ok
+                raise .errorAtPos(rhs_tok.line, rhs_tok.col, "the right side of `->` must be a call (`x -> f(y)` is `f(x, y)`), a function or method named bare (`x -> f` is `f(x)`), or a leading-dot call (`x -> .lower()`)")
             var lhs_list = List(PNode)()
             lhs_list.add(left)
             var rhs_list = List(PNode)()

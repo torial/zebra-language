@@ -3227,7 +3227,7 @@ pub fn _ZbrBound(comptime Recv: type, comptime name: []const u8) type {
             return _zbr_fn_info_param(I, k + 1);
         }
     };
-    return switch (I.params.len - 1) {
+    return switch (_zbr_fn_info_arity(I) - 1) {   // dual-version: 0.17 has `param_types`, not `params`
         0 => struct { recv: Recv, pub fn call(self: @This()) R { return @field(Base, name)(self.recv); } },
         1 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0)) R { return @field(Base, name)(self.recv, a0); } },
         2 => struct { recv: Recv, pub fn call(self: @This(), a0: P.at(0), a1: P.at(1)) R { return @field(Base, name)(self.recv, a0, a1); } },

@@ -1,0 +1,36 @@
+# BUG-599 + BUG-600 + BUG-601 positives. A generic class WITH its type argument still constructs,
+# here and from a used module, and as a container's type argument (BUG-601: `List(Box(int))()`
+# emitted a bare `Box`). And `x -> f` is `f(x)` --
+# QUICKSTART's own example (`a + b -> f`) -- for a function, a function value, and a
+# method of an object (`x -> c.scale` is `c.scale(x)`). A used module's generic class named
+# qualified, `lib.Cell(int)(3)`, the form the BUG-599 refusal names, constructs too.
+use bug599_generic_lib exposing Cell
+
+class Box(T)
+    var v: T
+
+    cue init(v: T)
+        .v = v
+
+class Scaler
+    var k: int = 3
+
+    def scale(x: int): int
+        return x * .k
+
+def twice(x: int): int
+    return x * 2
+
+def main()
+    var b = Box(int)(41)
+    var c = Cell(str)("seven")
+    var q = bug599_generic_lib.Cell(int)(3)
+    var boxes = List(Box(int))()
+    boxes.add(Box(int)(2))
+    var f = twice
+    var s = Scaler()
+    var p1 = 1 + 4 -> twice
+    var p2 = 6 -> f
+    var p3 = 5 -> s.scale
+    var p4 = 2 -> twice -> s.scale
+    print("bug599_600: ${b.v} ${c.get()} ${boxes.at(0).v} ${p1} ${p2} ${p3} ${p4} ${q.get()}")

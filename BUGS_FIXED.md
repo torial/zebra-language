@@ -6,6 +6,55 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-601: a generic class as a container's type argument, `List(Box(int))()`, emitted a bare `Box` -- zig "use of undeclared identifier 'Box'" -- FIXED 2026-10-19 (found 2026-10-19)
+- **Found by:** writing BUG-599's positive fixture. The annotation form
+  (`var b: List(Box(int)) = []`) was right; only the constructor EXPRESSION was wrong.
+- **Cause:** `genTypeFromExpr`'s call arm knew `List` / `HashMap` / `Set` and emitted any
+  other callee's name verbatim, dropping both the `_zbr_ty_` prefix (BUG-281 B) and the type
+  argument: `_ZbrList(Box)`.
+- **Fix:** a user type there emits the annotation's spelling, `*_zbr_ty_Box(i64)` (the `*`
+  for a class), its arguments through `genTypeFromExpr` again.
+- **Regression fixture:** `test/bug599_600_601_test.zbr` (`List(Box(int))()`). Red on the
+  pre-fix compiler.
+
+### BUG-600: `x -> f` with a bare function name was refused with an internal `buildExpr:` message and no position -- QUICKSTART's own example -- FIXED 2026-10-19 (found 2026-10-19)
+- **Found by:** probing BUG-596 (`5 -> s.scale`). QUICKSTART §3 says `a + b -> f` means
+  `f(a + b)`; the compiler said "buildExpr: pipeline RHS must be a call expression", no file,
+  no line, for that exact shape. The doc and the compiler disagreed, and the refusal was an
+  internal raise rather than a diagnostic.
+- **Fix:** the right side may also be a function or method named BARE: `x -> f` is `f(x)`,
+  `x -> c.scale` is `c.scale(x)` (a callee, so BUG-596's binding is not involved). The PARSER
+  now refuses any other right side at its own position, naming the three accepted forms; the
+  builder's raise stays as an internal guard it can no longer reach.
+- **Regression fixtures:** `test/bug599_600_601_test.zbr` (`1 + 4 -> twice`, `6 -> f` through a
+  function value, `5 -> s.scale`, `2 -> twice -> s.scale`) and
+  `test/fail_fixtures/bug600_pipeline_rhs_test.zbr` (`5 -> 3`, refused at 5:18).
+
+### BUG-599: a GENERIC class constructed without its type argument, `Box(41)`, passed `zebra -c` and failed inside zig "no field or member function named 'init' in 'fn (comptime type) type'" -- FIXED 2026-10-19 (found 2026-10-19)
+- **Found by:** an adversarial probe for BUG-596 that spelled the constructor wrong. The
+  generic-FUNCTION form of this leak was BUG-460, refused at the same site; the class arm
+  returned before reaching it.
+- **Fix:** refused in the front end, here, from a used module (`use lib exposing Box`), and
+  named qualified (`lib.Box(41)`): "`Box` is a generic class: pass its type argument(s)
+  first, `Box(int)(...)` -- Zebra does not infer them". Every generic class's parameter names
+  are registered now (they were recorded only for a class with a constraint), which is what
+  carries the fact across the module boundary.
+- **The suggested fix had to be made to work.** `lib.Box(int)(7)`, the qualified form the
+  refusal names, emitted `lib.Box.init(int)(7)` -- the inner call taken as a cross-module
+  constructor with `int` as its argument. It never worked. It emits `lib._zbr_ty_Box(i64).init(7)`
+  now (the cross-module constructor's predicate and spelling, with the type applied).
+- **Measured before landing (with BUG-600's parser refusal):** `-c` error count AND exit
+  code, old compiler vs new, over 1,073 repo files, 29 zebra-ide files and 1,847 GameEngine
+  files (`--module-path zbra`). Only the five new fixtures moved, each the expected way; the
+  engine's results were sampled first (17 of 31 clean, the rest refused) so its zero is a
+  measurement, not a corpus that failed identically on both sides.
+- **Not done:** inferring the type argument from the constructor's arguments. Zebra does not
+  infer generic-function arguments either (BUG-460); the two should move together if ever.
+- **Regression fixtures:** `test/fail_fixtures/bug599_generic_ctor_test.zbr` (12:13),
+  `test/bug599_generic_ctor_dep_test.zbr`, `test/bug599_generic_ctor_qual_test.zbr` (with
+  `test/bug599_generic_lib.zbr`), and the positive `test/bug599_600_601_test.zbr`, which builds
+  `Cell(str)` through `exposing` and `bug599_generic_lib.Cell(int)` qualified.
+
 ### BUG-597: a mixin's method bodies were never type-checked -- an unknown method or a type mismatch in one passed `zebra -c` -- FIXED 2026-10-16 (found 2026-10-16)
 - **Found by:** working on BUG-595: the checker's mixin arms looked at type NAMES and
   shadowing only; `checkDecl` had no mixin arm, so `s.toUpperX()` or `var n: int = "x"`

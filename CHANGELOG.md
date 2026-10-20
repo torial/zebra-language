@@ -115,6 +115,15 @@ confirmed via `tools/bootstrap_check.sh`.
   object's state (QUICKSTART §19.5). It failed inside zig. `map` / `filter` / `reduce` / `any`
   / `all` / `find` take any callable now, not only a bare function. A STRUCT's method as a
   value is refused for now, naming why (it waits on BUG-569's capture design).
+- **`x -> f` pipes into a function or method named bare (BUG-600)** -- `x -> f` is `f(x)`,
+  `x -> c.scale` is `c.scale(x)`, as QUICKSTART's `a + b -> f` example always said. It was
+  refused with an internal message and no position; any other right side of `->` is now
+  refused at its own position, naming the three accepted forms.
+- **A generic class built without its type argument is refused by name (BUG-599)** --
+  `Box(41)` for `class Box(T)`, here, through `exposing`, or as `lib.Box(41)`. It failed
+  inside zig. The qualified form the refusal suggests, `lib.Box(int)(7)`, compiles now; it
+  never had. And `List(Box(int))()` builds a List of a generic class (BUG-601); it emitted a
+  bare `Box` zig could not find.
 - **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that
   `adds` it, private to the mixin: its methods use it, and the class reaches it through
   them; naming it from outside is refused, saying so. It used to be dropped, and every read

@@ -1068,6 +1068,13 @@ class ASTBuilder
 
     # ── Expressions ───────────────────────────────────────────────────────────
 
+    # BUG-600: `lhs -> f` / `lhs -> obj.m` -- the bare right side is the callee, `lhs` its one argument.
+    def pipeBare(lhs_expr: Expr, rhs_node: PNode): Expr throws
+        const callee_expr = .buildExpr(rhs_node)?
+        var args: List(Arg) = List(Arg)()
+        args.add(Arg(spanOf(lhs_expr), nil, lhs_expr))
+        return Expr.call(ExprCall(spanOf(lhs_expr), callee_expr, args))
+
     # BUG-417 helper: walk the rhs spine (call -> callee, member -> base) to the
     # self-member with an EMPTY base and rebuild the spine with `lhs` as that base.
     # nil when the spine has no self-member (an ordinary `x -> f(args)` pipeline).
@@ -1241,8 +1248,14 @@ class ASTBuilder
                                 const av = .buildExpr(arg_pn)?
                                 args.add(Arg(spanOf(av), nil, av))
                         return Expr.call(ExprCall(spanOf(lhs_expr), callee_expr, args))
+                    on PNode.expr_id
+                        # BUG-600: `x -> f` is `f(x)` -- QUICKSTART's own example (`a + b -> f`).
+                        return .pipeBare(lhs_expr, rhs_node)?
+                    on PNode.expr_member
+                        # BUG-600: `x -> c.scale` is `c.scale(x)`.
+                        return .pipeBare(lhs_expr, rhs_node)?
                     else
-                        raise "buildExpr: pipeline RHS must be a call expression"
+                        raise "buildExpr: pipeline RHS must be a call expression"   # the parser refuses it first
 
             on PNode.expr_unary as pu
                 const operand_expr = .buildExpr(pu.operand.at(0))?
