@@ -124,6 +124,10 @@ confirmed via `tools/bootstrap_check.sh`.
   inside zig. The qualified form the refusal suggests, `lib.Box(int)(7)`, compiles now; it
   never had. And `List(Box(int))()` builds a List of a generic class (BUG-601); it emitted a
   bare `Box` zig could not find.
+- **A field default may use an operator (BUG-592).** `var bump: int = base() + 2`, `B + 1`,
+  even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
+  now, in a struct and in a class. And an undefined name in a field default is reported by
+  `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
 - **A generic class can `add` a mixin (BUG-598).** `class Box(T) adds Tagged` was accepted
   and the mixin's methods and state were never emitted, so calling one failed inside zig.
 - **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that

@@ -4684,6 +4684,21 @@ struct Generator
     # that emit a field initialiser and the other four kept the bug, so every site now
     # calls this one function.
     def genFieldInitExpr(fexpr: Expr, tr: TypeRef?)
+        # BUG-592: a field default is emitted OUTSIDE any function -- in the struct's field
+        # list -- where no inference context is attached, so every operand typed as unknown
+        # and every `+` in one (`base() + 2`, `B + 1`, even `2 + 3`) was a guess, refused.
+        # The module-level context a module var's initializer gets (BUG-496): it binds no
+        # locals, and a default has none to bind. Inside a constructor's prologue the
+        # constructor's own context is already attached and is kept.
+        if .infer_ctx == nil
+            var fctx = InferCtx(.module_types, "")
+            fctx.withDepTypes(.dep_types)
+            var fg = withInferCtx(fctx)
+            fg.genFieldInitExprIn(fexpr, tr)
+            return
+        genFieldInitExprIn(fexpr, tr)
+
+    def genFieldInitExprIn(fexpr: Expr, tr: TypeRef?)
         if tr != nil and isBareCollectionCtor(fexpr)
             genCallWithTypeHint(fexpr, tr!)
         else
@@ -11021,7 +11036,29 @@ struct Generator
                 if bid.name == "List" or bid.name == "StringBuilder"
                     return false
             return true
+        # BUG-592: an operator over such an operand (`base() * 2`) is deferred too, and so
+        # is one that ALLOCATES -- `+` joining strings, an interpolation -- which no comptime
+        # field default can do. A class's constructor fills every defaulted field anyway
+        # (the prefill), so `= undefined` in the field list costs nothing there.
+        if e is Expr.binary as db
+            if isDeferredFieldInit(db.left) or isDeferredFieldInit(db.right)
+                return true
+            if db.op == BinaryOp.add and (fieldInitIsStr(db.left) or fieldInitIsStr(db.right))
+                return true
+            return false
+        if e is Expr.unary as du
+            return isDeferredFieldInit(du.operand)
+        if e is Expr.string_interp
+            return true
         return false
+
+    # BUG-592: is a field default's operand a str (a literal, or typed so by the module context)?
+    def fieldInitIsStr(e: Expr): bool
+        if e is Expr.string_lit or e is Expr.string_interp
+            return true
+        var sctx = InferCtx(.module_types, "")
+        sctx.withDepTypes(.dep_types)
+        return inferExpr(e, sctx) is Type_.string_
 
     # BUG-501 1c: is this field a Zebra container -- by its declared type, or (untyped) by a
     # container-constructing initialiser?

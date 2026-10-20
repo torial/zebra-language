@@ -243,6 +243,14 @@ class Resolver
                 .enterMethod(m.params, m.stmts)?
             on PNode.init_ as i
                 .enterMethod(i.params, i.stmts)?
+            on PNode.field_ as f
+                # BUG-602: a field's default was never resolved, so `var c: int = NOPE`
+                # passed `-c` and failed inside zig, pointing into the generated file. The
+                # class's own names are in scope (a static field or method may be named);
+                # no locals, as for a module var's initializer.
+                .method_scope = HashMap()
+                for fe in f.init_expr
+                    .resolveExpr(fe)?
             else
                 pass
 

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-601. Next new bug: BUG-602.**
+**Last bug number generated: BUG-603. Next new bug: BUG-604.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,28 @@
 
 ---
 
+### BUG-603: a STRUCT field default that allocates (`var s: str = "a" + NAME`) passes `zebra -c` and `S()` fails inside zig "unable to resolve comptime value" -- OPEN (found 2026-10-20)
+- **Found by:** BUG-592's edges, on the pre-fix compiler too (not a regression):
+  ```zebra
+  const NAME: str = "zz"
+
+  struct S
+      var s: str = "a" + NAME
+      var n: int = 3
+
+  def main()
+      var x = S()
+      var y = S(s: "q")
+      print("${x.s} ${y.s} ${x.n}")
+  ```
+- **Cause:** the default is emitted as a comptime field default
+  (`s: []const u8 = _str_concat(...)`), and a zero-argument `S()` emits `_zbr_ty_S{}`, which
+  evaluates it. BUG-519's `_zbr_dflt_s()` functions already exist beside it and are what
+  `S(n: 1)` uses for an omitted field.
+- **Fix direction:** when any field's default is deferred (`isDeferredFieldInit`, extended by
+  BUG-592), build `S()` through the same per-field `_zbr_dflt_*` path and emit no comptime
+  default for that field. Control: the probe prints `azz q 3`.
+
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
@@ -68,25 +90,6 @@
   outlive the closure -- BUG-569's escaping-capture boxing. Fixture
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
-
-### BUG-592: a field default that uses a module-level function or constant inside an expression is refused -- "cannot infer the type of `B`, an operand of `+`" -- OPEN (found 2026-10-16)
-- **Found by:** writing BUG-519's fixture. One file, no modules:
-  ```zebra
-  def base(): int
-      return 40
-
-  const B: int = 1
-
-  struct R
-      var bump: int = base() + 2
-      var c: int = B + 1
-  ```
-  Both defaults are refused naming `base(...)` / `B` (the same for a class field). A bare
-  `var bump: int = base()` is accepted, so the field-default context sees the name and does
-  not TYPE it inside an operator -- the shape BUG-306 records for module-scope declarations.
-  An over-refusal of valid code; the workaround is a `cue init`.
-- **Control when fixing:** the probe prints `42 2`; a default naming an undefined name is
-  still refused.
 
 ### BUG-590: an `is <Interface>` test INSIDE the interface's module misses implementers declared in modules that use it -- OPEN (found 2026-10-15)
 - **Found by:** probing BUG-580's fix. A dep declares `interface Show` and `def isShow(x:

@@ -1,0 +1,31 @@
+# BUG-592: a field default with an OPERATOR in it -- `base() + 2`, `B + 1`, even `2 + 3` --
+# was refused "cannot infer the type of ..., an operand of `+`": defaults are emitted
+# outside any function, where codegen had no inference context, so every operand was a
+# guess. A struct, a class with a `cue init`, and a class with the synthesized init.
+
+def base(): int
+    return 40
+
+const B: int = 1
+
+struct R
+    var bump: int = base() + 2
+    var c: int = B + 1
+    var lit: int = 2 + 3
+
+class K
+    var area: int = base() * 2
+    var pos: bool = B > 0
+    var label: str = "k" + B.toString()
+
+    cue init()
+        pass
+
+class J
+    var d: float = 1.5 * 2.0
+
+def main()
+    var r = R()
+    var k = K()
+    var j = J()
+    print("bug592: ${r.bump} ${r.c} ${r.lit} ${k.area} ${k.pos} ${k.label} ${j.d}")

@@ -6,6 +6,46 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-602: an undefined name in a FIELD DEFAULT passed `zebra -c` and failed inside zig, pointing into the generated file -- FIXED 2026-10-20 (found 2026-10-20)
+- **Found by:** BUG-592's control ("a default naming an undefined name is still refused").
+  With an operator it was -- but by the codegen's inference guess, as "cannot infer the type
+  of `NOPE`". Without one (`var c: int = NOPE`, `var d: int = nosuch()`), `-c` exited 0 and
+  zig reported "use of undeclared identifier" at a line of the emitted `.zig`.
+- **Cause:** the Resolver's `resolveMember` walked methods and constructors and skipped
+  `field_`, so a field's initializer was never resolved. (A module var's initializer was
+  added for the same reason earlier; fields were not.)
+- **Fix:** a field's initializer is resolved with the class's own names in scope and no
+  locals. MIXIN fields and methods are still not resolved by the Resolver: a mixin's method
+  may name a member of the class that adopts it, so resolving it alone would refuse valid
+  code; BUG-597's per-class re-check in the checker covers those.
+- **Regression fixture:** `test/fail_fixtures/bug602_field_default_undefined_test.zbr`
+  (6:18, "undefined name: 'NOPE'").
+
+### BUG-592: a field default with an OPERATOR in it was refused -- "cannot infer the type of `B`, an operand of `+`" -- even `2 + 3` -- FIXED 2026-10-20 (found 2026-10-16)
+- **Found by:** writing BUG-519's fixture: `var bump: int = base() + 2` and `var c: int = B + 1`
+  refused. Broader than first recorded: `var lit: int = 2 + 3` is refused too, in a struct
+  and in a class.
+- **Cause:** a field default is emitted in the struct's FIELD LIST, outside any function,
+  where codegen had no inference context -- so `isPrimType` answered false for every
+  operand, and every `+` was a guess (§28a) and refused. A bare `= base()` was accepted only
+  because it has no operator.
+- **Fix:** `genFieldInitExpr`, the one path every field default is emitted through, attaches
+  the module-level context a module var's initializer already gets (BUG-496) when none is
+  attached; inside a constructor's prologue the constructor's own context is kept.
+- **And what that let through had to be placed.** Once accepted, a class default like
+  `base() * 2` or `"k" + B.toString()` reached zig as a COMPTIME field default -- "unable to
+  resolve comptime value", and an allocating string `+` can never be comptime. BUG-339 already
+  defers a bare call to the constructor (`= undefined` in the field list; the prefill assigns
+  it); `isDeferredFieldInit` now also defers an operator over such an operand, a string `+`,
+  and an interpolation. A class's constructor fills every defaulted field anyway, so this
+  costs nothing there.
+- **Regression fixture:** `test/bug592_field_default_expr_test.zbr` -- a struct (`base() + 2`,
+  `B + 1`, `2 + 3`), a class with a `cue init` (`base() * 2`, `B > 0`, `"k" + B.toString()`)
+  and one with the synthesized init (`1.5 * 2.0`); prints `42 2 5 80 true k1 3.0`. Red on the
+  pre-fix compiler (three refusals).
+- **Not covered:** a STRUCT default that allocates (`var s: str = "a" + NAME`) -- BUG-603,
+  filed open; it fails inside zig on the pre-fix compiler too.
+
 ### BUG-598: `adds` on a GENERIC class was accepted and the mixin's methods and fields were never emitted -- zig "no field or member function named 'tag' in 'Box(i64)'" -- FIXED 2026-10-20 (found 2026-10-16)
 - **Found by:** checking BUG-595's edges. `class Box(T) adds Tagged`, `Box(int)(4).tag("g")`
   passed `zebra -c`; `genGenericClass` returns from `genClass` before either mixin loop
