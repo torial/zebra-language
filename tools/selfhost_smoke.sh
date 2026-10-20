@@ -1361,6 +1361,7 @@ smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixi
 smoke_run test/bug596_bound_method_test.zbr "bug596: 1113 12 112 1112 1113 [false, false, false] [5000, 9999] 6678 hi, zebra 9"
 smoke_tc_fail test/fail_fixtures/bug596_struct_bound_method_test.zbr "bug596_struct_bound_method_test.zbr:12:15: error: a method of a STRUCT cannot be used as a value yet"
 smoke_run test/bug599_600_601_test.zbr "bug599_600: 41 seven 2 10 12 15 12 3"
+smoke_run test/bug598_generic_mixin_test.zbr "bug598: [g][h] 2 4 [k] 1 x [z] 1 1"
 smoke_tc_fail test/fail_fixtures/bug599_generic_ctor_test.zbr "bug599_generic_ctor_test.zbr:12:13: error: \`Box\` is a generic class: pass its type argument(s) first"
 smoke_tc_fail test/bug599_generic_ctor_dep_test.zbr "bug599_generic_ctor_dep_test.zbr:5:13: error: \`Cell\` is a generic class"
 smoke_tc_fail test/bug599_generic_ctor_qual_test.zbr "bug599_generic_ctor_qual_test.zbr:5:32: error: \`bug599_generic_lib.Cell\` is a generic class"

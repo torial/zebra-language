@@ -46,14 +46,6 @@
 
 ---
 
-### BUG-598: `adds` on a GENERIC class is accepted and the mixin's methods are never emitted -- zig "no field or member function named 'tag' in 'Box(i64)'" -- OPEN (found 2026-10-16)
-- **Found by:** checking BUG-595's edges. `class Box(T) adds Tagged`, `Box(int)().tag("g")`:
-  `zebra -c` passes, and `genGenericClass` returns before `genClass`'s mixin loop, so neither
-  the mixin's methods nor (since BUG-595) its fields reach the instantiated struct. Pre-existing
-  on 746847a for the methods.
-- **Fix direction:** route both mixin loops (methods, and `mixinFieldDecls`) through the generic
-  emitter, or refuse `adds` on a generic class until then. Control: the probe prints `g`.
-
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any

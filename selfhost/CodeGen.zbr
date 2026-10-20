@@ -5146,11 +5146,20 @@ struct Generator
         var fg = indented()
         fg.writeIndent()
         fg.w.emit("return struct {\n")
+        # BUG-598: a generic class `adds` a mixin too -- its fields and methods, as
+        # genClass emits them for a plain class (BUG-089 / BUG-595). This emitter had
+        # neither, so `Box(int)().tag("g")` failed inside zig.
+        var all_members = List(Decl)()
+        for am in n.members
+            all_members.add(am)
+        for mxf in mixinFieldDecls(n)
+            all_members.add(mxf)
         var ig0 = fg.indented()
         var ig1 = ig0.withOwner(n.name)
-        var ig  = ig1.withGeneric(n)
+        var ig2 = ig1.withGeneric(n)
+        var ig  = ig2.withOwnerMembers(all_members)     # after withGeneric, which sets n.members
         ig.line("_type_tag: u64 = _ttag_${n.name},")
-        for decl in n.members
+        for decl in all_members
             if decl is Decl.var_ as fld
                 ig.genFieldDecl(fld)
         var has_init = false
@@ -5163,6 +5172,14 @@ struct Generator
                     has_init = true
                 else
                     pass
+        for gmx_ref in n.mixins                             # BUG-598: the mixin's methods
+            if gmx_ref is TypeRef.named as gmx_nr
+                for gmx_decl in module_decls
+                    if gmx_decl is Decl.mixin_ as gmx
+                        if gmx.name == gmx_nr.name
+                            for gmx_mem in gmx.members
+                                if gmx_mem is Decl.method as gmx_m
+                                    ig.genMethod(gmx_m)
         if not has_init
             # 2026-09-24: the same synthesized init a non-generic class gets -- a HEAP
             # instance (a class is a pointer; this returned `@This()` by value and every
@@ -5180,7 +5197,7 @@ struct Generator
             dig.w.emit("self._type_tag = _ttag_")
             dig.w.emit(n.name)
             dig.w.emit(";\n")
-            for gfdecl in n.members
+            for gfdecl in all_members                      # BUG-598: mixin fields too
                 if gfdecl is Decl.var_ as gfld
                     if dig.needsPrefill(gfld)
                         dig.genFieldPrefill("self.", gfld)    # BUG-501 1c

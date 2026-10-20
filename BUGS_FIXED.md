@@ -6,6 +6,23 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-598: `adds` on a GENERIC class was accepted and the mixin's methods and fields were never emitted -- zig "no field or member function named 'tag' in 'Box(i64)'" -- FIXED 2026-10-20 (found 2026-10-16)
+- **Found by:** checking BUG-595's edges. `class Box(T) adds Tagged`, `Box(int)(4).tag("g")`
+  passed `zebra -c`; `genGenericClass` returns from `genClass` before either mixin loop
+  (BUG-089's methods, BUG-595's fields).
+- **Fix:** the generic emitter does both, as `genClass` does: the mixin's fields join the
+  member list the struct's fields, the synthesized init's prefill and a `cue init`'s prologue
+  are emitted from, and its methods follow the class's own.
+- **The half that looked done and was not:** with the fields emitted, a class with a `cue
+  init` read the mixin's counter as `-6148914691236517204` -- Zig's 0xAA undefined fill. The
+  prologue walks `owner_members`, and `withGeneric` SETS `owner_members` to the class's own
+  members, so the list carrying the mixin fields was overwritten by the call after it. The
+  context is now applied in the other order. Only the `cue init` instantiation could show it:
+  the synthesized init prefills from its own list.
+- **Regression fixture:** `test/bug598_generic_mixin_test.zbr` -- two instantiations of one
+  generic class with a `cue init` (each its own counter) and one with the synthesized init.
+  Red on the pre-fix compiler (the zig error above).
+
 ### BUG-601: a generic class as a container's type argument, `List(Box(int))()`, emitted a bare `Box` -- zig "use of undeclared identifier 'Box'" -- FIXED 2026-10-19 (found 2026-10-19)
 - **Found by:** writing BUG-599's positive fixture. The annotation form
   (`var b: List(Box(int)) = []`) was right; only the constructor EXPRESSION was wrong.

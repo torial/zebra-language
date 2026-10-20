@@ -1904,7 +1904,8 @@ if obj is Printable
 
 - `implements` declares interface conformance — the compiler verifies all
   required methods exist via `comptime { Iface.check(@This()); }`.
-- `adds Mixin` includes methods from a mixin declaration.
+- `adds Mixin` includes methods from a mixin declaration. A generic class `adds` one the
+  same way (`class Box(T) adds Tagged`); each instantiation has its own copy of the state.
 - **A mixin may keep state.** A `var` in a mixin becomes a field of every class that `adds`
   it, and it is PRIVATE to the mixin: only the mixin's own methods name it (`.label`,
   `this.label`, or a bare `label` the method does not declare itself). The class, and code

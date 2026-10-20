@@ -124,6 +124,8 @@ confirmed via `tools/bootstrap_check.sh`.
   inside zig. The qualified form the refusal suggests, `lib.Box(int)(7)`, compiles now; it
   never had. And `List(Box(int))()` builds a List of a generic class (BUG-601); it emitted a
   bare `Box` zig could not find.
+- **A generic class can `add` a mixin (BUG-598).** `class Box(T) adds Tagged` was accepted
+  and the mixin's methods and state were never emitted, so calling one failed inside zig.
 - **A mixin can keep state (BUG-595).** A `var` in a mixin is a field of every class that
   `adds` it, private to the mixin: its methods use it, and the class reaches it through
   them; naming it from outside is refused, saying so. It used to be dropped, and every read
