@@ -131,6 +131,8 @@ class VGen
     var heap_names: List(str)         # the structs some `^T` targets: reference types in V (their constructors allocate)
     var global_types: HashMap(str, str)  # the V type of each module-level var
     var union_payloads: HashMap(str, str)   # `U_v` -> the V type of the variant's payload
+    var boxed_variants: HashMap(str, bool)  # `U_v` -> whether its payload is boxed (`&ZBox[U_v's payload]`): decided once by isBoxed -- V master's sum is an inline tagged union (vlang/v#29578), a value cycle is refused
+    var variant_union: HashMap(str, str)    # `U_v` -> `U`
     var current_file: str             # the module being emitted (a refusal names it)
     var has_globals: bool             # a `__global` was emitted
     var global_dedup: HashMap(str, str)   # a module-level var's numbered spelling when a sibling snake-cases alike
@@ -191,6 +193,8 @@ class VGen
         .heap_names = List(str)()
         .global_types = HashMap(str, str)()
         .union_payloads = HashMap(str, str)()
+        .boxed_variants = HashMap(str, bool)()
+        .variant_union = HashMap(str, str)()
         .current_file = ""
         .has_globals = false
         .sig_conflicts = List(str)()
@@ -364,6 +368,43 @@ class VGen
             if en == name
                 return true
         return false
+
+    # whether a V type reaches the union `un` by value: the union itself, an
+    # option of it, or a value struct whose fields do -- a reference (`&`), a
+    # container (`&ZList` ...) or a class breaks the cycle, as V's check does
+    def reachesUnion(un: str, vt: str, depth: int): bool
+        if depth > 12
+            return false
+        var t: str = vt
+        if t.startsWith("?")
+            t = t.substring(1, t.len)
+        if t == un
+            return true
+        if t.startsWith("&") or not .isStructName(t)
+            return false
+        for k in .all_field_types.keys()
+            if k.startsWith(t + ".")
+                if .reachesUnion(un, .all_field_types.get(k) orelse "", depth + 1)
+                    return true
+        return false
+
+    # a variant's payload is boxed when it reaches its own union by value;
+    # decided once per variant, at the first emission that asks
+    def isBoxed(vk: str): bool
+        if .boxed_variants.get(vk) as b
+            return b
+        var boxed: bool = false
+        if .variant_union.get(vk) as un
+            if .union_payloads.get(vk) as pt
+                boxed = .reachesUnion(un, pt, 0)
+        .boxed_variants.set(vk, boxed)
+        return boxed
+
+    # `.v` after a boxed variant's payload: the value out of its ZBox
+    def unbox(vk: str): str
+        if .isBoxed(vk)
+            return ".v"
+        return ""
 
     def isUnionName(name: str): bool
         for un in .union_names
@@ -854,6 +895,8 @@ class VGen
         g.heap_names = .heap_names
         g.global_types = .global_types
         g.union_payloads = .union_payloads
+        g.boxed_variants = .boxed_variants
+        g.variant_union = .variant_union
         g.current_file = .current_file
         g.sig_conflicts = .sig_conflicts
         g.rets = .rets
@@ -963,6 +1006,7 @@ class VGen
                     for v in un.variants
                         if v.payload as pt
                             .union_payloads.set(un.name + "_" + v.name, .vType(pt))
+                            .variant_union.set(un.name + "_" + v.name, un.name)
                 on Decl.class_ as c
                     .noteFieldsOf(c.name, c.members)
                 on Decl.struct_ as st
@@ -1548,7 +1592,10 @@ class VGen
             if v.payload as pt
                 .line("struct " + vname + " {")
                 .line("pub mut:")
-                .line("\tpayload " + .vType(pt))
+                if .isBoxed(vname)
+                    .line("\tpayload &ZBox[" + .vType(pt) + "]   // reaches " + un.name + " by value: boxed, a value cycle is refused by V master's tagged unions")
+                else
+                    .line("\tpayload " + .vType(pt))
                 .line("}")
             else
                 .line("struct " + vname + " {}")
@@ -2370,13 +2417,14 @@ class VGen
                 if bnd != "_"   # (a discarded binding is not bound: V's unused variable)
                     .local_names.add(bnd)
                     var lead: str = ""
+                    var vk: str = ""   # the variant key, for the payload type and the box
                     if arm.values.count() == 1
-                        var vk: str = .armValueStr(arm.values.at(0))
+                        vk = .armValueStr(arm.values.at(0))
                         if .union_payloads.get(vk) as pt
                             .local_types.set(bnd, pt)
                             if .needsMut(pt)
                                 lead = "mut "   # V refuses `mut x.field` through an immutable binding
-                    .line(lead + vSafe(bnd) + " := " + t + ".payload")
+                    .line(lead + vSafe(bnd) + " := " + t + ".payload" + .unbox(vk))
                     if not mightUseName(bnd, arm.stmts)
                         .line("_ = " + vSafe(bnd))
             .genStmts(arm.stmts)
@@ -2665,7 +2713,7 @@ class VGen
                         .local_types.set(cap, pt)
                         if .needsMut(pt)
                             lead = "mut "
-                    return lead + vSafe(cap) + " := " + subj + ".payload"
+                    return lead + vSafe(cap) + " := " + subj + ".payload" + .unbox(tc.type_name + "_" + vn)
                 .refuse("`is` on a class (not a union variant)", tc.span)
                 .line("if true {")
                 return ""
@@ -3328,7 +3376,7 @@ class VGen
         if isDigits(m.member)
             return obj + ".f" + m.member   # a tuple's element by position
         if .isUnionName(ot) and .union_payloads.get(ot + "_" + m.member) != nil
-            return "(" + obj + " as " + ot + "_" + m.member + ").payload"   # Zebra's payload access by the variant's name
+            return "(" + obj + " as " + ot + "_" + m.member + ").payload" + .unbox(ot + "_" + m.member)   # Zebra's payload access by the variant's name
         if m.member == "len"
             if .isContainerType(ot)
                 return obj + ".count()"   # Zebra's `.len` on a container
@@ -3645,6 +3693,8 @@ class VGen
             # (wrapped as the sum type, as the bare-member form above: see there)
             if args.count() == 0
                 return owner + "(" + owner + "_" + name + "{})"
+            if .isBoxed(owner + "_" + name)
+                return owner + "(" + owner + "_" + name + "{ payload: zbox[" + (.union_payloads.get(owner + "_" + name) orelse owner) + "](" + .exprStr(args.at(0).value) + ") })"
             return owner + "(" + owner + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " })"
         if isMath
             .needs_math = true

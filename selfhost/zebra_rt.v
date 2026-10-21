@@ -290,6 +290,18 @@ pub fn zopt_id[T](x ?T) ?T {
 	return x
 }
 
+// a Zebra `^U` payload inside U's own variant: a heap box, so the sum type
+// (an inline tagged union on V master, vlang/v#29578) has no value cycle
+@[heap]
+pub struct ZBox[T] {
+pub mut:
+	v T
+}
+
+pub fn zbox[T](x T) &ZBox[T] {
+	return &ZBox[T]{ v: x }
+}
+
 pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
 }
