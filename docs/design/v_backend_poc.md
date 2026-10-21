@@ -2330,11 +2330,20 @@ In the order they pay, each with the witness that says it is done:
    scene_loader + hotreload, net_host, devtools_server, shapes + shadow,
    console_panel + main), and the witness (`tools/v_host_check.sh` <!-- doc-lint-ok: a path in the engine repo -->
    there: each port's V witness against its Zig test, fresh, line for
-   line, with a `--control`). The profiler is ported and IDENTICAL. Two
-   things this emitter owes the host before the frame loop moves: a
+   line, with a `--control`). By the afternoon nine of the ten host
+   modules are ported and IDENTICAL (profiler, collision, scene_loader,
+   devtools_server, hotreload, net_host, console_panel, shadow, shapes);
+   the frame loop (`main.zig`) remains. The emitter owed the host a
    callable name for a game's class `main(...)` (V refuses a program
-   entry with parameters; the measurement used `sed`), and #30999's
-   name clashes until V fixes them.
+   entry with parameters; the measurement used `sed`): since this
+   commit a root's main with parameters is emitted as `script_main`
+   (a comment line above it says so; the globals initialiser stays at
+   its start), and the host's own `fn main` constructs the services and
+   calls it -- the game module emits `fn script_main(mut script
+   Instance, mut run RunService, mut uis UserInputService, mut gsvc
+   GuiService, mut snd SoundService, mut ws Workspace)` and
+   type-checks beside a stub host main. #30999's name clashes stand
+   until V fixes them.
 
 ## If the branch ever merges to main
 
