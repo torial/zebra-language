@@ -430,6 +430,17 @@ pub fn zsys_read_bytes(n i64) ?string {
 // These read the handle itself, not libc's buffer: a program that mixes them
 // with readLine / readBytes on the same stdin would lose what libc had read
 // ahead -- the bridge and the LSP each use one family.
+// The header that defines pollfd, named so V emits no body of its own for
+// the declaration below: a C-prefixed struct with no #include beside it is
+// emitted as a definition (0.5.2 and master alike), and that definition
+// redefines winsock2.h's the moment an import pulls the header in (net,
+// db.sqlite, x.json) -- the whole game module refused to build for it.
+$if windows {
+	#include <winsock2.h>
+} $else {
+	#include <poll.h>
+}
+
 struct C.pollfd {
 mut:
 	fd      int
