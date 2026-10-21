@@ -2106,9 +2106,17 @@ whose variant holds the sum BY VALUE (`struct Wrap { inner Node }` or
 accept it; through a reference or an array, or an option on a struct
 outside the sum, it is fine (da62dd4b, sum types as tagged unions, the
 candidate). The route's `PNode_stmt_expr { payload PNode }` and two
-more variants hit it. The seventh
-ticket, reduced cold before the reviewer this time (the fieldnote's
-remedy, `fable/fieldnotes_the-too-specific-construct_2026-10-20`).
+more variants hit it. Not a regression: the reviewer read #29578's
+"Breaking change" section and its test -- an inline tagged union needs
+a finite layout, and recursive sum fields must use a reference or a
+dynamic collection -- so the seventh ticket (vlang/v#30986) asks for
+the error to name the fix and the field and to cover `?T`, which the
+PR text does not. The emitter's side: box a sum held by value in a
+variant (`payload &PNode`, `?&PNode`), accepted on all three
+compilers -- the docket's first item now. The reduction held this
+time (thirteen lines, the reviewer's matrix agreed); the miss was the
+framing: I called a documented breaking change a regression because
+I named a candidate commit and did not read its PR.
 
 **4. The perf gap.** One lever closes most of it: V's `-prealloc` (a
 bump allocator, the nearest thing V has to Zebra's arena) with
@@ -2138,6 +2146,11 @@ build script), and the runtime's own hot spots (the boxed `ZList` /
 
 In the order they pay, each with the witness that says it is done:
 
+0. **A sum held by value in a variant is boxed** (`payload &PNode`,
+   `?&PNode`; vlang/v#30986's rule): master 9ca360c refuses the
+   by-value form, 0.5.2 and master accept the reference, so the
+   emission moves to the shape both take. The route builds under
+   master again; the pipeline's diffs identical. Small, first.
 1. **`Http` onto `net.http`** (the stale refusal above): the route's
    updater fetch runs through V; `--emit-zig` unchanged. Small.
 2. **The release lane**: `-cc clang -prod -prealloc` as the V side's
