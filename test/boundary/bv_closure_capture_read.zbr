@@ -1,0 +1,72 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM QUICKSTART §19 ("Implicit closure capture") AND
+# docs/design/closure_capture.md §2-§3.4, BEFORE RUNNING (BUG-569).
+#
+# §19: "Free variables are auto-captured (no explicit `capture` block needed)". The design
+# note's measurement (2026-10-21) found that true only for compile-time constants: every
+# runtime value a lambda names -- a local, a parameter, a loop variable -- failed inside zig
+# with "not accessible from inner function". Each row below names one such value, READ
+# ONLY. Nothing here writes a captured variable after the closure exists, so by-value and
+# by-reference capture print the same thing; the write rows belong to the shared-capture
+# step and to its own probe.
+#
+# Runtime values on purpose: `sys.args().len` is 1 when the suite runs a probe (the
+# program path only), so `k` is 10, and nothing is foldable at compile time.
+
+def apply(f: def(int): int, x: int): int
+    return f(x)
+
+def scale(m: int): int
+    return apply(def(x: int): int = x * m, 3)
+
+def makeAdder(n: int): def(int): int
+    return def(x: int): int = x + n
+
+struct P
+    var x: int
+
+def main()
+    var k = sys.args().len + 9
+
+    # A runtime local, read by an expression lambda.
+    var add = def(x: int): int = x + k
+    print(add(1))
+
+    # A parameter of the enclosing function.
+    print(scale(4))
+
+    # A parameter captured by a closure that OUTLIVES its frame (returned).
+    var a5 = makeAdder(5)
+    print(a5(2))
+
+    # A statement-body lambda reading a local.
+    var twice = def(x: int): int
+        var t = x + k
+        return t + k
+    print(twice(1))
+
+    # A loop variable: each iteration's closure sees that iteration's value.
+    var total = 0
+    for v in [1, 2, 3]
+        total += apply(def(y: int): int = y * v, 10)
+    print(total)
+
+    # The receiver of the call the lambda is passed to.
+    var xs = [1, 2, 3]
+    var ys = xs.map(def(e: int): int = e + xs.len)
+    print(ys)
+
+    # A name used ONLY inside string interpolation.
+    var who = ["ann", "bob"].at(sys.args().len - 1)
+    var greet = def(): str = "hi ${who}"
+    print(greet())
+
+    # A struct local, read through a field.
+    var p = P(x: k)
+    var px = def(d: int): int = p.x + d
+    print(px(5))
+
+    # Nested lambdas: the inner one reads a local two levels out.
+    var outer = def(x: int): int = apply(def(y: int): int = y + k, x)
+    print(outer(3))
