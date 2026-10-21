@@ -89,10 +89,11 @@ lsp_frames() {   # the three requests, Content-Length framed
   printf 'Content-Length: %d\r\n\r\n%s' "${#b1}" "$b1"; printf 'Content-Length: %d\r\n\r\n%s' "${#b2}" "$b2"; printf 'Content-Length: %d\r\n\r\n%s' "${#b3}" "$b3"
 }
 lsp_answers() {   # <exe> -> "<responses> <capabilities 0/1> <shutdown 0/1> <exit>"
-  local out; out=$(cd "$WT" && lsp_frames | timeout 30 "$1" lsp 2> "$OUT/lsp_err.txt"); local rc=$?
-  local n; n=$(printf '%s' "$out" | grep -c 'Content-Length')
-  local caps=0; printf '%s' "$out" | grep -q capabilities && caps=1
-  local sd=0; printf '%s' "$out" | grep -q '"id":2' && sd=1
+  lsp_frames > "$OUT/lsp_in.txt"
+  (cd "$WT" && timeout 30 "$1" lsp < "$OUT/lsp_in.txt" > "$OUT/lsp_out.txt" 2> "$OUT/lsp_err.txt"); local rc=$?   # no pipe: the status is the compiler's (H10)
+  local n; n=$(grep -c 'Content-Length' "$OUT/lsp_out.txt")
+  local caps=0; grep -q capabilities "$OUT/lsp_out.txt" && caps=1
+  local sd=0; grep -q '"id":2' "$OUT/lsp_out.txt" && sd=1
   echo "$n $caps $sd $rc"
 }
 rm -f "$OUT/zebra_v.exe"
