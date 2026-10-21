@@ -25,6 +25,7 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Targets
 
+- `zebra --target v --also=a.zbr,b.zbr root.zbr` emits extra modules into the one V file (what a host calls that the root does not use: the engine's physics step for its V host). Collected before the root, so the root's main stays the one emitted; a root's main with parameters is emitted as `script_main` for a host's own `fn main` to call (2026-10-21).
 - **`zebra --target v` -- a V backend, a proof of concept (merged 2026-10-15).** It emits a
   Zebra program as one V file over an inlined runtime (`selfhost/zebra_rt.v`), and with
   `--gui-backend=libui_ng` appends the libui-ng section, CodeEditor included. `--gc` asks V
