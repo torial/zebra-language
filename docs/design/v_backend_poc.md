@@ -2342,7 +2342,13 @@ In the order they pay, each with the witness that says it is done:
    calls it -- the game module emits `fn script_main(mut script
    Instance, mut run RunService, mut uis UserInputService, mut gsvc
    GuiService, mut snd SoundService, mut ws Workspace)` and
-   type-checks beside a stub host main. #30999's name clashes stand
+   type-checks beside a stub host main. `--also=a.zbr,b.zbr` emits
+   modules the root does not use into the same file (the engine's
+   physics step, which the Zig host imports as a module of its own).
+   With both, the engine's `host_v/headless.v` -- the host without <!-- doc-lint-ok: a path in the engine repo -->
+   raylib -- walks the game's 125 s autoplay and prints the same 114
+   milestones as the windowed Zig host (the engine's
+   `tools/v_host_check.sh --autoplay`). #30999's name clashes stand <!-- doc-lint-ok: a path in the engine repo -->
    until V fixes them.
 
 ## If the branch ever merges to main
