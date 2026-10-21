@@ -2348,8 +2348,18 @@ In the order they pay, each with the witness that says it is done:
    With both, the engine's `host_v/headless.v` -- the host without <!-- doc-lint-ok: a path in the engine repo -->
    raylib -- walks the game's 125 s autoplay and prints the same 114
    milestones as the windowed Zig host (the engine's
-   `tools/v_host_check.sh --autoplay`). #30999's name clashes stand <!-- doc-lint-ok: a path in the engine repo -->
-   until V fixes them.
+   `tools/v_host_check.sh --autoplay`). The windowed V host followed the <!-- doc-lint-ok: a path in the engine repo -->
+   same evening (`host_v/host.v`, the engine's main.zig's raylib half, <!-- doc-lint-ok: a path in the engine repo -->
+   first slice: the window, the input, the camera, the sound device,
+   the shadow and lit passes, the models, the GUI commands, the frame
+   save): 45 s of the autoplay with a window, its milestones a prefix
+   of the Zig host's, its frame at 40 s the same as the Zig's to the
+   eye. Three V 0.5.2 hazards it met: a local named `size` or `lines`
+   reaches the C without its declaration; `for x in call().items`
+   evaluates the call on every iteration (the C reads
+   `call()->items.data[i]`; master evaluates it once); an `rl.Font{}`
+   literal names the binding's misspelled fields. #30999's name clashes
+   stand until V fixes them.
 
 ## If the branch ever merges to main
 
