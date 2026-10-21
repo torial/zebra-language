@@ -6344,7 +6344,8 @@ struct Generator
         else if b.kind == GT_LIST_INIT
             writeIndent()
             w.emit("self._it_" + lid + " = ")
-            genExpr(b.expr!)
+            # BUG-554: `split`/`lines` lower to a Zig iterator; the field is a List.
+            genListRecv(b.expr!)
             w.emit(";\n")
             writeIndent()
             w.emit("self._ix_" + lid + " = 0;\n")

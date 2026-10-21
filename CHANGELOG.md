@@ -128,6 +128,8 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A generator can yield over `s.split(sep)` and `s.lines()` (BUG-554)** -- it failed
+  inside zig.
 - **Five more programs that failed inside zig are refused by `zebra -c`, naming the fix
   (BUG-551, 552, 555, 557)**: `<` on a type without `cue compare`, `==` on a struct without
   `cue equals` / `@derive(Eq)`, `for` over a type whose `next` is a `def`, `v[0]` on a class or

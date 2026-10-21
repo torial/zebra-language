@@ -6,6 +6,16 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-554: a yielding `for` over `text.split(" ")` passed the front end and failed inside zig -- FIXED 2026-10-21 (found 2026-10-10)
+- **Cause:** the generator lowering stores a list loop's iterable in a `List` field, and
+  `split` / `lines` lower to a Zig iterator, not a List.
+- **Fix:** the generator's list-init collects the iterator into a `List(str)` -- the same
+  `genListRecv` the `.len()` arm uses (BUG-605) -- so `split` and `lines` behave as a
+  bound `var parts: List(str) = text.split(" ")` always did. Other iterables are emitted
+  unchanged (the emit A/B moved only the new fixture). QUICKSTART's generator note says so.
+- **Fixture:** `test/bug554_yield_over_split_test.zbr` (`[a][bb][ccc] 1 2 3`: a `split`
+  and a `lines` generator); red on the pre-fix compiler with the ticket's zig error.
+
 ### BUG-557: a str method called on a `str?` passed `zebra -c` and failed inside zig "expected type 'str', found '?str'" -- FIXED 2026-10-21 (found 2026-10-11)
 - **Fix:** refused at the receiver, as an operator on an optional already is, naming the three
   ways to a plain value: "'x' may be nil here, so `.trim()` cannot be called on it -- check it

@@ -166,16 +166,6 @@
   indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
   indent with a message naming the lambda, not end-of-input on the line after.
 
-### BUG-554: a yielding `for` over `text.split(" ")` passes the front end and fails inside zig -- OPEN (found 2026-10-10)
-- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
-- **Repro:** `def words(text: str): Iter(str)` whose body is `for w in text.split(" ")` /
-  `yield w`. `-c` exits 0; zig: "expected type '*array_list.Aligned([]const u8,null)', found
-  'mem.SplitIterator(u8,.sequence)'". Binding `var parts: List(str) = text.split(" ")` first
-  works.
-- **Expected:** QUICKSTART says a yielding `for` over anything but a List / range / cue
-  iterable is REFUSED by name; `split()` here is lowered to a Zig iterator, not a List, so
-  either the generator lowering materialises it or the refusal names it.
-
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
   the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).

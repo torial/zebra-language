@@ -1,0 +1,20 @@
+# BUG-554: a yielding `for` over `text.split(...)` / `text.lines()` passed the front end
+# and failed inside zig -- the generator stored the Zig split iterator in a List field.
+# The generator now materialises the split into a List(str), as a bound
+# `var parts: List(str) = text.split(" ")` always did.
+
+def words(text: str): Iter(str)
+    for w in text.split(" ")
+        yield w
+
+def lineLens(text: str): Iter(int)
+    for ln in text.lines()
+        yield ln.len
+
+def main()
+    var out = StringBuilder()
+    for w in words("a bb ccc")
+        out.append("[${w}]")
+    for n in lineLens("x\nyy\nzzz")
+        out.append(" ${n}")
+    print("bug554: ${out.toString()}")

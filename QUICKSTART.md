@@ -707,7 +707,8 @@ def main()
   type is inferred; it cannot annotate a variable or a parameter.
 - The lowering splits `if` / `while` / `for` around a yield. A `for` that yields
   iterates a List, a range (`a.to(b)`, `a : b`), or anything with `cue next`/`cue iter`
-  (another generator included), with one loop variable and no `if` filter. A yield
+  (another generator included), with one loop variable and no `if` filter.
+  `s.split(sep)` and `s.lines()` count as Lists here (they are collected first). A yield
   under `branch`, `try`, `with`, `using` or `allocate`, or under `if x as y`, is refused
   by name — restructure with an `if` chain, or bind the value first. Statements with no
   yield inside them are unaffected.
