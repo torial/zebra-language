@@ -2267,6 +2267,39 @@ In the order they pay, each with the witness that says it is done:
    The decision whether the host moves is still Sean's; the spike says
    the road is open.
 
+   **The measurement behind the second act** (2026-10-21, morning): the
+   whole monster mayhem module (`game/mm/mm_gui_demo.zbr` with every
+   module it reaches, `zebra --target v --module-path zbra`) is one V
+   file of 38k lines, nothing refused, and with a trivial `fn main`
+   stood in for the host's it type-checks with zero errors on 0.5.2 and
+   on master (158 notices: unused functions a host would call). The
+   build: 0.5.2 4.0 s and 1.0 GB peak, the program runs; master
+   REFUSED it (74 s, tcc: `struct/union/enum already defined`) at the
+   runtime's own `struct C.pollfd`, the stdin-polling `$else` branch.
+   Reduced cold to twelve lines: the new compiler emits a C definition
+   for a C-prefixed struct declaration that nothing references, where
+   0.5.2 drops it, and `import net` (winsock2.h defines `pollfd`) makes
+   the definition a redefinition; both compilers agree in the
+   referenced case (a definition without an `#include` beside it, none
+   with one), and every master build since the new compiler (37b596b
+   on) does it -- vlang/v#30997, after the reviewer round (which also
+   found: `int` is 64 bits on master, so a C declaration says `i32`;
+   an unused import is `import net as _`; and the referenced case
+   fails on 0.5.2 too, said in the ticket before a maintainer could).
+   The runtime's fix is the documented usage: the header named beside
+   the declaration (`$if windows { #include <winsock2.h> } $else {
+   #include <poll.h> }`), after which master builds the module in
+   12.9 s and 570 MB and runs it. Two facts for the port from the same
+   morning: the emitter reads `selfhost/zebra_rt.v` relative to the
+   CURRENT DIRECTORY, else the copy beside `zebra.exe` -- an emit from
+   the engine's directory read a stale copy until the patched file was
+   copied over (the regen installs it; a hand edit must too); and the
+   two compilers' layouts differ (`int` 8 bytes against 4, an option
+   16 against 40, a string 24 against 16: the game's root struct 1064
+   bytes against 2008), which the ladder's agreement says is layout
+   only, but a host that shares a struct with C must declare it in
+   fixed-width types.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
