@@ -302,6 +302,28 @@ pub fn zbox[T](x T) &ZBox[T] {
 	return &ZBox[T]{ v: x }
 }
 
+// == http begin ==
+// Zebra's Http over V's net.http: a response (status, text) or none when the
+// request could not be made (no route, a refused connection, a bad URL);
+// the program reads the status itself. Inlined only when a program names it
+// (the section's import with it), as the sqlite section is.
+pub struct ZHttpResponse {
+pub mut:
+	status i64
+	text   string
+}
+
+pub fn zhttp_get(url string) ?ZHttpResponse {
+	r := http.get(url) or { return none }
+	return ZHttpResponse{ status: r.status_code, text: r.body }
+}
+
+pub fn zhttp_post(url string, body string) ?ZHttpResponse {
+	r := http.post(url, body) or { return none }
+	return ZHttpResponse{ status: r.status_code, text: r.body }
+}
+// == http end ==
+
 pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
 }

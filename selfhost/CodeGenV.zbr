@@ -1761,6 +1761,8 @@ class VGen
                             return "&ZList[string]"
                         if jowner == "File" and (cm.member == "listDir" or cm.member == "readLines")
                             return "&ZList[string]"
+                        if jowner == "Http" and (cm.member == "get" or cm.member == "post")
+                            return "?ZHttpResponse"
                         if jowner == "sys"
                             if cm.member == "run"
                                 return "ZRunResult"
@@ -3900,8 +3902,12 @@ class VGen
             .refuse("Hash." + name, span)
             return "zhash_" + snakeCase(name) + "(" + a + ")"
         if ns == "Http"
-            # V's net.http needs socket headers tcc on Windows does not ship: a stub
-            .refuse("Http." + name + " (no HTTP client on this backend: V's net.http needs socket headers tcc does not ship on Windows)", span)
+            # V's net.http, through the runtime's http section (inlined with its
+            # import only when a program names it); the bundled tcc builds it on
+            # Windows since 0.5.2 -- the earlier refusal was stale (2026-10-20)
+            if name == "get": return "zhttp_get(" + a + ")"
+            if name == "post": return "zhttp_post(" + a + ")"
+            .refuse("Http." + name + " (get and post are mapped; the JSON forms and withHeader are next)", span)
             return "none"
         return ""
 
@@ -4528,5 +4534,15 @@ def generateV(ms: List(Module), runtime: str): VResult
         var sb: int = rt_text.indexOf("// == sqlite end ==")
         if sa >= 0 and sb > sa
             rt_text = rt_text.substring(0, sa) + "// (the sqlite section is left out: the program has no database)\n" + rt_text.substring(sb + "// == sqlite end ==".len, rt_text.len)
+    # the runtime's http section (V's net.http: sockets, TLS) goes in, with
+    # its import, only when the program names it
+    var needs_http: bool = body.contains("zhttp_") or body.contains("ZHttpResponse")
+    if needs_http
+        head = head + "import net.http\n"
+    else
+        var ha: int = rt_text.indexOf("// == http begin ==")
+        var hb: int = rt_text.indexOf("// == http end ==")
+        if ha >= 0 and hb > ha
+            rt_text = rt_text.substring(0, ha) + "// (the http section is left out: the program makes no request)\n" + rt_text.substring(hb + "// == http end ==".len, rt_text.len)
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui)

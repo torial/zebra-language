@@ -2146,16 +2146,30 @@ build script), and the runtime's own hot spots (the boxed `ZList` /
 
 In the order they pay, each with the witness that says it is done:
 
-0. **A sum held by value in a variant is boxed** (`payload &PNode`,
-   `?&PNode`; vlang/v#30986's rule): master 9ca360c refuses the
-   by-value form, 0.5.2 and master accept the reference, so the
-   emission moves to the shape both take. The route builds under
-   master again; the pipeline's diffs identical. Small, first.
-1. **`Http` onto `net.http`** (the stale refusal above): the route's
-   updater fetch runs through V; `--emit-zig` unchanged. Small.
-2. **The release lane**: `-cc clang -prod -prealloc` as the V side's
-   optimized build in `v_clang_lane.sh`, with Boehm as the long-running
-   shape; the cost matrix re-taken with it. Small.
+0. **A sum held by value in a variant is boxed** -- DONE 3a7c901
+   (2026-10-20 night): a variant whose payload reaches its own union by
+   value (directly, as an option, or through a value struct's fields --
+   TypeRef_fn_type's FnTypeRef.ret was the transitive case) is spelled
+   `payload &ZBox[T]`, built through `zbox[T]` and read back with `.v`
+   at the arm binding, the is-check binding and the payload access;
+   decided lazily over the noted field types. Fourteen boxed in the
+   route, which type-checks under master 9ca360c again (its full build
+   still fails at the C stage on #30965's family -- V's); v_poc6 is the
+   witness, identical to its Zig control, running on 0.5.2 and master.
+1. **`Http` onto `net.http`** -- DONE (the commit after 3a7c901): the
+   runtime's http section (ZHttpResponse: status, text; zhttp_get /
+   zhttp_post over V's net.http), inlined with `import net.http` only
+   when a program names it, as the sqlite section is; the route's
+   updater fetch is a call now, not a stub (16 refusals to 14); v_poc7
+   (a refused port and a bad URL: "no response" on both backends) is
+   the network-free witness, identical to its Zig control. The JSON
+   forms and withHeader stay refused, by name.
+2. **The release lane** -- DONE (the same commit): `tools/v_clang_lane.sh
+   052|master [prod|boehm]` is in the repo, `prod` being `-prod
+   -prealloc` and `boehm` the long-running shape, each root emitted
+   afresh by the checkout's zebra.exe before its build (the old lane
+   built stored emissions from 2026-10-14). Its first release run is in
+   the ledger.
 3. **Tooling parity**, the instruments the Zig output has and the V
    output lacks, in the order the engine needed them: source locations
    in a panic (`assert failed at x.zbr:12`) -- V's `-g` names the V
