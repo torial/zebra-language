@@ -2089,9 +2089,26 @@ the refusal is lifted by mapping `Http` onto `net.http`, an emitter
 task on the docket below. The route's updater fetch comes back with
 it.
 
-**3. V's maturity.** Reassessed in a few days, as Sean said; Alex M is
-on the checker's memory (#30975), and BUG-604 on the Zebra side was
-fixed the same evening it was filed.
+**3. V's maturity.** Reassessed in a few days, as Sean said. The same
+night: #30975 was fixed by Alex M (PR 30985, "fix cubic memory growth
+in diagnostic span lookup" -- cubic, which the 6.7x per doubling had
+said), BUG-604 on the Zebra side the same evening it was filed. On the
+rebuilt master 9ca360c (the morning's 7940bb1 kept beside it as
+`v_7940bb1.exe`): 500 declaration-only structs 87 MB (was 2.4 GB), a
+thousand 96 MB (was refused), the realistic 250 112 MB (was 3.8 GB),
+the 37,826-line demo 978 MB in 12.5 s (was 9.8 GB in 29.7 s; 0.5.2
+1,067 MB in 5.0 s), the compiler route's `-check` 330 MB (was over
+10 GB). The five other tickets still reproduce on 9ca360c. And the
+same nineteen commits brought a new wall for the route: a sum type
+whose variant holds the sum BY VALUE (`struct Wrap { inner Node }` or
+`inner ?Node`, `type Node = Wrap | Leaf`) is refused -- "sum type
+`Node` cannot be defined recursively" -- where 7940bb1 and 0.5.2
+accept it; through a reference or an array, or an option on a struct
+outside the sum, it is fine (da62dd4b, sum types as tagged unions, the
+candidate). The route's `PNode_stmt_expr { payload PNode }` and two
+more variants hit it. The seventh
+ticket, reduced cold before the reviewer this time (the fieldnote's
+remedy, `fable/fieldnotes_the-too-specific-construct_2026-10-20`).
 
 **4. The perf gap.** One lever closes most of it: V's `-prealloc` (a
 bump allocator, the nearest thing V has to Zebra's arena) with
