@@ -1,0 +1,10 @@
+# BUG-605: `.len()` on a `split` result -- the lazy iterator -- emitted `.items` on it and
+# failed inside zig ("no field named 'items' in struct 'mem.SplitIterator'"). The property
+# form `.len` and `.count()` / `.at(i)` were already collected first (BUG-336).
+
+def main()
+    var t = "a b c"
+    var a = t.split(" ").len()
+    var b = "x,y".split(",").len()
+    var c = t.split(" ").len
+    print("bug605: ${a} ${b} ${c}")

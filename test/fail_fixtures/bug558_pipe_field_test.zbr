@@ -1,0 +1,7 @@
+# BUG-558: `text -> .len` reads a field, not a call; the right side of `->` must be a call
+# (QUICKSTART §3, the book's ch15 "Mistake 1"). It compiled as `text.len`.
+
+def main()
+    var text = "hello"
+    var n = text -> .len
+    print("${n}")

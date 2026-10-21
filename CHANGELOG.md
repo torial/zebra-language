@@ -128,6 +128,10 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **`x -> .field` is refused (BUG-558)**, as the reference always said: a pipeline's right
+  side is a call. Write `x.field`, or call a method (`x -> .lower()`).
+- **`s.split(sep).len()` compiles (BUG-605)**; the call form failed inside zig while `.len`
+  worked.
 - **`use M exposing f` means M's `f`, whatever else the program loads (BUG-604).** A
   same-named function in a module loaded only transitively took its place (a false "too many
   arguments"), and a qualified `M.f(...)` could lose its arguments in the emitted code.

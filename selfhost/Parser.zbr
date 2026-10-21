@@ -2961,6 +2961,19 @@ class Parser
         .expr_depth -= 1
         return result
 
+    # BUG-558: does this pipeline right side's member/call spine end in a leading-dot member
+    # (`.len`, `.split(" ").count`) -- the rhs-is-the-receiver form?
+    def pipeSpineLeadingDot(node: PNode): bool
+        branch node
+            on PNode.expr_member as pm
+                if pm.base.len == 0
+                    return true
+                return .pipeSpineLeadingDot(pm.base.at(0))
+            on PNode.expr_call as pc
+                return .pipeSpineLeadingDot(pc.callee.at(0))
+            else
+                return false
+
     def parsePipeline(): PNode throws
         var left = .parseOr()?
         while .textIs("->")
@@ -2975,6 +2988,13 @@ class Parser
                 rhs_ok = true
             if not rhs_ok
                 raise .errorAtPos(rhs_tok.line, rhs_tok.col, "the right side of `->` must be a call (`x -> f(y)` is `f(x, y)`), a function or method named bare (`x -> f` is `f(x)`), or a leading-dot call (`x -> .lower()`)")
+            # BUG-558 (Sean, 2026-10-14: refuse it): a leading-dot FIELD read, `text -> .len`,
+            # is not a call. It compiled as `text.len`; QUICKSTART §3 and the book's ch15 both
+            # call it an error. A method named bare off a receiver (`x -> c.scale`, BUG-600)
+            # is still a callee.
+            if rhs is PNode.expr_member as rm558
+                if .pipeSpineLeadingDot(rhs)
+                    raise .errorAtPos(rhs_tok.line, rhs_tok.col, "`-> ." + rm558.member + "` reads a field, and the right side of `->` must be a call: write `x." + rm558.member + "`, or call a method (`x -> .lower()`)")
             var lhs_list = List(PNode)()
             lhs_list.add(left)
             var rhs_list = List(PNode)()

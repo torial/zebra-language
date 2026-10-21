@@ -17613,8 +17613,11 @@ struct Generator
                 w.emit(".len))")
                 return
             # sb.len() → @as(i64, @intCast(sb.items.len))
+            # BUG-605: `s.split(sep).len()` -- the receiver is the LAZY split iterator, which has
+            # no `.items`; collect it first, as `.count()` and `.at(i)` already do (BUG-336).
+            # genListRecv is genExpr for every other receiver.
             w.emit("@as(i64, @intCast(")
-            genExpr(m.object)
+            genListRecv(m.object)
             w.emit(".items.len))")
             return
         if mname == "appendChar"

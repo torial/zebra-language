@@ -1,0 +1,20 @@
+# BUG-558 control: the pipeline forms that stay legal beside the refused `-> .field` --
+# a leading-dot method call, a chain ending in a call, a function named bare (BUG-600) and a
+# method named bare off a receiver (BUG-600).
+
+class Scaler
+    var k: int = 3
+
+    def scale(x: int): int
+        return x * .k
+
+def twice(x: int): int
+    return x * 2
+
+def main()
+    var s = Scaler()
+    var a = "Hello" -> .lower()
+    var b = "a b c" -> .split(" ").len()
+    var c = 4 -> twice
+    var d = 5 -> s.scale
+    print("bug558: ${a} ${b} ${c} ${d}")

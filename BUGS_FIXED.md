@@ -6,6 +6,31 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-605: `.len()` on a `split` result failed inside zig "no field named 'items' in struct 'mem.SplitIterator'" -- FIXED 2026-10-21 (found 2026-10-21)
+- **Found by:** BUG-558's control fixture, `"a b c" -> .split(" ").len()`; the direct
+  `t.split(" ").len()` fails the same way. The property form `.len`, `.count()` and `.at(i)`
+  already collected the lazy iterator first (BUG-336); the `.len()` CALL went through the
+  StringBuilder spelling and emitted `.items` on the iterator.
+- **Fix:** the `len()` arm passes its receiver through `genListRecv`, as `count()` does --
+  `genExpr` for every other receiver, so nothing else moves.
+- **Regression fixture:** `test/bug605_split_len_call_test.zbr` (`3 2 3`), red on the pre-fix
+  compiler.
+
+### BUG-558: `text -> .len` compiled, though the reference says a pipeline's right side must be a call -- FIXED 2026-10-21 (found 2026-10-11)
+- **Decision (Sean, 2026-10-14): refuse it,** as QUICKSTART §3 and the book's ch15 ("Mistake 1:
+  Piping to a Field, Not a Call") already say.
+- **Fix:** the parser refuses a right side that is a member READ whose chain ends in a
+  leading-dot member (`-> .len`, `-> .split(" ").len`), at its position, naming both fixes:
+  "`-> .len` reads a field, and the right side of `->` must be a call: write `x.len`, or call
+  a method (`x -> .lower()`)". A method named bare off a receiver (`x -> c.scale`, BUG-600)
+  and every call form are unchanged.
+- **Measured before landing:** no `-> .field` in this repo, zebra-ide or the GameEngine (a
+  grep found only strings and comments), and the book has it only as ch15's error example;
+  the `-c` A/B is in the commit.
+- **Regression fixtures:** `test/fail_fixtures/bug558_pipe_field_test.zbr` (6:21) and the
+  control `test/bug558_pipe_forms_test.zbr` (`hello 3 8 15`: a leading-dot call, a chain
+  ending in a call, a function and a method named bare).
+
 ### BUG-604: a free function from a module loaded only TRANSITIVELY won over the same-named function a file explicitly `exposing`-imports -- and a QUALIFIED call to it emitted with no arguments -- FIXED 2026-10-20 (found 2026-10-20)
 - **Found by:** Fable, porting in the GameEngine (`game/mm/door.zbr` exposes a 7-parameter
   `swingClip`; a module it uses gained a `use` whose graph reaches a zero-argument

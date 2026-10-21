@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-604. Next new bug: BUG-605.**
+**Last bug number generated: BUG-605. Next new bug: BUG-606.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -165,20 +165,6 @@
 - **Expected:** measure the body against the line the lambda STARTS on -- record that line's
   indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
   indent with a message naming the lambda, not end-of-input on the line after.
-
-### BUG-558: `text -> .len` compiles, though the reference says a pipeline's right side must be a call -- OPEN, DECIDED: refuse it (found 2026-10-11)
-- **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
-- **Repro:** `var n = text -> .len` with `text = "hello"` compiles and prints `5`.
-- **The disagreement:** QUICKSTART §3 says the right side of `->` is a call (`x -> f(y)`) or a
-  leading-dot METHOD call (`x -> .lower()`), and the book's ch15 "Mistake 1: Piping to a
-  Field, Not a Call" teaches that `-> .len` is an error. The compiler accepts a leading-dot
-  FIELD too.
-- **Decision (Sean):** refuse it, as the reference says -- or make it the rule (`x -> .field`
-  is `x.field`) and fix QUICKSTART §3 and the book's ch15. Until then the book teaches
-  something rc7 does not do.
-- **DECIDED 2026-10-14 (Sean): refuse it,** as QUICKSTART §3 and the book's ch15 already
-  say. The refusal names the fix (`text.len`, or `-> .method()` for a call). Nothing to change
-  in the docs; check the corpus and the book's examples for `-> .field` before landing.
 
 ### BUG-557: a method call on a `str?` passes the front end and fails inside zig -- OPEN (found 2026-10-11)
 - **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
