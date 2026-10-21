@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-605. Next new bug: BUG-606.**
+**Last bug number generated: BUG-609. Next new bug: BUG-610.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,51 @@
 
 ---
 
+### BUG-609: `.sort()` on a `List` of an enum or an interface, and `<` on an enum, pass `zebra -c` and fail inside zig -- OPEN (found 2026-10-21)
+- **Found by:** checking BUG-551's `.sort()` refusal for the element types it does not cover.
+- **Repro:** `enum Color` (red, green, blue), `var cs = List(Color)()`, two `add`s, `cs.sort()`:
+  zig "operator < not allowed for type '_zbr_ty_Color'" in `_zebra_sort_natural`. The same
+  for `List(Shape).sort()` where `Shape` is an interface. Measured on `1af3848`.
+- **Expected:** an interface has no `cue compare`, so `missingCompareCue` should refuse it
+  (it returns "" for interfaces today, to keep `==` identity working -- the ordering case
+  needs its own answer). An enum has a declaration order. Either sort and compare by it
+  (Java's ordinal; `@intFromEnum` in the runtime) or refuse naming a comparator. **Which
+  one is a language decision (Sean).** Check `Color.red < Color.green` with the fix.
+
+### BUG-608: assigning to a `for x in xs` loop variable passes `zebra -c` and fails inside zig "cannot assign to constant" -- OPEN (found 2026-10-21)
+- **Found by:** checking a claim in the BUG-569 design note.
+- **Repro:** `for x in xs` / `x = x + 1`: `-c` exits 0; zig "cannot assign to constant".
+  The parameter case was the same leak and became a refusal (BUG-354).
+- **Contrast:** a NUMERIC `for i in 0 : 3` variable IS assignable and steers the loop
+  (`i = i + 1` prints `1 3`). Whether that is intended belongs in the same fix: either say so
+  in QUICKSTART or refuse it too.
+- **Expected:** refused at the assignment: "`x` is the loop variable of a `for ... in`; it
+  cannot be assigned -- bind a new local (`var y = x + 1`)".
+
+### BUG-607: a `capture` closure's state does not survive being passed to a function -- OPEN, DECISION (found 2026-10-21)
+- **Found by:** mapping closure lowering for BUG-569.
+- **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then
+  `b()`, `b()`, `apply(b)`, `apply(b)`, `b()` where `def apply(f: def(): int): int = f()`.
+  Prints `1 2 3 3 3`. Calling `b()` counts up; passing it copies it.
+- **Cause:** deliberate. BUG-371's borrow copies a closure argument into a block-local and
+  passes `.fromRef(&copy)`, so no allocation is needed; `.from` heap-copies too. A closure is
+  a value.
+- **Decision (Sean):** under the C#-style semantics chosen for BUG-569, a function value is a
+  reference and the count would carry through (`1 2 3 4 5`). The fix would pass
+  `.fromRef(&b)` on the caller's own variable. See `docs/design/closure_capture.md` §5.1.
+  QUICKSTART §19.1 says nothing either way today.
+
+### BUG-606: a `capture` closure as a `sort` / `sortBy` comparator passes `zebra -c` and fails inside zig -- OPEN (found 2026-10-21)
+- **Found by:** mapping closure lowering for BUG-569.
+- **Repro:** `xs.sort(def(a: int, b: int): bool` with a `capture var d: int = -1` and
+  `return a * d < b * d`: zig "type 'main__struct_N' not a function" at `return cmp(a, b)`
+  in the runtime's `_zebra_sort_by`. With the capture initialised from a runtime local the
+  message is "unable to evaluate comptime expression" instead. A capture-less comparator and
+  a `capture` closure passed to `map` both work.
+- **Expected:** the sort helpers call a closure struct through `.call`, as `_zbr_invoke`
+  does for `map`. BUG-569's design (`docs/design/closure_capture.md` §3.5) depends on this:
+  every implicit capture becomes a closure struct.
+
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
@@ -86,8 +131,15 @@
   field (`c.n = c.n + 1` inside the lambda), and for a mutating method on a captured struct
   (`def(): int = c.bump()`: "expected '*Counter', found '*const Counter'"; with `c` made `var`
   outside, zig says "mutable 'c' not accessible from here").
-- **What works:** reading a captured local; an explicit `capture` block for per-closure state
-  (§19.1).
+- **What works:** an explicit `capture` block for per-closure state (§19.1), and module-level
+  variables. **Corrected 2026-10-21:** "reading a captured local" works only when the local is
+  a compile-time constant (`var k = 10` is emitted as `const k: i64 = 10` and Zig folds it).
+  Every runtime value fails inside zig with `"k" not accessible from inner function`, even if
+  it is only read: a local, a parameter, `self` in a method, a `for` variable, the receiver of
+  `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
+- **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
+  that nothing writes, box one that something writes, refuse written captures by name until
+  boxing lands; three questions there are Sean's.
 - **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
   the bullet right under it says implicit capture is for "read-only access in most cases".
 - **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the

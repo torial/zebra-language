@@ -54,6 +54,7 @@ Open bugs live in `BUGS.md`.
 - **And `.sort()`** with no comparator on a `List(V)` whose element is a user type without
   `cue compare` (the ledger's second shape) is refused at the call, naming the cue and the
   comparator form; the runtime's natural sort already went through `cue compare`.
+  An enum or interface element still leaks (filed as BUG-609).
 - **The book's Appendix C quotes the leaked zig text** ("operator < not allowed for type", "operator
   == not allowed"); those entries now describe a message users no longer see.
 - **Fixtures:** `test/fail_fixtures/bug551_order_no_compare_test.zbr`,
