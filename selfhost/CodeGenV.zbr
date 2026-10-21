@@ -294,6 +294,10 @@ class VGen
                     return "&ZMap[" + .vType(g.args.at(0)) + ", " + .vType(g.args.at(1)) + "]"
                 if g.name == "Set" and g.args.count() == 1
                     return "&ZSet[" + .vType(g.args.at(0)) + "]"
+                if g.name == "Chan" and g.args.count() == 1
+                    return "chan " + .vType(g.args.at(0))   # V's own channel
+                if g.name == "Atomic" and g.args.count() == 1
+                    return "&ZAtomic[" + .vType(g.args.at(0)) + "]"   # the runtime's value under a mutex
                 .refused.add("generic type " + g.name)
                 return "voidptr"
             on TypeRef.void_
@@ -1771,7 +1775,7 @@ class VGen
                                 return "&ZSysProcess"
                             if cm.member == "args"
                                 return "&ZList[string]"
-                            if cm.member == "getenv" or cm.member == "readLine"
+                            if cm.member == "getenv" or cm.member == "readLine" or cm.member == "readBytes"
                                 return "?string"
                         if ot == "ZArgs"
                             if cm.member == "option" or cm.member == "unknownFlag" or cm.member == "usage"
@@ -1810,6 +1814,13 @@ class VGen
                             return "&ZList[string]"
                         if cm.member == "chars" and c.args.count() == 0
                             return "&ZList[u8]"
+                        if ot.startsWith("chan ") and (cm.member == "recv" or cm.member == "tryRecv" or cm.member == "recvTimeout")
+                            return "?" + ot.substring(5, ot.len)
+                        if ot.startsWith("&ZAtomic[")
+                            if cm.member == "cas"
+                                return "bool"
+                            if cm.member == "load" or cm.member == "swap" or cm.member == "add" or cm.member == "sub"
+                                return ot.substring(9, ot.len - 1)
                         if (cm.member == "get" or cm.member == "fetch") and c.args.count() == 1 and ot.startsWith("&ZMap[")
                             # the map's value type: `?V` for get, V for fetch
                             var inner: str = ot.substring(6, ot.len - 1)
@@ -3599,6 +3610,10 @@ class VGen
                             return "new_zmap[" + .typeArgStr(inner.args.at(0).value) + ", " + .typeArgStr(inner.args.at(1).value) + "]()"
                         if cid.name == "Set" and inner.args.count() == 1
                             return "new_zset[" + .typeArgStr(inner.args.at(0).value) + "]()"
+                        if cid.name == "Chan" and inner.args.count() == 1 and c.args.count() == 1
+                            return "chan " + .typeArgStr(inner.args.at(0).value) + "{cap: int(" + .exprStr(c.args.at(0).value) + ")}"
+                        if cid.name == "Atomic" and inner.args.count() == 1 and c.args.count() == 1
+                            return "zatomic_new[" + .typeArgStr(inner.args.at(0).value) + "](" + .exprStr(c.args.at(0).value) + ")"
                     else
                         pass
                 .refuse("a call on a call's result", c.span)
@@ -3845,6 +3860,8 @@ class VGen
             if name == "run": return "zsys_run(" + a + ")"
             if name == "sleep": return "time.sleep(i64(" + a + ") * time.millisecond)"
             if name == "readLine": return "zsys_readline()"
+            if name == "readBytes": return "zsys_read_bytes(" + a + ")"
+            if name == "go": return "spawn " + a + "()"   # a goroutine: V's spawn of the closure
             if name == "exec_inherit": return "zsys_exec_inherit(" + a + ")"
             if name == "writeStdout": return "print(" + a + ")"
             if name == "spawnPiped": return "zsys_spawn_piped(" + a + ")"
@@ -3914,6 +3931,16 @@ class VGen
 
     # the call on an object already spelled (a temporary, or the member's object)
     def mappedCall(obj: str, name: str, args: List(Arg), span: Span, rtype: str = ""): str
+        # a channel (`chan T`): send is V's push statement; the receives go through
+        # the runtime, which keeps Zebra's rule (queued messages first, none once
+        # closed and empty -- V's select on a closed channel fires with a zero value)
+        if rtype.startsWith("chan ")
+            var et: str = rtype.substring(5, rtype.len)
+            if name == "send" and args.count() == 1: return obj + " <- " + .argsStr(args)
+            if name == "recv" and args.count() == 0: return "zchan_recv[" + et + "](" + obj + ")"
+            if name == "tryRecv" and args.count() == 0: return "zchan_try_recv[" + et + "](" + obj + ")"
+            if name == "recvTimeout" and args.count() == 1: return "zchan_recv_timeout[" + et + "](" + obj + ", f64(" + .argsStr(args) + "))"
+            if name == "close" and args.count() == 0: return obj + ".close()"
         if name == "toString" and args.count() == 0: return obj + ".str()"
         if name == "concat" and args.count() == 1: return "(" + obj + " + " + .argsStr(args) + ")"
         if name == "isNumeric" and args.count() == 0: return "zstr_is_numeric(" + obj + ")"
@@ -4523,7 +4550,7 @@ def generateV(ms: List(Module), runtime: str): VResult
     # the runtime (inlined below) uses math, os and strconv: always imported
     # (an import the program itself never reaches is used by the runtime's
     # functions, so V does not warn)
-    head = head + "import math\nimport math.bits\nimport os\nimport strconv\nimport time\nimport x.json2\nimport rand\nimport crypto.sha256\n"
+    head = head + "import math\nimport math.bits\nimport os\nimport strconv\nimport time\nimport x.json2\nimport rand\nimport crypto.sha256\nimport sync\n"
     # the runtime's sqlite section (V's db.sqlite, 9 MB of C to compile) goes
     # in, with its import, only when the program names it
     var rt_text: str = runtime

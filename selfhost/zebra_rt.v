@@ -302,6 +302,124 @@ pub fn zbox[T](x T) &ZBox[T] {
 	return &ZBox[T]{ v: x }
 }
 
+// == concurrency ==
+// Zebra's Atomic(T): a value under a mutex -- V's sync.stdatomic has no value
+// type over every T Zebra allows (bool among them), and the LSP's uses are a
+// flag and a counter. add and sub are comptime-guarded: a generic method is
+// instantiated for every T the struct is, and bool has no +=.
+@[heap]
+pub struct ZAtomic[T] {
+mut:
+	mu sync.Mutex
+	v  T
+}
+
+pub fn zatomic_new[T](v T) &ZAtomic[T] {
+	return &ZAtomic[T]{ v: v }
+}
+
+pub fn (mut a ZAtomic[T]) load() T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	return a.v
+}
+
+pub fn (mut a ZAtomic[T]) store(v T) {
+	a.mu.lock()
+	a.v = v
+	a.mu.unlock()
+}
+
+pub fn (mut a ZAtomic[T]) swap(v T) T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	old := a.v
+	a.v = v
+	return old
+}
+
+pub fn (mut a ZAtomic[T]) add(d T) T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	$if T is bool {
+		return a.v
+	} $else {
+		a.v += d
+		return a.v
+	}
+}
+
+pub fn (mut a ZAtomic[T]) sub(d T) T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	$if T is bool {
+		return a.v
+	} $else {
+		a.v -= d
+		return a.v
+	}
+}
+
+pub fn (mut a ZAtomic[T]) cas(expected T, desired T) bool {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	if a.v == expected {
+		a.v = desired
+		return true
+	}
+	return false
+}
+
+// Zebra's Chan(T) is V's chan T; the receives keep Zebra's rule: queued
+// messages first, none once the channel is closed and empty. (V's select on
+// a closed channel fires its receive branch with a zero value, so the closed
+// and empty case is checked first; a close that lands during the wait gives
+// one zero value, which the next call reports as none.)
+pub fn zchan_recv[T](ch chan T) ?T {
+	x := <-ch or { return none }
+	return x
+}
+
+pub fn zchan_try_recv[T](ch chan T) ?T {
+	if ch.closed && ch.len == 0 {
+		return none
+	}
+	select {
+		x := <-ch {
+			return x
+		}
+		else {
+			return none
+		}
+	}
+	return none
+}
+
+pub fn zchan_recv_timeout[T](ch chan T, secs f64) ?T {
+	if ch.closed && ch.len == 0 {
+		return none
+	}
+	select {
+		x := <-ch {
+			return x
+		}
+		i64(secs * 1000.0) * time.millisecond {
+			return none
+		}
+	}
+	return none
+}
+
+// sys.readBytes(n): exactly n bytes of stdin, none at an early end
+pub fn zsys_read_bytes(n i64) ?string {
+	mut f := os.stdin()
+	buf := f.read_bytes(int(n))
+	if buf.len < int(n) {
+		return none
+	}
+	return buf.bytestr()
+}
+
 // == http begin ==
 // Zebra's Http over V's net.http: a response (status, text) or none when the
 // request could not be made (no route, a refused connection, a bad URL);

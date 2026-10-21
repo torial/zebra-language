@@ -26,7 +26,7 @@ ZEBRA="$WT/zig-out/bin/zebra.exe"
 V=${V:-/c/Projects/v-dist/v/v.exe}
 [ "${1:-}" = "--v" ] && V=$2
 OUT=${OUT:-$WT/.zig-cache/v_check}
-ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-14}   # main.zbr's known stubs (run_lsp, dbg_run_session): more is a regression
+ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-4}   # main.zbr's known stubs (dbg_run_session's stdin polling, two zig literals): more is a regression
 mkdir -p "$OUT/scratch"
 [ -x "$ZEBRA" ] || { echo "v_check: no $ZEBRA (build the checkout)"; exit 2; }
 [ -x "$V" ] || { echo "v_check: no V at $V"; exit 2; }

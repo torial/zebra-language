@@ -1,0 +1,37 @@
+# v_poc8: a channel, an atomic and a goroutine -- the LSP loop's shape in
+# small (Chan(str), Atomic(bool), Atomic(int), sys.go, recvTimeout): a
+# producer thread sends five messages and closes, the consumer drains the
+# channel on a short timeout, reading the EOF flag before each wait as the
+# LSP does, so every queued message is answered before the loop ends. Both
+# backends print the same counts; the timing is not printed.
+def main()
+    var evCh: Chan(str) = Chan(str)(4)
+    var eof: Atomic(bool) = Atomic(bool)(false)
+    var sent: Atomic(int) = Atomic(int)(0)
+    sys.go(def()
+        capture
+            var evCh: Chan(str) = evCh
+            var eof: Atomic(bool) = eof
+            var sent: Atomic(int) = sent
+        var i = 0
+        while i < 5
+            evCh.send("msg " + i.toString())
+            sent.add(1)
+            i = i + 1
+        eof.store(true)
+        evCh.close()
+    )
+    var got = 0
+    var last = ""
+    while true
+        var eof_before: bool = eof.load()
+        var evo = evCh.recvTimeout(0.05)
+        if evo == nil
+            if eof_before
+                break
+            continue
+        got = got + 1
+        last = evo!
+    print("got " + got.toString() + " of " + sent.load().toString() + ", last " + last + ", eof " + eof.load().toString())
+    var flag: Atomic(bool) = Atomic(bool)(false)
+    print("cas " + flag.cas(false, true).toString() + " then " + flag.cas(false, true).toString() + ", now " + flag.load().toString())

@@ -2188,10 +2188,31 @@ In the order they pay, each with the witness that says it is done:
    the profiler's section report and the budget guard, the input
    recorder and the error overlay, when a V host exists to hang them
    on.
-4. **Concurrency**: channels, atomics, goroutines (the LSP's `run_lsp`
-   stub) onto V's `chan`, `sync.atomic` and `spawn`; piped processes
-   and stdin polling (the debugger bridge) onto `os.Process`. The
-   route's two stubs go; `zebra_v lsp` answers an editor. Medium.
+4. **Concurrency** -- the first slice DONE (the commit after 0c901d5):
+   `Chan(T)` is V's `chan T` (send as the push statement; recv, tryRecv
+   and recvTimeout through runtime helpers that keep Zebra's rule --
+   queued messages first, none once closed and empty; V's `select` on a
+   closed channel fires its receive with a zero value, which a probe
+   found by hanging both compilers until the closed-and-empty check
+   came first), `Atomic(T)` is the runtime's `ZAtomic[T]`, a value under
+   a mutex (load, store, swap, add, sub, cas; add and sub comptime-
+   guarded for bool, whose instantiation has no `+=`), `sys.go(closure)`
+   is `spawn <closure>()`, `sys.readBytes(n)` reads exactly n bytes of
+   stdin. The route's `run_lsp` stub is GONE: its refusals went from 14
+   to 4, the four being the debugger bridge's stdin polling
+   (`sys.readStdinAvailable`, `sys.stdinClosed`: Windows pipe peeking,
+   next) and two `zig` literals, which are Zig-backend code by
+   definition. v_poc8 (the LSP loop's shape in small: a producer thread,
+   the EOF flag read before each wait, every queued message answered)
+   is identical to its Zig control on 0.5.2 and master; `v_check` reads
+   17 rows green on both. Found on the way and filed as the eighth
+   ticket (vlang/v, below): master loses `try_pop` / `try_push` on a
+   `chan T` inside a generic once instantiated, so the helpers use
+   `select` and the channel's `closed` / `len` fields (V's channel
+   `len`, `closed` and `cap` are fields, not methods). Left: the
+   debugger's stdin polling; and the witness that `zebra_v lsp` answers
+   an editor (the IDE check with ZEBRA_COMPILER pointed at the V-built
+   compiler), next.
 5. **The V host spike**: the sandbox scene through vlang/raylib,
    timed; then the decision whether the host moves. Large, and the
    one that decides "completely".
