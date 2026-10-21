@@ -1346,7 +1346,14 @@ class VGen
 
     def genFunction(m: DeclMethod)
         var ret = .retType(m)
-        var head = "fn " + .freeFnName(m.name) + "(" + .genParams(m.params) + ")"
+        var fname: str = .freeFnName(m.name)
+        if m.name == "main" and m.params.count() > 0
+            # a class main a host calls (the game's `main(script, run, uis, ...)`):
+            # V refuses a program entry with parameters, so the host provides
+            # `fn main` and calls this by name (the engine's host_v/)
+            fname = "script_main"
+            .line("// the root's main takes " + m.params.count().toString() + " parameter(s): emitted as script_main, for a host's own fn main to call")
+        var head = "fn " + fname + "(" + .genParams(m.params) + ")"
         if ret != ""
             head = head + " " + .retSpelling(ret)
         .line(head + " {")
