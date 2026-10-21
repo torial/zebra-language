@@ -408,7 +408,7 @@ a session arriving cold can tell what to *skip* rather than guessing:
 | `design` | a design/decision note | read only when touching that subsystem; may describe intent that is not built. Each carries its own `Status:` line |
 | `generated` | produced by a tool | **skip.** Edit the tool, not the file |
 
-**6 of the 44 documents are `historical` or `generated`** <!-- doc-gen: 44 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
+**6 of the 46 documents are `historical` or `generated`** <!-- doc-gen: 46 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> <!-- doc-gen: 6 = for f in *.md docs/*.md docs/design/*.md; do head -1 "$f" | grep -qE 'doc-status: (historical|generated)' && echo x; done | wc -l | tr -d ' ' -->,
 i.e. skippable with confidence. That is the point: the surface area of this repo's
 documentation is what let one wrong claim live in four files at once, and "which of these
 is current?" was previously answerable only by reading them.
@@ -2417,7 +2417,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 116 scripts | <!-- doc-gen: 116 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 117 scripts | <!-- doc-gen: 117 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 44 tracked documents <!-- doc-gen: 44 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

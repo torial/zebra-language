@@ -2237,6 +2237,36 @@ In the order they pay, each with the witness that says it is done:
    does is diff that list against the binding's declarations. The
    binding is a download (vlang/raylib), asked for, not taken.
 
+   **The first act, done** (2026-10-20, 23:50; Sean: "fetch what you
+   need"): vlang/raylib cloned into `~/.vmodules` (46a8cae, 3.9 MB: a
+   header binding of raylib 5.5 that links a system `-lraylib`). The
+   coverage: 115 of the host's 118 names match the binding's
+   declarations directly, `beginMode3D` / `endMode3D` are a spelling
+   (`begin_mode_3d`), and the seven rlgl calls (rlPushMatrix,
+   rlPopMatrix, rlTranslatef, rlMultMatrixf, rlGetCullDistanceNear /
+   Far, rlDrawRenderBatchActive) are absent from the binding, which
+   binds raylib.h and not rlgl.h -- `tools/host_spike/rlgl_ext.v`
+   declares them by hand against the same library, as the host port
+   would. `tools/v_host_spike.sh` is the witness: the sandbox scene (a
+   window, a camera, a floor, two cubes, one through rlgl's matrix
+   stack, a text line) built with V 0.5.2 and clang against the
+   ENGINE's own raylib (the sanitizer-free raylib.lib and the headers
+   from its ReleaseFast build's cache: raylib 6.0 under a 5.5 binding,
+   and every call the spike makes linked), 300 frames drawn uncapped:
+   0.58 s, 1.9 ms a frame mean, 10 ms worst, the cull distances read
+   back through rlgl (0.05 .. 4000), a 2.0 MB executable. Three
+   gotchas the port will meet, each a line in the script: V emits a
+   Windows GUI entry (wWinMain with MSVC's `freopen_s`) for a raylib
+   import unless `-subsystem console`; the Debug raylib carries UBSan
+   handler references V's link cannot resolve, so the release library
+   it is; `near` and `far` are Windows header macros, not names for a
+   local. What the spike does not say: whether the 118 functions' 6.0
+   signatures all agree with the 5.5 binding (the spike called a
+   dozen; a mismatch shows at link or as a wrong argument layout), and
+   what the host's real frame costs through V -- that is the port.
+   The decision whether the host moves is still Sean's; the spike says
+   the road is open.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
