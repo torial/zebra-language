@@ -1106,6 +1106,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --turbo <source.zbr>               strip require/ensure/invariant checks", to_stdout)
     usageLine("  zebra --cpu=CPU <source.zbr>             target CPU for zig: native, x86_64+avx2, ... (SIMD, QUICKSTART §32)", to_stdout)
     usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
+    usageLine("  zebra --target v --also=a.zbr,b.zbr <root.zbr>  emit these modules into the V file too (what a host calls that the root does not use; the = form: a space-separated value reads as the source)", to_stdout)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
     usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
@@ -1608,9 +1609,19 @@ def vRenameCollisions(modules: List(Module)): List(Module) throws
             out.add(vLoadModuleText(renamed, m.file)?)
     return out
 
-def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "")
+def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", also: str = "")
     var modules = List(Module)()
     var visited = List(str)()
+    # --also=a.zbr,b.zbr: modules a host calls that the root does not use
+    # (the = form: positional() takes the first non-flag argument, so a space-separated value would read as the source),
+    # collected first so the root stays last (the last module's main is the one emitted)
+    if also != ""
+        for extra in also.split(",")
+            if extra != ""
+                if not File.exists(extra)
+                    sys.errln("zebra --target v: --also " + extra + ": no such file: nothing written")
+                    sys.exit(1)
+                vCollect(extra, module_path, visited, modules)?
     vCollect(path, module_path, visited, modules)?
     modules = vRenameCollisions(modules)?
     if modules.count() > 0
@@ -4415,7 +4426,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--gc --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--also --gc --build-file --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4896,7 +4907,7 @@ def main()
     # emitter, the .v written beside the source; what the subset refused is
     # printed by name and line. No Zig, no runtime module, no build.
     if mode_v
-        vTarget(path, args.contains("--gc"), module_path, gui_backend)
+        vTarget(path, args.contains("--gc"), module_path, gui_backend, args.option("--also", ""))
         sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo
