@@ -2300,6 +2300,27 @@ In the order they pay, each with the witness that says it is done:
    only, but a host that shares a struct with C must declare it in
    fixed-width types.
 
+   **The check script's master column, refreshed the same morning**
+   (it had not run under master since the stdin section): 19/19 under
+   0.5.2, 18/19 under master -- the LSP row builds the route itself
+   (`selfhost/main.v`, 133k lines of C) and master's tcc refused it at
+   every `for` over a generic list of statements: the loop variable is
+   typed `sqlite__Stmt`, the array allocated and filled as
+   `main__Stmt`. A `for ... in` over a generic struct's `[]T` field,
+   instantiated with a program type whose short name an imported
+   module also declares, resolves the element by the short name
+   (vlang/v#30999: twenty lines, also with `os` and `File`; indexing
+   the field, a plain `item T` field and a generic function's `[]T`
+   parameter all pass; since the new compiler's first build). The
+   route was only ever `-check`ed on master before -- a check is not a
+   build, and the column said so the first time it built. Until it is
+   fixed, the row is red under master and the pinned 0.5.2 is the
+   witness; an emitter-side rename of program types that clash with an
+   imported module's (the cross-module rename it already does for two
+   Zebra modules) would make the route build on master today, and is
+   not built: master is not the pinned V, and a rename hides the bug
+   from the row that found it.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
