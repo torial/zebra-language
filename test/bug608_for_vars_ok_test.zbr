@@ -1,0 +1,18 @@
+# BUG-608 control: what the refusal leaves alone. A range loop's variable is a counter and
+# stays assignable (it steers the loop); a body that re-declares the name binds a new
+# local; the name is free again after the loop; and a sibling local is untouched.
+
+def main()
+    var out = StringBuilder()
+    for i in 0.to(5)
+        i = i + 1
+        out.append("${i}")
+    var xs = [10, 20]
+    for x in xs
+        var y = x
+        y = y + 1
+        out.append(" ${y}")
+    var x = 0
+    x = 7
+    out.append(" ${x}")
+    print("bug608: ${out.toString()}")

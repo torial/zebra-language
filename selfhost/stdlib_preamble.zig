@@ -879,7 +879,31 @@ fn _zbr_fn_arity(comptime F: type) ?usize {
         else => null,
     };
 }
-pub fn _zebra_sort_by(comptime T: type, comptime cmp: anytype, items: []T) void {
+pub fn _zebra_sort_by(comptime T: type, cmp: anytype, items: []T) void {
+    // BUG-606: a comparator that is a VALUE -- a `capture` closure (a struct with `call`), a
+    // sig, a bound method -- cannot be a comptime parameter. It rides in std.mem.sort's
+    // context and is called through `.call`. A plain function keeps the comptime path.
+    if (comptime !_zbr_is_fnlike(@TypeOf(cmp))) return _zebra_sort_by_value(T, cmp, items);
+    _zebra_sort_by_fn(T, cmp, items);
+}
+fn _zebra_sort_by_value(comptime T: type, cmp: anytype, items: []T) void {
+    const C = @TypeOf(cmp);
+    const _I = struct {
+        fn less(c: C, a: T, b: T) bool {
+            var cc = c; // a capture that mutates its state takes `*@This()`
+            _ = &cc;
+            if (comptime _zbr_fn_info_arity(@typeInfo(@TypeOf(C.call)).@"fn") == 2) {
+                const ka = cc.call(a);
+                const kb = cc.call(b);
+                if (comptime @TypeOf(ka) == []const u8) return std.mem.lessThan(u8, ka, kb);
+                return ka < kb;
+            }
+            return cc.call(a, b);
+        }
+    };
+    std.mem.sort(T, items, cmp, _I.less);
+}
+fn _zebra_sort_by_fn(comptime T: type, comptime cmp: anytype, items: []T) void {
     const _I = struct {
         fn less(_: void, a: T, b: T) bool {
             if (comptime (_zbr_fn_arity(@TypeOf(cmp)) orelse 2) == 1) {

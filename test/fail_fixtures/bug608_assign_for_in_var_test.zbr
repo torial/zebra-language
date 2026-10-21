@@ -1,0 +1,11 @@
+# BUG-608: the variable of a `for ... in` loop is a Zig const capture; assigning it passed
+# `zebra -c` and failed inside zig "cannot assign to constant". Refused at the assignment,
+# as a parameter is (BUG-354).
+
+def main()
+    var xs = [1, 2, 3]
+    var total = 0
+    for x in xs
+        x = x + 1
+        total += x
+    print(total)

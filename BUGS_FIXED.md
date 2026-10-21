@@ -6,6 +6,34 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-608: assigning to a `for x in xs` loop variable passed `zebra -c` and failed inside zig "cannot assign to constant" -- FIXED 2026-10-21 (found 2026-10-21)
+- **Fix:** refused at the assignment, as a parameter is (BUG-354): "cannot assign to 'x' -- it
+  is the variable of a `for ... in` loop; bind a new local (var x2 = ...)". Every `for ... in`
+  form is covered (`for x in xs`, `for i, x in xs`, `for k, v in m`, compound `+=`). A RANGE's
+  counter (`for i in 0.to(n)`, and the numeric `for i in 0 : n`) stays assignable -- it lowers
+  to a numeric loop and the assignment steers it; QUICKSTART §13 now says both. The set of
+  loop variables is restored after the body and reset per function, and a body that
+  re-declares the name binds a new local.
+- **Measured:** `-c` over the repo (1,106), zebra-ide (29) and the GameEngine (1,848) moved
+  only the new fail fixture.
+- **Fixtures:** `test/fail_fixtures/bug608_assign_for_in_var_test.zbr` (9:9) and the control
+  `test/bug608_for_vars_ok_test.zbr` (`135 11 21 7`: a range counter steered, a body local, the
+  name free again after the loop).
+
+### BUG-606: a `capture` closure as a `sort` / `sortBy` comparator passed `zebra -c` and failed inside zig -- FIXED 2026-10-21 (found 2026-10-21)
+- **Cause:** the runtime's `_zebra_sort_by` took the comparator as a `comptime` parameter, which
+  only a plain function can be.
+- **Fix:** a comparator that is a value -- a `capture` closure, a sig, a bound method -- rides in
+  `std.mem.sort`'s context and is called through `.call` (a 1-argument `call` is a `sortBy`
+  key). A plain function keeps the comptime path. The arity is read through
+  `_zbr_fn_info_arity`, since Zig 0.17 renamed `Fn.params`.
+- **Red-check:** the fixture run with the committed preamble swapped back in fails with the
+  ticket's "unable to evaluate comptime expression" (the compiler reads the runtime from disk,
+  so an old binary alone cannot red-check a runtime fix).
+- **Fixture:** `test/bug606_closure_comparator_test.zbr` -- a capture comparator over a runtime
+  value, a capture `sortBy` key, a sig parameter, a comparator mutating its own capture, and a
+  plain lambda.
+
 ### BUG-554: a yielding `for` over `text.split(" ")` passed the front end and failed inside zig -- FIXED 2026-10-21 (found 2026-10-10)
 - **Cause:** the generator lowering stores a list loop's iterable in a `List` field, and
   `split` / `lines` lower to a Zig iterator, not a List.

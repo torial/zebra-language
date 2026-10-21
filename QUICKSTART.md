@@ -1434,6 +1434,9 @@ branch p
 
 - `for x in list if cond` — the inline guard skips non-matching elements via
   `continue`; works on all iterator forms (list, split, chars, range, HashMap).
+- The variable of a `for ... in` is read-only (`x = ...` is refused; bind a new local).
+  A range's counter (`for i in 0.to(n)`, `for i in 0 : n`) is the exception: assigning it
+  steers the loop.
 - `for-else` is fully supported on list `.items` iteration; HashMap /
   string-split / chars iterators silently drop the `else` block (deferred).
 - `branch` struct patterns match by field value; the type name must be a

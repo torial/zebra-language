@@ -1,0 +1,34 @@
+# BUG-606: a `capture` closure as a `sort` / `sortBy` comparator failed inside zig ("not a
+# function" / "unable to evaluate comptime expression"): the runtime took the comparator
+# as a comptime parameter, which only a plain function can be. A value -- a closure, a
+# sig -- now rides in std.mem.sort's context and is called through `.call`.
+
+def sortWith(xs: List(int), cmp: def(int, int): bool)
+    xs.sort(cmp)
+
+def main()
+    var dir = sys.args().len - 2      # -1 at run time, not a constant
+    var a = [3, 1, 2]
+    a.sort(def(x: int, y: int): bool
+        capture
+            var d: int = dir
+        return x * d < y * d
+    )
+    var ws = ["ccc", "a", "bb"]
+    ws.sortBy(def(s: str): int
+        capture
+            var w: int = dir
+        return s.len * w
+    )
+    var b = [5, 4, 6]
+    sortWith(b, def(x: int, y: int): bool = x < y)
+    var c = [2, 3, 1]
+    c.sort(def(x: int, y: int): bool
+        capture
+            var n: int = 0
+        n += 1
+        return x < y
+    )
+    var d = [9, 7, 8]
+    d.sort(def(x: int, y: int): bool = x < y)
+    print("bug606: ${a} ${ws} ${b} ${c} ${d}")

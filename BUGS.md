@@ -57,16 +57,6 @@
   (Java's ordinal; `@intFromEnum` in the runtime) or refuse naming a comparator. **Which
   one is a language decision (Sean).** Check `Color.red < Color.green` with the fix.
 
-### BUG-608: assigning to a `for x in xs` loop variable passes `zebra -c` and fails inside zig "cannot assign to constant" -- OPEN (found 2026-10-21)
-- **Found by:** checking a claim in the BUG-569 design note.
-- **Repro:** `for x in xs` / `x = x + 1`: `-c` exits 0; zig "cannot assign to constant".
-  The parameter case was the same leak and became a refusal (BUG-354).
-- **Contrast:** a NUMERIC `for i in 0 : 3` variable IS assignable and steers the loop
-  (`i = i + 1` prints `1 3`). Whether that is intended belongs in the same fix: either say so
-  in QUICKSTART or refuse it too.
-- **Expected:** refused at the assignment: "`x` is the loop variable of a `for ... in`; it
-  cannot be assigned -- bind a new local (`var y = x + 1`)".
-
 ### BUG-607: a `capture` closure's state does not survive being passed to a function -- OPEN, DECISION (found 2026-10-21)
 - **Found by:** mapping closure lowering for BUG-569.
 - **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then
@@ -79,17 +69,6 @@
   reference and the count would carry through (`1 2 3 4 5`). The fix would pass
   `.fromRef(&b)` on the caller's own variable. See `docs/design/closure_capture.md` §5.1.
   QUICKSTART §19.1 says nothing either way today.
-
-### BUG-606: a `capture` closure as a `sort` / `sortBy` comparator passes `zebra -c` and fails inside zig -- OPEN (found 2026-10-21)
-- **Found by:** mapping closure lowering for BUG-569.
-- **Repro:** `xs.sort(def(a: int, b: int): bool` with a `capture var d: int = -1` and
-  `return a * d < b * d`: zig "type 'main__struct_N' not a function" at `return cmp(a, b)`
-  in the runtime's `_zebra_sort_by`. With the capture initialised from a runtime local the
-  message is "unable to evaluate comptime expression" instead. A capture-less comparator and
-  a `capture` closure passed to `map` both work.
-- **Expected:** the sort helpers call a closure struct through `.call`, as `_zbr_invoke`
-  does for `map`. BUG-569's design (`docs/design/closure_capture.md` §3.5) depends on this:
-  every implicit capture becomes a closure struct.
 
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
@@ -139,7 +118,8 @@
   `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
 - **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
   that nothing writes, box one that something writes, refuse written captures by name until
-  boxing lands; three questions there are Sean's.
+  boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;
+  BUG-608 (assigning a `for ... in` variable) is refused.
 - **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
   the bullet right under it says implicit capture is for "read-only access in most cases".
 - **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the

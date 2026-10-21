@@ -1542,6 +1542,10 @@ class InferCtx
     # mutator call on one is refused with the two idioms that do work. Same
     # space-delimited shape as params_here; reset per function.
     var copy_locals: str
+    # BUG-608: the variables of the enclosing `for ... in` loops (not ranges, which lower
+    # to a numeric loop whose variable is assignable). Each is a Zig `const` capture, so
+    # assigning one leaked "cannot assign to constant". Same shape as params_here.
+    var loop_consts: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1562,9 +1566,26 @@ class InferCtx
         .rt_public = ""
         .params_here = " "
         .copy_locals = " "
+        .loop_consts = " "
 
     def setParamsHere(names: str)
         .params_here = names
+        .loop_consts = " "
+
+    def loopConsts(): str
+        return .loop_consts
+
+    def setLoopConsts(names: str)
+        .loop_consts = names
+
+    def addLoopConst(name: str)
+        .loop_consts = .loop_consts + name + " "
+
+    def dropLoopConst(name: str)
+        .loop_consts = .loop_consts.replace(" " + name + " ", " ")
+
+    def isLoopConst(name: str): bool
+        return (" " + name + " ") in .loop_consts
 
     def markCopyLocal(name: str)
         if not ((" " + name + " ") in .copy_locals)
@@ -6910,6 +6931,7 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
     if true
         branch s
             on Stmt.var_ as dv
+                ctx.dropLoopConst(dv.name)    # BUG-608: a re-declared name is a new local
                 if iterElemRef(dv.type_) != nil
                     ctx.addErr(file, dv.span.line, dv.span.col, "`Iter(T)` is a generator's return type, not an annotation; bind the call and let the type be inferred: `var " + dv.name + " = f()`")
                 # BUG-359. LOCALS (and params, in checkDecl) only: a module-level var
@@ -7071,7 +7093,12 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         if inferExpr(sfi.iter, ctx) is Type_.list_
                             ctx.markCopyLocal(sv + "@loop")
                     svi = svi + 1
+                var sfi_saved_lc: str = ctx.loopConsts()
+                if not isRangeIterExpr(sfi.iter)
+                    for sv_lc in sfi.vars
+                        ctx.addLoopConst(sv_lc)
                 checkStmts(sfi.stmts, file, ctx)
+                ctx.setLoopConsts(sfi_saved_lc)
                 if sfi.else_ as sfi_else   # BUG-367: the for/else arm was unchecked too
                     checkStmts(sfi_else, file, ctx)
             on Stmt.try_catch as stc
@@ -7116,6 +7143,9 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     if ctx.isParamHere(sa_id.name)
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "cannot assign to parameter '" + sa_id.name + "' -- parameters are read-only; bind a new local (var " + sa_id.name + "2 = ...)")
+                    else if ctx.isLoopConst(sa_id.name)
+                        ctx.addErr(file, sasn.span.line, sasn.span.col,
+                                   "cannot assign to '" + sa_id.name + "' -- it is the variable of a `for ... in` loop; bind a new local (var " + sa_id.name + "2 = ...)")
                 # BUG-319. `s[i] = x` on a string was checked by NOTHING. It reached codegen,
                 # emitted a store into a `[]const u8`, and surfaced as Zig's `local variable is
                 # never mutated` -- a message that flatly contradicts the line the user just
