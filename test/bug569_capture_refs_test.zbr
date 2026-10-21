@@ -1,0 +1,22 @@
+# BUG-569: implicit capture copies the VARIABLE. A class instance and a container are
+# references, so the closure's copy shares the object and sees changes made through it
+# after the closure exists. And a closure factory may read an untyped local of its own:
+# the hoisted struct is typed from inference.
+
+class K
+    var n: int
+    cue init(n: int)
+        .n = n
+
+def makeCounter(start: int): def(): int
+    var base = start * 2
+    return def(): int = base + 1
+
+def main()
+    var c = K(sys.args().len)
+    var xs = [sys.args().len]
+    var f = def(): str = "${c.n} ${xs.len}"
+    c.n = 7
+    xs.add(9)
+    var mc = makeCounter(sys.args().len + 4)
+    print("bug569: ${f()} ${mc()}")

@@ -1438,7 +1438,10 @@ class ASTBuilder
             if cv.type_name != ""
                 cv_tr = .parseTypeRef(cv.type_name)
             const cv_init_expr = .buildExpr(cv.init_expr.at(0))?
-            var dv = DeclVar(zspan(), zmods(), cv.name, cv_tr, cv_init_expr, not cv.is_const)
+            var cv_mods: Modifiers = zmods()
+            if cv.is_implicit
+                cv_mods = Modifiers(is_implicit_capture: true)     # BUG-569
+            var dv = DeclVar(zspan(), cv_mods, cv.name, cv_tr, cv_init_expr, not cv.is_const)
             captures.add(dv)
         return Expr.lambda(ExprLambda(zspan(), params, ret_type, lbody, captures))
 

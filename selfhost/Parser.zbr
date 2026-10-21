@@ -284,11 +284,15 @@ struct PCaptureVar
     var type_name: str
     var init_expr: List(PNode)
     var is_const: bool
-    cue init(name: str, type_name: str, init_expr: List(PNode), is_const: bool)
+    # BUG-569: synthesized by the Resolver for a name the lambda reads from the enclosing
+    # function (docs/design/closure_capture.md), not written in a `capture` block.
+    var is_implicit: bool
+    cue init(name: str, type_name: str, init_expr: List(PNode), is_const: bool, is_implicit: bool = false)
         .name = name
         .type_name = type_name
         .init_expr = init_expr
         .is_const = is_const
+        .is_implicit = is_implicit
 
 struct PUse
     var path: str

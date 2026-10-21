@@ -22,7 +22,7 @@
 #   - Recursive tree walking: resolveStmt - resolveExpr
 #   - ^T field auto-deref: c.name, m.stmts etc. work through *PClass/*PMethod
 
-use Parser exposing PNode, PParam, POptChain, PIfExpr
+use Parser exposing PNode, PParam, POptChain, PIfExpr, PCaptureVar, PExprId
 use CgHelpers exposing isStdlibNs, isBuiltinTypeName
 
 # -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
@@ -40,6 +40,28 @@ struct ResolveError
     cue init(message: str)
         .message = message
 
+# BUG-569 (docs/design/closure_capture.md): one lambda being resolved. `own` holds every
+# name the lambda binds itself -- parameters, `capture` names, locals in its body. A name it
+# reads that is not its own but IS a local or parameter of the enclosing function is an
+# IMPLICIT CAPTURE: appended to the lambda's `capture` list when the function's walk ends
+# (so a pass that ignores this resolver's errors never gets a capture that should have been
+# refused), unless something rebinds the name -- a copy would go stale, so that is refused.
+class LamFrame
+    var own: HashMap(str, int)
+    var caps: List(PCaptureVar)
+    var implicit: List(str)
+    var first_line: HashMap(str, int)
+    var first_col: HashMap(str, int)
+    var is_thread: bool
+
+    cue init(caps: List(PCaptureVar), is_thread: bool)
+        .own = HashMap()
+        .caps = caps
+        .implicit = List(str)()
+        .first_line = HashMap()
+        .first_col = HashMap()
+        .is_thread = is_thread
+
 # -- Resolver -----------------------------------------------------------------
 # Results are accessed via getter methods (errorCount, firstError, symbolCount)
 # rather than a result struct, so the test can use primitive return values
@@ -56,6 +78,17 @@ class Resolver
     var file_name   : str
     # Full source text for caret-rendered diagnostics; "" → no caret.
     var source      : str
+    # BUG-569: the lambdas being walked (innermost last), every lambda of the current
+    # function, the first REBINDING of each function-level name, the locals bound to a
+    # capture-less lambda (a comptime function Zig folds; capturing one would make the
+    # closure struct comptime-only), and whether the next lambda is a `sys.go` argument.
+    var lam_stack   : List(LamFrame)
+    var fn_lams     : List(LamFrame)
+    var fn_written_line: HashMap(str, int)
+    var fn_written_col : HashMap(str, int)
+    var foldable    : HashMap(str, int)
+    var next_lambda_thread: bool
+    var last_lambda_captures: int
 
     cue init(file_name: str, source: str = "")
         .module_scope  = HashMap()
@@ -65,6 +98,13 @@ class Resolver
         .symbol_count  = 0
         .file_name     = file_name
         .source        = source
+        .lam_stack     = List(LamFrame)()
+        .fn_lams       = List(LamFrame)()
+        .fn_written_line = HashMap()
+        .fn_written_col  = HashMap()
+        .foldable      = HashMap()
+        .next_lambda_thread = false
+        .last_lambda_captures = 0
 
     # `file:line:col: error: msg`, plus the offending source line and a `^` under
     # the column when the source is available (li/col are 1-based).
@@ -257,10 +297,78 @@ class Resolver
     # Enter a method: reset the method scope, declare params, then walk statements.
     def enterMethod(params: List(PParam), stmts: List(PNode)) throws
         .method_scope = HashMap()
+        .fn_lams = List(LamFrame)()
+        .fn_written_line = HashMap()
+        .fn_written_col = HashMap()
+        .foldable = HashMap()
         for p in params
-            .method_scope.put(p.name, 3)
+            .declare(p.name, 3)
             .symbol_count = .symbol_count + 1
         .resolveStmts(stmts)?
+        .finishCaptures()
+
+    # A name bound in the current scope -- and, inside a lambda, one of the lambda's own.
+    def declare(name: str, kind: int)
+        .method_scope.put(name, kind)
+        if .foldable.contains(name)
+            .foldable.remove(name)
+        if .lam_stack.len > 0
+            .lam_stack.at(.lam_stack.len - 1).own.put(name, kind)
+
+    # BUG-569: `name` was read at line:col. If a lambda is being walked and the name is a
+    # local or parameter of the enclosing function -- not the lambda's own -- every lambda
+    # between the read and the function captures it (an outer lambda must carry the value
+    # in for an inner one to copy).
+    def noteCapture(name: str, line: int, col: int)
+        if .lam_stack.len == 0 or not .method_scope.contains(name) or .foldable.contains(name)
+            return
+        var i: int = .lam_stack.len - 1
+        while i >= 0
+            var fr = .lam_stack.at(i)
+            if fr.own.contains(name)
+                return
+            if not fr.first_line.contains(name)
+                fr.implicit.add(name)
+                fr.first_line.put(name, line)
+                fr.first_col.put(name, col)
+            i = i - 1
+
+    # BUG-569: `name` is REBOUND at line:col (`=`, a compound assignment, `<<-`). Only a
+    # rebinding of the function's own variable counts: one of a lambda's own locals or
+    # `capture` names is that lambda's business.
+    def noteWrite(name: str, line: int, col: int)
+        var i: int = .lam_stack.len - 1
+        while i >= 0
+            if .lam_stack.at(i).own.contains(name)
+                return
+            i = i - 1
+        if not .fn_written_line.contains(name)
+            .fn_written_line.put(name, line)
+            .fn_written_col.put(name, col)
+
+    # BUG-569: the function's walk is over, so every implicit capture is known. A name
+    # something rebinds is refused (a closure's copy would not see the change, and shared
+    # capture -- design note step 4 -- is not built); a `sys.go` closure keeps the explicit
+    # rule QUICKSTART states; the rest become `capture` entries, exactly as if written.
+    # A pass that ignores this resolver's errors therefore never gets a refused capture --
+    # the lambda still names a runtime local and zig refuses it, loudly.
+    def finishCaptures()
+        var refused: HashMap(str, int) = HashMap()
+        for fr in .fn_lams
+            if fr.is_thread and fr.implicit.len > 0
+                var tn: str = fr.implicit.at(0)
+                .errors.add(ResolveError(.fmtErrAt(fr.first_line.fetch(tn), fr.first_col.fetch(tn), "a `sys.go` closure names what it uses in a `capture` block (QUICKSTART §19.1): `capture` / `var " + tn + ": T = " + tn + "`")))
+            else
+                for nm in fr.implicit
+                    if .fn_written_line.contains(nm)
+                        if not refused.contains(nm)
+                            refused.put(nm, 1)
+                            .errors.add(ResolveError(.fmtErrAt(.fn_written_line.fetch(nm), .fn_written_col.fetch(nm), "'" + nm + "' is changed here, and a closure reads it (line " + fr.first_line.fetch(nm).toString() + ") -- a closure gets a copy, which would not see the change; shared capture is not built yet (BUG-569). Keep the state in the closure with a `capture` block, or pass the value in as an argument")))
+                    else
+                        var cap_init = List(PNode)()
+                        cap_init.add(PNode.expr_id(PExprId(nm, fr.first_line.fetch(nm), fr.first_col.fetch(nm))))
+                        fr.caps.add(PCaptureVar(nm, "", cap_init, true, true))
+        .fn_lams = List(LamFrame)()
 
     # -- Statement walking -----------------------------------------------------
 
@@ -287,13 +395,19 @@ class Resolver
                 # Resolve init before declaring - so `var x = x` errors
                 for expr in v.init_expr
                     .resolveExpr(expr)?
-                .method_scope.put(v.name, 4)
+                .declare(v.name, 4)
                 .symbol_count = .symbol_count + 1
+                # BUG-569: a local bound to a lambda that captures nothing is a comptime
+                # function in the emit; another lambda reads it without capturing it.
+                if v.init_expr.len == 1
+                    if v.init_expr.at(0) is PNode.expr_lambda
+                        if .last_lambda_captures == 0
+                            .foldable.put(v.name, 1)
             on PNode.stmt_destruct as d
                 for expr in d.init_expr
                     .resolveExpr(expr)?
                 for nm in d.names
-                    .method_scope.put(nm, 4)
+                    .declare(nm, 4)
                     .symbol_count = .symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value
@@ -306,7 +420,7 @@ class Resolver
                     .resolveExpr(expr)?
                 var if_saved = .method_scope.copy()
                 if i.is_capture as ic
-                    .method_scope.put(ic, 4)
+                    .declare(ic, 4)
                     .symbol_count = .symbol_count + 1
                 .resolveStmts(i.then_stmts)?
                 .method_scope = if_saved
@@ -320,7 +434,7 @@ class Resolver
                     .resolveExpr(expr)?
                 var fi_saved = .method_scope.copy()
                 for var_name in f.var_names
-                    .method_scope.put(var_name, 4)
+                    .declare(var_name, 4)
                 # BUG-593: the `for x in xs if <filter>` condition was never walked.
                 for expr in f.filter
                     .resolveExpr(expr)?
@@ -336,13 +450,15 @@ class Resolver
                 for expr in fnum.step
                     .resolveExpr(expr)?
                 var fn_saved = .method_scope.copy()
-                .method_scope.put(fnum.var_name, 4)
+                .declare(fnum.var_name, 4)
                 .resolveStmts(fnum.stmts)?
                 .method_scope = fn_saved
                 .resolveBlock(fnum.else_stmts)?
             on PNode.stmt_assign as a
                 for expr in a.target
                     .resolveExpr(expr)?
+                    if expr is PNode.expr_id as a_id
+                        .noteWrite(a_id.name, a.line, a.col)       # BUG-569
                 for expr in a.value
                     .resolveExpr(expr)?
             on PNode.stmt_assert as a
@@ -357,7 +473,7 @@ class Resolver
                 .resolveBlock(tc.body_stmts)?
                 var tc_saved = .method_scope.copy()
                 if tc.catch_binding != ""
-                    .method_scope.put(tc.catch_binding, 4)
+                    .declare(tc.catch_binding, 4)
                 .resolveStmts(tc.catch_stmts)?
                 .method_scope = tc_saved
             on PNode.stmt_branch as br
@@ -366,7 +482,7 @@ class Resolver
                 for arm in br.arms
                     var arm_saved = .method_scope.copy()
                     if arm.binding != ""
-                        .method_scope.put(arm.binding, 4)
+                        .declare(arm.binding, 4)
                     .resolveStmts(arm.stmts)?
                     .method_scope = arm_saved
                 .resolveBlock(br.else_stmts)?
@@ -393,6 +509,9 @@ class Resolver
             on PNode.stmt_copy_out as co
                 for expr in co.target
                     .resolveExpr(expr)?
+                    if co.deep
+                        if expr is PNode.expr_id as co_id
+                            .noteWrite(co_id.name, co.line, co.col)   # BUG-569
                 for expr in co.value
                     .resolveExpr(expr)?
             on PNode.stmt_expr as inner
@@ -432,7 +551,7 @@ class Resolver
                     .resolveExpr(e)?
                 var pca_saved = .method_scope.copy()          # BUG-589: the binding is the fallback's
                 if pca.binding != ""
-                    .method_scope.put(pca.binding, 4)
+                    .declare(pca.binding, 4)
                 for e in pca.fallback
                     .resolveExpr(e)?
                 .method_scope = pca_saved
@@ -466,19 +585,32 @@ class Resolver
                     .resolveExpr(e)?
             on PNode.expr_lambda as plm
                 var plm_saved = .method_scope.copy()          # BUG-589: a lambda's names are its own
-                for lp in plm.params
-                    .method_scope.put(lp.name, 3)
+                var plm_thread: bool = .next_lambda_thread
+                .next_lambda_thread = false
+                # A `capture` initialiser runs where the closure is MADE, so it reads the
+                # enclosing scope: resolve it before this lambda's frame exists (BUG-569 --
+                # a name it reads is captured by the lambda around this one, if any).
                 for lc in plm.captures
                     for e in lc.init_expr
                         .resolveExpr(e)?
-                    .method_scope.put(lc.name, 4)
+                var plm_frame = LamFrame(plm.captures, plm_thread)
+                .lam_stack.add(plm_frame)
+                .fn_lams.add(plm_frame)
+                for lp in plm.params
+                    .declare(lp.name, 3)
+                for lc in plm.captures
+                    .declare(lc.name, 4)
                 for e in plm.body_expr
                     .resolveExpr(e)?
                 .resolveStmts(plm.body_stmts)?
+                var _ = .lam_stack.pop()?
                 .method_scope = plm_saved
+                .last_lambda_captures = plm.captures.len + plm_frame.implicit.len
             on PNode.expr_id as id
                 if not .isInScope(id.name)
                     .errors.add(ResolveError(.fmtErrAt(id.line, id.col, "undefined name: '" + id.name + "'")))
+                else
+                    .noteCapture(id.name, id.line, id.col)
             on PNode.expr_binary as b
                 for e in b.left
                     .resolveExpr(e)?
@@ -498,6 +630,14 @@ class Resolver
                     if ce is PNode.expr_id as cid
                         if cid.name == "List" or cid.name == "HashMap" or cid.name == "Set" or cid.name == "Atomic" or cid.name == "Chan" or cid.name == "ObjectPool"
                             generic_ctor = true
+                # BUG-569: a lambda handed straight to `sys.go` keeps the explicit-capture
+                # rule (QUICKSTART §19.1); finishCaptures refuses an implicit one by name.
+                var go_call: bool = false
+                for ce2 in c.callee
+                    if ce2 is PNode.expr_member as gm
+                        if gm.member == "go" and gm.base.len == 1
+                            if gm.base.at(0) is PNode.expr_id as gid
+                                go_call = gid.name == "sys"
                 for e in c.args
                     var skip_e: bool = false
                     if generic_ctor
@@ -505,6 +645,8 @@ class Resolver
                             if isBuiltinTypeName(aid.name)
                                 skip_e = true
                     if not skip_e
+                        if go_call and e is PNode.expr_lambda
+                            .next_lambda_thread = true
                         .resolveExpr(e)?
             on PNode.expr_index as ix
                 for e in ix.object

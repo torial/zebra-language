@@ -1,0 +1,12 @@
+# BUG-569: a captured STRUCT changed by a mutating method after the closure copied it.
+
+struct C
+    var n: int
+    def bump()
+        .n = .n + 1
+
+def main()
+    var c = C(n: sys.args().len)
+    var f = def(): int = c.n
+    c.bump()
+    print(f())

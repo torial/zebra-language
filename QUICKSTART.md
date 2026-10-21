@@ -2100,14 +2100,22 @@ var consume = def(x: int)
     print("got ${x}")
     log("seen", x)
 
-# Implicit closure capture:
-var counter = 0
-var bump = def()
-    counter += 1                     # captures `counter` from the enclosing scope
+# Implicit closure capture -- a lambda reads the enclosing function's variables:
+var step = 2
+var bumpBy = def(x: int): int = x + step     # copies `step` into the closure
 ```
 
-- Free variables are auto-captured (no explicit `capture` block needed for
-  read-only access in most cases).
+- A lambda reads the enclosing function's locals, parameters and loop variables
+  without a `capture` block: it gets a COPY of each when it is created (so a closure
+  made in a loop sees that iteration's value). A class instance or a container is a
+  reference, so the copy shares the object and sees changes made through it.
+- Writing a captured variable -- inside the closure, or outside after the closure has
+  copied it -- is REFUSED for now, because the copy would not see the change; a struct
+  changed in place after capture is refused when the program is built. Keep changing
+  state in a `capture` block (§19.1), or pass the value in as an argument. Shared
+  capture, where the closure and the function see one variable, is designed
+  (`docs/design/closure_capture.md`) and not built yet (BUG-569).
+- A lambda handed to `sys.go` names what it uses in a `capture` block (§19.1).
 - An explicit `capture` block at the top of a lambda body declares persistent
   per-instance state — see §19.1 below.
 

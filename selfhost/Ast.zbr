@@ -77,8 +77,11 @@ struct Modifiers
     # Declared with `cue` (2026-09-16): a method the compiler calls on a language event
     # -- toString, equals, hash, compare, iter, next. `init` stays its own Decl.
     var is_cue: bool
+    # BUG-569: a lambda `capture` the Resolver synthesized for a name the lambda reads from
+    # the enclosing function (docs/design/closure_capture.md), not one the user wrote.
+    var is_implicit_capture: bool
 
-    cue init(is_public: bool = false, is_private: bool = false, is_static: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, is_pure: bool = false, is_node_export: bool = false, is_cue: bool = false)
+    cue init(is_public: bool = false, is_private: bool = false, is_static: bool = false, is_extern: bool = false, is_reflectable: bool = false, is_profile: bool = false, is_once: bool = false, is_export: bool = false, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false, is_pure: bool = false, is_node_export: bool = false, is_cue: bool = false, is_implicit_capture: bool = false)
         .is_public = is_public
         .is_private = is_private
         .is_static = is_static
@@ -93,6 +96,7 @@ struct Modifiers
         .is_pure = is_pure
         .is_node_export = is_node_export
         .is_cue = is_cue
+        .is_implicit_capture = is_implicit_capture
 
 # ── Generic type parameter ────────────────────────────────────────────────────
 

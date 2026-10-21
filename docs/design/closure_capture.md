@@ -2,8 +2,9 @@
 # Implicit closure capture, by reference — BUG-569's fix
 
 **Status:** direction decided by Sean 2026-10-14 ("(a), by reference ... similar to C#
-semantics"). Drafted by Opus 5.5 on 2026-10-21. Nothing below is built. The decisions
-marked **OPEN** are Sean's.
+semantics"). Drafted by Opus 5.5 on 2026-10-21. **Steps 1-3 of §6 are built (2026-10-21,
+§7)**: read-only capture by copy, written captures refused by name. Step 4 (shared capture)
+is not built; it waits on the decisions marked **OPEN**, which are Sean's.
 **Bug:** BUG-569 (`BUGS.md`). Its scope turned out wider than filed; see §1.
 
 ---
@@ -194,3 +195,53 @@ identical. Every other implicit capture moves from "zig error" to "compiles".
 
 Each step lands separately, with the emit A/B, the `-c` A/B over the three corpora, and a
 FULL tier.
+
+## 7. What was built (steps 1-3, 2026-10-21) and what it does not do
+
+- **Where the capture is made: the Resolver.** It is the one pass that already knows, for
+  every name, whether it is a local, a parameter or a module name -- and over-including a
+  module variable would have been a silent copy. Each lambda walked pushes a frame of its own
+  names; a name read that is not the lambda's own but is a function-level local or parameter
+  becomes an implicit capture of every frame it crosses. When the function's walk ends, those
+  are appended to the lambda's `capture` list (`PCaptureVar.is_implicit`, carried into the AST
+  as `Modifiers.is_implicit_capture`), so the checker and all fifteen codegen consumers of
+  `captures` see one uniform form. Appending at the END means a path that ignores the
+  Resolver's errors (`main.zbr`'s dependency pass) never gets a capture that should have been
+  refused: the lambda still names a runtime local and zig refuses it, loudly.
+- **The walker is the Resolver's own** `resolveExpr` / `resolveStmt`, which `lint_expr_walkers`
+  already holds exhaustive over `PNode` (BUG-571, BUG-593), so §3.1's separate walker was not
+  needed; the interpolation row of the boundary probe is the check that names inside `${...}`
+  are reached.
+- **Not captured:** a local bound to a lambda that itself captures nothing -- it is a comptime
+  function in the emit, and copying it would make the closure struct comptime-only.
+- **Field types** come from inference (`implicitCaptureZigType`), not `@TypeOf(local)`; a closure
+  factory's hoisted struct is typed under the factory's own context (`closure_ret_ctx`: params
+  bound, body walked), since it is emitted at module scope.
+- **The write rule, in two places.** A REBOUND variable (`=`, a compound assignment, `<<-`) is
+  syntactic: the Resolver refuses it at the write, naming the closure's line. A struct changed
+  IN PLACE needs types, and CgHelpers -- which the TypeChecker cannot import -- holds the oracle
+  (`scanMutations`), so codegen emits a Zebra-worded `@compileError` in the field's type. That
+  half is seen at build, not by `zebra -c` (the documented front-end asymmetry). A class
+  instance or a container changed through its reference is not a write of the variable: the
+  copy shares the object (`test/bug569_capture_refs_test.zbr`).
+- **`sys.go`** keeps the explicit-capture rule (§5.2's recommendation), refused by name.
+- **§3.4 correction.** "A `for` variable cannot be written" was false when written: assigning
+  one passed `-c` and failed inside zig (BUG-608, fixed the same night). It is true now for
+  `for ... in`; a range counter is still assignable, and a captured, written counter falls to
+  the general rebinding refusal.
+- **NOT DONE: `this` inside a lambda** (`.n` in a method) still fails inside zig, as before. A
+  bare leading-dot member is also the right side of a pipeline (`s -> .trim()`), so telling
+  the two apart needs its own walk; it is listed on BUG-569.
+- **The probe's loop row** (`bv_closure_capture_read`) calls each iteration's closure inside
+  that iteration, so per-iteration copy and a shared variable print the same 60 there. The
+  discriminating row -- closures kept and called after the loop -- belongs to step 4's probe
+  (and needs BUG-563's list of lambdas, or a capture-free container of them).
+- **Measured before landing:** `-c` over the repo (1,108 files), zebra-ide (29) and the
+  GameEngine (1,848): the repo and zebra-ide moved 0. The engine moved two hand-wired scripts,
+  `game/scripts/portal_oscillate.zbr` and `dancing_shelly.zbr`, from passing to a named
+  refusal: each accumulates into an enclosing local from a Heartbeat closure -- shared
+  capture, step 4 -- and neither emit could ever have compiled (`t = (t + dt)` inside a nested
+  function); `build.zig` registers them with `_ = script_...;`, so zig never analysed them. The
+  other 78 moved files are machine-ported scripts that already failed. The emit A/B moved three
+  corpus files, all compile-time-constant captures now carried as fields, each printing exactly
+  what it did.

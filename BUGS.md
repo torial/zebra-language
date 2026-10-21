@@ -116,6 +116,16 @@
   Every runtime value fails inside zig with `"k" not accessible from inner function`, even if
   it is only read: a local, a parameter, `self` in a method, a `for` variable, the receiver of
   `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
+- **STEPS 1-3 LANDED 2026-10-21** (design note §7): every runtime value a lambda reads is
+  captured by COPY -- locals, parameters, loop variables, a factory's own locals (typed from
+  inference); a REBOUND captured variable is refused by name (Resolver), a struct changed in
+  place after capture is refused at build (codegen's mutation scan), and a `sys.go` lambda keeps
+  the explicit-capture rule. QUICKSTART §19's `counter += 1` example is now a named refusal and
+  the section says so. STILL OPEN: step 4, shared capture (it removes those refusals), which
+  waits on §5's three questions; and `this` read inside a lambda (`.n` in a method) still fails
+  inside zig -- a bare leading-dot member is also a pipeline's right side, so it needs its own
+  walk. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
+  `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
 - **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
   that nothing writes, box one that something writes, refuse written captures by name until
   boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;

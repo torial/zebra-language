@@ -1,0 +1,10 @@
+# BUG-569: QUICKSTART §19's own example. A closure gets a COPY of what it reads, so a write
+# through it would not be seen outside; until shared capture (design note step 4) it is
+# refused by name, at the write.
+
+def main()
+    var counter = 0
+    var bump = def()
+        counter += 1
+    bump()
+    print(counter)

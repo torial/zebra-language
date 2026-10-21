@@ -128,6 +128,10 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A lambda reads the enclosing function's locals, parameters and loop variables (BUG-569,
+  read half)** -- each is copied into the closure when it is made. Only compile-time constants
+  worked before; every runtime value failed inside zig. Writing a captured variable is refused
+  by name until shared capture lands, and QUICKSTART §19's example changed accordingly.
 - **A `capture` closure works as a `sort` / `sortBy` comparator (BUG-606)**, and assigning
   the variable of a `for ... in` loop is refused by name (BUG-608) -- both failed inside zig.
 - **A generator can yield over `s.split(sep)` and `s.lines()` (BUG-554)** -- it failed

@@ -1,0 +1,9 @@
+# BUG-569: a lambda handed to sys.go keeps the explicit-capture rule (QUICKSTART §19.1).
+
+def main()
+    var ch = Chan(int)(1)
+    var n = sys.args().len
+    sys.go(def()
+        ch.send(n)
+    )
+    print(ch.recv())

@@ -1,0 +1,11 @@
+# BUG-569: a captured STRUCT changed in place (a field write) after the closure copied it.
+# Type-dependent, so codegen's mutation scan refuses it, with Zebra's words, at build.
+
+struct P
+    var x: int
+
+def main()
+    var p = P(x: sys.args().len)
+    var f = def(): int = p.x
+    p.x = 5
+    print(f())

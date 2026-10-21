@@ -1,0 +1,8 @@
+# BUG-569: a captured local rebound AFTER the closure copied it -- the closure would read
+# the old value. Refused at the rebinding.
+
+def main()
+    var k = sys.args().len
+    var f = def(): int = k
+    k = 5
+    print(f())

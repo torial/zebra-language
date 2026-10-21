@@ -3536,6 +3536,9 @@ struct Generator
     var exposed_module_vars  : HashMap(str, str)  # BUG-158: exposed cross-module module-var name → import alias
     # Phase 7b additions
     var mut_set              : StrSet?  # locals mutated in current block; nil → all emitted as const; set by genStmts
+    # BUG-569: the OUTERMOST block's mutation set -- scanMutations recurses, so it is every
+    # in-place change in the function outside lambda bodies. Set by the first genStmts.
+    var fn_mut_all           : StrSet?
     var ret_set              : StrSet?  # variables that escape via return
     var nil_narrowed         : StrSet?  # variables narrowed to non-nil in current scope
     var try_err_var          : str?     # current try-block error variable name
@@ -3613,6 +3616,10 @@ struct Generator
     # name → the returned lambda; a parallel StrSet marks factories whose closure
     # MUTATES (forces the caller binding to be `var`).  See genLambda/genReturn.
     var closure_ret_fns      : HashMap(str, ExprLambda)
+    # BUG-569: each closure factory's own types (params bound, body walked), so its hoisted
+    # struct -- emitted at module scope, where no function context exists -- can type the
+    # captures the Resolver synthesized from the factory's params and locals.
+    var closure_ret_ctx      : HashMap(str, InferCtx)
     var closure_ret_mutates  : StrSet
     # Set to `_ZbrClosure_<fn>` while emitting a factory body, so its
     # `return <capture lambda>` constructs the hoisted named type (init-only).
@@ -3661,6 +3668,7 @@ struct Generator
         .exposed_module_vars   = HashMap(str, str)()
         # Phase 7b field initializations
         .mut_set               = nil
+        .fn_mut_all            = nil
         .ret_set               = nil
         .nil_narrowed          = nil
         .try_err_var           = nil
@@ -3711,6 +3719,7 @@ struct Generator
         .datetime_vars         = StrSet()
         .closure_lambdas       = HashMap(str, ExprLambda)()
         .closure_ret_fns       = HashMap(str, ExprLambda)()
+        .closure_ret_ctx       = HashMap(str, InferCtx)()
         .closure_ret_mutates   = StrSet()
         .current_closure_ret   = nil
 
@@ -7570,6 +7579,9 @@ struct Generator
         # emission paths) falls back to the name-based over-approximation.
         var ms: StrSet = scanMutations(stmts, .infer_ctx)
         mut_set = ms
+        var saved_fma = fn_mut_all
+        if fn_mut_all == nil
+            fn_mut_all = ms
         # EARLY-EXIT NARROWING (Sean, 2026-09-30): after `if a == nil` whose body always
         # leaves, `a` emits `a.?` for the rest of this block (unless the block reassigns
         # it). Set on this generator and restored below -- a copy would drop the state the
@@ -7629,6 +7641,7 @@ struct Generator
             .infer_ctx!.bind(ee_names.at(eei), ee_saveds.at(eei))
             eei -= 1
         mut_set = saved_ms
+        fn_mut_all = saved_fma
 
     # True when genLocalVar will emit an inline constraint-check block for a
     # local declared with this type — a named / parametric alias with a `where`
@@ -9706,7 +9719,10 @@ struct Generator
             w.emit("const _ZbrClosure_")
             w.emit(name)
             w.emit(" = ")
-            genLambdaEx(hlam, true, false, nil)
+            if closure_ret_ctx.get(name) as hctx
+                withInferCtx(hctx).genLambdaEx(hlam, true, false, nil)
+            else
+                genLambdaEx(hlam, true, false, nil)
             w.emit(";\n")
 
     # Populate closure_ret_fns / closure_ret_mutates from module_decls.  A method
@@ -9718,6 +9734,15 @@ struct Generator
                     var flam = returnedCaptureLambda(fmth.stmts!)
                     if flam != nil
                         closure_ret_fns.set(fmth.name, flam!)
+                        var fctx = InferCtx(.module_types, "")
+                        fctx.withDepTypes(.dep_types)
+                        for fpp in fmth.params
+                            if fpp.type_ != nil
+                                fctx.bind(fpp.name, typeFromRef(fpp.type_!))
+                            else
+                                fctx.bind(fpp.name, Type_.unknown_)
+                        walkStmts(fmth.stmts!, fctx)
+                        closure_ret_ctx.set(fmth.name, fctx)
                         branch flam!.body_
                             on LambdaBody.stmts as fbody
                                 var fmuts = StrSet()
@@ -19905,6 +19930,53 @@ struct Generator
     # ── genLambda ────────────────────────────────────────────────────────────
     # Emit anonymous struct with a call method.
     # Without capture:   struct { fn call(params) RetT { body } }.call
+    # BUG-569 (docs/design/closure_capture.md §3.2-§3.3): the field type of a capture the
+    # Resolver synthesized. The INFERRED type, not `@TypeOf(local)`: an untyped Zig const can
+    # be `comptime_int` or `*const [N:0]u8`, which makes the closure comptime-only or tied to
+    # one literal's length. "" falls back to `@TypeOf` -- except in a hoisted factory, whose
+    # struct lives at module scope where the local does not exist.
+    #
+    # It is also the BACKSTOP for the write rule. The Resolver refuses a REBOUND capture; an
+    # IN-PLACE change of a value (a struct field write, a mutating method) needs types, and
+    # CgHelpers' mutation scan is the oracle for that. A value changed after a closure copied
+    # it would be read stale with no error -- so it compiles to a named error instead.
+    def implicitCaptureZigType(cv: DeclVar, lam: ExprLambda, hoisted: bool): str
+        var ct: Type_ = Type_.unknown_
+        if .infer_ctx as cic
+            ct = inferExpr(Expr.ident(ExprIdent(cv.span, cv.name)), cic)
+        var changed: bool = false
+        if fn_mut_all as fma
+            changed = fma.contains_(cv.name)
+        if not changed
+            branch lam.body_
+                on LambdaBody.stmts as lbs_m
+                    changed = scanMutations(lbs_m, .infer_ctx).contains_(cv.name)
+                else
+                    pass
+        if changed and .captureCopyIsDistinct(ct)
+            return "@compileError(\"'" + cv.name + "' is changed in place, and a closure reads it -- a closure gets a copy, which would not see the change; shared capture is not built yet (BUG-569). Keep the state in the closure with a `capture` block, or pass the value in as an argument\")"
+        var zt: str = genFieldZigType(ct)
+        if zt == "" and hoisted
+            return "@compileError(\"the closure this function returns reads '" + cv.name + "', whose type is not known here -- give it one (var " + cv.name + ": T = ...)\")"
+        return zt
+
+    # BUG-569: does copying a value of type `t` give an INDEPENDENT value? A class instance
+    # and a container are references, so a closure's copy shares the object and sees every
+    # change through it; anything else (a number, a str, a struct, a tuple, an optional of
+    # one) is a separate value. Unknown answers yes: a refusal is loud, a stale copy is not.
+    def captureCopyIsDistinct(t: Type_): bool
+        branch t
+            on Type_.list_
+                return false
+            on Type_.hashmap_
+                return false
+            on Type_.set_
+                return false
+            on Type_.named as cn
+                return not class_names.contains_(cn)
+            else
+                return true
+
     def genLambda(lam: ExprLambda)
         # Default: emit the full `(struct {…}{ inits })` / `struct {…}.call` in place.
         genLambdaEx(lam, true, true, nil)
@@ -19929,7 +20001,12 @@ struct Generator
                     fg.writeIndent()
                     fg.emitName(cv.name)                    # BUG-280
                     fg.w.emit(": ")
-                    if cv.type_ != nil
+                    var imp_zt: str = ""
+                    if cv.mods.is_implicit_capture and cv.type_ == nil
+                        imp_zt = .implicitCaptureZigType(cv, lam, not emit_init)
+                    if imp_zt != ""
+                        fg.w.emit(imp_zt)
+                    else if cv.type_ != nil
                         fg.genType(cv.type_!)
                     else if cv.init_expr != nil
                         # No explicit type — @TypeOf(<init>).  For a HOISTED (module-
