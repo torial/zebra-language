@@ -439,7 +439,8 @@ class VGen
     # `vt`: the V type of the nilable ("?T", or "" when unknown): spelled on the
     # runtime generics when known, since V master infers a generic's T from an
     # assignment target of type ?T (vlang/v#30966); the explicit argument is the fix
-    def narrowedRead(rendered: str, what: str, vt: str): str
+    # `at`: the source place ("file.zbr:line") the panic names when the value is none
+    def narrowedRead(rendered: str, what: str, vt: str, at: str): str
         if .iface_target
             # into an interface: V's own unwrap, no generic in the path -- master
             # infers a generic's T from the assignment target and boxes without a
@@ -450,8 +451,8 @@ class VGen
         # directly as a call argument of a generic-struct pointer type
         if vt.startsWith("?") and vt.len > 1
             var payload: str = vt.substring(1, vt.len)
-            return "zunwrap[" + payload + "](zopt_id[" + payload + "](" + rendered + "))"
-        return "zunwrap(zopt_id(" + rendered + "))"
+            return "zunwrap_at[" + payload + "](zopt_id[" + payload + "](" + rendered + "), " + .vStringLit(at) + ")"
+        return "zunwrap_at(zopt_id(" + rendered + "), " + .vStringLit(at) + ")"
 
     def jsonTry(kind: str, obj: str, args: List(Arg), ja: str): str
         if args.count() == 1
@@ -2909,7 +2910,7 @@ class VGen
             on Expr.ident as id
                 if .isNarrowed(id.name)
                     if .local_types.get(id.name) as nlt
-                        return .narrowedRead(.localName(id.name), id.name, nlt)   # Zebra reads it narrowed; V never narrows here
+                        return .narrowedRead(.localName(id.name), id.name, nlt, .current_file + ":" + id.span.line.toString())   # Zebra reads it narrowed; V never narrows here
                 if .renames.get(id.name) as rn
                     if .isLocalName(id.name)
                         return rn
@@ -2978,8 +2979,8 @@ class VGen
                         pass
                 var ot: str = .vTypeOf(tnn.expr)
                 if ot.startsWith("?")
-                    return .narrowedRead(.exprStr(tnn.expr), "a value", ot)
-                return "zunwrap(" + .exprStr(tnn.expr) + ")"
+                    return .narrowedRead(.exprStr(tnn.expr), "a value", ot, .current_file + ":" + tnn.span.line.toString())
+                return "zunwrap_at(" + .exprStr(tnn.expr) + ", " + .vStringLit(.current_file + ":" + tnn.span.line.toString()) + ")"
             on Expr.dict_lit as dl
                 .refuse("a dict literal (maps are next)", dl.span)
                 return "map[string]i64{}"
@@ -3388,7 +3389,7 @@ class VGen
         var plain: str = obj + "." + vSafe(m.member)
         if exprRootIsThis(m.object) and .isNarrowed(plain)
             if .field_types.get(m.member) as nft
-                return .narrowedRead(plain, m.member, nft)   # Zebra reads the field narrowed
+                return .narrowedRead(plain, m.member, nft, .current_file + ":" + m.span.line.toString())   # Zebra reads the field narrowed
         return plain
 
     def isCatchBinding(name: str): bool

@@ -2170,16 +2170,24 @@ In the order they pay, each with the witness that says it is done:
    afresh by the checkout's zebra.exe before its build (the old lane
    built stored emissions from 2026-10-14). Its first release run is in
    the ledger.
-3. **Tooling parity**, the instruments the Zig output has and the V
-   output lacks, in the order the engine needed them: source locations
-   in a panic (`assert failed at x.zbr:12`) -- V's `-g` names the V
-   line, the emitter can carry the `.zbr` line in the message as the
-   Zig emitter does; the drift alarm (`regen --check` for the V side:
-   every emitted `.v` against the committed one); the affected-tests
-   graph over `use` lines for the V witnesses; the profiler's section
-   report (`--profile`) and the budget guard, when a V host exists to
-   hang them on; the input recorder and the error overlay, the same.
-   The first two are a day; the rest follow the host.
+3. **Tooling parity** -- the first two pieces DONE (the commit after
+   03a4efe): `tools/v_check.sh` is the V side's drift alarm and suites
+   in one run -- the seven examples and the five selfhost dumps each
+   emitted, built and run under the given V and diffed against a FRESH
+   Zig control (the same program through the Zig backend, run now,
+   never a stored file; an empty control is NO CONTROL and a failure),
+   the route's three modules emitted with their refusals counted
+   against a baseline (main's 14 known stubs) and `v -check`ed, and a
+   nil unwrapped must die on both backends with V naming its Zebra
+   place; watched red on a baseline below the count. The place comes
+   from the emitter: a narrowed read is `zunwrap_at[T](x, "file.zbr:12")`
+   now, and the runtime's panic says `nil unwrapped at file.zbr:12` as
+   the Zig side's faults do (the assert already named its own). On
+   master 9ca360c the check reads the same 16 rows green. Still to do
+   here: the affected-tests graph over `use` lines for the V witnesses;
+   the profiler's section report and the budget guard, the input
+   recorder and the error overlay, when a V host exists to hang them
+   on.
 4. **Concurrency**: channels, atomics, goroutines (the LSP's `run_lsp`
    stub) onto V's `chan`, `sync.atomic` and `spawn`; piped processes
    and stdin polling (the debugger bridge) onto `os.Process`. The
@@ -2209,6 +2217,10 @@ the C stage naming the missing header.
 
 ```bash
 # in the worktree, on Zig 0.17
+bash tools/v_check.sh                    # the V side's drift alarm and suites (2026-10-20): the examples and the
+                                         # dumps against fresh Zig controls, the route's refusals and -check, the
+                                         # located nil unwrap; V=<path> or --v for another V; exit 0 only all green
+bash tools/v_clang_lane.sh 052 prod      # the release shape (-prod -prealloc) over eleven engine roots, fresh emissions
 bash tools/regen_selfhost.sh --apply     # since f970e71 (the Zebra session, from this branch's finding): one default-flag
                                          # emit of main.zbr, every module validated against the committed one and installed
                                          # with zebra_rt.zig; on this branch all fourteen show 0 changed lines, CodeGenV among them

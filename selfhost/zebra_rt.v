@@ -328,6 +328,12 @@ pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
 }
 
+// the same, naming the Zebra source place ("file.zbr:line") as the Zig
+// side's runtime faults do (the engine's error overlay reads it)
+pub fn zunwrap_at[T](x ?T, at string) T {
+	return x or { panic('nil unwrapped at ' + at) }
+}
+
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
 // Zebra's DateTime: the epoch milliseconds (the Zig backend's _DateTime)
 pub struct ZDateTime {
