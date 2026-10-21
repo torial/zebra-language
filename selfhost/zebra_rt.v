@@ -412,10 +412,13 @@ pub fn zchan_recv_timeout[T](ch chan T, secs f64) ?T {
 
 // sys.readBytes(n): exactly n bytes of stdin, none at an early end
 pub fn zsys_read_bytes(n i64) ?string {
-	mut f := os.stdin()
-	buf := f.read_bytes(int(n))
-	if buf.len < int(n) {
-		return none
+	mut buf := []u8{cap: int(n)}
+	for buf.len < int(n) {
+		c := C.getchar()
+		if c < 0 {
+			return none
+		}
+		buf << u8(c)
 	}
 	return buf.bytestr()
 }
@@ -1421,12 +1424,28 @@ pub fn zfile_try_delete(path string) bool {
 }
 
 // sys.readLine: a line without its newline, none at the end of input
+// one stdin path for readLine and readBytes: libc's stdin through getchar,
+// so both read one buffer (os.get_raw_line and os.stdin().read_bytes read
+// through different ones, and the LSP's second message vanished between
+// them, 2026-10-20); the Zig side reads one buffered reader for both
+fn C.getchar() int
+
 pub fn zsys_readline() ?string {
-	line := os.get_raw_line()
-	if line.len == 0 {
-		return none
+	mut buf := []u8{}
+	for {
+		c := C.getchar()
+		if c < 0 {
+			if buf.len == 0 {
+				return none
+			}
+			break
+		}
+		if c == 10 {
+			break
+		}
+		buf << u8(c)
 	}
-	return line.trim_right('\r\n')
+	return buf.bytestr().trim_right('\r')
 }
 
 // sys.exec_inherit(argv): run with the parent's stdio; the exit code

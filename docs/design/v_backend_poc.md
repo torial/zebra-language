@@ -2209,10 +2209,17 @@ In the order they pay, each with the witness that says it is done:
    ticket (vlang/v, below): master loses `try_pop` / `try_push` on a
    `chan T` inside a generic once instantiated, so the helpers use
    `select` and the channel's `closed` / `len` fields (V's channel
-   `len`, `closed` and `cap` are fields, not methods). Left: the
-   debugger's stdin polling; and the witness that `zebra_v lsp` answers
-   an editor (the IDE check with ZEBRA_COMPILER pointed at the V-built
-   compiler), next.
+   `len`, `closed` and `cap` are fields, not methods). And the witness:
+   `v_check`'s last row builds the route under the given V and sends
+   the V-built compiler an initialize, a shutdown and an exit over
+   stdin, Content-Length framed, as it sends the Zig-built one -- both
+   must answer the two requests (capabilities, the shutdown's id) and
+   exit on the third. Its first run was red on the real thing: the V
+   side answered the initialize and lost the shutdown, because readLine
+   read through `os.get_raw_line` and readBytes through `os.stdin()`,
+   two buffers over one stream; both read libc's stdin through getchar
+   now, as the Zig side reads one buffered reader for both. Left: the
+   debugger bridge's stdin polling (Windows pipe peeking).
 5. **The V host spike**: the sandbox scene through vlang/raylib,
    timed; then the decision whether the host moves. Large, and the
    one that decides "completely".

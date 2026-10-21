@@ -80,6 +80,29 @@ printf 'def main()\n    var x: int? = nil\n    if sys.args().count() > 100\n    
 if [ "$zrc" = 0 ] || [ "$vrc" = 0 ]; then echo "nil_at: FAILED -- a nil unwrapped must die on both backends (zig exit $zrc, v exit $vrc)"; fail=1
 elif grep -q 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt"; then echo "nil_at: ok -- V says: $(grep -m1 -o 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt") (zig exit $zrc, v exit $vrc)"
 else echo "nil_at: FAILED -- V died without naming the place:"; head -3 "$OUT/nil_at_v_err.txt" | cut -c1-160; fail=1; fi
+echo "── the V-built compiler answers the LSP (initialize, shutdown, exit over stdin: the goroutine, the channel, the atomic, readBytes) ──"
+rows=$((rows + 1))
+lsp_frames() {   # the three requests, Content-Length framed
+  local b1='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}'
+  local b2='{"jsonrpc":"2.0","id":2,"method":"shutdown","params":{}}'
+  local b3='{"jsonrpc":"2.0","method":"exit","params":{}}'
+  printf 'Content-Length: %d\r\n\r\n%s' "${#b1}" "$b1"; printf 'Content-Length: %d\r\n\r\n%s' "${#b2}" "$b2"; printf 'Content-Length: %d\r\n\r\n%s' "${#b3}" "$b3"
+}
+lsp_answers() {   # <exe> -> "<responses> <capabilities 0/1> <shutdown 0/1> <exit>"
+  local out; out=$(cd "$WT" && lsp_frames | timeout 30 "$1" lsp 2> "$OUT/lsp_err.txt"); local rc=$?
+  local n; n=$(printf '%s' "$out" | grep -c 'Content-Length')
+  local caps=0; printf '%s' "$out" | grep -q capabilities && caps=1
+  local sd=0; printf '%s' "$out" | grep -q '"id":2' && sd=1
+  echo "$n $caps $sd $rc"
+}
+rm -f "$OUT/zebra_v.exe"
+"$V" -cc tcc -gc none -enable-globals -o "$OUT/zebra_v.exe" "$WT/selfhost/main.v" > "$OUT/zebra_v_build.txt" 2>&1
+if [ ! -f "$OUT/zebra_v.exe" ]; then echo "lsp: FAILED -- the route did not build under $V:"; grep -E 'error' "$OUT/zebra_v_build.txt" | head -3 | cut -c1-160; fail=1
+else
+  zig_ans=$(lsp_answers "$ZEBRA"); v_ans=$(lsp_answers "$OUT/zebra_v.exe")
+  if [ "$zig_ans" = "2 1 1 0" ] && [ "$v_ans" = "2 1 1 0" ]; then echo "lsp: ok -- both answer initialize (capabilities) and shutdown, and exit on exit (zig: $zig_ans, v: $v_ans)"
+  else echo "lsp: FAILED -- responses capabilities shutdown exit: zig [$zig_ans] v [$v_ans] (want [2 1 1 0] on both)"; head -3 "$OUT/lsp_err.txt" | cut -c1-160; fail=1; fi
+fi
 echo "── the engine's roots: tools/v_engine_check.py (not run here) ──"
 if [ "$fail" = 0 ]; then echo "v_check: ok -- $rows rows, every example and dump identical to its fresh Zig control, the route within its baseline"; exit 0; fi
 echo "v_check: FAILED (see the rows above; outputs under $OUT)"; exit 1
