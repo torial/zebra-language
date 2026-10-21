@@ -1,0 +1,30 @@
+# BUG-551 control: the two ways out the `.sort()` refusal names both compile and order
+# the list -- a `cue compare` on the element, or a comparator.
+
+class V
+    var n: int
+    cue init(n: int)
+        .n = n
+    cue compare(other: V): int
+        return .n - other.n
+    cue equals(other: V): bool
+        return .n == other.n
+
+class W
+    var n: int
+    cue init(n: int)
+        .n = n
+
+def main()
+    var vs = List(V)()
+    vs.add(V(3))
+    vs.add(V(1))
+    vs.add(V(2))
+    vs.sort()
+    var ws = List(W)()
+    ws.add(W(5))
+    ws.add(W(4))
+    ws.sort(def(a, b) = a.n < b.n)
+    var nums = [3, 1, 2]
+    nums.sort()
+    print("bug551_sort: ${vs.at(0).n}${vs.at(1).n}${vs.at(2).n} ${ws.at(0).n}${ws.at(1).n} ${nums.at(0)}")

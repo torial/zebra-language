@@ -51,13 +51,16 @@ Open bugs live in `BUGS.md`.
 - **Fix:** `<` `<=` `>` `>=` on a user class or struct without `cue compare`, and `==` / `!=` on a
   STRUCT without `cue equals` / `@derive(Eq)`, are refused naming the cue. A class still
   compares by identity (documented, and the control fixture pins it).
-- **Not covered:** `.sort()` on a `List(V)` whose element has no `cue compare` (the ledger's
-  second shape for (a)); it still fails inside zig.
+- **And `.sort()`** with no comparator on a `List(V)` whose element is a user type without
+  `cue compare` (the ledger's second shape) is refused at the call, naming the cue and the
+  comparator form; the runtime's natural sort already went through `cue compare`.
 - **The book's Appendix C quotes the leaked zig text** ("operator < not allowed for type", "operator
   == not allowed"); those entries now describe a message users no longer see.
 - **Fixtures:** `test/fail_fixtures/bug551_order_no_compare_test.zbr`,
-  `test/fail_fixtures/bug551_struct_eq_no_equals_test.zbr`, and the control
-  `test/bug551_552_cues_ok_test.zbr` (`true true true false 10`).
+  `test/fail_fixtures/bug551_struct_eq_no_equals_test.zbr`,
+  `test/fail_fixtures/bug551_sort_no_compare_test.zbr` (13:8), and the controls
+  `test/bug551_552_cues_ok_test.zbr` (`true true true false 10`) and
+  `test/bug551_sort_ok_test.zbr` (`123 45 1`: a `cue compare` element, a comparator, ints).
 
 ### BUG-605: `.len()` on a `split` result failed inside zig "no field named 'items' in struct 'mem.SplitIterator'" -- FIXED 2026-10-21 (found 2026-10-21)
 - **Found by:** BUG-558's control fixture, `"a b c" -> .split(" ").len()`; the direct
@@ -1164,10 +1167,10 @@ Open bugs live in `BUGS.md`.
   reproducing BUG-527.
 - **Fixed (2026-10-09):** the parser refuses an untyped INSTANCE field (`var` or `const`) at the field, naming the type when the initializer is a literal (`var hits: int = ...`); an untyped `static var` still infers, as it worked. Fixture: test/fail_fixtures/bug528_untyped_field_fail.zbr (3:9).
 
-### BUG-533: an invalid escape (`"\w"`, `" "`) passes the front end and fails inside zig -- FIXED 2026-10-09 (found 2026-10-05)
+### BUG-533: an invalid escape (`"\w"`, `"\0"`) passes the front end and fails inside zig -- FIXED 2026-10-09 (found 2026-10-05)
 - `var s = "a\wb"` -> zig "invalid escape character: 'w'" at the line. The lexer should
   refuse an unknown escape with a Zebra message (and suggest `r"..."` for regex).
-  Reported by the book agent; `\w` verified, ` ` not re-run.
+  Reported by the book agent; `\w` verified, `\0` not re-run.
 - **Fixed (2026-10-09):** the lexer refuses an escape zig does not know at its column, listing the escapes (`\n \r \t \\ \" \' \$ \xNN \u{N}`) and naming `r"..."` for a regex. Fixture: test/fail_fixtures/bug533_unknown_escape_fail.zbr (3:15).
 
 ### BUG-535: the `extern` int-ambiguity refusal points at the NEXT declaration, not the extern -- FIXED 2026-10-09 (found 2026-10-05)

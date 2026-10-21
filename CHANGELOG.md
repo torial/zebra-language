@@ -131,7 +131,7 @@ confirmed via `tools/bootstrap_check.sh`.
 - **A generator can yield over `s.split(sep)` and `s.lines()` (BUG-554)** -- it failed
   inside zig.
 - **Five more programs that failed inside zig are refused by `zebra -c`, naming the fix
-  (BUG-551, 552, 555, 557)**: `<` on a type without `cue compare`, `==` on a struct without
+  (BUG-551, 552, 555, 557)**: `<` or a bare `.sort()` on a type without `cue compare`, `==` on a struct without
   `cue equals` / `@derive(Eq)`, `for` over a type whose `next` is a `def`, `v[0]` on a class or
   struct, and a str method called on a `str?`. And `P(x: 1) == p` compiles (BUG-553).
 - **`x -> .field` is refused (BUG-558)**, as the reference always said: a pipeline's right

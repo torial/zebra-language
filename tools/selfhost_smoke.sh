@@ -1383,6 +1383,8 @@ smoke_tc_fail test/fail_fixtures/bug552_def_next_not_iterable_test.zbr "bug552_d
 smoke_tc_fail test/fail_fixtures/bug551_order_no_compare_test.zbr "bug551_order_no_compare_test.zbr:11:11: error: 'V' has no ordering"
 smoke_tc_fail test/fail_fixtures/bug551_struct_eq_no_equals_test.zbr "bug551_struct_eq_no_equals_test.zbr:10:11: error: struct 'P' has no equality"
 smoke_run test/bug551_552_cues_ok_test.zbr "bug551_552: true true true false 10"
+smoke_tc_fail test/fail_fixtures/bug551_sort_no_compare_test.zbr "bug551_sort_no_compare_test.zbr:13:8: error: 'V' has no ordering: \`.sort()\`"
+smoke_run test/bug551_sort_ok_test.zbr "bug551_sort: 123 45 1"
 smoke_run test/bug554_yield_over_split_test.zbr "bug554: [a][bb][ccc] 1 2 3"
 smoke_tc_fail test/fail_fixtures/bug604_unexposed_test.zbr "bug604_unexposed_test.zbr:6:14: error: undefined name: 'swingClip'"
 smoke_tc_fail test/fail_fixtures/bug602_field_default_undefined_test.zbr "bug602_field_default_undefined_test.zbr:6:18: error: undefined name: 'NOPE'"

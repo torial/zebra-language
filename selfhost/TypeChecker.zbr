@@ -6279,6 +6279,16 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                             so_line = cm.span.line
                             so_col = cm.span.col
                         ctx.addErr(file, so_line, so_col, so_nm + " may be nil here, so `." + cm.member + "()` cannot be called on it -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse \"\")")
+                # BUG-551: a bare `list.sort()` orders the elements with `cue compare`; on a
+                # user type without one it reached zig as "operator < not allowed".
+                if cm.member == "sort" and c.args.len == 0
+                    var st551: Type_ = inferExpr(cm.object, ctx)
+                    if st551 is Type_.ref_to as st551r
+                        st551 = st551r
+                    if st551 is Type_.list_ as st551e
+                        var st551n: str = missingCompareCue(st551e, true, ctx)
+                        if st551n != ""
+                            ctx.addErr(file, cm.span.line, cm.span.col, "'" + st551n + "' has no ordering: `.sort()` needs a `cue compare(other: " + st551n + "): int` on it, or a comparator (`.sort(def(a, b) = a.n < b.n)`)")
                 # BUG-331: the optional JSON reads take exactly one key.
                 if cm.member == "has" or cm.member == "get" or cm.member == "tryStr" or cm.member == "tryInt" or cm.member == "tryFloat" or cm.member == "tryBool" or cm.member == "tryObj" or cm.member == "tryList"
                     if inferExpr(cm.object, ctx) is Type_.json_value

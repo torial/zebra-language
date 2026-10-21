@@ -1,0 +1,14 @@
+# BUG-551: `list.sort()` with no comparator orders the elements with `cue compare`.
+# On a user type without one it passed `zebra -c` and failed inside zig
+# ("operator < not allowed for type"); it is refused at the call, naming both ways out.
+
+class V
+    var n: int
+    cue init(n: int)
+        .n = n
+
+def main()
+    var vs = List(V)()
+    vs.add(V(2))
+    vs.sort()
+    print(vs.len)
