@@ -2059,6 +2059,171 @@ twenty minutes, across two builds, until 0.5.2 "hung" the same way. The
 stderr goes to a file now. A hang in the subject is the instrument
 until proven otherwise.
 
+## Sean's five, answered with measurements (2026-10-20, evening)
+
+Asked what keeps V from replacing Zig entirely, the five answers were:
+the host is Zig; the emitter's refusals (concurrency, piped processes,
+Http); V's maturity; the 1.7x on the emit; the tooling built around the
+Zig output. Sean's replies, each taken up:
+
+**1. The host.** `vlang/raylib` exists (untried here), and V's own
+library carries the rest of what the host leans on: `net.websocket`
+(the wire), `db.sqlite` (the datastore), `x.json2`, `sync`,
+`clipboard`, `term`. The hand-written host is about twelve thousand
+lines of Zig outside the emitted modules: main.zig 3,712, devtools.zig
+3,986, camera_system 830, net_host 507, mesh_gltf 398, shapes 383,
+navmesh 358, particle 342, shadow 341, devtools_server 305, cvar 288,
+dialogue_tree 282. A V host is a port of those over V's raylib binding,
+not a design; its cost is weeks, its risk the binding's coverage of
+what the host calls (shaders, render textures, the shadow map, model
+loading, the frame grab). The first step, when it comes, is a one-file
+spike: the sandbox scene (a window, a box, a camera) through
+vlang/raylib, timed against the Zig host's.
+
+**2. Http.** The emitter's refusal ("V's net.http needs socket headers
+tcc does not ship on Windows") is stale: V 0.5.2's bundled tcc carries
+winsock2.h, ws2tcpip.h, wincrypt.h and schannel.h, and a `net.http`
+GET builds and runs under tcc and under clang today (status 200 from
+example.com, both). No header needs adding to the Zebra toolchain;
+the refusal is lifted by mapping `Http` onto `net.http`, an emitter
+task on the docket below. The route's updater fetch comes back with
+it.
+
+**3. V's maturity.** Reassessed in a few days, as Sean said. The same
+night: #30975 was fixed by Alex M (PR 30985, "fix cubic memory growth
+in diagnostic span lookup" -- cubic, which the 6.7x per doubling had
+said), BUG-604 on the Zebra side the same evening it was filed. On the
+rebuilt master 9ca360c (the morning's 7940bb1 kept beside it as
+`v_7940bb1.exe`): 500 declaration-only structs 87 MB (was 2.4 GB), a
+thousand 96 MB (was refused), the realistic 250 112 MB (was 3.8 GB),
+the 37,826-line demo 978 MB in 12.5 s (was 9.8 GB in 29.7 s; 0.5.2
+1,067 MB in 5.0 s), the compiler route's `-check` 330 MB (was over
+10 GB). The five other tickets still reproduce on 9ca360c. And the
+same nineteen commits brought a new wall for the route: a sum type
+whose variant holds the sum BY VALUE (`struct Wrap { inner Node }` or
+`inner ?Node`, `type Node = Wrap | Leaf`) is refused -- "sum type
+`Node` cannot be defined recursively" -- where 7940bb1 and 0.5.2
+accept it; through a reference or an array, or an option on a struct
+outside the sum, it is fine (da62dd4b, sum types as tagged unions, the
+candidate). The route's `PNode_stmt_expr { payload PNode }` and two
+more variants hit it. Not a regression: the reviewer read #29578's
+"Breaking change" section and its test -- an inline tagged union needs
+a finite layout, and recursive sum fields must use a reference or a
+dynamic collection -- so the seventh ticket (vlang/v#30986) asks for
+the error to name the fix and the field and to cover `?T`, which the
+PR text does not. The emitter's side: box a sum held by value in a
+variant (`payload &PNode`, `?&PNode`), accepted on all three
+compilers -- the docket's first item now. The reduction held this
+time (thirteen lines, the reviewer's matrix agreed); the miss was the
+framing: I called a documented breaking change a regression because
+I named a candidate commit and did not read its PR.
+
+**4. The perf gap.** One lever closes most of it: V's `-prealloc` (a
+bump allocator, the nearest thing V has to Zebra's arena) with
+`-prod` under clang. The same emit of the whole compiler, three runs,
+byte-identical output:
+
+| build | emit | peak |
+|---|---|---|
+| Zig ReleaseFast (the control) | 1.57 s | 360 MB |
+| V 0.5.2, clang `-prod` | 2.78 s | 585 MB |
+| V 0.5.2, clang `-prod -prealloc` | 1.76 s (min 1.59) | 402 MB |
+
+So 1.1x the Zig build in time and memory, from 1.7x and 1.6x. The
+price: a prealloc build never frees -- it is right for a compiler run
+and for a test, wrong for a game server that runs for hours, where
+Boehm (209 MB on the emit, a tenth slower) or an arena the runtime
+resets per frame would be the shape. tcc cannot compile the prealloc
+C (it falls back to gcc, absent here), so the lever is clang's and
+MSVC's. Not yet tried: PGO (master's `-prod` has a profile-guided
+build script), and the runtime's own hot spots (the boxed `ZList` /
+`ZMap`, string concatenation) under a profiler -- the next steps if
+1.1x is not enough.
+
+**5. Tooling parity.** On the docket, below.
+
+## The V target's docket (2026-10-20)
+
+In the order they pay, each with the witness that says it is done:
+
+0. **A sum held by value in a variant is boxed** -- DONE 3a7c901
+   (2026-10-20 night): a variant whose payload reaches its own union by
+   value (directly, as an option, or through a value struct's fields --
+   TypeRef_fn_type's FnTypeRef.ret was the transitive case) is spelled
+   `payload &ZBox[T]`, built through `zbox[T]` and read back with `.v`
+   at the arm binding, the is-check binding and the payload access;
+   decided lazily over the noted field types. Fourteen boxed in the
+   route, which type-checks under master 9ca360c again (its full build
+   still fails at the C stage on #30965's family -- V's); v_poc6 is the
+   witness, identical to its Zig control, running on 0.5.2 and master.
+1. **`Http` onto `net.http`** -- DONE (the commit after 3a7c901): the
+   runtime's http section (ZHttpResponse: status, text; zhttp_get /
+   zhttp_post over V's net.http), inlined with `import net.http` only
+   when a program names it, as the sqlite section is; the route's
+   updater fetch is a call now, not a stub (16 refusals to 14); v_poc7
+   (a refused port and a bad URL: "no response" on both backends) is
+   the network-free witness, identical to its Zig control. The JSON
+   forms and withHeader stay refused, by name.
+2. **The release lane** -- DONE (the same commit): `tools/v_clang_lane.sh
+   052|master [prod|boehm]` is in the repo, `prod` being `-prod
+   -prealloc` and `boehm` the long-running shape, each root emitted
+   afresh by the checkout's zebra.exe before its build (the old lane
+   built stored emissions from 2026-10-14). Its first release run is in
+   the ledger.
+3. **Tooling parity** -- the first two pieces DONE (the commit after
+   03a4efe): `tools/v_check.sh` is the V side's drift alarm and suites
+   in one run -- the seven examples and the five selfhost dumps each
+   emitted, built and run under the given V and diffed against a FRESH
+   Zig control (the same program through the Zig backend, run now,
+   never a stored file; an empty control is NO CONTROL and a failure),
+   the route's three modules emitted with their refusals counted
+   against a baseline (main's 14 known stubs) and `v -check`ed, and a
+   nil unwrapped must die on both backends with V naming its Zebra
+   place; watched red on a baseline below the count. The place comes
+   from the emitter: a narrowed read is `zunwrap_at[T](x, "file.zbr:12")`
+   now, and the runtime's panic says `nil unwrapped at file.zbr:12` as
+   the Zig side's faults do (the assert already named its own). On
+   master 9ca360c the check reads the same 16 rows green. Still to do
+   here: the affected-tests graph over `use` lines for the V witnesses;
+   the profiler's section report and the budget guard, the input
+   recorder and the error overlay, when a V host exists to hang them
+   on.
+4. **Concurrency** -- the first slice DONE (the commit after 0c901d5):
+   `Chan(T)` is V's `chan T` (send as the push statement; recv, tryRecv
+   and recvTimeout through runtime helpers that keep Zebra's rule --
+   queued messages first, none once closed and empty; V's `select` on a
+   closed channel fires its receive with a zero value, which a probe
+   found by hanging both compilers until the closed-and-empty check
+   came first), `Atomic(T)` is the runtime's `ZAtomic[T]`, a value under
+   a mutex (load, store, swap, add, sub, cas; add and sub comptime-
+   guarded for bool, whose instantiation has no `+=`), `sys.go(closure)`
+   is `spawn <closure>()`, `sys.readBytes(n)` reads exactly n bytes of
+   stdin. The route's `run_lsp` stub is GONE: its refusals went from 14
+   to 4, the four being the debugger bridge's stdin polling
+   (`sys.readStdinAvailable`, `sys.stdinClosed`: Windows pipe peeking,
+   next) and two `zig` literals, which are Zig-backend code by
+   definition. v_poc8 (the LSP loop's shape in small: a producer thread,
+   the EOF flag read before each wait, every queued message answered)
+   is identical to its Zig control on 0.5.2 and master; `v_check` reads
+   17 rows green on both. Found on the way and filed as the eighth
+   ticket (vlang/v, below): master loses `try_pop` / `try_push` on a
+   `chan T` inside a generic once instantiated, so the helpers use
+   `select` and the channel's `closed` / `len` fields (V's channel
+   `len`, `closed` and `cap` are fields, not methods). And the witness:
+   `v_check`'s last row builds the route under the given V and sends
+   the V-built compiler an initialize, a shutdown and an exit over
+   stdin, Content-Length framed, as it sends the Zig-built one -- both
+   must answer the two requests (capabilities, the shutdown's id) and
+   exit on the third. Its first run was red on the real thing: the V
+   side answered the initialize and lost the shutdown, because readLine
+   read through `os.get_raw_line` and readBytes through `os.stdin()`,
+   two buffers over one stream; both read libc's stdin through getchar
+   now, as the Zig side reads one buffered reader for both. Left: the
+   debugger bridge's stdin polling (Windows pipe peeking).
+5. **The V host spike**: the sandbox scene through vlang/raylib,
+   timed; then the decision whether the host moves. Large, and the
+   one that decides "completely".
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
@@ -2080,6 +2245,10 @@ the C stage naming the missing header.
 
 ```bash
 # in the worktree, on Zig 0.17
+bash tools/v_check.sh                    # the V side's drift alarm and suites (2026-10-20): the examples and the
+                                         # dumps against fresh Zig controls, the route's refusals and -check, the
+                                         # located nil unwrap; V=<path> or --v for another V; exit 0 only all green
+bash tools/v_clang_lane.sh 052 prod      # the release shape (-prod -prealloc) over eleven engine roots, fresh emissions
 bash tools/regen_selfhost.sh --apply     # since f970e71 (the Zebra session, from this branch's finding): one default-flag
                                          # emit of main.zbr, every module validated against the committed one and installed
                                          # with zebra_rt.zig; on this branch all fourteen show 0 changed lines, CodeGenV among them

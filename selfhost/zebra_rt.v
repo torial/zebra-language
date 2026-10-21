@@ -290,8 +290,169 @@ pub fn zopt_id[T](x ?T) ?T {
 	return x
 }
 
+// a Zebra `^U` payload inside U's own variant: a heap box, so the sum type
+// (an inline tagged union on V master, vlang/v#29578) has no value cycle
+@[heap]
+pub struct ZBox[T] {
+pub mut:
+	v T
+}
+
+pub fn zbox[T](x T) &ZBox[T] {
+	return &ZBox[T]{ v: x }
+}
+
+// == concurrency ==
+// Zebra's Atomic(T): a value under a mutex -- V's sync.stdatomic has no value
+// type over every T Zebra allows (bool among them), and the LSP's uses are a
+// flag and a counter. add and sub are comptime-guarded: a generic method is
+// instantiated for every T the struct is, and bool has no +=.
+@[heap]
+pub struct ZAtomic[T] {
+mut:
+	mu sync.Mutex
+	v  T
+}
+
+pub fn zatomic_new[T](v T) &ZAtomic[T] {
+	return &ZAtomic[T]{ v: v }
+}
+
+pub fn (mut a ZAtomic[T]) load() T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	return a.v
+}
+
+pub fn (mut a ZAtomic[T]) store(v T) {
+	a.mu.lock()
+	a.v = v
+	a.mu.unlock()
+}
+
+pub fn (mut a ZAtomic[T]) swap(v T) T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	old := a.v
+	a.v = v
+	return old
+}
+
+pub fn (mut a ZAtomic[T]) add(d T) T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	$if T is bool {
+		return a.v
+	} $else {
+		a.v += d
+		return a.v
+	}
+}
+
+pub fn (mut a ZAtomic[T]) sub(d T) T {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	$if T is bool {
+		return a.v
+	} $else {
+		a.v -= d
+		return a.v
+	}
+}
+
+pub fn (mut a ZAtomic[T]) cas(expected T, desired T) bool {
+	a.mu.lock()
+	defer { a.mu.unlock() }
+	if a.v == expected {
+		a.v = desired
+		return true
+	}
+	return false
+}
+
+// Zebra's Chan(T) is V's chan T; the receives keep Zebra's rule: queued
+// messages first, none once the channel is closed and empty. (V's select on
+// a closed channel fires its receive branch with a zero value, so the closed
+// and empty case is checked first; a close that lands during the wait gives
+// one zero value, which the next call reports as none.)
+pub fn zchan_recv[T](ch chan T) ?T {
+	x := <-ch or { return none }
+	return x
+}
+
+pub fn zchan_try_recv[T](ch chan T) ?T {
+	if ch.closed && ch.len == 0 {
+		return none
+	}
+	select {
+		x := <-ch {
+			return x
+		}
+		else {
+			return none
+		}
+	}
+	return none
+}
+
+pub fn zchan_recv_timeout[T](ch chan T, secs f64) ?T {
+	if ch.closed && ch.len == 0 {
+		return none
+	}
+	select {
+		x := <-ch {
+			return x
+		}
+		i64(secs * 1000.0) * time.millisecond {
+			return none
+		}
+	}
+	return none
+}
+
+// sys.readBytes(n): exactly n bytes of stdin, none at an early end
+pub fn zsys_read_bytes(n i64) ?string {
+	mut buf := []u8{cap: int(n)}
+	for buf.len < int(n) {
+		c := C.getchar()
+		if c < 0 {
+			return none
+		}
+		buf << u8(c)
+	}
+	return buf.bytestr()
+}
+
+// == http begin ==
+// Zebra's Http over V's net.http: a response (status, text) or none when the
+// request could not be made (no route, a refused connection, a bad URL);
+// the program reads the status itself. Inlined only when a program names it
+// (the section's import with it), as the sqlite section is.
+pub struct ZHttpResponse {
+pub mut:
+	status i64
+	text   string
+}
+
+pub fn zhttp_get(url string) ?ZHttpResponse {
+	r := http.get(url) or { return none }
+	return ZHttpResponse{ status: r.status_code, text: r.body }
+}
+
+pub fn zhttp_post(url string, body string) ?ZHttpResponse {
+	r := http.post(url, body) or { return none }
+	return ZHttpResponse{ status: r.status_code, text: r.body }
+}
+// == http end ==
+
 pub fn zunwrap[T](x ?T) T {
 	return x or { panic('a nil unwrapped') }
+}
+
+// the same, naming the Zebra source place ("file.zbr:line") as the Zig
+// side's runtime faults do (the engine's error overlay reads it)
+pub fn zunwrap_at[T](x ?T, at string) T {
+	return x or { panic('nil unwrapped at ' + at) }
 }
 
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
@@ -1263,12 +1424,28 @@ pub fn zfile_try_delete(path string) bool {
 }
 
 // sys.readLine: a line without its newline, none at the end of input
+// one stdin path for readLine and readBytes: libc's stdin through getchar,
+// so both read one buffer (os.get_raw_line and os.stdin().read_bytes read
+// through different ones, and the LSP's second message vanished between
+// them, 2026-10-20); the Zig side reads one buffered reader for both
+fn C.getchar() int
+
 pub fn zsys_readline() ?string {
-	line := os.get_raw_line()
-	if line.len == 0 {
-		return none
+	mut buf := []u8{}
+	for {
+		c := C.getchar()
+		if c < 0 {
+			if buf.len == 0 {
+				return none
+			}
+			break
+		}
+		if c == 10 {
+			break
+		}
+		buf << u8(c)
 	}
-	return line.trim_right('\r\n')
+	return buf.bytestr().trim_right('\r')
 }
 
 // sys.exec_inherit(argv): run with the parent's stdio; the exit code

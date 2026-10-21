@@ -1,0 +1,38 @@
+# v_poc6: a union whose variant holds the union itself by reference (`^Node`),
+# the shape V master's tagged unions refuse by value (vlang/v#29578, #30986):
+# the V side boxes the payload. The control is the Zig backend's output.
+union Node
+    leaf: int
+    wrap: ^Node
+    pair: List(Node)
+
+def total(n: Node): int
+    branch n
+        on Node.leaf as v
+            return v
+        on Node.wrap as inner
+            return 1 + total(inner)
+        on Node.pair as kids
+            var s = 0
+            for k in kids
+                s = s + total(k)
+            return s
+
+def depth(n: Node): int
+    branch n
+        on Node.wrap as inner
+            return 1 + depth(inner)
+        else
+            return 0
+
+def main()
+    var leaf = Node.leaf(5)
+    var once = Node.wrap(leaf)
+    var twice = Node.wrap(once)
+    var kids = List(Node)()
+    kids.add(leaf)
+    kids.add(twice)
+    var tree = Node.pair(kids)
+    print("total " + total(tree).toString() + " depth " + depth(twice).toString())
+    if twice is Node.wrap as inner
+        print("inner total " + total(inner).toString())

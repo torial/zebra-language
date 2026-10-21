@@ -1,0 +1,13 @@
+# v_poc7: Http.get through the V runtime's http section (V's net.http). The
+# request goes to a port nothing listens on, so both backends answer "no
+# response" without a network -- the witness is the mapping, not the wire;
+# the route's updater fetch is the real use.
+def fetch(url: str): str
+    var r = Http.get(url)
+    if r as resp
+        return "status " + resp.status.toString() + " (" + resp.text.len.toString() + " bytes)"
+    return "no response"
+
+def main()
+    print("refused port: " + fetch("http://127.0.0.1:9/nothing"))
+    print("bad url: " + fetch("not a url"))
