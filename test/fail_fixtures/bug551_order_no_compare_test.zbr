@@ -1,0 +1,11 @@
+# BUG-551 (a): `<` on a class with no `cue compare` passed `zebra -c` and failed inside zig
+# ("operator < not allowed for type ..."). Refused, naming the cue.
+
+class V
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+def main()
+    print(V(1) < V(2))

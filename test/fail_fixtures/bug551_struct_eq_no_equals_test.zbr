@@ -1,0 +1,10 @@
+# BUG-551 (b): `==` on a STRUCT with no `cue equals` / `@derive(Eq)` passed `zebra -c` and
+# failed inside zig ("operator == not allowed for type 'P'"). Refused, naming both fixes.
+
+struct P
+    var x: int
+
+def main()
+    var p = P(x: 1)
+    var q = P(x: 1)
+    print(p == q)

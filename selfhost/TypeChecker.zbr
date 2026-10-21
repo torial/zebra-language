@@ -6232,6 +6232,28 @@ def checkJsonInto(target: Type_, e: Expr, file: str, line: int, col: int, conver
 # expr-walker-ok: lambda its body is STATEMENTS; checkStmts walks it on its own
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
 # expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
+# BUG-551: the name of the user class/struct `t` when it lacks the cue a comparison needs --
+# `compare` for an ordering operator, `equals` for `==`/`!=` on a STRUCT (a class compares by
+# identity) -- else "".
+def missingCompareCue(t: Type_, ordering: bool, ctx: InferCtx): str
+    var tt: Type_ = t
+    if tt is Type_.ref_to as tr
+        tt = tr
+    if tt is Type_.named as tn
+        if not ctx.hasClassAny(tn) or ctx.module_types.isInterface(tn) or ctx.dep_types.isInterface(tn)
+            return ""
+        if ordering
+            if not ctx.hasCueAny(tn, "compare")
+                return tn
+            return ""
+        var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
+        if ct_opt == nil
+            ct_opt = ctx.dep_types.classOf(tn)
+        if ct_opt as ct
+            if ct.is_struct and not ctx.hasCueAny(tn, "equals")
+                return tn
+    return ""
+
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c
@@ -6242,6 +6264,21 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             checkDeprecatedCall(c, ctx)
             if c.callee is Expr.member as cm
                 checkCallsInExpr(cm.object, file, line, ctx)
+                # BUG-557: a str METHOD on a `str?` reached zig as "expected type 'str',
+                # found '?str'". Refused at the receiver, as an operator on an optional is
+                # (below); inside `if x != nil` the checker has already narrowed x, so the
+                # guarded form is not refused. `x?.trim()` is a different expression.
+                if inferExpr(cm.object, ctx) is Type_.optional as cm_opt
+                    if cm_opt is Type_.string_
+                        var so_nm: str = "the value"
+                        if cm.object is Expr.ident as so_id
+                            so_nm = "'" + so_id.name + "'"
+                        var so_line: int = exprSpanLine(cm.object)
+                        var so_col: int = exprSpanCol(cm.object)
+                        if so_line == 0
+                            so_line = cm.span.line
+                            so_col = cm.span.col
+                        ctx.addErr(file, so_line, so_col, so_nm + " may be nil here, so `." + cm.member + "()` cannot be called on it -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse \"\")")
                 # BUG-331: the optional JSON reads take exactly one key.
                 if cm.member == "has" or cm.member == "get" or cm.member == "tryStr" or cm.member == "tryInt" or cm.member == "tryFloat" or cm.member == "tryBool" or cm.member == "tryObj" or cm.member == "tryList"
                     if inferExpr(cm.object, ctx) is Type_.json_value
@@ -6259,6 +6296,15 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             # BUG-331: a JSON read can fail, so it is marked like any other failing call.
             if inferExpr(ix.object, ctx) is Type_.json_value
                 ctx.addErr(file, ix.span.line, ix.span.col, "reading a JSON value by key can fail (the key is missing, or the value is the wrong type) -- mark it with '?': j[\"k\"]?  For a key that may be absent use j.get(\"k\") or j.tryInt(\"k\") / tryStr / ...")
+            # BUG-555: `v[0]` on a user class or struct reached zig's std through
+            # `_zbr_at` ("Expected pointer, slice, array or vector type"). A user type has
+            # no index operator -- the 1.0 surface says so ("Not cues, on purpose").
+            var ix_t: Type_ = inferExpr(ix.object, ctx)
+            if ix_t is Type_.ref_to as ix_rt
+                ix_t = ix_rt
+            if ix_t is Type_.named as ix_cn
+                if ctx.hasClassAny(ix_cn) and not ctx.module_types.isInterface(ix_cn) and not ctx.dep_types.isInterface(ix_cn)
+                    ctx.addErr(file, ix.span.line, ix.span.col, "'" + ix_cn + "' has no index operator: a class or struct cannot be indexed with `[...]` -- give it a method and call that (`v.at(i)`, `v.get(i)`)")
             checkCallsInExpr(ix.object, file, line, ctx)
             checkCallsInExpr(ix.index, file, line, ctx)
         on Expr.binary as b
@@ -6290,6 +6336,21 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                         ob_line = b.span.line
                         ob_col = b.span.col
                     ctx.addErr(file, ob_line, ob_col, ob_nm + " may be nil here, so it cannot be used with this operator -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse 0)")
+            # BUG-551: an ordering operator on a class or struct without `cue compare`, or
+            # `==` / `!=` on a STRUCT without `cue equals` / `@derive(Eq)`, reached zig
+            # ("operator < not allowed for type ..."). A class compares by identity, which
+            # works and is documented, so `==` on a class is not refused.
+            var cmp_ord: bool = b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
+            var cmp_eq: bool = b.op == BinaryOp.eq or b.op == BinaryOp.ne
+            if cmp_ord or cmp_eq
+                var cmp_name: str = missingCompareCue(inferExpr(b.left, ctx), cmp_ord, ctx)
+                if cmp_name == ""
+                    cmp_name = missingCompareCue(inferExpr(b.right, ctx), cmp_ord, ctx)
+                if cmp_name != ""
+                    if cmp_ord
+                        ctx.addErr(file, b.span.line, b.span.col, "'" + cmp_name + "' has no ordering: `<`, `<=`, `>` and `>=` need a `cue compare(other: " + cmp_name + "): int` on it")
+                    else
+                        ctx.addErr(file, b.span.line, b.span.col, "struct '" + cmp_name + "' has no equality: `==` and `!=` need a `cue equals(other: " + cmp_name + "): bool` on it, or `@derive(Eq)`")
             # BUG-331: a JsonValue is not a number or a string; the operator would
             # reach Zig. Say which typed read to use.
             if inferExpr(b.left, ctx) is Type_.json_value or inferExpr(b.right, ctx) is Type_.json_value
@@ -6977,6 +7038,21 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                 if inferExpr(sfi.iter, ctx) is Type_.string_
                     ctx.addErr(file, sfi.span.line, sfi.span.col,
                                "cannot iterate a 'str' directly -- use s.chars() for codepoints, or index s[i] over its bytes")
+                # BUG-552: a class or struct is iterable only through `cue next` (or a
+                # `cue iter` returning a type with one); a `def next` is an ordinary method,
+                # and the loop reached zig as "no field named 'items'".
+                var sfi_t: Type_ = inferExpr(sfi.iter, ctx)
+                if sfi_t is Type_.ref_to as sfi_rt
+                    sfi_t = sfi_rt
+                if sfi_t is Type_.named as sfi_cn
+                    if ctx.hasClassAny(sfi_cn) and not ctx.module_types.isInterface(sfi_cn) and not ctx.dep_types.isInterface(sfi_cn)
+                        if not ctx.hasCueAny(sfi_cn, "next") and not ctx.hasCueAny(sfi_cn, "iter")
+                            var sfi_hint: str = "declare `cue next(): T?` on it (or a `cue iter` returning a type that has one)"
+                            if ctx.methodReturnAny(sfi_cn, "next") != nil
+                                sfi_hint = "its `def next` is an ordinary method -- declare it `cue next` instead"
+                            else if ctx.methodReturnAny(sfi_cn, "iter") != nil
+                                sfi_hint = "its `def iter` is an ordinary method -- declare it `cue iter` instead"
+                            ctx.addErr(file, sfi.span.line, sfi.span.col, "'" + sfi_cn + "' is not iterable: " + sfi_hint)
                 var svi: int = 0
                 for sv in sfi.vars
                     ctx.bind(sv, sfi_elems.at(svi))

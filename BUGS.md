@@ -166,22 +166,6 @@
   indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
   indent with a message naming the lambda, not end-of-input on the line after.
 
-### BUG-557: a method call on a `str?` passes the front end and fails inside zig -- OPEN (found 2026-10-11)
-- **Found by:** the rc7 book pass (2026-10-11); re-verified on `69f42e0` (rc7).
-- **Repro:** `var x: str? = " a "` then `print(x.trim())`. `zebra -c` exits 0; the build fails
-  with zig's `expected type 'str', found '?str'` (a line, no column).
-- **Expected:** refused at the receiver, naming the fix (`if x as v` / `x!` / `x orelse ...`),
-  as an arithmetic operator on an optional already is. QUICKSTART tells the reader to unwrap
-  first; the front end does not.
-
-### BUG-555: `v[0]` on a user class passes the front end and fails inside zig's std -- OPEN (found 2026-10-10)
-- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
-- **Repro:** `class V` (one int field, a `cue init`), then `var v = V(1)` / `print(v[0])`. `zebra -c`
-  exits 0; the build fails in `std/meta.zig` via `zebra_rt._zbr_at`: "Expected pointer, slice,
-  array or vector type, found '*..._zbr_ty_V'".
-- **Expected:** a front-end refusal at the `[`: user types have no index operator (the 1.0
-  surface says so -- "Not cues, on purpose": `at` / index).
-
 ### BUG-554: a yielding `for` over `text.split(" ")` passes the front end and fails inside zig -- OPEN (found 2026-10-10)
 - **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
 - **Repro:** `def words(text: str): Iter(str)` whose body is `for w in text.split(" ")` /
@@ -191,33 +175,6 @@
 - **Expected:** QUICKSTART says a yielding `for` over anything but a List / range / cue
   iterable is REFUSED by name; `split()` here is lowered to a Zig iterator, not a List, so
   either the generator lowering materialises it or the refusal names it.
-
-### BUG-553: `P(x: 1) == p` on a struct with `cue equals` emits Zig that does not parse -- OPEN (found 2026-10-10)
-- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
-- **Repro:** `struct P` with `var x: int` and `cue equals(other: P): bool` (or `@derive(Eq)`),
-  then `print(P(x: 1) == p)`. Emits `_zbr_ty_P{ .x = 1 }.equals(p)`; zig: "expected ',' after
-  initializer". With the literal on the RIGHT (`p == P(x: 1)`) it works.
-- **Expected:** a struct literal used as a method receiver is parenthesised (or materialised
-  into a temp, as other expression-position chains are).
-
-### BUG-552: `for x in obj` over a type whose `next` / `iter` is a `def` (not a `cue`) passes the front end and fails inside zig -- OPEN (found 2026-10-10)
-- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
-- **Repro:** `class Ticker` with `def next(): int?`, then `for t in Ticker(2)`. `-c` exits 0;
-  zig: "no field named 'items' in struct 'Ticker'", with a line and no column.
-- **Expected:** a front-end refusal at the `for` naming the fix: only `cue next` (or a
-  `cue iter` returning a type with one) makes a type iterable.
-
-### BUG-551: comparison operators on a type without the cue that defines them pass the front end and fail inside zig -- OPEN (found 2026-10-10)
-- **Found by:** the book's cue audit (2026-10-10); re-verified on `b9fcaf1`.
-- **Repro:** (a) a class with no `cue compare`: `print(V(1) < V(2))` (or `.sort()` on a
-  `List(V)`) -> zig, inside `zebra_rt.zig`: "operator < not allowed for type '*..._zbr_ty_V'".
-  (b) a struct with no `cue equals` / `@derive(Eq)`: `p == q` -> zig: "operator == not allowed
-  for type 'P'". `-c` exits 0 on both.
-- **Expected:** a front-end refusal naming the missing cue (`<` needs `cue compare`; `==` on a
-  struct needs `cue equals` or `@derive(Eq)`). A class with no `cue equals` compares by
-  identity, which works and is documented -- (b) is about structs only.
-- **The book quotes the leaked text** (Appendix C, "operator < not allowed for type" and
-  "operator == not allowed"): reword those entries when this is fixed.
 
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --

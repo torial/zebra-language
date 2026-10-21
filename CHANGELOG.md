@@ -128,6 +128,10 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **Five more programs that failed inside zig are refused by `zebra -c`, naming the fix
+  (BUG-551, 552, 555, 557)**: `<` on a type without `cue compare`, `==` on a struct without
+  `cue equals` / `@derive(Eq)`, `for` over a type whose `next` is a `def`, `v[0]` on a class or
+  struct, and a str method called on a `str?`. And `P(x: 1) == p` compiles (BUG-553).
 - **`x -> .field` is refused (BUG-558)**, as the reference always said: a pipeline's right
   side is a call. Write `x.field`, or call a method (`x -> .lower()`).
 - **`s.split(sep).len()` compiles (BUG-605)**; the call form failed inside zig while `.len`

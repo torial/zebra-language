@@ -1,0 +1,17 @@
+# BUG-557 control: every way of getting a plain str out of a `str?` before calling a method
+# on it stays legal -- the narrowed `if x != nil`, `if x as v`, `x!`, and `x orelse ""`.
+
+def get(): str?
+    return " a "
+
+def main()
+    var x: str? = get()
+    var out = StringBuilder()
+    if x != nil
+        out.append("[" + x.trim() + "]")
+    if x as v
+        out.append("[" + v.trim() + "]")
+    var y = x!
+    out.append("[" + y.trim() + "]")
+    out.append("[" + (x orelse "").trim() + "]")
+    print("bug557: " + out.toString())

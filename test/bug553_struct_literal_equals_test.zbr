@@ -1,0 +1,11 @@
+# BUG-553: `P(x: 1) == p` on a struct with `cue equals` (or `@derive(Eq)`) emitted
+# `_zbr_ty_P{ .x = 1 }.equals(p)`, which zig does not parse ("expected ',' after
+# initializer"). The literal on the right always worked; both sides are here.
+
+@derive(Eq)
+struct P
+    var x: int
+
+def main()
+    var p = P(x: 1)
+    print("bug553: ${P(x: 1) == p} ${p == P(x: 1)} ${P(x: 2) != p}")

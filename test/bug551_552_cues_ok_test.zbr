@@ -1,0 +1,43 @@
+# BUG-551 / BUG-552 controls: what stays legal beside the new refusals -- ordering through
+# `cue compare` (with the `cue equals` it requires), struct equality through `@derive(Eq)`, `==` on a CLASS (identity), and a
+# `for` over a type with `cue next`.
+
+class V
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    cue compare(other: V): int
+        return .n - other.n
+
+    cue equals(other: V): bool
+        return .n == other.n
+
+class W
+    var n: int = 0
+
+@derive(Eq)
+struct P
+    var x: int
+
+class Ticker
+    var left: int
+
+    cue init(n: int)
+        .left = n
+
+    cue next(): int?
+        if .left <= 0
+            return nil
+        .left -= 1
+        return .left
+
+def main()
+    var a = V(1)
+    var out = StringBuilder()
+    var w = W()
+    out.append("${a < V(2)} ${P(x: 1) == P(x: 1)} ${w == w} ${w == W()} ")
+    for t in Ticker(2)
+        out.append("${t}")
+    print("bug551_552: " + out.toString())

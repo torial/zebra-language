@@ -6,6 +6,49 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-557: a str method called on a `str?` passed `zebra -c` and failed inside zig "expected type 'str', found '?str'" -- FIXED 2026-10-21 (found 2026-10-11)
+- **Fix:** refused at the receiver, as an operator on an optional already is, naming the three
+  ways to a plain value: "'x' may be nil here, so `.trim()` cannot be called on it -- check it
+  first (if x != nil ...), unwrap it (x!), or give a default (x orelse \"\")". The checker has
+  already narrowed `x` inside `if x != nil`, so the guarded call is not refused; `x?.trim()` is
+  a different expression and untouched.
+- **Fixtures:** `test/fail_fixtures/bug557_str_opt_method_test.zbr` (9:11) and the control
+  `test/bug557_str_opt_unwrapped_test.zbr` -- the narrowed `if`, `if x as v`, `x!` and
+  `x orelse ""` all still call `.trim()`.
+
+### BUG-555: `v[0]` on a user class passed `zebra -c` and failed inside zig's std -- FIXED 2026-10-21 (found 2026-10-10)
+- **Fix:** indexing a value whose type is a user class or struct is refused: "'V' has no index
+  operator: a class or struct cannot be indexed with `[...]` -- give it a method and call that
+  (`v.at(i)`, `v.get(i)`)" -- the 1.0 surface's "Not cues, on purpose". Lists, maps and
+  strings index as before.
+- **Fixture:** `test/fail_fixtures/bug555_index_user_type_test.zbr` (12:11).
+
+### BUG-553: `P(x: 1) == p` on a struct with `cue equals` emitted Zig that does not parse -- FIXED 2026-10-21 (found 2026-10-10)
+- **Found again** by BUG-551's control fixture, written independently, which is how it re-entered.
+- **Fix:** the `==` / `!=` route through `cue equals` parenthesises its left operand,
+  `(left).equals(right)`, so a struct literal there parses.
+- **Fixture:** `test/bug553_struct_literal_equals_test.zbr` (`true true true`: the literal on
+  each side, and `!=`); red on the pre-fix compiler ("expected ',' after initializer").
+
+### BUG-552: `for x in obj` over a type whose `next` / `iter` is a `def` passed `zebra -c` and failed inside zig "no field named 'items'" -- FIXED 2026-10-21 (found 2026-10-10)
+- **Fix:** a `for` over a user class or struct with neither `cue next` nor `cue iter` is refused,
+  and when the type has a `def next` / `def iter` the message says exactly that: "'Ticker' is not
+  iterable: its `def next` is an ordinary method -- declare it `cue next` instead".
+- **Fixture:** `test/fail_fixtures/bug552_def_next_not_iterable_test.zbr` (17:5); the control's
+  `cue next` loop is in `test/bug551_552_cues_ok_test.zbr`.
+
+### BUG-551: comparison operators on a type without the cue that defines them passed `zebra -c` and failed inside zig -- FIXED 2026-10-21 (found 2026-10-10)
+- **Fix:** `<` `<=` `>` `>=` on a user class or struct without `cue compare`, and `==` / `!=` on a
+  STRUCT without `cue equals` / `@derive(Eq)`, are refused naming the cue. A class still
+  compares by identity (documented, and the control fixture pins it).
+- **Not covered:** `.sort()` on a `List(V)` whose element has no `cue compare` (the ledger's
+  second shape for (a)); it still fails inside zig.
+- **The book's Appendix C quotes the leaked zig text** ("operator < not allowed for type", "operator
+  == not allowed"); those entries now describe a message users no longer see.
+- **Fixtures:** `test/fail_fixtures/bug551_order_no_compare_test.zbr`,
+  `test/fail_fixtures/bug551_struct_eq_no_equals_test.zbr`, and the control
+  `test/bug551_552_cues_ok_test.zbr` (`true true true false 10`).
+
 ### BUG-605: `.len()` on a `split` result failed inside zig "no field named 'items' in struct 'mem.SplitIterator'" -- FIXED 2026-10-21 (found 2026-10-21)
 - **Found by:** BUG-558's control fixture, `"a b c" -> .split(" ").len()`; the direct
   `t.split(" ").len()` fails the same way. The property form `.len`, `.count()` and `.at(i)`

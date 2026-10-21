@@ -1,0 +1,18 @@
+# BUG-552: `for t in obj` over a class whose `next` is a `def`, not a `cue`, passed `zebra -c`
+# and failed inside zig ("no field named 'items'"). Refused, naming the fix.
+
+class Ticker
+    var left: int
+
+    cue init(n: int)
+        .left = n
+
+    def next(): int?
+        if .left <= 0
+            return nil
+        .left -= 1
+        return .left
+
+def main()
+    for t in Ticker(2)
+        print("${t}")

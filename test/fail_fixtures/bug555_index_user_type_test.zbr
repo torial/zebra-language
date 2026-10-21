@@ -1,0 +1,12 @@
+# BUG-555: `v[0]` on a user class or struct passed `zebra -c` and failed inside zig's std
+# ("Expected pointer, slice, array or vector type"). A user type has no index operator.
+
+class V
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+def main()
+    var v = V(1)
+    print(v[0])

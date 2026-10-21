@@ -1,0 +1,9 @@
+# BUG-557: a str METHOD called on a `str?` passed `zebra -c` and failed inside zig
+# ("expected type 'str', found '?str'"). Refused at the receiver, naming the three fixes.
+
+def get(): str?
+    return " a "
+
+def main()
+    var x: str? = get()
+    print(x.trim())

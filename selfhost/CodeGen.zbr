@@ -14787,8 +14787,11 @@ struct Generator
                 if .isEqualsCueExpr(b.left)
                     if b.op == BinaryOp.ne
                         w.emit("!")
+                    # BUG-553: parenthesised -- a struct LITERAL on the left (`P(x: 1) == p`)
+                    # emitted `_zbr_ty_P{ .x = 1 }.equals(p)`, which zig does not parse.
+                    w.emit("(")
                     genExpr(b.left)
-                    w.emit(".equals(")
+                    w.emit(").equals(")
                     genExpr(b.right)
                     w.emit(")")
                     return
