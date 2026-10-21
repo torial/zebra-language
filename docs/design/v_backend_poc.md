@@ -2321,6 +2321,21 @@ In the order they pay, each with the witness that says it is done:
    not built: master is not the pinned V, and a rename hides the bug
    from the row that found it.
 
+   **The second act, begun** (2026-10-21, 12:50; Sean: "start on item 5
+   second act"): the plan and the ledger live in the ENGINE,
+   `C:/Projects/GameEngine/docs/V_HOST_PORT.md` -- the live host measured <!-- doc-lint-ok: a path in the engine repo -->
+   (ten files, 6,197 lines, the `@import` closure from `game/main.zig`),
+   the shape (`host_v/*.v` compiled with the emitted game as one V
+   module, the seam a plain call), the order (profiler, collision,
+   scene_loader + hotreload, net_host, devtools_server, shapes + shadow,
+   console_panel + main), and the witness (`tools/v_host_check.sh` <!-- doc-lint-ok: a path in the engine repo -->
+   there: each port's V witness against its Zig test, fresh, line for
+   line, with a `--control`). The profiler is ported and IDENTICAL. Two
+   things this emitter owes the host before the frame loop moves: a
+   callable name for a game's class `main(...)` (V refuses a program
+   entry with parameters; the measurement used `sed`), and #30999's
+   name clashes until V fixes them.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
