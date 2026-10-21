@@ -26,7 +26,7 @@ ZEBRA="$WT/zig-out/bin/zebra.exe"
 V=${V:-/c/Projects/v-dist/v/v.exe}
 [ "${1:-}" = "--v" ] && V=$2
 OUT=${OUT:-$WT/.zig-cache/v_check}
-ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-4}   # main.zbr's known stubs (dbg_run_session's stdin polling, two zig literals): more is a regression
+ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-2}   # main.zbr's two zig literals (Zig-backend code by definition): more is a regression
 mkdir -p "$OUT/scratch"
 [ -x "$ZEBRA" ] || { echo "v_check: no $ZEBRA (build the checkout)"; exit 2; }
 [ -x "$V" ] || { echo "v_check: no V at $V"; exit 2; }
@@ -80,6 +80,30 @@ printf 'def main()\n    var x: int? = nil\n    if sys.args().count() > 100\n    
 if [ "$zrc" = 0 ] || [ "$vrc" = 0 ]; then echo "nil_at: FAILED -- a nil unwrapped must die on both backends (zig exit $zrc, v exit $vrc)"; fail=1
 elif grep -q 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt"; then echo "nil_at: ok -- V says: $(grep -m1 -o 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt") (zig exit $zrc, v exit $vrc)"
 else echo "nil_at: FAILED -- V died without naming the place:"; head -3 "$OUT/nil_at_v_err.txt" | cut -c1-160; fail=1; fi
+echo "── stdin polled without blocking (the debugger bridge's readStdinAvailable / stdinClosed): the same bytes and the same hang-up on both backends ──"
+rows=$((rows + 1))
+printf 'def main()\n    var got: str = ""\n    var spins = 0\n    while true\n        var a = sys.readStdinAvailable()\n        if a != ""\n            got = got + a\n        else if sys.stdinClosed()\n            break\n        else\n            spins = spins + 1\n            sys.sleep(5)\n            if spins > 400\n                print("gave up")\n                break\n    print("got [" + got + "] closed " + sys.stdinClosed().toString())\n' > "$OUT/poll_in.zbr"
+printf 'hello from a pipe' > "$OUT/poll_input.txt"
+# a pipe, not a redirected file: a file handle on stdin reads as closed (PeekNamedPipe fails on it) on both backends, as it does for the bridge
+poll_zig() {   # the program's status, not cat's: PIPESTATUS (H10)
+  cd "$OUT" && cat "$OUT/poll_input.txt" | "$ZEBRA" poll_in.zbr > "$OUT/poll_zig_out.txt" 2> "$OUT/poll_zig_err.txt"
+  return "${PIPESTATUS[1]}"
+}
+poll_v() {
+  cd "$OUT" && cat "$OUT/poll_input.txt" | timeout 30 "$OUT/poll_in.exe" > "$OUT/poll_v_out.txt" 2> "$OUT/poll_v_err.txt"
+  return "${PIPESTATUS[1]}"
+}
+(poll_zig); zrc=$?
+(cd "$OUT" && "$ZEBRA" --target v poll_in.zbr > "$OUT/poll_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals -o "$OUT/poll_in.exe" "$OUT/poll_in.v" > "$OUT/poll_build.txt" 2>&1)
+if [ ! -f "$OUT/poll_in.exe" ]; then echo "poll_in: FAILED -- the V build:"; grep -E 'error' "$OUT/poll_build.txt" | head -3 | cut -c1-160; fail=1
+else
+  (poll_v); vrc=$?
+  if [ "$zrc" != 0 ] || [ "$vrc" != 0 ]; then echo "poll_in: FAILED (zig exit $zrc, v exit $vrc)"; head -2 "$OUT/poll_v_err.txt" | cut -c1-160; fail=1
+  elif ! grep -q 'got \[hello from a pipe\] closed true' "$OUT/poll_zig_out.txt"; then echo "poll_in: NO CONTROL -- the Zig run did not read the pipe: $(cat "$OUT/poll_zig_out.txt")"; fail=1
+  elif diff -q "$OUT/poll_v_out.txt" "$OUT/poll_zig_out.txt" > /dev/null; then echo "poll_in: ok -- both say: $(cat "$OUT/poll_zig_out.txt")"
+  else echo "poll_in: DIFFERS"; diff "$OUT/poll_v_out.txt" "$OUT/poll_zig_out.txt" | head -4 | cut -c1-160; fail=1; fi
+fi
 echo "── the V-built compiler answers the LSP (initialize, shutdown, exit over stdin: the goroutine, the channel, the atomic, readBytes) ──"
 rows=$((rows + 1))
 lsp_frames() {   # the three requests, Content-Length framed

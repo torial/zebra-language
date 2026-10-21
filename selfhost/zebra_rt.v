@@ -423,6 +423,66 @@ pub fn zsys_read_bytes(n i64) ?string {
 	return buf.bytestr()
 }
 
+// sys.readStdinAvailable / sys.stdinClosed: the debugger bridge polls stdin
+// without blocking. On Windows PeekNamedPipe on the stdin handle counts what
+// a pipe holds (and fails on a closed pipe or a console: closed, as the Zig
+// runtime reads it), ReadFile takes exactly that many bytes; elsewhere poll.
+// These read the handle itself, not libc's buffer: a program that mixes them
+// with readLine / readBytes on the same stdin would lose what libc had read
+// ahead -- the bridge and the LSP each use one family.
+struct C.pollfd {
+mut:
+	fd      int
+	events  i16
+	revents i16
+}
+
+fn C.poll(fds &C.pollfd, nfds u64, timeout int) int
+
+pub fn zsys_read_stdin_available() string {
+	$if windows {
+		h := C.GetStdHandle(u32(0xfffffff6))   // STD_INPUT_HANDLE
+		mut avail := u32(0)
+		if !C.PeekNamedPipe(h, unsafe { nil }, 0, unsafe { nil }, &avail, unsafe { nil }) || avail == 0 {
+			return ''
+		}
+		mut buf := []u8{len: int(avail)}
+		mut got := u32(0)
+		if !C.ReadFile(h, buf.data, avail, &got, unsafe { nil }) || got == 0 {
+			return ''
+		}
+		return buf[..int(got)].bytestr()
+	} $else {
+		mut pfd := C.pollfd{ fd: 0, events: 1, revents: 0 }   // POLLIN
+		if C.poll(&pfd, 1, 0) <= 0 || (pfd.revents & 1) == 0 {
+			return ''
+		}
+		mut buf := []u8{len: 65536}
+		n := C.read(0, buf.data, 65536)
+		if n <= 0 {
+			return ''
+		}
+		return buf[..n].bytestr()
+	}
+}
+
+pub fn zsys_stdin_closed() bool {
+	$if windows {
+		h := C.GetStdHandle(u32(0xfffffff6))
+		mut avail := u32(0)
+		return !C.PeekNamedPipe(h, unsafe { nil }, 0, unsafe { nil }, &avail, unsafe { nil })
+	} $else {
+		mut pfd := C.pollfd{ fd: 0, events: 1, revents: 0 }
+		if C.poll(&pfd, 1, 0) <= 0 {
+			return false
+		}
+		if (pfd.revents & 1) != 0 {
+			return false   // data first
+		}
+		return (pfd.revents & (0x10 | 0x08 | 0x20)) != 0   // HUP, ERR, NVAL
+	}
+}
+
 // == http begin ==
 // Zebra's Http over V's net.http: a response (status, text) or none when the
 // request could not be made (no route, a refused connection, a bad URL);

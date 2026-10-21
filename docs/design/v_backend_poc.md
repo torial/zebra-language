@@ -2218,11 +2218,24 @@ In the order they pay, each with the witness that says it is done:
    side answered the initialize and lost the shutdown, because readLine
    read through `os.get_raw_line` and readBytes through `os.stdin()`,
    two buffers over one stream; both read libc's stdin through getchar
-   now, as the Zig side reads one buffered reader for both. Left: the
-   debugger bridge's stdin polling (Windows pipe peeking).
+   now, as the Zig side reads one buffered reader for both. The second
+   slice, the same night: `sys.readStdinAvailable` and `sys.stdinClosed`
+   (the debugger bridge's polling) through PeekNamedPipe on the stdin
+   handle and a ReadFile of what it counts on Windows, poll elsewhere,
+   as the Zig runtime does; a file on stdin reads as closed on both
+   backends (PeekNamedPipe fails on it), so `v_check`'s row feeds a pipe.
+   The route's refusals are 2: its two `zig` literals, which are the
+   Zig backend's by definition. Item 4 is done; `v_check` reads 19 rows.
 5. **The V host spike**: the sandbox scene through vlang/raylib,
    timed; then the decision whether the host moves. Large, and the
-   one that decides "completely".
+   one that decides "completely". Its coverage bar, counted
+   2026-10-20: the hand-written host calls 118 distinct raylib entry
+   points (266 call sites), among them the low-level `rl.gl` calls
+   (22 sites), shaders loaded from memory with values and matrices
+   set by location, render textures, model animations, instanced mesh
+   draws, generated meshes, the gamepad -- the first thing the spike
+   does is diff that list against the binding's declarations. The
+   binding is a download (vlang/raylib), asked for, not taken.
 
 ## If the branch ever merges to main
 
