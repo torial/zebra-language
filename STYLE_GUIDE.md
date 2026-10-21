@@ -910,16 +910,19 @@ Full form (`T where T implements X`), not the shorthand `T where Comparable`.
 
 ### 15.1 Implicit capture is the default ✅ ESTABLISHED (QS §19)
 
-Free variables auto-close. Don't write a `capture` block unless you need
-**persistent per-instance state** that outlives one call of the closure -- a generator,
-a memo, a counter handed to a callback. (The GUI case that motivated `capture`, a
-per-frame closure in `Gui.run`, was retired 2026-09-21; GUI state lives in the MVU model.)
+Free variables auto-close: a lambda gets a copy of each local, parameter or loop
+variable it reads. Don't write a `capture` block unless you need **persistent
+per-instance state** that outlives one call of the closure -- a generator, a memo, a
+counter handed to a callback. Changing a captured variable (inside the closure, or
+outside after it) is refused until shared capture lands (QS §19, BUG-569), so state
+the closure changes belongs in a `capture` block. (The GUI case that motivated
+`capture`, a per-frame closure in `Gui.run`, was retired 2026-09-21; GUI state lives
+in the MVU model.)
 
 ```zebra
-# ✓ Implicit capture:
-var counter = 0
-var bump = def()
-    counter += 1
+# ✓ Implicit capture (read):
+var step = 2
+var bumpBy = def(x: int): int = x + step
 
 # ✓ Explicit capture only when needed:
 var nextId = def(): int

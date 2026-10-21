@@ -1033,7 +1033,7 @@ python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate poin
                                 #   FRONT END ONLY (`zebra -c`) — a doc fragment has no
                                 #   modules around it, so a full compile would drown syntax
                                 #   errors in missing-dependency noise.
-                                #   Baselined at 5 <!-- doc-gen: 5 = grep -vc '^#' tools/doc_example_baseline.txt -->
+                                #   Baselined at 4 <!-- doc-gen: 4 = grep -vc '^#' tools/doc_example_baseline.txt -->
                                 #   (was 27), so it fails only on NEW breakage. That
                                 #   baseline is REAL DEBT a reader hits, in three families:
                                 #   `print` WITHOUT PARENS (pre-`()`-mandatory Cobra syntax),
