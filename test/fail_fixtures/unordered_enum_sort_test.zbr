@@ -1,0 +1,13 @@
+# BUG-609 follow-up (Sean, 2026-10-21): `@unordered enum` -- its values have no order.
+# A bare `.sort()` on a List of one is refused, naming a comparator.
+
+@unordered
+enum Suit
+    hearts
+    spades
+
+def main()
+    var ss = List(Suit)()
+    ss.add(Suit.spades)
+    ss.sort()
+    print(ss.len)

@@ -1,0 +1,12 @@
+# BUG-609 follow-up (Sean, 2026-10-21): `@unordered enum` -- its values have no order.
+# On anything but an enum it is refused, not ignored -- an ignored directive reads as if it
+# worked.
+
+@unordered
+class Card
+    var n: int
+    cue init(n: int)
+        .n = n
+
+def main()
+    print(Card(1).n)

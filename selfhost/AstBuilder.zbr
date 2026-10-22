@@ -567,7 +567,7 @@ class ASTBuilder
         var base: TypeRef? = nil
         if e.base != ""
             base = .parseTypeRef(e.base)
-        return Decl.enum_(DeclEnum(nameSpan(e.line, e.col, e.name), zmods(), e.name, base, members))
+        return Decl.enum_(DeclEnum(nameSpan(e.line, e.col, e.name), Modifiers(is_unordered: e.unordered), e.name, base, members))
 
     # ── Method ────────────────────────────────────────────────────────────────
 

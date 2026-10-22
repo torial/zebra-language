@@ -1,0 +1,20 @@
+# `@unordered enum` (Sean, 2026-10-21): equality still works, a comparator still sorts, and
+# a plain enum beside it still orders by declaration. The refusals have their own fixtures.
+
+@unordered
+enum Suit
+    hearts
+    spades
+    clubs
+
+enum Rank
+    low
+    high
+
+def main()
+    var ss = List(Suit)()
+    ss.add(Suit.clubs)
+    ss.add(Suit.hearts)
+    ss.sort(def(a, b) = a.toString() < b.toString())
+    var same = Suit.hearts == Suit.hearts
+    print("unordered: ${ss} ${same} ${Suit.hearts != Suit.spades} ${Rank.low < Rank.high}")

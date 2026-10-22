@@ -431,29 +431,46 @@ pub fn _zbr_enum_ord(x: anytype) usize {
     }
     @panic("enum value outside its declaration");
 }
+// BUG-610: a string operand is any u8 slice or pointer-to-u8-array, not only `[]const u8`:
+// a literal on the LEFT (`"x" >= s`) is `*const [N:0]u8`, and `toString()` can return `[]u8`.
+// Either fell through to Zig's `<`, which slices do not have. Fields read the same in 0.16
+// and 0.17 (`size`, `child`).
+pub inline fn _zbr_is_strlike(comptime T: type) bool {
+    const i = @typeInfo(T);
+    if (i != .pointer) return false;
+    if (i.pointer.size == .slice) return i.pointer.child == u8;
+    if (i.pointer.size == .one) {
+        const c = @typeInfo(i.pointer.child);
+        return c == .array and c.array.child == u8;
+    }
+    return false;
+}
+pub inline fn _zbr_as_str(x: anytype) []const u8 {
+    return x;
+}
 pub fn _zebra_lt(a: anytype, b: anytype) bool {
-    if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
+    if (comptime _zbr_is_strlike(@TypeOf(a))) return std.mem.lessThan(u8, _zbr_as_str(a), _zbr_as_str(b));
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) < 0; }
     // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
     if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) < _zbr_enum_ord(b);
     return a < b;
 }
 pub fn _zebra_le(a: anytype, b: anytype) bool {
-    if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .gt;
+    if (comptime _zbr_is_strlike(@TypeOf(a))) return std.mem.order(u8, _zbr_as_str(a), _zbr_as_str(b)) != .gt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) <= 0; }
     // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
     if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) <= _zbr_enum_ord(b);
     return a <= b;
 }
 pub fn _zebra_gt(a: anytype, b: anytype) bool {
-    if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) == .gt;
+    if (comptime _zbr_is_strlike(@TypeOf(a))) return std.mem.order(u8, _zbr_as_str(a), _zbr_as_str(b)) == .gt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) > 0; }
     // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
     if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) > _zbr_enum_ord(b);
     return a > b;
 }
 pub fn _zebra_ge(a: anytype, b: anytype) bool {
-    if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
+    if (comptime _zbr_is_strlike(@TypeOf(a))) return std.mem.order(u8, _zbr_as_str(a), _zbr_as_str(b)) != .lt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) >= 0; }
     // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
     if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) >= _zbr_enum_ord(b);

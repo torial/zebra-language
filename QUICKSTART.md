@@ -926,6 +926,18 @@ Usage: `Color.red`, `Status.ok`.
 and a bare `.sort()` on a `List(Color)` sorts red, green, blue. That holds for a backed enum
 too: its declared position decides, not its value.
 
+**`@unordered`** on the line before `enum` says the values have no order (suits, colours,
+states): `<`, `<=`, `>` and `>=` on them, and a bare `.sort()` on a `List` of them, are
+refused. `==` and `!=` work as before, and `.sort(def(a, b) = ...)` sorts by whatever the
+comparator says. On anything other than an `enum` the directive is refused.
+
+```zebra
+@unordered
+enum Suit
+    hearts
+    spades
+```
+
 **Type inference:** The type checker recognises enum names as types, so
 `Color.red` infers as `Color` and exhaustiveness checking works without an
 explicit type annotation.  Cross-module enums (imported via `use`) are

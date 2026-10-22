@@ -1,0 +1,25 @@
+# BUG-610: `<` `<=` `>` `>=` on strings worked only when the LEFT operand was exactly
+# `[]const u8`. A literal on the left (`"x" >= s`, a `*const [N:0]u8` in Zig) or a `[]u8`
+# from `toString()` fell through to Zig's `<`, which slices do not have, and failed inside
+# zig. Every row reads the operands the way users write them.
+
+enum Suit
+    hearts
+    spades
+
+class K
+    var n: int
+    cue init(n: int)
+        .n = n
+    cue toString(): str
+        return "k${.n}"
+
+def main()
+    var a = Suit.hearts.toString()
+    var b = K(2).toString()
+    var c = 42.toString()
+    var ss = List(Suit)()
+    ss.add(Suit.spades)
+    ss.add(Suit.hearts)
+    ss.sortBy(def(s: Suit): str = s.toString())
+    print("bug610: ${a < "z"} ${b > "a"} ${c <= "5"} ${"x" >= c} ${"a" < "b"} ${ss}")

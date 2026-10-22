@@ -129,6 +129,10 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **`@unordered enum`** -- its values have no order: `<` and a bare `.sort()` on it are
+  refused, `==` and a comparator still work.
+- **String comparisons work whatever the operands' spelling (BUG-610)** -- a literal on the
+  left of `<`, or a `toString()` result, failed inside zig.
 - **Enums order by declaration (BUG-609)** -- `<` and a bare `.sort()` on an enum work (a
   backed enum too: its declared position decides, not its value); on an interface they are
   refused, naming a comparator. Both failed inside zig.

@@ -1,0 +1,10 @@
+# BUG-609 follow-up (Sean, 2026-10-21): `@unordered enum` -- its values have no order.
+# Ordering one is refused, naming the directive.
+
+@unordered
+enum Suit
+    hearts
+    spades
+
+def main()
+    print(Suit.hearts < Suit.spades)

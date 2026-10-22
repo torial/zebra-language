@@ -447,6 +447,7 @@ class ModuleTypes
     var type_alias_names: HashMap(str, bool)
     # Enum type names declared in this module — used for exhaustiveness checking.
     var enum_names: HashMap(str, bool)
+    var unordered_enums: HashMap(str, bool)     # `@unordered enum` names
     # All enum member keys ("EnumName.memberName") in insertion order.
     var all_enum_member_keys: List(str)
     # Top-level generic function names (def name(T)(...)). Used by codegen to
@@ -484,6 +485,7 @@ class ModuleTypes
         private_member_keys = HashMap()
         type_alias_names = HashMap()
         enum_names = HashMap()
+        unordered_enums = HashMap()
         all_enum_member_keys = List()
         generic_fn_names = HashMap()
         module_vars = HashMap()
@@ -536,6 +538,12 @@ class ModuleTypes
 
     def hasEnum(name: str): bool
         return .enum_names.contains(name)
+
+    def markUnorderedEnum(name: str)
+        .unordered_enums.put(internString(name), true)
+
+    def isUnorderedEnum(name: str): bool
+        return .unordered_enums.contains(name)
 
     def memberNamesForEnum(enum_name: str): List(str)
         var result: List(str) = List(str)()
@@ -1257,6 +1265,8 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
             on Decl.enum_ as de
                 for mem in de.members
                     mt.addEnumMember(de.name, mem.name)
+                if de.mods.is_unordered
+                    mt.markUnorderedEnum(de.name)
             on Decl.union_ as u
                 # Index variant → payload Type_ for branch-on narrowing (17b).
                 var uname: str = u.name
@@ -6267,6 +6277,17 @@ def interfaceTypeName(t: Type_, ctx: InferCtx): str
             return tn
     return ""
 
+# BUG-609 follow-up: an `@unordered enum`, by name, or "". Its values have no order, so
+# `<` and a bare `.sort()` on it are refused rather than following the declaration.
+def unorderedEnumName(t: Type_, ctx: InferCtx): str
+    var tt: Type_ = t
+    if tt is Type_.ref_to as tr
+        tt = tr
+    if tt is Type_.named as tn
+        if ctx.module_types.isUnorderedEnum(tn) or ctx.dep_types.isUnorderedEnum(tn)
+            return tn
+    return ""
+
 def missingCompareCue(t: Type_, ordering: bool, ctx: InferCtx): str
     var tt: Type_ = t
     if tt is Type_.ref_to as tr
@@ -6322,6 +6343,9 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                         var st609i: str = interfaceTypeName(st551e, ctx)
                         if st551n != ""
                             ctx.addErr(file, cm.span.line, cm.span.col, "'" + st551n + "' has no ordering: `.sort()` needs a `cue compare(other: " + st551n + "): int` on it, or a comparator (e.g. `.sort(def(a, b) = a.key < b.key)`)")
+                        else if unorderedEnumName(st551e, ctx) != ""
+                            var st609u: str = unorderedEnumName(st551e, ctx)
+                            ctx.addErr(file, cm.span.line, cm.span.col, "'" + st609u + "' is `@unordered`: its values have no order, so `.sort()` needs a comparator (e.g. `.sort(def(a, b) = a.key < b.key)`), or drop `@unordered` to sort by declaration")
                         else if st609i != ""
                             ctx.addErr(file, cm.span.line, cm.span.col, "'" + st609i + "' is an interface, which has no ordering: `.sort()` needs a comparator (e.g. `.sort(def(a, b) = a.key() < b.key())`)")
                 # BUG-331: the optional JSON reads take exactly one key.
@@ -6396,6 +6420,13 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                     cmp_iface = interfaceTypeName(inferExpr(b.left, ctx), ctx)
                     if cmp_iface == ""
                         cmp_iface = interfaceTypeName(inferExpr(b.right, ctx), ctx)
+                var cmp_unord: str = ""
+                if cmp_ord
+                    cmp_unord = unorderedEnumName(inferExpr(b.left, ctx), ctx)
+                    if cmp_unord == ""
+                        cmp_unord = unorderedEnumName(inferExpr(b.right, ctx), ctx)
+                if cmp_unord != ""
+                    ctx.addErr(file, b.span.line, b.span.col, "'" + cmp_unord + "' is `@unordered`: its values have no order, so `<`, `<=`, `>` and `>=` do not apply (drop `@unordered` to order it by declaration)")
                 if cmp_name == "" and cmp_iface != ""
                     ctx.addErr(file, b.span.line, b.span.col, "'" + cmp_iface + "' is an interface, which has no ordering: compare something it returns (`a.key() < b.key()`)")
                 if cmp_name != ""

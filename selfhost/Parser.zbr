@@ -371,13 +371,17 @@ struct PEnum
     var values: List(List(PNode))
     var line: int
     var col: int
-    cue init(name: str, variants: List(str), base: str, values: List(List(PNode)), line: int = 0, col: int = 0)
+    # BUG-609 follow-up (Sean, 2026-10-21): `@unordered enum` -- its values have no order,
+    # so `<` and a bare `.sort()` on it are refused instead of following the declaration.
+    var unordered: bool
+    cue init(name: str, variants: List(str), base: str, values: List(List(PNode)), line: int = 0, col: int = 0, unordered: bool = false)
         .name = name
         .variants = variants
         .base = base
         .values = values
         .line = line
         .col = col
+        .unordered = unordered
 
 struct PField
     var name: str
@@ -1474,16 +1478,26 @@ class Parser
         var pending_tags: List(str) = List(str)()
         var pending_export_sym: str? = nil
         var pending_deprecated: str = ""
+        var pending_unordered: bool = false
+        var unordered_line: int = 0
+        var unordered_col: int = 0
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
             branch .peek().kind
                 on TokenKind.at_id
                     const dtext = .peek().text
+                    const dline = .peek().line
+                    const dcol = .peek().col
                     .advance()
                     if dtext == "@reflectable"
                         .skipEol()
                         pending_reflectable = true
+                    else if dtext == "@unordered"
+                        pending_unordered = true
+                        unordered_line = dline
+                        unordered_col = dcol
+                        .skipEol()
                     else if dtext == "@profile"
                         .skipEol()
                         pending_profile = true
@@ -1553,6 +1567,10 @@ class Parser
                     saw_directive = true
                 else
                     saw_directive = false
+        # `@unordered` says an enum's values have no order; on anything else it would be
+        # ignored, and an ignored directive reads as if it worked.
+        if pending_unordered and not .textIs("enum")
+            raise .errorAtPos(unordered_line, unordered_col, "`@unordered` applies to an `enum` (its values then have no order): put it on the line before `enum Name`")
         if .textIs("use")
             return .parseUseDecl()?
         else if .textIs("namespace")
@@ -1570,7 +1588,7 @@ class Parser
         else if .textIs("union")
             return .parseUnionDecl()?
         else if .textIs("enum")
-            return .parseEnumDecl()?
+            return .parseEnumDecl(pending_unordered)?
         else if .textIs("sig")
             return .parseSigDecl()?
         else if .textIs("type")
@@ -1730,7 +1748,7 @@ class Parser
                 .advance()
         return PNode.class_(PClass(name, type_params, ifaces, mixins, members, invs, is_reflectable, false, false, false, export_sym, _dl, _dc))
 
-    def parseEnumDecl(): PNode throws
+    def parseEnumDecl(unordered: bool = false): PNode throws
         .expectText("enum")?
         const _dl = .peek().line
         const _dc = .peek().col - 1
@@ -1768,7 +1786,7 @@ class Parser
                 .advance()
         if variants.len == 0
             raise .errorAt("enum '" + name + "' must have at least one variant")
-        return PNode.enum_(PEnum(name, variants, base, values, _dl, _dc))
+        return PNode.enum_(PEnum(name, variants, base, values, _dl, _dc, unordered))
 
     def parseStructDecl(is_reflectable: bool, is_derive_debug: bool = false, is_derive_eq: bool = false, is_derive_hash: bool = false): PNode throws
         .expectText("struct")?

@@ -367,13 +367,13 @@ pub fn _zbr_fn_spanOfFirst(es: _ZbrList(_zbr_ty_Expr)) _zbr_ty_Span {
 // zbr:selfhost/AstBuilder.zbr:140
 pub fn _zbr_fn_zmods() _zbr_ty_Modifiers {
 // zbr:selfhost/AstBuilder.zbr:141
-    return _zbr_ty_Modifiers.init(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+    return _zbr_ty_Modifiers.init(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 }
 
 // zbr:selfhost/AstBuilder.zbr:143
 pub fn _zbr_fn_zstatic() _zbr_ty_Modifiers {
 // zbr:selfhost/AstBuilder.zbr:144
-    return _zbr_ty_Modifiers.init(false, false, true, false, false, false, false, false, false, false, false, false, false, false, false);
+    return _zbr_ty_Modifiers.init(false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false);
 }
 
 // zbr:selfhost/AstBuilder.zbr:151
@@ -1202,7 +1202,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             base = self.parseTypeRef(e.base);
         }
 // zbr:selfhost/AstBuilder.zbr:570
-        return _zbr_ty_Decl{ .enum_ = blk_box_17: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Decl, "enum_")) = _zbr_ty_DeclEnum.init(_zbr_fn_nameSpan(e.line, e.col, e.name), _zbr_fn_zmods(), e.name, base, members); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
+        return _zbr_ty_Decl{ .enum_ = blk_box_17: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Decl, "enum_")) = _zbr_ty_DeclEnum.init(_zbr_fn_nameSpan(e.line, e.col, e.name), _zbr_ty_Modifiers.init(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, e.unordered), e.name, base, members); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_17 _bp; } };
     }
 
     // zbr:selfhost/AstBuilder.zbr:574
@@ -2692,7 +2692,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1442
             if (cv.is_implicit) {
 // zbr:selfhost/AstBuilder.zbr:1443
-                cv_mods = _zbr_ty_Modifiers.init(false, false, false, false, false, false, false, false, false, false, false, false, false, false, true);
+                cv_mods = _zbr_ty_Modifiers.init(false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false);
             }
 // zbr:selfhost/AstBuilder.zbr:1444
             const dv = _zbr_ty_DeclVar.init(_zbr_fn_zspan(), cv_mods, cv.name, cv_tr, _bx0: { const _bv = cv_init_expr; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :_bx0 _bp; }, (!cv.is_const));

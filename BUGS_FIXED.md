@@ -6,6 +6,20 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-610: `<` `<=` `>` `>=` on strings failed inside zig unless the LEFT operand was exactly `[]const u8` -- FIXED 2026-10-21 (found 2026-10-21)
+- **Found by:** the `@unordered` control fixture, whose comparator was
+  `a.toString() < b.toString()`; reproduced on the compiler from before the evening's work.
+- **Cause:** the runtime's `_zebra_lt` / `_le` / `_gt` / `_ge` took the string path only for
+  `@TypeOf(a) == []const u8`. A literal on the left (`"x" >= s`, which Zig types
+  `*const [N:0]u8`) and a `[]u8` from `toString()` fell through to Zig's `<`, which slices do
+  not have: "operator < not allowed for type".
+- **Fix:** `_zbr_is_strlike` (any `u8` slice, or a pointer to a `u8` array) selects the string
+  path, and `_zbr_as_str` coerces both operands to `[]const u8`. Dual-version (`size` /
+  `child` read the same in 0.16 and 0.17).
+- **Fixture:** `test/bug610_string_order_operands_test.zbr` -- an enum's, a class's and an
+  int's `toString()`, a literal on the left, two literals, and a `sortBy` keyed by a
+  `toString()`; red with the committed preamble swapped back in.
+
 ### BUG-609: `.sort()` on a `List` of an enum or an interface, and `<` on an enum, passed `zebra -c` and failed inside zig -- FIXED 2026-10-21 (found 2026-10-21)
 - **Decision (Sean, 2026-10-21):** an enum orders by DECLARATION.
 - **Fix:** the runtime's `_zebra_lt` / `_le` / `_gt` / `_ge` and `_zebra_sort_natural` compare an
@@ -20,8 +34,13 @@ Open bugs live in `BUGS.md`.
 - **Fixtures:** `test/bug609_enum_order_test.zbr` (plain and backed enums, all four operators,
   sorting), `test/fail_fixtures/bug609_interface_sort_test.zbr` (17:8) and
   `test/fail_fixtures/bug609_interface_lt_test.zbr` (17:11).
-- **Open idea (Sean):** a directive marking an enum as having NO order, so `<` or `.sort()` on
-  it is a compile error -- not built; recorded here to decide.
+- **`@unordered` (Sean, 2026-10-21, built the same day):** the directive on an enum says its
+  values have no order; `<` `<=` `>` `>=` and a bare `.sort()` on it are refused naming the
+  directive, `==` and a comparator still work, and the directive on anything but an enum is
+  refused rather than ignored (unknown directives only warn). It crosses modules through
+  `ModuleTypes.isUnorderedEnum`. Fixtures: `test/fail_fixtures/unordered_enum_lt_test.zbr`
+  (10:16), `unordered_enum_sort_test.zbr` (12:8), `unordered_misplaced_test.zbr` (5:1), and
+  the control `test/unordered_enum_ok_test.zbr`.
 
 ### BUG-608: assigning to a `for x in xs` loop variable passed `zebra -c` and failed inside zig "cannot assign to constant" -- FIXED 2026-10-21 (found 2026-10-21)
 - **Fix:** refused at the assignment, as a parameter is (BUG-354): "cannot assign to 'x' -- it
