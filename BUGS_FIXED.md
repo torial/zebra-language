@@ -6,6 +6,30 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-612: the type checker never walked a lambda's body -- FIXED 2026-10-21 (found 2026-10-21)
+- **Found by:** a `this`-capture probe that called `.toUpper()` (not a str method) inside a
+  lambda: `-c` passed and zig refused it. Nothing in the checker descended into a lambda:
+  `inferExpr` returned the lambda's type without its body, and `checkCallsInExpr` -- the
+  walker gated `exhaustive` -- carried the waiver "its body is STATEMENTS; checkStmts walks it
+  on its own". No code did. An unknown method, a wrong argument count, a type error, an
+  assignment to a lambda parameter: every front-end check skipped every lambda.
+- **Fix:** `checkLambdaBody`, the method-body pattern: the enclosing scope snapshotted, the
+  `capture` initialisers typed there, the captures and parameters bound over it, the lambda's
+  return type set, the parameter and loop-variable sets reset (so BUG-354 and BUG-608 apply
+  inside), the body checked, everything restored. The false waiver is gone; the walker
+  handles `lambda`.
+- **Measured:** `-c` over the repo (1,125 files) and zebra-ide (29) moved 0. The GameEngine
+  moved 5 machine-ported scripts, each a real error: a lambda assigning its own parameter
+  (four: `fadeInTime = 0` in a `def(magnitude, roughness, fadeInTime, fadeOutTime)`; a
+  Zig parameter is const) and an optional used in arithmetic inside a lambda (one).
+- **Also found:** the gate was not checking `checkCallsInExpr` at all -- two helpers had been
+  inserted between its marker and its `def`; `lint_expr_walkers` now reports a stranded marker
+  (separate commit). And BUG-613 (a lambda local shadowing an enclosing local).
+- **Fixtures:** `test/fail_fixtures/bug612_lambda_body_method_test.zbr` (both lambda forms,
+  5:34 and 7:18), `test/fail_fixtures/bug612_lambda_param_assign_test.zbr` (6:9), and the control
+  `test/bug612_lambda_body_ok_test.zbr` (untyped params, locals, a captured local, `capture`
+  state, nested lambdas).
+
 ### BUG-611: the runtime's WebSocket server computed `Sec-WebSocket-Accept` with the wrong GUID, so every client that checks the value refused its handshake -- FIXED 2026-10-21 (found 2026-10-21)
 - **Found by:** the engine's V host port (`C:/Projects/GameEngine/tools/v_host_check.sh --duo`, 2026-10-21): a V client (`net.websocket`) against the Zig host's server read "connect: handshake_handler: Sec-WebSocket-Accept header does not match computed sha1/base64 response", while V against V, Zig against Zig and a V server with a Zig client all held. A ten-line V probe printed both sides of the handshake. <!-- doc-lint-ok: a path in the engine repo -->
 - **Cause:** `_WS_GUID` in `selfhost/stdlib_preamble.zig` read `258EAFA5-E914-47DA-95CA-C5AB0DC85B24`; RFC 6455's GUID ends `85B11`. Python with the wrong GUID reproduces the runtime's value exactly (`zLpol6vhAJDokhKIG41M9QdaeaI=` for key `Y0U5bm94bHRPUXN1UGl5RQ==`), the right one gives V's. The runtime's own client (`_ws_connect`) does not verify the accept value, which is why `Ws.connect` against `Ws.serve` always worked and nothing else ever did.

@@ -1,0 +1,8 @@
+# BUG-612: the checker never walked a lambda's body, so an unknown method inside one passed
+# `zebra -c` and failed inside zig. Both lambda forms.
+
+def main()
+    var f = def(w: str): str = w.toUpper()
+    var g = def(w: str): str
+        return w.toUpper()
+    print(f("x") + g("y"))

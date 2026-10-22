@@ -134,6 +134,8 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A lambda's body is checked (BUG-612)** -- an unknown method, a wrong argument count or a
+  type error inside a lambda passed `zebra -c` and failed inside zig.
 - **A lambda in a class method reads and changes `this` (BUG-569)** -- `.count += 1` in a
   closure changes the object; in a struct method it is refused, naming the local that works.
 - **`@unordered enum`** -- its values have no order: `<` and a bare `.sort()` on it are

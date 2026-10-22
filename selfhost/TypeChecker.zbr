@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld
+use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -6303,12 +6303,66 @@ def missingCompareCue(t: Type_, ordering: bool, ctx: InferCtx): str
                 return tn
     return ""
 
+# BUG-612: a lambda's body is checked like a method's -- it was checked by NOTHING. This
+# walker's waiver said "checkStmts walks it on its own", and no code did, so an unknown
+# method, a wrong argument count or a type error inside any lambda passed `zebra -c` and
+# failed inside zig. The scope is the enclosing one (a lambda reads it -- BUG-569) with the
+# captures and parameters bound over it, and everything is restored after: one lambda's
+# names must not leak into the code around it.
+def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
+    var saved_scope = HashMap(str, Type_)()
+    for lk, lv in ctx.scope
+        saved_scope.set(lk, lv)
+    var saved_ret: Type_? = ctx.current_return_type
+    var saved_yield: Type_? = ctx.current_yield_type
+    var saved_params: str = ctx.params_here
+    var saved_loops: str = ctx.loopConsts()
+    # A capture's initialiser runs where the closure is MADE: typed in the enclosing scope,
+    # before the lambda's own names exist.
+    var cap_types = List(Type_)()
+    for cv in lam.captures
+        if cv.type_ != nil
+            cap_types.add(typeFromRef(cv.type_!))
+        else if cv.init_expr != nil
+            cap_types.add(inferExpr(cv.init_expr!, ctx))
+        else
+            cap_types.add(Type_.unknown_)
+    var ci: int = 0
+    for cv2 in lam.captures
+        ctx.bind(cv2.name, cap_types.at(ci))
+        ci = ci + 1
+    var lp_names: str = " "
+    for lp in lam.params
+        if lp.type_ != nil
+            ctx.bind(lp.name, typeFromRef(lp.type_!))
+        else
+            ctx.bind(lp.name, Type_.unknown_)
+        lp_names = lp_names + lp.name + " "
+    ctx.setParamsHere(lp_names)
+    ctx.withYieldType(nil)
+    if lam.return_type != nil
+        ctx.withReturnType(typeFromRef(lam.return_type!))
+    else
+        ctx.withReturnType(nil)
+    branch lam.body_
+        on LambdaBody.stmts as lbody
+            checkStmts(lbody, file, ctx)
+        on LambdaBody.expr_ as lexpr
+            checkCallsInExpr(lexpr, file, line, ctx)
+            var _ = inferExpr(lexpr, ctx)
+    ctx.scope = saved_scope
+    ctx.withReturnType(saved_ret)
+    ctx.withYieldType(saved_yield)
+    ctx.setParamsHere(saved_params)
+    ctx.setLoopConsts(saved_loops)
+
 # expr-walker: exhaustive
-# expr-walker-ok: lambda its body is STATEMENTS; checkStmts walks it on its own
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
 # expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
+        on Expr.lambda as clam
+            checkLambdaBody(clam, file, line, ctx)
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
             checkNamedArgs(c, file, line, ctx)    # BUG-540

@@ -1,0 +1,21 @@
+# BUG-612 control: what checking lambda bodies must keep accepting -- untyped parameters,
+# locals, a captured local and `capture` state, nested lambdas, a statement body that
+# returns. (A lambda local reusing an enclosing name is BUG-613.)
+
+def main()
+    var k = 3
+    var xs = [1, 2, 3]
+    var ys = xs.map(def(x) = x * k)
+    var total = def(): int
+        var t = 0
+        for y in ys
+            t += y
+        return t
+    var counter = def(): int
+        capture
+            var n: int = 0
+        n += 1
+        return n
+    var outer = def(x: int): int = xs.map(def(e: int): int = e + x).at(0)
+    counter()
+    print("bug612: ${ys} ${total()} ${counter()} ${outer(5)} ${k}")
