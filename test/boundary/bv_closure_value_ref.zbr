@@ -1,0 +1,76 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM docs/design/closure_capture.md §5.1 (DECIDED by Sean 2026-10-21:
+# "a closure value is a reference"), BEFORE RUNNING (BUG-607).
+#
+# Every holder of one closure -- the local it was made in, a parameter it was passed to,
+# a field it was stored in, another local it was assigned to -- sees the SAME `capture`
+# state, as with a C# delegate. Today a closure is copied when it is passed, so its count
+# restarts from the copy (`1 2 3 3 3` in BUG-607's repro). Each evaluation of a lambda
+# expression makes a NEW closure, with its own state.
+
+sig IntFn(): int
+
+struct P
+    var x: int
+    def bump()
+        .x += 1
+
+class Holder
+    var f: IntFn
+    cue init(f: IntFn)
+        .f = f
+
+def apply0(f: IntFn): int
+    return f()
+
+def mk(): IntFn
+    return def(): int
+        capture
+            var z: int = 0
+        z += 1
+        return z
+
+def main()
+    var b = def(): int
+        capture
+            var cnt: int = 0
+        cnt += 1
+        return cnt
+    # Called directly, then passed to a function: one count throughout.
+    var r1 = b()
+    var r2 = b()
+    var r3 = apply0(b)
+    var r4 = apply0(b)
+    var r5 = b()
+    print("${r1} ${r2} ${r3} ${r4} ${r5}")
+
+    # Stored in a field: the holder and the local share it.
+    var h = Holder(b)
+    var r6 = apply0(h.f)
+    var r7 = b()
+    print("${r6} ${r7}")
+
+    # Assigned to another local: one closure, two names.
+    var b2 = b
+    var r8 = b2()
+    var r9 = b()
+    print("${r8} ${r9}")
+
+    # Capture state that is a struct, changed in place, shared the same way.
+    var pc = def(): int
+        capture
+            var pt: P = P(0)
+        pt.bump()
+        return pt.x
+    var q1 = apply0(pc)
+    var q2 = pc()
+    print("${q1} ${q2}")
+
+    # Each run of a factory makes a NEW closure with its own state.
+    var m1 = mk()
+    var m2 = mk()
+    var n1 = m1()
+    var n2 = m1()
+    var n3 = m2()
+    print("${n1} ${n2} ${n3}")

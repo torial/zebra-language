@@ -1,0 +1,155 @@
+# @boundary runs
+#
+# INTENT AUTHORED FROM QUICKSTART §19 ("Implicit closure capture") AND
+# docs/design/closure_capture.md §2 / §3.2 / §3.4, BEFORE RUNNING (BUG-569 step 4).
+#
+# §2: a lambda that names a local of the enclosing function SHARES that variable with the
+# function and with every other closure that names it. A write through the closure is seen
+# outside, and a write outside is seen by the closure. The read-only rows are in
+# bv_closure_capture_read; every row here writes the variable AFTER the closure exists, so
+# a copy would print a stale value -- with no error, which is why each write channel of
+# §3.2 has its own row, in both directions where the channel allows it.
+#
+# Not a channel: destructuring only DECLARES (`var (a, b) = ...`), it cannot write an
+# existing variable. `<<-` outside an `allocate` block is a plain assignment (QUICKSTART).
+#
+# Runtime values on purpose: `sys.args().len` is 1 when the suite runs a probe, so `k` is
+# 1 and nothing is foldable at compile time.
+
+sig IntFn(): int
+
+struct P
+    var x: int
+    def bump()
+        .x += 1
+
+def apply0(f: IntFn): int
+    return f()
+
+def counterFrom(start: int): IntFn
+    var n = start
+    return def(): int
+        n += 1
+        return n
+
+def main()
+    var k = sys.args().len
+
+    # §19's own shape: a closure changes an enclosing local with `+=`.
+    var counter = 0
+    var inc = def()
+        counter += 1
+    inc()
+    inc()
+    print(counter)
+    # The shared value at the untyped sinks: interpolation and comparison.
+    print("${counter} ${counter == 2} ${counter < 3}")
+
+    # `=` outside, seen inside.
+    var base = k
+    var getb = def(): int = base
+    base = 40
+    print(getb())
+
+    # `+=` outside, seen inside.
+    var tally = k
+    var gett = def(): int = tally
+    tally += 5
+    print(gett())
+
+    # `=` inside, seen outside (a str).
+    var name = "a"
+    var setn = def()
+        name = "zed"
+    setn()
+    print(name)
+
+    # `<<-` outside, seen inside.
+    var label: str = "old"
+    var getl = def(): str = label
+    label <<- "new"
+    print(getl())
+
+    # A struct field written outside, seen inside.
+    var p = P(k)
+    var getpx = def(): int = p.x
+    p.x = 7
+    print(getpx())
+
+    # A struct field written inside, seen outside.
+    var q = P(k)
+    var setq = def()
+        q.x = 9
+    setq()
+    print(q.x)
+
+    # A mutating struct method outside, seen inside.
+    var r = P(k)
+    var getrx = def(): int = r.x
+    r.bump()
+    print(getrx())
+
+    # A mutating struct method inside, seen outside.
+    var s = P(k)
+    var bumps = def()
+        s.bump()
+    bumps()
+    bumps()
+    print(s.x)
+
+    # A write from a NESTED lambda, seen in the function.
+    var depth = 0
+    var outer = def()
+        var inner = def()
+            depth += 10
+        inner()
+    outer()
+    outer()
+    print(depth)
+
+    # Two closures over one variable: one writes it, the other reads it.
+    var shared = 0
+    var w = def()
+        shared = shared + 5
+    var rd = def(): int = shared
+    w()
+    w()
+    print(rd())
+
+    # A returned closure over a local it writes: each call continues the count, and two
+    # factories are independent of each other.
+    var cf = counterFrom(k)
+    var c1 = cf()
+    var c2 = cf()
+    print("${c1} ${c2}")
+    var cg = counterFrom(100)
+    var g1 = cg()
+    var c3 = cf()
+    print("${g1} ${c3}")
+
+    # A local declared INSIDE a loop body is one variable per iteration (§3.4): closures
+    # kept past the loop each see their own, and calling one twice continues its count.
+    var fs: List(IntFn) = List(IntFn)()
+    for i in [1, 2, 3]
+        var cnt = i * 10
+        var f = def(): int
+            cnt += 1
+            return cnt
+        fs.add(f)
+    var a1 = apply0(fs.at(0))
+    var a2 = apply0(fs.at(0))
+    var a3 = apply0(fs.at(2))
+    print("${a1} ${a2} ${a3}")
+
+    # A local declared OUTSIDE a loop and written by every iteration's closure is ONE
+    # variable shared by all of them (C#'s behaviour, §3.4).
+    var sum = 0
+    var adders: List(IntFn) = List(IntFn)()
+    for j in [1, 2, 3]
+        var add = def(): int
+            sum += j
+            return sum
+        adders.add(add)
+    var s1 = apply0(adders.at(0))
+    var s3 = apply0(adders.at(2))
+    print("${s1} ${s3} ${sum}")
