@@ -1868,6 +1868,17 @@ python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUI
                                 #   pre-fix Resolver: 7 findings, one per skipped kind. CANNOT
                                 #   SEE a field skipped inside a handled arm (the `for ... if`
                                 #   filter was one).
+                                #   A STRANDED MARKER IS A FINDING (2026-10-21). Two helpers
+                                #   inserted between checkCallsInExpr's marker block and its
+                                #   `def` (BUG-551, BUG-609) left the marker above a non-walker:
+                                #   opted-in went 13 -> 12 while the marker count stayed 13,
+                                #   and every run printed clean for a day -- the 2026-08-17
+                                #   shape again, reached by a different route. Every marker
+                                #   must now attach to a counted walker of its tree, or it is
+                                #   reported by line. A planted control runs first, both
+                                #   directions, and the gate REFUSES if it stops seeing.
+                                #   Red-checked with the real stranded tree (1 finding, exit
+                                #   1) and a broken control (exit 2).
 bash tools/ffi_lib_check.sh        # THE PREBUILT-LIBRARY GATE (BUG-266, QUICK tier):
                                 #   `use foo` resolving to a prebuilt `foo.lib`/`.a` must
                                 #   LINK and the foreign call must return the right value.

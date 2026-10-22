@@ -6259,10 +6259,6 @@ def checkJsonInto(target: Type_, e: Expr, file: str, line: int, col: int, conver
             return true
     return false
 
-# expr-walker: exhaustive
-# expr-walker-ok: lambda its body is STATEMENTS; checkStmts walks it on its own
-# expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
-# expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
 # BUG-551: the name of the user class/struct `t` when it lacks the cue a comparison needs --
 # `compare` for an ordering operator, `equals` for `==`/`!=` on a STRUCT (a class compares by
 # identity) -- else "".
@@ -6307,6 +6303,10 @@ def missingCompareCue(t: Type_, ordering: bool, ctx: InferCtx): str
                 return tn
     return ""
 
+# expr-walker: exhaustive
+# expr-walker-ok: lambda its body is STATEMENTS; checkStmts walks it on its own
+# expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
+# expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
 def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
     branch e
         on Expr.call as c

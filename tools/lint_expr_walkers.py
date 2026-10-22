@@ -232,12 +232,17 @@ def check_tree(t):
     arm = re.compile(r"on\s+" + t["tag"] + r"\.(\w+)")
     marker = t["marker"] + ": exhaustive"
     findings, checked, total_walkers = [], 0, 0
+    checked_defs = set()      # (file, def line) of every walker a marker attached to
+    marker_lines = []         # (file, line) of every marker comment
+    marker_re = re.compile(r"^\s*#\s*" + re.escape(marker) + r"\s*$")
     for rel in SEARCH if t["name"] == "Expr" else ALL_SELFHOST:
         p = REPO / rel
         if not p.exists():
             continue
         lines = io.open(p, encoding="utf-8").read().split("\n")
         for i, line in enumerate(lines):
+            if marker_re.match(line):
+                marker_lines.append((rel, i))
             m = re.match(r"^\s*def\s+(\w+)", line)
             if not m:
                 continue
@@ -271,11 +276,27 @@ def check_tree(t):
             if marker not in head:
                 continue
             checked += 1
+            checked_defs.add((rel, i))
             waived = set(re.findall(t["marker"] + r"-ok:\s*(\w+)", body_txt + "\n" + head))
             for v in sorted(required - handled - waived):
                 findings.append((rel, i + 1, m.group(1), v))
 
+    # A marker must attach to a walker of THIS tree. 2026-10-21: two helpers inserted
+    # between checkCallsInExpr's marker block and its `def` (BUG-551/609) left the marker
+    # above a non-walker, so checkCallsInExpr dropped out of the gate -- opted-in 13 -> 12
+    # while the marker count stayed 13 and every run printed clean. A marker that
+    # attaches to nothing is now a FINDING, named by line, not a smaller number.
+    for rel in sorted({r for r, _ in marker_lines}):
+        flines = io.open(REPO / rel, encoding="utf-8").read().split("\n")
+        here = {ln for r, ln in checked_defs if r == rel}
+        for ml, nxt in stranded_markers(flines, marker_re, here):
+            print(f"  {rel}:{ml + 1}: [stranded-marker] `# {marker}` attaches to `{nxt}`, "
+                  f"which is not a walker of {t['tag']} -- move the marker to the def it "
+                  f"describes")
+            findings.append((rel, ml + 1, "<stranded marker>", "-"))
     for rel, ln, fn, v in findings:
+        if fn == "<stranded marker>":
+            continue
         print(f"  {rel}:{ln}: [walker-drift] {fn}() does not handle {t['tag']}.{v}, "
               f"which {t['oracle']} says contains expressions")
     if checked < total_walkers:
@@ -287,7 +308,36 @@ def check_tree(t):
     return findings, checked, summary
 
 
+def stranded_markers(lines, marker_re, checked_def_lines):
+    """Marker comment lines whose comment block does not end at a counted walker's def."""
+    out = []
+    for ml, line in enumerate(lines):
+        if not marker_re.match(line):
+            continue
+        j = ml + 1
+        while j < len(lines) and (lines[j].strip().startswith("#") or not lines[j].strip()):
+            j += 1
+        if j not in checked_def_lines:
+            out.append((ml, lines[j].strip()[:60] if j < len(lines) else "<end of file>"))
+    return out
+
+
+def stranded_control():
+    """Both directions, on planted text: a marker over a non-walker must be found, and one
+    over a counted walker must not. A detector that cannot see is refused, not trusted."""
+    mre = re.compile(r"^\s*#\s*expr-walker: exhaustive\s*$")
+    planted = ["# expr-walker: exhaustive", "# expr-walker-ok: ident why", "def helper(): int", "    return 1"]
+    if len(stranded_markers(planted, mre, set())) != 1:
+        return "a marker above a non-walker was NOT reported"
+    if stranded_markers(planted, mre, {2}):
+        return "a marker above a counted walker WAS reported"
+    return ""
+
+
 def main():
+    ctl = stranded_control()
+    if ctl:
+        return refuse("stranded-marker control failed: " + ctl)
     results = []
     for t in TREES:
         r = check_tree(t)
