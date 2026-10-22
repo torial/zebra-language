@@ -12,13 +12,21 @@ Open bugs live in `BUGS.md`.
   `zig build` refused the .zig.
 - **Shapes, each measured:** two methods, two fields, a field and a method, a static and an
   instance method (one Zig struct namespace), two struct fields, and two top-level
-  declarations (two `def f`, a `def` and a class, a module var and a `def`).
+  declarations OF ONE KIND (two functions, two types, two module vars).
 - **Fix:** the Resolver records where each member of the type being walked, and each
   top-level name, was first declared, and refuses the second -- naming the first one's line.
   Different namespaces stay fine (the same method in two classes; a member named like a
   top-level function). `use` names are not counted (an import may be shadowed).
-- **Not covered:** a duplicate whose SECOND declaration is a `struct` or `interface` at the top
-  level -- those parse nodes carry no position yet, and a refusal must not invent one.
+- **Corrected the same night -- the first commit over-refused.** It treated every top-level
+  name as one namespace, so a `def` and a class (or a module var) sharing a name was refused.
+  They never meet in zig: a function emits as `_zbr_fn_<n>`, a type as `_zbr_ty_<n>`, a
+  module var as `_zbr_mv_<n>`, and on the compiler before the check such a pair builds and
+  runs. Measured per pair; only same-kind pairs collide. The check is now per kind, and the
+  control fixture carries two cross-kind pairs so the over-refusal cannot return.
+- **Struct and interface as the second declaration:** covered in a follow-up the same night.
+  The first commit skipped them believing their parse nodes had no position; they parse as a
+  `PClass`, positioned like a class -- the probe that said otherwise looked for a `PStruct`
+  type that does not exist.
 - **Measured:** `-c` over the repo (1,137) and zebra-ide (29) moved 0. The GameEngine moved
   274 machine-ported scripts, every one a second `def main()` emitted by the porter; the
   old compiler's full build of one fails with zig's "duplicate struct member name 'main'",

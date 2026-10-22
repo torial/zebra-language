@@ -181,55 +181,58 @@ class Resolver
         if root is PNode.module_ as m
             for decl in m.decls
                 .bindTopDecl(decl)?
-    # BUG-615: a second top-level declaration of one name (two `def f`, a `def` and a class,
-    # a module var and a `def`) was a "duplicate struct member" inside zig. Refused at the
-    # second, when it carries a position; a struct or interface does not yet, so a
-    # duplicate whose SECOND declaration is one of those still reaches zig.
-    def declareTop(name: str, line: int, col: int)
-        if .top_lines.contains(name)
+    # BUG-615: a second top-level declaration of one name IN ONE KIND was a "duplicate struct
+    # member" inside zig. The kinds are the emitted namespaces: a function is `_zbr_fn_<n>`,
+    # a type (class, struct, enum, union, interface, sig) `_zbr_ty_<n>`, a module var
+    # `_zbr_mv_<n>` -- so a `def` and a class sharing a name never meet in zig and build
+    # today (measured on the compiler before this check); only a same-kind pair collides.
+    # A struct and an interface parse as a PClass, positioned like a class.
+    def declareTop(kind: str, name: str, line: int, col: int)
+        var key: str = kind + ":" + name
+        if .top_lines.contains(key)
             if line > 0
-                var first: int = .top_lines.fetch(name)
+                var first: int = .top_lines.fetch(key)
                 var top_at: str = ""
                 if first > 0
                     top_at = " (line " + first.toString() + ")"
                 .errors.add(ResolveError(.fmtErrAt(line, col, "`" + name + "` is already declared at the top of this module" + top_at + " -- two declarations cannot share a name; rename one")))
         else
-            .top_lines.put(name, line)
+            .top_lines.put(key, line)
 
     def bindTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
-                .declareTop(c.name, c.line, c.col)
+                .declareTop("type", c.name, c.line, c.col)
                 .module_scope.put(c.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.struct_ as s
-                .declareTop(s.name, 0, 0)
+                .declareTop("type", s.name, s.line, s.col)
                 .module_scope.put(s.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.union_decl as u
-                .declareTop(u.name, u.line, u.col)
+                .declareTop("type", u.name, u.line, u.col)
                 .module_scope.put(u.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.enum_ as e
-                .declareTop(e.name, e.line, e.col)
+                .declareTop("type", e.name, e.line, e.col)
                 .module_scope.put(e.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.sig_ as sg
-                .declareTop(sg.name, sg.line, sg.col)
+                .declareTop("type", sg.name, sg.line, sg.col)
                 .module_scope.put(sg.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.interface_ as i
                 # B5(a): register interface names so `obj is IFace` resolves the
                 # interface name (previously "undefined name: 'IFace'").
-                .declareTop(i.name, 0, 0)
+                .declareTop("type", i.name, i.line, i.col)
                 .module_scope.put(i.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.method_ as m
-                .declareTop(m.name, m.line, m.col)
+                .declareTop("fn", m.name, m.line, m.col)
                 .module_scope.put(m.name, 1)
                 .symbol_count = .symbol_count + 1
             on PNode.stmt_var as v
-                .declareTop(v.name, v.line, v.col)
+                .declareTop("var", v.name, v.line, v.col)
                 # Module-level var/const: hoist its name into module scope so bare
                 # references from function bodies resolve (emitted as a file-scope
                 # `pub var`/`pub const` by CodeGen).

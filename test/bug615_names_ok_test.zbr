@@ -1,5 +1,18 @@
 # BUG-615 control: one name in DIFFERENT namespaces is fine -- the same method in two
-# classes, a member named like a top-level function, a local named like a method.
+# classes, a member named like a top-level function, a local named like a method -- and so
+# is one name across top-level KINDS (a `def` and an interface, a `def` and a module var):
+# they emit as `_zbr_fn_` / `_zbr_ty_` / `_zbr_mv_` and never meet in zig.
+
+interface Shape
+    def area(): int
+
+def Shape(): int
+    return 7
+
+var level = 2
+
+def level(): int
+    return 9
 
 def width(): int
     return 100
@@ -21,4 +34,4 @@ class Pane
 def main()
     var width2 = Box(3).width()
     var b = Pane(4)
-    print("bug615: ${width2} ${b.width()} ${width()}")
+    print("bug615: ${width2} ${b.width()} ${width()} ${Shape()} ${level}")

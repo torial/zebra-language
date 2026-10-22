@@ -135,7 +135,8 @@ confirmed via `tools/bootstrap_check.sh`.
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
 - **Two declarations of one name are refused (BUG-615)** -- two methods, two fields, a field
-  and a method, or two top-level declarations sharing a name failed inside zig.
+  and a method, or two top-level functions / types / module vars sharing a name failed inside
+  zig. A function and a type may still share a name.
 - **A call inside an `assert`, `raise`, `<<-`, destructuring, `require` or `ensure` is checked
   (BUG-614)** -- a wrong argument count there passed `zebra -c` and failed at run time.
 - **A lambda's local cannot reuse a name the enclosing function has in scope (BUG-613)** --

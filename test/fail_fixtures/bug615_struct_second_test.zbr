@@ -1,0 +1,11 @@
+# BUG-615: two TYPES of one name collide in zig (both `_zbr_ty_Point`) -- refused even when
+# the second is a struct (it parses as a PClass, positioned like a class).
+
+class Point
+    var x: int
+
+struct Point
+    var x: int
+
+def main()
+    print(1)
