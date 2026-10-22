@@ -134,6 +134,9 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A `.sortBy` key orders as `<` does (BUG-616)** -- an enum key (by declaration), a class
+  key with `cue compare` and a `[]u8` string key failed inside zig; a key with no order (an
+  `@unordered` enum, a class without `cue compare`, an interface) is refused by name.
 - **Two declarations of one name are refused (BUG-615)** -- two methods, two fields, a field
   and a method, or two top-level functions / types / module vars sharing a name failed inside
   zig. A function and a type may still share a name.

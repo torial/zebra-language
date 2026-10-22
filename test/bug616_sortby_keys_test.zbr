@@ -1,0 +1,42 @@
+# BUG-616: a `.sortBy` key orders the way `<` does. The key comparison was a bare zig `<`
+# (with a special case for `[]const u8` only), so an enum key, a class key with
+# `cue compare`, and a `[]u8` string key (`upper()`) all failed inside zig with
+# "operator < not allowed". The key now goes through `_zebra_lt`.
+
+enum Suit
+    hearts
+    spades
+    clubs
+
+class P
+    var v: int
+    cue init(v: int)
+        .v = v
+    cue equals(other: P): bool
+        return .v == other.v
+    cue compare(other: P): int
+        return .v - other.v
+
+class Card
+    var suit: Suit
+    var p: P
+    var name: str
+    cue init(suit: Suit, p: P, name: str)
+        .suit = suit
+        .p = p
+        .name = name
+
+def order(cs: List(Card)): str
+    return "${cs.at(0).name}${cs.at(1).name}${cs.at(2).name}"
+
+def main()
+    var cs = [Card(Suit.clubs, P(1), "b"), Card(Suit.hearts, P(3), "c"), Card(Suit.spades, P(2), "a")]
+    cs.sortBy(def(c) = c.suit)
+    var by_suit = order(cs)
+    cs.sortBy(def(c: Card): P = c.p)
+    var by_p = order(cs)
+    cs.sortBy(def(c) = c.name)
+    var by_name = order(cs)
+    cs.sortBy(def(c) = c.name.upper())
+    var by_upper = order(cs)
+    print("bug616: ${by_suit} ${by_p} ${by_name} ${by_upper}")

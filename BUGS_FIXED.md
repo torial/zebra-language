@@ -6,6 +6,28 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-616: a `.sortBy` key compared with a bare zig `<` -- an enum, a `cue compare` class or a `[]u8` key failed inside zig -- FIXED 2026-10-22 (found 2026-10-22)
+- **Found by:** checking that `.sortBy` refuses an `@unordered` enum key (the BUG-609
+  follow-up). An ORDINARY enum key failed too: the runtime's key comparators
+  (`_zebra_sort_by_value` / `_fn`) special-cased `[]const u8` and otherwise wrote `ka < kb`,
+  so every key that `<` in Zebra handles through `_zebra_lt` -- an enum (declaration
+  order), a class with `cue compare`, a `[]u8` string such as `upper()` returns -- reached
+  zig as "operator < not allowed".
+- **Fix:** both key paths compare through `_zebra_lt`, the function `<` already lowers to.
+  And a key type with NO order is refused at the call, the three cases a bare `.sort()`
+  refuses: a class without `cue compare`, an `@unordered` enum, an interface. The key type
+  is the lambda's declared return type, or its expression body typed with the parameter
+  bound to the element type (`sortKeyType`); a two-parameter comparator or a key given as
+  a function value is not judged.
+- **Red-checked** with the committed runtime swapped in -- note that a compiler run from
+  OUTSIDE the repo reads `zig-out/bin/stdlib_preamble.zig`, the copy rebuild.sh installs,
+  not `selfhost/`: the first red-check swapped the wrong file and passed.
+- **Measured:** `-c` over the repo (1,152), zebra-ide (29) and the GameEngine (1,848): only
+  the two new must-fail fixtures moved.
+- **Fixtures:** `test/bug616_sortby_keys_test.zbr` (`cab bac abc abc`: enum, compare-class,
+  str and `[]u8` keys), `test/fail_fixtures/bug616_sortby_unordered_key_test.zbr` (16:8),
+  `test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr` (18:8).
+
 ### BUG-615: two declarations of one name in one namespace passed `zebra -c` and failed inside zig "duplicate struct member name" -- FIXED 2026-10-22 (found 2026-10-22)
 - **Found by:** Fable (GameEngine): an edit script added `selectedPosition()` to
   zbra/designer.zbr, which the class already had 350 lines down; the regen said OK and

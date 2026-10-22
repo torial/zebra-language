@@ -1084,6 +1084,10 @@ var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; resu
 items.sort()                         # natural ascending (numeric / lexicographic)
 items.sort(def(a, b) = a > b)        # custom comparator (descending here); same as sortBy
 items.sortBy(def(x) = x.score)     # ONE-argument KEY function: ascending by the key (BUG-422)
+                                     # The key orders as `<` does: numbers, strings, an enum by
+                                     # declaration, a class by its `cue compare` (BUG-616). A key
+                                     # with no order (an `@unordered` enum, a class without
+                                     # `cue compare`, an interface) is refused.
 items.reverse()                      # in place (2026-09-10)
 var snap = items.copy()              # a SHALLOW copy: a new list, the same elements (a nested
                                      # container is shared, not cloned; `<<-` is the deep copy).

@@ -938,8 +938,7 @@ fn _zebra_sort_by_value(comptime T: type, cmp: anytype, items: []T) void {
             if (comptime _zbr_fn_info_arity(@typeInfo(@TypeOf(C.call)).@"fn") == 2) {
                 const ka = cc.call(a);
                 const kb = cc.call(b);
-                if (comptime @TypeOf(ka) == []const u8) return std.mem.lessThan(u8, ka, kb);
-                return ka < kb;
+                return _zebra_lt(ka, kb); // BUG-616: a key orders as `<` does (str, cue compare, enum)
             }
             return cc.call(a, b);
         }
@@ -952,8 +951,7 @@ fn _zebra_sort_by_fn(comptime T: type, comptime cmp: anytype, items: []T) void {
             if (comptime (_zbr_fn_arity(@TypeOf(cmp)) orelse 2) == 1) {
                 const ka = cmp(a);
                 const kb = cmp(b);
-                if (comptime @TypeOf(ka) == []const u8) return std.mem.lessThan(u8, ka, kb);
-                return ka < kb;
+                return _zebra_lt(ka, kb); // BUG-616: a key orders as `<` does (str, cue compare, enum)
             }
             return cmp(a, b);
         }

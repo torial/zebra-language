@@ -6273,6 +6273,28 @@ def interfaceTypeName(t: Type_, ctx: InferCtx): str
             return tn
     return ""
 
+# BUG-616: the type a `.sortBy` key lambda returns -- its declared return type, or its
+# expression body typed with the parameter bound to the element type. A two-parameter
+# comparator, a block body or a non-lambda argument answers unknown (nothing is refused).
+def sortKeyType(lam: ExprLambda, elem: Type_, ctx: InferCtx): Type_
+    if lam.params.len != 1
+        return Type_.unknown_
+    if lam.return_type != nil
+        return typeFromRef(lam.return_type!)
+    if lam.body_ is LambdaBody.expr_ as kbe
+        var saved_scope = HashMap(str, Type_)()
+        for sk, sv in ctx.scope
+            saved_scope.set(sk, sv)
+        var kp: Param = lam.params.at(0)
+        if kp.type_ != nil
+            ctx.bind(kp.name, typeFromRef(kp.type_!))
+        else
+            ctx.bind(kp.name, elem)
+        var kt: Type_ = inferExpr(kbe, ctx)
+        ctx.scope = saved_scope
+        return kt
+    return Type_.unknown_
+
 # BUG-609 follow-up: an `@unordered enum`, by name, or "". Its values have no order, so
 # `<` and a bare `.sort()` on it are refused rather than following the declaration.
 def unorderedEnumName(t: Type_, ctx: InferCtx): str
@@ -6402,6 +6424,25 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                             ctx.addErr(file, cm.span.line, cm.span.col, "'" + st609u + "' is `@unordered`: its values have no order, so `.sort()` needs a comparator (e.g. `.sort(def(a, b) = a.key < b.key)`), or drop `@unordered` to sort by declaration")
                         else if st609i != ""
                             ctx.addErr(file, cm.span.line, cm.span.col, "'" + st609i + "' is an interface, which has no ordering: `.sort()` needs a comparator (e.g. `.sort(def(a, b) = a.key() < b.key())`)")
+                # BUG-616: a `.sortBy` key is compared with `<` -- a key type with no order
+                # (a class without `cue compare`, an `@unordered` enum, an interface)
+                # reached zig as "operator < not allowed".
+                if cm.member == "sortBy" and c.args.len == 1
+                    if c.args.at(0).value is Expr.lambda as sb_lam
+                        var sb_lt: Type_ = inferExpr(cm.object, ctx)
+                        if sb_lt is Type_.ref_to as sb_ltr
+                            sb_lt = sb_ltr
+                        if sb_lt is Type_.list_ as sb_elem
+                            var sb_kt: Type_ = sortKeyType(sb_lam, sb_elem, ctx)
+                            var sb_nc: str = missingCompareCue(sb_kt, true, ctx)
+                            var sb_un: str = unorderedEnumName(sb_kt, ctx)
+                            var sb_if: str = interfaceTypeName(sb_kt, ctx)
+                            if sb_nc != ""
+                                ctx.addErr(file, cm.span.line, cm.span.col, "'" + sb_nc + "' has no ordering, so it cannot be a `.sortBy` key: give it a `cue compare(other: " + sb_nc + "): int`, or return a field that orders")
+                            else if sb_un != ""
+                                ctx.addErr(file, cm.span.line, cm.span.col, "'" + sb_un + "' is `@unordered`: its values have no order, so it cannot be a `.sortBy` key -- return something that orders, or drop `@unordered` to sort by declaration")
+                            else if sb_if != ""
+                                ctx.addErr(file, cm.span.line, cm.span.col, "'" + sb_if + "' is an interface, which has no ordering, so it cannot be a `.sortBy` key: return something that orders")
                 # BUG-331: the optional JSON reads take exactly one key.
                 if cm.member == "has" or cm.member == "get" or cm.member == "tryStr" or cm.member == "tryInt" or cm.member == "tryFloat" or cm.member == "tryBool" or cm.member == "tryObj" or cm.member == "tryList"
                     if inferExpr(cm.object, ctx) is Type_.json_value

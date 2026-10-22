@@ -1,0 +1,17 @@
+# BUG-616: an `@unordered` enum has no order, so it cannot be a `.sortBy` key. It reached
+# zig as "operator < not allowed" (a bare `.sort()` and `<` on it were already refused).
+
+@unordered
+enum Suit
+    hearts
+    spades
+
+class Card
+    var suit: Suit
+    cue init(suit: Suit)
+        .suit = suit
+
+def main()
+    var cs = [Card(Suit.spades), Card(Suit.hearts)]
+    cs.sortBy(def(c) = c.suit)
+    print(cs.len)
