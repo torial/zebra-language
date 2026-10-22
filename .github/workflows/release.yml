@@ -98,7 +98,13 @@ jobs:
         run: |
           set -euo pipefail
           zig version
-          zig build -Doptimize=ReleaseSafe
+          # -Dcpu=baseline: with no CPU named, zig targets the BUILD runner's own CPU, and the
+          # binary may use instructions another machine lacks. rc7's Linux binary died with
+          # "Illegal instruction" (exit 132) on its first `--version` on one GitHub runner while
+          # the same file ran fine on another two hours earlier (the book's CI, 2026-10-22).
+          # A reader's machine is the case that matters; the smoke below runs on the build
+          # runner itself, so it can never see this.
+          zig build -Doptimize=ReleaseSafe -Dcpu=baseline
           ./zig-out/bin/${{ matrix.exe }} --version
 
       - name: Smoke (the packaged binary compiles and runs a program)

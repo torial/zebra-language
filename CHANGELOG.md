@@ -47,6 +47,9 @@ confirmed via `tools/bootstrap_check.sh`.
   changes meaning: a newline inside brackets was always an error.
 
 ### Fixes
+- **Release binaries are built for the baseline CPU** -- they were built for whatever CPU the
+  build runner had, so a released `zebra` could die with "Illegal instruction" on a machine
+  without those instructions (rc7's Linux binary did, on a GitHub runner, 2026-10-22).
 
 - **A List or map written only by subscript compiles (BUG-562).** `var s = [0, 0]` then
   `s[1] = 5` (or `s[i] += 1`, or `m[k] = v` on a map) was emitted as a Zig `var` and refused
