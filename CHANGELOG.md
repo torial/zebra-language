@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+### Runtime
+
+- **The WebSocket server's handshake is accepted by clients that check it (BUG-610, 2026-10-21).** `_WS_GUID` ended `85B24` where RFC 6455's ends `85B11`, so a browser or V's `net.websocket` refused a `Ws.serve` handshake; only the runtime's own `Ws.connect`, which does not check the accept value, ever connected. Found by the engine's V host joining a Zig-hosted game; `test/bug610_ws_accept_test.zbr` reads the handshake back over raw TCP against the RFC's sample key.
+
 ### Targets
 
 - `zebra --target v --also=a.zbr,b.zbr root.zbr` emits extra modules into the one V file (what a host calls that the root does not use: the engine's physics step for its V host). Collected before the root, so the root's main stays the one emitted; a root's main with parameters is emitted as `script_main` for a host's own `fn main` to call (2026-10-21).
