@@ -1,0 +1,19 @@
+# BUG-613 control: what the refusal must keep accepting -- sibling blocks inside a lambda
+# reusing a name, a lambda PARAMETER named like an enclosing local (BUG-233 renames it), and
+# an enclosing local declared AFTER the lambda.
+
+def main()
+    var xs = [1, 2]
+    var f = def(): int
+        if xs.len > 1
+            var t = 1
+            return t
+        else
+            var t = 2
+            return t
+    var j = 4
+    var g = def(j: int): int
+        var m = j + 1
+        return m
+    var m = 5
+    print("bug613: ${f()} ${g(j)} ${m}")

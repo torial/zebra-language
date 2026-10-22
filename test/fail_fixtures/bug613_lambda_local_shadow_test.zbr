@@ -1,0 +1,10 @@
+# BUG-613: a lambda is a nested function, and Zig forbids its locals from shadowing a name
+# the enclosing function has in scope -- it failed inside zig ("local constant shadows local
+# constant from outer scope"). Refused by name, as a block-level reuse is (BUG-461).
+
+def main()
+    var k = sys.args().len
+    var f = def(): int
+        var k = 10
+        return k
+    print(f() + k)

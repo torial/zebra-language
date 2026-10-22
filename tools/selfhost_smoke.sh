@@ -1408,6 +1408,8 @@ smoke_tc_fail test/fail_fixtures/bug569_go_this_capture_test.zbr "bug569_go_this
 smoke_tc_fail test/fail_fixtures/bug612_lambda_body_method_test.zbr "bug612_lambda_body_method_test.zbr:5:34: error: 'str' has no method 'toUpper'"
 smoke_tc_fail test/fail_fixtures/bug612_lambda_param_assign_test.zbr "bug612_lambda_param_assign_test.zbr:6:9: error: cannot assign to parameter 'x'"
 smoke_run test/bug612_lambda_body_ok_test.zbr "bug612: [3, 6, 9] 18 2 6 3"
+smoke_tc_fail test/fail_fixtures/bug613_lambda_local_shadow_test.zbr "bug613_lambda_local_shadow_test.zbr:8:9: error: \`k\` is already declared where this lambda can see it"
+smoke_run test/bug613_lambda_locals_ok_test.zbr "bug613: 1 5 5"
 smoke_run test/bug554_yield_over_split_test.zbr "bug554: [a][bb][ccc] 1 2 3"
 smoke_tc_fail test/fail_fixtures/bug604_unexposed_test.zbr "bug604_unexposed_test.zbr:6:14: error: undefined name: 'swingClip'"
 smoke_tc_fail test/fail_fixtures/bug602_field_default_undefined_test.zbr "bug602_field_default_undefined_test.zbr:6:18: error: undefined name: 'NOPE'"

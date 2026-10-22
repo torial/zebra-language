@@ -8283,8 +8283,9 @@ def checkDeclListTypeNames(decls: List(Decl), declared: List(str), file: str, ct
 # emitted it as written, so the program passed `-c` and failed inside Zig. This walks
 # each function body with a real scope STACK -- the checker's own `scope` map is flat
 # per function and cannot tell `for i in a` then `for i in b` (sibling scopes, legal)
-# from a nested reuse (illegal). Lambda bodies are not entered: they lower to a
-# separate Zig function whose locals are its own.
+# from a nested reuse (illegal). Lambda bodies are not entered here -- but NOT because a
+# lambda's locals are its own: Zig forbids a nested function's local from shadowing the
+# enclosing one too (BUG-613). The Resolver refuses that, with its block-scoped table.
 def shadowDeclare(name: str, line: int, col: int, names: List(str), lines: List(int), file: str, ctx: InferCtx)
     if name == "" or name == "_"
         return

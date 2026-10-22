@@ -46,15 +46,6 @@
 
 ---
 
-### BUG-613: a lambda's own local named like a local of the enclosing function fails inside zig "local constant shadows local constant from outer scope" -- OPEN (found 2026-10-21)
-- **Found by:** BUG-612's control fixture.
-- **Repro:** `var k = sys.args().len` / `var f = def(): int` / `    var k = 10` / `    return k`:
-  `-c` passes; zig refuses the lambda's `const k` because a nested function's local may not
-  shadow the enclosing function's. Pre-existing (the compiler before the evening fails the
-  same way) and independent of BUG-569: the lambda does not read the outer `k`.
-- **Expected:** a lambda body is its own scope, as the Resolver already treats it (BUG-589),
-  so the emit renames a colliding local -- BUG-233 already renames a lambda PARAMETER that
-  collides (`_zbr_lpN_<name>`); a local needs the same, at its declaration and every use.
 ### BUG-607: a `capture` closure's state does not survive being passed to a function -- OPEN, DECIDED 2026-10-21: closure values are references (found 2026-10-21)
 - **Found by:** mapping closure lowering for BUG-569.
 - **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then

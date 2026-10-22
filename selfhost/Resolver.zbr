@@ -329,6 +329,18 @@ class Resolver
         if .lam_stack.len > 0
             .lam_stack.at(.lam_stack.len - 1).own.put(name, kind)
 
+    # BUG-613: a local declared INSIDE a lambda whose name is already visible -- a local or
+    # parameter of the enclosing function, an outer lambda's local, the lambda's own
+    # parameter -- is a Zig shadowing error ("local constant shadows local constant from
+    # outer scope"): the lambda is a nested function, and Zig forbids its locals from
+    # shadowing. `method_scope` is block-scoped (BUG-589), so a sibling block's name is not
+    # visible here and is not refused. Lambda PARAMETERS keep BUG-233's rename; captures are
+    # struct fields; neither goes through here.
+    def declareLocal(name: str, line: int, col: int)
+        if .lam_stack.len > 0 and name != "_" and .method_scope.contains(name)
+            .errors.add(ResolveError(.fmtErrAt(line, col, "`" + name + "` is already declared where this lambda can see it -- a lambda's local cannot reuse the name (Zig forbids shadowing); rename one of them")))
+        .declare(name, 4)
+
     # BUG-569: `name` was read at line:col. If a lambda is being walked and the name is a
     # local or parameter of the enclosing function -- not the lambda's own -- every lambda
     # between the read and the function captures it (an outer lambda must carry the value
@@ -445,7 +457,7 @@ class Resolver
                 # Resolve init before declaring - so `var x = x` errors
                 for expr in v.init_expr
                     .resolveExpr(expr)?
-                .declare(v.name, 4)
+                .declareLocal(v.name, v.line, v.col)
                 .symbol_count = .symbol_count + 1
                 # BUG-569: a local bound to a lambda that captures nothing is a comptime
                 # function in the emit; another lambda reads it without capturing it.
@@ -457,7 +469,7 @@ class Resolver
                 for expr in d.init_expr
                     .resolveExpr(expr)?
                 for nm in d.names
-                    .declare(nm, 4)
+                    .declareLocal(nm, d.line, d.col)
                     .symbol_count = .symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value
@@ -484,7 +496,7 @@ class Resolver
                     .resolveExpr(expr)?
                 var fi_saved = .method_scope.copy()
                 for var_name in f.var_names
-                    .declare(var_name, 4)
+                    .declareLocal(var_name, f.line, f.col)
                 # BUG-593: the `for x in xs if <filter>` condition was never walked.
                 for expr in f.filter
                     .resolveExpr(expr)?

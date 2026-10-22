@@ -6,6 +6,26 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-613: a lambda's own local named like a local of the enclosing function failed inside zig "local constant shadows local constant from outer scope" -- FIXED 2026-10-22 (found 2026-10-21)
+- **Found by:** BUG-612's control fixture.
+- **Decision:** refused, not renamed -- the same rule Zebra already applies to a name reused
+  in an enclosing block (BUG-461, "a name cannot be reused inside the scope that declares
+  it"). A lambda PARAMETER keeps BUG-233's rename, the deliberate exception for callback
+  receivers.
+- **Fix:** the Resolver's `declareLocal`: a `var`, destructuring or `for` variable declared
+  inside a lambda whose name is already visible -- an enclosing local or parameter, an outer
+  lambda's local, the lambda's own parameter -- is refused by name. Its scope table is
+  block-scoped (BUG-589), so sibling blocks reusing a name stay legal. The checker's BUG-461
+  walk said lambda bodies were skipped because "their locals are their own"; that premise
+  was false and the comment now says where the rule lives.
+- **Not covered:** an `if x as y`, `catch`, or `branch ... as` binding inside a lambda that
+  shadows (those resolver sites carry no position yet); they still reach zig.
+- **Measured:** `-c` over the repo (1,129) and zebra-ide (29) moved 0; the GameEngine moved four
+  machine-ported scripts, each a real shadow (e.g. `var t` inside a `sys.go` lambda beside an
+  enclosing `t`).
+- **Fixtures:** `test/fail_fixtures/bug613_lambda_local_shadow_test.zbr` (8:9) and the control
+  `test/bug613_lambda_locals_ok_test.zbr` (`1 5 5`).
+
 ### BUG-612: the type checker never walked a lambda's body -- FIXED 2026-10-21 (found 2026-10-21)
 - **Found by:** a `this`-capture probe that called `.toUpper()` (not a str method) inside a
   lambda: `-c` passed and zig refused it. Nothing in the checker descended into a lambda:
