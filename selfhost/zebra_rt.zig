@@ -2649,7 +2649,13 @@ pub fn _http_serve(port: u16, handler: anytype) void {
 // ─────────────────────────────────────────────────────────────────────────────
 // WebSocket (RFC 6455) — Ws.connect/send/recv/close + Ws.serve
 // ─────────────────────────────────────────────────────────────────────────────
-pub const _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B24";
+// RFC 6455 section 1.3: the accept key is base64(SHA-1(client key + this GUID)).
+// Until BUG-611 (2026-10-21) the last two digits read 24, so every client that
+// checks the accept value -- a browser, V's net.websocket -- refused a runtime
+// server's handshake, and only the runtime's own client (which does not check)
+// ever connected. Known answer: the sample key "dGhlIHNhbXBsZSBub25jZQ==" must
+// yield "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=".
+pub const _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 pub const _WS_TLS_BUF = std.crypto.tls.Client.min_buffer_len;
 
 // Heap-allocated TLS state — must not move after _ws_tls_init() is called.

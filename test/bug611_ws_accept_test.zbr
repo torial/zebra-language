@@ -1,0 +1,50 @@
+# BUG-611 — the WebSocket server's handshake answers with RFC 6455's accept value.
+#
+# `Ws.serve` computed `Sec-WebSocket-Accept` with a GUID ending 85B24 (the RFC's ends
+# 85B11), so every client that checks the value -- a browser, V's net.websocket --
+# refused the handshake; only `Ws.connect`, which does not check, ever connected
+# (found 2026-10-21 by the engine's V host joining a Zig-hosted game). `ws_echo_test`
+# cannot see this: both ends are ours. This fixture speaks the handshake over a raw
+# TCP connection with the RFC's own sample key and reads the answer back, so the
+# known answer from the standard is the oracle:
+#     key "dGhlIHNhbXBsZSBub25jZQ==" -> accept "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+# Bounded as ws_echo_test is: the server on a sys.go thread, a retrying connect with
+# a ceiling, registered with smoke_run_bounded.
+
+def handler(ws: WsConn)
+    var m = ws.recv()
+    ws.close()
+
+def main()
+    sys.go(def()
+        Ws.serve(19915, handler)
+    )
+
+    var accept: str = ""
+    var status: str = ""
+    var connected: bool = false
+    var attempts: int = 0
+    while attempts < 20 and not connected
+        var c = Tcp.connect("127.0.0.1", 19915)
+        if c as conn
+            connected = true
+            conn.write("GET / HTTP/1.1\r\nHost: 127.0.0.1:19915\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+            status = conn.readLine()
+            # the response's headers, up to the blank line (each line ends in \r)
+            var guard = 0
+            var line = conn.readLine()
+            while guard < 16 and line.contains(":")
+                if line.contains("Sec-WebSocket-Accept:")
+                    accept = line
+                line = conn.readLine()
+                guard = guard + 1
+            conn.close()
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+
+    assert connected, "the raw client reached the in-process server within 20 attempts"
+    assert status.contains("101"), "the server switched protocols: " + status
+    assert accept.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), "RFC 6455's sample key answered with its known accept value; got '" + accept + "'"
+
+    print("bug611_ws_accept: OK")

@@ -23,8 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+### Runtime
+
+- **The WebSocket server's handshake is accepted by clients that check it (BUG-611, 2026-10-21).** `_WS_GUID` ended `85B24` where RFC 6455's ends `85B11`, so a browser or V's `net.websocket` refused a `Ws.serve` handshake; only the runtime's own `Ws.connect`, which does not check the accept value, ever connected. Found by the engine's V host joining a Zig-hosted game; `test/bug611_ws_accept_test.zbr` reads the handshake back over raw TCP against the RFC's sample key.
+
 ### Targets
 
+- **The V target's panics go through `zbr_panic`, and a host may hear them first (2026-10-21).** Every panic the emitted program or its runtime raises (an assert, a raise nothing catches, a narrowed read of none, a map fetch of a missing key, a sqlite failure) calls `zbr_panic(msg)`; a program built with `-d zbr_panic_hook` defines `zbr_host_panic(msg string)` in module main and hears it before V's own panic (the engine's V host: its error overlay, `saves/last_panic.txt`, exit 3). Without the define the branch is not compiled and nothing changes.
 - `zebra --target v --also=a.zbr,b.zbr root.zbr` emits extra modules into the one V file (what a host calls that the root does not use: the engine's physics step for its V host). Collected before the root, so the root's main stays the one emitted; a root's main with parameters is emitted as `script_main` for a host's own `fn main` to call (2026-10-21).
 - **`zebra --target v` -- a V backend, a proof of concept (merged 2026-10-15).** It emits a
   Zebra program as one V file over an inlined runtime (`selfhost/zebra_rt.v`), and with

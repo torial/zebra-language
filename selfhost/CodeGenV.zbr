@@ -272,7 +272,7 @@ class VGen
                 reasons = reasons + .refused.at(k)
                 .refused.set(k, .refused.at(k) + " [in " + what + ": stubbed]")
                 k = k + 1
-            .line("panic('not on the V backend: " + .vEscape(what + ": " + reasons) + "')")
+            .line("zbr_panic('not on the V backend: " + .vEscape(what + ": " + reasons) + "')")
         else
             for l in .captured
                 .sb.append(l)
@@ -450,7 +450,7 @@ class VGen
             # infers a generic's T from the assignment target and boxes without a
             # method table (repro_v8)
             .narrowed_or_used = true
-            return "(" + rendered + " or { panic(" + .vStringLit("narrowed read of " + what + " is none at " + .current_file) + ") })"
+            return "(" + rendered + " or { zbr_panic(" + .vStringLit("narrowed read of " + what + " is none at " + .current_file) + ") })"
         # elsewhere the function form: 0.5.2 miscompiles an `or` expression used
         # directly as a call argument of a generic-struct pointer type
         if vt.startsWith("?") and vt.len > 1
@@ -1743,6 +1743,8 @@ class VGen
                         var ot: str = .vTypeOf(cm.object)
                         if cm.member == "last" and c.args.count() == 0
                             return .elemOf(ot)
+                        if cm.member == "pop" and c.args.count() == 0
+                            return "!" + .elemOf(ot)   # the last element or an error (an empty list): `xs.pop()?` propagates
                         var rown: str = ot
                         if rown.startsWith("&")
                             rown = rown.substring(1, rown.len)
@@ -2295,7 +2297,7 @@ class VGen
                 else
                     what = .vStringLit(cs)
                 .line("if !(" + cs + ") {")
-                .line("\tpanic(" + place + " + " + what + ")")
+                .line("\tzbr_panic(" + place + " + " + what + ")")
                 .line("}")
             on Stmt.print_ as p
                 .genPrint(p)
@@ -2472,7 +2474,7 @@ class VGen
             if .branchSubjectIsPaddedUnion(b)
                 # the padded one-variant union: its else can never run, and an
                 # empty one leaves V a path without a return when the arm returns
-                .line("else { panic('unreachable: the pad of a one-variant union') }")
+                .line("else { zbr_panic('unreachable: the pad of a one-variant union') }")
             else
                 .line("else {}")
         .depth = .depth - 1
@@ -4001,6 +4003,8 @@ class VGen
         if name == "build" and args.count() == 0: return obj + ".build()"
         if name == "append" and args.count() == 1: return obj + ".append(" + .argsStr(args) + ")"
         if name == "lastIndexOf" and args.count() == 1: return "zstr_last_index_of(" + obj + ", " + .argsStr(args) + ")"
+        if name == "pop" and args.count() == 0 and rtype.startsWith("&ZList[")
+            return obj + ".pop()"   # the runtime's pop: the last element or an error on an empty list, as the Zig side
         if name == "sort" or name == "sortBy" or name == "map" or name == "filter" or name == "reduce" or name == "pop"
             .refuse("." + name + " (needs the receiver's type or a closure: the next slices)", span)
         if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"

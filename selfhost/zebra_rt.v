@@ -103,7 +103,7 @@ pub fn (m &ZMap[K, V]) contains(k K) bool {
 // Zebra's fetch: the value, or a failure when the key is absent (the Zig
 // backend's `.?`; callers guard with contains)
 pub fn (m &ZMap[K, V]) fetch(k K) V {
-	return m.m[k] or { panic('fetch: no such key: ${k}') }
+	return m.m[k] or { zbr_panic('fetch: no such key: ${k}') }
 }
 
 pub fn new_zmap[K, V]() &ZMap[K, V] {
@@ -517,13 +517,13 @@ pub fn zhttp_post(url string, body string) ?ZHttpResponse {
 // == http end ==
 
 pub fn zunwrap[T](x ?T) T {
-	return x or { panic('a nil unwrapped') }
+	return x or { zbr_panic('a nil unwrapped') }
 }
 
 // the same, naming the Zebra source place ("file.zbr:line") as the Zig
 // side's runtime faults do (the engine's error overlay reads it)
 pub fn zunwrap_at[T](x ?T, at string) T {
-	return x or { panic('nil unwrapped at ' + at) }
+	return x or { zbr_panic('nil unwrapped at ' + at) }
 }
 
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
@@ -663,6 +663,15 @@ pub fn zlist_contains[T](l &ZList[T], x T) bool {
 }
 
 // the list's own spellings, reached when the emitter knows the receiver is a list
+// `xs.pop()`: the last element, removed, or a Zebra error on an empty list (the Zig side's
+// _zbr_list_pop, BUG-545), so `xs.pop()?` propagates on both backends
+pub fn (mut l ZList[T]) pop() !T {
+	if l.items.len == 0 {
+		return error('pop on an empty list')
+	}
+	return l.items.pop()
+}
+
 pub fn (mut l ZList[T]) remove_at(i i64) {
 	l.items.delete(int(i))
 }
@@ -1339,13 +1348,13 @@ fn zsqlite_params(params &ZList[string]) []string {
 // exec(sql, params): the statement run with its `?` parameters; a failure
 // is the program's fault and says the statement
 pub fn (mut d ZSqliteDb) exec(sql_text string, params &ZList[string]) {
-	d.db.exec_param_many(sql_text, zsqlite_params(params)) or { panic('sqlite exec: ' + err.msg() + ' -- ' + sql_text) }
+	d.db.exec_param_many(sql_text, zsqlite_params(params)) or { zbr_panic('sqlite exec: ' + err.msg() + ' -- ' + sql_text) }
 }
 
 // query(sql, params): the rows, each its columns by name
 pub fn (mut d ZSqliteDb) query(sql_text string, params &ZList[string]) &ZList[&ZSqliteRow] {
 	mut out := new_zlist[&ZSqliteRow]()
-	rows := d.db.exec_param_many(sql_text, zsqlite_params(params)) or { panic('sqlite query: ' + err.msg() + ' -- ' + sql_text) }
+	rows := d.db.exec_param_many(sql_text, zsqlite_params(params)) or { zbr_panic('sqlite query: ' + err.msg() + ' -- ' + sql_text) }
 	for r in rows {
 		mut cols := map[string]string{}
 		for i, name in r.names {
@@ -1664,4 +1673,18 @@ pub fn zpath_stem(p string) string {
 
 pub fn zpath_join(a string, b string) string {
 	return os.join_path(a, b)
+}
+
+// Every panic the runtime or an emitted program raises (an assert, a raise nothing catches,
+// a nil unwrapped, a map fetch of a missing key, a sqlite failure) comes through here. A host
+// built with `-d zbr_panic_hook` defines `zbr_host_panic(msg string)` in module main and hears
+// it first (the engine's V host: the message to saves/last_panic.txt and the clipboard, the
+// window held on a red strip, exit 3 -- its Zig host's root panic handler); without the define
+// the branch is not compiled and V's own panic runs, as before 2026-10-21.
+@[noreturn]
+fn zbr_panic(msg string) {
+	$if zbr_panic_hook ? {
+		zbr_host_panic(msg)
+	}
+	panic(msg)
 }
