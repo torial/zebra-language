@@ -65,8 +65,24 @@ Open bugs live in `BUGS.md`.
   block-scoped (BUG-589), so sibling blocks reusing a name stay legal. The checker's BUG-461
   walk said lambda bodies were skipped because "their locals are their own"; that premise
   was false and the comment now says where the rule lives.
-- **Not covered:** an `if x as y`, `catch`, or `branch ... as` binding inside a lambda that
-  shadows (those resolver sites carry no position yet); they still reach zig.
+- **The remaining sites, closed the next day:** an `if x as y`, `branch ... as r` or
+  `expr catch |e|` binding inside a lambda, named like an enclosing local, still reached zig
+  ("capture 'y' shadows local constant"). They are refused by the checker's BUG-461 shadow
+  walk, which now descends into expressions: a lambda body is walked with the enclosing
+  names in scope (its parameters added unchecked, keeping BUG-233's rename), and a
+  `catch |e|` binding is declared over its fallback. The `catch` half was not
+  lambda-specific -- `var r = f() catch |e| ...` beside an enclosing `e` failed inside zig
+  ("redeclaration of local constant") in any function, because the walk never looked inside
+  expressions. `shadowExpr` is gated `expr-walker: exhaustive` and `shadowStmts`
+  `stmt-walker: exhaustive`, so a statement or expression kind it skips is a finding.
+  Measured: `-c` over the repo (1,145), zebra-ide (29) and the GameEngine (1,848) moved 0.
+  Fixtures: `test/fail_fixtures/bug613_lambda_if_as_shadow_test.zbr` (12:9),
+  `test/fail_fixtures/bug613_lambda_branch_as_shadow_test.zbr` (12:13),
+  `test/fail_fixtures/bug613_catch_binding_shadow_test.zbr`
+  (13:16), each a zig error on the compiler before; the control
+  `test/bug613_bindings_ok_test.zbr` (a lambda parameter named like an enclosing local,
+  sibling lambdas and catches reusing a binding, a binding named like a LATER local, nested
+  lambdas) prints the same on both compilers.
 - **Measured:** `-c` over the repo (1,129) and zebra-ide (29) moved 0; the GameEngine moved four
   machine-ported scripts, each a real shadow (e.g. `var t` inside a `sys.go` lambda beside an
   enclosing `t`).

@@ -1,0 +1,35 @@
+# BUG-613 control: what the shadow walk must still ACCEPT once it descends into lambdas and
+# catch expressions -- a lambda parameter named like an enclosing local (BUG-233 renames
+# it), sibling lambdas and sibling catches reusing one binding name, a lambda binding named
+# like a local declared only AFTER the lambda, and nested lambdas with distinct names.
+
+def find(n: int): int?
+    if n > 0
+        return n
+    return nil
+
+def risky(n: int): int throws
+    if n > 1
+        raise "big"
+    return n
+
+def main()
+    var x = 10
+    var addx = def(x: int): int
+        return x + 1
+    var f = def(n: int): int
+        if find(n) as v
+            return v
+        return 0
+    var g = def(n: int): int
+        if find(n) as later
+            return later * 2
+        return 0
+    var a = risky(1) catch |err| err.message.len
+    var b = risky(5) catch |err| err.message.len
+    var h = def(n: int): int
+        var inner = def(m: int): int
+            return risky(m) catch |err2| err2.message.len + 100
+        return inner(n) + (risky(n) catch |err| err.message.len)
+    var later = 4
+    print("bug613b: ${addx(1)} ${f(3)} ${g(3)} ${a} ${b} ${h(5)} ${later} ${x}")

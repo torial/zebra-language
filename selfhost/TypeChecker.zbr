@@ -8316,9 +8316,12 @@ def checkDeclListTypeNames(decls: List(Decl), declared: List(str), file: str, ct
 # emitted it as written, so the program passed `-c` and failed inside Zig. This walks
 # each function body with a real scope STACK -- the checker's own `scope` map is flat
 # per function and cannot tell `for i in a` then `for i in b` (sibling scopes, legal)
-# from a nested reuse (illegal). Lambda bodies are not entered here -- but NOT because a
-# lambda's locals are its own: Zig forbids a nested function's local from shadowing the
-# enclosing one too (BUG-613). The Resolver refuses that, with its block-scoped table.
+# from a nested reuse (illegal). It also descends into EXPRESSIONS: a lambda body is
+# walked with the enclosing names still in scope (Zig forbids a nested function's capture
+# from shadowing the enclosing function's locals too -- BUG-613), and an `expr catch |e|`
+# binding is declared over its fallback. A `var` / `for` variable inside a lambda is
+# refused earlier, by the Resolver's block-scoped table (BUG-613); what reaches this walk
+# is the `if x as y`, `branch ... as r` and `catch |e|` bindings that table cannot see.
 def shadowDeclare(name: str, line: int, col: int, names: List(str), lines: List(int), file: str, ctx: InferCtx)
     if name == "" or name == "_"
         return
@@ -8339,22 +8342,132 @@ def shadowPop(names: List(str), lines: List(int), mark: int)
         names.remove(names.len - 1)
         lines.remove(lines.len - 1)
 
+# Lambdas and `catch |e|` bindings live inside expressions, so every expression a
+# statement holds is walked (BUG-613's remaining sites). Bindings are scoped exactly as
+# Zig scopes them: a lambda's parameters and body, a catch binding over its fallback.
+# expr-walker: exhaustive
+# expr-walker-ok: ident -- a name USE declares nothing.
+# expr-walker-ok: zig_lit -- raw Zig text binds no Zebra name.
+def shadowExpr(e: Expr, names: List(str), lines: List(int), file: str, ctx: InferCtx)
+    branch e
+        on Expr.lambda as lam
+            for lc in lam.captures
+                if lc.init_expr as lci
+                    shadowExpr(lci, names, lines, file, ctx)
+            var m_lam: int = names.len
+            # Parameters are added unchecked: BUG-233 renames a lambda parameter that
+            # collides, the deliberate exception for callback receivers.
+            for lp in lam.params
+                names.add(lp.name)
+                lines.add(0)
+            branch lam.body_
+                on LambdaBody.expr_ as lbe
+                    shadowExpr(lbe, names, lines, file, ctx)
+                on LambdaBody.stmts as lbs
+                    shadowStmts(lbs, names, lines, file, ctx)
+            shadowPop(names, lines, m_lam)
+        on Expr.catch_ as ec
+            shadowExpr(ec.expr, names, lines, file, ctx)
+            var m_c: int = names.len
+            if ec.err_var as ecv
+                shadowDeclare(ecv, ec.span.line, ec.span.col, names, lines, file, ctx)
+            shadowExpr(ec.fallback, names, lines, file, ctx)
+            shadowPop(names, lines, m_c)
+        on Expr.unary as u
+            shadowExpr(u.operand, names, lines, file, ctx)
+        on Expr.binary as b
+            shadowExpr(b.left, names, lines, file, ctx)
+            shadowExpr(b.right, names, lines, file, ctx)
+        on Expr.call as c
+            shadowExpr(c.callee, names, lines, file, ctx)
+            for a in c.args
+                shadowExpr(a.value, names, lines, file, ctx)
+        on Expr.member as mem
+            shadowExpr(mem.object, names, lines, file, ctx)
+        on Expr.index as ix
+            shadowExpr(ix.object, names, lines, file, ctx)
+            shadowExpr(ix.index, names, lines, file, ctx)
+        on Expr.slice as slc
+            shadowExpr(slc.object, names, lines, file, ctx)
+            if slc.start as sst
+                shadowExpr(sst, names, lines, file, ctx)
+            if slc.stop_ as ssp
+                shadowExpr(ssp, names, lines, file, ctx)
+        on Expr.cast as ca
+            shadowExpr(ca.expr, names, lines, file, ctx)
+        on Expr.to_non_nil as tnn
+            shadowExpr(tnn.expr, names, lines, file, ctx)
+        on Expr.is_nil as isn
+            shadowExpr(isn.expr, names, lines, file, ctx)
+        on Expr.orelse_ as oe
+            shadowExpr(oe.expr, names, lines, file, ctx)
+            shadowExpr(oe.fallback, names, lines, file, ctx)
+        on Expr.if_expr as ie
+            shadowExpr(ie.cond, names, lines, file, ctx)
+            shadowExpr(ie.then_expr, names, lines, file, ctx)
+            shadowExpr(ie.else_expr, names, lines, file, ctx)
+        on Expr.try_ as tr
+            shadowExpr(tr.expr, names, lines, file, ctx)
+        on Expr.list_lit as ll
+            for le in ll.elems
+                shadowExpr(le, names, lines, file, ctx)
+        on Expr.array_lit as al
+            for ae in al.elems
+                shadowExpr(ae, names, lines, file, ctx)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                shadowExpr(se, names, lines, file, ctx)
+        on Expr.tuple_lit as tl
+            for te in tl.elems
+                shadowExpr(te, names, lines, file, ctx)
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                shadowExpr(de.key, names, lines, file, ctx)
+                shadowExpr(de.value, names, lines, file, ctx)
+        on Expr.string_interp as sip
+            for sp in sip.parts
+                if sp is StringPart.expr_ as spe
+                    shadowExpr(spe, names, lines, file, ctx)
+        on Expr.type_check as tck
+            shadowExpr(tck.expr, names, lines, file, ctx)
+        on Expr.chained_cmp as ccmp
+            for co in ccmp.operands
+                shadowExpr(co, names, lines, file, ctx)
+        on Expr.except_ as exc
+            shadowExpr(exc.base, names, lines, file, ctx)
+            for ef in exc.fields
+                shadowExpr(ef.value, names, lines, file, ctx)
+        on Expr.old_ as eo
+            shadowExpr(eo.operand, names, lines, file, ctx)
+        on Expr.opt_chain as oc
+            shadowExpr(oc.base, names, lines, file, ctx)
+            for oa in oc.args
+                shadowExpr(oa.value, names, lines, file, ctx)
+        else
+            pass
+
+# stmt-walker: exhaustive
 def shadowStmts(stmts: List(Stmt), names: List(str), lines: List(int), file: str, ctx: InferCtx)
     var mark: int = names.len
     for st in stmts
         branch st
             on Stmt.var_ as sv
+                if sv.init_expr as svi
+                    shadowExpr(svi, names, lines, file, ctx)
                 shadowDeclare(sv.name, sv.span.line, sv.span.col, names, lines, file, ctx)
             on Stmt.destruct as sd
+                shadowExpr(sd.init_expr, names, lines, file, ctx)
                 for dn in sd.names
                     shadowDeclare(dn, sd.span.line, sd.span.col, names, lines, file, ctx)
             on Stmt.if_ as si
+                shadowExpr(si.cond, names, lines, file, ctx)
                 var m_if: int = names.len
                 if si.is_capture as icap
                     shadowDeclare(icap, si.span.line, si.span.col, names, lines, file, ctx)
                 shadowStmts(si.then_stmts, names, lines, file, ctx)
                 shadowPop(names, lines, m_if)
                 for ei in si.else_ifs
+                    shadowExpr(ei.cond, names, lines, file, ctx)
                     var m_ei: int = names.len
                     if ei.is_capture as ecap
                         shadowDeclare(ecap, ei.span.line, ei.span.col, names, lines, file, ctx)
@@ -8363,16 +8476,24 @@ def shadowStmts(stmts: List(Stmt), names: List(str), lines: List(int), file: str
                 if si.else_stmts as ies
                     shadowStmts(ies, names, lines, file, ctx)
             on Stmt.while_ as sw
+                shadowExpr(sw.cond, names, lines, file, ctx)
                 shadowStmts(sw.stmts, names, lines, file, ctx)
             on Stmt.for_in as sfi
+                shadowExpr(sfi.iter, names, lines, file, ctx)
                 var m_fi: int = names.len
                 for fv in sfi.vars
                     shadowDeclare(fv, sfi.span.line, sfi.span.col, names, lines, file, ctx)
+                if sfi.filter as sff
+                    shadowExpr(sff, names, lines, file, ctx)
                 shadowStmts(sfi.stmts, names, lines, file, ctx)
                 shadowPop(names, lines, m_fi)
                 if sfi.else_ as fie
                     shadowStmts(fie, names, lines, file, ctx)
             on Stmt.for_num as sfn
+                shadowExpr(sfn.start, names, lines, file, ctx)
+                shadowExpr(sfn.stop_, names, lines, file, ctx)
+                if sfn.step as sfs
+                    shadowExpr(sfs, names, lines, file, ctx)
                 var m_fn: int = names.len
                 shadowDeclare(sfn.var_, sfn.span.line, sfn.span.col, names, lines, file, ctx)
                 shadowStmts(sfn.stmts, names, lines, file, ctx)
@@ -8380,17 +8501,24 @@ def shadowStmts(stmts: List(Stmt), names: List(str), lines: List(int), file: str
                 if sfn.else_ as fne
                     shadowStmts(fne, names, lines, file, ctx)
             on Stmt.branch_ as sbr
+                shadowExpr(sbr.expr, names, lines, file, ctx)
                 for arm in sbr.cases
+                    for av in arm.values
+                        shadowExpr(av, names, lines, file, ctx)
                     var m_arm: int = names.len
                     if arm.binding as ab
                         shadowDeclare(ab, arm.span.line, arm.span.col, names, lines, file, ctx)
+                    for ag in arm.guard_expr
+                        shadowExpr(ag, names, lines, file, ctx)
                     shadowStmts(arm.stmts, names, lines, file, ctx)
                     shadowPop(names, lines, m_arm)
                 if sbr.else_ as bre
                     shadowStmts(bre, names, lines, file, ctx)
             on Stmt.with_ as swi
+                shadowExpr(swi.target, names, lines, file, ctx)
                 shadowStmts(swi.stmts, names, lines, file, ctx)
             on Stmt.in_scope as sis
+                shadowExpr(sis.expr, names, lines, file, ctx)
                 shadowStmts(sis.stmts, names, lines, file, ctx)
             on Stmt.try_catch as stc
                 shadowStmts(stc.stmts, names, lines, file, ctx)
@@ -8401,7 +8529,36 @@ def shadowStmts(stmts: List(Stmt), names: List(str), lines: List(int), file: str
                     shadowStmts(cc.stmts, names, lines, file, ctx)
                     shadowPop(names, lines, m_cc)
             on Stmt.allocate_ as sal
+                shadowExpr(sal.source, names, lines, file, ctx)
                 shadowStmts(sal.stmts, names, lines, file, ctx)
+            on Stmt.return_ as sr
+                if sr.value as srv
+                    shadowExpr(srv, names, lines, file, ctx)
+            on Stmt.yield_ as sy
+                shadowExpr(sy.value, names, lines, file, ctx)
+            on Stmt.assert_ as sas
+                shadowExpr(sas.cond, names, lines, file, ctx)
+                if sas.message as sam
+                    shadowExpr(sam, names, lines, file, ctx)
+            on Stmt.assign as sa
+                shadowExpr(sa.target, names, lines, file, ctx)
+                shadowExpr(sa.value, names, lines, file, ctx)
+            on Stmt.expr as se
+                shadowExpr(se, names, lines, file, ctx)
+            on Stmt.raise_ as sra
+                if sra.message as srm
+                    shadowExpr(srm, names, lines, file, ctx)
+                if sra.details as srd
+                    shadowExpr(srd, names, lines, file, ctx)
+            on Stmt.copy_out as sco
+                shadowExpr(sco.target, names, lines, file, ctx)
+                shadowExpr(sco.value, names, lines, file, ctx)
+            on Stmt.print_ as spr
+                for pa in spr.args
+                    shadowExpr(pa, names, lines, file, ctx)
+            on Stmt.contract as sct
+                for cx in sct.exprs
+                    shadowExpr(cx, names, lines, file, ctx)
             else
                 pass
     shadowPop(names, lines, mark)

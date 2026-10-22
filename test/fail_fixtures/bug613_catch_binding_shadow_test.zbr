@@ -1,0 +1,14 @@
+# BUG-613 (remaining site): an `expr catch |e|` binding named like an enclosing local failed
+# inside zig -- "redeclaration of local constant" outside a lambda, "capture shadows" in one.
+# The checker's shadow walk never looked inside expressions.
+
+def risky(n: int): int throws
+    if n > 1
+        raise "big"
+    return n
+
+def main()
+    var e = 5
+    var f = def(n: int): int
+        return risky(n) catch |e| e.message.len
+    print(f(3) + e)

@@ -1,0 +1,16 @@
+# BUG-613 (remaining site): a `branch ... as r` binding inside a lambda, named like a local
+# of the enclosing function, failed inside zig.
+
+union Shape
+    circle: int
+    sq: int
+
+def main()
+    var r = 2
+    var f = def(s: Shape): int
+        branch s
+            on Shape.circle as r
+                return r
+            on Shape.sq as q
+                return q
+    print(f(Shape.circle(4)) + r)

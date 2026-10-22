@@ -140,7 +140,9 @@ confirmed via `tools/bootstrap_check.sh`.
 - **A call inside an `assert`, `raise`, `<<-`, destructuring, `require` or `ensure` is checked
   (BUG-614)** -- a wrong argument count there passed `zebra -c` and failed at run time.
 - **A lambda's local cannot reuse a name the enclosing function has in scope (BUG-613)** --
-  it failed inside zig; it is refused by name, as a block-level reuse already was.
+  it failed inside zig; it is refused by name, as a block-level reuse already was. This
+  covers `var` / `for` variables and the `if x as y`, `branch ... as r` and `catch |e|`
+  bindings; a `catch |e|` binding that reuses an enclosing name is refused in any function.
 - **A lambda's body is checked (BUG-612)** -- an unknown method, a wrong argument count or a
   type error inside a lambda passed `zebra -c` and failed inside zig.
 - **A lambda in a class method reads and changes `this` (BUG-569)** -- `.count += 1` in a

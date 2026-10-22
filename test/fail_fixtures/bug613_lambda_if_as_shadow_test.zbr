@@ -1,0 +1,15 @@
+# BUG-613 (remaining site): an `if x as y` binding inside a lambda, named like a local of
+# the enclosing function, failed inside zig ("capture 'y' shadows local constant").
+
+def find(n: int): int?
+    if n > 0
+        return n
+    return nil
+
+def main()
+    var y = 1
+    var f = def(n: int): int
+        if find(n) as y
+            return y
+        return 0
+    print(f(3) + y)
