@@ -25,6 +25,7 @@ const _zebra_sort_natural = _zbr_rt._zebra_sort_natural;
 const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrMap = _zbr_rt._ZbrMap;
 const _zbr_new = _zbr_rt._zbr_new;
+const _zbr_cell = _zbr_rt._zbr_cell;
 const _zebra_map_keys = _zbr_rt._zebra_map_keys;
 const _sys_run = _zbr_rt._sys_run;
 const _sys_exec_inherit = _zbr_rt._sys_exec_inherit;
@@ -5385,8 +5386,8 @@ pub fn _zbr_fn_runLsp() void {
     var dirty = _zbr_new(_ZbrMap(bool));
 // zbr:selfhost/main.zbr:2864
     _sys_go((struct {
-        evCh: *_Chan([]const u8),
-        eof: *_Atomic(bool),
+        evCh: **_Chan([]const u8),
+        eof: **_Atomic(bool),
      pub fn call(_zbr_cself5: @This()) void {
 // zbr:selfhost/main.zbr:2868
         while (true) {
@@ -5395,15 +5396,15 @@ pub fn _zbr_fn_runLsp() void {
 // zbr:selfhost/main.zbr:2870
             if ((rm == null)) {
 // zbr:selfhost/main.zbr:2871
-                _zbr_cself5.eof.store(true);
+                _zbr_cself5.eof.*.store(true);
 // zbr:selfhost/main.zbr:2872
-                _zbr_cself5.evCh.close();
+                _zbr_cself5.evCh.*.close();
                 break;
             }
 // zbr:selfhost/main.zbr:2874
-            _zbr_cself5.evCh.send(rm.?);
+            _zbr_cself5.evCh.*.send(rm.?);
         }
-     } }{ .evCh = evCh, .eof = eof, }));
+     } }{ .evCh = _zbr_cell(*_Chan([]const u8), evCh), .eof = _zbr_cell(*_Atomic(bool), eof), }));
 // zbr:selfhost/main.zbr:2876
     while (true) {
 // zbr:selfhost/main.zbr:2883

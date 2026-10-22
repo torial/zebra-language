@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ClassTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -1246,24 +1246,11 @@ def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
 # The table was built from THIS module's declarations, so a dep struct fell back to the
 # method-name heuristic, which calls `count` / `hash` readers.
 #
-# BUG-581: its closure factories, so the module that
-# calls one knows its result. `collectClosureFactories` reads THIS module's declarations, so
-# `var c = makeCounter(10)` with the factory in a used module bound `c` as `const`, and the
-# runtime's call helper, which takes `*T` for a closure that mutates its captures, was handed
-# `*const T`. `$cfm:<fn>` = the fn returns a capture closure that assigns one of its captures.
-# Same two detectors as the root module's, so the two answers cannot drift.
+# (BUG-581 recorded here which dep factories returned a closure that MUTATED its captures,
+# whose `call` took `*@This()` and so needed a `var` local. Since BUG-607 every capture a
+# closure changes lives in a cell and `call` always takes `@This()`: nothing to record.)
 def noteDepCodegenFacts(mt: ModuleTypes, m: Module, strip_contracts: bool)
     mt.dep_struct_recv = mt.dep_struct_recv + structReceiverTable(m.decls, strip_contracts)
-    for decl in m.decls
-        if decl is Decl.method as fmth
-            if fmth.return_type != nil and fmth.stmts != nil
-                if returnedCaptureLambda(fmth.stmts!) as flam
-                    if flam.body_ is LambdaBody.stmts as fbody
-                        var fmuts = StrSet()
-                        collectAssignedIdents(fbody, fmuts)
-                        for fcv in flam.captures
-                            if fmuts.contains_(fcv.name)
-                                mt.addClass(ClassTypes("$cfm:" + fmth.name))
 
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
@@ -3852,7 +3839,6 @@ struct Generator
     # captures the Resolver synthesized from the factory's params and locals.
     var closure_ret_ctx      : HashMap(str, InferCtx)
     var closure_ret_boxed    : HashMap(str, StrSet)   # BUG-569 step 4: the factory's boxed set
-    var closure_ret_mutates  : StrSet
     # Set to `_ZbrClosure_<fn>` while emitting a factory body, so its
     # `return <capture lambda>` constructs the hoisted named type (init-only).
     var current_closure_ret  : str?
@@ -3955,7 +3941,6 @@ struct Generator
         .closure_ret_fns       = HashMap(str, ExprLambda)()
         .closure_ret_ctx       = HashMap(str, InferCtx)()
         .closure_ret_boxed     = HashMap(str, StrSet)()
-        .closure_ret_mutates   = StrSet()
         .current_closure_ret   = nil
 
     # ── Context-adjustment helpers ────────────────────────────────────────────
@@ -4136,6 +4121,55 @@ struct Generator
                 if .captureCopyIsDistinct(bt)
                     out.add(nm)
         return out
+
+    # BUG-607: the explicit `capture` variables a lambda's body changes -- rebound (`=`,
+    # `+=`, `<<-`), or changed in place when a copy would not share the change (a struct, a
+    # number...; a class instance or container changed through its reference is shared by
+    # a copy). Each becomes a cell.
+    def explicitCellCaptures(lam: ExprLambda): StrSet
+        var out = StrSet()
+        var writes = StrSet()
+        var rebound = StrSet()
+        branch lam.body_
+            on LambdaBody.stmts as lbs
+                scanMutationsInto(lbs, writes, .infer_ctx)
+                var nested = List(ExprLambda)()
+                var ndecls = StrSet()
+                lambdasInStmts(lbs, nested, ndecls, rebound)
+            on LambdaBody.expr_ as lbe
+                scanMutationsInExpr(lbe, writes, .infer_ctx)
+        for cv in lam.captures
+            if not cv.mods.is_implicit_capture
+                if rebound.contains_(cv.name)
+                    out.add(cv.name)
+                else if writes.contains_(cv.name) and .captureCopyIsDistinct(.explicitCaptureType(cv))
+                    out.add(cv.name)
+        return out
+
+    def explicitCaptureType(cv: DeclVar): Type_
+        if cv.type_ != nil
+            return typeFromRef(cv.type_!)
+        if cv.init_expr != nil
+            if .infer_ctx as eic
+                return inferExpr(cv.init_expr!, eic)
+        return Type_.unknown_
+
+    # The element type of a cell capture: its declared type, else the inferred one (a bare `0`
+    # would be comptime_int), else `@TypeOf` its initialiser.
+    def emitCaptureElemType(cv: DeclVar)
+        if cv.type_ != nil
+            genType(cv.type_!)
+            return
+        var et: str = genFieldZigType(.explicitCaptureType(cv))
+        if et != ""
+            w.emit(et)
+            return
+        w.emit("@TypeOf(")
+        if cv.init_expr != nil
+            genExpr(cv.init_expr!)
+        else
+            w.emit("undefined")
+        w.emit(")")
 
     def fnBoxedHas(name: str): bool
         if fn_boxed as fb
@@ -8283,36 +8317,16 @@ struct Generator
             is_mut = mut_set!.contains_(n.name)
         if n.is_const
             is_mut = false
-        # B4: a mutating capture-closure's `call` takes `*@This()`, so the binding
-        # must be `var` even though it is never reassigned.
-        if not n.is_const and n.init_expr != nil
-            if n.init_expr! is Expr.lambda as blam
-                if blam.captures.len > 0
-                    branch blam.body_
-                        on LambdaBody.stmts as blam_ss
-                            var blam_muts: StrSet = StrSet()
-                            collectAssignedIdents(blam_ss, blam_muts)
-                            for bcv in blam.captures
-                                if blam_muts.contains_(bcv.name)
-                                    # ...only when the local is CALLED; a closure that is
-                                    # only converted into a sig is copied (scanMutations
-                                    # records called names as "()name").
-                                    if mut_set == nil or mut_set!.contains_("()" + n.name)
-                                        is_mut = true
-                        else
-                            pass
+        # (A closure local was forced `var` when the closure mutated its captures -- its
+        # `call` took `*@This()`. Since BUG-607 those captures are cells and `call` takes
+        # `@This()`, so a closure local is `var` only when it is reassigned, like any other.)
         # Caller of a closure factory: `var c = factory()`.  Register `c` so `c()`
-        # dispatches to `c.call()`, and force `var` when the closure MUTATES (its
-        # `call` takes `*@This()`, which Zig cannot invoke on a `const`).
+        # dispatches to `c.call()`.
         if n.init_expr != nil
             if n.init_expr! is Expr.call as fccall
                 if fccall.callee is Expr.ident as fcid
                     if closure_ret_fns.get(fcid.name) != nil
                         closure_vars.add(n.name)
-                        if not n.is_const and closure_ret_mutates.contains_(fcid.name)
-                            is_mut = true
-                    else if not n.is_const and .dep_types.hasClass("$cfm:" + fcid.name) and not isLocalOrParamName(fcid.name)
-                        is_mut = true                       # BUG-581: a dep module's factory
         if is_mut and n.init_expr != nil and not n.is_const and n.type_ == nil
             if n.init_expr! is Expr.ident as fid
                 if isTopLevelMethod(fid.name) and not isLocalOrParamName(fid.name)   # BUG-427
@@ -10038,7 +10052,7 @@ struct Generator
                 genLambdaEx(hlam, true, false, nil)
             w.emit(";\n")
 
-    # Populate closure_ret_fns / closure_ret_mutates from module_decls.  A method
+    # Populate closure_ret_fns / closure_ret_ctx / closure_ret_boxed from module_decls.  A method
     # (not a free loop) so the field writes are bare self-field access.
     def collectClosureFactories()
         for decl in module_decls
@@ -10057,15 +10071,6 @@ struct Generator
                         walkStmts(fmth.stmts!, fctx)
                         closure_ret_ctx.set(fmth.name, fctx)
                         closure_ret_boxed.set(fmth.name, .boxedFor(fmth.stmts!, fctx))
-                        branch flam!.body_
-                            on LambdaBody.stmts as fbody
-                                var fmuts = StrSet()
-                                collectAssignedIdents(fbody, fmuts)
-                                for fcv in flam!.captures
-                                    if fmuts.contains_(fcv.name)
-                                        closure_ret_mutates.add(fmth.name)
-                            else
-                                pass
 
     # BUG-092 / BUG-350: `s.split(sep)` and `s.lines()` are ITERATORS in the emitted
     # Zig; a List(str) position (an annotated var, a `return` from a `List(str)`
@@ -20323,6 +20328,10 @@ struct Generator
     #   emit_type=false, emit_init=true  → the `<name>{ inits }` construction
     def genLambdaEx(lam: ExprLambda, emit_type: bool, emit_init: bool, hoisted_name: str?)
         var has_capture = lam.captures.len > 0
+        # BUG-607: a `capture` variable the body changes lives in a cell, so every holder of
+        # the closure -- a copy passed to a function, a field it was stored in, another local
+        # -- shares one state, and no closure ever mutates its own struct.
+        var cell_caps: StrSet = .explicitCellCaptures(lam)
         var wrap_paren = has_capture and emit_type and emit_init
         if wrap_paren
             w.emit("(")
@@ -20341,6 +20350,9 @@ struct Generator
                         imp_zt = .implicitCaptureZigType(cv, lam, not emit_init)
                     if imp_zt != ""
                         fg.w.emit(imp_zt)
+                    else if cell_caps.contains_(cv.name)
+                        fg.w.emit("*")
+                        fg.emitCaptureElemType(cv)
                     else if cv.type_ != nil
                         fg.genType(cv.type_!)
                     else if cv.init_expr != nil
@@ -20354,19 +20366,8 @@ struct Generator
                         fg.w.emit("anytype")
                     fg.w.emit(",\n")
                 writeIndent()
-            # B4: `call` takes `*@This()` (mutable self) when a capture field is
-            # assigned in the body, so the mutation is visible across calls.
-            var any_cap_mutated = false
-            if has_capture
-                branch lam.body_
-                    on LambdaBody.stmts as body_ss_m
-                        var body_muts: StrSet = StrSet()
-                        collectAssignedIdents(body_ss_m, body_muts)
-                        for cv_m in lam.captures
-                            if body_muts.contains_(cv_m.name)
-                                any_cap_mutated = true
-                    else
-                        pass
+            # `call` takes `@This()`: a capture the body changes is a cell (BUG-607, BUG-569
+            # step 4), so the struct itself is never written.
             # call method
             # BUG-487: inside a METHOD (or another closure) the enclosing function already
             # has a `self`, and Zig refuses a parameter that shadows it -- so the receiver
@@ -20377,10 +20378,7 @@ struct Generator
             w.emit(" pub fn call(")   # Zig 0.17: @hasDecl sees only pub decls, even in the same file
             var first = true
             if has_capture
-                if any_cap_mutated
-                    w.emit(cself + ": *@This()")
-                else
-                    w.emit(cself + ": @This()")
+                w.emit(cself + ": @This()")
                 first = false
             # BUG-233: Zebra allows a lambda parameter to shadow an enclosing parameter or
             # local (so does Python, which it draws from); ZIG FORBIDS IT --
@@ -20458,7 +20456,7 @@ struct Generator
                     pass
             var cbx = StrSet()
             for cvx in lam.captures
-                if cvx.mods.is_implicit_capture and fnBoxedHas(cvx.name)
+                if (cvx.mods.is_implicit_capture and fnBoxedHas(cvx.name)) or cell_caps.contains_(cvx.name)
                     cbx.add(cvx.name)
             var lg = asMethod().withCaptureFields(cf).withCaptureBoxed(cbx).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself).withLambdaReturnType(lam.return_type)
             # BUG-569: a closure that captured `this` reads it through its own field.
@@ -20545,6 +20543,18 @@ struct Generator
                     w.emit(" = ")
                     if cv.mods.is_implicit_capture and fnBoxedHas(cv.name)
                         w.emit(boxPtrSpelling(cv.name))      # BUG-569 step 4: share the cell
+                    else if cell_caps.contains_(cv.name)
+                        w.emit("_zbr_cell(")                 # BUG-607: a fresh cell per closure
+                        emitCaptureElemType(cv)
+                        w.emit(", ")
+                        if cv.init_expr != nil
+                            if cv.type_ != nil and isSigTypeRef(cv.type_!)
+                                genSigValue(cv.init_expr!)
+                            else
+                                genExpr(cv.init_expr!)
+                        else
+                            w.emit("undefined")
+                        w.emit(")")
                     else if cv.init_expr != nil
                         if cv.type_ != nil and isSigTypeRef(cv.type_!)
                             genSigValue(cv.init_expr!)          # a sig-typed capture

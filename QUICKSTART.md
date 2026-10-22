@@ -2179,9 +2179,11 @@ print(counter())   # → 2  (state persists across calls)
 print(counter())   # → 3
 ```
 
-The binding must be `var` (the compiler emits it as such automatically): calling
-a mutating closure mutates its captured state.  Each separately-created closure
-has independent capture fields.
+A closure VALUE is a reference to its state, as a C# delegate is (BUG-607): pass
+`counter` to a function, store it in a field, or assign it to another local, and every
+holder calls the SAME closure -- the count carries on. Each separately-created closure
+(each run of the lambda expression, each call of a factory) has its own state. The
+binding need not be `var`.
 
 ### §19.2 Closure factories — returning a stateful closure
 
@@ -2207,8 +2209,7 @@ print(d())   # → 101   (independent state)
 print(c())   # → 13
 ```
 
-The caller writes `var c = makeCounter(...)` and calls `c()`; the binding is made
-`var` automatically when the closure mutates.  **Captures in a returned closure
+The caller writes `var c = makeCounter(...)` and calls `c()`.  **Captures in a returned closure
 need explicit types** — the hoisted struct lives at module scope, so a bare
 `@TypeOf(init)` referencing an enclosing-scope name would not resolve.
 
@@ -2217,11 +2218,11 @@ struct.  Each call to the factory allocates a fresh instance.  The struct's `cal
 is invoked on each call to the closure.  For a factory, that struct is lifted to a named
 `_ZbrClosure_<fn>` type so the function signature can name it.
 
-**Mutation detection:** The compiler inspects the lambda body and emits
-`self: *@This()` (mutable self) when any capture field is directly assigned or passed to a
-known-mutating method (`append`, `add`, `remove`, `set`, etc.).  For class-type captures
-(which are already pointers), `self: @This()` is sufficient even when you call methods on
-them — mutation goes through the pointer, not the field.
+**Changed state:** a `capture` variable the body changes (`count += 1`, a struct's field
+or mutating method) lives in a heap cell that the closure holds a pointer to, so every
+copy of the closure shares it and calling the closure never writes the closure itself
+(`self: @This()`). A class instance or a container is already a reference and is held
+directly.
 
 **Rules:**
 

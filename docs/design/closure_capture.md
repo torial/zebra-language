@@ -4,9 +4,9 @@
 **Status:** direction decided by Sean 2026-10-14 ("(a), by reference ... similar to C#
 semantics"). Drafted by Opus 5.5 on 2026-10-21. **Steps 1-3 of §6 are built (2026-10-21,
 §7)**: read-only capture by copy, written captures refused by name. **Step 4's implicit half
-is built (2026-10-22, §8)**: a written `var` local is shared through a cell. BUG-607 (a
-closure VALUE as a reference) is the next commit; §5's three questions were answered by
-Sean on 2026-10-21.
+is built (2026-10-22, §8)**: a written `var` local is shared through a cell. **So is
+BUG-607 (§9)**: a closure VALUE is a reference. §5's three questions were answered by Sean
+on 2026-10-21.
 **Bug:** BUG-569 (`BUGS.md`). Its scope turned out wider than filed; see §1.
 
 ---
@@ -300,3 +300,28 @@ FULL tier.
   that already failed -- the Resolver's capture refusal used to stop them first, and the
   checker's ordinary refusals (parameters assigned, nil use, a `use` that is not in the
   tree) now show. The two hand-wired engine scripts §7 named had already been rewritten.
+
+## 9. BUG-607: a closure value is a reference (built 2026-10-22)
+
+§5.1 sketched it as "a capturing closure becomes a heap object from its creation". What was
+built gives the same observable sharing more cheaply: a `capture` variable the body CHANGES
+(rebinds, or changes in place when a copy would not share the change) lives in a cell, and
+the closure struct holds the pointer. Every copy of the struct -- BUG-371's borrow for a call,
+`.from`'s heap copy for a field, a plain assignment -- then sees one state, and the closure
+itself stays a value, so none of the sinks a closure flows into had to change. A class
+instance or a container changed only through its reference is a plain field, as for implicit
+captures (§8).
+
+Since nothing a closure changes lives in its own struct any more, `call` always takes
+`@This()`: the `*@This()` path and everything that kept a closure local `var` for it (B4 in
+genLocalVar, `closure_ret_mutates`, the `$cfm:` dependency marker, the mutation scan's
+`()name` entry) were removed rather than kept in agreement. A sig-typed `capture` that is
+rebound is a cell too (`_zbr_cell(_ZbrFn(...), ...)`).
+
+Consequence worth knowing: a `sys.go` closure's explicit state is shared with the closure it
+was copied from, like every other holder's. §5.2's rule (a thread closure names what it uses)
+still makes that sharing visible.
+
+Probe `test/boundary/bv_closure_value_ref.zbr`, committed unrun with §8's: it matched on its
+first compiling run (before the change it did not compile at all -- the stored and assigned
+rows were zig errors).

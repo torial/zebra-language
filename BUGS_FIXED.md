@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-607: a `capture` closure's state did not survive being passed to a function -- FIXED 2026-10-22: closure values are references (found 2026-10-21)
+- **Found by:** mapping closure lowering for BUG-569.
+- **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then
+  `b()`, `b()`, `apply(b)`, `apply(b)`, `b()` where `def apply(f: def(): int): int = f()`.
+  Prints `1 2 3 3 3`. Calling `b()` counts up; passing it copies it.
+- **Cause:** deliberate. BUG-371's borrow copies a closure argument into a block-local and
+  passes `.fromRef(&copy)`, so no allocation is needed; `.from` heap-copies too. A closure is
+  a value.
+- **Decision (Sean):** under the C#-style semantics chosen for BUG-569, a function value is a
+  reference and the count would carry through (`1 2 3 4 5`). The fix would pass
+  `.fromRef(&b)` on the caller's own variable. See `docs/design/closure_capture.md` §5.1.
+- **Fix (not the one the decision sketched):** a `capture` variable the body changes lives in
+  a heap cell, and the closure holds the pointer. Every copy -- the borrow BUG-371 makes for a
+  call, the heap copy `.from` makes for a field, a plain `var b2 = b` -- then shares one state,
+  which is the observable meaning of "a closure value is a reference" without making the
+  closure itself a pointer (that would have touched every sink a closure flows into). It is
+  BUG-569 step 4's cell, applied to explicit captures, so `call` never writes its own struct
+  and always takes `@This()`: the `*@This()` path, the forced-`var` closure local (B4), the
+  factory and dependency markers that fed it (`closure_ret_mutates`, `$cfm:`), and the
+  mutation scan's called-name entry are gone. A class instance or container changed only
+  through its reference stays a plain field (a copy shares it).
+- **It also fixed `var b2 = b; b2()`**, which failed inside zig ("expected '*T', found
+  '*const T'"): the copy was `const` and the mutating `call` wanted a pointer.
+- **One fixture asserted the old semantics:** `test/sig_fat_pointer_test.zbr` checked that two
+  conversions of one closure were independent counters. It now asserts they are one (`3`, then
+  `4`), with a comment saying what changed.
+- **Measured:** emit A/B over the repo -- 24 files moved, every one holding a closure whose
+  `capture` state the body writes: the 10 in output_sweep's baseline print exactly what they
+  printed, 12 are `smoke_run` fixtures and pass, one is a dependency of one of those, and
+  `examples/v_poc8.zbr` prints the same on both compilers. `-c` A/B unchanged (codegen only).
+- **Fixture:** `test/boundary/bv_closure_value_ref.zbr` (intent-first, committed unrun):
+  passed, stored in a field, assigned to another local, a struct changed in place, and a
+  factory making a NEW closure per call -- `1 2 3 4 5 / 6 7 / 8 9 / 1 2 / 1 2 1`.
+
+
 ### BUG-616: a `.sortBy` key compared with a bare zig `<` -- an enum, a `cue compare` class or a `[]u8` key failed inside zig -- FIXED 2026-10-22 (found 2026-10-22)
 - **Found by:** checking that `.sortBy` refuses an `@unordered` enum key (the BUG-609
   follow-up). An ORDINARY enum key failed too: the runtime's key comparators

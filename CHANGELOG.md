@@ -160,6 +160,10 @@ confirmed via `tools/bootstrap_check.sh`.
 - **Enums order by declaration (BUG-609)** -- `<` and a bare `.sort()` on an enum work (a
   backed enum too: its declared position decides, not its value); on an interface they are
   refused, naming a comparator. Both failed inside zig.
+- **A closure value is a reference (BUG-607)** -- pass a closure that keeps `capture` state to
+  a function, store it in a field or assign it to another local, and every holder calls the
+  same closure: its count carries on (`1 2 3 4 5`, not `1 2 3 3 3`). Each run of a lambda or a
+  factory still makes a new closure. `var b2 = b; b2()` on such a closure failed inside zig.
 - **A lambda shares the `var` locals it writes with its function (BUG-569, step 4)** --
   QUICKSTART §19's `counter += 1` through a closure is seen outside, a write outside is seen
   by the closure, and closures over one variable see one variable (C#'s model). A shared

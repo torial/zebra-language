@@ -46,19 +46,6 @@
 
 ---
 
-### BUG-607: a `capture` closure's state does not survive being passed to a function -- OPEN, DECIDED 2026-10-21: closure values are references (found 2026-10-21)
-- **Found by:** mapping closure lowering for BUG-569.
-- **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then
-  `b()`, `b()`, `apply(b)`, `apply(b)`, `b()` where `def apply(f: def(): int): int = f()`.
-  Prints `1 2 3 3 3`. Calling `b()` counts up; passing it copies it.
-- **Cause:** deliberate. BUG-371's borrow copies a closure argument into a block-local and
-  passes `.fromRef(&copy)`, so no allocation is needed; `.from` heap-copies too. A closure is
-  a value.
-- **Decision (Sean):** under the C#-style semantics chosen for BUG-569, a function value is a
-  reference and the count would carry through (`1 2 3 4 5`). The fix would pass
-  `.fromRef(&b)` on the caller's own variable. See `docs/design/closure_capture.md` §5.1.
-  QUICKSTART §19.1 says nothing either way today.
-
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
@@ -123,7 +110,9 @@
   refusals became `test/bug569_shared_{written,rebound,struct_field,struct_method}_test.zbr`;
   new negatives `test/fail_fixtures/bug569_for_counter_written_capture_test.zbr` and
   `bug569_param_struct_capture_test.zbr`; probe `test/boundary/bv_closure_capture_shared.zbr`
-  (intent-first). STILL OPEN: BUG-607 (a closure VALUE as a reference), the other half.
+  (intent-first). BUG-607 (a closure VALUE as a reference) landed in the next commit.
+  STILL OPEN: design note §6 step 5's tail -- leakgen should GENERATE capturing lambdas, so
+  the next sink that does not take a closure struct is found by the fuzzer, not a user.
 - **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
   that nothing writes, box one that something writes, refuse written captures by name until
   boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;

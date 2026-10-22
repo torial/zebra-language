@@ -1734,11 +1734,6 @@ def subscriptWritesThroughReference(obj: Expr, ic: InferCtx?): bool
 def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
     branch expr
         on Expr.call as c
-            # A CALLED name, spelled "()name" so it can never collide with a variable:
-            # a mutating closure local is `var` only when something calls it -- one that
-            # is only handed to a sig slot is copied, and Zig refuses a `var` never mutated.
-            if c.callee is Expr.ident as cc_id
-                out.add("()" + cc_id.name)
             if c.callee is Expr.member as m
                 if m.object is Expr.ident as id
                     if receiverNeedsVar(m.object, m.member, ic)
