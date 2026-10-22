@@ -163,6 +163,13 @@ def assemble(body):
     therefore collected into a synthesized `main`, and declarations are emitted as-is.
     """
     lines = body.strip("\n").split("\n")
+    # A block that writes its OWN top-level `def main()` is a complete file. Synthesizing a
+    # second main around its loose lines manufactured a duplicate: QUICKSTART's module-state
+    # example (`var counter = 0`, `const MAX = 100`, `def main()`) had its `var`/`const`
+    # wrapped into a generated main, and once BUG-615 refused two top-level functions of one
+    # name the block was reported broken. Module-scope `var`/`const` are legal as written.
+    if any(re.match(r'def\s+main\s*\(', l) for l in lines):
+        return body.strip("\n") + "\n"
     decls, loose = [], []
     i = 0
     while i < len(lines):
@@ -283,6 +290,11 @@ def controls():
     bad = check('def main()\n    this is not zebra @@@\n', "_ctl_bad")
     if bad is None:
         return "a trivially INVALID program was accepted"
+    # The assembler must not wrap a block that has its own main (a duplicate `main` is a
+    # front-end refusal since BUG-615, so this would read as a broken doc).
+    own = check(assemble('var n = 1\n\ndef main()\n    print(n)\n'), "_ctl_own_main")
+    if own is not None:
+        return f"a complete block with its own main was mis-assembled ({own})"
     return None
 
 
