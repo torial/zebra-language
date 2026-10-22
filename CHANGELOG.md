@@ -134,6 +134,8 @@ confirmed via `tools/bootstrap_check.sh`.
   even `2 + 3` were refused ("cannot infer the type of ..., an operand of `+`"); they compile
   now, in a struct and in a class. And an undefined name in a field default is reported by
   `zebra -c` (BUG-602) -- it failed inside zig, pointing into the generated file.
+- **A call inside an `assert`, `raise`, `<<-`, destructuring, `require` or `ensure` is checked
+  (BUG-614)** -- a wrong argument count there passed `zebra -c` and failed at run time.
 - **A lambda's local cannot reuse a name the enclosing function has in scope (BUG-613)** --
   it failed inside zig; it is refused by name, as a block-level reuse already was.
 - **A lambda's body is checked (BUG-612)** -- an unknown method, a wrong argument count or a

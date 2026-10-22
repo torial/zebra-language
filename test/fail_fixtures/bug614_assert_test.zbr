@@ -1,0 +1,16 @@
+# BUG-614: a call in this statement skipped every front-end check -- `checkStmt1` had no arm
+# for it (it fell to `else pass`) -- so `"s".count()`, which needs one argument, passed
+# `zebra -c` and failed inside zig or panicked at run time. Found by Fable as an `assert`
+# whose `and` operand called `.count()` where `.len` was meant.
+
+class Hinter
+    var n: int
+    cue init()
+        .n = 1
+    def hint(): str
+        return "hello"
+
+def main()
+    var h = Hinter()
+    assert h.n == 1 and h.hint().count() < 110, "x"
+    print("ran")

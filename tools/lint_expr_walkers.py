@@ -119,6 +119,15 @@ TREES = [
     dict(name="PNode-stmt", oracle="selfhost/Parser.zbr", root="PNode", prefix="stmt_",
          tag="PNode", marker="pnode-stmt-walker", min_variants=18,
          semantic=set(), bearing_ctl="stmt_for_num", leaf_ctl="stmt_pass"),
+    # BUG-614 (2026-10-22): the AST's statements. The checker's statement walker
+    # (checkStmt1) ended in `else pass` and skipped six kinds -- `assert`, `raise`, `<<-`,
+    # destructuring, `require` / `ensure` -- so a call inside one skipped every front-end
+    # check (arity, unknown method). A statement is "bearing" when it reaches an Expr OR a
+    # Stmt (`also`): `assert_` holds only an Expr, and is exactly the kind that was missed,
+    # so it is the bearing control.
+    dict(name="Stmt", oracle="selfhost/Ast.zbr", root="Stmt", prefix="", also=("Expr",),
+         tag="Stmt", marker="stmt-walker", min_variants=20,
+         semantic=set(), bearing_ctl="assert_", leaf_ctl="pass_"),
 ]
 
 
@@ -201,8 +210,10 @@ def check_tree(t):
         if m and not line.strip().startswith("#") and m.group(1).startswith(t["prefix"]):
             variants[m.group(1)] = m.group(2) or ""
 
+    roots = [t["root"]] + list(t.get("also", ()))
+
     def reaches(ptext):
-        return any(n == t["root"] or bearing(n, structs, unions, t["root"])
+        return any(n in roots or any(bearing(n, structs, unions, r) for r in roots)
                    for n in type_names(ptext))
 
     required = {v for v, p in variants.items() if reaches(p)} | t["semantic"]
@@ -235,7 +246,7 @@ def check_tree(t):
     checked_defs = set()      # (file, def line) of every walker a marker attached to
     marker_lines = []         # (file, line) of every marker comment
     marker_re = re.compile(r"^\s*#\s*" + re.escape(marker) + r"\s*$")
-    for rel in SEARCH if t["name"] == "Expr" else ALL_SELFHOST:
+    for rel in SEARCH if t["oracle"] == "selfhost/Ast.zbr" else ALL_SELFHOST:
         p = REPO / rel
         if not p.exists():
             continue

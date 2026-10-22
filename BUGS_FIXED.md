@@ -6,6 +6,25 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-614: a call inside an `assert`, `raise`, `<<-`, destructuring, `require` or `ensure` skipped every front-end check -- FIXED 2026-10-22 (found 2026-10-22)
+- **Found by:** Fable (GameEngine), an hour of print-bisecting a designer test:
+  `assert d.n == 1 and d.modeHint().count() < 110` (`.len` was meant) passed `zebra -c` and
+  panicked at run time, "reached unreachable code". The same call as a plain expression is
+  refused ("str.count expects 1 argument, got 0").
+- **Cause:** the checker's statement walker `checkStmt1` had no arm for `assert`, `raise`,
+  `copy_out` or `destruct` -- they fell to `else pass` -- and the `require` / `ensure` clauses,
+  which live on the method declaration, were never walked for calls. So arity, unknown
+  methods and argument types went unchecked in all six positions. Not the `and`: measured
+  with one probe per statement and a positive control (a `var` with the same call, refused).
+- **Fix:** an arm per statement calling `checkCallsInExpr` on each expression; the contract
+  clauses are checked with the parameters bound, beside the body. `break` / `continue` /
+  `pass` get explicit leaf arms, and `checkStmt1` is opted into a new tree of the walker gate
+  -- the AST's `Stmt`, where a statement is bearing if it reaches an `Expr` or a `Stmt`
+  (`assert_` is the bearing control, `pass_` the leaf). Red-checked with the real
+  adversary: the pre-fix `checkStmt1` marked gives exactly the five missing kinds.
+- **Fixtures:** `test/fail_fixtures/bug614_{assert,raise,copy_out,destruct,require,ensure}_test.zbr`,
+  each red under `-c` on the pre-fix compiler.
+
 ### BUG-613: a lambda's own local named like a local of the enclosing function failed inside zig "local constant shadows local constant from outer scope" -- FIXED 2026-10-22 (found 2026-10-21)
 - **Found by:** BUG-612's control fixture.
 - **Decision:** refused, not renamed -- the same rule Zebra already applies to a name reused

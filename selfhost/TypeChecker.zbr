@@ -7030,6 +7030,7 @@ def noteCtorArgs(e: Expr, file: str, line: int, ctx: InferCtx)
                     if isLiveContainerExpr(nca2.value) and isContainerT(inferExpr(nca2.value, ctx))
                         noteContainerCopy("ctor_arg", file, nca2.value, line)
 
+# stmt-walker: exhaustive
 def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
     noteContainerCopies(s, file, ctx)
     if s is Stmt.destruct as c_ds
@@ -7396,7 +7397,32 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                                     found = true
                             if not found
                                 ctx.addWarn(file, sb.span.line, 0, "branch on '" + sb_tname + "' has 'else' but does not explicitly handle variant '" + vname + "'")
-            else
+            # BUG-614: these statements fell to `else pass`, so a call inside one -- an
+            # `assert` condition or message, a `raise` message, a `<<-`, a destructuring
+            # initialiser, a `require` / `ensure` -- skipped every front-end check (arity,
+            # unknown method, argument types) and reached zig, or panicked at run time.
+            on Stmt.assert_ as s614a
+                checkCallsInExpr(s614a.cond, file, s614a.span.line, ctx)
+                if s614a.message != nil
+                    checkCallsInExpr(s614a.message!, file, s614a.span.line, ctx)
+            on Stmt.raise_ as s614r
+                if s614r.message != nil
+                    checkCallsInExpr(s614r.message!, file, s614r.span.line, ctx)
+                if s614r.details != nil
+                    checkCallsInExpr(s614r.details!, file, s614r.span.line, ctx)
+            on Stmt.copy_out as s614c
+                checkCallsInExpr(s614c.target, file, s614c.span.line, ctx)
+                checkCallsInExpr(s614c.value, file, s614c.span.line, ctx)
+            on Stmt.destruct as s614d
+                checkCallsInExpr(s614d.init_expr, file, s614d.span.line, ctx)
+            on Stmt.contract as s614k
+                for k614 in s614k.exprs
+                    checkCallsInExpr(k614, file, s614k.span.line, ctx)
+            on Stmt.pass_
+                pass
+            on Stmt.break_
+                pass
+            on Stmt.continue_
                 pass
 
 # ── BUG-292: `old <parameter>` is inert, so refuse it ────────────────────────
@@ -7556,6 +7582,13 @@ def checkDecl(decl: Decl, file: str, ctx: InferCtx, tc_result: TcResult)
                     pnames = pnames + p.name + " "
                 ctx.setParamsHere(pnames)
                 ctx.resetCopyLocals()
+                # BUG-614: a `require` / `ensure` clause lives on the declaration, not in
+                # the body, and nothing walked it for calls; checked with the parameters
+                # bound, as the clauses read them.
+                for req614 in dm.require_
+                    checkCallsInExpr(req614, file, dm.span.line, ctx)
+                for ens614 in dm.ensure_
+                    checkCallsInExpr(ens614, file, dm.span.line, ctx)
                 checkStmts(dm_stmts, file, ctx)
                 if ctx.current_yield_type != nil
                     checkGeneratorStmts(dm_stmts, file, ctx)

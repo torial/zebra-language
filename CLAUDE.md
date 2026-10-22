@@ -1868,6 +1868,16 @@ python tools/lint_expr_walkers.py  # THE WALKER-DRIFT GATE (static, instant, QUI
                                 #   pre-fix Resolver: 7 findings, one per skipped kind. CANNOT
                                 #   SEE a field skipped inside a handled arm (the `for ... if`
                                 #   filter was one).
+                                #   FOUR TREES SINCE 2026-10-22 (BUG-614): the AST's `Stmt`
+                                #   (marker `# stmt-walker: exhaustive`). The checker's
+                                #   statement walker fell to `else pass` for `assert`,
+                                #   `raise`, `<<-` and destructuring, so a call in one skipped
+                                #   every front-end check (Fable's `assert ... and
+                                #   h.hint().count() < 110` panicked at run time). A statement
+                                #   is bearing when it reaches an `Expr` OR a `Stmt` (`also`);
+                                #   `assert_` -- an Expr only, exactly what was missed -- is
+                                #   the bearing control, `pass_` the leaf. Red-checked with the
+                                #   pre-fix checkStmt1: the five missing kinds, by name.
                                 #   A STRANDED MARKER IS A FINDING (2026-10-21). Two helpers
                                 #   inserted between checkCallsInExpr's marker block and its
                                 #   `def` (BUG-551, BUG-609) left the marker above a non-walker:
