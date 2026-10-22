@@ -2131,6 +2131,10 @@ var bumpBy = def(x: int): int = x + step     # copies `step` into the closure
   state in a `capture` block (§19.1), or pass the value in as an argument. Shared
   capture, where the closure and the function see one variable, is designed
   (`docs/design/closure_capture.md`) and not built yet (BUG-569).
+- Inside a **class** method a lambda reads `this` too (`.count`, `this.name`, `.label()`),
+  and may change the object through it: an instance is a reference, so the closure and the
+  method share it. Inside a **struct** method that is refused (a struct is a value): bind
+  what the closure needs to a local first (`var n = .n`).
 - A lambda handed to `sys.go` names what it uses in a `capture` block (§19.1).
 - An explicit `capture` block at the top of a lambda body declares persistent
   per-instance state — see §19.1 below.

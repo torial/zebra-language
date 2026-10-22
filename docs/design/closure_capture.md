@@ -244,9 +244,13 @@ FULL tier.
   one passed `-c` and failed inside zig (BUG-608, fixed the same night). It is true now for
   `for ... in`; a range counter is still assignable, and a captured, written counter falls to
   the general rebinding refusal.
-- **NOT DONE: `this` inside a lambda** (`.n` in a method) still fails inside zig, as before. A
-  bare leading-dot member is also the right side of a pipeline (`s -> .trim()`), so telling
-  the two apart needs its own walk; it is listed on BUG-569.
+- **`this` inside a lambda (same day, a later commit).** In a CLASS method the Resolver
+  captures `this` as a hidden `_zbr_this` field (typed `*Class`) and codegen points the
+  closure's `self_name` at it, so `.n`, `this.n` and `.f()` all read through the copy -- a
+  class instance is a reference, so a write through it is shared, which is §2's semantics
+  exactly. In a STRUCT method `this` is a value; a closure reading it is refused by name
+  (§3.6), naming the local that works. A pipeline's right side (`s -> .upper()`) is a bare
+  leading-dot member that is NOT `this`; the Resolver walks it without noting `this`.
 - **The probe's loop row** (`bv_closure_capture_read`) calls each iteration's closure inside
   that iteration, so per-iteration copy and a shared variable print the same 60 there. The
   discriminating row -- closures kept and called after the loop -- belongs to step 4's probe

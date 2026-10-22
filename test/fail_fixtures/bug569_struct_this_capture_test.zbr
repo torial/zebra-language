@@ -1,0 +1,11 @@
+# BUG-569: a STRUCT method's `this` is a value; a closure would hold a copy, so reading it is
+# refused, naming the local that works.
+
+struct P
+    var x: int
+    def f(): int
+        var g = def(): int = .x + 1
+        return g()
+
+def main()
+    print(P(x: 1).f())

@@ -22,7 +22,7 @@
 #   - Recursive tree walking: resolveStmt - resolveExpr
 #   - ^T field auto-deref: c.name, m.stmts etc. work through *PClass/*PMethod
 
-use Parser exposing PNode, PParam, POptChain, PIfExpr, PCaptureVar, PExprId
+use Parser exposing PNode, PParam, POptChain, PIfExpr, PCaptureVar, PExprId, PPos
 use CgHelpers exposing isStdlibNs, isBuiltinTypeName
 
 # -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
@@ -53,6 +53,9 @@ class LamFrame
     var first_line: HashMap(str, int)
     var first_col: HashMap(str, int)
     var is_thread: bool
+    # Where the lambda first reads `this` (or a bare `.name`); 0 = it does not.
+    var this_line: int
+    var this_col: int
 
     cue init(caps: List(PCaptureVar), is_thread: bool)
         .own = HashMap()
@@ -61,6 +64,8 @@ class LamFrame
         .first_line = HashMap()
         .first_col = HashMap()
         .is_thread = is_thread
+        .this_line = 0
+        .this_col = 0
 
 # -- Resolver -----------------------------------------------------------------
 # Results are accessed via getter methods (errorCount, firstError, symbolCount)
@@ -89,6 +94,10 @@ class Resolver
     var foldable    : HashMap(str, int)
     var next_lambda_thread: bool
     var last_lambda_captures: int
+    # What `this` is in the methods being walked: 0 none (a top-level def), 1 a class
+    # instance (a reference -- a closure copies the pointer and shares the object), 2 a
+    # struct value (a copy would silently diverge, so a closure reading it is refused).
+    var this_kind: int
 
     cue init(file_name: str, source: str = "")
         .module_scope  = HashMap()
@@ -105,6 +114,7 @@ class Resolver
         .foldable      = HashMap()
         .next_lambda_thread = false
         .last_lambda_captures = 0
+        .this_kind = 0
 
     # `file:line:col: error: msg`, plus the offending source line and a `^` under
     # the column when the source is available (li/col are 1-based).
@@ -216,9 +226,13 @@ class Resolver
     def resolveTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
+                .this_kind = 1
                 .enterClass(c.name, c.members, c.type_params)?
+                .this_kind = 0
             on PNode.struct_ as s
+                .this_kind = 2
                 .enterClass(s.name, s.members, s.type_params)?
+                .this_kind = 0
             on PNode.method_ as m
                 .enterMethod(m.params, m.stmts)?
             on PNode.stmt_var as mv
@@ -333,6 +347,30 @@ class Resolver
                 fr.first_col.put(name, col)
             i = i - 1
 
+    # BUG-569: the lambdas being walked read `this` (or a bare `.name`) at line:col. Every
+    # frame from the innermost out carries it: an outer lambda must hold `this` for an
+    # inner one to copy.
+    def noteThis(line: int, col: int)
+        for fr in .lam_stack
+            if fr.this_line == 0
+                fr.this_line = line
+                fr.this_col = col
+
+    # A pipeline's right side `x -> .lower()` is a member with no base that is NOT `this`
+    # -- it is applied to the left side. Resolve it without noting `this`.
+    def resolvePipeRhs(e: PNode) throws
+        if e is PNode.expr_member as pm
+            if pm.base.len == 0
+                return
+        if e is PNode.expr_call as pc
+            if pc.callee.len == 1
+                if pc.callee.at(0) is PNode.expr_member as pcm
+                    if pcm.base.len == 0
+                        for a in pc.args
+                            .resolveExpr(a)?
+                        return
+        .resolveExpr(e)?
+
     # BUG-569: `name` is REBOUND at line:col (`=`, a compound assignment, `<<-`). Only a
     # rebinding of the function's own variable counts: one of a lambda's own locals or
     # `capture` names is that lambda's business.
@@ -358,7 +396,19 @@ class Resolver
             if fr.is_thread and fr.implicit.len > 0
                 var tn: str = fr.implicit.at(0)
                 .errors.add(ResolveError(.fmtErrAt(fr.first_line.fetch(tn), fr.first_col.fetch(tn), "a `sys.go` closure names what it uses in a `capture` block (QUICKSTART §19.1): `capture` / `var " + tn + ": T = " + tn + "`")))
+            else if fr.is_thread and fr.this_line > 0
+                .errors.add(ResolveError(.fmtErrAt(fr.this_line, fr.this_col, "a `sys.go` closure names what it uses in a `capture` block (QUICKSTART §19.1): `capture` / `var me = this`")))
             else
+                # `this` in a CLASS method is a reference: the closure copies the pointer and
+                # shares the object, which is exactly by-reference. In a STRUCT method it is a
+                # value, and a change made through the copy would be lost -- refused, naming
+                # the local that works.
+                if fr.this_line > 0 and .this_kind == 2
+                    .errors.add(ResolveError(.fmtErrAt(fr.this_line, fr.this_col, "a closure in a struct method cannot read `this` -- a struct is a value, and the closure would get a copy; bind what it needs to a local first (`var n = .n`)")))
+                else if fr.this_line > 0 and .this_kind == 1
+                    var this_init = List(PNode)()
+                    this_init.add(PNode.expr_this(PPos(fr.this_line, fr.this_col)))
+                    fr.caps.add(PCaptureVar("_zbr_this", "", this_init, true, true))
                 for nm in fr.implicit
                     if .fn_written_line.contains(nm)
                         if not refused.contains(nm)
@@ -562,7 +612,7 @@ class Resolver
                 for e in ppl.lhs
                     .resolveExpr(e)?
                 for e in ppl.rhs
-                    .resolveExpr(e)?
+                    .resolvePipeRhs(e)?
             on PNode.expr_list_lit as pll
                 for e in pll.elems
                     .resolveExpr(e)?
@@ -600,6 +650,8 @@ class Resolver
                     .declare(lp.name, 3)
                 for lc in plm.captures
                     .declare(lc.name, 4)
+                    if lc.name == "_zbr_this"
+                        plm_frame.this_line = -1      # already captured: a second pass adds none
                 for e in plm.body_expr
                     .resolveExpr(e)?
                 .resolveStmts(plm.body_stmts)?
@@ -663,6 +715,10 @@ class Resolver
             on PNode.expr_member as m
                 for e in m.base
                     .resolveExpr(e)?
+                if m.base.len == 0
+                    .noteThis(m.line, m.col)          # `.name` is `this.name` (BUG-569)
+            on PNode.expr_this as pthis
+                .noteThis(pthis.line, pthis.col)
                 # member name is accessed via dot notation - not a scope reference
             on PNode.expr_try
                 # ^PNode payload - skip deep resolution (same limitation: stmt_expr)

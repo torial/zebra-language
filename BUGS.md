@@ -111,9 +111,8 @@
   place after capture is refused at build (codegen's mutation scan), and a `sys.go` lambda keeps
   the explicit-capture rule. QUICKSTART §19's `counter += 1` example is now a named refusal and
   the section says so. STILL OPEN: step 4, shared capture (it removes those refusals), which
-  waits on §5's three questions; and `this` read inside a lambda (`.n` in a method) still fails
-  inside zig -- a bare leading-dot member is also a pipeline's right side, so it needs its own
-  walk. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
+  waits on §5's three questions. `this` in a lambda landed the same day: captured in a class
+  method (a reference, so writes through it are shared), refused by name in a struct method. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
   `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
 - **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
   that nothing writes, box one that something writes, refuse written captures by name until

@@ -19941,6 +19941,11 @@ struct Generator
     # CgHelpers' mutation scan is the oracle for that. A value changed after a closure copied
     # it would be read stale with no error -- so it compiles to a named error instead.
     def implicitCaptureZigType(cv: DeclVar, lam: ExprLambda, hoisted: bool): str
+        # BUG-569: `this`, captured in a class method -- the class pointer.
+        if cv.name == "_zbr_this"
+            if class_names.contains_(owner)
+                return "*" + typeZigName(owner)
+            return ""
         var ct: Type_ = Type_.unknown_
         if .infer_ctx as cic
             ct = inferExpr(Expr.ident(ExprIdent(cv.span, cv.name)), cic)
@@ -20122,6 +20127,9 @@ struct Generator
                 else
                     pass
             var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself).withLambdaReturnType(lam.return_type)
+            # BUG-569: a closure that captured `this` reads it through its own field.
+            if cf.contains_("_zbr_this")
+                lg = lg.withSelfName(cself + "._zbr_this")
             # Return type
             if lam.return_type != nil
                 genType(lam.return_type!)

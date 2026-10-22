@@ -1,0 +1,25 @@
+# BUG-569: a lambda in a CLASS method reads `this` -- a bare `.name`, `this.name`, a method call
+# -- and writes through it. A class instance is a reference, so the closure copies the
+# pointer and shares the object. Nested closures carry it in; a pipeline's `.upper()` inside
+# a lambda is not `this`.
+
+class Counter
+    var count: int
+    var name: str
+    cue init(name: str)
+        .name = name
+        .count = 0
+    def label(): str
+        return "<${.name}>"
+    def run(): str
+        var xs = [1, 2, 3]
+        var bump = def(d: int)
+            .count += d
+        bump(5)
+        var tag = def(): str = .label() + ":" + this.name
+        var nested = def(x: int): int = xs.map(def(e: int): int = e + .count).at(x)
+        var up = def(): str = .name -> .upper()
+        return "${.count} ${tag()} ${nested(0)} ${up()}"
+
+def main()
+    print("bug569_this: " + Counter("ab").run())

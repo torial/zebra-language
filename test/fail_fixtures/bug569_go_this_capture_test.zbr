@@ -1,0 +1,17 @@
+# BUG-569: a `sys.go` closure keeps the explicit-capture rule for `this` too.
+
+class Worker
+    var n: int
+    cue init(n: int)
+        .n = n
+    def start()
+        var ch = Chan(int)(1)
+        sys.go(def()
+            capture
+                var c: Chan(int) = ch
+            c.send(.n)
+        )
+        print(ch.recv())
+
+def main()
+    Worker(3).start()
