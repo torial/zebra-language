@@ -414,24 +414,49 @@ pub fn _zbr_CueCtx(comptime K: type) type {
         }
     };
 }
+// BUG-609: an enum value's position in its declaration. Not @intFromEnum: a backed enum
+// (`enum Status(int)` with `hi = 5` before `lo = 1`) would then order by its values, and
+// enums order by DECLARATION (Sean, 2026-10-21).
+pub fn _zbr_enum_ord(x: anytype) usize {
+    const info = @typeInfo(@TypeOf(x)).@"enum";
+    const v = @intFromEnum(x);
+    if (comptime @hasField(@TypeOf(info), "field_values")) { // Zig 0.17
+        inline for (info.field_values, 0..) |fv, i| {
+            if (v == fv) return i;
+        }
+    } else { // Zig 0.16
+        inline for (info.fields, 0..) |f, i| {
+            if (v == f.value) return i;
+        }
+    }
+    @panic("enum value outside its declaration");
+}
 pub fn _zebra_lt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.lessThan(u8, a, b);
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) < 0; }
+    // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
+    if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) < _zbr_enum_ord(b);
     return a < b;
 }
 pub fn _zebra_le(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .gt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) <= 0; }
+    // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
+    if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) <= _zbr_enum_ord(b);
     return a <= b;
 }
 pub fn _zebra_gt(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) == .gt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) > 0; }
+    // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
+    if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) > _zbr_enum_ord(b);
     return a > b;
 }
 pub fn _zebra_ge(a: anytype, b: anytype) bool {
     if (comptime @TypeOf(a) == []const u8) return std.mem.order(u8, a, b) != .lt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) >= 0; }
+    // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
+    if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) >= _zbr_enum_ord(b);
     return a >= b;
 }
 pub fn _zebra_eq(a: anytype, b: anytype) bool {
@@ -710,6 +735,7 @@ pub fn _zebra_sort_natural(comptime T: type, items: []T) void {
         fn less(_: void, a: T, b: T) bool {
             if (comptime T == []const u8) return std.mem.lessThan(u8, a, b);
             if (comptime _zbr_has_cue(T, "compare")) { var ac = a; _ = &ac; return ac.compare(b) < 0; }
+            if (comptime @typeInfo(T) == .@"enum") return _zbr_enum_ord(a) < _zbr_enum_ord(b); // BUG-609
             return a < b;
         }
     };

@@ -4,7 +4,7 @@
 **Status:** direction decided by Sean 2026-10-14 ("(a), by reference ... similar to C#
 semantics"). Drafted by Opus 5.5 on 2026-10-21. **Steps 1-3 of §6 are built (2026-10-21,
 §7)**: read-only capture by copy, written captures refused by name. Step 4 (shared capture)
-is not built; it waits on the decisions marked **OPEN**, which are Sean's.
+is not built; §5's three questions were answered by Sean the same day.
 **Bug:** BUG-569 (`BUGS.md`). Its scope turned out wider than filed; see §1.
 
 ---
@@ -159,7 +159,22 @@ to a closure-struct field; their behaviour does not. Measure it with the emit A/
 repo, zebra-ide and the engine before landing; output_sweep should show behaviour
 identical. Every other implicit capture moves from "zig error" to "compiles".
 
-## 5. Things this note does not decide — OPEN (Sean)
+## 5. The three questions -- DECIDED (Sean, 2026-10-21)
+
+1. **A closure value is a reference.** Every holder of one closure -- a local, a parameter it
+   was passed to, a field or list it was stored in -- sees the same `capture` state, as with a
+   C# delegate. BUG-607 tracks it. The borrow fix alone (`.fromRef(&b)` on the caller's own
+   variable) covers a closure passed INTO a call, but a closure stored in a field or list goes
+   through `.from`, which heap-copies, so two holders would still diverge. The complete form
+   makes a capturing closure a heap object from its creation, the way a class instance is,
+   which shares step 4's machinery (cells in the arena), so it lands with step 4.
+2. **`sys.go` keeps the explicit `capture` rule** -- as built in step 3.
+3. **Cells live in the program arena** -- §3.3's recommendation; revisit with the
+   long-running-memory work.
+
+The original questions follow, as written before the answers.
+
+### As written (OPEN at the time)
 
 1. **Is a closure *value* a reference?** Today a `capture`-block closure is copied when
    it is passed to a function (BUG-371's borrow copies it into a block-local; filed as BUG-607), so its state

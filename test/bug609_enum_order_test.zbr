@@ -1,0 +1,27 @@
+# BUG-609: an enum orders by DECLARATION (Sean, 2026-10-21) -- `<` `<=` `>` `>=` and a bare
+# `.sort()` on a List of one. Both reached zig as "operator < not allowed for type".
+
+enum Color
+    red
+    green
+    blue
+
+# Backed, with values NOT in declaration order: the order is still the declaration's.
+enum Pri(int)
+    hi = 5
+    mid = 3
+    lo = 1
+
+def main()
+    var cs = List(Color)()
+    cs.add(Color.blue)
+    cs.add(Color.red)
+    cs.add(Color.green)
+    cs.sort()
+    var r = Color.red
+    var ps = List(Pri)()
+    ps.add(Pri.lo)
+    ps.add(Pri.hi)
+    ps.add(Pri.mid)
+    ps.sort()
+    print("bug609: ${cs} ${r < Color.green} ${Color.blue <= r} ${Color.blue > Color.green} ${r >= Color.red} ${ps} ${Pri.hi < Pri.lo}")

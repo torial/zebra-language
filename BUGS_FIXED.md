@@ -6,6 +6,23 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-609: `.sort()` on a `List` of an enum or an interface, and `<` on an enum, passed `zebra -c` and failed inside zig -- FIXED 2026-10-21 (found 2026-10-21)
+- **Decision (Sean, 2026-10-21):** an enum orders by DECLARATION.
+- **Fix:** the runtime's `_zebra_lt` / `_le` / `_gt` / `_ge` and `_zebra_sort_natural` compare an
+  enum by `_zbr_enum_ord`, the value's position in its declaration -- not `@intFromEnum`, so a
+  backed enum whose values are out of declaration order (`hi = 5`, `mid = 3`, `lo = 1`) still
+  orders hi, mid, lo. Dual-version: Zig 0.17's `Type.Enum.field_values`, 0.16's `fields`. An
+  INTERFACE has no order (it cannot carry `cue compare`): `<` on one, or a bare `.sort()` on a
+  `List` of one, is refused naming a comparator. QUICKSTART §8 says how enums order.
+- **Red-check:** the enum fixture with the committed preamble swapped back in fails with the
+  ticket's "operator < not allowed"; the interface fixtures fail inside zig on the pre-fix
+  compiler.
+- **Fixtures:** `test/bug609_enum_order_test.zbr` (plain and backed enums, all four operators,
+  sorting), `test/fail_fixtures/bug609_interface_sort_test.zbr` (17:8) and
+  `test/fail_fixtures/bug609_interface_lt_test.zbr` (17:11).
+- **Open idea (Sean):** a directive marking an enum as having NO order, so `<` or `.sort()` on
+  it is a compile error -- not built; recorded here to decide.
+
 ### BUG-608: assigning to a `for x in xs` loop variable passed `zebra -c` and failed inside zig "cannot assign to constant" -- FIXED 2026-10-21 (found 2026-10-21)
 - **Fix:** refused at the assignment, as a parameter is (BUG-354): "cannot assign to 'x' -- it
   is the variable of a `for ... in` loop; bind a new local (var x2 = ...)". Every `for ... in`

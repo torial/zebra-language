@@ -46,18 +46,7 @@
 
 ---
 
-### BUG-609: `.sort()` on a `List` of an enum or an interface, and `<` on an enum, pass `zebra -c` and fail inside zig -- OPEN (found 2026-10-21)
-- **Found by:** checking BUG-551's `.sort()` refusal for the element types it does not cover.
-- **Repro:** `enum Color` (red, green, blue), `var cs = List(Color)()`, two `add`s, `cs.sort()`:
-  zig "operator < not allowed for type '_zbr_ty_Color'" in `_zebra_sort_natural`. The same
-  for `List(Shape).sort()` where `Shape` is an interface. Measured on `1af3848`.
-- **Expected:** an interface has no `cue compare`, so `missingCompareCue` should refuse it
-  (it returns "" for interfaces today, to keep `==` identity working -- the ordering case
-  needs its own answer). An enum has a declaration order. Either sort and compare by it
-  (Java's ordinal; `@intFromEnum` in the runtime) or refuse naming a comparator. **Which
-  one is a language decision (Sean).** Check `Color.red < Color.green` with the fix.
-
-### BUG-607: a `capture` closure's state does not survive being passed to a function -- OPEN, DECISION (found 2026-10-21)
+### BUG-607: a `capture` closure's state does not survive being passed to a function -- OPEN, DECIDED 2026-10-21: closure values are references (found 2026-10-21)
 - **Found by:** mapping closure lowering for BUG-569.
 - **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then
   `b()`, `b()`, `apply(b)`, `apply(b)`, `b()` where `def apply(f: def(): int): int = f()`.

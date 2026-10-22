@@ -1,0 +1,17 @@
+# BUG-609: an interface cannot carry `cue compare`, so it has no order; refused, naming a
+# comparator. It reached zig as "operator < not allowed for type".
+
+interface Shape
+    def area(): int
+
+class Sq implements Shape
+    var s: int
+    cue init(s: int)
+        .s = s
+    def area(): int
+        return .s * .s
+
+def main()
+    var a: Shape = Sq(2)
+    var b: Shape = Sq(3)
+    print(a < b)

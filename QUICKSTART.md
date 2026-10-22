@@ -922,6 +922,10 @@ enum Status(int)              # backed by int
 
 Usage: `Color.red`, `Status.ok`.
 
+**Order:** enum values compare by their **declaration order** -- `Color.red < Color.blue`,
+and a bare `.sort()` on a `List(Color)` sorts red, green, blue. That holds for a backed enum
+too: its declared position decides, not its value.
+
 **Type inference:** The type checker recognises enum names as types, so
 `Color.red` infers as `Color` and exhaustiveness checking works without an
 explicit type annotation.  Cross-module enums (imported via `use`) are
