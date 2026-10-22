@@ -1643,8 +1643,8 @@ smoke_run test/bug242_csv_roundtrip_test.zbr "bug242: OK"
 # until they pass, which costs the whole tier its meaning.
 smoke_run_bounded test/shell_test.zbr    "shell_test: OK" 90
 smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
-# BUG-610: the handshake's accept value against RFC 6455's own sample key, read back over raw TCP
-smoke_run_bounded test/bug610_ws_accept_test.zbr "bug610_ws_accept: OK" 90
+# BUG-611: the handshake's accept value against RFC 6455's own sample key, read back over raw TCP
+smoke_run_bounded test/bug611_ws_accept_test.zbr "bug611_ws_accept: OK" 90
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60

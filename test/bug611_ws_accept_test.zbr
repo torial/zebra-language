@@ -1,4 +1,4 @@
-# BUG-610 — the WebSocket server's handshake answers with RFC 6455's accept value.
+# BUG-611 — the WebSocket server's handshake answers with RFC 6455's accept value.
 #
 # `Ws.serve` computed `Sec-WebSocket-Accept` with a GUID ending 85B24 (the RFC's ends
 # 85B11), so every client that checks the value -- a browser, V's net.websocket --
@@ -47,4 +47,4 @@ def main()
     assert status.contains("101"), "the server switched protocols: " + status
     assert accept.contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo="), "RFC 6455's sample key answered with its known accept value; got '" + accept + "'"
 
-    print("bug610_ws_accept: OK")
+    print("bug611_ws_accept: OK")

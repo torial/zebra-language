@@ -2633,7 +2633,7 @@ pub fn _http_serve(port: u16, handler: anytype) void {
 // WebSocket (RFC 6455) — Ws.connect/send/recv/close + Ws.serve
 // ─────────────────────────────────────────────────────────────────────────────
 // RFC 6455 section 1.3: the accept key is base64(SHA-1(client key + this GUID)).
-// Until BUG-610 (2026-10-21) the last two digits read 24, so every client that
+// Until BUG-611 (2026-10-21) the last two digits read 24, so every client that
 // checks the accept value -- a browser, V's net.websocket -- refused a runtime
 // server's handshake, and only the runtime's own client (which does not check)
 // ever connected. Known answer: the sample key "dGhlIHNhbXBsZSBub25jZQ==" must
