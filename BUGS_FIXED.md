@@ -6,6 +6,26 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-615: two declarations of one name in one namespace passed `zebra -c` and failed inside zig "duplicate struct member name" -- FIXED 2026-10-22 (found 2026-10-22)
+- **Found by:** Fable (GameEngine): an edit script added `selectedPosition()` to
+  zbra/designer.zbr, which the class already had 350 lines down; the regen said OK and
+  `zig build` refused the .zig.
+- **Shapes, each measured:** two methods, two fields, a field and a method, a static and an
+  instance method (one Zig struct namespace), two struct fields, and two top-level
+  declarations (two `def f`, a `def` and a class, a module var and a `def`).
+- **Fix:** the Resolver records where each member of the type being walked, and each
+  top-level name, was first declared, and refuses the second -- naming the first one's line.
+  Different namespaces stay fine (the same method in two classes; a member named like a
+  top-level function). `use` names are not counted (an import may be shadowed).
+- **Not covered:** a duplicate whose SECOND declaration is a `struct` or `interface` at the top
+  level -- those parse nodes carry no position yet, and a refusal must not invent one.
+- **Measured:** `-c` over the repo (1,137) and zebra-ide (29) moved 0. The GameEngine moved
+  274 machine-ported scripts, every one a second `def main()` emitted by the porter; the
+  old compiler's full build of one fails with zig's "duplicate struct member name 'main'",
+  so none had ever built. zbra/ and game/ moved 0.
+- **Fixtures:** `test/fail_fixtures/bug615_{dup_method,dup_field,field_method,static_instance,struct_field,top_level}_test.zbr`
+  and the control `test/bug615_names_ok_test.zbr` (`3 8 100`).
+
 ### BUG-614: a call inside an `assert`, `raise`, `<<-`, destructuring, `require` or `ensure` skipped every front-end check -- FIXED 2026-10-22 (found 2026-10-22)
 - **Found by:** Fable (GameEngine), an hour of print-bisecting a designer test:
   `assert d.n == 1 and d.modeHint().count() < 110` (`.len` was meant) passed `zebra -c` and

@@ -1,0 +1,12 @@
+# BUG-615: two declarations of one name in one namespace -- Zig has no overloading -- passed
+# `zebra -c` and failed inside zig, "duplicate struct member name". Found by Fable: an edit
+# script added a method the class already had 350 lines down.
+
+class Box
+    var w: int
+    cue init(w: int)
+        .w = w
+    var w: int
+def main()
+    var b = Box(w: 3)
+    print(b.w)

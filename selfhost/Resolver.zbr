@@ -98,6 +98,11 @@ class Resolver
     # instance (a reference -- a closure copies the pointer and shares the object), 2 a
     # struct value (a copy would silently diverge, so a closure reading it is refused).
     var this_kind: int
+    # BUG-615: where each member of the class being walked, and each top-level name of the
+    # module, was first declared -- Zig has no overloading, so a second declaration of one
+    # name is a "duplicate struct member" inside zig. 0 = declared without a position.
+    var member_lines: HashMap(str, int)
+    var top_lines: HashMap(str, int)
 
     cue init(file_name: str, source: str = "")
         .module_scope  = HashMap()
@@ -115,6 +120,8 @@ class Resolver
         .next_lambda_thread = false
         .last_lambda_captures = 0
         .this_kind = 0
+        .member_lines = HashMap()
+        .top_lines = HashMap()
 
     # `file:line:col: error: msg`, plus the offending source line and a `^` under
     # the column when the source is available (li/col are 1-based).
@@ -174,32 +181,55 @@ class Resolver
         if root is PNode.module_ as m
             for decl in m.decls
                 .bindTopDecl(decl)?
+    # BUG-615: a second top-level declaration of one name (two `def f`, a `def` and a class,
+    # a module var and a `def`) was a "duplicate struct member" inside zig. Refused at the
+    # second, when it carries a position; a struct or interface does not yet, so a
+    # duplicate whose SECOND declaration is one of those still reaches zig.
+    def declareTop(name: str, line: int, col: int)
+        if .top_lines.contains(name)
+            if line > 0
+                var first: int = .top_lines.fetch(name)
+                var top_at: str = ""
+                if first > 0
+                    top_at = " (line " + first.toString() + ")"
+                .errors.add(ResolveError(.fmtErrAt(line, col, "`" + name + "` is already declared at the top of this module" + top_at + " -- two declarations cannot share a name; rename one")))
+        else
+            .top_lines.put(name, line)
+
     def bindTopDecl(decl: PNode) throws
         branch decl
             on PNode.class_ as c
+                .declareTop(c.name, c.line, c.col)
                 .module_scope.put(c.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.struct_ as s
+                .declareTop(s.name, 0, 0)
                 .module_scope.put(s.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.union_decl as u
+                .declareTop(u.name, u.line, u.col)
                 .module_scope.put(u.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.enum_ as e
+                .declareTop(e.name, e.line, e.col)
                 .module_scope.put(e.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.sig_ as sg
+                .declareTop(sg.name, sg.line, sg.col)
                 .module_scope.put(sg.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.interface_ as i
                 # B5(a): register interface names so `obj is IFace` resolves the
                 # interface name (previously "undefined name: 'IFace'").
+                .declareTop(i.name, 0, 0)
                 .module_scope.put(i.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.method_ as m
+                .declareTop(m.name, m.line, m.col)
                 .module_scope.put(m.name, 1)
                 .symbol_count = .symbol_count + 1
             on PNode.stmt_var as v
+                .declareTop(v.name, v.line, v.col)
                 # Module-level var/const: hoist its name into module scope so bare
                 # references from function bodies resolve (emitted as a file-scope
                 # `pub var`/`pub const` by CodeGen).
@@ -262,6 +292,7 @@ class Resolver
     # read-only iteration; the underlying array is shared with the parse tree.
     def enterClass(name: str, members: List(PNode), type_params: List(str)) throws
         .class_scope = HashMap()
+        .member_lines = HashMap()
         # Register generic type params so they resolve: valid names in method bodies.
         # A constrained parameter arrives as "T|Comparable(T)" (Parser.parseConstraintClause);
         # the NAME is the part before the bar -- registering the whole string made
@@ -280,12 +311,28 @@ class Resolver
         for member in members
             .resolveMember(member)?
 
+    # BUG-615: two members of one class or struct with one name -- two methods (Zebra has no
+    # overloading), two fields, a field and a method, a static and an instance method -- were
+    # a "duplicate struct member" inside zig.
+    def declareMember(name: str, line: int, col: int)
+        if .member_lines.contains(name)
+            if line > 0
+                var mfirst: int = .member_lines.fetch(name)
+                var mwhere: str = ""
+                if mfirst > 0
+                    mwhere = " (line " + mfirst.toString() + ")"
+                .errors.add(ResolveError(.fmtErrAt(line, col, "`" + name + "` is already a member of this type" + mwhere + " -- two members cannot share a name (Zebra has no overloading); rename one")))
+        else
+            .member_lines.put(name, line)
+
     def collectMember(member: PNode) throws
         branch member
             on PNode.method_ as m
+                .declareMember(m.name, m.line, m.col)
                 .class_scope.put(m.name, 1)
                 .symbol_count = .symbol_count + 1
             on PNode.field_ as f
+                .declareMember(f.name, f.line, f.col)
                 .class_scope.put(f.name, 2)
                 .symbol_count = .symbol_count + 1
             else
