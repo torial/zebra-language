@@ -23,7 +23,7 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
-use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ClassTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
 
@@ -260,6 +260,232 @@ def collectAssignedIdents(stmts: List(Stmt), out: StrSet)
                     collectAssignedIdents(be, out)
             else
                 pass
+
+# ── BUG-569 step 4: which locals live in a cell ───────────────────────────────
+# A `var` local is BOXED -- declared as a heap cell, read and written through it -- when a
+# lambda at ANY depth captures it implicitly and SOMETHING writes it: the function, the
+# capturing lambda, a sibling lambda or a nested one. Decided once per function, before any
+# of it is emitted, because the declaration precedes every lambda that captures it; a
+# per-lambda decision would box it for the writer and copy it for a reader, which prints a
+# stale value with no error. `writes` is the mutation scan (rebinding and in-place change)
+# of the function body and of every lambda body; `decls` every `var` the function declares,
+# inside lambdas too (a lambda's own local can be captured by a nested lambda).
+# These are the CANDIDATES; `rebound` gets the names something REBINDS (`x = ...`,
+# `x += ...`, `x <<- ...`), which the Generator's boxedFor needs: a class instance or a
+# container changed only THROUGH its reference is shared by a plain copy and needs no cell.
+def computeBoxCandidates(stmts: List(Stmt), ic: InferCtx?, rebound: StrSet): StrSet
+    var caps = StrSet()
+    var writes = StrSet()
+    var decls = StrSet()
+    boxInfoStmts(stmts, caps, writes, decls, rebound, ic)
+    var out = StrSet()
+    for nm in caps.items()
+        if writes.contains_(nm) and decls.contains_(nm)
+            out.add(nm)
+    return out
+
+def boxInfoStmts(stmts: List(Stmt), caps: StrSet, writes: StrSet, decls: StrSet, rebound: StrSet, ic: InferCtx?)
+    scanMutationsInto(stmts, writes, ic)
+    var lams = List(ExprLambda)()
+    lambdasInStmts(stmts, lams, decls, rebound)
+    for lam in lams
+        boxInfoLambda(lam, caps, writes, decls, rebound, ic)
+
+def boxInfoLambda(lam: ExprLambda, caps: StrSet, writes: StrSet, decls: StrSet, rebound: StrSet, ic: InferCtx?)
+    for cv in lam.captures
+        if cv.mods.is_implicit_capture and cv.name != "_zbr_this"
+            caps.add(cv.name)
+    branch lam.body_
+        on LambdaBody.stmts as lbs
+            boxInfoStmts(lbs, caps, writes, decls, rebound, ic)
+        on LambdaBody.expr_ as lbe
+            scanMutationsInExpr(lbe, writes, ic)
+            var inner = List(ExprLambda)()
+            lambdasInExpr(lbe, inner)
+            for il in inner
+                boxInfoLambda(il, caps, writes, decls, rebound, ic)
+
+# Every lambda in `stmts` (not inside another lambda -- the caller recurses into each
+# body), every `var` / destructured name declared, and every bare name REBOUND, in nested
+# blocks too.
+# stmt-walker: exhaustive
+def lambdasInStmts(stmts: List(Stmt), out: List(ExprLambda), decls: StrSet, rebound: StrSet)
+    for st in stmts
+        branch st
+            on Stmt.var_ as sv
+                decls.add(sv.name)
+                if sv.init_expr as svi
+                    lambdasInExpr(svi, out)
+            on Stmt.destruct as sd
+                for dn in sd.names
+                    decls.add(dn)
+                lambdasInExpr(sd.init_expr, out)
+            on Stmt.if_ as si
+                lambdasInExpr(si.cond, out)
+                lambdasInStmts(si.then_stmts, out, decls, rebound)
+                for ei in si.else_ifs
+                    lambdasInExpr(ei.cond, out)
+                    lambdasInStmts(ei.stmts, out, decls, rebound)
+                if si.else_stmts as ies
+                    lambdasInStmts(ies, out, decls, rebound)
+            on Stmt.while_ as sw
+                lambdasInExpr(sw.cond, out)
+                lambdasInStmts(sw.stmts, out, decls, rebound)
+            on Stmt.for_in as sfi
+                lambdasInExpr(sfi.iter, out)
+                if sfi.filter as sff
+                    lambdasInExpr(sff, out)
+                lambdasInStmts(sfi.stmts, out, decls, rebound)
+                if sfi.else_ as fie
+                    lambdasInStmts(fie, out, decls, rebound)
+            on Stmt.for_num as sfn
+                lambdasInExpr(sfn.start, out)
+                lambdasInExpr(sfn.stop_, out)
+                if sfn.step as sfs
+                    lambdasInExpr(sfs, out)
+                lambdasInStmts(sfn.stmts, out, decls, rebound)
+                if sfn.else_ as fne
+                    lambdasInStmts(fne, out, decls, rebound)
+            on Stmt.branch_ as sbr
+                lambdasInExpr(sbr.expr, out)
+                for arm in sbr.cases
+                    for av in arm.values
+                        lambdasInExpr(av, out)
+                    for ag in arm.guard_expr
+                        lambdasInExpr(ag, out)
+                    lambdasInStmts(arm.stmts, out, decls, rebound)
+                if sbr.else_ as bre
+                    lambdasInStmts(bre, out, decls, rebound)
+            on Stmt.with_ as swi
+                lambdasInExpr(swi.target, out)
+                lambdasInStmts(swi.stmts, out, decls, rebound)
+            on Stmt.in_scope as sis
+                lambdasInExpr(sis.expr, out)
+                lambdasInStmts(sis.stmts, out, decls, rebound)
+            on Stmt.try_catch as stc
+                lambdasInStmts(stc.stmts, out, decls, rebound)
+                for cc in stc.clauses
+                    lambdasInStmts(cc.stmts, out, decls, rebound)
+            on Stmt.allocate_ as sal
+                lambdasInExpr(sal.source, out)
+                lambdasInStmts(sal.stmts, out, decls, rebound)
+            on Stmt.return_ as sr
+                if sr.value as srv
+                    lambdasInExpr(srv, out)
+            on Stmt.yield_ as sy
+                lambdasInExpr(sy.value, out)
+            on Stmt.assert_ as sas
+                lambdasInExpr(sas.cond, out)
+                if sas.message as sam
+                    lambdasInExpr(sam, out)
+            on Stmt.assign as sa
+                if sa.target is Expr.ident as sat
+                    rebound.add(sat.name)
+                lambdasInExpr(sa.target, out)
+                lambdasInExpr(sa.value, out)
+            on Stmt.expr as se
+                lambdasInExpr(se, out)
+            on Stmt.raise_ as sra
+                if sra.message as srm
+                    lambdasInExpr(srm, out)
+                if sra.details as srd
+                    lambdasInExpr(srd, out)
+            on Stmt.copy_out as sco
+                if sco.target is Expr.ident as scot
+                    rebound.add(scot.name)
+                lambdasInExpr(sco.target, out)
+                lambdasInExpr(sco.value, out)
+            on Stmt.print_ as spr
+                for pa in spr.args
+                    lambdasInExpr(pa, out)
+            on Stmt.contract as sct
+                for cx in sct.exprs
+                    lambdasInExpr(cx, out)
+            else
+                pass
+
+# expr-walker: exhaustive
+# expr-walker-ok: ident -- a name use holds no lambda.
+# expr-walker-ok: zig_lit -- raw Zig text holds no Zebra lambda.
+def lambdasInExpr(e: Expr, out: List(ExprLambda))
+    branch e
+        on Expr.lambda as lam
+            out.add(lam)
+        on Expr.catch_ as ec
+            lambdasInExpr(ec.expr, out)
+            lambdasInExpr(ec.fallback, out)
+        on Expr.unary as u
+            lambdasInExpr(u.operand, out)
+        on Expr.binary as b
+            lambdasInExpr(b.left, out)
+            lambdasInExpr(b.right, out)
+        on Expr.call as c
+            lambdasInExpr(c.callee, out)
+            for a in c.args
+                lambdasInExpr(a.value, out)
+        on Expr.member as mem
+            lambdasInExpr(mem.object, out)
+        on Expr.index as ix
+            lambdasInExpr(ix.object, out)
+            lambdasInExpr(ix.index, out)
+        on Expr.slice as slc
+            lambdasInExpr(slc.object, out)
+            if slc.start as sst
+                lambdasInExpr(sst, out)
+            if slc.stop_ as ssp
+                lambdasInExpr(ssp, out)
+        on Expr.cast as ca
+            lambdasInExpr(ca.expr, out)
+        on Expr.to_non_nil as tnn
+            lambdasInExpr(tnn.expr, out)
+        on Expr.is_nil as isn
+            lambdasInExpr(isn.expr, out)
+        on Expr.orelse_ as oe
+            lambdasInExpr(oe.expr, out)
+            lambdasInExpr(oe.fallback, out)
+        on Expr.if_expr as ie
+            lambdasInExpr(ie.cond, out)
+            lambdasInExpr(ie.then_expr, out)
+            lambdasInExpr(ie.else_expr, out)
+        on Expr.try_ as tr
+            lambdasInExpr(tr.expr, out)
+        on Expr.list_lit as ll
+            for le in ll.elems
+                lambdasInExpr(le, out)
+        on Expr.array_lit as al
+            for ae in al.elems
+                lambdasInExpr(ae, out)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                lambdasInExpr(se, out)
+        on Expr.tuple_lit as tl
+            for te in tl.elems
+                lambdasInExpr(te, out)
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                lambdasInExpr(de.key, out)
+                lambdasInExpr(de.value, out)
+        on Expr.string_interp as sip
+            for sp in sip.parts
+                if sp is StringPart.expr_ as spe
+                    lambdasInExpr(spe, out)
+        on Expr.type_check as tck
+            lambdasInExpr(tck.expr, out)
+        on Expr.chained_cmp as ccmp
+            for co in ccmp.operands
+                lambdasInExpr(co, out)
+        on Expr.except_ as exc
+            lambdasInExpr(exc.base, out)
+            for ef in exc.fields
+                lambdasInExpr(ef.value, out)
+        on Expr.old_ as eo
+            lambdasInExpr(eo.operand, out)
+        on Expr.opt_chain as oc
+            lambdasInExpr(oc.base, out)
+            for oa in oc.args
+                lambdasInExpr(oa.value, out)
+        else
+            pass
 
 def isKnownListField(name: str): bool
     # Known List-typed fields on Parser structs and AST types
@@ -3539,6 +3765,11 @@ struct Generator
     # BUG-569: the OUTERMOST block's mutation set -- scanMutations recurses, so it is every
     # in-place change in the function outside lambda bodies. Set by the first genStmts.
     var fn_mut_all           : StrSet?
+    # BUG-569 step 4: the function's BOXED locals (computeBoxed) -- each a heap cell, read and
+    # written as `name.*`. nil until the outermost genStmts of a function sets it.
+    var fn_boxed             : StrSet?
+    # ...and, inside a lambda body, which of its capture fields hold such a cell's pointer.
+    var capture_boxed        : StrSet
     var ret_set              : StrSet?  # variables that escape via return
     var nil_narrowed         : StrSet?  # variables narrowed to non-nil in current scope
     var try_err_var          : str?     # current try-block error variable name
@@ -3620,6 +3851,7 @@ struct Generator
     # struct -- emitted at module scope, where no function context exists -- can type the
     # captures the Resolver synthesized from the factory's params and locals.
     var closure_ret_ctx      : HashMap(str, InferCtx)
+    var closure_ret_boxed    : HashMap(str, StrSet)   # BUG-569 step 4: the factory's boxed set
     var closure_ret_mutates  : StrSet
     # Set to `_ZbrClosure_<fn>` while emitting a factory body, so its
     # `return <capture lambda>` constructs the hoisted named type (init-only).
@@ -3669,6 +3901,8 @@ struct Generator
         # Phase 7b field initializations
         .mut_set               = nil
         .fn_mut_all            = nil
+        .fn_boxed              = nil
+        .capture_boxed         = StrSet()
         .ret_set               = nil
         .nil_narrowed          = nil
         .try_err_var           = nil
@@ -3720,6 +3954,7 @@ struct Generator
         .closure_lambdas       = HashMap(str, ExprLambda)()
         .closure_ret_fns       = HashMap(str, ExprLambda)()
         .closure_ret_ctx       = HashMap(str, InferCtx)()
+        .closure_ret_boxed     = HashMap(str, StrSet)()
         .closure_ret_mutates   = StrSet()
         .current_closure_ret   = nil
 
@@ -3873,6 +4108,46 @@ struct Generator
         var g = this except
             capture_self = name
         return g
+
+    def withFnBoxed(fb: StrSet): Generator
+        var g = this except
+            fn_boxed = fb
+        return g
+
+    def withCaptureBoxed(cb: StrSet): Generator
+        var g = this except
+            capture_boxed = cb
+        return g
+
+    # BUG-569 step 4: the function's boxed locals -- the candidates computeBoxCandidates finds,
+    # less any that is never REBOUND and whose copy already shares (a class instance, a
+    # container: a write through the reference is seen by every copy). Unknown types box.
+    def boxedFor(stmts: List(Stmt), ic: InferCtx?): StrSet
+        var rebound = StrSet()
+        var cands: StrSet = computeBoxCandidates(stmts, ic, rebound)
+        var out = StrSet()
+        for nm in cands.items()
+            if rebound.contains_(nm)
+                out.add(nm)
+            else
+                var bt: Type_ = Type_.unknown_
+                if ic as bic
+                    bt = inferExpr(Expr.ident(ExprIdent(Span(0, 0, 0, 0), nm)), bic)
+                if .captureCopyIsDistinct(bt)
+                    out.add(nm)
+        return out
+
+    def fnBoxedHas(name: str): bool
+        if fn_boxed as fb
+            return fb.contains_(name)
+        return false
+
+    # BUG-569 step 4: the POINTER spelling of a boxed variable -- what a closure's capture
+    # field is initialised from: the function's cell, or the enclosing closure's own field.
+    def boxPtrSpelling(name: str): str
+        if capture_fields.contains_(name)
+            return capture_self + "." + zigSafeName(name)
+        return zigSafeName(name)
 
     def withSelfName(name: str): Generator
         var g = this except
@@ -7582,6 +7857,9 @@ struct Generator
         var saved_fma = fn_mut_all
         if fn_mut_all == nil
             fn_mut_all = ms
+        var saved_fb: StrSet? = fn_boxed
+        if fn_boxed == nil
+            fn_boxed = .boxedFor(stmts, .infer_ctx)
         # EARLY-EXIT NARROWING (Sean, 2026-09-30): after `if a == nil` whose body always
         # leaves, `a` emits `a.?` for the rest of this block (unless the block reassigns
         # it). Set on this generator and restored below -- a copy would drop the state the
@@ -7642,6 +7920,33 @@ struct Generator
             eei -= 1
         mut_set = saved_ms
         fn_mut_all = saved_fma
+        fn_boxed = saved_fb
+
+    # BUG-569 step 4. `var counter = 0` shared with a closure becomes
+    #     const _zbr_bx_counter: i64 = 0;
+    #     const counter = _zbr_cell(i64, _zbr_bx_counter);
+    # The element type is the declared or inferred one (a bare `0` would be comptime_int);
+    # `@TypeOf` of the hidden local when inference has nothing.
+    def emitBoxedLocal(n: DeclVar)
+        var hid: str = "_zbr_bx_" + n.name
+        var hn = n except
+            name = hid
+        var bty: Type_ = Type_.unknown_
+        if n.type_ != nil
+            bty = typeFromRef(n.type_!)
+        else if n.init_expr != nil
+            if .infer_ctx as bic
+                bty = inferExpr(n.init_expr!, bic)
+        var bt: str = ""
+        if not (bty is Type_.unknown_) and not (bty is Type_.unresolved)
+            bt = genFieldZigType(bty)
+        if bt == ""
+            bt = "@TypeOf(" + hid + ")"
+        genLocalVar(hn)
+        writeIndent()
+        w.emit("const ")
+        emitName(n.name)
+        w.emit(" = _zbr_cell(" + bt + ", " + hid + ");\n")
 
     # True when genLocalVar will emit an inline constraint-check block for a
     # local declared with this type — a named / parametric alias with a `where`
@@ -7824,6 +8129,11 @@ struct Generator
             tp += 1
 
     def genLocalVar(n: DeclVar)
+        # BUG-569 step 4: a local a closure shares is declared as usual under a hidden name,
+        # then moved into a cell -- every path below stays as it is.
+        if n.name != "_" and fnBoxedHas(n.name)
+            emitBoxedLocal(n)
+            return
         # BUG-583: FIRST, before anything below records a fact about this declaration (the
         # closure-var tracking does, well above the str/List block) -- placed lower, it erased
         # `closure_vars` for the very declaration that set it.
@@ -9719,8 +10029,11 @@ struct Generator
             w.emit("const _ZbrClosure_")
             w.emit(name)
             w.emit(" = ")
+            var hbx: StrSet = StrSet()
+            if closure_ret_boxed.get(name) as hb
+                hbx = hb
             if closure_ret_ctx.get(name) as hctx
-                withInferCtx(hctx).genLambdaEx(hlam, true, false, nil)
+                withInferCtx(hctx).withFnBoxed(hbx).genLambdaEx(hlam, true, false, nil)
             else
                 genLambdaEx(hlam, true, false, nil)
             w.emit(";\n")
@@ -9743,6 +10056,7 @@ struct Generator
                                 fctx.bind(fpp.name, Type_.unknown_)
                         walkStmts(fmth.stmts!, fctx)
                         closure_ret_ctx.set(fmth.name, fctx)
+                        closure_ret_boxed.set(fmth.name, .boxedFor(fmth.stmts!, fctx))
                         branch flam!.body_
                             on LambdaBody.stmts as fbody
                                 var fmuts = StrSet()
@@ -14388,6 +14702,14 @@ struct Generator
         if capture_fields.contains_(id.name)
             w.emit(capture_self + ".")              # BUG-487
             emitName(id.name)
+            if capture_boxed.contains_(id.name)
+                w.emit(".*")                        # BUG-569 step 4: the shared cell
+            return
+        # BUG-569 step 4: a boxed local is read and written through its cell. `x.*` is a
+        # postfix expression, so `x.* += 1`, `x.*.f = 5`, `&x.*` and `x.*.m()` are all Zig.
+        if fnBoxedHas(id.name)
+            emitName(id.name)
+            w.emit(".*")
             return
         # BUG-281 F: a bare field read inside a method. Distinct path from `.field`
         # (member access) — that one is genExpr's member arm, fixed under BUG-280.
@@ -19949,6 +20271,14 @@ struct Generator
         var ct: Type_ = Type_.unknown_
         if .infer_ctx as cic
             ct = inferExpr(Expr.ident(ExprIdent(cv.span, cv.name)), cic)
+        # BUG-569 step 4: a boxed variable's field is the cell's pointer, shared by every copy.
+        if fnBoxedHas(cv.name)
+            var bzt: str = genFieldZigType(ct)
+            if bzt != ""
+                return "*" + bzt
+            if hoisted
+                return "@compileError(\"the closure this function returns reads '" + cv.name + "', whose type is not known here -- give it one (var " + cv.name + ": T = ...)\")"
+            return "@TypeOf(" + boxPtrSpelling(cv.name) + ")"
         var changed: bool = false
         if fn_mut_all as fma
             changed = fma.contains_(cv.name)
@@ -19959,7 +20289,7 @@ struct Generator
                 else
                     pass
         if changed and .captureCopyIsDistinct(ct)
-            return "@compileError(\"'" + cv.name + "' is changed in place, and a closure reads it -- a closure gets a copy, which would not see the change; shared capture is not built yet (BUG-569). Keep the state in the closure with a `capture` block, or pass the value in as an argument\")"
+            return "@compileError(\"'" + cv.name + "' is changed in place, and a closure reads it -- only a `var` local can be shared with a closure, and this is a parameter or a binding; copy it into a `var` first, or keep the state in the closure with a `capture` block\")"
         var zt: str = genFieldZigType(ct)
         if zt == "" and hoisted
             return "@compileError(\"the closure this function returns reads '" + cv.name + "', whose type is not known here -- give it one (var " + cv.name + ": T = ...)\")"
@@ -20126,7 +20456,11 @@ struct Generator
                     walkStmts(lbs, lam_ctx)
                 else
                     pass
-            var lg = asMethod().withCaptureFields(cf).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself).withLambdaReturnType(lam.return_type)
+            var cbx = StrSet()
+            for cvx in lam.captures
+                if cvx.mods.is_implicit_capture and fnBoxedHas(cvx.name)
+                    cbx.add(cvx.name)
+            var lg = asMethod().withCaptureFields(cf).withCaptureBoxed(cbx).withInferCtx(lam_ctx).withLambdaParamRenames(lp_names, lp_pfx).withCaptureSelf(cself).withLambdaReturnType(lam.return_type)
             # BUG-569: a closure that captured `this` reads it through its own field.
             if cf.contains_("_zbr_this")
                 lg = lg.withSelfName(cself + "._zbr_this")
@@ -20209,7 +20543,9 @@ struct Generator
                     w.emit(".")
                     emitName(cv.name)                       # BUG-280
                     w.emit(" = ")
-                    if cv.init_expr != nil
+                    if cv.mods.is_implicit_capture and fnBoxedHas(cv.name)
+                        w.emit(boxPtrSpelling(cv.name))      # BUG-569 step 4: share the cell
+                    else if cv.init_expr != nil
                         if cv.type_ != nil and isSigTypeRef(cv.type_!)
                             genSigValue(cv.init_expr!)          # a sig-typed capture
                         else

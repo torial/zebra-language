@@ -114,6 +114,16 @@
   waits on §5's three questions. `this` in a lambda landed the same day: captured in a class
   method (a reference, so writes through it are shared), refused by name in a struct method. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
   `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
+- **STEP 4, IMPLICIT HALF, LANDED 2026-10-22** (design note §8): a `var` local a closure
+  captures and something writes -- the function, that closure, a sibling or a nested one --
+  is SHARED through a heap cell (`_zbr_cell`, the program arena), so QUICKSTART §19's
+  `counter += 1` works as written. A class instance or container is boxed only when rebound.
+  Still refused, with the fix named: a parameter, loop counter or binding written after a
+  closure reads it, and a struct parameter changed in place (at build). The four step-3
+  refusals became `test/bug569_shared_{written,rebound,struct_field,struct_method}_test.zbr`;
+  new negatives `test/fail_fixtures/bug569_for_counter_written_capture_test.zbr` and
+  `bug569_param_struct_capture_test.zbr`; probe `test/boundary/bv_closure_capture_shared.zbr`
+  (intent-first). STILL OPEN: BUG-607 (a closure VALUE as a reference), the other half.
 - **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
   that nothing writes, box one that something writes, refuse written captures by name until
   boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;

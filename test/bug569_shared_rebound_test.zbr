@@ -1,0 +1,8 @@
+# BUG-569 step 4: a captured local rebound AFTER the closure exists -- the closure sees the
+# new value, because the two share the variable.
+
+def main()
+    var k = sys.args().len
+    var f = def(): int = k
+    k = 5
+    print("bug569_rebound: ${f()}")

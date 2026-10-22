@@ -3,8 +3,10 @@
 
 **Status:** direction decided by Sean 2026-10-14 ("(a), by reference ... similar to C#
 semantics"). Drafted by Opus 5.5 on 2026-10-21. **Steps 1-3 of §6 are built (2026-10-21,
-§7)**: read-only capture by copy, written captures refused by name. Step 4 (shared capture)
-is not built; §5's three questions were answered by Sean the same day.
+§7)**: read-only capture by copy, written captures refused by name. **Step 4's implicit half
+is built (2026-10-22, §8)**: a written `var` local is shared through a cell. BUG-607 (a
+closure VALUE as a reference) is the next commit; §5's three questions were answered by
+Sean on 2026-10-21.
 **Bug:** BUG-569 (`BUGS.md`). Its scope turned out wider than filed; see §1.
 
 ---
@@ -264,3 +266,37 @@ FULL tier.
   other 78 moved files are machine-ported scripts that already failed. The emit A/B moved three
   corpus files, all compile-time-constant captures now carried as fields, each printing exactly
   what it did.
+
+## 8. Step 4, implicit half (built 2026-10-22)
+
+- **Which variables are boxed** (CodeGen `boxedFor`, decided ONCE per function before any
+  of it is emitted): the implicit captures of every lambda at any depth, that something
+  WRITES -- the mutation scan of the function body and of every lambda body, nested ones
+  included -- and that the function declares with `var` (inside lambdas too). A per-lambda
+  decision would box a variable for the lambda that writes it and copy it for one that only
+  reads it; that prints a stale value with no error. Two lambdas over one variable, one
+  writing and one reading, is a probe row.
+- **Less the references.** A class instance or a container changed only THROUGH its
+  reference (`c.n = 7`, `xs.add(9)`) is shared by a plain copy, so it is boxed only when it
+  is REBOUND (`c = K()`). Found by the emit A/B: the first build boxed both in
+  `test/bug569_capture_refs_test.zbr`, correct but pointless.
+- **The lowering.** The declaration is emitted as before under a hidden name and moved into
+  a cell: `const _zbr_bx_n: i64 = 0; const n = _zbr_cell(i64, _zbr_bx_n);`. Every use is
+  `n.*` -- one place, `genIdentRaw`, so `n.* += 1`, `n.*.x = 5`, `&n.*` and `n.*.m()` all
+  come out right with no site-by-site work. A closure's field is the pointer (`n: *i64`),
+  initialised from the cell (or from an enclosing closure's own field), and read as
+  `self.n.*`. `_zbr_cell` allocates from the program arena (§5.3).
+- **Still refused**, now with the fix named: a parameter, a numeric `for` counter or a
+  binding that is written after a closure reads it (the Resolver, which knows declaration
+  kinds -- `fn_vars`); a struct PARAMETER changed in place (codegen's backstop, at build).
+- **Probe** `test/boundary/bv_closure_capture_shared.zbr`, written and committed unrun
+  before this code: one row per write channel in both directions, nested writers, a
+  returned factory, both loop rows. It matched on its first compiling run. Red-checked by
+  removing the `<<-` arm from the mutation scan: the probe goes red (loudly, since the same
+  scan decides `var`/`const`).
+- **Measured.** Emit A/B over the repo (814 files emitted by both): one moved, the
+  references case above; after that fix, only this change's own four moved fixtures. `-c` over the repo / zebra-ide / engine:
+  the repo moved only this change's fixtures; the engine moved 76 machine-ported scripts
+  that already failed -- the Resolver's capture refusal used to stop them first, and the
+  checker's ordinary refusals (parameters assigned, nil use, a `use` that is not in the
+  tree) now show. The two hand-wired engine scripts §7 named had already been rewritten.

@@ -160,6 +160,11 @@ confirmed via `tools/bootstrap_check.sh`.
 - **Enums order by declaration (BUG-609)** -- `<` and a bare `.sort()` on an enum work (a
   backed enum too: its declared position decides, not its value); on an interface they are
   refused, naming a comparator. Both failed inside zig.
+- **A lambda shares the `var` locals it writes with its function (BUG-569, step 4)** --
+  QUICKSTART §19's `counter += 1` through a closure is seen outside, a write outside is seen
+  by the closure, and closures over one variable see one variable (C#'s model). A shared
+  variable lives in a heap cell. A parameter, loop counter or binding written after a closure
+  reads it is still refused, naming the fix (copy it into a `var`).
 - **A lambda reads the enclosing function's locals, parameters and loop variables (BUG-569,
   read half)** -- each is copied into the closure when it is made. Only compile-time constants
   worked before; every runtime value failed inside zig. Writing a captured variable is refused

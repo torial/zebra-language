@@ -1,0 +1,10 @@
+# BUG-569 step 4: QUICKSTART §19's own example. The closure and the function share
+# `counter`, so the write through the closure is seen outside. (Refused by name from step 3
+# until shared capture was built.)
+
+def main()
+    var counter = 0
+    var bump = def()
+        counter += 1
+    bump()
+    print("bug569_written: ${counter}")

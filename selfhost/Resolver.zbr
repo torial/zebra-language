@@ -91,6 +91,10 @@ class Resolver
     var fn_lams     : List(LamFrame)
     var fn_written_line: HashMap(str, int)
     var fn_written_col : HashMap(str, int)
+    # BUG-569 step 4: the function's own `var` locals (declared outside any lambda). A capture
+    # of one that something writes is SHARED -- codegen boxes it in a cell -- rather than
+    # refused. A parameter, a loop variable or a binding keeps the refusal.
+    var fn_vars     : HashMap(str, int)
     var foldable    : HashMap(str, int)
     var next_lambda_thread: bool
     var last_lambda_captures: int
@@ -116,6 +120,7 @@ class Resolver
         .fn_lams       = List(LamFrame)()
         .fn_written_line = HashMap()
         .fn_written_col  = HashMap()
+        .fn_vars       = HashMap()
         .foldable      = HashMap()
         .next_lambda_thread = false
         .last_lambda_captures = 0
@@ -364,6 +369,7 @@ class Resolver
         .fn_lams = List(LamFrame)()
         .fn_written_line = HashMap()
         .fn_written_col = HashMap()
+        .fn_vars = HashMap()
         .foldable = HashMap()
         for p in params
             .declare(p.name, 3)
@@ -446,10 +452,11 @@ class Resolver
             .fn_written_line.put(name, line)
             .fn_written_col.put(name, col)
 
-    # BUG-569: the function's walk is over, so every implicit capture is known. A name
-    # something rebinds is refused (a closure's copy would not see the change, and shared
-    # capture -- design note step 4 -- is not built); a `sys.go` closure keeps the explicit
-    # rule QUICKSTART states; the rest become `capture` entries, exactly as if written.
+    # BUG-569: the function's walk is over, so every implicit capture is known. A `var`
+    # local something rebinds is SHARED (step 4: codegen boxes it in a cell); any other name
+    # something rebinds -- a parameter, a loop counter, a binding -- is refused; a `sys.go`
+    # closure keeps the explicit rule QUICKSTART states; the rest become `capture` entries,
+    # exactly as if written.
     # A pass that ignores this resolver's errors therefore never gets a refused capture --
     # the lambda still names a runtime local and zig refuses it, loudly.
     def finishCaptures()
@@ -472,10 +479,10 @@ class Resolver
                     this_init.add(PNode.expr_this(PPos(fr.this_line, fr.this_col)))
                     fr.caps.add(PCaptureVar("_zbr_this", "", this_init, true, true))
                 for nm in fr.implicit
-                    if .fn_written_line.contains(nm)
+                    if .fn_written_line.contains(nm) and not .fn_vars.contains(nm)
                         if not refused.contains(nm)
                             refused.put(nm, 1)
-                            .errors.add(ResolveError(.fmtErrAt(.fn_written_line.fetch(nm), .fn_written_col.fetch(nm), "'" + nm + "' is changed here, and a closure reads it (line " + fr.first_line.fetch(nm).toString() + ") -- a closure gets a copy, which would not see the change; shared capture is not built yet (BUG-569). Keep the state in the closure with a `capture` block, or pass the value in as an argument")))
+                            .errors.add(ResolveError(.fmtErrAt(.fn_written_line.fetch(nm), .fn_written_col.fetch(nm), "'" + nm + "' is changed here, and a closure reads it (line " + fr.first_line.fetch(nm).toString() + ") -- only a `var` local can be shared with a closure, and this is a parameter, a loop variable or a binding; copy it into a `var` first (`var n2 = " + nm + "`), or keep the state in the closure with a `capture` block")))
                     else
                         var cap_init = List(PNode)()
                         cap_init.add(PNode.expr_id(PExprId(nm, fr.first_line.fetch(nm), fr.first_col.fetch(nm))))
@@ -508,6 +515,8 @@ class Resolver
                 for expr in v.init_expr
                     .resolveExpr(expr)?
                 .declareLocal(v.name, v.line, v.col)
+                if .lam_stack.len == 0
+                    .fn_vars.put(v.name, 1)
                 .symbol_count = .symbol_count + 1
                 # BUG-569: a local bound to a lambda that captures nothing is a comptime
                 # function in the emit; another lambda reads it without capturing it.
@@ -520,6 +529,8 @@ class Resolver
                     .resolveExpr(expr)?
                 for nm in d.names
                     .declareLocal(nm, d.line, d.col)
+                    if .lam_stack.len == 0
+                        .fn_vars.put(nm, 1)
                     .symbol_count = .symbol_count + 1
             on PNode.stmt_return as r
                 for expr in r.value

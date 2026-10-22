@@ -797,6 +797,16 @@ pub fn _zbr_new(comptime C: type) C {
     p.* = if (comptime @hasField(H, "items")) H.empty else H.init(_allocator);
     return p;
 }
+// BUG-569 step 4: a variable a closure shares with its function (or with other closures)
+// lives in a heap cell; the function and every closure hold the pointer, so a write through
+// any of them is seen by all. From the program allocator (the arena): the closure may outlive
+// the frame -- returned, stored, handed on -- and nothing here knows which (closure_capture.md
+// §3.3).
+pub fn _zbr_cell(comptime T: type, v: T) *T {
+    const p = _allocator.create(T) catch @panic("OOM");
+    p.* = v;
+    return p;
+}
 /// Free a Zebra container a HOST owns -- a List or map returned to hand-written Zig --
 /// whatever the representation (BUG-501). A container VALUE is deinited; a container
 /// REFERENCE (`_zbr_ref_containers`) is deinited and its heap header destroyed. Hosts call

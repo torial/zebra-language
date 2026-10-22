@@ -1,0 +1,11 @@
+# BUG-569 step 4: only a `var` local is shared with a closure. A numeric `for` counter that
+# a closure reads and the body steers cannot be both per-iteration and shared (design note
+# §3.4), so it is refused by name, with the one-line fix.
+
+def main()
+    var total = 0
+    for i in 0 : 3
+        var f = def(): int = i * 10
+        total += f()
+        i = i + 1
+    print(total)

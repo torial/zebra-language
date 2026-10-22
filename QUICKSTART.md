@@ -2122,19 +2122,31 @@ var consume = def(x: int)
 
 # Implicit closure capture -- a lambda reads the enclosing function's variables:
 var step = 2
-var bumpBy = def(x: int): int = x + step     # copies `step` into the closure
+var bumpBy = def(x: int): int = x + step     # reads `step`
+
+# ...and SHARES a `var` it writes with the function (test/bug569_shared_written_test.zbr):
+var counter = 0
+var bump = def()
+    counter += 1
+bump()
+bump()
+print(counter)                               # 2
 ```
 
-- A lambda reads the enclosing function's locals, parameters and loop variables
-  without a `capture` block: it gets a COPY of each when it is created (so a closure
-  made in a loop sees that iteration's value). A class instance or a container is a
-  reference, so the copy shares the object and sees changes made through it.
-- Writing a captured variable -- inside the closure, or outside after the closure has
-  copied it -- is REFUSED for now, because the copy would not see the change; a struct
-  changed in place after capture is refused when the program is built. Keep changing
-  state in a `capture` block (§19.1), or pass the value in as an argument. Shared
-  capture, where the closure and the function see one variable, is designed
-  (`docs/design/closure_capture.md`) and not built yet (BUG-569).
+- A lambda reads the enclosing function's locals, parameters and loop variables without
+  a `capture` block, and **shares** the function's `var` locals with it, as C# does: a
+  write through the closure is seen by the function, a write by the function is seen by
+  the closure, and every closure that names the variable sees the same one -- also after
+  the function returns (a returned closure keeps it alive). A `var` declared inside a
+  loop body is one variable per iteration; one declared before the loop is shared by every
+  iteration's closures. (BUG-569; `docs/design/closure_capture.md`.)
+- Parameters, loop variables and `as` / `catch` bindings are read as a COPY made when the
+  closure is created, so a closure made in a loop sees that iteration's value. Changing
+  one of them after a closure has read it is refused, with the fix: copy it into a `var`
+  first. A class instance or a container is a reference, so a copy shares the object.
+- Cost: a shared `var` lives in a heap cell from the program arena -- one small
+  allocation each time its declaration runs. A variable no one writes after the closure
+  exists is copied and costs nothing.
 - Inside a **class** method a lambda reads `this` too (`.count`, `this.name`, `.label()`),
   and may change the object through it: an instance is a reference, so the closure and the
   method share it. Inside a **struct** method that is refused (a struct is a value): bind

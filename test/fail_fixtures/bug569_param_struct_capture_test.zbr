@@ -1,0 +1,14 @@
+# BUG-569 step 4: a struct PARAMETER changed in place after a closure read it. Only a `var`
+# local is shared; a parameter is the caller's value, so the closure's copy would be stale.
+# Type-dependent, so codegen's mutation scan refuses it, in Zebra's words, at build.
+
+struct P
+    var x: int
+
+def g(p: P): int
+    var f = def(): int = p.x
+    p.x = 5
+    return f()
+
+def main()
+    print(g(P(x: sys.args().len)))

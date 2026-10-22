@@ -1,4 +1,4 @@
-# BUG-569: a captured STRUCT changed by a mutating method after the closure copied it.
+# BUG-569 step 4: a captured STRUCT changed by a mutating method after the closure exists.
 
 struct C
     var n: int
@@ -9,4 +9,4 @@ def main()
     var c = C(n: sys.args().len)
     var f = def(): int = c.n
     c.bump()
-    print(f())
+    print("bug569_struct_method: ${f()}")
