@@ -205,9 +205,70 @@ costs, from the engine's side:
 
 It does not touch the no-regret items (which help under any backend), the determinism the
 engine's budget guard relies on, the Zig backend (the shipped one), or the reference semantics
-Sean chose for containers and closures. Measurable: the V window row with `-gc boehm`, process
-memory every 2 s over the 45 s autoplay, and its fps -- Fable will run it when the V-master rows
-finish.
+Sean chose for containers and closures.
+
+**Measured (Fable, 2026-10-23)** on the engine's V window host over its 45 s autoplay, the
+working set sampled every 2 s, three runs each:
+
+| V build | working set over 45 s | frame cost |
+|---|---|---|
+| `-gc none` (the V rows today) | 573 MB -> **2,509 MB** (~43 MB/s; the boxed V runtime drifts about five times the Zig host's 8 MB/s on the same game) | 60 fps |
+| `-gc boehm` | 135 -> 776 MB in the first 15 s (clips, scene, GUI), then **flat at ~810 MB** | 60 fps at the 2 s average; lowest sample 60; the budget guard (thirty frames over 20 ms in a row) never fired |
+
+Both runs pass the window row (milestones identical, as a prefix of the Zig host's). So at this
+scale the collector resolves the drift as a class with no frame cost the engine's instruments
+can see -- the first measured "it just works" among the options, at no compiler change, which
+makes it **the comparison every other model has to beat on the engine.** Caveats: 45 s is one
+steady state (a longer run at a bigger live heap would show the collection cycles), and the
+host-boundary hazard above is UNTESTED, because the V host's rows never keep a Zebra pointer past
+the frame. `VGC=boehm` on the row script repeats it.
+
+**Why `-gc none` drifts about five times faster -- apportioned by section (Fable, 2026-10-23).**
+Per 2 s window of the engine's plain run, gross (bytes charged before any free) and net. The V
+column samples Boehm's total at every profiler section boundary (three windows; with `-gc none`
+nothing is freed, so V's net equals its gross):
+
+| section | Zig gross | Zig net | V gross (= net) |
+|---|---|---|---|
+| scripts -- the emitted Zebra game | 16.2 MB | 9.9 MB | **7.8-10.4 MB** |
+| render -- the host's own draw | 19.4 MB | 1.6 MB | 20.6-22.3 MB |
+| gui | 2.5 MB | 1.6 MB | **39.4-50.3 MB** |
+| collision | 1.5 MB | 0.8 MB | 1.7 MB |
+| other | 5.6 MB | 2.8 MB | ~10 MB |
+
+What it says:
+
+- **The emitted game: the V backend allocates LESS per frame than the Zig backend, not more**
+  (about 9 against 16 MB a window) -- boxing does not multiply the garbage. In the engine the Zig
+  runtime allocates from the host's allocator and the game keeps about sixty percent of what it
+  allocates (9.9 of 16.2); V keeps all of its ~9. So **the game's drift is the same on both
+  backends, ~10 MB a window**.
+- **The host's draw** is ~20 MB a window on both: freed by the host's defers on the Zig side, by
+  the collector on the V side.
+- **The one real difference is the GUI path: ~45 MB a window on the V host against 2.5 on the
+  Zig host.** Split around the flush call (two windows): **two thirds (~30 MB) is the emitted GUI
+  tree's flush** -- the same Zebra code whose Zig emission allocates 2.5 for the whole section, so
+  this is the V BACKEND's string handling -- a backend finding. Traced (Fable): the command
+  builders are one interpolated literal with ~10 formatted floats each; the Zig backend emits one
+  `std.fmt.allocPrint` per command (one allocation, the floats formatted into its buffer), while V
+  lowers the literal to `str_intp`, whose float formatting returns a heap string per value before
+  joining them -- **~11 allocations per command against one**, ~200 commands a frame. Not `+`
+  chains (an earlier guess here). Fixes: CodeGenV emits a formatted interpolation through one
+  `strings.Builder` (Fable's backend, Fable's to take), and, engine-side, one builder per flush --
+  which would take the Zig side's 2.5 MB toward zero too. **The other third (~16 MB) is
+  the V host's draw** parsing the ~200 command strings a frame with copying `split` / `substr`
+  where the Zig host slices -- a port finding. So the V backend's emitted game allocates less in
+  the step (9 vs 16 MB) but twelve times more in the GUI flush (30 vs 2.5), and that flush is
+  string building: **the no-regret builder item (§3 item 5, reused capacity for per-frame
+  formatting) is where the V backend gains most.**
+- With Boehm the V heap holds at **109 MB** from 16 s on (~0.6 collections a second, no frame the
+  budget guard saw); without it every byte is kept. A collector keeping a 109 MB live set at
+  60 fps is the measured floor any counting scheme has to match on the engine.
+
+(A first reading compared WHOLE-PROCESS gross on both sides -- "~40 MB/s on both, the Zig side
+frees 80 percent" -- and the section split showed that figure was mostly the host freeing its own
+draw. The wrong instrument for the claim, corrected the same night; recorded so it is not
+re-derived.)
 
 ## 6b. The models through the UNGIT tests (Fable, at Sean's request)
 
