@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Memory in long-running programs — the model, brainstormed
 
-**Status:** BRAINSTORM for Sean, nothing decided. Written 2026-10-22 by Opus 5.5 (the
+**Status:** BRAINSTORM for Sean. Decided so far: §6.2, weak by default for declared parent links (Sean, 2026-10-23). §6.1 measured, with Fable's review pending. Written 2026-10-22 by Opus 5.5 (the
 compiler session) with Fable (the GameEngine session), at Sean's request: "coordinate with
 Fable ... and brainstorm on the best way forward". Where the two of us agree it says so;
 where we disagree, both positions are kept. The 2026-10-11 decision ("reference counting for
@@ -170,7 +170,65 @@ representation**. F and G ranked below by both of us.
    - Fable: views are the normal design for immutable strings, and copying the GUI's per-frame
      `split` results is a real cost. Keep views and measure.
    - Agreed: **measure first** (the census, item 6 in §3); take copies if they are cheap enough.
+   - **Measured 2026-10-23 (Opus; Sean: "let's measure"). Fable's review is PENDING** -- Fable is
+     out of tokens until about 2026-10-26, so this is one side's reading of one benchmark, not a
+     joint conclusion.
+
+     Today `split` and `substring` are already views (slices into the parent) and nothing is
+     freed, so the question only exists under a freeing model. `bench/split_copy_view/` (Zig,
+     `bash bench/split_copy_view/run.sh 5`, raw output in `results_2026-10-23.txt`) simulates
+     what a counted runtime would free, and when, over Zig's `smp_allocator`, three policies:
+     **view** (a kept piece keeps its parent alive), **copy_all** (`split` copies every piece,
+     the parent dies at once), **copy_kept** (pieces are views while temporary; the one that is
+     KEPT is copied at the store). Medians of 5 interleaved rounds; checksums agree across the
+     policies of each workload, freed variants end with 0 MB live, the arena variant shows its
+     full growth.
+
+     | workload | view | copy_kept | copy_all |
+     |---|---|---|---|
+     | W1 Sean's loop, `a = line.upper().split("*")[0]`, 2M lines of ~50 B | 280 ms | 305 ms (+9%) | 430 ms (+54%) |
+     | W2 keep field 0 of every line, 2M lines of ~50 B: time / live at end | 336 ms / **166 MB** | 307 ms / **53 MB** | 456 ms / 53 MB |
+     | W2, 500k lines of ~200 B (20 fields): time / live at end | 232 ms / **117 MB** | 191 ms / **15 MB** | 348 ms / 15 MB |
+     | W3 `"rect\|120\|340\|64\|32\|Play".split("\|")`, parsed and dropped, 2M times | 123 ms (61 ns each) | = view (nothing kept) | 358 ms (179 ns each) |
+
+     Today's arena on W1, for scale: 294 ms and **464 MB** live at the end, against under 1 MB
+     for every freeing policy.
+
+     **What the numbers say.** Copying every piece is the expensive policy, about 3x on a short
+     temporary split. Copying only what is kept costs about 9% on Sean's loop. It costs nothing
+     on temporaries, and on the retention workload it is *faster* than view (it keeps less
+     memory live). The retention trap is real and grows with the row/field ratio: 3x the live
+     memory on 50-byte rows, 8x on 200-byte rows (the end-live totals include the results list
+     itself, 16 B a piece in both policies, so the ratio of the string data alone is higher).
+     Absolute scale for the engine: 1,000 `copy_all` splits a frame is 0.12 ms more per 16.6 ms
+     frame. The engine's GUI flush (`guitree.zbr`, `gui.zbr`) contains no `split`. Its 85 `split`
+     sites are elsewhere, many in ported scripts; how many run per frame is not measured.
+
+     **Limits, so nobody reads more into this than it holds.**
+     - copy_kept is a **store-site rule** the compiler would have to apply. W1 copied on a plain
+       local assignment (`a = ...`), so in this model every `var x = s.split(..)[0]` pays the
+       copy. A narrower rule (copy only into a field, container element, module var, return or
+       capture) costs less on W1 and keeps a parent alive through a long-lived local. Which
+       stores count is a design decision this benchmark does not make.
+     - **view is under-costed.** It omits the parent pointer every view would carry (a `str` of
+       ptr+len+parent) and the count increment/decrement on the parent per piece. The
+       simulation's list of pinned parents stands in for the first.
+     - One allocator (`smp_allocator`), one machine; the runtime's real counted header is not
+       modelled. Spreads were tight except for three outlier maxima (W2 short copy_kept 524,
+       W2 wide copy_all 661, W1 arena 332); all are in the raw file.
+
+     **Opus's reading:** copy at the store, views for temporaries. That puts the retention
+     protection behind a rule a reader can see, at single-digit cost. It is also the shape the
+     compiler already has for `_intern` on a field store (BUG-618) and that escape analysis (§4
+     C) needs anyway. Through the UNGIT tests: a view that pins its parent is *withheld*
+     retention, since nothing at the use site says a 9-byte field is holding a 200-byte row.
+     Copy-at-store happens at a declared point the compiler can name on request.
 2. **Cycles: `weak` by default on parent-shaped fields, or opt-in?**
+   - **DECIDED 2026-10-23 (Sean): weak by default**, the joint recommendation below. Precisely:
+     weak by default for a field whose *kind* declares it a parent link (a declared shape the
+     reader can see), never a compiler guess at which fields "look like" parents. A guessed
+     weak reference would fail "nothing ambient", and a wrong guess would surface as a
+     use-after-free rather than a leak.
    - Every engine tree node is a cycle from day one (`Instance.parent` <-> `children`), and
      signals hold closures that capture their owner. An opt-in `weak` is one a port forgets.
    - **Joint recommendation:** a field kind that is weak by default where the shape is declared

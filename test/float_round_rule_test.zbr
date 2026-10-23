@@ -1,0 +1,12 @@
+# The formatted-float rounding rule (QUICKSTART, "Format specifiers"; Sean, 2026-10-23):
+# `${x:.Nf}` / `${x:.N}` / `${x:.Ne}` round the SHORTEST decimal that prints as x, half away
+# from zero -- what you get rounding the printed digits by hand. Python, C and C#'s string
+# formatting round the exact binary value with ties to even (2.67, 0.12, 2) instead.
+# A change to either half of the rule (binary value, ties to even) moves this line.
+def main()
+    var a = 2.675
+    var b = 0.125
+    var c = 2.5
+    var d = -2.5
+    var e = 1.45
+    print("float_round: ${a:.2f} ${b:.2f} ${c:.0f} ${d:.0f} ${e:.1f} ${a:.2} ${a:.2e}")

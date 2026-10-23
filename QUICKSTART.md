@@ -1548,6 +1548,15 @@ var result = sb.build()              # str (drains the builder)
   `-` fill.  A part the formatter does not support -- a sign (`+`), `#`, digit
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
+- **How a float is rounded to a precision** (`.2f`, `.2`, `.2e`): Zebra rounds the
+  *shortest decimal that prints as the value*, half away from zero, which is what you get
+  rounding the printed digits by hand. `${2.675:.2f}` is `2.68`, `${0.125:.2f}` is `0.13`,
+  `${2.5:.0f}` is `3`, `${-2.5:.0f}` is `-3`. Python's `%`/`format`, C's `printf` (measured
+  on the Windows UCRT) and .NET 10's `ToString("F2")` round the exact binary value with ties
+  to even, so they print `2.67`, `0.12` and `2` for the same three. (C#'s
+  `Math.Round(2.675, 2)` gives `2.68`; its string formatting does not.) Keep this in mind
+  when comparing output with another language digit for digit. A negative value that rounds
+  to zero prints `-0`, as in C and Python.
 - To include a literal `${` in a string, escape the dollar sign: `"\${"`.
 - The escapes are `\n \r \t \\ \" \' \$ \xNN \u{N}`. Any other backslash pair (`"\w"`, `"\d"`)
   is a compile error at its column -- for a regex, write a raw string, `r"\w+"`
