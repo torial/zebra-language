@@ -45,6 +45,18 @@ a COMPILER rule (BUG-618, §3 item 2): every `str` stored into a class field is 
 30 s -- **a 100-byte leak under a page-granular allocator is a 4 KB leak (64 KB of reserve on
 Windows); the allocator behind the model matters as much as the model.**
 
+**Which kind dominates (Fable's deeper report, engine commit 50c5e70).** The Debug leak report
+at 6 s (24 frames) lists 126k live allocations, 103k of them the nine animation clips' JSON
+trees -- parsed once each and kept after the clips are built, ~10 MB one-time -- the rest also
+one-time (map library, laid map, GUI scene). So the per-frame drift does NOT go through the Zig
+allocator the leak report sees, and the host's counting allocator over-reads it. The OS does
+see it: 64 KB committed regions at ~145/s (+9.4 MB/s), whose first bytes are floats, doubles
+and pointers, no text. **The dominant kind is the runtime's own objects -- containers and boxes
+rebuilt every frame and never freed**; the intern pool's pages are about a tenth. Named engine
+sites: the GUI flush's five fresh Lists a frame (cmds, hitNodes, hitRects, hoverNodes,
+hoverRects, a few hundred items each), a fresh List per host-polled queue per frame, the status
+handler's attribute JSON each second per character, the health bar's format strings.
+
 ## 2. What allocates today, and what frees
 
 The program allocator `_allocator` is one `ArenaAllocator` over the page allocator (wrapped
@@ -103,6 +115,14 @@ measured.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
    witnesses whatever model lands.
+8. **Reuse in place: `clear()` that keeps capacity** (Fable). The per-frame reuse idiom every
+   game has, and the one change that cuts the engine's drift today without a model. Measured
+   while adding this: `List.clear()` ALREADY EXISTS and keeps capacity (it emits
+   `clearRetainingCapacity()`) but QUICKSTART never mentions it, so nobody knew; `HashMap` has
+   no `clear()` at all (the checker refuses it; `Set.clear()` exists). So: document
+   `List.clear()`, add `HashMap.clear()` with the same retaining behaviour.
+9. **A JSON parse result that can be released** once the value built from it is kept (Fable):
+   the engine's nine clips hold ~10 MB of parse tree they never read again.
 
 Items 1 and 3 should take variant B from 9.4x toward the size of what it keeps, for any program
 that bounds its loops with `allocate`; item 2 removes the engine's one named live leak.
@@ -158,7 +178,9 @@ representation**. F and G ranked below by both of us.
    `Parser()` made per line grows the same way; the recommendation is yes.
 4. **Order of work:** the no-regret steps (§3) first -- they are small, measurable, and fix the
    workaround users are told to use -- then a design for the counted representation before
-   any code.
+   any code. Within §3, Fable would put the **census (item 6) first**: its per-site list is what
+   any model's reuse and escape analysis will be judged against. Opus would put BUG-618 and
+   BUG-617 alongside it (each is small, and each is a defect users hit today).
 
 ## 7. Acceptance (Fable's witness list)
 
