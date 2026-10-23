@@ -97,6 +97,8 @@ measured.
 6. **A per-type allocation census** in the runtime (Fable): strings, Lists, maps, instances,
    closure cells, boxes, interned -- counts and bytes, on the profiler's memory line and from
    `sys.memStats()`. This is the evidence the decision needs, and the witness afterwards.
+   Per TYPE **and per SITE** (Fable, reviewing this note): the engine's 8.3 MB/s is spread
+   across every section, so a per-type count alone will not say which GUI path to fix.
    Fable can land the engine side.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
