@@ -23,6 +23,38 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+---
+
+## Release 0.9.0-rc8 — 2026-10-22 (everything since rc7)
+
+rc8 fixes a **broken download**: rc7's binaries were built for the CPU of the machine that
+built them, and the Linux one died with "Illegal instruction" on its first run on some
+machines. Release binaries are built for the baseline CPU now.
+
+It carries **two semantics changes**, both closures, both decided 2026-10-21:
+
+- a lambda **shares** the `var` locals it writes with its function, as in C#: QUICKSTART
+  §19's `counter += 1` through a closure is seen outside, and closures over one variable see
+  one variable (BUG-569). A parameter, loop counter or binding written after a closure reads
+  it is refused, naming the fix;
+- a closure **value is a reference**: pass a closure that keeps `capture` state to a
+  function, store it in a field or copy it to another local, and every holder sees the same
+  state (BUG-607). It used to be copied, so its count restarted.
+
+And **enums order by declaration** -- `<` and a bare `.sort()` on an enum work, and
+`@unordered` opts an enum out (BUG-609).
+
+The rest are **front-end refusals of programs that failed inside Zig** (or, worse, ran): a
+lambda's body is now checked like a method's (BUG-612); an undefined name is caught wherever
+it appears (BUG-571) and a misspelled field at its use (BUG-594); two declarations of one name
+(BUG-615), a lambda local or binding reusing a visible name (BUG-613), a struct built without
+a field that has no default (BUG-591), a generic class without its type argument (BUG-599)
+and `x -> .field` (BUG-558) are refused by name. Run `zebra -c` over your code first: each
+refusal names the line and the fix. New, as a proof of concept: `zebra --target v`, a V
+backend.
+
 ### Runtime
 
 - **The WebSocket server's handshake is accepted by clients that check it (BUG-611, 2026-10-21).** `_WS_GUID` ended `85B24` where RFC 6455's ends `85B11`, so a browser or V's `net.websocket` refused a `Ws.serve` handshake; only the runtime's own `Ws.connect`, which does not check the accept value, ever connected. Found by the engine's V host joining a Zig-hosted game; `test/bug611_ws_accept_test.zbr` reads the handshake back over raw TCP against the RFC's sample key.
