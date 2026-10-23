@@ -58,6 +58,12 @@ Open bugs live in `BUGS.md`.
   option (b) (a field store copies; interning for literals only) and the counted model are
   `docs/design/memory_model.md`'s, not this fix's. `escape-hatches` baseline 77 -> 75 (the
   dupe, and the pool's comment that named the page allocator -- the gate counts lines).
+- **Engine witness (Fable, 2026-10-23, pin 603e923, 60 s plain `--mm-gui --profile`):** the
+  page-sized steps are gone -- committed regions under 64 KB at the first window 2,420 (10 MB) on
+  d621ca6 -> 480 (3 MB); the live total at the second window 64 -> 50 MB. The pool's COUNT still
+  climbs (1,975 -> 2,837, ~14/s: every distinct dynamic string is kept), as designed for option
+  (a). The engine's bulk drift is unchanged (committed private 695 -> 1,398 MB over the run, the
+  containers at ~11 MB/s): that is the memory model's, not this bug's.
 - **Fixture:** `test/bug618_intern_program_arena_test.zbr` -- dynamic text into a field, and a
   string made inside `allocate Arena()` stored into an outer field then interned again after the
   block (meaningful once BUG-617 makes a scoped arena really free).
