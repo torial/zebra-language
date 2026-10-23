@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Memory in long-running programs — the model, brainstormed
 
-**Status:** BRAINSTORM for Sean. Decided so far: §6.2, weak by default for declared parent links (Sean, 2026-10-23). §6.1 measured, with Fable's review pending. Written 2026-10-22 by Opus 5.5 (the
+**Status:** BRAINSTORM for Sean. Decided so far: §6.2, weak by default for declared parent links (Sean, 2026-10-23); §6.3, class instances are counted (joint; Sean 2026-10-23: "anything you and Fable agree on -- please consider that pre approved"). §6.1 measured, with Fable's review pending. Written 2026-10-22 by Opus 5.5 (the
 compiler session) with Fable (the GameEngine session), at Sean's request: "coordinate with
 Fable ... and brainstorm on the best way forward". Where the two of us agree it says so;
 where we disagree, both positions are kept. The 2026-10-11 decision ("reference counting for
@@ -237,6 +237,9 @@ representation**. F and G ranked below by both of us.
      report for what remains.
 3. **Are class instances counted?** The 2026-10-11 decision named strings and containers. A
    `Parser()` made per line grows the same way; the recommendation is yes.
+   - **DECIDED 2026-10-23: yes**, the joint recommendation. Sean's standing rule the same day:
+     a position both of us hold is pre-approved. So class instances join strings and
+     containers under the counted representation; cycles through them are §6.2's concern.
 4. **Order of work:** the no-regret steps (§3) first -- they are small, measurable, and fix the
    workaround users are told to use -- then a design for the counted representation before
    any code. Within §3, Fable would put the **census (item 6) first**: its per-site list is what
