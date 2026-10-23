@@ -2474,6 +2474,17 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-22 (the rc8 release commit `561b7b1`, on top of BUG-569 step 4 / BUG-607
+`cda2ddc`, whose FULL was 46/46): 57/57 PASS in ONE invocation at JOBS=2, ~2h32m; tagged
+`v0.9.0-rc8_zig0.17` on it.** The FULL before it ran ~2h09m because another session's engine
+run held 18 GB (0.2 GB free) until it was stopped: `output_sweep` 2217 s against ~500 usual.
+**rc8 exists because rc7's Linux binary died with "Illegal instruction" on its first
+`--version` on some GitHub runners** -- the release built for the build runner's CPU; it builds
+with `-Dcpu=baseline` now (`5d176e2`). Verified the way a reader meets it: the book's CI
+installs the latest release with `install.sh` and validates 803 examples -- rc8 installed,
+ran, and passed. Its first run timed one `-c` (a C-header FFI example, cold cache) past 60 s;
+the re-run passed and the file takes 0.8 s locally -- one occurrence, recorded, not chased.
+
 **DAILY tier 2026-10-16, second run (BUG-519/591 `1bd2b14`, BUG-589/593 `bf2f9db`, BUG-594
 `746847a`): 56/57 in ONE invocation at JOBS=2, 51 min, then `library-mode` green standalone twice
 -- ASSEMBLED.** smoke 739/739, round-trip byte-identical, `output_sweep` 466 identical,
