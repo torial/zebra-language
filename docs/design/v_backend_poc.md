@@ -2361,6 +2361,65 @@ In the order they pay, each with the witness that says it is done:
    literal names the binding's misspelled fields. #30999's name clashes
    stand until V fixes them.
 
+## Float interpolation as one formatted write (2026-10-23)
+
+The memory-model note's fix (1) (`docs/design/memory_model.md` §6a): the
+engine's GUI flush builds one interpolated string per command, ten floats
+each and two hundred a frame, and V lowers `'${x:.1f}|${y:.1f}|...'` to
+`str_intp`, which makes a heap string per formatted value — about eleven
+allocations a command against the Zig emission's one `allocPrint`, 30 MB a
+window of the V host's gui section (46 MB) in the plain run.
+
+**What the emitter does now** (`CodeGenV.vInterp`): an interpolation whose
+holes are all floats (`vTypeOf` f64) with an explicit one-digit precision
+(`.Nf`, N 0..9), one to twelve of them and no other format part, is emitted as
+`zfmt_f('<format>', [f64(e1), ...])` — the literal parts with `%` doubled,
+each hole its `%.Nf` — and the runtime (`selfhost/zebra_rt.v`) formats it hole
+by hole into a 1024-byte stack buffer and copies once (a longer result is
+formatted again into a heap buffer of its size). A mixed interpolation (an int
+or a string hole, a bare `${x}`, more than twelve holes) keeps V's
+interpolation, but each fixed-precision float hole in it goes through
+`zfmt_one(x, N)` — one allocation per hole as before, but the same digits.
+
+**The spelling is the Zig backend's, not the C library's and not V's.** The
+first cut was one `C.snprintf` of the whole format, and the witness found two
+rows where it disagreed with the Zig control: a decimal tie whose binary value
+lies below it (2.675 is 2.67499…: Zig's `{d:.2}` says 2.68, C's `%.2f` 2.67)
+and the C runtime's spelling of inf (msvcrt under tcc: `1.$`). And V's own
+`${x:.2f}` turned out to be a *third* spelling — 2.67 for the tie, `+inf`,
+`-+inf`, `nan` for -nan, and `10` for 1e16 at `.0f` on 0.5.2 (right on master
+4103200) — so the example lane had been agreeing with Zig only because no
+example carried a tie or a special. The runtime's rule (`zfmt_val`): nan,
+-nan, inf and -inf by hand; otherwise format at N+1 places, and when the last
+digit is 5 and that decimal parses back to x (V's own `f64()` over a `tos`
+view of the buffer — `C.strtod` declared beside V's builtin declaration
+returned garbage under tcc), it is the shortest digits' tie, and the N-place
+prefix is rounded up by hand with its carries, the sign kept; else `%.Nf` is
+Zig's answer too. Exact while ulp(x) < 10^-(N+1), i.e. |x| < 2^52 / 10^(N+1)
+(`zfmt_bounds`); beyond that the C library's exact digits, where Zig pads the
+shortest digits with zeros (a 2^62 at `.1f` differs; a GUI never gets there).
+
+**The witness** is `examples/v_poc9_fmt.zbr` through `tools/v_check.sh`'s
+example lane (byte-for-byte against a fresh Zig control): the ties (0.125,
+2.675, 0.5/1.5/2.5 at `.0f`), the near-ties that round up from their shortest
+digits (1.005, 0.045, 9.995 with its carry to 10.00, -9.995 through the sign,
+0.995 through the point), signed zero and a negative rounding to it, nan and
+both infinities, 1e20 and 1e16, a `%` in the literal, twelve holes and
+thirteen, a 608-byte result, and the mixed rows beside. It was seen red twice
+(the tie row, the special row) before it was green.
+
+**What it bought** (the V window host under `VGC=boehm --profile`, the
+autoplay's first 30 s): the gui-flush line 4.5–10.6 MB a window against 30
+before, the gui section 11–29 MB against 46; the window row's milestones
+unchanged. The residue is one `tos_clone` and the `[f64(...)]` array literal
+per command (V heap-allocates an array literal), and the V draw's own
+parsing copies (`split` / `substr`), which are the port's, not the backend's.
+
+**V's refusals on the way**, for the next hand on the runtime file: a mutable
+array element's address (`&big[0]`) and a fixed array's address (`&tmp[0]`)
+both want `unsafe`; `fn C.strtod` redeclared beside the builtin's returned a
+wrong value with no diagnostic — use V's `string.f64()` instead.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

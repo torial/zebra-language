@@ -3318,14 +3318,99 @@ class VGen
                 i = i + 1
         return out
 
+    # the fast path's test: every hole a float (f64 by vTypeOf) followed by an explicit `.Nf`
+    # spec, one to twelve holes, no other format parts -- then the whole interpolation is one
+    # formatted write through the runtime's zfmt_f (one snprintf, one copy) instead of V's
+    # str_intp, which makes a heap string per formatted value (the memory-model note's fix (1),
+    # 2026-10-23: the engine's GUI commands, ten floats each, cost 30 MB a window that way).
+    # Anything else keeps V's interpolation: no spelling changes where printf and V could differ.
+    def vInterpFloatsOnly(si: ExprStringInterp): bool
+        var holes: int = 0
+        var i: int = 0
+        var n: int = si.parts.count()
+        while i < n
+            var part = si.parts.at(i)
+            branch part
+                on StringPart.literal
+                    pass
+                on StringPart.expr_ as ex
+                    if .vTypeOf(ex) != "f64"
+                        return false
+                    if i + 1 >= n
+                        return false
+                    var nxt = si.parts.at(i + 1)
+                    var okSpec: bool = false
+                    branch nxt
+                        on StringPart.format as f
+                            okSpec = isFixedFloatSpec(f)
+                        else
+                            pass
+                    if not okSpec
+                        return false
+                    holes = holes + 1
+                    i = i + 1   # the spec, taken with its hole
+                on StringPart.format
+                    return false   # a spec with no hole before it: the slow path says so
+            i = i + 1
+        return holes >= 1 and holes <= 12
+
+    # the printf format and the values of a floats-only interpolation
+    def vInterpFmt(si: ExprStringInterp): str
+        var fmt: str = ""
+        var vals: str = ""
+        var i: int = 0
+        var n: int = si.parts.count()
+        while i < n
+            var part = si.parts.at(i)
+            branch part
+                on StringPart.literal as lit
+                    fmt = fmt + .vEscape(lit).replace("%", "%%")
+                on StringPart.expr_ as ex
+                    var spec: str = ""
+                    var nxt = si.parts.at(i + 1)
+                    branch nxt
+                        on StringPart.format as f
+                            spec = f
+                        else
+                            pass
+                    fmt = fmt + "%" + spec
+                    if vals != ""
+                        vals = vals + ", "
+                    vals = vals + "f64(" + .exprStr(ex) + ")"
+                    i = i + 1
+                on StringPart.format
+                    pass
+            i = i + 1
+        return "zfmt_f('" + fmt + "', [" + vals + "])"
+
     def vInterp(si: ExprStringInterp): str
+        if .vInterpFloatsOnly(si)
+            return .vInterpFmt(si)
         var out: str = "'"
-        for part in si.parts
+        var i: int = 0
+        var n: int = si.parts.count()
+        while i < n
+            var part = si.parts.at(i)
             branch part
                 on StringPart.literal as lit
                     out = out + .vEscape(lit)
                 on StringPart.expr_ as ex
-                    out = out + "\${" + .exprStr(ex) + "}"
+                    # a float hole with a fixed spec goes through the runtime's zfmt_one
+                    # here too, so a float is spelled the same whatever its neighbours
+                    # (the Zig backend's digits; V's str_intp differs on ties and specials)
+                    var spec: str = ""
+                    if i + 1 < n
+                        var nxt = si.parts.at(i + 1)
+                        branch nxt
+                            on StringPart.format as f0
+                                spec = f0
+                            else
+                                pass
+                    if spec != "" and isFixedFloatSpec(spec) and .vTypeOf(ex) == "f64"
+                        out = out + "\${zfmt_one(f64(" + .exprStr(ex) + "), " + spec.substring(1, 2) + ")}"
+                        i = i + 1   # the spec, taken with its hole
+                    else
+                        out = out + "\${" + .exprStr(ex) + "}"
                 on StringPart.format as f
                     # a format spec FOLLOWS its expression in the parts: spliced
                     # into the `${...}` just emitted (V's own spelling, `${x:.4f}`)
@@ -3333,6 +3418,7 @@ class VGen
                         out = out.substring(0, out.len - 1) + ":" + f + "}"
                     else
                         .refused.add("a format spec (" + f + ") with no expression before it")
+            i = i + 1
         return out + "'"
 
     # a list literal's element type: the declared one, else the first
@@ -4231,6 +4317,14 @@ def zjoinStr(xs: List(str), sep: str): str
         first = false
         out = out + x
     return out
+
+# a fixed-point float spec, `.Nf` with one digit (N 0..9: the runtime's zfmt_specs table)
+def isFixedFloatSpec(spec: str): bool
+    if spec.len != 3
+        return false
+    if not spec.startsWith(".") or not spec.endsWith("f")
+        return false
+    return isDigits(spec.substring(1, 2))
 
 def isDigits(s: str): bool
     if s.len == 0

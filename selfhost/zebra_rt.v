@@ -1688,3 +1688,185 @@ fn zbr_panic(msg string) {
 	}
 	panic(msg)
 }
+
+// -- zfmt_f: an interpolation of floats as one formatted write (2026-10-23) --
+// The emitter takes this path when every hole of an interpolation is a float with an explicit
+// one-digit precision (`${x:.4f}`) and there are at most twelve: the printf-shaped format is built
+// at emit time (the literal parts with `%` doubled, each hole its `%.Nf`), the values come as one
+// array, and the whole string is formatted hole by hole into a stack buffer and copied once. V's
+// own interpolation (str_intp) makes a heap string per formatted value: the engine's GUI commands,
+// ten floats each and two hundred a frame, cost 30 MB a window that way (the memory-model note,
+// §6a). A string the buffer cannot hold is formatted again into a heap buffer of its size.
+//
+// The spelling is the Zig backend's (std.fmt's `{d:.N}`: the shortest round-trip digits, rounded
+// half away from zero at N places; nan, -nan, inf, -inf), not the C library's: C's `%.Nf` rounds
+// the exact binary value, so the two differ exactly when the shortest digits end in a 5 at place
+// N+1 and the binary value lies below that tie (2.675 is 2.67499...: Zig 2.68, C 2.67), and
+// msvcrt spells inf as "1.$". The rule: format at N+1 places; when the last digit is 5 and that
+// decimal parses back to x, it IS the shortest digits' tie and the N-place prefix is rounded up by
+// hand; else `%.Nf` is Zig's answer too. Exact while ulp(x) < 10^-(N+1), i.e. |x| < 2^52 / 10^(N+1)
+// (zfmt_bounds); beyond that the C library's digits (Zig pads the shortest digits with zeros
+// there). V's own `${x:.Nf}` is a third spelling (2.67, +inf, -+inf, and "10" for 1e20 at .0f on
+// 0.5.2), which is why the emitter routes every fixed-precision float hole through zfmt_val, in
+// a mixed interpolation too (one allocation per hole there, as before, but Zig's digits).
+fn C.snprintf(buf &char, n usize, fmt &char, ...) int
+
+const zfmt_specs = ['%.0f', '%.1f', '%.2f', '%.3f', '%.4f', '%.5f', '%.6f', '%.7f', '%.8f', '%.9f', '%.10f']
+const zfmt_bounds = [450359962737049.6, 45035996273704.96, 4503599627370.496, 450359962737.0496, 45035996273.70496, 4503599627.370496, 450359962.7370496, 45035996.27370496, 4503599.627370496, 450359.9627370496]
+
+pub fn zfmt_f(fmt string, v []f64) string {
+	mut buf := [1024]u8{}
+	n := zfmt_into(unsafe { &buf[0] }, 1024, fmt, v)
+	if n < 1024 {
+		return unsafe { tos_clone(&buf[0]) }
+	}
+	big := []u8{len: n + 1}
+	zfmt_into(&u8(big.data), n + 1, fmt, v)
+	return unsafe { tos_clone(&u8(big.data)) }
+}
+
+// one float at a precision, as a string (the mixed interpolation's hole)
+pub fn zfmt_one(x f64, prec int) string {
+	mut buf := [400]u8{}
+	n := zfmt_val(unsafe { &buf[0] }, 400, 0, x, prec)
+	unsafe {
+		buf[if n < 399 { n } else { 399 }] = 0
+	}
+	return unsafe { tos_clone(&buf[0]) }
+}
+
+fn zfmt_put(out &u8, cap int, pos int, c u8) {
+	if pos < cap - 1 {
+		unsafe {
+			out[pos] = c
+		}
+	}
+}
+
+// fmt's literal bytes and each `%.Nf` hole's value into out (cap bytes, NUL-terminated at what
+// fits); returns the whole's length, as snprintf does
+fn zfmt_into(out &u8, cap int, fmt string, v []f64) int {
+	mut pos := 0
+	mut i := 0
+	mut hole := 0
+	for i < fmt.len {
+		c := fmt[i]
+		if c != `%` {
+			zfmt_put(out, cap, pos, c)
+			pos++
+			i++
+			continue
+		}
+		if i + 1 < fmt.len && fmt[i + 1] == `%` {
+			zfmt_put(out, cap, pos, `%`)
+			pos++
+			i += 2
+			continue
+		}
+		if i + 3 < fmt.len && fmt[i + 1] == `.` && fmt[i + 3] == `f` && hole < v.len {
+			d := int(fmt[i + 2]) - 48
+			if d >= 0 && d <= 9 {
+				pos = zfmt_val(out, cap, pos, v[hole], d)
+				hole++
+				i += 4
+				continue
+			}
+		}
+		// any other spec: its bytes as they are (the emitter writes none)
+		zfmt_put(out, cap, pos, c)
+		pos++
+		i++
+	}
+	end := if pos < cap { pos } else { cap - 1 }
+	unsafe {
+		out[end] = 0
+	}
+	return pos
+}
+
+fn zfmt_signbit(x f64) bool {
+	u := unsafe { *(&u64(&x)) }
+	return (u >> 63) != 0
+}
+
+fn zfmt_lit(t &u8, s string) int {
+	for k in 0 .. s.len {
+		unsafe {
+			t[k] = s[k]
+		}
+	}
+	return s.len
+}
+
+// the digits t[0..n0) rounded up by one in the last place, the sign kept, a carry out of the
+// first digit prepending a 1; a trailing '.' (precision 0) dropped first; returns the new length
+fn zfmt_round_up(t &u8, n0 int) int {
+	mut n := n0
+	if n > 0 && unsafe { t[n - 1] } == `.` {
+		n--
+	}
+	mut k := n - 1
+	for k >= 0 {
+		c := unsafe { t[k] }
+		if c == `.` {
+			k--
+			continue
+		}
+		if c == `-` {
+			break
+		}
+		if c == `9` {
+			unsafe {
+				t[k] = `0`
+			}
+			k--
+			continue
+		}
+		unsafe {
+			t[k] = c + 1
+		}
+		return n
+	}
+	at := k + 1
+	mut j := n
+	for j > at {
+		unsafe {
+			t[j] = t[j - 1]
+		}
+		j--
+	}
+	unsafe {
+		t[at] = `1`
+	}
+	return n + 1
+}
+
+// one value at a precision into out at pos, in Zig's spelling (see above); returns the new pos
+fn zfmt_val(out &u8, cap int, pos int, x f64, prec int) int {
+	mut tmp := [400]u8{}
+	tp := unsafe { &tmp[0] }
+	mut len := 0
+	if x != x {
+		len = zfmt_lit(tp, if zfmt_signbit(x) { '-nan' } else { 'nan' })
+	} else if x > 1.7976931348623157e308 {
+		len = zfmt_lit(tp, 'inf')
+	} else if x < -1.7976931348623157e308 {
+		len = zfmt_lit(tp, '-inf')
+	} else {
+		len = C.snprintf(&char(tp), 400, &char(zfmt_specs[prec + 1].str), x)
+		ax := if x < 0 { -x } else { x }
+		if len > 0 && len < 400 && tmp[len - 1] == `5` && ax < zfmt_bounds[prec]
+			&& unsafe { tos(tp, len) }.f64() == x {
+			len = zfmt_round_up(tp, len - 1)
+		} else {
+			len = C.snprintf(&char(tp), 400, &char(zfmt_specs[prec].str), x)
+		}
+	}
+	if len > 400 {
+		len = 400
+	}
+	for k in 0 .. len {
+		zfmt_put(out, cap, pos + k, tmp[k])
+	}
+	return pos + len
+}

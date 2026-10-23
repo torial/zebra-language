@@ -1,0 +1,79 @@
+# v_poc9_fmt.zbr -- string interpolation of floats on the V backend (2026-10-23).
+# The emitter takes a fast path when every hole is a float with an explicit `.Nf`
+# spec: one formatted write (zfmt_f: one C.snprintf, one copy) instead of V's
+# str_intp, which makes a heap string per formatted value. The claim is byte-for-
+# byte agreement with the Zig backend's allocPrint `{d:.Nf}`, so the rows here are
+# the ones where C's printf and Zig's formatting could disagree: exact-binary ties,
+# a tiny value rounding to zero, signed zero, nan and the infinities, a large
+# magnitude, a `%` in the literal, twelve holes, a result longer than the fast
+# path's stack buffer. The rows with an int or a string hole, or a bare `${x}`, are
+# the slow path, printed beside them so the two paths read alike.
+
+def mk(x: float): float
+    return x
+
+def main()
+    var r: float = 10.3
+    var g: float = 0.123456
+    print("one|${r:.1f}|${g:.4f}")
+    print("ten|${r:.1f}|${g:.1f}|${r:.1f}|${g:.1f}|${r:.4f}|${g:.4f}|${r:.4f}|${g:.4f}|${r:.4f}|${g:.1f}")
+    # ties and near-ties: 0.125 is exact in binary, 2.675 is 2.67499...
+    var t1: float = 0.125
+    var t2: float = 2.675
+    var t3: float = 0.5
+    var t4: float = 1.5
+    var t5: float = 2.5
+    print("ties|${t1:.2f}|${t2:.2f}|${t3:.0f}|${t4:.0f}|${t5:.0f}")
+    # tiny, signed zero, a tiny negative rounding to zero
+    var tiny: float = 0.0000001
+    var negz: float = 0.0 - 0.0
+    var negtiny: float = 0.0 - 0.001
+    print("zero|${tiny:.1f}|${negz:.1f}|${negtiny:.1f}|${negtiny:.3f}")
+    # nan and the infinities
+    var zero: float = 0.0
+    var inf: float = 1.0 / zero
+    var ninf: float = 0.0 - 1.0 / zero
+    var nan: float = zero / zero
+    print("special|${inf:.1f}|${ninf:.1f}|${nan:.1f}")
+    # large magnitudes: every integer digit
+    var big: float = 100000000000000000000.0
+    var big2: float = 123456789012345678.0
+    print("big|${big:.1f}|${big2:.1f}|${big:.0f}")
+    # a percent in the literal
+    print("pct|100%|${r:.1f}%|%%")
+    # twelve holes, the most the fast path takes
+    print("twelve|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}")
+    # thirteen holes: the slow path
+    print("thirteen|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}|${r:.1f}")
+    # a result longer than 512 bytes: the fast path formats again into a buffer of its size
+    var pad: str = "0123456789"
+    var long: str = ""
+    var i: int = 0
+    while i < 60
+        long = long + pad
+        i = i + 1
+    var longLine: str = "${long}|${r:.4f}"
+    print("long|" + longLine.len.toString() + "|" + longLine.substring(595, longLine.len))
+    # the slow path beside the fast: an int hole, a string hole, a bare float hole
+    var k: int = 42
+    var name: str = "Part7"
+    print("slow|${k}|${name}|${r}|${r:.1f}")
+    # a call in a hole
+    print("call|${mk(2.5):.2f}|${mk(r) * 2.0:.1f}")
+    # the tie rule's carries and signs: 1.005, 0.045 and 9.995 are binary values just under their
+    # decimal ties, which Zig rounds UP from their shortest digits (1.01, 0.05, 10.00 with a carry;
+    # C's %.2f would say 1.00, 0.04, 9.99), 99.5 and 0.5 are exact ties (up: half away from zero),
+    # -2.675 keeps its sign; 1e16 at .0f is an exact integer (V's own .0f printed "10" for it on 0.5.2)
+    var c1: float = 1.005
+    var c2: float = 0.045
+    var c3: float = 9.995
+    var c4: float = 99.5
+    var c5: float = 0.0 - 2.675
+    var c6: float = 10000000000000000.0
+    print("carry|${c1:.2f}|${c2:.2f}|${c3:.2f}|${c4:.0f}|${t3:.0f}|${c5:.2f}|${c6:.0f}")
+    # a carry through the sign and one through the point
+    var c7: float = 0.0 - 9.995
+    var c8: float = 0.995
+    print("carry2|${c7:.2f}|${c8:.2f}|${c7:.0f}|${c8:.0f}")
+    # a mixed interpolation's float holes go the same way (one at a tie, one carrying)
+    print("mixed|${name}|${t2:.2f}|${k}|${c3:.2f}|${c5:.1f}")
