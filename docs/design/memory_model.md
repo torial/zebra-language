@@ -253,9 +253,14 @@ What it says:
   `std.fmt.allocPrint` per command (one allocation, the floats formatted into its buffer), while V
   lowers the literal to `str_intp`, whose float formatting returns a heap string per value before
   joining them -- **~11 allocations per command against one**, ~200 commands a frame. Not `+`
-  chains (an earlier guess here). Fixes: CodeGenV emits a formatted interpolation through one
-  `strings.Builder` (Fable's backend, Fable's to take), and, engine-side, one builder per flush --
-  which would take the Zig side's 2.5 MB toward zero too. **The other third (~16 MB) is
+  chains (an earlier guess here). **The fix (Fable's, in CodeGenV, the next V-backend thread):**
+  emit an interpolation whose arguments are numbers as ONE formatted write -- V's stdlib has no
+  allocation-free float formatting (every path ends in a `tos_clone`), so through a C-level
+  `snprintf` into a stack buffer and one final string: one allocation per interpolation. Witness:
+  the same gui-flush line, 30 MB a window before. **Dropped:** an engine-side per-flush command
+  buffer -- the Zig flush is already one `allocPrint` per command (2.5 MB a window; a buffer takes
+  it to ~1.5), and on V the cost is inside each number's formatting, which a builder around the
+  commands does not reach. **The other third (~16 MB) is
   the V host's draw** parsing the ~200 command strings a frame with copying `split` / `substr`
   where the Zig host slices -- a port finding. So the V backend's emitted game allocates less in
   the step (9 vs 16 MB) but twelve times more in the GUI flush (30 vs 2.5), and that flush is
