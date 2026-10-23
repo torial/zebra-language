@@ -25,6 +25,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **`allocate Arena()` frees its memory at block exit (BUG-617).** A scoped block was backed by
+  the program's own arena, which frees nothing, so the documented way to bound a loop's memory
+  freed nothing -- with `<<-` inside the block it used MORE memory than no block at all (a 100 MB
+  file: 1009 MB peak against 678 MB). It is backed by an allocator that frees now: 265 MB.
 - **A string stored into a field no longer costs a memory page (BUG-618).** Every `str` stored
   into a class field or a container is interned, and each new string was given its own page,
   kept forever: a label rewritten with changing text grew memory by ~4 KB per value (50,000

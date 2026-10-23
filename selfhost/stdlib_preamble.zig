@@ -73,9 +73,22 @@ pub var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 // library `main()` must not replace it on entry -- the host later frees Zebra-allocated
 // memory with its own allocator ("Invalid free"). The prologue checks this flag.
 pub var _host_alloc_set: bool = false;
+pub var _host_alloc: std.mem.Allocator = undefined; // BUG-617: the host's, kept apart from `_allocator`
 pub fn _initAllocator(a: std.mem.Allocator) void {
     _allocator = a;
+    _host_alloc = a;
     _host_alloc_set = true;
+}
+// BUG-617: what a scoped `allocate Arena()` / `Debug()` block is backed by. It must FREE: the
+// block used to be backed by `_allocator` -- the program arena, which frees nothing -- so its
+// deinit handed every chunk back to an allocator that kept it, and the documented way to bound
+// a loop's memory measured WORSE than doing nothing (1247 MB against 942 MB over a 100 MB file).
+// Not `_allocator` for a nested block either: inside an outer block that is the outer scoped
+// arena. A host that installed its own allocator (`--library-mode`) gets that one back: the
+// host owns the accounting, and it frees.
+pub fn _zbr_scoped_backing() std.mem.Allocator {
+    if (_host_alloc_set) return _host_alloc;
+    return std.heap.page_allocator;
 }
 // BUG-356: a shared library (`zebra --shared`) has no main() to hand it an Io, so `_io`
 // stayed `undefined` and the first File/print/sleep inside the library faulted. The

@@ -3084,7 +3084,10 @@ You can also pass any class that implements `AllocatorSource` (`def allocator():
 
 Typical uses:
 - **Large file processing in a loop** — `allocate Arena()` each iteration to discard
-  temporaries before reading the next file.
+  temporaries before reading the next file. Only what is allocated INSIDE the block is
+  freed: a line read in the loop header (`while var line = sys.readLine(), ...`) lives in
+  the program's memory, so a 100 MB file still costs ~250 MB for its lines (measured; the
+  body's work on top of that is freed per iteration). Keep what you need with `<<-`.
 - **Allocation profiling during development** — swap in `allocate Debug()` to
   print how many allocations a block made, the cumulative bytes requested, and
   the peak simultaneously-live bytes (to stderr, at block exit).  It behaves

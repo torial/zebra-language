@@ -1,0 +1,51 @@
+# BUG-617: a scoped `allocate Arena()` block was backed by the PROGRAM arena, which frees
+# nothing, so the block's "free on exit" freed nothing -- QUICKSTART's way to bound a loop's
+# memory measured worse than doing nothing (1247 MB against 942 MB over a 100 MB file).
+# It is backed by an allocator that frees now (the page allocator, or a host's).
+#
+# The witness is the program arena itself: work done inside the block must NOT grow it.
+# The positive control does the same work outside any block and MUST grow it -- without
+# that, a flat reading would pass even if `sys.memStats()` had stopped measuring.
+#
+# Each iteration keeps a value OUTSIDE the block and copies one out of it with `<<-`, as the
+# documented idiom does. The `<<-` is load-bearing: the program arena can take back a chunk
+# freed into it only if nothing was allocated after it, and a copy-out writes into the outer
+# arena while the block's chunk is still above it. Without one, the BROKEN compiler read
+# nearly flat too (two drafts of this fixture passed there).
+
+def churn(n: int): int
+    var total = 0
+    var i = 0
+    while i < n
+        var s = "abcdefghij".repeat(1000).upper()
+        total += s.len
+        i += 1
+    return total
+
+def main()
+    # The blocks FIRST, while the program arena is small: `arenaBytes` is the arena's
+    # CAPACITY, and after the 94 MB control below its last chunk has megabytes of free tail
+    # that later allocations fit into without the capacity moving -- measured: with the
+    # control first, the broken compiler read `inside=0` too.
+    var m1 = sys.memStats().arenaBytes
+    var b = 0
+    var k = 0
+    var kept = List(str)()
+    var tag = ""
+    while k < 2000
+        kept.add("line ${k}")
+        allocate Arena()
+            b += churn(1)
+            tag <<- "t${k}"
+        k += 1
+    var grew_inside = sys.memStats().arenaBytes - m1
+    var m0 = sys.memStats().arenaBytes
+    var a = churn(2000)
+    var grew_outside = sys.memStats().arenaBytes - m0
+    assert a == b and tag == "t1999", "same work both ways"
+    # The claim first, so a regression names itself (on the broken compiler: ~397 MB inside;
+    # its control then reads 0, because that slack swallows the control's work). A small
+    # reading counts only if the control proves the instrument still sees an allocation.
+    assert grew_inside < 1000000, "a scoped block's memory stayed in the program arena (${grew_inside} bytes)"
+    assert grew_outside > 10000000, "control: the same work outside a block must grow the arena (${grew_outside} bytes)"
+    print("bug617: OK")

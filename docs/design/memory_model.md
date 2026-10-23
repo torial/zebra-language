@@ -24,6 +24,7 @@ large file.
 | A: read the lines, nothing else | 245 MB (2.5x the file) | 248 MB |
 | B: `a = line!.upper().split("*")[0]` | **942 MB (9.4x)** | 678 MB |
 | C: the documented workaround, `allocate Arena()` around the body and `a <<- ...` | **1247 MB** | **1009 MB** |
+| C after BUG-617 (2026-10-23): the block backed by an allocator that frees | 318 MB | 265 MB |
 
 C is the surprise: the workaround QUICKSTART recommends makes it WORSE. It emits
 `std.heap.ArenaAllocator.init(_allocator)`, so the scoped arena is backed by the program
@@ -83,7 +84,7 @@ host allocator plus `_zbr_free`, and process exit.
 Each is useful whatever Sean decides, and the census and the gate are how the decision gets
 measured.
 
-1. **`allocate Arena()` must reclaim (BUG-617).** Back a scoped arena with a freeing
+1. **`allocate Arena()` must reclaim (BUG-617) -- DONE 2026-10-23,** variant C 1009 -> 265 MB. Back a scoped arena with a freeing
    allocator (the page or smp allocator), not with `_allocator`; red-check with variant C
    above, which must go flat. Same for `Debug()`. Without this the language's only tool for
    bounded memory does not work.
@@ -183,6 +184,62 @@ representation**. F and G ranked below by both of us.
    any model's reuse and escape analysis will be judged against. Opus would put BUG-618 and
    BUG-617 alongside it (each is small, and each is a defect users hit today).
 
+## 6a. How much a V backend resolves (Fable, at Sean's request)
+
+With V's default Boehm collector the drift goes away **as a class** -- per-frame containers and
+boxes, field-stored strings (no interning needed under a collector), instances, closure cells
+-- with no Zebra-side model work: it is model G as a shipped collector, not one to write. The
+costs, from the engine's side:
+
+- Boehm is stop-the-world mark-sweep; the pause scales with the live heap (the engine's is
+  100-300 MB: tens of ms against a 16 ms frame). An incremental mode exists; V's support for it
+  is uneven.
+- Conservative scanning retains pointer-shaped garbage, invisibly.
+- **The host boundary gets worse:** the Zig / raylib side holds pointers the collector cannot
+  see, so a missed root is a silent use-after-free, not a leak. Threads must register
+  (`sys.go`).
+- With `-gc none` (the V rows today) it resolves nothing -- today's arena with another
+  allocator. With `-autofree`, some: experimental, leaks where it does not understand; not a
+  basis.
+
+It does not touch the no-regret items (which help under any backend), the determinism the
+engine's budget guard relies on, the Zig backend (the shipped one), or the reference semantics
+Sean chose for containers and closures. Measurable: the V window row with `-gc boehm`, process
+memory every 2 s over the 45 s autoplay, and its fps -- Fable will run it when the V-master rows
+finish.
+
+## 6b. The models through the UNGIT tests (Fable, at Sean's request)
+
+Nothing withheld / nothing fabricated / nothing ambient (`concept_ungit-principle`):
+
+- **Today's arena.** Withheld: no instrument said memory grows (the engine's 18 GB was a
+  24-minute accident). Fabricated: `allocate Arena()` read as freeing and reclaimed nothing
+  (BUG-617 -- a green from an instrument never seen red). Ambient: the arena is the program's
+  whole life, declared by nobody.
+- **Reference counting at last use.** Nothing withheld IF the compiler can say, per site and on
+  request, what it inserted and what it elided, and debug builds report cycles. Nothing
+  fabricated IF `weak` is visible where declared (a field kind), not inferred. Ambient risk: the
+  host's retain, unless the handle type makes it explicit (a handle the host cannot dereference
+  without retaining).
+- **Frame arena, host-owned.** Nothing withheld (entered and left at a named point). Nothing
+  fabricated ONLY with a compile-time refusal of escapes that names the fix -- a runtime-silent
+  escape is the `<<-` surprise again. The boundary is declared by the host, never inferred from
+  a loop.
+- **Tracing GC (V's Boehm).** Withheld unless the runtime reports pauses where the user looks
+  (the profiler's frame line); fabricated liveness from conservative scanning, with no report;
+  ambient at its worst -- thread registration and host roots, where a missed root is a silent
+  use-after-free.
+- **Perceus reuse / escape analysis.** Needs a "why was this not reused" answer on request, or a
+  slow loop is unexplainable; otherwise holds. An optimisation, not a rule.
+- **Generational handles.** A stale handle fails loudly on the generation check; nothing reads
+  freed memory as live; Destroy is the declared event. Holds on all three.
+- **The census and the leak budget** are the UNGIT instruments themselves: the count where the
+  user looks, a strip that goes red -- and a budget never seen red is the first thing to run.
+
+Two conclusions: **the tracing collector fails all three tests at the host boundary**, which is
+the engine's exact seam; and **counting passes only if its elision and its cycle leaks are
+REPORTABLE** -- a tooling requirement to write into the design, not an afterthought.
+
 ## 7. Acceptance (Fable's witness list)
 
 Before Sean decides on a branch:
@@ -198,7 +255,7 @@ Before Sean decides on a branch:
 
 ## 8. Credits
 
-Fable: the engine evidence (§1), the BUG-618 trace and no-regret items 2-7, models B-E, the handle-ABI requirement,
+Fable: the engine evidence (§1), the BUG-618 trace and no-regret items 2-7, §6a and §6b, models B-E, the handle-ABI requirement,
 the cycle analysis, the acceptance list, and both dissents in §6. Opus: Sean's-loop
 measurements and the finding that `allocate Arena()` reclaims nothing, the inventory (§2),
 model A, the copy position and the thread rule.

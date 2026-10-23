@@ -13371,7 +13371,7 @@ struct Generator
         if e is Expr.call as c
             if c.callee is Expr.ident as id
                 if id.name == "Arena"
-                    w.emit("std.heap.ArenaAllocator.init(_allocator)")
+                    w.emit("std.heap.ArenaAllocator.init(_zbr_scoped_backing())")   # BUG-617
                     return
                 if id.name == "Debug"
                     w.emit("std.heap.DebugAllocator(.{}){}")
@@ -13437,7 +13437,7 @@ struct Generator
                 # §Design-a: Debug() = a scoped arena (frees on exit) WRAPPED by a
                 # stats observer that reports alloc count/bytes/peak at block exit.
                 var dbg_arena = "_dbg_arena_".concat(depth_str)
-                ig.line("var ".concat(dbg_arena).concat(" = std.heap.ArenaAllocator.init(_allocator);"))
+                ig.line("var ".concat(dbg_arena).concat(" = std.heap.ArenaAllocator.init(_zbr_scoped_backing());"))   # BUG-617
                 ig.line("var ".concat(src_name).concat(" = _AllocStats{ .parent = ").concat(dbg_arena).concat(".allocator() };"))
             else
                 ig.writeIndent()

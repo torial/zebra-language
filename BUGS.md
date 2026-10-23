@@ -46,19 +46,6 @@
 
 ---
 
-### BUG-617: `allocate Arena()` reclaims nothing in an ordinary program -- the scoped arena is backed by the program arena -- OPEN (found 2026-10-22)
-- **Found by:** measuring Sean's loop (`docs/design/memory_model.md` §1). Over a 100 MB file,
-  `a = line!.upper().split("*")[0]` grows the arena 942 MB; the same loop with the body in
-  `allocate Arena()` and `a <<- ...` -- QUICKSTART's documented way to bound memory in a loop --
-  grows it **1247 MB** (peak working set 1009 MB vs 678 MB). Programs in `C:	mp\zzrc\`.
-- **Cause:** `genAllocatorSourceInit` emits `std.heap.ArenaAllocator.init(_allocator)`, so the
-  scoped arena's chunks come from the program arena; its `deinit` "frees" them into an allocator
-  that never frees, and its own bookkeeping is added on top. QUICKSTART promises "big_file.txt
-  buffer + all parse temporaries freed here" -- false at top level. `Debug()` likely the same.
-- **Fix direction:** back a scoped arena with a freeing allocator (page or smp), keeping a host
-  allocator in `--library-mode`; red-check: variant C must go flat (OS peak working set, since
-  `sys.memStats()` measures only the program arena and would read flat for the wrong reason).
-
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any

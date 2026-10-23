@@ -24595,7 +24595,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13373
                 if (std.mem.eql(u8, id.name, "Arena")) {
 // zbr:selfhost/CodeGen.zbr:13374
-                    self.w.emit("std.heap.ArenaAllocator.init(_allocator)");
+                    self.w.emit("std.heap.ArenaAllocator.init(_zbr_scoped_backing())");
 // zbr:selfhost/CodeGen.zbr:13375
                     return;
                 }
@@ -24709,7 +24709,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:13439
                     const dbg_arena: []const u8 = (std.mem.concat(_zbr_rt._allocator, u8, &.{ "_dbg_arena_", depth_str }) catch @panic("OOM"));
 // zbr:selfhost/CodeGen.zbr:13440
-                    ig.line((std.mem.concat(_zbr_rt._allocator, u8, &.{ (std.mem.concat(_zbr_rt._allocator, u8, &.{ "var ", dbg_arena }) catch @panic("OOM")), " = std.heap.ArenaAllocator.init(_allocator);" }) catch @panic("OOM")));
+                    ig.line((std.mem.concat(_zbr_rt._allocator, u8, &.{ (std.mem.concat(_zbr_rt._allocator, u8, &.{ "var ", dbg_arena }) catch @panic("OOM")), " = std.heap.ArenaAllocator.init(_zbr_scoped_backing());" }) catch @panic("OOM")));
 // zbr:selfhost/CodeGen.zbr:13441
                     ig.line((std.mem.concat(_zbr_rt._allocator, u8, &.{ (std.mem.concat(_zbr_rt._allocator, u8, &.{ (std.mem.concat(_zbr_rt._allocator, u8, &.{ (std.mem.concat(_zbr_rt._allocator, u8, &.{ "var ", src_name }) catch @panic("OOM")), " = _AllocStats{ .parent = " }) catch @panic("OOM")), dbg_arena }) catch @panic("OOM")), ".allocator() };" }) catch @panic("OOM")));
                 } else {

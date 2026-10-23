@@ -6,6 +6,34 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-617: `allocate Arena()` reclaims nothing in an ordinary program -- the scoped arena is backed by the program arena -- FIXED 2026-10-23 (found 2026-10-22)
+- **Found by:** measuring Sean's loop (`docs/design/memory_model.md` §1). Over a 100 MB file,
+  `a = line!.upper().split("*")[0]` grows the arena 942 MB; the same loop with the body in
+  `allocate Arena()` and `a <<- ...` -- QUICKSTART's documented way to bound memory in a loop --
+  grows it **1247 MB** (peak working set 1009 MB vs 678 MB). Programs in `C:	mp\zzrc\`.
+- **Cause:** `genAllocatorSourceInit` emits `std.heap.ArenaAllocator.init(_allocator)`, so the
+  scoped arena's chunks come from the program arena; its `deinit` "frees" them into an allocator
+  that never frees, and its own bookkeeping is added on top. QUICKSTART promises "big_file.txt
+  buffer + all parse temporaries freed here" -- false at top level. `Debug()` likely the same.
+- **Fix direction:** back a scoped arena with a freeing allocator (page or smp), keeping a host
+  allocator in `--library-mode`; red-check: variant C must go flat (OS peak working set, since
+  `sys.memStats()` measures only the program arena and would read flat for the wrong reason).
+- **Fixed:** a scoped `Arena()` / `Debug()` block is backed by `_zbr_scoped_backing()` -- the
+  page allocator, or in `--library-mode` the host's allocator (kept apart from `_allocator`, so
+  a NESTED block is not backed by its outer block's arena). Sean's loop, variant C: peak working
+  set **1009 MB -> 265 MB** (arena 1247 -> 318 MB) -- now about variant A's floor (245 MB: each
+  line is read OUTSIDE the block, into the program arena) plus the kept copies. Variant B
+  unchanged (678 MB). `escape-hatches` baseline 75 -> 76 (the new, reviewed use).
+- **Why it was only sometimes visible:** an arena takes back a freed chunk only if nothing was
+  allocated after it. A block whose work stays inside it gave its chunk back on exit even when
+  broken; a block that copies OUT with `<<-` -- the documented idiom -- writes into the outer
+  arena while its chunk is still above, which pins the chunk for good. Two drafts of the
+  fixture missed it this way (and a third read 0 on both compilers because `arenaBytes` is
+  CAPACITY, and an earlier 94 MB control left megabytes of slack that later allocations fit in).
+- **Fixture:** `test/bug617_scoped_arena_frees_test.zbr` -- 2,000 blocks with a `<<-` each, the
+  program arena must grow < 1 MB (fixed: 285 KB; broken: 397 MB), and a control proving the
+  instrument still sees an allocation. Red on the pre-fix compiler with the right message.
+
 ### BUG-618: every `str` stored into a class field is interned onto its own page, forever -- dynamic text leaks a page per distinct value -- FIXED 2026-10-22 (found 2026-10-22 by Fable)
 - **Found by:** Fable, tracing the GameEngine's intern pool growing ~16 strings/s with no new
   literals in a plain run.
