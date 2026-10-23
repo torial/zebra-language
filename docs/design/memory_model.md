@@ -1,109 +1,179 @@
 <!-- doc-status: design -->
-# The Zebra memory model — what a concurrent program may rely on
+# Memory in long-running programs — the model, brainstormed
 
-**Status:** ADOPTED 2026-10-06 (Sean: "I approve the memory_model.md"). Every **G** row
-below binds from 1.0 as part of the stability promise (`docs/design/stability_policy.md`
-§2); **C** rows stay free to change. Drafted the same day. Written because NEXT_STEPS_to_1.0 ("THE
-WRITTEN MEMORY MODEL") lists five questions whose answers existed only as folklore plus one
-hazard test, and because the switch to reference containers (BUG-501 1d, `cfd2bc8`) changed
-the answer to one of them. Every row below names the MECHANISM in the runtime
-(`selfhost/stdlib_preamble.zig`) that makes it true, and its WITNESS: a fixture that would
-go red if it stopped being true, or "none" said out loud.
+**Status:** BRAINSTORM for Sean, nothing decided. Written 2026-10-22 by Opus 5.5 (the
+compiler session) with Fable (the GameEngine session), at Sean's request: "coordinate with
+Fable ... and brainstorm on the best way forward". Where the two of us agree it says so;
+where we disagree, both positions are kept. The 2026-10-11 decision ("reference counting for
+strings and containers, cycles accepted, debug-mode leak report") is the starting point, not
+assumed final.
 
-Each row is tagged:
+---
 
-- **G** — part of the 1.0 promise (`docs/design/stability_policy.md` §2); all of them,
-  as adopted 2026-10-06.
-- **C** — current behaviour, stated so nobody has to read the runtime, and free to change.
+## 1. The problem, measured
 
-## 1. Where threads come from
+**Sean's worry:** a general program, not only the engine, sees RAM grow with what it has
+*ever* allocated. The example: `a = b.upper().split("*")[0]` in a loop over the lines of a
+large file.
 
-A Zebra program has one thread unless it starts more. Five things start them:
+**Measured 2026-10-22** on a 100 MB file (1,972,690 lines), lines read from stdin with
+`sys.readLine()`, `--release`, arena growth from `sys.memStats()` and the OS peak working set:
 
-| source | threads | joined? |
+| variant | arena growth | peak working set |
 |---|---|---|
-| `sys.go(def() ...)` | one per call, detached | no — signal completion through a `Chan` or `Atomic` |
-| `ThreadPool(n)` | `n` workers, started at construction, detached | `pool.wait()` waits for the submitted tasks, not the workers |
-| `Http.serve`, `Ws.serve`, `Tcp.serve` | one per accepted connection | no |
+| A: read the lines, nothing else | 245 MB (2.5x the file) | 248 MB |
+| B: `a = line!.upper().split("*")[0]` | **942 MB (9.4x)** | 678 MB |
+| C: the documented workaround, `allocate Arena()` around the body and `a <<- ...` | **1247 MB** | **1009 MB** |
 
-The serve functions are the easy ones to miss: a handler runs on many threads at once, so
-anything it shares with other connections is shared state in the sense of §3 (BUG-154).
+C is the surprise: the workaround QUICKSTART recommends makes it WORSE. It emits
+`std.heap.ArenaAllocator.init(_allocator)`, so the scoped arena is backed by the program
+arena; on exit it "frees" into an allocator that never frees, and its own bookkeeping is
+added on top. That is a bug independent of any model (§3, item 1). Programs and harness:
+`C:\tmp\zzrc\` (`a_read.zbr`, `b_plain.zbr`, `c_arena.zbr`).
 
-`--single-threaded` commits a program to no threads: the allocator's lock compiles out,
-and every one of the five sources above is refused at compile time, naming the file and
-line (`recordThreadSpawn` in CodeGen). **G**
+What one iteration of B allocates today (from the emitted Zig): a copy of the line
+(`allocUpperString`), a List header (`_zbr_new`), the List's buffer and every buffer it
+outgrows, and `a` is a slice INTO the upper-case copy. None of it is ever freed.
 
-## 2. What orders a write before a read (happens-before)
+**The engine (Fable, 2026-10-22, a plain `--mm-gui` run):** a steady **+8.3 MB/s** net, about
+1,000 allocations per frame averaging ~140 bytes, every section growing together (scripts
+9.1 MB, gui 2.2, render 1.6, collision 0.8, other 2.8 per 2 s window): the signature of
+"temporaries nobody frees", not one bad site. A 24-minute run reached 18 GB. The intern pool
+grew 1,947 -> 2,269 strings in 20 s with no new literals -- traced by Fable the same night to
+a COMPILER rule (BUG-618, §3 item 2): every `str` stored into a class field is wrapped in
+`_intern(...)`, and `_intern` copies each new string onto its own page, forever. Earlier, F50: a page per JSON node gave 13 GB in
+30 s -- **a 100-byte leak under a page-granular allocator is a 4 KB leak (64 KB of reserve on
+Windows); the allocator behind the model matters as much as the model.**
 
-A write made on one thread is guaranteed visible to a read on another only when one of
-these edges lies between them. Nothing else orders anything.
+## 2. What allocates today, and what frees
 
-| edge | guarantee | mechanism | tag | witness |
-|---|---|---|---|---|
-| spawn | everything the spawner did before `sys.go(...)` / `pool.submit(...)` is visible to the new task when it starts | OS thread creation; the pool's queue mutex | **G** | `test/boundary/memory_model_probe.zbr` (R1, R3) |
-| `Chan` | everything the sender did before `send(v)` is visible to the receiver once the matching `recv()` returns `v` | one mutex + two condition variables per channel | **G** | `memory_model_probe` (R1, R2), `test/chan_thread_test.zbr` |
-| `Chan.close()` | everything before `close()` is visible to a receiver whose `recv()` returns `nil` because of it | same mutex | **G** | none (from the code) |
-| `ThreadPool.wait()` | everything every submitted task did is visible after `wait()` returns | `in_flight` decremented under the pool mutex; `wait` reads it under the same mutex | **G** | `memory_model_probe` (R3, R4) |
-| `Atomic(T)` | every operation is sequentially consistent: one total order all threads agree on | Zig `.seq_cst` on every load, store, add, sub, swap, compare-and-swap | **G** | `memory_model_probe` (R5, counts only — ordering itself is not observable deterministically) |
-| `sys.go` finishing | **nothing.** A detached thread's writes are visible only through one of the edges above | — | **G** | — |
+The program allocator `_allocator` is one `ArenaAllocator` over the page allocator (wrapped
+thread-safe when threads exist), released only at exit (`defer _arena.deinit()` in `main`).
+Everything below goes through it:
 
-## 3. What is shared
+- strings: concatenation, interpolation, `toString()`, `upper()`, `split()`, file reads;
+- class instances (`_allocator.create` in every constructor);
+- container headers (`_zbr_new`) and storage -- and **growth garbage**: an arena resizes in
+  place only for its most recent allocation, so a growing List, a HashMap rehash or a
+  StringBuilder leaves every outgrown buffer behind (building a list costs ~2x its size);
+- `^T` boxes, union payloads, closure cells (BUG-569/607, 2026-10-22);
+- thread allocations (same arena through the thread-safe wrapper).
 
-A `capture` copies the **variable** into the task at spawn time, and `Chan.send` hands
-over the **value**. Whether the other side then has its own data depends on the type:
+Outside the arena, also never freed: **76** `std.heap.page_allocator` escape hatches in the
+runtime (the `escape-hatches` gate counts them): the string intern pool, JSON values and
+output, error messages formatted on `raise`, ObjectPool / ThreadPool headers, HTTP buffers.
 
-| type | after capture / send | tag | witness |
-|---|---|---|---|
-| `int`, `float`, `bool`, `byte`, enums | independent copy | **G** | `memory_model_probe` R1 |
-| `str` | the same bytes, and that is safe: `str` is immutable (`[]const u8`) | **G** | none needed — no operation writes into a `str` |
-| struct, tuple, union | independent copy of the fields; any class instance or container INSIDE it is shared | **G** | `memory_model_probe` R1: a struct of an `int`, and a struct holding a `List` captured into a thread (copy / shared; the pre-switch compiler prints 1 / 0) |
-| class instance | **shared** — the same object | **G** | `memory_model_probe` R1 (`Box`) |
-| `List`, `HashMap`, `Set` | **shared** — the same container (since 2026-10-06; before that, a half-copy that shared the buffer and not the length) | **G** | `memory_model_probe` R1, R2; red against the pre-switch anchor |
-| `StringBuilder` | **shared** -- it became a reference in the same switch, being spelled `_ZbrList(u8)` (found 2026-10-06 after this note was adopted, which first said "still a half-copy"; the pre-switch compiler prints a lost write where this one shares) | **G** | `memory_model_probe` R1: an alias sees the append, and so does a thread that captured it |
-| `CsvWriter` | **shared** -- a reference like StringBuilder since 2026-10-09 (BUG-541; before that an independent copy: writes through a copy were lost, and a function could not write to one it was given) | **G** | `bug541_csvwriter_reference_test`: an alias and a parameter both write the one writer |
-| `Chan`, `Atomic`, `ThreadPool` | shared — that is what they are for, and they synchronise themselves | **G** | `chan_thread_test`, `memory_model_probe` |
+What frees: a scoped `allocate` block (in principle -- see C above), `--library-mode` with a
+host allocator plus `_zbr_free`, and process exit.
 
-To give another thread its own container, send or capture `xs.copy()` (shallow) or a `<<-`
-deep copy.
+## 3. No-regret steps -- do these under ANY model (joint)
 
-**No container, class instance or module-level variable synchronises itself.** Two threads
-touching the same one, at least one of them writing, with no edge from §2 between the
-accesses, is a **data race**, and a data race is undefined behaviour: the program may crash,
-lose writes or read torn values, and Zebra checks none of it. **G** (the rule); there is no
-witness, because a race cannot be demonstrated deterministically —
-`test/arena_concurrency_hazard_test.zbr` shows what one looks like.
+Each is useful whatever Sean decides, and the census and the gate are how the decision gets
+measured.
 
-Two pieces of runtime state are per-thread and need no care: the error context (what
-`catch` reads) and the random generator behind `Random.*`. **C**
+1. **`allocate Arena()` must reclaim (BUG-617).** Back a scoped arena with a freeing
+   allocator (the page or smp allocator), not with `_allocator`; red-check with variant C
+   above, which must go flat. Same for `Debug()`. Without this the language's only tool for
+   bounded memory does not work.
+2. **A field store must not intern (BUG-618, found by Fable).** Codegen wraps every `str`
+   stored into a class field in `_intern(...)` -- `_self.name = _intern(name)`,
+   `guiProps().text = _intern(text)`, `attributes.put(_intern(key), _intern(value))`: 89 + 19
+   + 13 + ... sites in the emitted engine, all dynamic text. `_intern` dupes each new string with
+   `std.heap.page_allocator` (a page per string; 64 KB of reserve on Windows) and keeps it
+   forever, so a timer label rewritten once a second is an immortal page a second. Interning is
+   today's FIELD-OWNERSHIP strategy (a field-held str must not dangle into a temporary), which
+   makes it unbounded by construction for any field that takes dynamic text. Steps: (a) at
+   least intern through the program allocator (bytes, not pages; ~100x smaller, still
+   unbounded); (b) better, a field store COPIES into a fresh allocation, with interning kept for
+   literals only. Under counting the rule disappears (the field holds a count). Engine witness:
+   the plain run's intern-pool count flat over 60 s. This is the live leak in every Roblox port.
+3. **Free outgrown container buffers** (Fable). The old buffer on growth is pure waste under
+   any model; route container storage through an allocator that frees.
+4. **One allocator interface, no page-allocator escapes** (Fable). Each of the 76 hatches turns
+   a byte leak into a page leak; each moves to the program allocator or carries a written
+   reason why it must outlive everything.
+5. **A builder with reused capacity** for per-frame formatting (Fable) -- the GUI flush builds
+   ~200 formatted strings per frame through `_str_concat` chains.
+6. **A per-type allocation census** in the runtime (Fable): strings, Lists, maps, instances,
+   closure cells, boxes, interned -- counts and bytes, on the profiler's memory line and from
+   `sys.memStats()`. This is the evidence the decision needs, and the witness afterwards.
+   Fable can land the engine side.
+7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
+   over a large file) must not grow committed private memory past a budget. The same gate
+   witnesses whatever model lands.
 
-## 4. Memory and allocators
+Items 1 and 3 should take variant B from 9.4x toward the size of what it keeps, for any program
+that bounds its loops with `allocate`; item 2 removes the engine's one named live leak.
 
-| rule | mechanism | tag | witness |
-|---|---|---|---|
-| Any thread may allocate from the program allocator at any time | one arena behind a mutex (`_TsAlloc`); the lock compiles out under `--single-threaded` | **G** | `test/thread_alloc_stress_test.zbr` |
-| Memory from the program allocator lives until the program exits, whichever thread allocated it, so a reference handed to another thread never dangles | the arena is freed once, at exit | **G** | none (from the code) |
-| Interning a `str` (storing it into a class field) is thread-safe | the intern pool is locked (BUG-440) | **C** | `test/bug440_intern_thread_race_test.zbr` |
-| **An `allocate` block is single-threaded only.** While one is open, no other thread may run Zebra code | the block swaps the GLOBAL `_allocator`, so every thread allocates from the scoped allocator, which is not thread-safe and is freed when the block ends | **G** (the rule) | `test/arena_concurrency_hazard_test.zbr` crashes ~77% of runs |
-| A reference received from another thread points into the SENDER's allocator. If the sender allocated it inside an `allocate` block that has ended, it dangles | — | **G** | none |
-| `Chan`, `ThreadPool` and their queues use the page allocator, not the program allocator | — | **C** | — |
+## 4. The models considered
 
-## 5. Failure
-
-| rule | tag | witness |
+| model | for | against |
 |---|---|---|
-| A panic on any thread (an assert, an index past the end, an unhandled error) ends the whole program with a non-zero exit. A `ThreadPool.wait()` waiting on the panicking task never returns | **G** | `test/pool_task_panic_test.zbr` (smoke_run_fail: a task indexing an empty list; a `wait()` that returned would print and exit 0) |
-| An error raised in a task and not caught there ends the program the same way; errors do not cross threads | **C** | none |
+| **A. Reference counting, freed at LAST USE** (Koka's Perceus, Lobster; Nim ARC/ORC is the closest compile-to-a-systems-language precedent) | deterministic, no pauses, Python-like expectations met (Sean's loop runs flat), works with a host that holds values; most inc/dec elided at compile time (Lobster reports ~95%) | the `str` representation changes (a counted buffer, not a bare slice), touching every runtime string function and the FFI; releases on every path, including `raise`/`catch` unwinding; cycles leak without help; the V backend's boxed runtime must count the same |
+| **B. Perceus reuse** on top of A (Fable) | when a count is 1, `upper()` / `split()` reuse buffers in place -- Sean's loop allocates nothing per iteration | only as good as A's precision |
+| **C. Escape analysis for temporaries** (Fable) | a List or str made, used and dropped inside one function (no field, no return, no capture) is freed at the function's end with no counts at all; most of the engine's ~1,000 per frame are this shape | a conservative analysis misses some; needs A (or an arena) for the rest |
+| **D. A frame arena the HOST owns**, opt-in (Fable) | `Workspace.frameScope` around step+draw; the compiler REFUSES assigning a frame-arena value to a field, module var or capture (a static check, as `<<-` is today), so "the loop kept something" is a compile error, not a surprise; Unity's `Allocator.Temp`, Bevy's frame allocators are the precedent; removes the engine's drift alone | a tool for frame-shaped programs, not a model for general code |
+| **E. Generational handles** for engine Instances (Fable) | a slab plus a generation counter, as the engine's ECS already does for entities: Destroy invalidates, no cycles exist, a host keeps handles safely with no retain; the Roblox DataModel's real shape | an engine representation, not a language rule |
+| **F. Automatic per-iteration arena** | cheap | real loops KEEP something (append a parsed field to a results list), so the user must know to `<<-` it out -- the same surprise moved |
+| **G. Tracing GC** | handles cycles | pauses inside a 16 ms frame; host-held pointers need a host-roots API ("hostile to embedding" is only true without one) |
 
-## 6. What this note deliberately does not decide
+**Joint recommendation:** the hybrid -- **A + B + C as the language's model** (counts freed at
+last use, with reuse and escape analysis making them cheap and mostly invisible), **D as an
+opt-in tool** whose escapes the compiler refuses, **E as the engine's Instance
+representation**. F and G ranked below by both of us.
 
-- **§28j step b** (per-thread arenas, a shared `Smp()` handle) — a design question with its
-  own note, `docs/design/concurrency_allocation_design.md`. If it lands, §4 changes and
-  this note follows it.
-- **An evented runtime** (green threads, `std.Io` async). Out of scope for 1.0.
-- **Relaxed atomics.** `Atomic` is seq-cst only; `zig"..."` reaches Zig's own builtins.
+## 5. Requirements any model must meet (joint)
 
-## 7. Settled on adoption, and what is still owed
+- **Host-held values go through an explicit handle ABI** (Fable). Today's rule is "the host
+  copies what it keeps"; under counting it becomes "the host retains what it keeps", and a
+  forgotten retain is a **use-after-free instead of a leak** -- the one place counting makes the
+  engine worse. So a host-facing value is an opaque handle the host cannot dereference without
+  retaining, and `_zbr_free` becomes `_zbr_release`. The V backend honours the same ABI.
+- **A value handed to the host and used "later" is a last use the compiler cannot see**
+  (Fable): the ABI retains across that boundary explicitly.
+- **Threads:** counts are plain (non-atomic) by default; only values crossing `sys.go` / `Chan`
+  pay for atomics. Zebra already makes those boundaries explicit (a `sys.go` closure names what
+  it uses in a `capture` block), which is Nim's approach.
+- **Module-level containers initialised by nobody** (the engine's F26) must not hold references
+  forever.
 
-1. **Settled:** the §2 spawn edge is promised for `pool.submit` as well as `sys.go`, as
-   written. A future lock-free queue has to keep it.
-2. **Paid 2026-10-07:** the fixtures this list owed -- §5's panic row (`test/pool_task_panic_test.zbr`), §3's StringBuilder and struct-holding-a-reference rows (`memory_model_probe` R1, red against the pre-switch compiler where it compiles). Every G row now names a witness except the ones marked "none" by nature (`str` immutability, the data-race rule, and the edges read from the code: `close()`, exit-time freeing).
+## 6. Decisions for Sean (both positions kept)
+
+1. **Substrings and `split` results: copy, or a view that keeps its parent alive?**
+   - Opus: copy. A view keeps the whole parent alive -- keep a 3-byte field from every line and
+     you have kept every line (Java's and Go's substring trap).
+   - Fable: views are the normal design for immutable strings, and copying the GUI's per-frame
+     `split` results is a real cost. Keep views and measure.
+   - Agreed: **measure first** (the census, item 6 in §3); take copies if they are cheap enough.
+2. **Cycles: `weak` by default on parent-shaped fields, or opt-in?**
+   - Every engine tree node is a cycle from day one (`Instance.parent` <-> `children`), and
+     signals hold closures that capture their owner. An opt-in `weak` is one a port forgets.
+   - **Joint recommendation:** a field kind that is weak by default where the shape is declared
+     (a parent link), plus explicit `weak` elsewhere; subscriber lists weak or Maid-style
+     connection objects the owner drops (the ports already use Maid). Keep the debug-mode leak
+     report for what remains.
+3. **Are class instances counted?** The 2026-10-11 decision named strings and containers. A
+   `Parser()` made per line grows the same way; the recommendation is yes.
+4. **Order of work:** the no-regret steps (§3) first -- they are small, measurable, and fix the
+   workaround users are told to use -- then a design for the counted representation before
+   any code.
+
+## 7. Acceptance (Fable's witness list)
+
+Before Sean decides on a branch:
+
+- the plain engine run for ten minutes with committed private memory flat (the leak-budget
+  gate), and the host-boundary duo;
+- the autoplay's fps within noise of today's (the inc/dec cost on the ~1,000-allocation GUI path,
+  with elision);
+- `designer_test`, `demo_test`, the full engine suite: Destroy and the signals under counting
+  (cycles), nothing freed under the host's feet (the snapshot rule);
+- Sean's loop over a 1 GB file, flat;
+- the V backend showing the same counts on one program.
+
+## 8. Credits
+
+Fable: the engine evidence (§1), the BUG-618 trace and no-regret items 2-7, models B-E, the handle-ABI requirement,
+the cycle analysis, the acceptance list, and both dissents in §6. Opus: Sean's-loop
+measurements and the finding that `allocate Arena()` reclaims nothing, the inventory (§2),
+model A, the copy position and the thread rule.
