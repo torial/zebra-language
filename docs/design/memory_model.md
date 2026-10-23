@@ -117,7 +117,8 @@ measured.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
    witnesses whatever model lands.
-8. **Reuse in place: `clear()` that keeps capacity** (Fable). The per-frame reuse idiom every
+8. **Reuse in place: `clear()` that keeps capacity** (Fable) -- **DONE 2026-10-23**
+   (`HashMap.clear()` added; `List.clear()` documented). The per-frame reuse idiom every
    game has, and the one change that cuts the engine's drift today without a model. Measured
    while adding this: `List.clear()` ALREADY EXISTS and keeps capacity (it emits
    `clearRetainingCapacity()`) but QUICKSTART never mentions it, so nobody knew; `HashMap` has

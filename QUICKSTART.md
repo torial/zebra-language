@@ -1089,6 +1089,9 @@ items.sortBy(def(x) = x.score)     # ONE-argument KEY function: ascending by the
                                      # with no order (an `@unordered` enum, a class without
                                      # `cue compare`, an interface) is refused.
 items.reverse()                      # in place (2026-09-10)
+items.clear()                        # empty it, KEEPING its capacity: refill it next frame or
+                                     # next line without allocating again -- reuse one list
+                                     # instead of building a fresh one per iteration
 var snap = items.copy()              # a SHALLOW copy: a new list, the same elements (a nested
                                      # container is shared, not cloned; `<<-` is the deep copy).
                                      # HashMap and Set have copy() too (BUG-501, 2026-10-06).
@@ -1120,6 +1123,7 @@ m.set("a", 1)
 var v = m.get("a")                   # returns int? (optional)
 var present = m.contains("a")        # bool
 m.remove("a")
+m.clear()                            # empty it, keeping its capacity (as List / Set clear())
 var ks: List(str) = m.keys()         # snapshot of keys as a new List(K)
 var vs: List(int) = m.values()       # snapshot of values as a new List(V)
 for val in m.values()                # or iterate the snapshot directly

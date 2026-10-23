@@ -77,9 +77,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `add` `all` `any` `append` `at` `clear` `contains` `copy` `count` `fetch` `filter` `find` `items` `join` `len` `map` `pop` `reduce` `remove` `reserve` `reverse` `set` `sort` `sortBy` `toString`
 
-### HashMap(K, V) (13)
+### HashMap(K, V) (14)
 
-`contains` `copy` `count` `entries` `fetch` `get` `keys` `len` `put` `remove` `set` `toString` `values`
+`clear` `contains` `copy` `count` `entries` `fetch` `get` `keys` `len` `put` `remove` `set` `toString` `values`
 
 ### Set(T) (9)
 

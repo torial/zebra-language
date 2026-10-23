@@ -2079,7 +2079,7 @@ def listMethodKnown(name: str): bool
 # and List-only names (`at`, `sort`, `join`) that codegen dispatches by name and that
 # compiled to nonsense on these receivers -- refusing them is the point.
 def hashmapMethodKnown(name: str): bool
-    return name == "set" or name == "put" or name == "get" or name == "fetch" or name == "contains" or name == "remove" or name == "keys" or name == "values" or name == "entries" or name == "count" or name == "len" or name == "toString" or name == "copy"
+    return name == "set" or name == "put" or name == "get" or name == "fetch" or name == "contains" or name == "remove" or name == "keys" or name == "values" or name == "entries" or name == "count" or name == "len" or name == "toString" or name == "copy" or name == "clear"
 
 def setMethodKnown(name: str): bool
     return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString" or name == "copy"
@@ -4248,6 +4248,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.list_(hmt.key_t)
                             if hmname == "copy"
                                 return Type_.hashmap_(hmt)
+                            if hmname == "clear"
+                                return Type_.void_
                             if hmname == "values"
                                 return Type_.list_(hmt.val_t)
                             if hmname == "entries"
@@ -4258,7 +4260,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.list_(Type_.tuple_(TupleType_(ent_elems)))
                             if not hashmapMethodKnown(hmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'HashMap' has no method '" + hmname + "' (set/get/fetch/contains/remove/keys/values/entries/count/copy)")
+                                           "'HashMap' has no method '" + hmname + "' (set/get/fetch/contains/remove/keys/values/entries/count/copy/clear)")
                                 return Type_.unknown_
                         on Type_.set_ as set_elem
                             # §28f: generic Set(T). items() → List(T) snapshot

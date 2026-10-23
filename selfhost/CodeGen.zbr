@@ -17104,6 +17104,12 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                    if mname == "clear"
+                        # Empty in place, KEEPING capacity: the per-frame reuse idiom (the
+                        # memory note, §3 item 8). List and Set already had it.
+                        genExpr(m.object)
+                        w.emit(".clearRetainingCapacity()")
+                        return
                     if mname == "keys"
                         # §28f: use the preamble helper (StringHashMap/AutoHashMap
                         # have no Zig .keys()/.values() — those are ArrayHashMap-only).

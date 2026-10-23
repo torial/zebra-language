@@ -1,0 +1,22 @@
+# HashMap.clear() (2026-10-23): empty a map in place, keeping its capacity -- the per-frame
+# reuse idiom (docs/design/memory_model.md §3 item 8). List and Set had clear(); a map had
+# none, so a program rebuilt a fresh one every frame. String keys and int keys are different
+# Zig maps, so both are exercised, each refilled after clearing.
+
+def main()
+    var byName = HashMap(str, int)()
+    byName.set("a", 1)
+    byName.set("b", 2)
+    byName.clear()
+    var emptied = byName.count()
+    byName.set("c", 3)
+    var byId = HashMap(int, str)()
+    var i = 0
+    while i < 100
+        byId.set(i, "v${i}")
+        i += 1
+    byId.clear()
+    byId.set(7, "seven")
+    var seven = byId.get(7) orelse "?"
+    var gone = byId.get(42) orelse "none"
+    print("hashmap_clear: ${emptied} ${byName.count()} ${byName.get("c") orelse 0} ${byId.count()} ${seven} ${gone}")

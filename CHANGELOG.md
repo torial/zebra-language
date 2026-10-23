@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+### Language
+
+- **`HashMap.clear()`** empties a map in place and keeps its capacity, as `List.clear()` and
+  `Set.clear()` do -- reuse one map per frame or per line instead of building a fresh one.
+  (`List.clear()` already kept its capacity; QUICKSTART now says so.)
+
 ### Fixes
 
 - **`allocate Arena()` frees its memory at block exit (BUG-617).** A scoped block was backed by
