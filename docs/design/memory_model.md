@@ -257,7 +257,11 @@ What it says:
   emit an interpolation whose arguments are numbers as ONE formatted write -- V's stdlib has no
   allocation-free float formatting (every path ends in a `tos_clone`), so through a C-level
   `snprintf` into a stack buffer and one final string: one allocation per interpolation. Witness:
-  the same gui-flush line, 30 MB a window before. **Dropped:** an engine-side per-flush command
+  the same gui-flush line, 30 MB a window before. **Landed** (d67ee8d on v-backend-poc,
+  2026-10-23): **30 -> 4.5-10.6 MB a window** (the gui section 46 -> 11-29); the spelling is the
+  Zig backend's by a tie rule, since V's `str_intp` and C's `printf` each spell ties and specials
+  differently (`docs/design/v_backend_poc.md`, "Float interpolation as one formatted write").
+  **Dropped:** an engine-side per-flush command
   buffer -- the Zig flush is already one `allocPrint` per command (2.5 MB a window; a buffer takes
   it to ~1.5), and on V the cost is inside each number's formatting, which a builder around the
   commands does not reach. **The other third (~16 MB) is
