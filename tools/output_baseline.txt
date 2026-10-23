@@ -1,7 +1,7 @@
 === allocate_copyout_deep_test sha1=3f63f860be03 ===
 allocate_copyout_deep: OK
-=== allocate_debug_stats_test sha1=3019fd43db18 ===
-[allocate Debug] 5 allocations, 1057 bytes requested, 1032 bytes peak live
+=== allocate_debug_stats_test sha1=e0abd66d71cc ===
+[allocate Debug] 6 allocations, 1193 bytes requested, 1032 bytes peak live
 allocate_debug_stats: OK
 === allocate_slice4_test sha1=331542f1a957 ===
 [allocate Debug] 0 allocations, 0 bytes requested, 0 bytes peak live
@@ -897,15 +897,15 @@ test/forgot_parens_test.zbr:7:5: warning: 'greet' is a function used as a value 
     ^
 === forin_throws_test sha1=5108449fdb08 ===
 forin_throws_test: run with 'zebra test'
-=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
-i8=7 f32=1.5 usize=3 c_int=abc r=10.5
-fuzz_f1: OK
 === fuzz_f11_unused_capture_ternary_test sha1=8a8ca1cb6b8d ===
 x=10
 a=7
 y=2
 y=2
 fuzz_f11: OK
+=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
+i8=7 f32=1.5 usize=3 c_int=abc r=10.5
+fuzz_f1: OK
 === fuzz_f2_unused_local_test sha1=693203703cf7 ===
 w=3 bump=11
 fuzz_f2: OK
