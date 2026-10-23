@@ -59,22 +59,6 @@
   allocator in `--library-mode`; red-check: variant C must go flat (OS peak working set, since
   `sys.memStats()` measures only the program arena and would read flat for the wrong reason).
 
-### BUG-618: every `str` stored into a class field is interned onto its own page, forever -- dynamic text leaks a page per distinct value -- OPEN (found 2026-10-22 by Fable)
-- **Found by:** Fable, tracing the GameEngine's intern pool growing ~16 strings/s with no new
-  literals in a plain run.
-- **Cause:** codegen wraps a `str` stored into a class field in `_intern(...)`
-  (`_self.name = _intern(name)`, `guiProps().text = _intern(text)`,
-  `attributes.put(_intern(key), _intern(value))`; 89 + 19 + 13 + ... sites in the emitted
-  engine, all dynamic text), and `_intern` (`stdlib_preamble.zig`) copies each NEW string with
-  `std.heap.page_allocator.dupe` and keeps it in `_str_pool` forever: a page per distinct string
-  (64 KB of reserve on Windows). A timer label rewritten once a second is an immortal page a
-  second. Interning is today's field-ownership rule (a field-held str must not dangle into a
-  temporary), which makes it unbounded by construction for fields that take dynamic text.
-- **Fix direction** (`docs/design/memory_model.md` §3 item 2): at least intern through the
-  program allocator (bytes, not pages); better, a field store copies into a fresh allocation and
-  interning is kept for literals. Witness: the engine's intern-pool count flat over a 60 s plain
-  run.
-
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any

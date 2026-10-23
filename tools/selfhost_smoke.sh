@@ -1417,6 +1417,7 @@ smoke_tc_fail test/fail_fixtures/bug613_lambda_branch_as_shadow_test.zbr "bug613
 smoke_tc_fail test/fail_fixtures/bug613_catch_binding_shadow_test.zbr "bug613_catch_binding_shadow_test.zbr:13:16: error: \`e\` is already declared on line 11"
 smoke_run test/bug613_bindings_ok_test.zbr "bug613b: 2 3 6 1 3 106 4 10"
 smoke_run test/bug616_sortby_keys_test.zbr "bug616: cab bac abc abc"
+smoke_run test/bug618_intern_program_arena_test.zbr "bug618: tick 1999 | made-inside-2000 | made-inside-2000"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_unordered_key_test.zbr "bug616_sortby_unordered_key_test.zbr:16:8: error: 'Suit' is \`@unordered\`"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr "bug616_sortby_no_compare_key_test.zbr:18:8: error: 'P' has no ordering, so it cannot be a \`.sortBy\` key"
 smoke_tc_fail test/fail_fixtures/bug614_assert_test.zbr "bug614_assert_test.zbr:15:34: error: str.count expects 1 argument, got 0"

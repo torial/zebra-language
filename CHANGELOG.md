@@ -23,7 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+### Fixes
+
+- **A string stored into a field no longer costs a memory page (BUG-618).** Every `str` stored
+  into a class field or a container is interned, and each new string was given its own page,
+  kept forever: a label rewritten with changing text grew memory by ~4 KB per value (50,000
+  values: 202 MB). Interned strings now live in the program's memory (5.2 MB for the same).
 
 ---
 

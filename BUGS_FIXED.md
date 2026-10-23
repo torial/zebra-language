@@ -6,6 +6,34 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-618: every `str` stored into a class field is interned onto its own page, forever -- dynamic text leaks a page per distinct value -- FIXED 2026-10-22 (found 2026-10-22 by Fable)
+- **Found by:** Fable, tracing the GameEngine's intern pool growing ~16 strings/s with no new
+  literals in a plain run.
+- **Cause:** codegen wraps a `str` stored into a class field in `_intern(...)`
+  (`_self.name = _intern(name)`, `guiProps().text = _intern(text)`,
+  `attributes.put(_intern(key), _intern(value))`; 89 + 19 + 13 + ... sites in the emitted
+  engine, all dynamic text), and `_intern` (`stdlib_preamble.zig`) copies each NEW string with
+  `std.heap.page_allocator.dupe` and keeps it in `_str_pool` forever: a page per distinct string
+  (64 KB of reserve on Windows). A timer label rewritten once a second is an immortal page a
+  second. Interning is today's field-ownership rule (a field-held str must not dangle into a
+  temporary), which makes it unbounded by construction for fields that take dynamic text.
+- **Fix direction** (`docs/design/memory_model.md` §3 item 2): at least intern through the
+  program allocator (bytes, not pages); better, a field store copies into a fresh allocation and
+  interning is kept for literals. Witness: the engine's intern-pool count flat over a 60 s plain
+  run.
+- **Fixed (option (a)):** `_intern` copies a new string into the PROGRAM arena (`_prog_alloc()`),
+  not onto its own page. Not `_allocator`: inside an `allocate` block that is the scoped arena,
+  and the pool would keep a string the block frees. Measured with the OS (`sys.memStats()`
+  cannot see page allocations, so it would have read flat either way): 50,000 field stores of
+  ~10-byte strings went from **202 MB** private to **5.2 MB** working set; 500,000 stores take
+  62 MB, ~125 bytes a string against ~4 KB. Still grows with the number of DISTINCT values --
+  option (b) (a field store copies; interning for literals only) and the counted model are
+  `docs/design/memory_model.md`'s, not this fix's. `escape-hatches` baseline 77 -> 75 (the
+  dupe, and the pool's comment that named the page allocator -- the gate counts lines).
+- **Fixture:** `test/bug618_intern_program_arena_test.zbr` -- dynamic text into a field, and a
+  string made inside `allocate Arena()` stored into an outer field then interned again after the
+  block (meaningful once BUG-617 makes a scoped arena really free).
+
 ### BUG-607: a `capture` closure's state did not survive being passed to a function -- FIXED 2026-10-22: closure values are references (found 2026-10-21)
 - **Found by:** mapping closure lowering for BUG-569.
 - **Repro:** `var b = def(): int` with `capture var k: int = 0`, `k += 1`, `return k`; then

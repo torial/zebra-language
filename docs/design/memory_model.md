@@ -99,6 +99,7 @@ measured.
    unbounded); (b) better, a field store COPIES into a fresh allocation, with interning kept for
    literals only. Under counting the rule disappears (the field holds a count). Engine witness:
    the plain run's intern-pool count flat over 60 s. This is the live leak in every Roblox port.
+   **(a) DONE 2026-10-22:** 50,000 field stores 202 MB -> 5.2 MB; (b) remains.
 3. **Free outgrown container buffers** (Fable). The old buffer on growth is pure waste under
    any model; route container storage through an allocator that frees.
 4. **One allocator interface, no page-allocator escapes** (Fable). Each of the 76 hatches turns

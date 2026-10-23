@@ -65,7 +65,8 @@ pub fn _prog_alloc() std.mem.Allocator {
     return if (@import("builtin").single_threaded) _arena.allocator() else _ts_alloc.allocator();
 }
 pub var _allocator: std.mem.Allocator = _prog_alloc();
-// String intern pool — backed by page_allocator so interned strings survive arena_scope rewinds.
+// String intern pool. The MAP lives on the page allocator (it is resized, and that frees
+// an outgrown table); the STRINGS live in the program arena -- see _intern.
 // Initialized eagerly so main modules (which never receive an _initAllocator call) can use _intern.
 pub var _str_pool = std.StringHashMap([]const u8).init(std.heap.page_allocator);
 // BUG-485: a host that embeds Zebra (`--library-mode`) installs its allocator here, and a
@@ -206,7 +207,13 @@ pub fn _intern(s: []const u8) []const u8 {
     if (threaded) _str_pool_mutex.lockUncancelable(_io);
     defer if (threaded) _str_pool_mutex.unlock(_io);
     if (_str_pool.get(s)) |existing| return existing;
-    const owned = std.heap.page_allocator.dupe(u8, s) catch @panic("OOM");
+    // BUG-618: the copy goes to the PROGRAM arena, which lives until exit like the pool.
+    // It was a page-allocator dupe -- a whole page (64 KB of reserve on Windows) for every new
+    // string, and codegen interns every str stored into a field or container, so dynamic
+    // text (a timer label, an attribute) cost a page per value: 50,000 field stores of
+    // ~10-byte strings committed 202 MB. Not `_allocator`: inside an `allocate` block that
+    // is the scoped arena, and the pool would then hand out freed memory after the block.
+    const owned = _prog_alloc().dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");
     return owned;
 }

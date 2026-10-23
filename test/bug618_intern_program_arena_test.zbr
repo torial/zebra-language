@@ -1,0 +1,25 @@
+# BUG-618: a str stored into a field is interned, and `_intern` gave every new string its own
+# PAGE, forever -- 50,000 stores of ~10-byte strings committed 202 MB. The copy now goes to the
+# program arena (bytes, not pages; 5.2 MB for the same loop).
+#
+# The copy must NOT go to `_allocator`: inside an `allocate` block that is the scoped arena,
+# and the pool would keep a string the block frees. This stores a string made INSIDE a block
+# into an outer object's field, then interns the same content again after the block -- both
+# must still read back intact.
+
+class Label
+    var text: str = ""
+
+def main()
+    var lab = Label()
+    var i = 0
+    while i < 2000
+        lab.text = "tick ${i}"
+        i += 1
+    var kept = Label()
+    allocate Arena()
+        var inner = "made-inside-${i}"
+        kept.text = inner
+    var again = Label()
+    again.text = "made-inside-${i}"
+    print("bug618: ${lab.text} | ${kept.text} | ${again.text}")
