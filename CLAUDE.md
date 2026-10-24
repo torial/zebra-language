@@ -226,10 +226,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 57 <!-- doc-gen: 57 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 36 <!-- doc-gen: 36 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 39 <!-- doc-gen: 39 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 47 <!-- doc-gen: 47 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 58 <!-- doc-gen: 58 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1237,6 +1237,34 @@ bash tools/coverage_check.sh    # THE COVERAGE-MAP GATE, registered as `coverage
                                 #   branch coverage (the instrument is the statement), GUI
                                 #   closures run at paint time (counted; the flush must
                                 #   outlive the loop).
+bash tools/census_check.sh      # THE ALLOCATION-CENSUS GATE, registered as `census` (FAST
+                                #   tier, ~10 s, 2026-10-23; memory_model.md §3 item 6).
+                                #   `zebra --census` counts every allocation under (source
+                                #   line, first frames of the allocating call): genStmt sets
+                                #   the runtime's `_zbr_site` beside the `// zbr:` marker,
+                                #   every function / constructor / statement lambda saves and
+                                #   restores it, the entry prologue wraps `_allocator` (the
+                                #   arena, or a --library-mode host's), each scoped `allocate`
+                                #   block wraps its own and releases it at the end, and the
+                                #   report goes to stderr + zebra-census.json at exit. The KIND
+                                #   is the first frame outside Zig's std (a runtime helper, a
+                                #   constructor, the user's fn), `via` the innermost std frame
+                                #   (`ensureTotalCapacity` = container growth) -- symbolised
+                                #   from debug info, which the self-hosted backend does not
+                                #   write, so --census builds take LLVM (the first run had
+                                #   21 of 21 kinds unresolved).
+                                #   THE ORACLE IS THE SOURCE TEXT (`# cens:none` / `>=N` /
+                                #   `kind=` / `via=` labels in tools/fixtures/census_probe.zbr),
+                                #   and its `post-call` lines are the property a census lives
+                                #   or dies by: an allocation after a call returns belongs to
+                                #   the CALLER. Without the restore it lands on the callee's
+                                #   last line -- a confident wrong coordinate.
+                                #   Leg 2: no flag -> no report, no file, and memStats' census
+                                #   fields read -1 (unmeasured), never 0. REFUSES under 15
+                                #   labelled lines or on zero allocations.
+                                #   CANNOT SEE: the runtime's page-allocator escape hatches
+                                #   (the report names them as uncounted), kinds in a --release
+                                #   build (printed as ?0x<address>), a host's own allocations.
 bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-mode` (FAST
                                 #   tier, ~15 s, 2026-09-30, BUG-485). A `--library-mode`
                                 #   program is linked into a HOST, which installs its own
@@ -2438,7 +2466,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 117 scripts | <!-- doc-gen: 117 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 118 scripts | <!-- doc-gen: 118 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 tracked documents <!-- doc-gen: 45 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

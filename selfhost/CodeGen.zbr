@@ -1639,6 +1639,11 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
         w.emit("pub var _zbr_covf: _ZbrCovFile = .{ .path = \"")
         w.emit(fwdSlashes(file))
         w.emit("\", .lines = &_zbr_cov_lines, .counts = &_zbr_cov_counts };\n")
+    if _census
+        # One address per module: the census keys a site by this pointer and line.
+        w.emit("const _zbr_cens_path: []const u8 = \"")
+        w.emit(fwdSlashes(file))
+        w.emit("\";\n")
     return w.output()
 
 # ── Entry point thunk ─────────────────────────────────────────────────────────
@@ -1699,11 +1704,13 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         sb.append("    if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
     else
         sb.append("    _allocator = _prog_alloc();\n")
+    sb.append(censInstall("    "))
     sb.append(depInitLines("    "))                       # BUG-539
     sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
     sb.append(covPrologue("    "))    # after the arena defer: the flush allocates (see the test main)
+    sb.append(censFlush("    "))
     if main_throws
         sb.append("    ")
         sb.append(mod_prefix)
@@ -2138,6 +2145,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
     sb.append("    _allocator = _prog_alloc();\n")
+    sb.append(censInstall("    "))
     sb.append(depInitLines("    "))                       # BUG-539
     sb.append("    _initModuleVars();\n")
     sb.append("    defer _arena.deinit();\n")
@@ -2145,6 +2153,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # from the arena -- registered first it ran last, on a freed arena (a segfault at
     # exit that the first IDE witness found; the probe's free main had the other order).
     sb.append(covPrologue("    "))
+    sb.append(censFlush("    "))
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
     var ti: int = 0
@@ -2371,6 +2380,41 @@ def setCoverage(v: bool)
 
 def coverageOn(): bool
     return _coverage
+
+# `--census` (2026-10-23, docs/design/memory_model.md §3 item 6): the allocation census.
+# genStmt sets the runtime's `_zbr_site` beside the `// zbr:` marker; every function,
+# constructor and statement lambda saves it on entry and restores it on exit (so an
+# allocation after a call returns is charged to the caller's line); the entry prologue
+# wraps `_allocator` and flushes the report at exit. Off: nothing is emitted, and the
+# default emit is byte-identical. The runtime half is `_ZbrCensAlloc` in the preamble.
+var _census: bool = false
+var _cens_save_n: int = 0
+
+def setCensus(v: bool)
+    _census = v
+
+def censusOn(): bool
+    return _census
+
+# The entry prologue's install line: right after `_allocator` is chosen, before any
+# dependency or module var initialises, so their allocations land in `<init>`.
+def censInstall(indent: str): str
+    if not _census
+        return ""
+    return indent + "_zbr_cens_install();\n"
+
+# After the arena defer, so it runs FIRST (defers are LIFO) and reads a live arena.
+def censFlush(indent: str): str
+    if not _census
+        return ""
+    return indent + "defer _zbr_cens_flush();\n"
+
+# A function body's save/restore of the current site. The counter keeps nested lambda
+# bodies (emitted as fns inside the enclosing fn) from shadowing an outer save.
+def censSave(): str
+    _cens_save_n = _cens_save_n + 1
+    var nm: str = "_zbr_ss_" + _cens_save_n.toString()
+    return "const " + nm + " = _zbr_site; defer _zbr_site = " + nm + ";\n"
 
 def covNoteLine(ln: int)
     var key: str = " " + ln.toString() + " "
@@ -6879,6 +6923,9 @@ struct Generator
                     ei.w.emit("if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
                 else
                     ei.w.emit("_allocator = _prog_alloc();\n")
+                if _census
+                    ei.writeIndent()
+                    ei.w.emit("_zbr_cens_install();\n")
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
@@ -6935,6 +6982,9 @@ struct Generator
                         if cov_line != ""
                             ei.writeIndent()
                             ei.w.emit(cov_line + "\n")
+                if _census
+                    ei.writeIndent()
+                    ei.w.emit("defer _zbr_cens_flush();\n")
                 # BUG-466: an error reaching the end of a throwing `main` prints its message
                 # and exits 1. Registered AFTER the arena/coverage defers so it runs FIRST
                 # (defers are LIFO) -- the message may live in the arena.
@@ -6969,6 +7019,10 @@ struct Generator
                     prof_ig.w.emit("\");\n")
                 prof_ig.writeIndent()
                 prof_ig.w.emit("defer _profile_end();\n")
+            if _census
+                var cens_ig = indented()
+                cens_ig.writeIndent()
+                cens_ig.w.emit(censSave())
             # Invariant exit check — public instance methods only.
             # Private helpers may temporarily break invariants; shared methods have no `self`.
             if has_self and not m.mods.is_static and not m.mods.is_private and owner_invariants.len > 0 and not strip_contracts
@@ -7133,6 +7187,9 @@ struct Generator
             emitTypeName(owner)                             # BUG-281 B
         w.emit(" {\n")
         var ig = indented()
+        if _census
+            ig.writeIndent()
+            ig.w.emit(censSave())
         if not is_struct_owner
             # Class init: allocate on arena
             ig.writeIndent()
@@ -8026,6 +8083,11 @@ struct Generator
                     w.emit("_zbr_covf.counts[")
                     w.emit(_ln.toString())
                     w.emit("] += 1;\n")
+                if _census
+                    writeIndent()
+                    w.emit("_zbr_site = .{ .path = _zbr_cens_path, .line = ")
+                    w.emit(_ln.toString())
+                    w.emit(" };\n")
         branch s
             on Stmt.var_ as n
                 genLocalVar(n)
@@ -13450,22 +13512,42 @@ struct Generator
             var getter = ".allocator()"
             if kind == "stack_fallback"
                 getter = ".get()"
-            ig.line("_allocator = ".concat(src_name).concat(getter).concat(";"))
-            if kind == "fixed_buffer" or kind == "stack_fallback"
-                ig.line("defer _allocator = ".concat(saved_name).concat(";"))
-            else if kind == "debug"
-                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".report(); _dbg_arena_").concat(depth_str).concat(".deinit(); }"))
+            # --census: the block's allocator gets its own counting wrapper, released at
+            # exit (the block frees everything at once, with no per-allocation free).
+            var cens_rel: str = ""
+            if _census
+                var cw: str = "_zbr_cw_".concat(depth_str)
+                ig.line("var ".concat(cw).concat(": _ZbrCensAlloc = .{ .child = ").concat(src_name).concat(getter).concat(" };"))
+                ig.line("_allocator = ".concat(cw).concat(".allocator();"))
+                cens_rel = "_zbr_cens_release(&".concat(cw).concat("); ")
             else
-                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".deinit(); }"))
+                ig.line("_allocator = ".concat(src_name).concat(getter).concat(";"))
+            if kind == "fixed_buffer" or kind == "stack_fallback"
+                if cens_rel == ""
+                    ig.line("defer _allocator = ".concat(saved_name).concat(";"))
+                else
+                    ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(cens_rel).concat("}"))
+            else if kind == "debug"
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(cens_rel).concat(src_name).concat(".report(); _dbg_arena_").concat(depth_str).concat(".deinit(); }"))
+            else
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(cens_rel).concat(src_name).concat(".deinit(); }"))
         else
             ig.writeIndent()
             ig.w.emit("const ")
             ig.w.emit(saved_name)
             ig.w.emit(" = _allocator;\n")
             ig.writeIndent()
-            ig.w.emit("_allocator = ")
-            ig.genAllocatorSourceInit(al.source)
-            ig.w.emit(";\n")
+            if _census
+                # --census: a persistent allocator (Page/Smp/C) is counted per allocation and
+                # per free; nothing is released in bulk at the block's end.
+                ig.w.emit("var _zbr_cw_".concat(depth_str).concat(": _ZbrCensAlloc = .{ .child = "))
+                ig.genAllocatorSourceInit(al.source)
+                ig.w.emit(" };\n")
+                ig.line("_allocator = _zbr_cw_".concat(depth_str).concat(".allocator();"))
+            else
+                ig.w.emit("_allocator = ")
+                ig.genAllocatorSourceInit(al.source)
+                ig.w.emit(";\n")
             ig.line("defer _allocator = ".concat(saved_name).concat(";"))
         if al.is_scoped
             ig.allocate_depth = depth
@@ -20525,6 +20607,9 @@ struct Generator
                     # Clear the outer-fn ensure context so `return` inside the lambda
                     # body is NOT rewritten to outer-fn `_result` capture.
                     var ig = lg.withInLambda().indented()
+                    if _census
+                        ig.writeIndent()
+                        ig.w.emit(censSave())
                     for ulp2 in lam.params
                         if not nameUsedInStmts(ulp2.name, ss)
                             ig.writeIndent()

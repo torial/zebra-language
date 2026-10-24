@@ -72,6 +72,15 @@ backend.
 
 ### Runtime
 
+- **`zebra --census`: where the memory goes (2026-10-23, memory_model.md §3 item 6).** Every
+  allocation is counted under the source line that made it and the function that allocated
+  (the first frame outside Zig's std, with the std function underneath as `via`); the report
+  goes to stderr at exit and to `zebra-census.json` (`ZEBRA_CENSUS_OUT`). It splits what the
+  arena holds into never-freed, freed-but-kept and slack, counts interned strings and scoped
+  `allocate` blocks, and names what it cannot count (the runtime's page-allocator escape
+  hatches). A `--library-mode` host gets its own allocator wrapped and may call
+  `_zbr_cens_flush()` at any time. `sys.memStats()` gains `censusOn`, `allocations`,
+  `allocBytes`, `liveBytes` -- `-1` when not measured. Off, nothing is emitted. Gate: `census`.
 - **The WebSocket server's handshake is accepted by clients that check it (BUG-611, 2026-10-21).** `_WS_GUID` ended `85B24` where RFC 6455's ends `85B11`, so a browser or V's `net.websocket` refused a `Ws.serve` handshake; only the runtime's own `Ws.connect`, which does not check the accept value, ever connected. Found by the engine's V host joining a Zig-hosted game; `test/bug611_ws_accept_test.zbr` reads the handshake back over raw TCP against the RFC's sample key.
 
 ### Targets

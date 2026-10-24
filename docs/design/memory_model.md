@@ -114,6 +114,19 @@ measured.
    Per TYPE **and per SITE** (Fable, reviewing this note): the engine's 8.3 MB/s is spread
    across every section, so a per-type count alone will not say which GUI path to fix.
    Fable can land the engine side.
+   **Runtime side DONE 2026-10-23: `zebra --census`** (QUICKSTART §28, gate `census`). Per
+   SITE (the source line, with save/restore across calls so a post-call allocation lands on the
+   caller) and per KIND (the first frame outside Zig's std, plus the std frame under it as `via`).
+   It also counts interned strings and scoped blocks, splits what the arena holds into
+   never-freed / freed-but-kept / slack, and names the escape hatches it cannot count. Not done:
+   the profiler line. For the engine: a `--library-mode` host gets its own allocator wrapped and
+   calls `_zbr_cens_flush()` whenever it wants a report (the gate's leg 3 does exactly that).
+   First reading, Sean's loop on a 10 MB slice (197k lines): 4 allocations a line -- `split`'s
+   List storage 137 B, `readLine` 123 B, `upper` 47 B, the List header 23 B. The arena holds
+   82.6 MB = 65.2 never freed + **0 freed-but-kept** + 17.4 slack. So item 3 (outgrown buffers)
+   saves NOTHING on this loop -- every growth happens in place on the arena's newest allocation.
+   It matters where other allocations interleave with growth (the census probe shows that case).
+   The census also found **BUG-619**: `readLine` read stdin a byte per read call.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
    witnesses whatever model lands.

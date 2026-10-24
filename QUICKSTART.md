@@ -3044,6 +3044,47 @@ invisible for typical programs.
 high-water mark for the main allocator) — handy for a bytes-per-frame delta:
 `var a = sys.memStats().arenaBytes; …; print(sys.memStats().arenaBytes - a)`.
 
+### Where the memory goes: `--census` (2026-10-23)
+
+```bash
+zebra --census prog.zbr                      # run, then print the census on stderr
+ZEBRA_CENSUS_OUT=out.json zebra --census prog.zbr
+```
+
+With `--census` every allocation is counted under the source line that made it and the
+function that allocated, and the program prints a report on stderr at exit (including
+`sys.exit`) and writes `zebra-census.json`:
+
+```
+── Allocation census (--census) ─────────────────────────────────
+  allocations 1369, 0.06 MB requested; 30 frees, 0.05 MB handed back; live 0.01 MB (peak 0.02 MB)
+  interned strings: 301 (0.00 MB, outside the counts above)
+  program arena holds 0.05 MB from the OS; 0.04 MB of it is not live (outgrown buffers and frees an arena cannot honour)
+  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)
+  21 sites; top by bytes:
+    helper.zbr:6                 _zbr_fn_build_list (via ensureTotalCapacity)    200   0.026 MB
+    main.zbr:29                  _str_concat (via concatMaybeSentinel)           200   0.001 MB
+```
+
+- **The line** is the statement running when the allocation happened. A call does not
+  move it: an allocation after `f()` returns is charged to the caller's line, not to
+  `f`'s last one. Module-variable initialisers are charged to `<init>`.
+- **The kind** is the first allocating function outside Zig's standard library -- a
+  runtime helper (`_str_concat`), a constructor (`Point.init`), or your own function --
+  and `via` names the std function underneath (`ensureTotalCapacity` is a List or map
+  growing). Kinds come from the binary's debug info, so a `--census` build always takes
+  the LLVM backend; with `--release` they print as `?0x<address>`.
+- **The arena line** is the gap between what the arena holds from the OS and what is
+  live: memory a freeing allocator would have returned.
+- Inside a scoped `allocate` block the block's allocator is counted too, and released in
+  one step when the block ends.
+
+`sys.memStats()` gains `.censusOn`, `.allocations`, `.allocBytes` and `.liveBytes`; the
+three counts are `-1` (not measured) unless the program was built with `--census`.
+`--census` needs the default runtime-module shape: it is refused with
+`--no-runtime-module`, `--target node-addon` and `--target v`. A `--library-mode` host
+can call `_zbr_cens_flush()` whenever it wants a report.
+
 ### Recycling churny objects: `ObjectPool(T)`
 
 For a high-churn workload (bullets, particles) where the arena would otherwise
@@ -3912,7 +3953,7 @@ Zig 0.17.
 | `sys.writeStdout(s)` | void    | Raw bytes to stdout, no newline (byte-exact protocol frames) |
 | `sys.spawnPipedIn(argv, cwd)` | `SysProcess` | As `spawnPiped`, but the child starts in `cwd` (a gate runner's "run tools/x.sh in <repo>"). `""` = inherit |
 | `proc.exitCode()`   | `int`             | Exit status once the child has ended (`-1` while running or unknown); POSIX signal → 128+n. Any `SysProcess` |
-| `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes` |
+| `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes`. Under `--census` also `.allocations`, `.allocBytes`, `.liveBytes` (int; `-1` when `.censusOn` is false) |
 
 ### `File` — file I/O (static)
 

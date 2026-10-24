@@ -525,6 +525,12 @@ run_fast "libui-pin"     "PASS"     python tools/libui_pin_check.py
 # compiler; the probe ends in sys.exit and carries a dep module, so a skipped flush or an
 # unattached dep record goes red.
 run_fast "coverage-map"  "passed"   bash tools/coverage_check.sh
+# The census gate (2026-10-23, memory_model.md §3 item 6): `--census` counts allocations by
+# source line and allocating function. Same oracle discipline as coverage-map -- the probe's
+# `# cens:` labels -- plus the property a census lives or dies by: an allocation after a call
+# returns is charged to the CALLER's line. Leg 2: without the flag nothing is reported and
+# sys.memStats()'s census fields read -1 (unmeasured), never 0.
+run_fast "census"        "passed"   bash tools/census_check.sh
 # BUG-485: a host that embeds a --library-mode program keeps its allocator across the
 # library's main(). A Zig host is the attacker; the old prologue is the negative control.
 run_fast "library-mode"  "PASS"     bash tools/library_mode_check.sh

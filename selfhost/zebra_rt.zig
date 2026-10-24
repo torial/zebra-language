@@ -228,6 +228,7 @@ pub fn _intern(s: []const u8) []const u8 {
     // is the scoped arena, and the pool would then hand out freed memory after the block.
     const owned = _prog_alloc().dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");
+    _zbr_cens_intern(owned.len);
     return owned;
 }
 
@@ -1069,9 +1070,18 @@ pub fn _zebra_map_entries(map: anytype) _ZbrList(struct { @FieldType(_MapKV(@Typ
 // holds from the OS).  Because the arena bump-allocates and only grows until an
 // arena_scope reset, this is the high-water mark for the main allocator.  A
 // struct (not a bare int) so fields can be added later without breaking callers.
-pub const MemStats = struct { arenaBytes: i64 };
+// The census fields (2026-10-23) are measured only under `--census`; without it they
+// are -1, never 0 -- an unmeasured count must not read as "nothing allocated".
+pub const MemStats = struct { arenaBytes: i64, censusOn: bool, allocations: i64, allocBytes: i64, liveBytes: i64 };
 pub fn _mem_stats() MemStats {
-    return .{ .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())) };
+    const on = _zbr_cens_on;
+    return .{
+        .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())),
+        .censusOn = on,
+        .allocations = if (on) @intCast(_zbr_cens.allocs) else -1,
+        .allocBytes = if (on) @intCast(_zbr_cens.bytes) else -1,
+        .liveBytes = if (on) _zbr_cens.live else -1,
+    };
 }
 
 // `allocate Debug()` allocation-stats reporter.  Wraps a real allocator and
@@ -5312,6 +5322,274 @@ pub fn _profile_start(name: []const u8) void {
     _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .awake).nanoseconds) catch @panic("OOM");
 }
 // ── line coverage (2026-09-23) ──────────────────────────────────────────────────
+// `--census` (2026-10-23, memory_model.md §3 item 6): who allocates, where, how much.
+// Codegen sets `_zbr_site` beside each statement's `// zbr:` marker and saves/restores it
+// around every function, constructor and statement lambda, so an allocation made after a
+// call returns is charged to the CALLER's line, not to the callee's last one. The entry
+// prologue wraps whatever `_allocator` is at that moment (the program arena, or a host's
+// allocator in --library-mode) with `_ZbrCensAlloc`, and every scoped `allocate` block wraps
+// its own; each allocation is counted under (source line, return address). The return
+// address names the KIND -- `_str_concat`, `ensureTotalCapacityPrecise` (container growth),
+// `Parser.init` -- once symbolised at report time from the binary's debug info; a build
+// without debug info (--release) prints the address and says the kind is unresolved.
+// `_zbr_cens_flush` prints the report on stderr and writes zebra-census.json
+// ($ZEBRA_CENSUS_OUT) at exit; a host can call it any time. NOT counted: the runtime's
+// page-allocator escape hatches (JSON values, raise messages, HTTP buffers, the pool
+// headers) -- the report says so rather than letting their absence read as zero.
+pub const _ZbrSite = struct { path: []const u8 = "<init>", line: u32 = 0 };
+pub threadlocal var _zbr_site: _ZbrSite = .{};
+pub var _zbr_cens_on: bool = false;
+// A row is (site, the first frames of the allocating call): the innermost frame is usually a
+// std function (`concatMaybeSentinel`, `ensureTotalCapacityPrecise`), so the report names the
+// first frame OUTSIDE std as the kind, and the innermost one as `via`.
+const _zbr_cens_depth = 6;
+const _ZbrCensKey = struct { path: usize, line: u32, frames: [_zbr_cens_depth]usize };
+const _ZbrCensVal = struct { path: []const u8, count: u64 = 0, bytes: u64 = 0 };
+var _zbr_cens_map: std.AutoHashMapUnmanaged(_ZbrCensKey, _ZbrCensVal) = .empty;
+var _zbr_cens_mu: std.Io.Mutex = .init;
+pub const _ZbrCensTotals = struct {
+    allocs: u64 = 0, // successful allocations
+    bytes: u64 = 0, // bytes requested: allocations plus in-place growth
+    frees: u64 = 0,
+    freed: u64 = 0, // bytes handed back (an arena keeps most of them -- see the gap)
+    live: i64 = 0, // requested minus handed back
+    peak: i64 = 0,
+    interned: u64 = 0, // strings the intern pool copied (they bypass `_allocator`)
+    interned_bytes: u64 = 0,
+    released_scopes: u64 = 0, // scoped `allocate` blocks that ended (their arena freed at once)
+};
+pub var _zbr_cens: _ZbrCensTotals = .{};
+fn _zbr_cens_lock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_cens_mu.lockUncancelable(_io);
+}
+fn _zbr_cens_unlock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_cens_mu.unlock(_io);
+}
+fn _zbr_cens_note(w: *_ZbrCensAlloc, len: usize, ra: usize) void {
+    const site = _zbr_site;
+    var frames: [_zbr_cens_depth]usize = @splat(0);
+    const st = std.debug.captureCurrentStackTrace(.{ .first_address = ra }, &frames);
+    if (st.return_addresses.len == 0) frames[0] = ra; // no unwinder: the one address we have
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    w.live += @intCast(len);
+    _zbr_cens.allocs += 1;
+    _zbr_cens.bytes += len;
+    _zbr_cens.live += @intCast(len);
+    if (_zbr_cens.live > _zbr_cens.peak) _zbr_cens.peak = _zbr_cens.live;
+    const gop = _zbr_cens_map.getOrPut(std.heap.page_allocator, .{ .path = @intFromPtr(site.path.ptr), .line = site.line, .frames = frames }) catch return;
+    if (!gop.found_existing) gop.value_ptr.* = .{ .path = site.path };
+    gop.value_ptr.count += 1;
+    gop.value_ptr.bytes += len;
+}
+fn _zbr_cens_shrink(w: *_ZbrCensAlloc, len: usize) void {
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    w.live -= @intCast(len);
+    _zbr_cens.frees += 1;
+    _zbr_cens.freed += len;
+    _zbr_cens.live -= @intCast(len);
+}
+pub fn _zbr_cens_intern(len: usize) void {
+    if (!_zbr_cens_on) return;
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    _zbr_cens.interned += 1;
+    _zbr_cens.interned_bytes += len;
+}
+/// A counting wrapper over `child`. `live` is this wrapper's own share, so a scoped block's
+/// arena -- freed all at once by deinit, with no per-allocation free -- can be released in one
+/// step (`_zbr_cens_release`).
+pub const _ZbrCensAlloc = struct {
+    child: std.mem.Allocator,
+    live: i64 = 0,
+    pub const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+    pub fn allocator(self: *_ZbrCensAlloc) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &_vt };
+    }
+    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        const p = self.child.vtable.alloc(self.child.ptr, len, al, ra) orelse return null;
+        _zbr_cens_note(self, len, ra);
+        return p;
+    }
+    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        if (!self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra)) return false;
+        self._moved(mem.len, new_len, ra);
+        return true;
+    }
+    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        const p = self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra) orelse return null;
+        self._moved(mem.len, new_len, ra);
+        return p;
+    }
+    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        self.child.vtable.free(self.child.ptr, mem, al, ra);
+        _zbr_cens_shrink(self, mem.len);
+    }
+    fn _moved(self: *_ZbrCensAlloc, old: usize, new: usize, ra: usize) void {
+        if (new > old) {
+            _zbr_cens_note(self, new - old, ra);
+            _zbr_cens_lock();
+            _zbr_cens.allocs -= 1; // growth in place is bytes, not a new allocation
+            _zbr_cens_unlock();
+        } else if (old > new) {
+            _zbr_cens_lock();
+            defer _zbr_cens_unlock();
+            self.live -= @intCast(old - new);
+            _zbr_cens.freed += old - new;
+            _zbr_cens.live -= @intCast(old - new);
+        }
+    }
+};
+pub var _zbr_cens_root: _ZbrCensAlloc = .{ .child = undefined };
+var _zbr_cens_root_is_arena: bool = false;
+/// Entry prologue: wrap the allocator in force NOW (the arena, or a library host's).
+pub fn _zbr_cens_install() void {
+    if (_zbr_cens_on) return;
+    _zbr_cens_on = true;
+    _zbr_cens_root_is_arena = !_host_alloc_set;
+    _zbr_cens_root = .{ .child = _allocator };
+    _allocator = _zbr_cens_root.allocator();
+}
+/// A scoped `allocate` block's wrapper, emitted as a local: `.child` is the block's own
+/// allocator; on exit the block's arena frees everything it held at once.
+pub fn _zbr_cens_release(w: *_ZbrCensAlloc) void {
+    if (w.live <= 0) return;
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    _zbr_cens.freed += @intCast(w.live);
+    _zbr_cens.live -= w.live;
+    _zbr_cens.released_scopes += 1;
+    w.live = 0;
+}
+const _ZbrCensRow = struct { path: []const u8, line: u32, frames: [_zbr_cens_depth]usize, count: u64, bytes: u64 };
+const _ZbrCensSym = struct { name: ?[]const u8, in_std: bool };
+const _ZbrCensKind = struct { kind: ?[]const u8, via: ?[]const u8 };
+fn _zbr_cens_sym(ra: usize, cache: *std.AutoHashMapUnmanaged(usize, _ZbrCensSym), syms: *std.ArrayList(std.debug.Symbol), text: std.mem.Allocator) _ZbrCensSym {
+    if (cache.get(ra)) |c| return c;
+    var r: _ZbrCensSym = .{ .name = null, .in_std = false };
+    if (std.debug.getSelfDebugInfo()) |si| {
+        syms.clearRetainingCapacity();
+        if (si.getSymbols(_io, std.heap.page_allocator, text, ra -| 1, false, syms)) |_| {
+            for (syms.items) |s| if (s.name) |n| {
+                const file: []const u8 = if (s.source_location) |sl| sl.file_name else "";
+                r = .{ .name = n, .in_std = std.mem.indexOf(u8, file, "lib/std/") != null or std.mem.indexOf(u8, file, "lib\\std\\") != null };
+                break;
+            };
+        } else |_| {}
+    } else |_| {}
+    cache.put(text, ra, r) catch {};
+    return r;
+}
+fn _zbr_cens_kind(frames: [_zbr_cens_depth]usize, cache: *std.AutoHashMapUnmanaged(usize, _ZbrCensSym), syms: *std.ArrayList(std.debug.Symbol), text: std.mem.Allocator) _ZbrCensKind {
+    var via: ?[]const u8 = null;
+    for (frames, 0..) |ra, i| {
+        if (ra == 0) break;
+        const s = _zbr_cens_sym(ra, cache, syms, text);
+        const n = s.name orelse return .{ .kind = null, .via = via };
+        if (!s.in_std) return .{ .kind = n, .via = via };
+        if (i == 0) via = n;
+    }
+    return .{ .kind = via, .via = null }; // every frame we kept is std: name the innermost
+}
+fn _zbr_cens_mb(b: anytype) f64 {
+    return @as(f64, @floatFromInt(b)) / (1024.0 * 1024.0);
+}
+fn _zbr_cens_json_str(out: *std.ArrayList(u8), a: std.mem.Allocator, s: []const u8) void {
+    out.append(a, '"') catch return;
+    for (s) |c| {
+        switch (c) {
+            '"' => out.appendSlice(a, "\\\"") catch return,
+            '\\' => out.appendSlice(a, "\\\\") catch return,
+            else => if (c < 0x20) {} else out.append(a, c) catch return,
+        }
+    }
+    out.append(a, '"') catch return;
+}
+/// The census report: stderr summary + top sites, and the JSON file. Safe to call more than
+/// once (a host can dump mid-run); allocates only from the page allocator, so it does not
+/// count itself.
+pub fn _zbr_cens_flush() void {
+    if (!_zbr_cens_on) return;
+    const pa = std.heap.page_allocator;
+    var text_arena = std.heap.ArenaAllocator.init(pa);
+    defer text_arena.deinit();
+    const ta = text_arena.allocator();
+    _zbr_cens_lock();
+    const t = _zbr_cens;
+    var rows: std.ArrayList(_ZbrCensRow) = .empty;
+    var it = _zbr_cens_map.iterator();
+    while (it.next()) |e| rows.append(ta, .{ .path = e.value_ptr.path, .line = e.key_ptr.line, .frames = e.key_ptr.frames, .count = e.value_ptr.count, .bytes = e.value_ptr.bytes }) catch break;
+    _zbr_cens_unlock();
+    const _Cmp = struct {
+        fn gt(_: void, x: _ZbrCensRow, y: _ZbrCensRow) bool {
+            return if (x.bytes != y.bytes) x.bytes > y.bytes else x.count > y.count;
+        }
+    };
+    std.mem.sort(_ZbrCensRow, rows.items, {}, _Cmp.gt);
+    var syms: std.ArrayList(std.debug.Symbol) = .empty;
+    var sym_cache: std.AutoHashMapUnmanaged(usize, _ZbrCensSym) = .empty;
+    var kinds = ta.alloc(_ZbrCensKind, rows.items.len) catch return;
+    var unresolved: usize = 0;
+    for (rows.items, 0..) |r, i| {
+        kinds[i] = _zbr_cens_kind(r.frames, &sym_cache, &syms, ta);
+        if (kinds[i].kind == null) unresolved += 1;
+    }
+    var err: std.ArrayList(u8) = .empty;
+    const w = struct {
+        fn p(o: *std.ArrayList(u8), a: std.mem.Allocator, comptime f: []const u8, args: anytype) void {
+            const s = std.fmt.allocPrint(a, f, args) catch return;
+            o.appendSlice(a, s) catch {};
+        }
+    };
+    w.p(&err, ta, "── Allocation census (--census) ─────────────────────────────────\n", .{});
+    w.p(&err, ta, "  allocations {d}, {d:.2} MB requested; {d} frees, {d:.2} MB handed back; live {d:.2} MB (peak {d:.2} MB)\n", .{ t.allocs, _zbr_cens_mb(t.bytes), t.frees, _zbr_cens_mb(t.freed), _zbr_cens_mb(t.live), _zbr_cens_mb(t.peak) });
+    w.p(&err, ta, "  interned strings: {d} ({d:.2} MB, outside the counts above)\n", .{ t.interned, _zbr_cens_mb(t.interned_bytes) });
+    if (t.released_scopes > 0) w.p(&err, ta, "  scoped allocate blocks ended: {d} (their arenas returned what they held)\n", .{t.released_scopes});
+    if (_zbr_cens_root_is_arena) {
+        const cap: i64 = @intCast(_arena.queryCapacity());
+        const held: i64 = _zbr_cens_root.live + @as(i64, @intCast(t.interned_bytes));
+        w.p(&err, ta, "  program arena holds {d:.2} MB from the OS; {d:.2} MB of it is not live (outgrown buffers and frees an arena cannot honour)\n", .{ _zbr_cens_mb(cap), _zbr_cens_mb(@max(cap - held, 0)) });
+    } else {
+        w.p(&err, ta, "  allocator: the host's (--library-mode); the arena line does not apply\n", .{});
+    }
+    w.p(&err, ta, "  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)\n", .{});
+    w.p(&err, ta, "  {d} sites; top by bytes:\n", .{rows.items.len});
+    for (rows.items[0..@min(rows.items.len, 25)], 0..) |r, i| {
+        const loc = std.fmt.allocPrint(ta, "{s}:{d}", .{ std.fs.path.basename(r.path), r.line }) catch continue;
+        const k: []const u8 = if (kinds[i].kind) |kk|
+            (if (kinds[i].via) |v| (std.fmt.allocPrint(ta, "{s} (via {s})", .{ kk, v }) catch kk) else kk)
+        else
+            std.fmt.allocPrint(ta, "?0x{x}", .{r.frames[0]}) catch "?";
+        w.p(&err, ta, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes) });
+    }
+    if (unresolved > 0) w.p(&err, ta, "  {d} of {d} sites have an UNRESOLVED kind: this binary carries no debug info for that address (a --release build has none) -- shown as ?0x<address>\n", .{ unresolved, rows.items.len });
+    std.Io.File.stderr().writeStreamingAll(_io, err.items) catch {};
+
+    var out: std.ArrayList(u8) = .empty;
+    w.p(&out, ta, "{{\"version\": 1, \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
+    if (_zbr_cens_root_is_arena) w.p(&out, ta, ", \"arenaCapacity\": {d}", .{_arena.queryCapacity()});
+    w.p(&out, ta, "}}, \"sites\": [", .{});
+    for (rows.items, 0..) |r, i| {
+        if (i > 0) out.appendSlice(ta, ", ") catch {};
+        out.appendSlice(ta, "{\"file\": ") catch {};
+        _zbr_cens_json_str(&out, ta, r.path);
+        w.p(&out, ta, ", \"line\": {d}, \"kind\": ", .{r.line});
+        if (kinds[i].kind) |k| _zbr_cens_json_str(&out, ta, k) else out.appendSlice(ta, "null") catch {};
+        out.appendSlice(ta, ", \"via\": ") catch {};
+        if (kinds[i].via) |v| _zbr_cens_json_str(&out, ta, v) else out.appendSlice(ta, "null") catch {};
+        w.p(&out, ta, ", \"count\": {d}, \"bytes\": {d}}}", .{ r.count, r.bytes });
+    }
+    out.appendSlice(ta, "]}\n") catch {};
+    const path: []const u8 = _sys_getenv("ZEBRA_CENSUS_OUT") orelse "zebra-census.json";
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, out.items) catch {};
+}
 // Each module compiled with `--coverage` ends with a `_zbr_covf` record: its path, the
 // sorted instrumented source lines (the denominator) and a counter per source line;
 // genStmt bumps the counter beside the `// zbr:` marker. The entry prologue attaches
@@ -5389,6 +5667,7 @@ pub fn _zbr_assert_msg_at(loc: []const u8, msg: []const u8) []const u8 {
 }
 pub fn _zbr_exit(code: i64) noreturn {
     _zbr_cov_flush();
+    _zbr_cens_flush();
     std.process.exit(@truncate(@as(u64, @bitCast(code))));
 }
 pub fn _profile_end() void {
