@@ -1,0 +1,21 @@
+# stdin_read_probe.zbr -- reads stdin for tools/stdin_read_check.sh (BUG-619).
+# Mode "lines": every line as `<len>:<first 8 chars>` (the gate derives the same from the input
+# file, with '\r' dropped and '\n' stripped), then a count. Mode "bytes": a 5-byte header, then
+# the rest line by line -- the LSP shape, readBytes and readLine sharing one buffered reader.
+def main()
+    var mode = "lines"
+    if sys.args().len() > 1
+        mode = sys.args().at(1)
+    var n: int = 0
+    if mode == "bytes"
+        var head = sys.readBytes(5)
+        if head != nil
+            print("head=${head!}")
+    while var line = sys.readLine(), line != nil
+        var t = line!
+        var pre = t
+        if t.len > 8
+            pre = t[0 .. 8]
+        print("${t.len}:${pre}")
+        n = n + 1
+    print("lines=${n}")

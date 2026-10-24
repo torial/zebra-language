@@ -1403,32 +1403,62 @@ fn _stdin_reader() *std.Io.File.Reader {
     if (_stdin_rdr == null) _stdin_rdr = std.Io.File.stdin().readerStreaming(_io, &_stdin_buf);
     return &_stdin_rdr.?;
 }
+// BUG-619 (2026-10-23): both readers took ONE BYTE per `readSliceShort`, and on an empty
+// buffer that call reads straight into the caller's 1-byte slice -- a read per byte, so the
+// 4 KB buffer was never used: 10 MB of stdin took 18.5 s, ReleaseFast as well as Debug (plain
+// Zig, same call: 18.5 s; `takeByte`: 0.09 s). They now scan the buffer itself (`peekGreedy`
+// fills it), and a line that fits in it is ONE exact-size allocation instead of a List grown
+// from 8 bytes (the census measured 123 bytes allocated per ~50-byte line).
 pub fn _sys_readline() ?[]const u8 {
-    const rdr = _stdin_reader();
-    var line: std.ArrayList(u8) = .empty;
-    var byte_buf: [1]u8 = undefined;
+    const r = &_stdin_reader().interface;
+    var line: std.ArrayList(u8) = .empty; // only for a line longer than what is buffered
     while (true) {
-        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (line.items.len > 0) line.items else null;
-        if (n == 0) return if (line.items.len > 0) line.items else null;
-        const b = byte_buf[0];
-        if (b == '\n') break;
-        if (b != '\r') line.append(_allocator, b) catch return null;
+        const avail = r.peekGreedy(1) catch return _zbr_line_done(&line, null);
+        if (std.mem.indexOfScalar(u8, avail, '\n')) |i| {
+            const done = _zbr_line_done(&line, avail[0..i]);
+            r.toss(i + 1);
+            return done;
+        }
+        line.appendSlice(_allocator, avail) catch return null;
+        r.toss(avail.len);
     }
-    return line.items;
+}
+// The line without its '\n' and with every '\r' dropped (as before); `tail` is the part
+// still in the reader's buffer, copied before the caller tosses it. null = end of input
+// with nothing read.
+fn _zbr_line_done(line: *std.ArrayList(u8), tail: ?[]const u8) ?[]const u8 {
+    if (tail) |t| {
+        if (line.items.len == 0) {
+            const out = _allocator.alloc(u8, t.len - std.mem.count(u8, t, "\r")) catch return null;
+            var j: usize = 0;
+            for (t) |c| if (c != '\r') {
+                out[j] = c;
+                j += 1;
+            };
+            return out;
+        }
+        line.appendSlice(_allocator, t) catch return null;
+    } else if (line.items.len == 0) return null;
+    var j: usize = 0;
+    for (line.items) |c| if (c != '\r') {
+        line.items[j] = c;
+        j += 1;
+    };
+    return line.items[0..j];
 }
 // Read EXACTLY `count` bytes from stdin via the shared reader (so read-ahead from
 // a preceding readLine is consumed, not lost — LSP Content-Length framing).
 // Returns null at clean EOF; a short read at EOF returns what was read.
 pub fn _sys_read_bytes(count: i64) ?[]const u8 {
     if (count <= 0) return "";
-    const rdr = _stdin_reader();
+    const r = &_stdin_reader().interface;
+    const want: usize = @intCast(count);
     var out: std.ArrayList(u8) = .empty;
-    var byte_buf: [1]u8 = undefined;
-    var i: i64 = 0;
-    while (i < count) : (i += 1) {
-        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (out.items.len > 0) out.items else null;
-        if (n == 0) return if (out.items.len > 0) out.items else null;
-        out.append(_allocator, byte_buf[0]) catch return null;
+    while (out.items.len < want) {
+        const avail = r.peekGreedy(1) catch return if (out.items.len > 0) out.items else null;
+        const take = @min(avail.len, want - out.items.len);
+        out.appendSlice(_allocator, avail[0..take]) catch return null;
+        r.toss(take);
     }
     return out.items;
 }

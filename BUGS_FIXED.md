@@ -6,6 +6,34 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-619: `sys.readLine()` / `sys.readBytes(n)` read stdin ONE BYTE PER READ -- 10 MB took 18.5 s, in `--release` too -- FIXED 2026-10-23
+
+**Found by:** the allocation census (`--census`, 2026-10-23), timing Sean's large-file loop
+(`while var line = sys.readLine(), line != nil` over `C:\tmp\zzrc\data.txt`). 197,258 lines
+(10 MB) took 22 s in a Debug build and **19 s in `--release`** -- about 1.9 µs a byte.
+
+**Cause.** Both readers called `rdr.interface.readSliceShort(&byte_buf)` with a one-byte
+`byte_buf`. Zig 0.17's `readSliceShort` copies what is buffered, and when the buffer is empty
+calls `readVec` into the CALLER's slice -- one byte -- so the stdin reader's 4 KB buffer was
+never filled and every byte was its own read. Isolated in plain Zig (no Zebra runtime), same
+call, same 10 MB: **18.5 s**; `takeByte()` on the same reader: **0.09 s**.
+
+**Fix.** `_sys_readline` scans the buffer itself (`peekGreedy(1)` fills it, `indexOfScalar`
+finds the newline, `toss` consumes), and a line that fits in the buffer is copied with ONE
+exact-size allocation. Before, every line was a `List(u8)` grown from 8 bytes: the census
+measured **123 bytes allocated per ~50-byte line**. `_sys_read_bytes` copies buffered chunks the
+same way. Semantics unchanged: '\n' stripped, every '\r' dropped, a final line without '\n' is
+a line, nil at end of input with nothing read; `readBytes` and `readLine` still share one
+reader (the LSP's Content-Length framing).
+
+**Regression gate:** `stdin-read` (`tools/stdin_read_check.sh`, FAST): correctness from the
+input bytes (CRLF, empty lines, a 10,000-byte line across the buffer, no final newline,
+readBytes-then-readLine), and 4 MB of lines in under 1.5 s (min of two runs): 3.84 s with the
+old runtime -- red-checked against it, the real attacker -- and 0.42 s fixed.
+
+**Effect on Sean's loop** (10 MB slice): 22 s -> 0.93 s; arena 82.6 -> 60.7 MB; `readLine`'s
+grown Lists 197,258 -> 2,413 (only the lines straddling a 4 KB refill).
+
 ### BUG-617: `allocate Arena()` reclaims nothing in an ordinary program -- the scoped arena is backed by the program arena -- FIXED 2026-10-23 (found 2026-10-22)
 - **Found by:** measuring Sean's loop (`docs/design/memory_model.md` §1). Over a 100 MB file,
   `a = line!.upper().split("*")[0]` grows the arena 942 MB; the same loop with the body in

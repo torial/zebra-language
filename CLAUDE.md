@@ -226,10 +226,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 36 <!-- doc-gen: 36 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 39 <!-- doc-gen: 39 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 47 <!-- doc-gen: 47 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 58 <!-- doc-gen: 58 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 48 <!-- doc-gen: 48 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 59 <!-- doc-gen: 59 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -1265,6 +1265,18 @@ bash tools/census_check.sh      # THE ALLOCATION-CENSUS GATE, registered as `cen
                                 #   CANNOT SEE: the runtime's page-allocator escape hatches
                                 #   (the report names them as uncounted), kinds in a --release
                                 #   build (printed as ?0x<address>), a host's own allocations.
+bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-read` (FAST,
+                                #   ~5 s, 2026-10-23, BUG-619). sys.readLine / sys.readBytes
+                                #   took one byte per `readSliceShort`, which on an empty buffer
+                                #   reads straight into the 1-byte slice: a read per byte, 10 MB
+                                #   in 18.5 s in --release too. Found by the census; no gate fed
+                                #   a program more than a few bytes of stdin. Leg 1 derives the
+                                #   expected lines from the INPUT BYTES (CRLF, empty, a 10,000-
+                                #   byte line across the 4 KB buffer, no final newline); leg 2
+                                #   readBytes then readLine on one reader (the LSP framing); leg
+                                #   3 4 MB in under 1.5 s, min of two -- 3.84 s on the old
+                                #   runtime (red-checked with it), 0.42 s fixed. CANNOT SEE:
+                                #   File reads, or stdin from a console rather than a pipe.
 bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-mode` (FAST
                                 #   tier, ~15 s, 2026-09-30, BUG-485). A `--library-mode`
                                 #   program is linked into a HOST, which installs its own
@@ -2466,7 +2478,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 118 scripts | <!-- doc-gen: 118 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 119 scripts | <!-- doc-gen: 119 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 tracked documents <!-- doc-gen: 45 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |

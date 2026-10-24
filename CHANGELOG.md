@@ -72,6 +72,10 @@ backend.
 
 ### Runtime
 
+- **`sys.readLine()` and `sys.readBytes(n)` read stdin through the buffer (BUG-619, 2026-10-23).**
+  They took one read per byte -- 10 MB of stdin cost 18.5 s, in `--release` too -- and every line
+  was a list grown from 8 bytes. Now a line that fits in the 4 KB buffer is one exact-size
+  allocation; behaviour is unchanged. A 10 MB `readLine` loop: 22 s -> 0.93 s. Gate: `stdin-read`.
 - **`zebra --census`: where the memory goes (2026-10-23, memory_model.md §3 item 6).** Every
   allocation is counted under the source line that made it and the function that allocated
   (the first frame outside Zig's std, with the std function underneath as `via`); the report
