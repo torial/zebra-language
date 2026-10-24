@@ -1,0 +1,8 @@
+def main()
+    var q = "${39:c}"
+    var b = "${124:c}"
+    var s = r'def main()|    var q = "${39:c}"|    var b = "${124:c}"|    for i, line in s.split(b)|        print(line)|        if i == 2|            print("    var s = r" + q + s + q)'
+    for i, line in s.split(b)
+        print(line)
+        if i == 2
+            print("    var s = r" + q + s + q)

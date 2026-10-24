@@ -5579,6 +5579,21 @@ def forInVarTypes(fi: StmtForIn, ctx: InferCtx): List(Type_)
             out.add(Type_.int_)
             out.add(lelem)
             return out
+    # BUG-621: `for i, x in <iterator>` (split/lines/chars/bytes/to/a set) -- the index is
+    # an int and the element is what the one-variable form would bind. A map took the
+    # key/value arm above, a list of tuples the destructuring one. An iterable whose
+    # type is NOT known stays unknown: it may be a map inference could not see, and
+    # typing its key as an int would fabricate an answer.
+    if n == 2 and not (it is Type_.hashmap_)
+        var one_vars = List(str)()
+        one_vars.add(fi.vars.at(1))
+        var it621: Expr = fi.iter
+        var one = StmtForIn(fi.span, one_vars, it621, fi.filter, fi.stmts, fi.else_)
+        var elem621: Type_ = forInVarTypes(one, ctx).at(0)
+        if not (it is Type_.unknown_) or not (elem621 is Type_.unknown_)
+            out.add(Type_.int_)
+            out.add(elem621)
+            return out
     var i: int = 0
     while i < n
         out.add(Type_.unknown_)

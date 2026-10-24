@@ -3822,6 +3822,9 @@ struct Generator
     var in_try_expr          : bool     # suppress auto-try when already inside Expr.try_
     var json_want_mode       : str      # BUG-331: conversion for the armed `j[...]?` ("" = JsonValue)
     var json_want_at         : str      # BUG-331: "line:col" of the index node it applies to
+    var for_index_at         : str      # BUG-621: "line:col" of the `for i, x in <iterator>` whose body declares the index
+    var for_index_name       : str      # BUG-621: that index variable ("" = none)
+    var for_index_ctr        : str      # BUG-621: the Zig counter it reads
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
     var in_lambda_body       : bool     # BUG-494: a `return` here is the lambda's, not an init's
@@ -3954,6 +3957,9 @@ struct Generator
         .in_try_expr           = false
         .json_want_mode        = ""
         .json_want_at          = ""
+        .for_index_at          = ""
+        .for_index_name        = ""
+        .for_index_ctr         = ""
         .self_name             = "self"
         .capture_self          = "self"
         .in_lambda_body        = false
@@ -10745,6 +10751,14 @@ struct Generator
             if is_tuple_list
                 genForInTupleList(fi)
                 return
+        # BUG-621: `for i, x in <iterator>` -- split/lines/chars/bytes/to emit an ITERATOR,
+        # not a List, so the indexed form below (`.items`) and the map form (`.iterator()`)
+        # both failed inside zig. Count instead: the one-variable loop over the same
+        # iterable, its body opening with the index (emitForGuard).
+        if fi.vars.len == 2
+            if isSplitIter(fi.iter) or isCharsIter(fi.iter) or isBytesIter(fi.iter) or isToRangeIter(fi.iter)
+                genForInCounted(fi)
+                return
         # B1: for i, v in list — indexed iteration (i = index, v = element).
         if fi.vars.len == 2
             var is_indexed = false
@@ -11328,6 +11342,26 @@ struct Generator
 
     # B1: `for i, v in list` — indexed iteration.  i = index (i64), v = element.
     # Emits `for (list.items, 0..) |v, _zbr_i| { const i = @intCast(_zbr_i); ... }`.
+    # BUG-621: `for i, x in <iterator>` as
+    #   { var _zbr_ix_N: i64 = 0; <for x in iterator> { const i: i64 = _zbr_ix_N; _zbr_ix_N += 1; body } }
+    def genForInCounted(fi: StmtForIn)
+        var ctr: str = "_zbr_ix_" + w.nextUid().toString()
+        writeIndent()
+        w.emit("{\n")
+        var cg = indented()
+        cg.writeIndent()
+        cg.w.emit("var " + ctr + ": i64 = 0;\n")
+        cg.noteShadowLocal(fi.vars.at(0))
+        var one_vars = List(str)()
+        one_vars.add(fi.vars.at(1))
+        cg.for_index_at = fi.span.line.toString() + ":" + fi.span.col.toString()
+        cg.for_index_name = fi.vars.at(0)
+        cg.for_index_ctr = ctr
+        var it621: Expr = fi.iter
+        cg.genForIn(StmtForIn(fi.span, one_vars, it621, fi.filter, fi.stmts, fi.else_))
+        writeIndent()
+        w.emit("}\n")
+
     def genForInIndexedList(fi: StmtForIn)
         var ig = indented()
         ig.for_else_label = nil
@@ -11386,6 +11420,18 @@ struct Generator
     # Emit `if (!(cond)) continue;` guard at the top of a for-in loop body.
     # `self` is the body-level generator (ig or bg) so indentation is correct.
     def emitForGuard(fi: StmtForIn)
+        # BUG-621: the counted form's index, declared before the guard so a filtered
+        # element still counts (as it does for a List). Keyed on the loop's position:
+        # Generator copies carry the field into nested loops, which must not take it.
+        if .for_index_ctr != "" and .for_index_at == fi.span.line.toString() + ":" + fi.span.col.toString()
+            writeIndent()
+            w.emit("const " + zigSafeName(.for_index_name) + ": i64 = " + .for_index_ctr + "; " + .for_index_ctr + " += 1;\n")
+            var ix_used = mightUseName(.for_index_name, fi.stmts)
+            if not ix_used and fi.filter != nil
+                ix_used = mightUseNameInExpr(.for_index_name, fi.filter!)
+            if not ix_used
+                writeIndent()
+                w.emit("_ = " + zigSafeName(.for_index_name) + ";\n")
         if fi.filter == nil
             return
         writeIndent()
@@ -14408,6 +14454,10 @@ struct Generator
                 # astbuilder already stripped the zig"..." wrapper via stripZigQuotes.
                 emitZigLitText(zl.text)
             on Expr.try_ as tr
+                # BUG-622: RESTORE, not clear -- an inner `?` (`h(h(x)?)?`) cleared the flag
+                # while the outer call was still emitting its args, so the outer call took the
+                # catch-break wrapper itself and this arm added a second ("expected error union").
+                var tr_saved_ite: bool = in_try_expr
                 var tr_json_fn: str = ""
                 if .infer_ctx != nil
                     var tr_is_index: bool = false
@@ -14435,14 +14485,14 @@ struct Generator
                         w.emit(tr_json_fn + "(")
                         genExpr(tr.expr)
                         w.emit(")")
-                        in_try_expr = false
+                        in_try_expr = tr_saved_ite
                         emitTryBlockCatch()
                         w.emit(")")
                     else
                         w.emit("(try " + tr_json_fn + "(")
                         in_try_expr = true
                         genExpr(tr.expr)
-                        in_try_expr = false
+                        in_try_expr = tr_saved_ite
                         w.emit("))")
                     return
                 if try_block_label != nil
@@ -14451,7 +14501,7 @@ struct Generator
                     w.emit("(")
                     in_try_expr = true
                     genExpr(tr.expr)
-                    in_try_expr = false
+                    in_try_expr = tr_saved_ite
                     emitTryBlockCatch()
                     w.emit(")")
                 else
@@ -14459,7 +14509,7 @@ struct Generator
                     w.emit("(try ")
                     in_try_expr = true
                     genExpr(tr.expr)
-                    in_try_expr = false
+                    in_try_expr = tr_saved_ite
                     w.emit(")")
             on Expr.tuple_lit as tu
                 w.emit(".{")

@@ -39,6 +39,14 @@ confirmed via `tools/bootstrap_check.sh`.
   into a class field or a container is interned, and each new string was given its own page,
   kept forever: a label rewritten with changing text grew memory by ~4 KB per value (50,000
   values: 202 MB). Interned strings now live in the program's memory (5.2 MB for the same).
+- **A `"` inside a raw string compiles (BUG-620).** `r'{"key": "value"}'` -- QUICKSTART's own
+  example of the single-quoted raw form -- failed inside zig, as did every raw string holding a
+  double quote.
+- **`for i, x in` works over iterators (BUG-621).** Over `split`, `lines`, `chars`, `bytes` and
+  `n.to(m)`, the indexed form failed inside zig or was refused for an untyped index. `i` is an
+  int counting every element, as it is for a List (a `for ... if` guard does not renumber).
+- **`f(g(x)?)?` inside a function-level `catch` compiles (BUG-622).** The outer call got two
+  catch wrappers and failed inside zig.
 
 ---
 

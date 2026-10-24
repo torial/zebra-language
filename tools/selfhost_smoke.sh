@@ -662,6 +662,29 @@ smoke_run() {
     fi
 }
 
+# smoke_quine <zbr> -- the program's STDOUT must equal its own source, byte for byte
+# (`cmp`, so a trailing newline counts). A substring check cannot prove a quine.
+smoke_quine() {
+    local zbr="$1"
+    local label
+    label="$(basename "$zbr" .zbr)_quine"
+    local out
+    out=$(mktemp)
+    if zbr_run_retrying "$ZEBRA" "$zbr" > "$out" 2>/dev/null; then
+        if cmp -s "$out" "$zbr"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (stdout is not the source; first difference: $(cmp "$out" "$zbr" 2>&1 | head -1))" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (non-zero exit)" >&2
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$out"
+}
+
 # smoke_run_flag <zbr> <flag> <expected> -- smoke_run with one compiler flag. The file
 # comes FIRST so registration_check's `^smoke\w* test/...` pattern sees it. Not in
 # positive_set.sh on purpose: a program that needs a flag to compile is not a positive
@@ -1421,6 +1444,10 @@ smoke_run test/bug618_intern_program_arena_test.zbr "bug618: tick 1999 | made-in
 smoke_run test/bug617_scoped_arena_frees_test.zbr "bug617: OK"
 smoke_run test/hashmap_clear_test.zbr "hashmap_clear: 0 1 3 1 seven none"
 smoke_run test/float_round_rule_test.zbr "float_round: 2.68 0.13 3 -3 1.5 2.68 2.68e0"
+smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
+smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
+smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"
+smoke_quine test/quine_test.zbr
 smoke_tc_fail test/fail_fixtures/bug616_sortby_unordered_key_test.zbr "bug616_sortby_unordered_key_test.zbr:16:8: error: 'Suit' is \`@unordered\`"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr "bug616_sortby_no_compare_key_test.zbr:18:8: error: 'P' has no ordering, so it cannot be a \`.sortBy\` key"
 smoke_tc_fail test/fail_fixtures/bug614_assert_test.zbr "bug614_assert_test.zbr:15:34: error: str.count expects 1 argument, got 0"

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-619. Next new bug: BUG-620.**
+**Last bug number generated: BUG-624. Next new bug: BUG-625.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,55 @@
 > measured in.
 
 ---
+
+### BUG-624: a struct `var` written ONLY through a `^T` field (`b.e = a.e`) is refused by zig as "never mutated" -- OPEN (found 2026-10-24)
+
+**Found by:** probing BUG-623. Assigning a `^T` field copies the VALUE into the box --
+`b.e.* = a.e.*` -- which is the intended value semantics; but `b` itself is never written,
+so zig refuses the `var b` the mutation analysis emitted ("local variable is never mutated").
+A front-end-accepts / zig-rejects leak.
+
+```zebra
+struct Node
+    var v: int
+struct Box
+    var e: ^Node
+    cue init(e: ^Node)
+        .e = e
+def main()
+    var a = Box(Node(1))
+    var b = Box(Node(2))
+    b.e = a.e            # the only write to b: through its ^T field
+    print(b.e.v)
+```
+
+**Control when fixing:** the same program with a second, ordinary field written
+(`b.n = 3`) must still emit `var b`.
+
+### BUG-623: a `^T` field passed to a `^T` parameter is emitted DEREFERENCED -- zig "expected type '*Node', found 'Node'" -- OPEN (found 2026-10-24)
+
+**Found by:** writing BUG-621's fix (`StmtForIn(..., fi.iter, ...)` in the compiler's own
+source failed to build). `rhsIsAlreadyRef` says the argument is already a pointer, so
+`genCallWithTypeHint` does not box it, but `genExpr` of a `^T` FIELD read emits `a.e.*`.
+The two disagree. Same for a function parameter (`take(a.e)` emits `take(a.e.*)`).
+
+```zebra
+struct Node
+    var v: int
+struct Box
+    var e: ^Node
+    cue init(e: ^Node)
+        .e = e
+def main()
+    var a = Box(Node(1))
+    var b = Box(a.e)     # zig: expected type '*Node', found 'Node'
+    print(b.e.v)
+```
+
+**Decision owed by the fix:** pass the pointer (aliasing `a.e` and `b.e`) or box a copy
+(`_zbr_boxed(a.e.*)`). Assignment of a `^T` field COPIES the value (BUG-624's repro emits
+`b.e.* = a.e.*`), so a copy is the consistent reading. Workaround: read the field into a
+local first (`var n: Node = a.e`, then `Box(n)`) -- what the compiler's own source does.
 
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->

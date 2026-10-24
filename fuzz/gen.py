@@ -62,6 +62,10 @@ class Gen:
             return self.pick(('true', 'false'))
         if ty == 'str':
             n = self.rng.randint(0, 6)
+            if self.caps.get('rawstr') and self.rng.random() < 0.2:
+                # BUG-620: a raw string carrying the OTHER quote and backslashes, both literal.
+                q, other = self.pick((("'", '"'), ('"', "'")))
+                return 'r' + q + ''.join(self.pick('ab \\$' + other) for _ in range(n)) + q
             return '"' + ''.join(self.pick('abcdefg ') for _ in range(n)) + '"'
         if ty == 'char':
             return "'" + self.pick('abcdefg') + "'"
@@ -725,6 +729,7 @@ DEFAULT_CAPS = {
     'maps': True,        # HashMap(K,V) — construct, .set, .get orelse, .len, entries for-in
     'strmethods': True,  # str methods — upper/lower/trim*/replace/contains/startsWith/len (NOT indexOf; BUG-174)
     'chains': True,      # methods on EXPRESSION results, toString, interpolation (leakgen, 2026-09-09)
+    'rawstr': True,      # r'..."...' / r"...'..." with literal backslashes (BUG-620, 2026-10-24)
     'leakclass': True,   # the hand-found "Zebra accepts, Zig rejects" shapes, kept as regression
                          # coverage now they are fixed: BUG-336 split().at/len, BUG-337 getList
                          # as a List, BUG-338 List(JsonValue)(), BUG-339 ctor field initialiser

@@ -6,6 +6,82 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-622: `f(g(x)?)?` inside a function-level `catch` gave the outer call TWO catch wrappers -- FIXED 2026-10-24
+
+**Found by:** leakgen, the day its generator grew raw strings (BUG-620): the new random
+stream produced `var _cw = h10(h10(r'...')?)?` in a function ending in `catch`, and zig
+refused `... catch |_tc_e| {...} catch |_tc_e| {...}` ("expected error union type, found
+'[]const u8'"). Not about raw strings: `h(h("x")?)?` is enough.
+
+**Cause.** The `?` emitter set `in_try_expr = true` around its operand and then set it to
+`false` -- not back to what it was. An inner `?` in the outer call's ARGUMENTS therefore
+cleared the flag before the outer call finished, so the call took the method-level
+catch-break wrapper itself (`not in_try_expr`) and the outer `?` added a second. The
+BUG-436 postfix-`catch` arm already saved and restored; this arm did not.
+
+**Fix.** Save and restore, in all four places in the arm.
+
+**Fixture:** `test/bug622_nested_try_in_catch_test.zbr` (`smoke_run`) -- the nested form
+succeeding, the INNER call raising into the function's `catch`, and the plain `throws` path.
+Red: LEAK_00's program and a 7-line repro failed with the zig error before the fix.
+
+### BUG-621: `for i, x in <iterator>` -- split/lines failed inside zig, chars/bytes/to refused an untyped index -- FIXED 2026-10-24
+
+**Found by:** the same quine (`for i, line in s.split(b)`). Measured over every iterator form:
+
+| iterable | before |
+|---|---|
+| `split`, `lines` | front end accepted; zig: `no field named 'items'` on the iterator |
+| `n.to(m)` | front end accepted; zig: `invalid digit 't'` (fell to the MAP form) |
+| `chars`, `bytes` | refused: "cannot infer the type of `i`" |
+| a List, `0..n`, `tokenize` | worked |
+
+**Cause.** Codegen has one indexed path, `genForInIndexedList` (`for (x.items, 0..)`), chosen
+when the iterable INFERS as a List -- and `split` infers as `List(str)` while emitting a lazy
+`splitSequence` iterator in loop position. Everything else with two variables fell to the
+map form. The checker typed the index only for a List.
+
+**Fix.** Codegen: for split/lines/chars/bytes/to, `genForInCounted` emits the ONE-variable
+loop over the same iterable inside `{ var _zbr_ix_N: i64 = 0; ... }`, and `emitForGuard` --
+which every one-variable path calls where its body starts -- declares the index there,
+before the guard, so a filtered element still counts (as for a List). The pending index is
+keyed on the loop's `line:col`, because `Generator` copies carry the field into nested loops.
+Checker: a two-variable loop over anything but a map or a list of tuples types the first
+variable `int` and the second as the one-variable form would -- but only when the iterable's
+type, or that element type, is KNOWN: an iterable inference cannot see may be a map, and
+typing its key `int` would fabricate an answer.
+
+**Not covered:** `for i, x in set` (a set still goes to the map form) and
+`s.split(",").reverse()` (inference does not type the receiver; refused as before).
+
+**Fixture:** `test/bug621_indexed_for_iterators_test.zbr` (`smoke_run`) -- each iterator, a
+guard (`02`), a for-else with the index unused, a map (`k7`: the first variable stays the
+KEY) and a List literal. Watched red before the fix.
+
+### BUG-620: a `"` inside a raw string closed the emitted Zig literal -- QUICKSTART's own `r'{"key": "value"}'` never compiled -- FIXED 2026-10-24
+
+**Found by:** writing a Zebra quine (free time, 2026-10-24). QUICKSTART §14 documents
+`r'...'` as THE way to carry a double quote (`var json_tmpl = r'{"key": "value"}'`), and
+every such program failed inside zig: `error: expected ';' after statement` at the
+literal's line -- a Zig diagnostic about code the user never wrote.
+
+**Cause.** `stripRawAndEscape` (AstBuilder) prepares a raw string's text for
+`genStringLit`, which wraps it in a Zig `"..."`. It doubled every backslash and left `"`
+bare, so the first quote in the content closed the Zig literal.
+
+**Fix.** It also escapes `"` as `\"` (after doubling backslashes, so `r'a\"b'` keeps both
+characters literal: 4 bytes). `genStringLit` is the only reader of that text.
+
+**Why nothing caught it:** `doc-example` runs the front end only (`-c`), which accepts the
+program; no tracked `.zbr` puts a `"` in a raw string (checked: zero), so no corpus gate
+emits one; and leakgen's `gen.py` never generates a raw string with a quote. A
+front-end-accepts / zig-rejects leak of exactly leakgen's class, outside its generator.
+
+**Fixture:** `test/bug620_raw_string_dquote_test.zbr` (`smoke_run`) -- the QUICKSTART
+example, a backslash before a quote, a lone quote, `${` with a quote (no interpolation),
+`r"it's"`, and equality with the escaped plain-string spelling. Red: the QUICKSTART
+example compiled with the pre-fix binary failed with the zig error above.
+
 ### BUG-619: `sys.readLine()` / `sys.readBytes(n)` read stdin ONE BYTE PER READ -- 10 MB took 18.5 s, in `--release` too -- FIXED 2026-10-23
 
 **Found by:** the allocation census (`--census`, 2026-10-23), timing Sean's large-file loop

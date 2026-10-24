@@ -1400,9 +1400,12 @@ while var line = reader.readLine(), line != nil
 for item in items
     print(item)
 
-# for-in with index
+# for-in with index -- over a List, and over split/lines/chars/bytes/n.to(m) too;
+# `i` counts every element (an `if` guard skips, it does not renumber)
 for i, item in items
     print("${i}: ${item}")
+for i, word in line.split(" ")
+    print("${i}: ${word}")
 
 # for-in with numeric range — three equivalent spellings, all i64 counters,
 # stop is EXCLUSIVE (0..10 iterates 0-9); negative bounds work

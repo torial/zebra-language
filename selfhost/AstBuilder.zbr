@@ -229,14 +229,16 @@ def stripRawAndEscape(text: str): str
     for bp in content.split("\\")
         bs_parts.add(bp)
     if bs_parts.len <= 1
-        return content
+        return content.replace("\"", "\\\"")
     var out: str = bs_parts.at(0)
     var j: int = 1
     while j < bs_parts.len
         out = out + "\\\\"
         out = out + bs_parts.at(j)
         j = j + 1
-    return out
+    # BUG-620: the text is emitted inside a Zig "..." (genStringLit), and r'...' is the
+    # documented way to carry a `"` -- left bare, it closed the Zig literal early.
+    return out.replace("\"", "\\\"")
 
 # Strip char literal: c'x' → x, c'\n' → \n
 def stripCharQuotes(text: str): str

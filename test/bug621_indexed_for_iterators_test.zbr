@@ -1,0 +1,42 @@
+# BUG-621: `for i, x in <iterator>` -- split/lines leaked to zig (`.items` on an
+# iterator); chars/bytes/to had an untyped index the checker refused. The index is
+# an int and counts every element, as it does for a List. Expected values are
+# derived by hand from the source.
+
+def main()
+    var s = "a,b,c"
+    var n = 0
+    var acc = ""
+    for i, p in s.split(",")
+        n = n + i
+        acc = acc + "${i}${p}"
+    var t = "x\ny"
+    for i, ln in t.lines()
+        acc = acc + "${i}${ln}"
+    var ci = 0
+    for i, c in "héy".chars()          # three codepoints: 0+1+2
+        ci = ci + i
+    var bi = 0
+    for i, b in "ab".bytes()           # 0+1
+        bi = bi + i
+    var ri = 0
+    for i, v in 5.to(8)                # v = 5,6,7; i*v = 0+6+14
+        ri = ri + i * v
+    var gi = ""
+    for i, p in s.split(",") if p != "b"
+        gi = gi + "${i}"               # the guard skips index 1
+    var fe = 0
+    for i, p in s.split(",")           # index unused; for-else
+        if p == "z"
+            break
+    else
+        fe = 9
+    var m = HashMap(str, int)()
+    m.set("k", 7)
+    var mk = ""
+    for k, v in m                      # a map's first variable stays the KEY
+        mk = k + v.toString()
+    var li = 0
+    for i, x in [10, 20, 30]           # 0+20+60
+        li = li + i * x
+    print("bug621: ${n} ${acc} ${ci} ${bi} ${ri} ${gi} ${fe} ${mk} ${li}")
