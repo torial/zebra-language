@@ -6,6 +6,39 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-623 / BUG-624: a `^T` field passed to a `^T` parameter, or assigned to a local's `^T` field, failed inside zig -- FIXED 2026-10-24
+
+**Found by:** writing BUG-621's fix (`StmtForIn(..., fi.iter, ...)` in the compiler's own
+source did not build), then probing it.
+
+**Repros.** `Box(a.e)` / `take(a.e)` with a `^Node` parameter: "expected type '*Node', found
+'Node'" (623). `b.e = a.e` with `b` written nowhere else: "local variable is never mutated"
+(624). The same probe found a third shape nobody had filed: `c.e = Node(7)` on a LOCAL `c`
+emitted `c.e.* = _rp`, a `*Node` stored into a `Node`.
+
+**Cause -- one rule read two ways.** A `^T` field of a local (or param, branch or for
+binding) reads through its pointer: genExpr emits `a.e.*`, the QUICKSTART §22 "pointer is
+transparent" rule. Two other places asked the TYPE instead, which says ref: the call-argument
+boxing (`isBoxableValueOf` -> `rhsIsAlreadyRef`) concluded "already a pointer, do not box"
+and passed `a.e.*`; and the assignment box path both skipped boxing for a field RHS and
+emitted its TARGET with genExpr, so the store went through the old pointer (`b.e.* = ...`),
+which is also why `b` itself was never written.
+
+**Fix.** `memberEmitsDeref` mirrors genExpr's auto-deref rule exactly. A ref that is
+emitted dereferenced is a VALUE: boxed as a copy at a `^T` parameter, and boxed on
+assignment (`rhsIsPointerValue`). The target of a `^T`-field assignment is the pointer slot
+(`genRefSlot`: `b.e = _rp`), so the field is rebound and `var b` is genuinely mutated.
+
+**Decision taken (owed by the 623 entry):** COPY, not alias. Assignment already copied the
+value, and §22 says a `^T` field reads as a value; `test/bug623_624_ref_field_pass_assign_test.zbr`
+pins it (a write to `a.e` after `Box(a.e)`, `b.e = a.e`, or a method's `.e = other.e` does not
+show through the new box). A `^T` PARAMETER or local passed on is still a pointer copy, as
+before. A `^T?` field passed to a `^T?` parameter is also still a pointer copy (genExpr
+does not deref it), which aliases; not changed here, noted rather than decided.
+
+**Red-check:** both minimal repros failed on the pre-fix compiler (623 with the zig type
+error, 624 with three "never mutated" plus the `*Node`-into-`Node` error) and pass after.
+
 ### BUG-622: `f(g(x)?)?` inside a function-level `catch` gave the outer call TWO catch wrappers -- FIXED 2026-10-24
 
 **Found by:** leakgen, the day its generator grew raw strings (BUG-620): the new random

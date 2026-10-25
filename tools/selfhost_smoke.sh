@@ -1447,6 +1447,7 @@ smoke_run test/float_round_rule_test.zbr "float_round: 2.68 0.13 3 -3 1.5 2.68 2
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"
+smoke_run test/bug623_624_ref_field_pass_assign_test.zbr "bug623_624: 1 5 7 9 6 3"
 smoke_quine test/quine_test.zbr
 smoke_tc_fail test/fail_fixtures/bug616_sortby_unordered_key_test.zbr "bug616_sortby_unordered_key_test.zbr:16:8: error: 'Suit' is \`@unordered\`"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr "bug616_sortby_no_compare_key_test.zbr:18:8: error: 'P' has no ordering, so it cannot be a \`.sortBy\` key"

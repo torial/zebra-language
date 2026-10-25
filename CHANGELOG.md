@@ -47,6 +47,9 @@ confirmed via `tools/bootstrap_check.sh`.
   int counting every element, as it is for a List (a `for ... if` guard does not renumber).
 - **`f(g(x)?)?` inside a function-level `catch` compiles (BUG-622).** The outer call got two
   catch wrappers and failed inside zig.
+- **A `^T` field passes and assigns as a value (BUG-623/624).** `Box(a.e)` and `take(a.e)` into a
+  `^T` parameter failed inside zig, and so did `b.e = a.e` or `b.e = Node(7)` on a local `b`.
+  Each now boxes a fresh copy: a later change to `a.e` does not show through `b`.
 
 ---
 

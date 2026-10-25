@@ -2502,15 +2502,14 @@ var b = Node(2, nil)
 a.next = b                            # auto-boxes: allocates *Node, copies b in
 ```
 
-> **Currently broken for a STRUCT (BUG-299, open):** assigning a struct value to a `^T?`
-> field fails to compile ("expected type '?*T', found 'T'"). A UNION value auto-boxes
-> correctly, and so does a non-optional `^T` field.
-
 ### Rules
 
 - `^T` in a field type → `*T` in Zig; `^T?` → `?*T`.
 - **Auto-boxing:** assigning a value of type `T` to a `^T` field allocates a heap copy
   automatically.  No explicit `new` or `box(…)` call is needed.
+- **A `^T` field reads as a value**, so it is copied like one: `b.e = a.e`, `Box(a.e)` and
+  `take(a.e)` (a `^Node` parameter) each box a fresh copy, and a later `a.e.v = 5` does not
+  show through `b` (BUG-623/624).
 - **Transparent in `branch`:** inside a `branch` arm that binds a `^T` union payload, the
   binding has type `T` — the pointer indirection is stripped for you.
 - **`^ClassName` is a compile error** — classes already have reference semantics;

@@ -9572,11 +9572,16 @@ struct Generator
                         # must NOT fire when the RHS is already a ref (`^T`/`^T?`) — e.g.
                         # `cue init(opt_val: ^Val?) { .opt_val = opt_val }` is a direct
                         # pointer copy, not a box (BUG: union-box regressed val_test here).
-                        if (isDeclaredHere(tn) or .module_types.hasUnion(tn)) and not rhsIsAlreadyRef(a.value)
+                        # BUG-623/624: `b.e = a.e` -- a `^T` FIELD read is emitted as a VALUE
+                        # (`a.e.*`), so it is boxed like one; and the TARGET is the pointer
+                        # slot itself (genRefSlot), never `b.e.*`. Writing through the old
+                        # pointer stored a `*T` into a `T` (`c.e = Node(7)`) or, for a ref RHS,
+                        # left `b` never mutated, which zig refuses for a `var`.
+                        if (isDeclaredHere(tn) or .module_types.hasUnion(tn)) and not rhsIsPointerValue(a.value)
                             w.emit("{ const _rp = _allocator.create(" + typeZigName(tn) + ") catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
-                            genExpr(a.target)
+                            genRefSlot(a.target)
                             w.emit(" = _rp; }\n")
                             return
                         # BUG-584: a struct or union of a USED module (or one declared inside a
@@ -9584,13 +9589,13 @@ struct Generator
                         # module is used without `exposing` (`lib.SBox`), so the box is spelled
                         # from the SLOT's own type (`_ZbrSlotChild`) -- the value's type would be
                         # the tag type for a payload-less variant (`lib.Shape.dot`).
-                        if (struct_names.contains_(tn) or .dep_types.hasUnion(tn) or depDeclaresStruct(.dep_types, tn)) and not rhsIsAlreadyRef(a.value)
+                        if (struct_names.contains_(tn) or .dep_types.hasUnion(tn) or depDeclaresStruct(.dep_types, tn)) and not rhsIsPointerValue(a.value)
                             w.emit("{ const _rp = _allocator.create(_ZbrSlotChild(@TypeOf(")
-                            genExpr(a.target)
+                            genRefSlot(a.target)
                             w.emit("))) catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
-                            genExpr(a.target)
+                            genRefSlot(a.target)
                             w.emit(" = _rp; }\n")
                             return
         # BUG-412: `s += "x"` on a str is concatenation.
@@ -9676,6 +9681,22 @@ struct Generator
                         return false
             else
                 return false
+
+    # BUG-623/624: the RHS reaches Zig as a POINTER -- a ref that genExpr does not
+    # dereference. A `^T` field read infers as a ref but is emitted `a.e.*`, a value.
+    def rhsIsPointerValue(v: Expr): bool
+        return rhsIsAlreadyRef(v) and not memberEmitsDeref(v)
+
+    # BUG-624: a `^T` field as an assignment TARGET is the pointer slot (`b.e`), not the
+    # value behind it (`b.e.*`, what genExpr emits for a read).
+    def genRefSlot(t: Expr)
+        if memberEmitsDeref(t)
+            if t is Expr.member as rs_m
+                genExpr(rs_m.object)
+                w.emit(".")
+                emitName(rs_m.member)
+                return
+        genExpr(t)
 
     def getAssignFieldType(a: StmtAssign): TypeRef?
         # BUG-299: `b.p = v` where `b` is a value of another struct/class -- its declared
@@ -9972,11 +9993,35 @@ struct Generator
 
     # BUG-299: `e` is a VALUE of struct/union `name` (not nil, not already a pointer).
     def isBoxableValueOf(e: Expr, name: str): bool
-        if e is Expr.nil_ or rhsIsAlreadyRef(e) or .infer_ctx == nil
+        if e is Expr.nil_ or .infer_ctx == nil
             return false
         var vt: Type_ = inferExpr(e, .infer_ctx!)
+        # BUG-623: a `^T` FIELD read infers as a ref, but genExpr emits it dereferenced
+        # (`a.e.*` -- the pointer is transparent, QUICKSTART §22), so it reaches the call as
+        # a VALUE and is boxed like one: a copy, as `b.e = a.e` already copies.
+        if vt is Type_.ref_to as vr
+            if memberEmitsDeref(e)
+                if vr is Type_.named as vrn
+                    return vrn == name
+            return false
+        if vt is Type_.optional as vo
+            if vo is Type_.ref_to
+                return false            # `^T?`: already a pointer (rhsIsAlreadyRef's other arm)
         if vt is Type_.named as vn
             return vn == name
+        return false
+
+    # BUG-623: does genExpr emit this member read with a trailing `.*`? Mirrors the
+    # auto-deref rule in genExpr's `Expr.member` arm exactly -- the two must agree, or a
+    # value is passed where a pointer is expected (or the reverse).
+    def memberEmitsDeref(e: Expr): bool
+        if e is Expr.member as md
+            var md_obj = getIdentName(md.object)
+            if md_obj != nil
+                var md_key = makeDottedKey(md_obj!, md.member)
+                if for_loop_vars.contains_(md_obj!)
+                    return for_loop_deref.contains_(md_key)
+                return ptr_field_bindings.contains_(md_key)
         return false
 
     # BUG-496: a module var's initializer, emitted with a module-level inference context.
