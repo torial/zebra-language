@@ -2348,6 +2348,15 @@ whose final run's streams arrive on the right streams, a genuine error run once,
 persistent one tried three times, a successful run that merely PRINTS the signature not
 retried. Watched red against a never-retry and a retry-anything wrapper.
 
+**And the round-trip (2026-10-25)**: `bootstrap_check.sh` built selfhost-A/B with bare
+`zig build-exe`, and the closing `--daily` went red on round-trip alone with zig unable to read
+`std/time.zig` -- byte-identical standalone minutes later. Both of its attempts (fast backend,
+then the LLVM fallback) had hit it. `build_compiler` now retries the pair, three tries in all,
+only on the shared predicate, and its PASS line ends `(infra-retries=N)`. Red-checked with a
+`ZEBRA_ZIG_DIR` stub that fails the first two builds with the verbatim error (the pre-fix script
+fails exactly as the daily did, the fixed one passes with 1 retry), and with a persistent genuine
+error (one try, two builds, rc=1).
+
 ### The daily is CACHED where the answer cannot have changed (2026-09-26)
 
 The daily was 110 minutes and ~85% of it was zig compiling what we emit: `divergence` 38
@@ -2513,6 +2522,12 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-10-25 (closing BUG-546/531/563/625/627 `aff4599`, BUG-628 filed
+`e8c7c6a`; FULL 48/48 before it): 56/57 in ONE invocation at JOBS=2, then round-trip green
+standalone -- ASSEMBLED.** `regen-recover`, `gramgen` 0/0 and `leakgen` 100/0 all green -- the
+last is the one that could have objected to the new "cannot fail" refusal. The red was BUG-302 in
+round-trip, which had no retry; it has one now (see the BUG-302 section).
 
 **DAILY tier 2026-10-22 (the rc8 release commit `561b7b1`, on top of BUG-569 step 4 / BUG-607
 `cda2ddc`, whose FULL was 46/46): 57/57 PASS in ONE invocation at JOBS=2, ~2h32m; tagged

@@ -115,13 +115,33 @@ FAST_BACKEND="${BOOTSTRAP_FAST:-1}"
 FAST_FLAGS=""
 [[ "$FAST_BACKEND" == "1" ]] && FAST_FLAGS="-fno-llvm -fno-lld"
 
-# build_compiler <root.zig> <out.exe> <errfile> — try the fast backend, fall back to LLVM.
-build_compiler() {
+# build_compiler_once <root.zig> <out.exe> <errfile> — try the fast backend, fall back to LLVM.
+build_compiler_once() {
     local root="$1" out="$2" err="$3"
     if [[ -n "$FAST_FLAGS" ]]; then
         zig build-exe "$root" -femit-bin="$out" $FAST_FLAGS 2>"$err" && return 0
     fi
     zig build-exe "$root" -femit-bin="$out" 2>"$err"
+}
+
+# build_compiler — the above, retried (three tries in all) ONLY when zig failed to read its
+# own std (BUG-302, the shared predicate in zig_build_lib.sh); a genuine compile error is
+# reported after one try. RECEIPT (2026-10-25): the closing --daily went red on round-trip
+# alone, "unable to load "time.zig": Unexpected" while building selfhost-A, the one zig gate
+# in the QUICK tier without the retry; standalone minutes later it was byte-identical.
+source "$REPO/tools/zig_build_lib.sh"
+BC_RETRIES=0
+build_compiler() {
+    local n=0
+    while :; do
+        build_compiler_once "$@" && return 0
+        if [[ "$n" -lt 2 ]] && zbr_zig_infra_error "$3"; then
+            n=$((n + 1)); BC_RETRIES=$((BC_RETRIES + 1))
+            echo "   (zig could not read its own std -- BUG-302 -- retrying the build, try $((n + 1)) of 3)" >&2
+            continue
+        fi
+        return 1
+    done
 }
 
 # typechecker is part of the selfhost dep graph as of Phase 16c. It is
@@ -309,4 +329,4 @@ fi
 # being true when --emit-zig moved to $TEMP, and it is now false by design
 # rather than by accident.
 
-echo "PASS: round-trip clean, selfhost-B produces output byte-identical to selfhost-A"
+echo "PASS: round-trip clean, selfhost-B produces output byte-identical to selfhost-A (infra-retries=$BC_RETRIES)"
