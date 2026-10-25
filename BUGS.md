@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-627. Next new bug: BUG-628.**
+**Last bug number generated: BUG-628. Next new bug: BUG-629.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,33 @@
 > measured in.
 
 ---
+
+### BUG-628: a method that throws only by INFERENCE (a `raise`, no `throws`), called without `?`, is not refused and fails inside zig -- OPEN (found 2026-10-25)
+- **Found by:** probing the seam behind BUG-546's fix. Two throw rules disagree: genMethod
+  (and `declMayFail`, `isTopLevelMethodThrows`) treat a body with a `raise` or `?` as
+  throwing and emit `anyerror!`; `throws_methods`, behind `isClassMethodThrows` /
+  `isOwnerMethodThrows`, records only a DECLARED `throws`.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'i64', found 'anyerror!i64'".
+  ```
+  class Box
+      var n: int = 1
+      def inferred(): int
+          if .n > 0
+              raise "inferred"
+          return .n
+
+  def main()
+      var b = Box()
+      var x = b.inferred()     # no `?`: the §28b implicit-try refusal does not fire
+  ```
+  The same through a bare owner call inside another method (`return inferred()`).
+- **Knock-on (BUG-546):** in that owner-call shape the CALLER (`caller(): int` holding
+  `return inferred()`) has no `raise` or `?` of its own, so `b.caller() catch 9` is refused
+  as "cannot fail" -- on a program that is invalid anyway, but naming the wrong line. With
+  the `?` written (`return inferred()?`) it compiles and nothing is refused.
+- **Fix direction:** populate `throws_methods` (and `isOwnerMethodThrows`) by the same rule
+  as genMethod -- one predicate, `declMayFail` -- then measure: methods in the corpus that
+  throw by inference and are called bare become implicit-try refusals.
 
 ### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- OPEN (found 2026-10-25)
 - **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding

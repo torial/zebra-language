@@ -26,7 +26,11 @@ wrong "cannot fail" would refuse a program zig accepts.
 GameEngine (3,047): 0 files carry the refusal. Positive control (a planted
 `f() catch 0`) fired. Then for the whole batch (546, 563, 625, 627): the new compiler over
 3,026 tracked files, and the committed one re-run on each of the 1,264 it refuses -- the
-files refused NOW and accepted BEFORE are exactly three, this batch's own fail fixtures. Fixtures: `test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr`
+files refused NOW and accepted BEFORE are exactly three, this batch's own fail fixtures.
+**The denominator is 1,762, not 3,026:** the 1,264 refused by both compilers -- mostly
+engine sources compiled without the engine's `--module-path` -- stop before codegen, where
+this check runs, so they say nothing about it. Seam found probing it: BUG-628 (a method
+that throws by inference is not a throwing callee to `isClassMethodThrows`). Fixtures: `test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr`
 (four shapes, `smoke_tc_fail`) and `test/bug546_catch_can_fail_test.zbr` -- declared,
 raise-inferred and `?`-inferred throwers, a throwing method, a raise-inferred method, and
 a bare owner call inside a method all keep their `catch`. Red-checked on the pre-fix
