@@ -1324,6 +1324,11 @@ var got = someObj.method()?          # propagates if method throws
 - **Postfix `catch |e|`** binds the error: `var n = f() catch |e| e.message.len` reads the
   raised message, and `"${e}"` the error's name. A capture the fallback never reads is a
   compile error at the `catch` -- write `catch 0`, or `catch |_| 0` (2026-10-09, BUG-526).
+- **A `catch` or `?` needs a call that can fail.** On a function or method that does not
+  throw (no `throws`, no `raise` or `?` in its body), or on a `File.*` call (these panic on
+  failure rather than raise), it is a compile error naming the call: ``` `three` cannot fail
+  (it does not throw) ... drop the `catch` ``` (2026-10-25, BUG-546). Calls the compiler
+  cannot see into -- another module's functions, a value of a `sig` type -- are not checked.
 - **An error that reaches the end of `main` ends the program** like an uncaught
   exception: `Error at <file>:<line>: <message>` on stderr -- the line of the `raise` --
   and exit status 1 (2026-09-28, BUG-466; the location since 2026-10-09). A caught error's
@@ -2435,6 +2440,17 @@ var cb: Callback = def()
     print("called")
 
 cb()    # invoke the stored callback
+```
+
+- **A list of functions** names its element type with a sig; each element converts,
+  and a call through one is typed as the sig's return (2026-10-25, BUG-563). Without
+  the annotation the literal is refused -- a lambda's own type has no name to infer:
+
+```zebra
+sig Step(x: int): int
+
+var fns: List(Step) = [def(x: int) = x + 1, def(x: int) = x * 10]
+var total = fns[0](4) + fns[1](4)    # 45
 ```
 
 - **`sig` in `class` fields:** you can store callbacks as fields — useful for

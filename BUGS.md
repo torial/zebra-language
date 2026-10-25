@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-624. Next new bug: BUG-625.**
+**Last bug number generated: BUG-627. Next new bug: BUG-628.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,29 @@
 > measured in.
 
 ---
+
+### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- OPEN (found 2026-10-25)
+- **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding
+  it to a `List(str)` passed the front end.
+- **Repro:** all three pass `zebra -c`; zig refuses each.
+  ```
+  def f(xs: List(str)): int
+      return xs.len
+
+  def main()
+      var a = [1, 2]
+      print(f(a))                    # expected type 'List(str)', found 'List(int)'
+      var b: List(str) = a           # the same, for a typed var
+      var c: List(int) = List(int?)()   # found 'List(?i64)'
+  ```
+- **Mechanism:** `typesCompatible` answers `true` whenever either side is not a primitive,
+  so no container slot -- argument, typed var, assignment, return -- compares element types.
+  The zig message already names the Zebra types, so the user is told what is wrong, but in
+  zig's words and after the build.
+- **Why it was not fixed with BUG-531:** the check would run on every container assignment
+  in every program; it needs the §28a treatment (measure the refusals across the corpus,
+  zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
+  (an empty literal, a generic) that must stay compatible.
 
 ### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
 <!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
@@ -156,21 +179,6 @@
   bindable), or it is documented as the inline membership form only and the front end refuses
   the other uses by name. Today the reference documents a use that cannot compile.
 
-### BUG-563: a list literal of lambdas is accepted and typed as `List(str)` -- calling an element is an inference error, binding it leaks a zig error -- OPEN (found 2026-10-12)
-- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor and on HEAD.
-- **Repro:**
-  ```
-  def main()
-      var fns = [def(x: int) = x + 1, def(x: int) = x * 10]
-      var a: int = fns[0](4)
-      print(a)
-  ```
-  zig: `expected type 'str', found '*const fn (i64) i64'`. With `print(fns[0](4) + fns[1](4))`
-  the front end instead says "cannot infer the type of this expression, an operand of `+`".
-- **Expected:** the element type of a list of lambdas is their function type (or a `sig` when
-  annotated, `var fns: List(Step) = [...]`); calling `fns[i](x)` types as the lambda's return.
-  At least: refuse the literal in the front end rather than typing it `List(str)`.
-
 ### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
   predates BUG-561.
@@ -210,18 +218,6 @@
   must resolve a relative marker against the same root (debug-map's gate covers the map).
   Fixture: the same source emitted from two different cwds with `--source-root` gives
   byte-identical files.
-
-### BUG-546: a postfix `catch` on a call that cannot fail passes the front end and fails inside zig -- OPEN (found 2026-10-08)
-- **Severity:** Low-Medium (a leak: the user's fix is to delete the `catch`, but nothing says
-  so where they are looking).
-- **Reported by:** Fable, GameEngine, about `File.listDir`, which returns a List and does not
-  throw. Reproduced here: `var xs = File.listDir(".") catch |e| List(str)()` -- `zebra -c`
-  exits 0, and zig refuses the `catch` on a non-error-union.
-- **Fix direction:** refuse in the checker, naming the call: "`File.listDir` does not throw;
-  drop the `catch`". That needs the checker to know which calls can fail -- it does for
-  user `throws` functions; the builtin namespaces need their throwing members listed, which
-  is also what the surface doc should say ("which File calls throw", Fable's question).
-  `?` on a non-throwing call should get the same rule if it does not already.
 
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).
@@ -283,16 +279,34 @@
   decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
   output must hold no `NTSTATUS` line (Windows-only leg).
 
-### BUG-531: a Regex method called directly on `Regex.compile(...)` in a `var` initializer passes `-c` and fails inside zig -- OPEN (found 2026-10-05)
-- `var r = Regex.compile("a").groups("cat")` -> "no field or member function named
-  'groups' in 'zebra_rt.Regex'". The chain is materialized into `_mc_1` and the call is
-  emitted as a raw struct method. The same call inside `print(...)` works. Every Regex
-  method. Reported by the book agent; verified.
+### BUG-534: a runtime `int` flowing into ANY sized-int slot passes `-c` and fails inside zig -- and there is no Zebra spelling for the conversion -- OPEN, NEEDS A DECISION (found 2026-10-05; re-scoped 2026-10-25)
+- **Reported as** an `int` argument to a `uint64` EXTERN parameter (`f(p, text.len)` ->
+  zig "expected type 'u64', found 'i64'"), with "`var u: uint64 = n` builds fine".
+- **Measured 2026-10-25, it is wider and that note was wrong.** `var u: uint64 = n` builds
+  only when `n` is a never-mutated local that Zig folds as a comptime constant; with `n` a
+  PARAMETER it fails the same way. Every slot leaks, for every sized type: a Zebra `def`'s
+  `uint64` parameter, an extern's `uint32` / `int32` parameter, a typed `var`, a `return`
+  from a `uint64` function. Repro (no C dependency):
+  ```
+  def f(x: uint64): uint64
+      return x
 
-### BUG-534: an `int` argument to a `uint64` extern parameter passes `-c` and fails inside zig -- OPEN (found 2026-10-05)
-- `extern def f(p: ^byte, len: uint64): uint32` called as `f(p, text.len)` -> zig
-  "expected type 'u64', found 'i64'"; `var u: uint64 = n` builds fine, and `int` has no
-  unsigned conversion method. Reported by the book agent; NOT re-run here (needs a C dep).
+  def go(n: int): uint64
+      return f(n)        # zig: expected type 'u64', found 'i64'
+  ```
+- **Why it is not just a missing refusal.** BUG-431 closed the same hole for `byte` by
+  adding `.toByte()` AND refusing an int value in a byte slot by name. For `uint64`,
+  `uint32`, `int32`... no conversion method exists, so a refusal could only name
+  `zig"@intCast(n)"` -- and for `text.len` the user cannot annotate their way out. A
+  silent `@intCast` at the boundary is rejected: out-of-range is illegal behaviour, UB
+  under `--release` (the A4 class).
+- **The decision (Sean's; no joint position while Fable is away):** the conversion
+  spelling -- names (a family `toInt32()` / `toUint32()` / `toUint64()`..., or one form) and
+  semantics (TRAP when out of range, like `u.toInt()`, or TRUNCATE, like `.toByte()`).
+  Then the refusal names it, BUG-431's shape. Proposed default: a trapping family named
+  for the target type, because a silent wrong length into C is the worse failure.
+- Before landing the refusal, measure: keyed on named values it also refuses the
+  comptime-folded cases that build today (`var n = 2` ... `f(n)`).
 
 ---
 

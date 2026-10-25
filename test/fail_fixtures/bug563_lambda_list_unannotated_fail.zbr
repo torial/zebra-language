@@ -1,0 +1,6 @@
+# BUG-563: an unannotated list of lambdas has no element type to infer; it was emitted
+# as a List(str) and zig refused the first append.
+def main()
+    var fns = [def(x: int) = x + 1, def(x: int) = x * 10]
+    var a: int = fns[0](4)
+    print(a)

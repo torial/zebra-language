@@ -3442,6 +3442,16 @@ def recordImplicitTry(site: str)
 def implicitTrySites(): List(str)
     return _implicit_try_sites
 
+# BUG-546: a `catch` or `?` on a call that cannot fail, as full "file:line:col: error:
+# ..." lines. Recorded at the emit site like _implicit_try_sites; main.zbr refuses.
+var _cannot_fail_sites: List(str) = List(str)()
+
+def recordCannotFail(site: str)
+    _cannot_fail_sites.add(site)
+
+def cannotFailSites(): List(str)
+    return _cannot_fail_sites
+
 # `--single-threaded` (2026-09-26): every call that STARTS A THREAD, as "file:line  what".
 # Recorded at the emit site (like _implicit_try_sites) so main.zbr can refuse the build in
 # Zebra's words; without it the user got Zig's "Cannot spawn thread when building in
@@ -8369,7 +8379,7 @@ struct Generator
                 # string chain directly.  Materialization (BUG-079) is only needed for
                 # STRUCT temporaries needing a stable address; string slices pass by
                 # value.  Fixes chained `s.concat(a).concat(b)` (BUG-185).
-                if not isStringExpr(chain.recv) and not isDateTimeExpr(chain.recv) and not isValueTypeExpr(chain.recv)
+                if chainRecvNeedsHoist(chain.recv)
                     mc_recv = hoistCallChain(chain.recv)
                     mc_field = chain.method
                     if .infer_ctx != nil
@@ -8694,10 +8704,18 @@ struct Generator
                             w.emit(" = _zbr_new(")
                             genType(n.type_!)
                             w.emit("); ")
+                            # BUG-563: `var fns: List(Step) = [def ..., def ...]` -- an
+                            # element flowing into a sig slot is converted, as
+                            # `fns.add(def ...)` already was; it reached zig as
+                            # "expected _ZbrFn(fn (i64) i64), found fn (i64) i64".
+                            var ll_sig: bool = gtll.args.len == 1 and isSigTypeRef(gtll.args.at(0))
                             var lli = 0
                             while lli < ll_init.elems.len
                                 w.emit(lname230 + ".append(_allocator, ")
-                                genExpr(ll_init.elems.at(lli))
+                                if ll_sig
+                                    genSigValue(ll_init.elems.at(lli))
+                                else
+                                    genExpr(ll_init.elems.at(lli))
                                 w.emit(") catch @panic(\"OOM\"); ")
                                 lli += 1
                             w.emit("break :" + lbl230 + " " + lname230 + "; };\n")
@@ -8937,6 +8955,80 @@ struct Generator
                     return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
         return false
 
+    # genMethod's rule for `anyerror!` in a signature, plus the `test_*` harness rule
+    # (BUG-386), as one predicate: can a call to `m` produce an error?
+    def declMayFail(m: DeclMethod): bool
+        if m.throws_ or m.name.startsWith("test_")
+            return true
+        return m.stmts != nil and bodyHasRaise(m.stmts!)
+
+    # BUG-546: the name of the call `e` if it certainly emits a plain value, not an
+    # error union -- so a `catch` or `?` on it would reach zig as "expected error union
+    # type", a message about code the user never wrote. Claimed only where this
+    # generator decides the emit: a same-module top-level fn, a method of a same-module
+    # class or struct (both by declMayFail, the rule that writes the signature), and the
+    # File namespace, whose members all panic on failure rather than return one
+    # (genFileCall). Anything else -- a local or parameter, a bare call inside a method
+    # (owner dispatch), a dep module, another namespace, an interface -- is nil and is
+    # left alone: a wrong "cannot fail" would refuse a program zig accepts.
+    def cannotFailCallName(e: Expr): str?
+        if e is Expr.call as c
+            if c.callee is Expr.ident as id
+                if isLocalOrParamName(id.name)
+                    return nil
+                if in_method and owner != "" and isOwnerMethod(id.name)
+                    return nil
+                var tl_found: bool = false
+                for decl in module_decls
+                    if decl is Decl.method as tm
+                        if tm.name == id.name
+                            if declMayFail(tm)
+                                return nil
+                            tl_found = true
+                if tl_found
+                    return id.name
+                return nil
+            if c.callee is Expr.member as cm
+                if cm.object is Expr.ident as ns
+                    if ns.name == "File" and not isLocalOrParamName("File") and not import_aliases.contains_("File") and not isUserTypeName("File")
+                        return "File." + cm.member
+                if .infer_ctx == nil
+                    return nil
+                var rt: Type_ = inferExpr(cm.object, .infer_ctx!)
+                if rt is Type_.ref_to as rtr
+                    rt = rtr
+                if rt is Type_.named as rcn
+                    var m_found: bool = false
+                    for decl in module_decls
+                        var mems: List(Decl) = List(Decl)()
+                        branch decl
+                            on Decl.class_ as dc
+                                if dc.name == rcn
+                                    mems = dc.members
+                            on Decl.struct_ as ds
+                                if ds.name == rcn
+                                    mems = ds.members
+                            else
+                                pass
+                        for mem in mems
+                            if mem is Decl.method as mm
+                                if mm.name == cm.member
+                                    if declMayFail(mm)
+                                        return nil
+                                    m_found = true
+                    if m_found
+                        return rcn + "." + cm.member
+        return nil
+
+    # BUG-546: record a `catch` / `?` on a call that cannot fail (see cannotFailCallName).
+    def noteCannotFail(e: Expr, op: str, span: Span)
+        if cannotFailCallName(e) as cf_name
+            var cf_fix: str = "drop the `catch` and its fallback"
+            if op == "?"
+                cf_fix = "drop the `?`"
+            recordCannotFail(source_file + ":" + span.line.toString() + ":" + span.col.toString() +
+                ": error: `" + cf_name + "` cannot fail (it does not throw), so this `" + op + "` has nothing to handle: " + cf_fix)
+
     def isStringBuilderCtor(e: Expr): bool
         if e is Expr.call as c
             if c.args.len == 0
@@ -9030,6 +9122,38 @@ struct Generator
         if t is Type_.json_value
             return true
         return false
+
+    # BUG-079 hoists `f().m(args)` into `var _mc_N = f();` then `_mc_N.m(args)`, because a
+    # Zig method taking `*Self` cannot be called on a temporary. That raw `.m(` is right for
+    # a user class/struct and wrong for every RUNTIME type (Regex, StringBuilder, a process,
+    # a connection...): their methods are dispatched by genMemberCall, which the hoist
+    # skips -- `var r = Regex.compile("a").groups(s)` reached zig as "no member named
+    # 'groups'" while the same call in `print(...)` or `return` worked (BUG-531). So the
+    # var-init and assignment hoists ALLOW the types a raw call is right for, rather than
+    # denying runtime types one bug at a time: a new runtime variant defaults to dispatch.
+    # Unknown receivers keep the old behaviour (hoist). The return path's rule is the
+    # narrower `Type_.named` only, unchanged.
+    def chainRecvNeedsHoist(recv: Expr): bool
+        if isStringExpr(recv) or isDateTimeExpr(recv) or isValueTypeExpr(recv)
+            return false
+        if .infer_ctx == nil
+            return true
+        var t: Type_ = inferExpr(recv, .infer_ctx!)
+        if t is Type_.ref_to as tr
+            t = tr
+        branch t
+            on Type_.named as _
+                return true
+            on Type_.cross_module as _
+                return true
+            on Type_.unknown_
+                return true
+            on Type_.unresolved
+                return true
+            on Type_.context_dependent
+                return true
+            else
+                return false
 
     def isDateTimeExpr(e: Expr): bool
         if e is Expr.ident as id
@@ -9397,7 +9521,7 @@ struct Generator
         # handles the string chain.  (Mirrors the var-init and return paths.)
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
-            if ch != nil and not isStringExpr((ch!).recv) and not isDateTimeExpr((ch!).recv) and not isValueTypeExpr((ch!).recv)
+            if ch != nil and chainRecvNeedsHoist((ch!).recv)
                 var chain = ch!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
@@ -14231,6 +14355,7 @@ struct Generator
                 else
                     w.emit(")")
             on Expr.catch_ as ca2
+                noteCannotFail(ca2.expr, "catch", ca2.span)    # BUG-546
                 w.emit("(")
                 # BUG-436: inside a method-level `catch` block, a throws call gets the
                 # block's catch-break wrapper (emitTryBlockCatch) unless the enclosing
@@ -14503,6 +14628,7 @@ struct Generator
                 # while the outer call was still emitting its args, so the outer call took the
                 # catch-break wrapper itself and this arm added a second ("expected error union").
                 var tr_saved_ite: bool = in_try_expr
+                noteCannotFail(tr.expr, "?", tr.span)    # BUG-546
                 var tr_json_fn: str = ""
                 if .infer_ctx != nil
                     var tr_is_index: bool = false

@@ -1,0 +1,10 @@
+# BUG-563: a list literal of lambdas annotated with a `sig` element type converts each
+# element as `fns.add(...)` does (it reached zig as "expected _ZbrFn(...), found fn"),
+# and a call through an element, `fns[i](x)`, is typed as the sig's return.
+sig Step(x: int): int
+
+def main()
+    var k = 3
+    var fns: List(Step) = [def(x: int) = x + 1, def(x: int) = x * 10, def(x: int) = x + k]
+    var total = fns[0](4) + fns[1](4) + fns[2](4)
+    print("bug563: ${total} ${fns.len}")

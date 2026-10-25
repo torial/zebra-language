@@ -4366,6 +4366,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return genericCallReturn(gf_rt, gc.args, ctx)   # BUG-462
                     return Type_.unresolved
                 else
+                    # BUG-563: a call through any other callable expression -- `fns[i](x)`
+                    # on a `List(Step)` -- yields the callable's return type, as a call
+                    # through a local of that type already did.
+                    var oc_t: Type_ = inferExpr(c.callee, ctx)
+                    if oc_t is Type_.fn_type_ as oc_ret
+                        return typeFromRef(oc_ret)
+                    if oc_t is Type_.named as oc_nm
+                        if ctx.methodReturnAny("$sig:" + oc_nm, "call") as oc_sig_rt
+                            return oc_sig_rt
                     return Type_.unresolved
         on Expr.try_ as et
             # `expr?` — propagate the inner type; the `?` suffix only affects
@@ -6908,6 +6917,13 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
                     if bc.callee is Expr.ident as bcid
                         if bcid.name == "List" or bcid.name == "HashMap" or bcid.name == "Set"
                             ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + bcid.name + "()' needs its type argument here: `" + bcid.name + "(int)()`, or annotate the binding (`var " + dv.name + ": " + bcid.name + "(int) = " + bcid.name + "()`)")
+            # BUG-563: `var fns = [def(x: int) = x + 1, ...]` -- a list of functions has
+            # no element type to infer (a lambda's own type has no name), so it was
+            # emitted as a List(str) and zig refused the first append.
+            if bare_init is Expr.list_lit as bll
+                if bll.elems.len > 0
+                    if bll.elems.at(0) is Expr.lambda
+                        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "a list of functions needs its element type named: declare a `sig` for it (`sig Step(x: int): int`) and annotate the binding (`var " + dv.name + ": List(Step) = [...]`) (QUICKSTART §20)")
         return
     var declared: Type_ = typeFromRef(dv.type_!)  # safe: nil returned above
     if dv.init_expr != nil
@@ -6932,6 +6948,12 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
                 ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
                 return
     if not isPrimitive(declared)
+        # BUG-627: the refusals inference makes on the way (an unknown method or field)
+        # must reach a var whose annotation is not a primitive too. `var p: ^byte =
+        # t.toCPtr()`, `var xs: List(int) = s.sizee()` returned here first, passed `-c`,
+        # and the typo reached zig. addErr drops an exact duplicate.
+        if dv.init_expr != nil
+            inferExpr(dv.init_expr!, ctx)
         return
     if dv.init_expr == nil
         return

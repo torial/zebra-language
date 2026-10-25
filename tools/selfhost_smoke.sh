@@ -1448,6 +1448,18 @@ smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"
 smoke_run test/bug623_624_ref_field_pass_assign_test.zbr "bug623_624: 1 5 7 9 6 3"
+smoke_run test/bug546_catch_can_fail_test.zbr "bug546: 10 20 30 40 50 7"
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'bug546_catch_cannot_fail_fail.zbr:14:12: error: `three` cannot fail (it does not throw), so this `?` has nothing to handle: drop the `?`'
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'bug546_catch_cannot_fail_fail.zbr:17:13: error: `three` cannot fail (it does not throw), so this `catch` has nothing to handle: drop the `catch` and its fallback'
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'error: `Counter.get` cannot fail'
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'error: `File.listDir` cannot fail'
+smoke_run test/bug531_chain_runtime_recv_test.zbr "bug531: 2 true 0 1 2"
+smoke_run test/bug563_sig_list_literal_test.zbr "bug563: 52 3"
+smoke_tc_fail test/fail_fixtures/bug563_lambda_list_unannotated_fail.zbr "a list of functions needs its element type named"
+smoke_run test/bug625_optional_type_arg_no_throw_test.zbr "bug625: 3 1"
+smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:6:22: error: 'str' has no method 'toCPtr'"
+smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:7:27: error: 'str' has no method 'sizee'"
+smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:8:21: error: 'str' has no method 'lenn'"
 smoke_quine test/quine_test.zbr
 smoke_tc_fail test/fail_fixtures/bug616_sortby_unordered_key_test.zbr "bug616_sortby_unordered_key_test.zbr:16:8: error: 'Suit' is \`@unordered\`"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr "bug616_sortby_no_compare_key_test.zbr:18:8: error: 'P' has no ordering, so it cannot be a \`.sortBy\` key"

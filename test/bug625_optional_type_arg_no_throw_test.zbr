@@ -1,0 +1,20 @@
+# BUG-625: a `?` inside a constructor's type argument (`List(str?)()`) was read as a
+# postfix try, so a function holding one THREW by inference and every call site was told
+# "throws call needs '?'". The function cannot fail; its callers need no `?`.
+def blanks(n: int): List(str?)
+    var xs = List(str?)()
+    var i = 0
+    while i < n
+        xs.add(nil)
+        i += 1
+    return xs
+
+def table(): HashMap(str, int?)
+    var m = HashMap(str, int?)()
+    m["a"] = nil
+    return m
+
+def main()
+    var xs = blanks(3)
+    var m = table()
+    print("bug625: ${xs.len} ${m.len}")

@@ -6,6 +6,88 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-546: a `catch` or `?` on a call that cannot fail passed `-c` and failed inside zig -- FIXED 2026-10-25
+
+**Reported by** Fable (GameEngine) on `File.listDir(".") catch List(str)()`; zig said
+"expected error union type, found 'List(str)'". **Wider than filed:** the same for a
+same-module function or class method that does not throw, with `catch` OR `?`.
+
+**Fix.** Refused where the emit is decided, as §28b's implicit-try rule already is: the
+`catch` and `?` arms of genExpr ask `cannotFailCallName`, and main.zbr prints each site
+and exits 1 (`-c` included). The claim "cannot fail" is made ONLY for shapes this
+generator decides, by the rule that writes the signature (`declMayFail`: declared
+`throws`, a `raise` or `?` in the body, or a `test_*` fn): a same-module top-level fn, a
+method of a same-module class or struct, and `File.*`, whose 15 generators all panic on
+failure (no `try` in genFileCall). Everything else is left alone -- a local or param, a
+bare owner call inside a method, a dep module, other namespaces, interfaces -- because a
+wrong "cannot fail" would refuse a program zig accepts.
+
+**Measured before landing:** `-c` over every tracked file of this repo, zebra-ide and the
+GameEngine (3,047): 0 files carry the refusal. Positive control (a planted
+`f() catch 0`) fired. Then for the whole batch (546, 563, 625, 627): the new compiler over
+3,026 tracked files, and the committed one re-run on each of the 1,264 it refuses -- the
+files refused NOW and accepted BEFORE are exactly three, this batch's own fail fixtures. Fixtures: `test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr`
+(four shapes, `smoke_tc_fail`) and `test/bug546_catch_can_fail_test.zbr` -- declared,
+raise-inferred and `?`-inferred throwers, a throwing method, a raise-inferred method, and
+a bare owner call inside a method all keep their `catch`. Red-checked on the pre-fix
+compiler: `-c` exited 0 on the fail fixture.
+
+**Not covered:** other builtin namespaces (which of their members can fail is not
+written down anywhere -- Fable's surface question stands), cross-module calls, and the
+IDE: like the implicit-try refusal, it is raised by the driver after codegen, so `zebra
+lsp` does not show it.
+
+### BUG-531: a method chained on a runtime-type temporary in a `var` initializer or assignment failed inside zig -- FIXED 2026-10-25
+
+`var r = Regex.compile("a").groups(s)` -> "no member named 'groups' in 'zebra_rt.Regex'";
+`var s = StringBuilder().toString()` the same. The BUG-079 hoist (`var _mc_N = f();` then
+`_mc_N.m(...)`) is right for a user class -- a `*Self` method cannot be called on a
+temporary -- and wrong for every runtime type, whose methods genMemberCall dispatches.
+The var-init and assignment paths hoisted everything but a hand-kept deny list (string,
+DateTime, value types); the return path already allowed only `Type_.named`.
+`chainRecvNeedsHoist` now ALLOWS named / cross-module / unknown receivers, so a new
+runtime variant defaults to dispatch. Measured: an emit diff of the committed compiler
+against the new one over the three repos moved ONE file -- `GameEngine/zbra/luaustring.zbr`'s
+`luaMatch`, `Regex.compile(pattern).find(s)` in a typed var, which did not compile before
+(latent: nothing calls it, so zig never analysed it) and runs now. Fixture
+`test/bug531_chain_runtime_recv_test.zbr` (Regex var-init and assignment, StringBuilder,
+and a user-class chain as the control); red on the pre-fix compiler.
+
+### BUG-563: a list literal of lambdas -- FIXED 2026-10-25
+
+Three layers, the first two not in the ticket. (1) An ANNOTATED `var fns: List(Step) =
+[def ..., ...]` failed inside zig ("expected _ZbrFn(fn (i64) i64), found fn (i64) i64"):
+the annotated-literal path appended each element raw, where `fns.add(def ...)` converts
+it into the sig; it converts now (genSigValue). (2) `fns[0](4)` was untyped -- a call
+through any callee other than a name; now a callee of a sig or `def(P): R` type yields
+its return. (3) An UNANNOTATED list of lambdas is refused, naming the `sig` + `List(Step)`
+form: a lambda's own type has no name to infer (it was guessed `List(str)`). Fixtures
+`test/bug563_sig_list_literal_test.zbr` (with a capturing element) and
+`test/fail_fixtures/bug563_lambda_list_unannotated_fail.zbr`; QUICKSTART §20.
+Still open nearby: a lambda with no declared return type is untyped, so
+`var f = def(x: int) = x + 1` then `f(4) + 1` is refused for inference.
+
+### BUG-625: `List(str?)()` in a function made it throw -- FIXED 2026-10-25
+
+Found probing BUG-531. A type argument's nilable suffix parses as a postfix `?`
+(BUG-503's shape), and `exprHasTry` counted it, so a function holding `List(str?)()` or
+`HashMap(str, int?)()` was emitted `anyerror!` and every caller was told "throws call
+needs '?'". `exprHasTry` no longer descends into the arguments of a `List` / `HashMap` /
+`Set` / `Chan` constructor. The only two corpus uses were in `main`, so no caller's `?`
+was stranded. Fixture `test/bug625_optional_type_arg_no_throw_test.zbr`, red on the
+pre-fix compiler.
+
+### BUG-627: an unknown method in a non-primitive typed var's initializer passed `-c` -- FIXED 2026-10-25
+
+Found probing BUG-534: `var p: ^byte = text.toCPtr()` passed `-c` while `var p =
+text.toCPtr()` and `var p: int = ...` were refused. `checkVarDecl` returned before
+inferring the initializer whenever the annotation was not a primitive (`^T`, `List(T)`,
+`T?`), and the unknown-method refusal lives in inference. It now infers first (addErr
+drops the exact duplicate). Fixture `test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr`,
+three annotations; `-c` exited 0 on the pre-fix compiler.
+
+---
+
 ### BUG-623 / BUG-624: a `^T` field passed to a `^T` parameter, or assigned to a local's `^T` field, failed inside zig -- FIXED 2026-10-24
 
 **Found by:** writing BUG-621's fix (`StmtForIn(..., fi.iter, ...)` in the compiler's own

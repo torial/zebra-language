@@ -50,6 +50,15 @@ confirmed via `tools/bootstrap_check.sh`.
 - **A `^T` field passes and assigns as a value (BUG-623/624).** `Box(a.e)` and `take(a.e)` into a
   `^T` parameter failed inside zig, and so did `b.e = a.e` or `b.e = Node(7)` on a local `b`.
   Each now boxes a fresh copy: a later change to `a.e` does not show through `b`.
+- **A `catch` or `?` on a call that cannot fail is a compile error naming the call (BUG-546).**
+  A same-module function or method that does not throw, or a `File.*` call; it failed inside
+  zig ("expected error union type").
+- **A method chained on `Regex.compile(...)` / `StringBuilder()` in a `var` initializer or an
+  assignment compiles (BUG-531).** It failed inside zig; `print` and `return` already worked.
+- **`var fns: List(Step) = [def ..., def ...]` compiles and `fns[i](x)` is typed (BUG-563).**
+  An unannotated list of lambdas is refused, naming the `sig` form.
+- **`List(str?)()` no longer makes the function holding it "throw" (BUG-625)**, and an unknown
+  method in a `^T` / `List(T)` / `T?`-typed var's initializer is refused like any other (BUG-627).
 
 ---
 

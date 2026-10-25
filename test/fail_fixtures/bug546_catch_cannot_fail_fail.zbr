@@ -1,0 +1,22 @@
+# BUG-546: a `catch` or `?` on a call that cannot fail reached zig as "expected error
+# union type, found 'i64'" -- `zebra -c` exited 0. Each shape the compiler can prove
+# infallible: a same-module fn, a method of a same-module class, and the File namespace
+# (its members panic on failure rather than return an error).
+class Counter
+    var n: int = 0
+    def get(): int
+        return .n
+
+def three(): int
+    return 3
+
+def viaQ(): int throws
+    return three()?
+
+def main()
+    var a = three() catch 0
+    var c = Counter()
+    var b = c.get() catch 0
+    var xs = File.listDir(".") catch List(str)()
+    print(a + b + xs.len)
+    print(viaQ() catch 0)
