@@ -2533,6 +2533,14 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-26, second run (closing BUG-629 / BUG-569 `4056ecd`; FULL 48/48 before it):
+59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke 858/858 (infra-retries=0),
+round-trip byte-identical, `boundary` 39/0, `output_sweep` 466 identical (465 cache hits / 1
+miss -- the BUG-629 fix moved one emit), `full_sweep` / `divergence` 0 regressions,
+`regen-recover` from `4056ecd`, `gramgen` 0/0, and `leakgen` 100/0 with the new `lambdas` cap
+generating capturing lambdas and their reassignment -- the cap that went red on the pre-fix
+compiler (18 leaks / 7 signatures).
+
 **DAILY tier 2026-10-26 (closing BUG-534 `e2fb50a`, the trapping `toInt8..toUint64` family; FULL
 48/48 before it): 59/59 PASS in ONE invocation at JOBS=2 on the committed tree, ~100 min of gate
 time.** smoke 854/854 (infra-retries=0), round-trip byte-identical, `boundary` 39/0,
