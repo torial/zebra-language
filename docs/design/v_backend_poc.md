@@ -1648,6 +1648,21 @@ stream-typed fields and one tuple literal, each a stub that panics if
 reached) and nothing in the test reaches them. The V compile of the
 health test is 9,000 lines of V and about two seconds with tcc.
 
+22. **No bare local names in `selfhost/zebra_rt.v`** (2026-10-26). The
+    runtime is compiled into every program's module, so a local or a
+    parameter there shares one namespace with every program's consts. V
+    0.5.2 silently lowers `&tmp[0]` against `_const_main__tmp` when they
+    collide (the engine's scene_loader and hotreload rows failed in the C
+    compiler after d67ee8d, whose `zfmt_val` had a local `tmp`; a witness
+    declared a const of that name); the emitter's rename (13) does not
+    reach hand-written runtime code. Every runtime local and parameter
+    carries a prefix (`zf_` in the zfmt functions; cb86c82). The positive
+    control is `examples/v_poc9_fmt.zbr`: it declares module consts named
+    after the formatter's former locals (`tmp`, `buf`, `len`, `pos`, `out`)
+    and prints them, so a bare name returning to the runtime fails the
+    example lane in the C stage, as d67ee8d's did when the control was run
+    against it.
+
 ## Main merged, the workarounds out (2026-10-13)
 
 The Zebra session fixed BUG-559 and BUG-560 on main (3133ec1; the cause
@@ -2414,6 +2429,15 @@ before, the gui section 11–29 MB against 46; the window row's milestones
 unchanged. The residue is one `tos_clone` and the `[f64(...)]` array literal
 per command (V heap-allocates an array literal), and the V draw's own
 parsing copies (`split` / `substr`), which are the port's, not the backend's.
+
+**Open, found by the control on 2026-10-26:** a *bare* float hole (`${x}`
+with no spec) keeps V's spelling, and it differs from the Zig backend's at
+large magnitude: V prints `1e+20` where Zig prints
+`100000000000000000000.0`. Small values agree (`10.3`), which is why the
+witness's `slow` row never saw it; the control's `big` const shadowed the
+example's own local and printed it bare. Routing the bare hole through a
+runtime function that spells as Zig's `{d}` does is the next step of this
+section, not yet taken.
 
 **V's refusals on the way**, for the next hand on the runtime file: a mutable
 array element's address (`&big[0]`) and a fixed array's address (`&tmp[0]`)

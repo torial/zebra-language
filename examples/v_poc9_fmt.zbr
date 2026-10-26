@@ -9,6 +9,17 @@
 # path's stack buffer. The rows with an int or a string hole, or a bare `${x}`, are
 # the slow path, printed beside them so the two paths read alike.
 
+# The positive control for the runtime's naming rule (v_backend_poc.md item 22, 2026-10-26): module
+# consts named after the formatter's former locals. The runtime file is compiled into this program's
+# module, and V 0.5.2 silently miscompiles a runtime local that shares a const's name; with every
+# runtime local prefixed this prints, and a bare name returning to zebra_rt.v fails the C stage here.
+const tmp: int = 7
+const buf: str = "b"
+const tp: int = 9
+const pos: int = 2
+const hole: int = 1
+const at: int = 4
+
 def mk(x: float): float
     return x
 
@@ -77,3 +88,4 @@ def main()
     print("carry2|${c7:.2f}|${c8:.2f}|${c7:.0f}|${c8:.0f}")
     # a mixed interpolation's float holes go the same way (one at a tie, one carrying)
     print("mixed|${name}|${t2:.2f}|${k}|${c3:.2f}|${c5:.1f}")
+    print("consts|${tmp}|${buf}|${tp}|${pos}|${hole}|${at}")
