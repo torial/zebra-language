@@ -1085,7 +1085,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     if pti > 0
                         ptypes_pipe = ptypes_pipe + "|"
                     if p2.type_ != nil
-                        ptypes_pipe = ptypes_pipe + typeTag(typeFromRef(p2.type_!))
+                        ptypes_pipe = ptypes_pipe + paramTag(typeFromRef(p2.type_!))
                     else
                         ptypes_pipe = ptypes_pipe + "?"
                     pti += 1
@@ -1301,7 +1301,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     if tl_pti > 0
                         tl_ptypes = tl_ptypes + "|"
                     if tl_p.type_ != nil
-                        tl_ptypes = tl_ptypes + typeTag(typeFromRef(tl_p.type_!))
+                        tl_ptypes = tl_ptypes + paramTag(typeFromRef(tl_p.type_!))
                     else
                         tl_ptypes = tl_ptypes + "?"
                     tl_pti += 1
@@ -1556,6 +1556,12 @@ class InferCtx
     # to a numeric loop whose variable is assignable). Each is a Zig `const` capture, so
     # assigning one leaked "cannot assign to constant". Same shape as params_here.
     var loop_consts: str
+    # BUG-629: locals an UNANNOTATED `var` bound to a lambda whose signature cannot be
+    # written down (an expression lambda with no return type, or an untyped parameter).
+    # Each lambda is its own Zig type, so reassigning one leaked "has no member named
+    # 'from'" / "must be const or comptime"; a nameable one becomes a sig value in
+    # codegen, these are refused at the assignment. Same shape as params_here.
+    var opaque_lambdas: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1577,6 +1583,7 @@ class InferCtx
         .params_here = " "
         .copy_locals = " "
         .loop_consts = " "
+        .opaque_lambdas = " "
 
     def setParamsHere(names: str)
         .params_here = names
@@ -1610,6 +1617,17 @@ class InferCtx
 
     def resetCopyLocals()
         .copy_locals = " "
+        .opaque_lambdas = " "
+
+    def markOpaqueLambda(name: str)
+        if not ((" " + name + " ") in .opaque_lambdas)
+            .opaque_lambdas = .opaque_lambdas + name + " "
+
+    def unmarkOpaqueLambda(name: str)
+        .opaque_lambdas = .opaque_lambdas.replace(" " + name + " ", " ")
+
+    def isOpaqueLambda(name: str): bool
+        return (" " + name + " ") in .opaque_lambdas
 
     def isParamHere(name: str): bool
         return (" " + name + " ") in .params_here
@@ -3145,6 +3163,11 @@ def simdLaneScalar(tn: str): Type_
         return Type_.float_
     if tn.startsWith("bool")
         return Type_.bool_
+    # BUG-534: the lane's own width (i32x4 -> int32), not `int` -- the sized-slot
+    # refusal would otherwise reject `var s: int32 = v.sum()`, which zig accepts.
+    var lane: Type_ = typeFromName(tn.split("x").at(0))
+    if lane is Type_.int_n or lane is Type_.uint_n
+        return lane
     return Type_.int_
 
 # the mask type of a vector type: u8x16 -> boolx16
@@ -3335,8 +3358,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # BUG-596: a METHOD read as a value (`c.bump`, `xs.map(p.score)`). On a class
                 # it binds to the object (CodeGen `_zbr_bind`) and is typed as a callable
                 # returning what the method returns. On a STRUCT it would bind the VARIABLE by
-                # reference (Sean, 2026-10-16) -- which needs the escaping-capture design
-                # BUG-569 still owes -- so it is refused for now rather than reaching zig.
+                # reference (Sean, 2026-10-16) -- not built yet, though BUG-569's shared cells
+                # (2026-10-22) are what it would stand on -- so it is refused rather than
+                # reaching zig.
                 if boundMethodRet(tn, m.member, m.span.line, m.span.col, ctx) as bm_ret
                     return bm_ret
                 if unknownUserMember(tn, m.member, ctx)
@@ -3775,6 +3799,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # BUG-431: the int -> byte narrowing (truncating, low 8 bits)
                             if mem.member == "toByte"
                                 return Type_.uint_n(8)
+                            var iconv_t: Type_ = intConvTarget(mem.member)   # BUG-534
+                            if not (iconv_t is Type_.unresolved)
+                                return iconv_t
                             # `n.to(m)` is the method-form range (§28a); its element
                             # type is handled by isRangeIterExpr, the range itself
                             # stays untyped here as it always was.
@@ -3783,8 +3810,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if ctx.methodReturnAny("$extend:int", mem.member) as iext_ret   # BUG-573
                                 return iext_ret
                             ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString; abs, min, max, pow are Math.* functions)")
+                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString, the checked toInt8..toInt64/toUint/toUint8..toUint64; abs, min, max, pow are Math.* functions)")
                             return Type_.unknown_
+                        # BUG-534: a SIZED integer receiver converts the same way. Only the
+                        # conversion names are typed here; anything else falls through to
+                        # the untyped path it always took.
+                        on Type_.int_n as _
+                            var snconv_t: Type_ = sizedIntMethodType(mem.member)
+                            if not (snconv_t is Type_.unresolved)
+                                return snconv_t
+                        on Type_.uint_n as _
+                            var suconv_t: Type_ = sizedIntMethodType(mem.member)
+                            if not (suconv_t is Type_.unresolved)
+                                return suconv_t
+                        on Type_.uint_
+                            var uconv_t: Type_ = sizedIntMethodType(mem.member)
+                            if not (uconv_t is Type_.unresolved)
+                                return uconv_t
                         on Type_.float_
                             if mem.member == "toInt"
                                 return Type_.int_
@@ -4366,6 +4408,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return genericCallReturn(gf_rt, gc.args, ctx)   # BUG-462
                     return Type_.unresolved
                 else
+                    # BUG-563: a call through any other callable expression -- `fns[i](x)`
+                    # on a `List(Step)` -- yields the callable's return type, as a call
+                    # through a local of that type already did.
+                    var oc_t: Type_ = inferExpr(c.callee, ctx)
+                    if oc_t is Type_.fn_type_ as oc_ret
+                        return typeFromRef(oc_ret)
+                    if oc_t is Type_.named as oc_nm
+                        if ctx.methodReturnAny("$sig:" + oc_nm, "call") as oc_sig_rt
+                            return oc_sig_rt
                     return Type_.unresolved
         on Expr.try_ as et
             # `expr?` — propagate the inner type; the `?` suffix only affects
@@ -5216,6 +5267,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     is_compound = false
                 else
                     pass
+            if not is_compound
+                if sasn.target is Expr.ident as olt
+                    if ctx.isOpaqueLambda(olt.name)
+                        ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
+                                   "'" + olt.name + "' holds a lambda whose type cannot be named, so it cannot be reassigned -- give the lambda its parameter and return types (`def(x: int): int = ...`) or declare the variable with a function type (`var " + olt.name + ": def(int): int = ...`)")
             if is_compound
                 var lhs_t: Type_ = inferExpr(sasn.target, ctx)
                 # BUG-412: `s += "x"` on a str is concatenation (codegen lowers it to
@@ -5264,6 +5320,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr!, ctx)
             ctx.bind(dv.name, t)
+            ctx.unmarkOpaqueLambda(dv.name)
+            if dv.type_ == nil and dv.init_expr != nil
+                if dv.init_expr! is Expr.lambda as dvlam
+                    if not lambdaSigNameable(dvlam)
+                        ctx.markOpaqueLambda(dv.name)
             # BUG-314: `var r = parent.at(i)` binds a COPY of the inner container.
             ctx.unmarkCopyLocal(dv.name)
             if dv.init_expr != nil
@@ -5484,6 +5545,78 @@ def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
 
 const BYTE_NARROW_HINT: str = "-- an int does not narrow to a byte on its own; use `.toByte()` (low 8 bits) (QUICKSTART §21)"
 
+# BUG-534 (Sean, 2026-10-25): the checked conversions to each sized integer, named for the
+# target. Out of range TRAPS in every build mode (the runtime's `_zbr_int_to`), because a
+# wrong length handed silently to C is the worse failure. `unresolved` = not one of them.
+def intConvTarget(name: str): Type_
+    if name == "toInt8"
+        return Type_.int_n(8)
+    if name == "toInt16"
+        return Type_.int_n(16)
+    if name == "toInt32"
+        return Type_.int_n(32)
+    if name == "toInt64"
+        return Type_.int_n(64)
+    if name == "toUint"
+        return Type_.uint_
+    if name == "toUint8"
+        return Type_.uint_n(8)
+    if name == "toUint16"
+        return Type_.uint_n(16)
+    if name == "toUint32"
+        return Type_.uint_n(32)
+    if name == "toUint64"
+        return Type_.uint_n(64)
+    return Type_.unresolved
+
+# The methods a sized integer receiver (int32, uint64, uint, byte...) answers to: the same
+# conversions as `int`, plus toInt / toFloat / toString. `unresolved` for anything else.
+def sizedIntMethodType(name: str): Type_
+    if name == "toInt"
+        return Type_.int_
+    if name == "toFloat" or name == "toFloat32"
+        return Type_.float_
+    if name == "toString"
+        return Type_.string_
+    return intConvTarget(name)
+
+# BUG-534: a NAMED integer value flowing into an integer slot zig will not coerce it to at
+# run time (`f(n)` with `n: int` and a `uint64` parameter: "expected type 'u64', found
+# 'i64'"). Zig coerces only when the slot holds every value of the source: same sign and
+# at least as wide, or unsigned into a strictly wider signed. Returns the hint naming the
+# conversion, "" when the flow is fine. The byte case keeps BYTE_NARROW_HINT (`.toByte()`).
+# Same shapes as narrowsIntToByte: literals and arithmetic are left to zig, which folds them.
+def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
+    var dk: int = numKind(declared)
+    var sk: int = numKind(inferred)
+    if dk == 0 or dk == 3 or sk == 0 or sk == 3
+        return ""
+    branch e
+        on Expr.ident as _
+            pass
+        on Expr.member as _
+            pass
+        on Expr.call as _
+            pass
+        on Expr.index as _
+            pass
+        else
+            return ""
+    var dw: int = numWidth(declared)
+    var sw: int = numWidth(inferred)
+    if dk == sk and dw >= sw
+        return ""
+    if sk == 2 and dk == 1 and dw > sw
+        return ""
+    var meth: str = "toInt"
+    if dk == 1 and declared is Type_.int_n
+        meth = "toInt" + dw.toString()
+    if dk == 2
+        meth = "toUint"
+        if declared is Type_.uint_n
+            meth = "toUint" + dw.toString()
+    return "-- convert it with `." + meth + "()` (checked: traps if the value does not fit; QUICKSTART §21)"
+
 def typesCompatible(declared: Type_, inferred: Type_): bool
     if not isPrimitive(declared)
         return true
@@ -5579,6 +5712,21 @@ def forInVarTypes(fi: StmtForIn, ctx: InferCtx): List(Type_)
             out.add(Type_.int_)
             out.add(lelem)
             return out
+    # BUG-621: `for i, x in <iterator>` (split/lines/chars/bytes/to/a set) -- the index is
+    # an int and the element is what the one-variable form would bind. A map took the
+    # key/value arm above, a list of tuples the destructuring one. An iterable whose
+    # type is NOT known stays unknown: it may be a map inference could not see, and
+    # typing its key as an int would fabricate an answer.
+    if n == 2 and not (it is Type_.hashmap_)
+        var one_vars = List(str)()
+        one_vars.add(fi.vars.at(1))
+        var it621: Expr = fi.iter
+        var one = StmtForIn(fi.span, one_vars, it621, fi.filter, fi.stmts, fi.else_)
+        var elem621: Type_ = forInVarTypes(one, ctx).at(0)
+        if not (it is Type_.unknown_) or not (elem621 is Type_.unknown_)
+            out.add(Type_.int_)
+            out.add(elem621)
+            return out
     var i: int = 0
     while i < n
         out.add(Type_.unknown_)
@@ -5661,6 +5809,10 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if narrowsIntToByte(exp, inferred, e)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected byte, got int " + BYTE_NARROW_HINT)
         return exp
+    var ex_hint: str = intNarrowHint(exp, inferred, e)   # BUG-534
+    if ex_hint != ""
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + numTypeName(exp) + ", got " + numTypeName(inferred) + " " + ex_hint)
+        return exp
     if not isPrimitive(exp)
         return inferred
     if optionalIntoPlain(exp, inferred)
@@ -5690,7 +5842,19 @@ def optionalIntoPlain(declared: Type_, inferred: Type_): bool
 
 # Reconstruct a primitive Type_ from a typeTag string. Returns nil for
 # non-primitive tags so checkCallExpr skips those param positions.
+# BUG-534: a sized INTEGER parameter is tagged by its Zebra name (`int32`, `uint64`, `byte`)
+# rather than typeTag's "?", which decoded to nil -- so no argument passed to an int32, a
+# uint64 or a byte parameter was ever checked (BUG-431's call-argument refusal included).
+def paramTag(t: Type_): str
+    if t is Type_.int_n or t is Type_.uint_n
+        return numTypeName(t)
+    return typeTag(t)
+
 def paramTypeFromTag(tag: str): Type_?
+    if tag.startsWith("int") and tag.len > 3
+        return typeFromName(tag)
+    if (tag.startsWith("uint") and tag.len > 4) or tag == "byte"
+        return typeFromName(tag)
     if tag == "int"
         return Type_.int_
     if tag == "uint"
@@ -6893,6 +7057,13 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
                     if bc.callee is Expr.ident as bcid
                         if bcid.name == "List" or bcid.name == "HashMap" or bcid.name == "Set"
                             ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + bcid.name + "()' needs its type argument here: `" + bcid.name + "(int)()`, or annotate the binding (`var " + dv.name + ": " + bcid.name + "(int) = " + bcid.name + "()`)")
+            # BUG-563: `var fns = [def(x: int) = x + 1, ...]` -- a list of functions has
+            # no element type to infer (a lambda's own type has no name), so it was
+            # emitted as a List(str) and zig refused the first append.
+            if bare_init is Expr.list_lit as bll
+                if bll.elems.len > 0
+                    if bll.elems.at(0) is Expr.lambda
+                        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "a list of functions needs its element type named: declare a `sig` for it (`sig Step(x: int): int`) and annotate the binding (`var " + dv.name + ": List(Step) = [...]`) (QUICKSTART §20)")
         return
     var declared: Type_ = typeFromRef(dv.type_!)  # safe: nil returned above
     if dv.init_expr != nil
@@ -6916,7 +7087,19 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
             if narrowsIntToByte(declared, inferExpr(dv.init_expr!, ctx), dv.init_expr!)
                 ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
                 return
+        # BUG-534: the same for every other integer slot zig will not coerce to.
+        var nv_inf: Type_ = inferExpr(dv.init_expr!, ctx)
+        var nv_hint: str = intNarrowHint(declared, nv_inf, dv.init_expr!)
+        if nv_hint != ""
+            ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + numTypeName(declared) + ", found " + numTypeName(nv_inf) + " " + nv_hint)
+            return
     if not isPrimitive(declared)
+        # BUG-627: the refusals inference makes on the way (an unknown method or field)
+        # must reach a var whose annotation is not a primitive too. `var p: ^byte =
+        # t.toCPtr()`, `var xs: List(int) = s.sizee()` returned here first, passed `-c`,
+        # and the typo reached zig. addErr drops an exact duplicate.
+        if dv.init_expr != nil
+            inferExpr(dv.init_expr!, ctx)
         return
     if dv.init_expr == nil
         return
@@ -7316,9 +7499,15 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         sa_slot = sa_el
                 else
                     sa_slot = inferExpr(sasn.target, ctx)
-                if narrowsIntToByte(sa_slot, inferExpr(sasn.value, ctx), sasn.value)
+                var sa_val_t: Type_ = inferExpr(sasn.value, ctx)
+                if narrowsIntToByte(sa_slot, sa_val_t, sasn.value)
                     ctx.addErr(file, sasn.span.line, sasn.span.col,
                                "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
+                else
+                    var sa_hint: str = intNarrowHint(sa_slot, sa_val_t, sasn.value)   # BUG-534
+                    if sa_hint != ""
+                        ctx.addErr(file, sasn.span.line, sasn.span.col,
+                                   "type mismatch: expected " + numTypeName(sa_slot) + ", found " + numTypeName(sa_val_t) + " " + sa_hint)
             on Stmt.expr as se
                 checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.
@@ -7952,6 +8141,106 @@ def interfaceHasMethod(ctx: InferCtx, iface: str, method: str, depth: int): bool
 
 # BUG-596: the type of METHOD `member` of user class `tn` read as a value -- a callable
 # returning the method's declared type (unknown_ for a method declared without one) -- or
+# BUG-629: can this lambda's signature be written as `def(P...): R`? Every parameter
+# typed, and a return type -- declared, or void for a statement body without one that
+# never returns a value. An expression lambda with no return type, or a statement body
+# that does `return 5` without declaring it, has a result only Zig knows.
+def lambdaSigNameable(lam: ExprLambda): bool
+    var i = 0
+    while i < lam.params.len
+        if lam.params.at(i).type_ == nil
+            return false
+        i += 1
+    if lam.return_type != nil
+        return true
+    if lam.body_ is LambdaBody.stmts as lbs
+        return not stmtsReturnValue(lbs)
+    return false
+
+def stmtsReturnValue(stmts: List(Stmt)): bool
+    for s in stmts
+        if stmtReturnsValue(s)
+            return true
+    return false
+
+# Does this statement -- or one nested in its body -- `return` a value? A nested lambda's
+# returns are its own: they sit inside an Expr, which this does not walk.
+# stmt-walker: exhaustive
+def stmtReturnsValue(s: Stmt): bool
+    branch s
+        on Stmt.return_ as r
+            return r.value != nil
+        on Stmt.if_ as si
+            if stmtsReturnValue(si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if stmtsReturnValue(ei.stmts)
+                    return true
+            if si.else_stmts as se
+                return stmtsReturnValue(se)
+            return false
+        on Stmt.while_ as sw
+            return stmtsReturnValue(sw.stmts)
+        on Stmt.for_in as sf
+            if stmtsReturnValue(sf.stmts)
+                return true
+            if sf.else_ as sfe
+                return stmtsReturnValue(sfe)
+            return false
+        on Stmt.for_num as sn
+            if stmtsReturnValue(sn.stmts)
+                return true
+            if sn.else_ as sne
+                return stmtsReturnValue(sne)
+            return false
+        on Stmt.branch_ as sb
+            for bc in sb.cases
+                if stmtsReturnValue(bc.stmts)
+                    return true
+            if sb.else_ as sbe
+                return stmtsReturnValue(sbe)
+            return false
+        on Stmt.with_ as swi
+            return stmtsReturnValue(swi.stmts)
+        on Stmt.in_scope as sis
+            return stmtsReturnValue(sis.stmts)
+        on Stmt.try_catch as stc
+            if stmtsReturnValue(stc.stmts)
+                return true
+            for cl in stc.clauses
+                if stmtsReturnValue(cl.stmts)
+                    return true
+            return false
+        on Stmt.allocate_ as sa
+            return stmtsReturnValue(sa.stmts)
+        # no statement body below: what they hold are expressions
+        on Stmt.assert_
+            return false
+        on Stmt.assign
+            return false
+        on Stmt.var_
+            return false
+        on Stmt.expr
+            return false
+        on Stmt.raise_
+            return false
+        on Stmt.destruct
+            return false
+        on Stmt.copy_out
+            return false
+        on Stmt.print_
+            return false
+        on Stmt.contract
+            return false
+        on Stmt.yield_
+            return false
+        on Stmt.pass_
+            return false
+        on Stmt.break_
+            return false
+        on Stmt.continue_
+            return false
+
 # nil when `member` is not such a method (a field of that name wins: it is what is read).
 # A struct's method read as a value is refused here (BUG-596's struct half waits on BUG-569).
 def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Type_?
@@ -7966,7 +8255,7 @@ def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Ty
     if ctx.fieldTypeAny(tn, member) != nil or ctx.methodReturnAny(tn, member) == nil
         return nil
     if ct.is_struct
-        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which needs the escaping-capture design BUG-569 still owes -- call it in place, or make '" + tn + "' a class to pass its methods around")
+        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which is not built yet (BUG-596) -- call it in place, or make '" + tn + "' a class to pass its methods around")
         return Type_.unknown_
     if ct.methodReturnRef(member) as rr
         return Type_.fn_type_(rr)

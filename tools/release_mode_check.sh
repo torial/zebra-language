@@ -198,6 +198,38 @@ else
     say FAIL "in-range indexing BROKE in --release -- the check is refusing valid reads"
     fail=$((fail + 1))
 fi
+
+# ── BUG-534: a checked integer conversion must TRAP in --release too ───────────────────────
+# `n.toUint8()` / `u.toInt()`... go through the runtime's _zbr_int_to (std.math.cast) and
+# never @intCast, whose out-of-range case is a panic in Debug and UNDEFINED in ReleaseFast --
+# so a shipped build would hand C a silently wrong length. Same classification: the panic
+# TEXT, plus a control that an in-range conversion still converts.
+cat > "$_idx_dir/conv_out.zbr" <<'ZBR'
+def main()
+    var n = 300
+    var b = n.toUint8()
+    print("SURVIVED conversion: ${b}")
+ZBR
+cat > "$_idx_dir/conv_in.zbr" <<'ZBR'
+def main()
+    var n = 255
+    print("conversion ok: ${n.toUint8()}")
+ZBR
+_conv_out="$("$ZEBRA" --release "$_idx_dir/conv_out.zbr" 2>&1)"
+if printf '%s' "$_conv_out" | grep -q "integer conversion out of range: 300 does not fit"; then
+    say ok "out-of-range conversion refused in --release"
+else
+    say FAIL "out-of-range conversion was NOT refused in --release -- it fabricated a value"
+    printf '%s
+' "$_conv_out" | tail -3 | sed 's/^/      /'
+    fail=$((fail + 1))
+fi
+if "$ZEBRA" --release "$_idx_dir/conv_in.zbr" 2>&1 | grep -q "conversion ok: 255"; then
+    say ok "in-range conversion still converts in --release"
+else
+    say FAIL "in-range conversion BROKE in --release"
+    fail=$((fail + 1))
+fi
 rm -rf "$_idx_dir"
 
 # ── BUG-468: a --release binary must SAY it overflowed its stack ─────────────────────────

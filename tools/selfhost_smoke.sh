@@ -662,6 +662,29 @@ smoke_run() {
     fi
 }
 
+# smoke_quine <zbr> -- the program's STDOUT must equal its own source, byte for byte
+# (`cmp`, so a trailing newline counts). A substring check cannot prove a quine.
+smoke_quine() {
+    local zbr="$1"
+    local label
+    label="$(basename "$zbr" .zbr)_quine"
+    local out
+    out=$(mktemp)
+    if zbr_run_retrying "$ZEBRA" "$zbr" > "$out" 2>/dev/null; then
+        if cmp -s "$out" "$zbr"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (stdout is not the source; first difference: $(cmp "$out" "$zbr" 2>&1 | head -1))" >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (non-zero exit)" >&2
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$out"
+}
+
 # smoke_run_flag <zbr> <flag> <expected> -- smoke_run with one compiler flag. The file
 # comes FIRST so registration_check's `^smoke\w* test/...` pattern sees it. Not in
 # positive_set.sh on purpose: a program that needs a flag to compile is not a positive
@@ -1407,6 +1430,11 @@ smoke_run_fail test/fail_fixtures/bug569_param_struct_capture_test.zbr "'p' is c
 smoke_run test/bug569_this_capture_test.zbr "bug569_this: 5 <ab>:ab 6 AB"
 smoke_tc_fail test/fail_fixtures/bug569_struct_this_capture_test.zbr "bug569_struct_this_capture_test.zbr:7:31: error: a closure in a struct method cannot read \`this\`"
 smoke_tc_fail test/fail_fixtures/bug569_go_this_capture_test.zbr "bug569_go_this_capture_test.zbr:12:21: error: a \`sys.go\` closure names what it uses"
+# BUG-629: a reassigned, unannotated lambda local is a sig value; one whose type cannot be named is refused
+smoke_run test/bug629_lambda_reassign_test.zbr "bug629: 4 4,9 21 2 42 11 1,100 6 60 6 4,10 102 3 5"
+smoke_tc_fail test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr "bug629_opaque_lambda_reassign_fail.zbr:8:5: error: 'h' holds a lambda whose type cannot be named, so it cannot be reassigned"
+smoke_tc_fail test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr "bug629_opaque_lambda_reassign_fail.zbr:11:5: error: 'g' holds a lambda whose type cannot be named, so it cannot be reassigned"
+smoke_tc_fail test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr "bug629_opaque_lambda_reassign_fail.zbr:15:5: error: 'r' holds a lambda whose type cannot be named, so it cannot be reassigned"
 smoke_tc_fail test/fail_fixtures/bug612_lambda_body_method_test.zbr "bug612_lambda_body_method_test.zbr:5:34: error: 'str' has no method 'toUpper'"
 smoke_tc_fail test/fail_fixtures/bug612_lambda_param_assign_test.zbr "bug612_lambda_param_assign_test.zbr:6:9: error: cannot assign to parameter 'x'"
 smoke_run test/bug612_lambda_body_ok_test.zbr "bug612: [3, 6, 9] 18 2 6 3"
@@ -1420,6 +1448,36 @@ smoke_run test/bug616_sortby_keys_test.zbr "bug616: cab bac abc abc"
 smoke_run test/bug618_intern_program_arena_test.zbr "bug618: tick 1999 | made-inside-2000 | made-inside-2000"
 smoke_run test/bug617_scoped_arena_frees_test.zbr "bug617: OK"
 smoke_run test/hashmap_clear_test.zbr "hashmap_clear: 0 1 3 1 seven none"
+smoke_run test/float_round_rule_test.zbr "float_round: 2.67 0.12 2 -2 1.4 2.67 2.67e0"
+smoke_run test/float_round_rule_test.zbr "float_round_halves: 0 2 -0.00 10.00 1.00e1"
+smoke_run test/float_round_rule_test.zbr "float_round_pad: [    2.67] [2.67    ] [**2.67***]"
+smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
+smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
+smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"
+smoke_run test/bug623_624_ref_field_pass_assign_test.zbr "bug623_624: 1 5 7 9 6 3"
+smoke_run test/bug546_catch_can_fail_test.zbr "bug546: 10 20 30 40 50 7"
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'bug546_catch_cannot_fail_fail.zbr:14:12: error: `three` cannot fail (it does not throw), so this `?` has nothing to handle: drop the `?`'
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'bug546_catch_cannot_fail_fail.zbr:17:13: error: `three` cannot fail (it does not throw), so this `catch` has nothing to handle: drop the `catch` and its fallback'
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'error: `Counter.get` cannot fail'
+smoke_tc_fail test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr 'error: `File.listDir` cannot fail'
+smoke_run test/bug531_chain_runtime_recv_test.zbr "bug531: 2 true 0 1 2"
+smoke_run test/bug563_sig_list_literal_test.zbr "bug563: 52 3"
+smoke_tc_fail test/fail_fixtures/bug563_lambda_list_unannotated_fail.zbr "a list of functions needs its element type named"
+smoke_run test/bug625_optional_type_arg_no_throw_test.zbr "bug625: 3 1"
+smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:6:22: error: 'str' has no method 'toCPtr'"
+smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:7:27: error: 'str' has no method 'sizee'"
+smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:8:21: error: 'str' has no method 'lenn'"
+# BUG-534: the checked sized-integer conversions (toInt8..toInt64, toUint, toUint8..toUint64),
+# a conversion that does not fit trapping, and the refusal of a named int into a sized slot.
+smoke_run test/bug534_sized_conversions_test.zbr "bug534: OK"
+smoke_run_fail test/bug534_conversion_trap_test.zbr "integer conversion out of range: 300 does not fit in byte"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:15:7: error: type mismatch: expected uint64, got int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:16:35: error: type mismatch: expected uint64, got int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:17:20: error: type mismatch: expected int32, found uint64 -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:18:7: error: type mismatch: expected byte, got int"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:20:5: error: type mismatch: expected uint32, found int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:24:12: error: type mismatch: expected int, got uint64 -- convert it with"
+smoke_quine test/quine_test.zbr
 smoke_tc_fail test/fail_fixtures/bug616_sortby_unordered_key_test.zbr "bug616_sortby_unordered_key_test.zbr:16:8: error: 'Suit' is \`@unordered\`"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr "bug616_sortby_no_compare_key_test.zbr:18:8: error: 'P' has no ordering, so it cannot be a \`.sortBy\` key"
 smoke_tc_fail test/fail_fixtures/bug614_assert_test.zbr "bug614_assert_test.zbr:15:34: error: str.count expects 1 argument, got 0"

@@ -1,0 +1,7 @@
+# BUG-534: a checked conversion whose value does not fit TRAPS, naming the value and the
+# target type -- in Debug and in --release alike (release_mode_check runs this one too).
+def main()
+    var n = 300
+    print("before")
+    var b = n.toUint8()
+    print("not reached ${b}")

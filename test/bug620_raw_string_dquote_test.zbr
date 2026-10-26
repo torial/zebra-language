@@ -1,0 +1,14 @@
+# BUG-620: a `"` inside a raw string closed the emitted Zig literal early, so
+# QUICKSTART's own example `r'{"key": "value"}'` never compiled. Expected values
+# are derived from the source text, not from a run.
+
+def main()
+    var j = r'{"key": "value"}'
+    var bq = r'a\"b'                   # backslash then quote: both literal, 4 bytes
+    var q = r'"'
+    var noi = r'${n}"'                 # no interpolation in a raw string: 5 bytes
+    var single = r"it's"
+    print(j)
+    var same = j == "{\"key\": \"value\"}"
+    var hi = r'say "hi"' == "say \"hi\""
+    print("bug620: ${j.len} ${bq.len} ${q.len} ${noi.len} ${single.len} ${same} ${hi}")

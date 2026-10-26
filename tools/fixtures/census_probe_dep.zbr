@@ -1,0 +1,8 @@
+# census_probe_dep.zbr -- a dependency of census_probe.zbr: its lines must carry ITS file name.
+def build_list(n: int): List(str)
+    var out: List(str) = List(str)()                         # cens:>=1
+    var i: int = 0                                           # cens:none
+    while i < n                                              # cens:none
+        out.add("v" + i.toString())                          # cens:>=300 via=ensureTotalCapacity
+        i = i + 1                                            # cens:none
+    return out                                               # cens:none

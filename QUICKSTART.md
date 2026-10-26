@@ -1324,6 +1324,11 @@ var got = someObj.method()?          # propagates if method throws
 - **Postfix `catch |e|`** binds the error: `var n = f() catch |e| e.message.len` reads the
   raised message, and `"${e}"` the error's name. A capture the fallback never reads is a
   compile error at the `catch` -- write `catch 0`, or `catch |_| 0` (2026-10-09, BUG-526).
+- **A `catch` or `?` needs a call that can fail.** On a function or method that does not
+  throw (no `throws`, no `raise` or `?` in its body), or on a `File.*` call (these panic on
+  failure rather than raise), it is a compile error naming the call: ``` `three` cannot fail
+  (it does not throw) ... drop the `catch` ``` (2026-10-25, BUG-546). Calls the compiler
+  cannot see into -- another module's functions, a value of a `sig` type -- are not checked.
 - **An error that reaches the end of `main` ends the program** like an uncaught
   exception: `Error at <file>:<line>: <message>` on stderr -- the line of the `raise` --
   and exit status 1 (2026-09-28, BUG-466; the location since 2026-10-09). A caught error's
@@ -1400,9 +1405,12 @@ while var line = reader.readLine(), line != nil
 for item in items
     print(item)
 
-# for-in with index
+# for-in with index -- over a List, and over split/lines/chars/bytes/n.to(m) too;
+# `i` counts every element (an `if` guard skips, it does not renumber)
 for i, item in items
     print("${i}: ${item}")
+for i, word in line.split(" ")
+    print("${i}: ${word}")
 
 # for-in with numeric range — three equivalent spellings, all i64 counters,
 # stop is EXCLUSIVE (0..10 iterates 0-9); negative bounds work
@@ -1548,6 +1556,16 @@ var result = sb.build()              # str (drains the builder)
   `-` fill.  A part the formatter does not support -- a sign (`+`), `#`, digit
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
+- **How a float is rounded to a precision** (`.2f`, `.2`, `.2e`): Zebra rounds the
+  *exact binary value* the float holds, and an exact half goes to the even digit. These are
+  the digits Python's `%`/`format`, glibc and the Windows UCRT's `printf`, and .NET 10's
+  `ToString("F2")` print. `2.675` is stored as `2.67499999…`, so `${2.675:.2f}` is `2.67`;
+  `0.125` and `2.5` are exact halves, so `${0.125:.2f}` is `0.12`, `${2.5:.0f}` is `2` and
+  `${-2.5:.0f}` is `-2`, while `${1.5:.0f}` is `2`. A negative value that rounds to zero
+  prints `-0`, as in C and Python. (Until 2026-10-26 Zebra rounded the shortest decimal half
+  away from zero -- `2.68`, `0.13`, `3` -- which printed digits the stored value does not
+  have. The legacy msvcrt `printf` rounds exact halves away from zero, so "what C prints"
+  depends on the C runtime.)
 - To include a literal `${` in a string, escape the dollar sign: `"\${"`.
 - The escapes are `\n \r \t \\ \" \' \$ \xNN \u{N}`. Any other backslash pair (`"\w"`, `"\d"`)
   is a compile error at its column -- for a regex, write a raw string, `r"\w+"`
@@ -2156,6 +2174,11 @@ print(counter)                               # 2
   method share it. Inside a **struct** method that is refused (a struct is a value): bind
   what the closure needs to a local first (`var n = .n`).
 - A lambda handed to `sys.go` names what it uses in a `capture` block (§19.1).
+- A lambda variable may be REASSIGNED with another lambda of the same signature
+  (`h = def(x: int): int = x - k`, or `h = other`, or a function): it is then a function
+  value, as if declared `var h: def(int): int`. That needs the signature to be nameable --
+  every parameter typed, and a return type (a statement lambda without one is void) --
+  otherwise the reassignment is refused with both fixes named. (BUG-629.)
 - An explicit `capture` block at the top of a lambda body declares persistent
   per-instance state — see §19.1 below.
 
@@ -2336,8 +2359,7 @@ def main()
 ```
 
 A STRUCT's method cannot be used as a value yet: it would bind the struct variable itself,
-which needs the escaping-capture design still owed (BUG-569). Call it in place, or make the
-type a class.
+which is not built yet (BUG-596). Call it in place, or make the type a class.
 
 ---
 
@@ -2425,6 +2447,17 @@ var cb: Callback = def()
 cb()    # invoke the stored callback
 ```
 
+- **A list of functions** names its element type with a sig; each element converts,
+  and a call through one is typed as the sig's return (2026-10-25, BUG-563). Without
+  the annotation the literal is refused -- a lambda's own type has no name to infer:
+
+```zebra
+sig Step(x: int): int
+
+var fns: List(Step) = [def(x: int) = x + 1, def(x: int) = x * 10]
+var total = fns[0](4) + fns[1](4)    # 45
+```
+
 - **`sig` in `class` fields:** you can store callbacks as fields — useful for
   event-driven patterns:
 
@@ -2471,6 +2504,20 @@ a cast in another language:
   VALUE flowing into a byte slot without it -- `buf[i] = n`, `var b: byte = n`,
   a byte parameter -- is refused by the checker naming `.toByte()`; a literal or
   arithmetic on literals (`buf[i] = 2`) still folds, as before.
+- For the other **sized integers**, convert with the method named for the target:
+  `toInt8` `toInt16` `toInt32` `toInt64` `toUint` `toUint8` `toUint16` `toUint32`
+  `toUint64`, on any integer (BUG-534). These are CHECKED: a value that does not fit stops
+  the program -- `integer conversion out of range: 300 does not fit in byte` -- in
+  `--release` too. (`toByte` is the one that truncates.) A named int flowing into a sized
+  slot on its own -- `f(text.len)` with a `uint64` parameter, `var x: int32 = n` -- is
+  refused naming the conversion; only a widening (`int32` into `int`, `byte` into `uint32`)
+  flows by itself. A sized integer converts back with `.toInt()` (checked the same way),
+  and has `.toFloat()` / `.toString()`.
+  ```zebra
+  extern def write_n(p: ^byte, n: uint64): int32
+  def send(buf: ^byte, text: str): int
+      return write_n(buf, text.len.toUint64()).toInt()
+  ```
 - For raw bit-pattern conversions, drop into `zig"…"` (§23).
 
 ---
@@ -2490,15 +2537,14 @@ var b = Node(2, nil)
 a.next = b                            # auto-boxes: allocates *Node, copies b in
 ```
 
-> **Currently broken for a STRUCT (BUG-299, open):** assigning a struct value to a `^T?`
-> field fails to compile ("expected type '?*T', found 'T'"). A UNION value auto-boxes
-> correctly, and so does a non-optional `^T` field.
-
 ### Rules
 
 - `^T` in a field type → `*T` in Zig; `^T?` → `?*T`.
 - **Auto-boxing:** assigning a value of type `T` to a `^T` field allocates a heap copy
   automatically.  No explicit `new` or `box(…)` call is needed.
+- **A `^T` field reads as a value**, so it is copied like one: `b.e = a.e`, `Box(a.e)` and
+  `take(a.e)` (a `^Node` parameter) each box a fresh copy, and a later `a.e.v = 5` does not
+  show through `b` (BUG-623/624).
 - **Transparent in `branch`:** inside a `branch` arm that binds a `^T` union payload, the
   binding has type `T` — the pointer indirection is stripped for you.
 - **`^ClassName` is a compile error** — classes already have reference semantics;
@@ -3034,6 +3080,47 @@ invisible for typical programs.
 `sys.memStats()` reports the arena's current footprint (`.arenaBytes`, the
 high-water mark for the main allocator) — handy for a bytes-per-frame delta:
 `var a = sys.memStats().arenaBytes; …; print(sys.memStats().arenaBytes - a)`.
+
+### Where the memory goes: `--census` (2026-10-23)
+
+```bash
+zebra --census prog.zbr                      # run, then print the census on stderr
+ZEBRA_CENSUS_OUT=out.json zebra --census prog.zbr
+```
+
+With `--census` every allocation is counted under the source line that made it and the
+function that allocated, and the program prints a report on stderr at exit (including
+`sys.exit`) and writes `zebra-census.json`:
+
+```
+── Allocation census (--census) ─────────────────────────────────
+  allocations 1369, 0.06 MB requested; 30 frees, 0.05 MB handed back; live 0.01 MB (peak 0.02 MB)
+  interned strings: 301 (0.00 MB, outside the counts above)
+  program arena holds 0.05 MB from the OS; 0.04 MB of it is not live (outgrown buffers and frees an arena cannot honour)
+  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)
+  21 sites; top by bytes:
+    helper.zbr:6                 _zbr_fn_build_list (via ensureTotalCapacity)    200   0.026 MB
+    main.zbr:29                  _str_concat (via concatMaybeSentinel)           200   0.001 MB
+```
+
+- **The line** is the statement running when the allocation happened. A call does not
+  move it: an allocation after `f()` returns is charged to the caller's line, not to
+  `f`'s last one. Module-variable initialisers are charged to `<init>`.
+- **The kind** is the first allocating function outside Zig's standard library -- a
+  runtime helper (`_str_concat`), a constructor (`Point.init`), or your own function --
+  and `via` names the std function underneath (`ensureTotalCapacity` is a List or map
+  growing). Kinds come from the binary's debug info, so a `--census` build always takes
+  the LLVM backend; with `--release` they print as `?0x<address>`.
+- **The arena line** is the gap between what the arena holds from the OS and what is
+  live: memory a freeing allocator would have returned.
+- Inside a scoped `allocate` block the block's allocator is counted too, and released in
+  one step when the block ends.
+
+`sys.memStats()` gains `.censusOn`, `.allocations`, `.allocBytes` and `.liveBytes`; the
+three counts are `-1` (not measured) unless the program was built with `--census`.
+`--census` needs the default runtime-module shape: it is refused with
+`--no-runtime-module`, `--target node-addon` and `--target v`. A `--library-mode` host
+can call `_zbr_cens_flush()` whenever it wants a report.
 
 ### Recycling churny objects: `ObjectPool(T)`
 
@@ -3903,7 +3990,7 @@ Zig 0.17.
 | `sys.writeStdout(s)` | void    | Raw bytes to stdout, no newline (byte-exact protocol frames) |
 | `sys.spawnPipedIn(argv, cwd)` | `SysProcess` | As `spawnPiped`, but the child starts in `cwd` (a gate runner's "run tools/x.sh in <repo>"). `""` = inherit |
 | `proc.exitCode()`   | `int`             | Exit status once the child has ended (`-1` while running or unknown); POSIX signal → 128+n. Any `SysProcess` |
-| `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes` |
+| `sys.memStats()`    | `MemStats`        | Program-arena footprint; `.arenaBytes` (int). High-water for the main allocator. Delta across a frame: `b.arenaBytes - a.arenaBytes`. Under `--census` also `.allocations`, `.allocBytes`, `.liveBytes` (int; `-1` when `.censusOn` is false) |
 
 ### `File` — file I/O (static)
 

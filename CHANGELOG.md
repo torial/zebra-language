@@ -25,12 +25,42 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **A float formatted to a precision rounds its exact binary value, ties to even.**
+  `${x:.2f}`, `${x:.2}` and `${x:.2e}` now print Python's digits (and glibc's and the UCRT's):
+  `${2.675:.2f}` is `2.67` (the float holds 2.67499999...), `${0.125:.2f}` is `0.12`,
+  `${2.5:.0f}` is `2`. They printed `2.68`, `0.13` and `3` before: Zig's `{d:.2}` rounds the
+  shortest decimal half away from zero, i.e. a number already rounded once. Checked against
+  Python's `format()` over 300 values x 10 specs, all equal; the previous compiler differed on
+  106 of the 300. **A behaviour change**: output that formats a near-tie or an exact half with
+  a precision prints different digits. Width, fill and alignment are unchanged. (Opus + Fable,
+  2026-10-26, under Sean's standing rule for joint agreements.)
+
 - **`HashMap.clear()`** empties a map in place and keeps its capacity, as `List.clear()` and
   `Set.clear()` do -- reuse one map per frame or per line instead of building a fresh one.
   (`List.clear()` already kept its capacity; QUICKSTART now says so.)
+- **Checked sized-integer conversions (BUG-534):** `toInt8`, `toInt16`, `toInt32`, `toInt64`,
+  `toUint`, `toUint8`, `toUint16`, `toUint32`, `toUint64` on any integer, named for the target
+  type -- `strlen(p, text.len.toUint64())`. A value that does not fit stops the program
+  ("integer conversion out of range: 300 does not fit in byte"), in `--release` as in Debug.
+  A sized integer (`uint64`, `int32`...) also takes `toInt`, `toFloat` and `toString`.
 
 ### Fixes
 
+- **A lambda variable can be reassigned without a type annotation (BUG-629).**
+  `var h = def(x: int): int = x + k` then `h = def(x: int): int = x - k` failed inside zig;
+  the variable is now a function value as if declared `var h: def(int): int`, also when
+  another closure reads it. A lambda whose type cannot be named (no return type on an
+  expression lambda, an untyped parameter, or a `def()` body that returns a value without
+  declaring it) is refused at the reassignment, naming both fixes.
+- **An `int` passed, assigned or returned into a sized integer slot is a compile error naming
+  the conversion (BUG-534).** `f(n)` into a `uint64` parameter (an `extern`'s included), `var x:
+  int32 = big`, `return u` from an `int` function: each failed inside zig ("expected type 'u64',
+  found 'i64'"). Only a widening zig makes on its own (`int32` into `int`) still flows. **A
+  variable that zig folded as a constant (`var n = 2` then `f(n)`) is refused too**; add the
+  conversion. Arguments to `byte`, `int32`, `uint64`... parameters were not checked at all
+  before, so BUG-431's `.toByte()` refusal now reaches call arguments as documented.
+- **`u.toInt()` on a `uint64` traps in `--release` when the value does not fit.** It compiled
+  to an unchecked cast there, which is undefined behaviour.
 - **`allocate Arena()` frees its memory at block exit (BUG-617).** A scoped block was backed by
   the program's own arena, which frees nothing, so the documented way to bound a loop's memory
   freed nothing -- with `<<-` inside the block it used MORE memory than no block at all (a 100 MB
@@ -39,6 +69,26 @@ confirmed via `tools/bootstrap_check.sh`.
   into a class field or a container is interned, and each new string was given its own page,
   kept forever: a label rewritten with changing text grew memory by ~4 KB per value (50,000
   values: 202 MB). Interned strings now live in the program's memory (5.2 MB for the same).
+- **A `"` inside a raw string compiles (BUG-620).** `r'{"key": "value"}'` -- QUICKSTART's own
+  example of the single-quoted raw form -- failed inside zig, as did every raw string holding a
+  double quote.
+- **`for i, x in` works over iterators (BUG-621).** Over `split`, `lines`, `chars`, `bytes` and
+  `n.to(m)`, the indexed form failed inside zig or was refused for an untyped index. `i` is an
+  int counting every element, as it is for a List (a `for ... if` guard does not renumber).
+- **`f(g(x)?)?` inside a function-level `catch` compiles (BUG-622).** The outer call got two
+  catch wrappers and failed inside zig.
+- **A `^T` field passes and assigns as a value (BUG-623/624).** `Box(a.e)` and `take(a.e)` into a
+  `^T` parameter failed inside zig, and so did `b.e = a.e` or `b.e = Node(7)` on a local `b`.
+  Each now boxes a fresh copy: a later change to `a.e` does not show through `b`.
+- **A `catch` or `?` on a call that cannot fail is a compile error naming the call (BUG-546).**
+  A same-module function or method that does not throw, or a `File.*` call; it failed inside
+  zig ("expected error union type").
+- **A method chained on `Regex.compile(...)` / `StringBuilder()` in a `var` initializer or an
+  assignment compiles (BUG-531).** It failed inside zig; `print` and `return` already worked.
+- **`var fns: List(Step) = [def ..., def ...]` compiles and `fns[i](x)` is typed (BUG-563).**
+  An unannotated list of lambdas is refused, naming the `sig` form.
+- **`List(str?)()` no longer makes the function holding it "throw" (BUG-625)**, and an unknown
+  method in a `^T` / `List(T)` / `T?`-typed var's initializer is refused like any other (BUG-627).
 
 ---
 
@@ -72,6 +122,19 @@ backend.
 
 ### Runtime
 
+- **`sys.readLine()` and `sys.readBytes(n)` read stdin through the buffer (BUG-619, 2026-10-23).**
+  They took one read per byte -- 10 MB of stdin cost 18.5 s, in `--release` too -- and every line
+  was a list grown from 8 bytes. Now a line that fits in the 4 KB buffer is one exact-size
+  allocation; behaviour is unchanged. A 10 MB `readLine` loop: 22 s -> 0.93 s. Gate: `stdin-read`.
+- **`zebra --census`: where the memory goes (2026-10-23, memory_model.md §3 item 6).** Every
+  allocation is counted under the source line that made it and the function that allocated
+  (the first frame outside Zig's std, with the std function underneath as `via`); the report
+  goes to stderr at exit and to `zebra-census.json` (`ZEBRA_CENSUS_OUT`). It splits what the
+  arena holds into never-freed, freed-but-kept and slack, counts interned strings and scoped
+  `allocate` blocks, and names what it cannot count (the runtime's page-allocator escape
+  hatches). A `--library-mode` host gets its own allocator wrapped and may call
+  `_zbr_cens_flush()` at any time. `sys.memStats()` gains `censusOn`, `allocations`,
+  `allocBytes`, `liveBytes` -- `-1` when not measured. Off, nothing is emitted. Gate: `census`.
 - **The WebSocket server's handshake is accepted by clients that check it (BUG-611, 2026-10-21).** `_WS_GUID` ended `85B24` where RFC 6455's ends `85B11`, so a browser or V's `net.websocket` refused a `Ws.serve` handshake; only the runtime's own `Ws.connect`, which does not check the accept value, ever connected. Found by the engine's V host joining a Zig-hosted game; `test/bug611_ws_accept_test.zbr` reads the handshake back over raw TCP against the RFC's sample key.
 
 ### Targets

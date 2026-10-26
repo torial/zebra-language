@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -67,9 +67,9 @@ def isUpperCase(s: str): bool
 def isAlignChar(c: char): bool
     return c == c'<' or c == c'>' or c == c'^'
 
-def zigFmtSpec(spec: str, ex_type: Type_): str
-    if spec.len == 0
-        return ""
+# A format spec's parts, [fill, align, width, precision (with its '.'), type char], read
+# the one way both zigFmtSpec and floatPrecArgs need them.
+def parseFmtSpec(spec: str): List(str)
     var i: int = 0
     var fill_s: str = ""
     var align_s: str = ""
@@ -114,6 +114,17 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
     # Type char
     if i < spec.len
         type_s = spec[i..i+1]
+    return [fill_s, align_s, width_s, prec_s, type_s]
+
+def zigFmtSpec(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var parts = parseFmtSpec(spec)
+    var fill_s: str = parts.at(0)
+    var align_s: str = parts.at(1)
+    var width_s: str = parts.at(2)
+    var prec_s: str = parts.at(3)
+    var type_s: str = parts.at(4)
     # Map Python type char to Zig type prefix
     var out: str = ""
     if type_s == "s"
@@ -165,6 +176,49 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
     if has_opts
         out = out + ":" + fill_s + align_s + width_s + prec_s
     return out
+
+# A float hole with a precision (`.2f`, `.2`, `.2e`) does not go through Zig's `{d:.2}`,
+# which rounds the SHORTEST decimal half away from zero (2.675 -> 2.68). It becomes `{f}`
+# over the runtime's `_zbr_ffmt(x, <these args>)`, which rounds the exact binary value with
+# ties to even (2.67), as Python and the UCRT do (2026-10-26; QUICKSTART "Format
+# specifiers"). Returns the call's trailing arguments, `, prec, emode, "fill", 'align',
+# width)`, or "" when the hole keeps Zig's formatting (not a float, no precision, or a
+# type such as `x` that is not a float rendering).
+def floatPrecArgs(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var is_float: bool = false
+    branch ex_type
+        on Type_.float_
+            is_float = true
+        on Type_.float_n as _
+            is_float = true
+        else
+            pass
+    if not is_float
+        return ""
+    var parts = parseFmtSpec(spec)
+    var prec_s: str = parts.at(3)
+    if prec_s.len < 2
+        return ""
+    var type_s: str = parts.at(4)
+    var emode: str = "false"
+    if type_s == "e" or type_s == "E"
+        emode = "true"
+    else if type_s == "s" or type_s == "c" or type_s == "u" or type_s == "x" or type_s == "X" or type_s == "o" or type_s == "b"
+        return ""
+    var fill_s: str = parts.at(0)
+    if fill_s == ""
+        fill_s = " "
+    if fill_s == "\"" or fill_s == "\\"
+        fill_s = "\\" + fill_s
+    var align_s: str = parts.at(1)
+    if align_s == ""
+        align_s = ">"
+    var width_s: str = parts.at(2)
+    if width_s == ""
+        width_s = "0"
+    return ", " + prec_s[1..prec_s.len] + ", " + emode + ", \"" + fill_s + "\", '" + align_s + "', " + width_s + ")"
 
 # BUG-301. `:c` renders one BYTE, and Zig's {c} takes a u8. An int literal coerced at
 # comptime so `"${206:c}"` worked; a COMPUTED value did not, and the user got a raw Zig
@@ -1639,6 +1693,11 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
         w.emit("pub var _zbr_covf: _ZbrCovFile = .{ .path = \"")
         w.emit(fwdSlashes(file))
         w.emit("\", .lines = &_zbr_cov_lines, .counts = &_zbr_cov_counts };\n")
+    if _census
+        # One address per module: the census keys a site by this pointer and line.
+        w.emit("const _zbr_cens_path: []const u8 = \"")
+        w.emit(fwdSlashes(file))
+        w.emit("\";\n")
     return w.output()
 
 # ── Entry point thunk ─────────────────────────────────────────────────────────
@@ -1699,11 +1758,13 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         sb.append("    if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
     else
         sb.append("    _allocator = _prog_alloc();\n")
+    sb.append(censInstall("    "))
     sb.append(depInitLines("    "))                       # BUG-539
     sb.append("    _initModuleVars();\n")
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
     sb.append(covPrologue("    "))    # after the arena defer: the flush allocates (see the test main)
+    sb.append(censFlush("    "))
     if main_throws
         sb.append("    ")
         sb.append(mod_prefix)
@@ -2138,6 +2199,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
     sb.append("    _allocator = _prog_alloc();\n")
+    sb.append(censInstall("    "))
     sb.append(depInitLines("    "))                       # BUG-539
     sb.append("    _initModuleVars();\n")
     sb.append("    defer _arena.deinit();\n")
@@ -2145,6 +2207,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # from the arena -- registered first it ran last, on a freed arena (a segfault at
     # exit that the first IDE witness found; the probe's free main had the other order).
     sb.append(covPrologue("    "))
+    sb.append(censFlush("    "))
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
     var ti: int = 0
@@ -2371,6 +2434,41 @@ def setCoverage(v: bool)
 
 def coverageOn(): bool
     return _coverage
+
+# `--census` (2026-10-23, docs/design/memory_model.md §3 item 6): the allocation census.
+# genStmt sets the runtime's `_zbr_site` beside the `// zbr:` marker; every function,
+# constructor and statement lambda saves it on entry and restores it on exit (so an
+# allocation after a call returns is charged to the caller's line); the entry prologue
+# wraps `_allocator` and flushes the report at exit. Off: nothing is emitted, and the
+# default emit is byte-identical. The runtime half is `_ZbrCensAlloc` in the preamble.
+var _census: bool = false
+var _cens_save_n: int = 0
+
+def setCensus(v: bool)
+    _census = v
+
+def censusOn(): bool
+    return _census
+
+# The entry prologue's install line: right after `_allocator` is chosen, before any
+# dependency or module var initialises, so their allocations land in `<init>`.
+def censInstall(indent: str): str
+    if not _census
+        return ""
+    return indent + "_zbr_cens_install();\n"
+
+# After the arena defer, so it runs FIRST (defers are LIFO) and reads a live arena.
+def censFlush(indent: str): str
+    if not _census
+        return ""
+    return indent + "defer _zbr_cens_flush();\n"
+
+# A function body's save/restore of the current site. The counter keeps nested lambda
+# bodies (emitted as fns inside the enclosing fn) from shadowing an outer save.
+def censSave(): str
+    _cens_save_n = _cens_save_n + 1
+    var nm: str = "_zbr_ss_" + _cens_save_n.toString()
+    return "const " + nm + " = _zbr_site; defer _zbr_site = " + nm + ";\n"
 
 def covNoteLine(ln: int)
     var key: str = " " + ln.toString() + " "
@@ -3398,6 +3496,16 @@ def recordImplicitTry(site: str)
 def implicitTrySites(): List(str)
     return _implicit_try_sites
 
+# BUG-546: a `catch` or `?` on a call that cannot fail, as full "file:line:col: error:
+# ..." lines. Recorded at the emit site like _implicit_try_sites; main.zbr refuses.
+var _cannot_fail_sites: List(str) = List(str)()
+
+def recordCannotFail(site: str)
+    _cannot_fail_sites.add(site)
+
+def cannotFailSites(): List(str)
+    return _cannot_fail_sites
+
 # `--single-threaded` (2026-09-26): every call that STARTS A THREAD, as "file:line  what".
 # Recorded at the emit site (like _implicit_try_sites) so main.zbr can refuse the build in
 # Zebra's words; without it the user got Zig's "Cannot spawn thread when building in
@@ -3778,6 +3886,9 @@ struct Generator
     var in_try_expr          : bool     # suppress auto-try when already inside Expr.try_
     var json_want_mode       : str      # BUG-331: conversion for the armed `j[...]?` ("" = JsonValue)
     var json_want_at         : str      # BUG-331: "line:col" of the index node it applies to
+    var for_index_at         : str      # BUG-621: "line:col" of the `for i, x in <iterator>` whose body declares the index
+    var for_index_name       : str      # BUG-621: that index variable ("" = none)
+    var for_index_ctr        : str      # BUG-621: the Zig counter it reads
     var self_name            : str      # "self" for methods, "_self" for init
     var capture_self         : str      # BUG-487: a capture closure's receiver ("self" at top level)
     var in_lambda_body       : bool     # BUG-494: a `return` here is the lambda's, not an init's
@@ -3793,6 +3904,7 @@ struct Generator
     var lp_renamed           : StrSet   # original names that were renamed in THIS lambda
     var lp_prefix            : str      # the prefix they were renamed with (uid-unique)
     var closure_vars         : StrSet   # local vars holding capture-lambdas → .call() dispatch
+    var sig_lambda_locals    : StrSet   # BUG-629: unannotated lambda locals declared as a sig value
     # Phase 16c additions — ModuleTypes for this module and merged deps.
     # Plumbed now, consumed incrementally: heuristics retire (16c..17).
     var module_types         : ModuleTypes
@@ -3910,6 +4022,9 @@ struct Generator
         .in_try_expr           = false
         .json_want_mode        = ""
         .json_want_at          = ""
+        .for_index_at          = ""
+        .for_index_name        = ""
+        .for_index_ctr         = ""
         .self_name             = "self"
         .capture_self          = "self"
         .in_lambda_body        = false
@@ -3920,6 +4035,7 @@ struct Generator
         .lp_renamed            = StrSet()          # BUG-233
         .lp_prefix             = ""
         .closure_vars          = StrSet()
+        .sig_lambda_locals     = StrSet()
         .module_types          = module_types
         .dep_types             = dep_types
         .infer_ctx             = nil
@@ -6879,6 +6995,9 @@ struct Generator
                     ei.w.emit("if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
                 else
                     ei.w.emit("_allocator = _prog_alloc();\n")
+                if _census
+                    ei.writeIndent()
+                    ei.w.emit("_zbr_cens_install();\n")
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
@@ -6935,6 +7054,9 @@ struct Generator
                         if cov_line != ""
                             ei.writeIndent()
                             ei.w.emit(cov_line + "\n")
+                if _census
+                    ei.writeIndent()
+                    ei.w.emit("defer _zbr_cens_flush();\n")
                 # BUG-466: an error reaching the end of a throwing `main` prints its message
                 # and exits 1. Registered AFTER the arena/coverage defers so it runs FIRST
                 # (defers are LIFO) -- the message may live in the arena.
@@ -6969,6 +7091,10 @@ struct Generator
                     prof_ig.w.emit("\");\n")
                 prof_ig.writeIndent()
                 prof_ig.w.emit("defer _profile_end();\n")
+            if _census
+                var cens_ig = indented()
+                cens_ig.writeIndent()
+                cens_ig.w.emit(censSave())
             # Invariant exit check — public instance methods only.
             # Private helpers may temporarily break invariants; shared methods have no `self`.
             if has_self and not m.mods.is_static and not m.mods.is_private and owner_invariants.len > 0 and not strip_contracts
@@ -7133,6 +7259,9 @@ struct Generator
             emitTypeName(owner)                             # BUG-281 B
         w.emit(" {\n")
         var ig = indented()
+        if _census
+            ig.writeIndent()
+            ig.w.emit(censSave())
         if not is_struct_owner
             # Class init: allocate on arena
             ig.writeIndent()
@@ -7888,6 +8017,11 @@ struct Generator
         # emission paths) falls back to the name-based over-approximation.
         var ms: StrSet = scanMutations(stmts, .infer_ctx)
         mut_set = ms
+        # BUG-629: sig_lambda_locals is per FUNCTION -- a module var or a later function's
+        # local may share the name, and a stale entry turned its plain `h = 5` into `.from(5)`.
+        var saved_sll: StrSet = sig_lambda_locals
+        if fn_mut_all == nil
+            sig_lambda_locals = StrSet()
         var saved_fma = fn_mut_all
         if fn_mut_all == nil
             fn_mut_all = ms
@@ -7954,6 +8088,7 @@ struct Generator
             eei -= 1
         mut_set = saved_ms
         fn_mut_all = saved_fma
+        sig_lambda_locals = saved_sll
         fn_boxed = saved_fb
 
     # BUG-569 step 4. `var counter = 0` shared with a closure becomes
@@ -7963,6 +8098,25 @@ struct Generator
     # `@TypeOf` of the hidden local when inference has nothing.
     def emitBoxedLocal(n: DeclVar)
         var hid: str = "_zbr_bx_" + n.name
+        # BUG-629: a lambda local a closure shares is boxed because something REBINDS it, so
+        # the cell holds a sig value, as genLocalVar's unboxed reassigned lambda does.
+        if n.type_ == nil and n.init_expr != nil
+            if n.init_expr! is Expr.lambda as blam
+                if lambdaSigNameable(blam)
+                    writeIndent()
+                    w.emit("const " + hid + ": ")
+                    emitLambdaSigType(blam)
+                    w.emit(" = .from(")
+                    genExpr(n.init_expr!)
+                    w.emit(");\n")
+                    writeIndent()
+                    w.emit("const ")
+                    emitName(n.name)
+                    w.emit(" = _zbr_cell(")
+                    emitLambdaSigType(blam)
+                    w.emit(", " + hid + ");\n")
+                    sig_lambda_locals.add(n.name)
+                    return
         var hn = n except
             name = hid
         var bty: Type_ = Type_.unknown_
@@ -7981,6 +8135,23 @@ struct Generator
         w.emit("const ")
         emitName(n.name)
         w.emit(" = _zbr_cell(" + bt + ", " + hid + ");\n")
+
+    # BUG-629: `_ZbrFn(fn(P...) R)` for a lambda lambdaSigNameable accepts -- the type an
+    # annotated `var h: def(P): R` gets.
+    def emitLambdaSigType(lam: ExprLambda)
+        w.emit("_ZbrFn(fn(")
+        var li = 0
+        while li < lam.params.len
+            if li > 0
+                w.emit(", ")
+            genType(lam.params.at(li).type_!)
+            li += 1
+        w.emit(") ")
+        if lam.return_type as lret
+            genType(lret)
+        else
+            w.emit("void")
+        w.emit(")")
 
     # True when genLocalVar will emit an inline constraint-check block for a
     # local declared with this type — a named / parametric alias with a `where`
@@ -8026,6 +8197,11 @@ struct Generator
                     w.emit("_zbr_covf.counts[")
                     w.emit(_ln.toString())
                     w.emit("] += 1;\n")
+                if _census
+                    writeIndent()
+                    w.emit("_zbr_site = .{ .path = _zbr_cens_path, .line = ")
+                    w.emit(_ln.toString())
+                    w.emit(" };\n")
         branch s
             on Stmt.var_ as n
                 genLocalVar(n)
@@ -8155,6 +8331,7 @@ struct Generator
         atomic_locals.removeOne(name)
         thread_pool_locals.removeOne(name)
         closure_vars.removeOne(name)
+        sig_lambda_locals.removeOne(name)
         dynlib_vars.removeOne(name)
         datetime_vars.removeOne(name)
         var tp: int = 0
@@ -8301,7 +8478,7 @@ struct Generator
                 # string chain directly.  Materialization (BUG-079) is only needed for
                 # STRUCT temporaries needing a stable address; string slices pass by
                 # value.  Fixes chained `s.concat(a).concat(b)` (BUG-185).
-                if not isStringExpr(chain.recv) and not isDateTimeExpr(chain.recv) and not isValueTypeExpr(chain.recv)
+                if chainRecvNeedsHoist(chain.recv)
                     mc_recv = hoistCallChain(chain.recv)
                     mc_field = chain.method
                     if .infer_ctx != nil
@@ -8336,6 +8513,21 @@ struct Generator
                     # going through genIdent, so it needs the prefix applied explicitly.
                     var zn_target: str = topLevelFnZigName(fid.name)
                     w.emit("var " + zn_fnref + ": _ZbrFn(@TypeOf(" + zn_target + ")) = .from(" + zn_target + ");\n")
+                    return
+            # BUG-629: a reassigned, unannotated lambda local is a sig value, exactly as if
+            # it were declared `var h: def(P): R`. Each lambda is its own Zig type (a fn,
+            # or a closure struct), so the reassignment's `.from(...)` needs a slot of the
+            # sig type to land in. A lambda whose signature cannot be named is refused at
+            # the assignment by the checker (lambdaSigNameable).
+            if n.init_expr! is Expr.lambda as rlam
+                if lambdaSigNameable(rlam)
+                    writeIndent()
+                    w.emit("var " + zigSafeName(n.name) + ": ")
+                    emitLambdaSigType(rlam)
+                    w.emit(" = .from(")
+                    genExpr(n.init_expr!)
+                    w.emit(");\n")
+                    sig_lambda_locals.add(n.name)
                     return
         # Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`
         if n.init_expr != nil
@@ -8626,10 +8818,18 @@ struct Generator
                             w.emit(" = _zbr_new(")
                             genType(n.type_!)
                             w.emit("); ")
+                            # BUG-563: `var fns: List(Step) = [def ..., def ...]` -- an
+                            # element flowing into a sig slot is converted, as
+                            # `fns.add(def ...)` already was; it reached zig as
+                            # "expected _ZbrFn(fn (i64) i64), found fn (i64) i64".
+                            var ll_sig: bool = gtll.args.len == 1 and isSigTypeRef(gtll.args.at(0))
                             var lli = 0
                             while lli < ll_init.elems.len
                                 w.emit(lname230 + ".append(_allocator, ")
-                                genExpr(ll_init.elems.at(lli))
+                                if ll_sig
+                                    genSigValue(ll_init.elems.at(lli))
+                                else
+                                    genExpr(ll_init.elems.at(lli))
                                 w.emit(") catch @panic(\"OOM\"); ")
                                 lli += 1
                             w.emit("break :" + lbl230 + " " + lname230 + "; };\n")
@@ -8869,6 +9069,80 @@ struct Generator
                     return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
         return false
 
+    # genMethod's rule for `anyerror!` in a signature, plus the `test_*` harness rule
+    # (BUG-386), as one predicate: can a call to `m` produce an error?
+    def declMayFail(m: DeclMethod): bool
+        if m.throws_ or m.name.startsWith("test_")
+            return true
+        return m.stmts != nil and bodyHasRaise(m.stmts!)
+
+    # BUG-546: the name of the call `e` if it certainly emits a plain value, not an
+    # error union -- so a `catch` or `?` on it would reach zig as "expected error union
+    # type", a message about code the user never wrote. Claimed only where this
+    # generator decides the emit: a same-module top-level fn, a method of a same-module
+    # class or struct (both by declMayFail, the rule that writes the signature), and the
+    # File namespace, whose members all panic on failure rather than return one
+    # (genFileCall). Anything else -- a local or parameter, a bare call inside a method
+    # (owner dispatch), a dep module, another namespace, an interface -- is nil and is
+    # left alone: a wrong "cannot fail" would refuse a program zig accepts.
+    def cannotFailCallName(e: Expr): str?
+        if e is Expr.call as c
+            if c.callee is Expr.ident as id
+                if isLocalOrParamName(id.name)
+                    return nil
+                if in_method and owner != "" and isOwnerMethod(id.name)
+                    return nil
+                var tl_found: bool = false
+                for decl in module_decls
+                    if decl is Decl.method as tm
+                        if tm.name == id.name
+                            if declMayFail(tm)
+                                return nil
+                            tl_found = true
+                if tl_found
+                    return id.name
+                return nil
+            if c.callee is Expr.member as cm
+                if cm.object is Expr.ident as ns
+                    if ns.name == "File" and not isLocalOrParamName("File") and not import_aliases.contains_("File") and not isUserTypeName("File")
+                        return "File." + cm.member
+                if .infer_ctx == nil
+                    return nil
+                var rt: Type_ = inferExpr(cm.object, .infer_ctx!)
+                if rt is Type_.ref_to as rtr
+                    rt = rtr
+                if rt is Type_.named as rcn
+                    var m_found: bool = false
+                    for decl in module_decls
+                        var mems: List(Decl) = List(Decl)()
+                        branch decl
+                            on Decl.class_ as dc
+                                if dc.name == rcn
+                                    mems = dc.members
+                            on Decl.struct_ as ds
+                                if ds.name == rcn
+                                    mems = ds.members
+                            else
+                                pass
+                        for mem in mems
+                            if mem is Decl.method as mm
+                                if mm.name == cm.member
+                                    if declMayFail(mm)
+                                        return nil
+                                    m_found = true
+                    if m_found
+                        return rcn + "." + cm.member
+        return nil
+
+    # BUG-546: record a `catch` / `?` on a call that cannot fail (see cannotFailCallName).
+    def noteCannotFail(e: Expr, op: str, span: Span)
+        if cannotFailCallName(e) as cf_name
+            var cf_fix: str = "drop the `catch` and its fallback"
+            if op == "?"
+                cf_fix = "drop the `?`"
+            recordCannotFail(source_file + ":" + span.line.toString() + ":" + span.col.toString() +
+                ": error: `" + cf_name + "` cannot fail (it does not throw), so this `" + op + "` has nothing to handle: " + cf_fix)
+
     def isStringBuilderCtor(e: Expr): bool
         if e is Expr.call as c
             if c.args.len == 0
@@ -8962,6 +9236,38 @@ struct Generator
         if t is Type_.json_value
             return true
         return false
+
+    # BUG-079 hoists `f().m(args)` into `var _mc_N = f();` then `_mc_N.m(args)`, because a
+    # Zig method taking `*Self` cannot be called on a temporary. That raw `.m(` is right for
+    # a user class/struct and wrong for every RUNTIME type (Regex, StringBuilder, a process,
+    # a connection...): their methods are dispatched by genMemberCall, which the hoist
+    # skips -- `var r = Regex.compile("a").groups(s)` reached zig as "no member named
+    # 'groups'" while the same call in `print(...)` or `return` worked (BUG-531). So the
+    # var-init and assignment hoists ALLOW the types a raw call is right for, rather than
+    # denying runtime types one bug at a time: a new runtime variant defaults to dispatch.
+    # Unknown receivers keep the old behaviour (hoist). The return path's rule is the
+    # narrower `Type_.named` only, unchanged.
+    def chainRecvNeedsHoist(recv: Expr): bool
+        if isStringExpr(recv) or isDateTimeExpr(recv) or isValueTypeExpr(recv)
+            return false
+        if .infer_ctx == nil
+            return true
+        var t: Type_ = inferExpr(recv, .infer_ctx!)
+        if t is Type_.ref_to as tr
+            t = tr
+        branch t
+            on Type_.named as _
+                return true
+            on Type_.cross_module as _
+                return true
+            on Type_.unknown_
+                return true
+            on Type_.unresolved
+                return true
+            on Type_.context_dependent
+                return true
+            else
+                return false
 
     def isDateTimeExpr(e: Expr): bool
         if e is Expr.ident as id
@@ -9329,7 +9635,7 @@ struct Generator
         # handles the string chain.  (Mirrors the var-init and return paths.)
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
-            if ch != nil and not isStringExpr((ch!).recv) and not isDateTimeExpr((ch!).recv) and not isValueTypeExpr((ch!).recv)
+            if ch != nil and chainRecvNeedsHoist((ch!).recv)
                 var chain = ch!
                 var mc_recv = hoistCallChain(chain.recv)
                 writeIndent()
@@ -9504,11 +9810,16 @@ struct Generator
                         # must NOT fire when the RHS is already a ref (`^T`/`^T?`) — e.g.
                         # `cue init(opt_val: ^Val?) { .opt_val = opt_val }` is a direct
                         # pointer copy, not a box (BUG: union-box regressed val_test here).
-                        if (isDeclaredHere(tn) or .module_types.hasUnion(tn)) and not rhsIsAlreadyRef(a.value)
+                        # BUG-623/624: `b.e = a.e` -- a `^T` FIELD read is emitted as a VALUE
+                        # (`a.e.*`), so it is boxed like one; and the TARGET is the pointer
+                        # slot itself (genRefSlot), never `b.e.*`. Writing through the old
+                        # pointer stored a `*T` into a `T` (`c.e = Node(7)`) or, for a ref RHS,
+                        # left `b` never mutated, which zig refuses for a `var`.
+                        if (isDeclaredHere(tn) or .module_types.hasUnion(tn)) and not rhsIsPointerValue(a.value)
                             w.emit("{ const _rp = _allocator.create(" + typeZigName(tn) + ") catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
-                            genExpr(a.target)
+                            genRefSlot(a.target)
                             w.emit(" = _rp; }\n")
                             return
                         # BUG-584: a struct or union of a USED module (or one declared inside a
@@ -9516,13 +9827,13 @@ struct Generator
                         # module is used without `exposing` (`lib.SBox`), so the box is spelled
                         # from the SLOT's own type (`_ZbrSlotChild`) -- the value's type would be
                         # the tag type for a payload-less variant (`lib.Shape.dot`).
-                        if (struct_names.contains_(tn) or .dep_types.hasUnion(tn) or depDeclaresStruct(.dep_types, tn)) and not rhsIsAlreadyRef(a.value)
+                        if (struct_names.contains_(tn) or .dep_types.hasUnion(tn) or depDeclaresStruct(.dep_types, tn)) and not rhsIsPointerValue(a.value)
                             w.emit("{ const _rp = _allocator.create(_ZbrSlotChild(@TypeOf(")
-                            genExpr(a.target)
+                            genRefSlot(a.target)
                             w.emit("))) catch @panic(\"OOM\"); _rp.* = ")
                             genExpr(a.value)
                             w.emit("; ")
-                            genExpr(a.target)
+                            genRefSlot(a.target)
                             w.emit(" = _rp; }\n")
                             return
         # BUG-412: `s += "x"` on a str is concatenation.
@@ -9543,6 +9854,14 @@ struct Generator
                 genSigValue(a.value)
                 w.emit(";\n")
                 return
+        # BUG-629: a void statement lambda has no inferred fn type, but its local was
+        # declared as a sig value all the same.
+        if a.op == AssignOp.assign
+            if a.target is Expr.ident as slt
+                if sig_lambda_locals.contains_(slt.name)
+                    genSigValue(a.value)
+                    w.emit(";\n")
+                    return
         # fn-ref reassignment: `pred = isDigit` → `pred = .from(isDigit)`. A mutable
         # fn-ref local is a sig value (`_ZbrFn`) since 2026-09-30, like every other
         # callable slot, so the function converts rather than decaying to a pointer.
@@ -9608,6 +9927,22 @@ struct Generator
                         return false
             else
                 return false
+
+    # BUG-623/624: the RHS reaches Zig as a POINTER -- a ref that genExpr does not
+    # dereference. A `^T` field read infers as a ref but is emitted `a.e.*`, a value.
+    def rhsIsPointerValue(v: Expr): bool
+        return rhsIsAlreadyRef(v) and not memberEmitsDeref(v)
+
+    # BUG-624: a `^T` field as an assignment TARGET is the pointer slot (`b.e`), not the
+    # value behind it (`b.e.*`, what genExpr emits for a read).
+    def genRefSlot(t: Expr)
+        if memberEmitsDeref(t)
+            if t is Expr.member as rs_m
+                genExpr(rs_m.object)
+                w.emit(".")
+                emitName(rs_m.member)
+                return
+        genExpr(t)
 
     def getAssignFieldType(a: StmtAssign): TypeRef?
         # BUG-299: `b.p = v` where `b` is a value of another struct/class -- its declared
@@ -9904,11 +10239,35 @@ struct Generator
 
     # BUG-299: `e` is a VALUE of struct/union `name` (not nil, not already a pointer).
     def isBoxableValueOf(e: Expr, name: str): bool
-        if e is Expr.nil_ or rhsIsAlreadyRef(e) or .infer_ctx == nil
+        if e is Expr.nil_ or .infer_ctx == nil
             return false
         var vt: Type_ = inferExpr(e, .infer_ctx!)
+        # BUG-623: a `^T` FIELD read infers as a ref, but genExpr emits it dereferenced
+        # (`a.e.*` -- the pointer is transparent, QUICKSTART §22), so it reaches the call as
+        # a VALUE and is boxed like one: a copy, as `b.e = a.e` already copies.
+        if vt is Type_.ref_to as vr
+            if memberEmitsDeref(e)
+                if vr is Type_.named as vrn
+                    return vrn == name
+            return false
+        if vt is Type_.optional as vo
+            if vo is Type_.ref_to
+                return false            # `^T?`: already a pointer (rhsIsAlreadyRef's other arm)
         if vt is Type_.named as vn
             return vn == name
+        return false
+
+    # BUG-623: does genExpr emit this member read with a trailing `.*`? Mirrors the
+    # auto-deref rule in genExpr's `Expr.member` arm exactly -- the two must agree, or a
+    # value is passed where a pointer is expected (or the reverse).
+    def memberEmitsDeref(e: Expr): bool
+        if e is Expr.member as md
+            var md_obj = getIdentName(md.object)
+            if md_obj != nil
+                var md_key = makeDottedKey(md_obj!, md.member)
+                if for_loop_vars.contains_(md_obj!)
+                    return for_loop_deref.contains_(md_key)
+                return ptr_field_bindings.contains_(md_key)
         return false
 
     # BUG-496: a module var's initializer, emitted with a module-level inference context.
@@ -10683,6 +11042,14 @@ struct Generator
             if is_tuple_list
                 genForInTupleList(fi)
                 return
+        # BUG-621: `for i, x in <iterator>` -- split/lines/chars/bytes/to emit an ITERATOR,
+        # not a List, so the indexed form below (`.items`) and the map form (`.iterator()`)
+        # both failed inside zig. Count instead: the one-variable loop over the same
+        # iterable, its body opening with the index (emitForGuard).
+        if fi.vars.len == 2
+            if isSplitIter(fi.iter) or isCharsIter(fi.iter) or isBytesIter(fi.iter) or isToRangeIter(fi.iter)
+                genForInCounted(fi)
+                return
         # B1: for i, v in list — indexed iteration (i = index, v = element).
         if fi.vars.len == 2
             var is_indexed = false
@@ -11266,6 +11633,26 @@ struct Generator
 
     # B1: `for i, v in list` — indexed iteration.  i = index (i64), v = element.
     # Emits `for (list.items, 0..) |v, _zbr_i| { const i = @intCast(_zbr_i); ... }`.
+    # BUG-621: `for i, x in <iterator>` as
+    #   { var _zbr_ix_N: i64 = 0; <for x in iterator> { const i: i64 = _zbr_ix_N; _zbr_ix_N += 1; body } }
+    def genForInCounted(fi: StmtForIn)
+        var ctr: str = "_zbr_ix_" + w.nextUid().toString()
+        writeIndent()
+        w.emit("{\n")
+        var cg = indented()
+        cg.writeIndent()
+        cg.w.emit("var " + ctr + ": i64 = 0;\n")
+        cg.noteShadowLocal(fi.vars.at(0))
+        var one_vars = List(str)()
+        one_vars.add(fi.vars.at(1))
+        cg.for_index_at = fi.span.line.toString() + ":" + fi.span.col.toString()
+        cg.for_index_name = fi.vars.at(0)
+        cg.for_index_ctr = ctr
+        var it621: Expr = fi.iter
+        cg.genForIn(StmtForIn(fi.span, one_vars, it621, fi.filter, fi.stmts, fi.else_))
+        writeIndent()
+        w.emit("}\n")
+
     def genForInIndexedList(fi: StmtForIn)
         var ig = indented()
         ig.for_else_label = nil
@@ -11324,6 +11711,18 @@ struct Generator
     # Emit `if (!(cond)) continue;` guard at the top of a for-in loop body.
     # `self` is the body-level generator (ig or bg) so indentation is correct.
     def emitForGuard(fi: StmtForIn)
+        # BUG-621: the counted form's index, declared before the guard so a filtered
+        # element still counts (as it does for a List). Keyed on the loop's position:
+        # Generator copies carry the field into nested loops, which must not take it.
+        if .for_index_ctr != "" and .for_index_at == fi.span.line.toString() + ":" + fi.span.col.toString()
+            writeIndent()
+            w.emit("const " + zigSafeName(.for_index_name) + ": i64 = " + .for_index_ctr + "; " + .for_index_ctr + " += 1;\n")
+            var ix_used = mightUseName(.for_index_name, fi.stmts)
+            if not ix_used and fi.filter != nil
+                ix_used = mightUseNameInExpr(.for_index_name, fi.filter!)
+            if not ix_used
+                writeIndent()
+                w.emit("_ = " + zigSafeName(.for_index_name) + ";\n")
         if fi.filter == nil
             return
         writeIndent()
@@ -13450,22 +13849,42 @@ struct Generator
             var getter = ".allocator()"
             if kind == "stack_fallback"
                 getter = ".get()"
-            ig.line("_allocator = ".concat(src_name).concat(getter).concat(";"))
-            if kind == "fixed_buffer" or kind == "stack_fallback"
-                ig.line("defer _allocator = ".concat(saved_name).concat(";"))
-            else if kind == "debug"
-                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".report(); _dbg_arena_").concat(depth_str).concat(".deinit(); }"))
+            # --census: the block's allocator gets its own counting wrapper, released at
+            # exit (the block frees everything at once, with no per-allocation free).
+            var cens_rel: str = ""
+            if _census
+                var cw: str = "_zbr_cw_".concat(depth_str)
+                ig.line("var ".concat(cw).concat(": _ZbrCensAlloc = .{ .child = ").concat(src_name).concat(getter).concat(" };"))
+                ig.line("_allocator = ".concat(cw).concat(".allocator();"))
+                cens_rel = "_zbr_cens_release(&".concat(cw).concat("); ")
             else
-                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(src_name).concat(".deinit(); }"))
+                ig.line("_allocator = ".concat(src_name).concat(getter).concat(";"))
+            if kind == "fixed_buffer" or kind == "stack_fallback"
+                if cens_rel == ""
+                    ig.line("defer _allocator = ".concat(saved_name).concat(";"))
+                else
+                    ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(cens_rel).concat("}"))
+            else if kind == "debug"
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(cens_rel).concat(src_name).concat(".report(); _dbg_arena_").concat(depth_str).concat(".deinit(); }"))
+            else
+                ig.line("defer { _allocator = ".concat(saved_name).concat("; ").concat(cens_rel).concat(src_name).concat(".deinit(); }"))
         else
             ig.writeIndent()
             ig.w.emit("const ")
             ig.w.emit(saved_name)
             ig.w.emit(" = _allocator;\n")
             ig.writeIndent()
-            ig.w.emit("_allocator = ")
-            ig.genAllocatorSourceInit(al.source)
-            ig.w.emit(";\n")
+            if _census
+                # --census: a persistent allocator (Page/Smp/C) is counted per allocation and
+                # per free; nothing is released in bulk at the block's end.
+                ig.w.emit("var _zbr_cw_".concat(depth_str).concat(": _ZbrCensAlloc = .{ .child = "))
+                ig.genAllocatorSourceInit(al.source)
+                ig.w.emit(" };\n")
+                ig.line("_allocator = _zbr_cw_".concat(depth_str).concat(".allocator();"))
+            else
+                ig.w.emit("_allocator = ")
+                ig.genAllocatorSourceInit(al.source)
+                ig.w.emit(";\n")
             ig.line("defer _allocator = ".concat(saved_name).concat(";"))
         if al.is_scoped
             ig.allocate_depth = depth
@@ -14058,6 +14477,7 @@ struct Generator
                 else
                     w.emit(")")
             on Expr.catch_ as ca2
+                noteCannotFail(ca2.expr, "catch", ca2.span)    # BUG-546
                 w.emit("(")
                 # BUG-436: inside a method-level `catch` block, a throws call gets the
                 # block's catch-break wrapper (emitTryBlockCatch) unless the enclosing
@@ -14326,6 +14746,11 @@ struct Generator
                 # astbuilder already stripped the zig"..." wrapper via stripZigQuotes.
                 emitZigLitText(zl.text)
             on Expr.try_ as tr
+                # BUG-622: RESTORE, not clear -- an inner `?` (`h(h(x)?)?`) cleared the flag
+                # while the outer call was still emitting its args, so the outer call took the
+                # catch-break wrapper itself and this arm added a second ("expected error union").
+                var tr_saved_ite: bool = in_try_expr
+                noteCannotFail(tr.expr, "?", tr.span)    # BUG-546
                 var tr_json_fn: str = ""
                 if .infer_ctx != nil
                     var tr_is_index: bool = false
@@ -14353,14 +14778,14 @@ struct Generator
                         w.emit(tr_json_fn + "(")
                         genExpr(tr.expr)
                         w.emit(")")
-                        in_try_expr = false
+                        in_try_expr = tr_saved_ite
                         emitTryBlockCatch()
                         w.emit(")")
                     else
                         w.emit("(try " + tr_json_fn + "(")
                         in_try_expr = true
                         genExpr(tr.expr)
-                        in_try_expr = false
+                        in_try_expr = tr_saved_ite
                         w.emit("))")
                     return
                 if try_block_label != nil
@@ -14369,7 +14794,7 @@ struct Generator
                     w.emit("(")
                     in_try_expr = true
                     genExpr(tr.expr)
-                    in_try_expr = false
+                    in_try_expr = tr_saved_ite
                     emitTryBlockCatch()
                     w.emit(")")
                 else
@@ -14377,7 +14802,7 @@ struct Generator
                     w.emit("(try ")
                     in_try_expr = true
                     genExpr(tr.expr)
-                    in_try_expr = false
+                    in_try_expr = tr_saved_ite
                     w.emit(")")
             on Expr.tuple_lit as tu
                 w.emit(".{")
@@ -15532,6 +15957,7 @@ struct Generator
         var cast_trunc: List(bool) = List(bool)()
         var needs_tostring: List(bool) = List(bool)()
         var show_wraps: List(bool) = List(bool)()     # {show}: wrap the arg in _zbr_show()
+        var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -15551,10 +15977,17 @@ struct Generator
                         var ex_type: Type_ = Type_.unknown_
                         if .infer_ctx != nil
                             ex_type = inferExpr(e, .infer_ctx!)
-                        var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
-                        fmt_str = fmt_str + "{" + zig_spec + "}"
-                        cast_types.add(bitCastType(fmt_spec, ex_type))
-                        cast_trunc.add(fmt_spec.endsWith("c"))
+                        var fpa: str = floatPrecArgs(fmt_spec, ex_type)
+                        if fpa != ""
+                            fmt_str = fmt_str + "{f}"
+                            cast_types.add("")
+                            cast_trunc.add(false)
+                        else
+                            var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
+                            fmt_str = fmt_str + "{" + zig_spec + "}"
+                            cast_types.add(bitCastType(fmt_spec, ex_type))
+                            cast_trunc.add(fmt_spec.endsWith("c"))
+                        ffmt_args.add(fpa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
                     else
@@ -15592,6 +16025,7 @@ struct Generator
                                 show_wraps.add(false)
                         cast_types.add("")
                         cast_trunc.add(false)
+                        ffmt_args.add("")
                         needs_tostring.add(ts)
                 on StringPart.format as _
                     pass
@@ -15609,7 +16043,12 @@ struct Generator
                 first = false
                 var cast: str = cast_types.at(arg_idx)
                 var ts: bool = needs_tostring.at(arg_idx)
-                if cast != ""
+                var fpa: str = ffmt_args.at(arg_idx)
+                if fpa != ""
+                    w.emit("_zbr_ffmt(")
+                    genExpr(e)
+                    w.emit(fpa)
+                else if cast != ""
                     if cast_trunc.at(arg_idx)
                         # BUG-301. One preamble helper rather than an inline cast: the
                         # inline form broke the LITERAL case (@bitCast cannot take a
@@ -18628,9 +19067,11 @@ struct Generator
                 # BUG-445: an INTEGER receiver (uint64, int32, byte...) converts with a
                 # checked @intCast -- it was emitted as @intFromFloat, so the conversion
                 # the mixed-sign refusal points at did not compile. Out of range traps.
-                w.emit("@as(i64, @intCast(")
+                # BUG-534: through _zbr_int_to, which traps in --release too (@intCast
+                # out of range is undefined there, not a trap).
+                w.emit("_zbr_int_to(i64, \"int\", ")
                 genExpr(m.object)
-                w.emit("))")
+                w.emit(")")
             else
                 w.emit("@as(i64, @intFromFloat(")
                 genExpr(m.object)
@@ -18662,6 +19103,23 @@ struct Generator
                 genExpr(m.object)
                 w.emit(")")
                 return
+        # BUG-534: the checked sized conversions (`n.toUint64()`, `u.toInt32()`...) on any
+        # integer receiver. Out of range traps in every build mode (std.math.cast in the
+        # runtime), never @intCast, whose out-of-range case is undefined under --release.
+        if args.len == 0 and .infer_ctx != nil
+            var cv_target: Type_ = intConvTarget(mname)
+            if not (cv_target is Type_.unresolved)
+                var cv_src: Type_ = inferExpr(m.object, .infer_ctx!)
+                if numKind(cv_src) == 1 or numKind(cv_src) == 2
+                    var cv_zig: str = "u64"
+                    if cv_target is Type_.int_n as cv_iw
+                        cv_zig = "i" + cv_iw.toString()
+                    if cv_target is Type_.uint_n as cv_uw
+                        cv_zig = "u" + cv_uw.toString()
+                    w.emit("_zbr_int_to(" + cv_zig + ", \"" + numTypeName(cv_target) + "\", ")
+                    genExpr(m.object)
+                    w.emit(")")
+                    return
         # BUG-146: try* parse a string, returning null on failure (?f64/?i64).
         if mname == "tryFloat"
             w.emit("(std.fmt.parseFloat(f64, ")
@@ -20525,6 +20983,9 @@ struct Generator
                     # Clear the outer-fn ensure context so `return` inside the lambda
                     # body is NOT rewritten to outer-fn `_result` capture.
                     var ig = lg.withInLambda().indented()
+                    if _census
+                        ig.writeIndent()
+                        ig.w.emit(censSave())
                     for ulp2 in lam.params
                         if not nameUsedInStmts(ulp2.name, ss)
                             ig.writeIndent()

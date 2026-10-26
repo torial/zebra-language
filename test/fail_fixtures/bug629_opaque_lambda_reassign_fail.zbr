@@ -1,0 +1,17 @@
+# BUG-629: a lambda local whose signature cannot be named -- an expression lambda with no
+# return type, an untyped parameter, or a statement lambda that returns a value without
+# declaring its type -- cannot become a sig value, so reassigning it is
+# refused, naming the two annotations that fix it. Before, zig refused the emitted code.
+
+def main()
+    var h = def(x: int) = x + 1
+    h = def(x: int) = x - 1
+    print(h(5))
+    var g = def(x): int = 7
+    g = def(x): int = 8
+    print(g(5))
+    var r = def()
+        return 5
+    r = def()
+        return 6
+    print(r())

@@ -1,0 +1,26 @@
+# BUG-622: `h(h(x)?)?` inside a function with a function-level `catch` gave the OUTER
+# call two catch-break wrappers (zig: "expected error union type"). The inner `?`
+# cleared the flag that says an enclosing `?` handles the error.
+
+def h(p0: str): str throws
+    if p0 == "q"
+        raise "e"
+    return p0 + "!"
+
+def ok(): str
+    var c = h(h("x")?)?
+    return c
+catch
+    return "caught"
+
+def fails(): str
+    var c = h(h("q")?)?              # the INNER call raises: the catch must see it
+    return c
+catch
+    return "caught"
+
+def plain(): str throws
+    return h(h("y")?)?
+
+def main()
+    print("bug622: ${ok()} ${fails()} ${plain()?}")

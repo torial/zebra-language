@@ -1,0 +1,37 @@
+# BUG-546's other direction: every call that CAN fail keeps its `catch` / `?`. The
+# refusal claims "cannot fail" only where the compiler decides the emit; each case here
+# is one where a wrong claim would refuse a program zig accepts.
+class Box
+    var n: int = 1
+    def risky(): int throws
+        if .n > 0
+            raise "risky"
+        return .n
+    def inferred(): int
+        if .n > 0
+            raise "inferred"
+        return .n
+    # a bare owner call inside a method: owner dispatch, left alone
+    def wrap(): int
+        return risky() catch 7
+
+def declared(): int throws
+    raise "declared"
+
+# throws by a `raise` in its body, with no `throws` keyword (BUG-467's rule)
+def byRaise(): int
+    if true
+        raise "byRaise"
+    return 1
+
+def byQ(): int throws
+    return declared()?
+
+def main()
+    var b = Box()
+    var r1 = declared() catch 10
+    var r2 = byRaise() catch 20
+    var r3 = byQ() catch 30
+    var r4 = b.risky() catch 40
+    var r5 = b.inferred() catch 50
+    print("bug546: ${r1} ${r2} ${r3} ${r4} ${r5} ${b.wrap()}")

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-618. Next new bug: BUG-619.**
+**Last bug number generated: BUG-631. Next new bug: BUG-632.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,8 +46,100 @@
 
 ---
 
-### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
-<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
+### BUG-628: a method that throws only by INFERENCE (a `raise`, no `throws`), called without `?`, is not refused and fails inside zig -- OPEN (found 2026-10-25)
+- **Found by:** probing the seam behind BUG-546's fix. Two throw rules disagree: genMethod
+  (and `declMayFail`, `isTopLevelMethodThrows`) treat a body with a `raise` or `?` as
+  throwing and emit `anyerror!`; `throws_methods`, behind `isClassMethodThrows` /
+  `isOwnerMethodThrows`, records only a DECLARED `throws`.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'i64', found 'anyerror!i64'".
+  ```
+  class Box
+      var n: int = 1
+      def inferred(): int
+          if .n > 0
+              raise "inferred"
+          return .n
+
+  def main()
+      var b = Box()
+      var x = b.inferred()     # no `?`: the §28b implicit-try refusal does not fire
+  ```
+  The same through a bare owner call inside another method (`return inferred()`).
+- **Knock-on (BUG-546):** in that owner-call shape the CALLER (`caller(): int` holding
+  `return inferred()`) has no `raise` or `?` of its own, so `b.caller() catch 9` is refused
+  as "cannot fail" -- on a program that is invalid anyway, but naming the wrong line. With
+  the `?` written (`return inferred()?`) it compiles and nothing is refused.
+- **Fix direction:** populate `throws_methods` (and `isOwnerMethodThrows`) by the same rule
+  as genMethod -- one predicate, `declMayFail` -- then measure: methods in the corpus that
+  throw by inference and are called bare become implicit-try refusals.
+
+### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- OPEN (found 2026-10-25)
+- **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding
+  it to a `List(str)` passed the front end.
+- **Repro:** all three pass `zebra -c`; zig refuses each.
+  ```
+  def f(xs: List(str)): int
+      return xs.len
+
+  def main()
+      var a = [1, 2]
+      print(f(a))                    # expected type 'List(str)', found 'List(int)'
+      var b: List(str) = a           # the same, for a typed var
+      var c: List(int) = List(int?)()   # found 'List(?i64)'
+  ```
+- **Mechanism:** `typesCompatible` answers `true` whenever either side is not a primitive,
+  so no container slot -- argument, typed var, assignment, return -- compares element types.
+  The zig message already names the Zebra types, so the user is told what is wrong, but in
+  zig's words and after the build.
+- **Why it was not fixed with BUG-531:** the check would run on every container assignment
+  in every program; it needs the §28a treatment (measure the refusals across the corpus,
+  zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
+  (an empty literal, a generic) that must stay compatible.
+
+### BUG-631: zero-padding a negative number puts the zeros before the sign -- OPEN (found 2026-10-26)
+- **Found by:** writing the rounding fixture for the exact-binary formatter; measured against
+  Python on the way. Pre-existing: the N-1 compiler prints the same.
+- **Repro:**
+  ```
+  def main()
+      var n = -5
+      var d = -2.5
+      print("[${n:04d}] [${d:06.1f}]")
+  ```
+  Zebra prints `[00-5] [00-2.5]`; Python, C and the spec this syntax follows print
+  `[-005] [-002.5]`. The `0` flag is mapped to fill `0` with right alignment (CodeGen
+  `zigFmtSpec`), and Zig's padding puts the fill before the whole text, sign included.
+- **Expected:** with the `0` flag the sign comes first and the zeros go between it and the
+  digits, for ints and floats, with and without a precision. An explicit fill and alignment
+  (`${n:0>4}`) keeps today's meaning: that is a fill, not the `0` flag.
+- **Control when fixing:** the two repros above print `[-005] [-002.5]`; `${5:04d}` stays
+  `0005`; `${n:0>4}` stays `00-5`; a float with a precision through `_zbr_ffmt` and one
+  without both get the sign-aware form.
+
+### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- OPEN (found 2026-10-26)
+- **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
+  Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that
+  fix's doing.
+- **Repro:**
+  ```
+  def main()
+      var h: def(int): int = def(x: int): int = x + 1
+      h = def(x: int): float = 1.5
+      print(h(1))
+  ```
+  zig, inside `zebra_rt.zig`'s `_ZbrFn.from`: `expected type 'i64', found 'f64'`. With
+  `h = def(): int = 1` (a different arity), `expected 0 argument(s), found 1`. The same through
+  a `sig` (`var h: Op = ...`). The user is shown a runtime line they never wrote.
+- **Why the front end cannot see it today:** `Type_.fn_type_` carries the RETURN type only, so
+  the checker cannot compare a lambda's parameters against the slot's. A return-type mismatch
+  is visible to it already and is not compared either.
+- **Expected:** refused at the assignment (and at a call argument, a return, a field store --
+  every place a value flows into a sig slot), naming both signatures.
+- **Control when fixing:** the two repros above must be refused with a coordinate; a matching
+  signature, a function reference (`h = twice`) and `nil` into an optional slot must still pass.
+
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers OPEN)
+<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until the struct half is built. Move it when it lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
   functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
   it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
@@ -65,74 +157,12 @@
   Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
 - **Struct receivers, OPEN:** refused, naming the reason and the alternatives (call it in
   place, or make the type a class). Binding the variable by reference needs the variable to
-  outlive the closure -- BUG-569's escaping-capture boxing. Fixture
+  outlive the closure. **That mechanism exists since 2026-10-22** (BUG-569 step 4, closed
+  2026-10-26): a written `var` local a closure shares lives in a heap cell (`_zbr_cell`) that a
+  returned closure keeps alive. What is left is binding a struct method value onto such a
+  cell. Fixture
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
-
-### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)
-- **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
-  should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
-- **Repro (QUICKSTART §19, "Implicit closure capture", verbatim shape):**
-  ```
-  def main()
-      var counter = 0
-      var bump = def()
-          counter += 1
-      bump()
-      bump()
-      print(counter)
-  ```
-  `lam_int.zbr:4: error: cannot assign to constant` (zig's, remapped). The same for a struct
-  field (`c.n = c.n + 1` inside the lambda), and for a mutating method on a captured struct
-  (`def(): int = c.bump()`: "expected '*Counter', found '*const Counter'"; with `c` made `var`
-  outside, zig says "mutable 'c' not accessible from here").
-- **What works:** an explicit `capture` block for per-closure state (§19.1), and module-level
-  variables. **Corrected 2026-10-21:** "reading a captured local" works only when the local is
-  a compile-time constant (`var k = 10` is emitted as `const k: i64 = 10` and Zig folds it).
-  Every runtime value fails inside zig with `"k" not accessible from inner function`, even if
-  it is only read: a local, a parameter, `self` in a method, a `for` variable, the receiver of
-  `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
-- **STEPS 1-3 LANDED 2026-10-21** (design note §7): every runtime value a lambda reads is
-  captured by COPY -- locals, parameters, loop variables, a factory's own locals (typed from
-  inference); a REBOUND captured variable is refused by name (Resolver), a struct changed in
-  place after capture is refused at build (codegen's mutation scan), and a `sys.go` lambda keeps
-  the explicit-capture rule. QUICKSTART §19's `counter += 1` example is now a named refusal and
-  the section says so. STILL OPEN: step 4, shared capture (it removes those refusals), which
-  waits on §5's three questions. `this` in a lambda landed the same day: captured in a class
-  method (a reference, so writes through it are shared), refused by name in a struct method. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
-  `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
-- **STEP 4, IMPLICIT HALF, LANDED 2026-10-22** (design note §8): a `var` local a closure
-  captures and something writes -- the function, that closure, a sibling or a nested one --
-  is SHARED through a heap cell (`_zbr_cell`, the program arena), so QUICKSTART §19's
-  `counter += 1` works as written. A class instance or container is boxed only when rebound.
-  Still refused, with the fix named: a parameter, loop counter or binding written after a
-  closure reads it, and a struct parameter changed in place (at build). The four step-3
-  refusals became `test/bug569_shared_{written,rebound,struct_field,struct_method}_test.zbr`;
-  new negatives `test/fail_fixtures/bug569_for_counter_written_capture_test.zbr` and
-  `bug569_param_struct_capture_test.zbr`; probe `test/boundary/bv_closure_capture_shared.zbr`
-  (intent-first). BUG-607 (a closure VALUE as a reference) landed in the next commit.
-  STILL OPEN: design note §6 step 5's tail -- leakgen should GENERATE capturing lambdas, so
-  the next sink that does not take a closure struct is found by the fuzzer, not a user.
-- **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
-  that nothing writes, box one that something writes, refuse written captures by name until
-  boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;
-  BUG-608 (assigning a `for ... in` variable) is refused.
-- **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
-  the bullet right under it says implicit capture is for "read-only access in most cases".
-- **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the
-  enclosing local (Python `nonlocal`, C# lambdas); or (b) it is READ-ONLY -- refuse a write to a
-  captured local in the front end, naming `capture` as the way to keep state, and fix §19's
-  example. (a) is what the example promises; (b) is what the implementation does today, minus
-  the error message.
-- **DECIDED 2026-10-14 (Sean): (a), BY REFERENCE** -- "similar to C# semantics": the closure
-  shares the enclosing local, so a write through it is seen outside and by every other closure
-  that captured it. §19's example becomes correct as written; the "read-only access in most
-  cases" bullet under it goes. Design questions to settle in the note before codegen: a closure
-  that OUTLIVES its frame (returned, stored in a field or list) needs the captured local
-  heap-boxed, as C# lifts it into a display class; and a loop variable captured per iteration
-  (C# 5 gives each `foreach` iteration its own variable -- say which Zebra does).
-- **Why no gate saw it:** doc_example_check runs the front end only, and the front end accepts
-  the example (pattern search 4 -- a full-build leg for doc examples -- is aimed at exactly this).
 
 ### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
@@ -155,21 +185,6 @@
 - **Expected:** either `@[...]` is a real fixed array (indexable, iterable, any element type,
   bindable), or it is documented as the inline membership form only and the front end refuses
   the other uses by name. Today the reference documents a use that cannot compile.
-
-### BUG-563: a list literal of lambdas is accepted and typed as `List(str)` -- calling an element is an inference error, binding it leaks a zig error -- OPEN (found 2026-10-12)
-- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor and on HEAD.
-- **Repro:**
-  ```
-  def main()
-      var fns = [def(x: int) = x + 1, def(x: int) = x * 10]
-      var a: int = fns[0](4)
-      print(a)
-  ```
-  zig: `expected type 'str', found '*const fn (i64) i64'`. With `print(fns[0](4) + fns[1](4))`
-  the front end instead says "cannot infer the type of this expression, an operand of `+`".
-- **Expected:** the element type of a list of lambdas is their function type (or a `sig` when
-  annotated, `var fns: List(Step) = [...]`); calling `fns[i](x)` types as the lambda's return.
-  At least: refuse the literal in the front end rather than typing it `List(str)`.
 
 ### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
@@ -210,18 +225,6 @@
   must resolve a relative marker against the same root (debug-map's gate covers the map).
   Fixture: the same source emitted from two different cwds with `--source-root` gives
   byte-identical files.
-
-### BUG-546: a postfix `catch` on a call that cannot fail passes the front end and fails inside zig -- OPEN (found 2026-10-08)
-- **Severity:** Low-Medium (a leak: the user's fix is to delete the `catch`, but nothing says
-  so where they are looking).
-- **Reported by:** Fable, GameEngine, about `File.listDir`, which returns a List and does not
-  throw. Reproduced here: `var xs = File.listDir(".") catch |e| List(str)()` -- `zebra -c`
-  exits 0, and zig refuses the `catch` on a non-error-union.
-- **Fix direction:** refuse in the checker, naming the call: "`File.listDir` does not throw;
-  drop the `catch`". That needs the checker to know which calls can fail -- it does for
-  user `throws` functions; the builtin namespaces need their throwing members listed, which
-  is also what the surface doc should say ("which File calls throw", Fable's question).
-  `?` on a non-throwing call should get the same rule if it does not already.
 
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).
@@ -282,19 +285,6 @@
   unexpected statuses from anyone debugging the runtime. Prefer (a) for the close path;
   decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
   output must hold no `NTSTATUS` line (Windows-only leg).
-
-### BUG-531: a Regex method called directly on `Regex.compile(...)` in a `var` initializer passes `-c` and fails inside zig -- OPEN (found 2026-10-05)
-- `var r = Regex.compile("a").groups("cat")` -> "no field or member function named
-  'groups' in 'zebra_rt.Regex'". The chain is materialized into `_mc_1` and the call is
-  emitted as a raw struct method. The same call inside `print(...)` works. Every Regex
-  method. Reported by the book agent; verified.
-
-### BUG-534: an `int` argument to a `uint64` extern parameter passes `-c` and fails inside zig -- OPEN (found 2026-10-05)
-- `extern def f(p: ^byte, len: uint64): uint32` called as `f(p, text.len)` -> zig
-  "expected type 'u64', found 'i64'"; `var u: uint64 = n` builds fine, and `int` has no
-  unsigned conversion method. Reported by the book agent; NOT re-run here (needs a C dep).
-
----
 
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
@@ -811,45 +801,6 @@ for. Nothing needs retiring.
 *Measured with a positive control: with strict on, the bug099 fixture MUST be rejected, and
 was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
 byte-identical `.zbr` and generated `.zig` before this note was written.*
-
-### BUG-106 (front-end check) — CONFLICT: the fixture serves two incompatible roles — NEEDS A DECISION
-
-**Not a new defect. A collision, surfaced 2026-08-04**, and recorded because acting on it
-without a decision would silently break a gate.
-
-The selfhost does **not** implement BUG-106's heterogeneous-literal check. Verified:
-
-| compiler | `var xs = [1, "two", 3]` |
-|---|---|
-| bootstrap | ✅ `error: list literal has heterogeneous element types: 'String' is not compatible with 'int'` |
-| **selfhost** (`zebra.exe`, what ships) | ❌ `-c` exits **0**; fails later inside emitted Zig |
-
-By the selfhost-equivalence rule that gap should simply be closed — as BUG-248 was, the
-same night, for BUG-108. **It cannot be, without a decision**, because
-`test/bug106_heterogeneous_list_test.zbr` is simultaneously:
-
-1. **the regression fixture for BUG-106** — it must be REJECTED by the front end; and
-2. **one of three asymmetry witnesses** named in `selfhost/main.zbr` and required by
-   `tools/check_mode_check.sh` — it must PASS `-c` and fail `--check-full`, proving the
-   documented `-c` limitation is real.
-
-Those are contradictory. Porting the check satisfies (1) and destroys (2) for this file.
-
-**It is survivable but not free:** `check_mode_check` fails only when *no* witness
-survives, and there are three, so fixing this leaves two. What it costs is a **witness**,
-and the comment in `selfhost/main.zbr` naming all three would go stale with it.
-
-**The options:**
-- **a.** Port the check; retire this file as a witness; pick a replacement witness first so
-  the set never drops below two; update the `main.zbr` comment.
-- **b.** Port the check and split the file: a new negative fixture for the check, and leave
-  a *different* construct here as the witness.
-- **c.** Leave the gap, and record explicitly that the selfhost does not implement it — the
-  worst option, because the two compilers then disagree on what is a valid program.
-
-**Recommend (b)** — a witness should not be load-bearing for a bug fixture, and the
-coupling is what made this invisible. Sean's call.
-
 
 ### BUG-243: fifteen corpus files have never compiled, and no gate could say so
 

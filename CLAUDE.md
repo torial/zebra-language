@@ -226,10 +226,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 35 <!-- doc-gen: 35 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 46 <!-- doc-gen: 46 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 57 <!-- doc-gen: 57 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 48 <!-- doc-gen: 48 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 59 <!-- doc-gen: 59 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -710,6 +710,12 @@ python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, regis
                                 #   The gate refuses (exit 2) if it stops leaking. Fixed seeds; the
                                 #   `-n/--seed` mode explores, `--update-baseline` never
                                 #   accepts a signature silently (it writes BUG-FILE-ME).
+                                #   CAPTURING LAMBDAS SINCE 2026-10-26 (cap `lambdas`, BUG-569
+                                #   step 5): expression and statement lambdas over the env, a
+                                #   write to an enclosing `var` (a shared cell), map/filter/
+                                #   any/all/reduce, and a reassigned lambda local. Writing the
+                                #   probe for it found BUG-629; on the pre-fix compiler the gate
+                                #   is red, 18 leaks / 7 signatures.
                                 #   CANNOT SEE: wrong-but-compiling output (output_sweep's
                                 #   job), anything gen.py does not generate (its caps list
                                 #   is the coverage -- grow it with every bug class), and a
@@ -1237,6 +1243,46 @@ bash tools/coverage_check.sh    # THE COVERAGE-MAP GATE, registered as `coverage
                                 #   branch coverage (the instrument is the statement), GUI
                                 #   closures run at paint time (counted; the flush must
                                 #   outlive the loop).
+bash tools/census_check.sh      # THE ALLOCATION-CENSUS GATE, registered as `census` (FAST
+                                #   tier, ~10 s, 2026-10-23; memory_model.md §3 item 6).
+                                #   `zebra --census` counts every allocation under (source
+                                #   line, first frames of the allocating call): genStmt sets
+                                #   the runtime's `_zbr_site` beside the `// zbr:` marker,
+                                #   every function / constructor / statement lambda saves and
+                                #   restores it, the entry prologue wraps `_allocator` (the
+                                #   arena, or a --library-mode host's), each scoped `allocate`
+                                #   block wraps its own and releases it at the end, and the
+                                #   report goes to stderr + zebra-census.json at exit. The KIND
+                                #   is the first frame outside Zig's std (a runtime helper, a
+                                #   constructor, the user's fn), `via` the innermost std frame
+                                #   (`ensureTotalCapacity` = container growth) -- symbolised
+                                #   from debug info, which the self-hosted backend does not
+                                #   write, so --census builds take LLVM (the first run had
+                                #   21 of 21 kinds unresolved).
+                                #   THE ORACLE IS THE SOURCE TEXT (`# cens:none` / `>=N` /
+                                #   `kind=` / `via=` labels in tools/fixtures/census_probe.zbr),
+                                #   and its `post-call` lines are the property a census lives
+                                #   or dies by: an allocation after a call returns belongs to
+                                #   the CALLER. Without the restore it lands on the callee's
+                                #   last line -- a confident wrong coordinate.
+                                #   Leg 2: no flag -> no report, no file, and memStats' census
+                                #   fields read -1 (unmeasured), never 0. REFUSES under 15
+                                #   labelled lines or on zero allocations.
+                                #   CANNOT SEE: the runtime's page-allocator escape hatches
+                                #   (the report names them as uncounted), kinds in a --release
+                                #   build (printed as ?0x<address>), a host's own allocations.
+bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-read` (FAST,
+                                #   ~5 s, 2026-10-23, BUG-619). sys.readLine / sys.readBytes
+                                #   took one byte per `readSliceShort`, which on an empty buffer
+                                #   reads straight into the 1-byte slice: a read per byte, 10 MB
+                                #   in 18.5 s in --release too. Found by the census; no gate fed
+                                #   a program more than a few bytes of stdin. Leg 1 derives the
+                                #   expected lines from the INPUT BYTES (CRLF, empty, a 10,000-
+                                #   byte line across the 4 KB buffer, no final newline); leg 2
+                                #   readBytes then readLine on one reader (the LSP framing); leg
+                                #   3 4 MB in under 1.5 s, min of two -- 3.84 s on the old
+                                #   runtime (red-checked with it), 0.42 s fixed. CANNOT SEE:
+                                #   File reads, or stdin from a console rather than a pipe.
 bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-mode` (FAST
                                 #   tier, ~15 s, 2026-09-30, BUG-485). A `--library-mode`
                                 #   program is linked into a HOST, which installs its own
@@ -1432,9 +1478,13 @@ python tools/lint_stale_bugs.py    # THE STALE-OPEN-BUG SCANNER — REPORT ONLY,
                                 #   Two of the three were found by someone picking the bug
                                 #   up to work on it and discovering it already done.
                                 #   NOT A GATE, because it produces real false positives
-                                #   and must: BUG-106 ranks top on an old "BUG-106 fixed"
-                                #   commit, but today's entry is a NEW conflict filed under
-                                #   the same number and is legitimately open. A tool that
+                                #   and must -- though its example was WRONG for eleven
+                                #   weeks: BUG-106 ranked top on its "BUG-106 fixed"
+                                #   commit, and this note called the open entry (a fixture
+                                #   role conflict) "legitimately open". e6cbe72 had
+                                #   resolved that conflict the same day it was filed; the
+                                #   entry left the ledger 2026-10-25, when Sean was asked
+                                #   to decide it. The scanner was right. A tool that
                                 #   would close that is worse than none. It ranks
                                 #   suspicion, names its evidence, and closes nothing.
                                 #   CARRIES A BOUNDARY CONTROL, because its first version
@@ -2308,6 +2358,15 @@ whose final run's streams arrive on the right streams, a genuine error run once,
 persistent one tried three times, a successful run that merely PRINTS the signature not
 retried. Watched red against a never-retry and a retry-anything wrapper.
 
+**And the round-trip (2026-10-25)**: `bootstrap_check.sh` built selfhost-A/B with bare
+`zig build-exe`, and the closing `--daily` went red on round-trip alone with zig unable to read
+`std/time.zig` -- byte-identical standalone minutes later. Both of its attempts (fast backend,
+then the LLVM fallback) had hit it. `build_compiler` now retries the pair, three tries in all,
+only on the shared predicate, and its PASS line ends `(infra-retries=N)`. Red-checked with a
+`ZEBRA_ZIG_DIR` stub that fails the first two builds with the verbatim error (the pre-fix script
+fails exactly as the daily did, the fixed one passes with 1 retry), and with a persistent genuine
+error (one try, two builds, rc=1).
+
 ### The daily is CACHED where the answer cannot have changed (2026-09-26)
 
 The daily was 110 minutes and ~85% of it was zig compiling what we emit: `divergence` 38
@@ -2438,7 +2497,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 118 scripts | <!-- doc-gen: 118 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 121 scripts | <!-- doc-gen: 121 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 tracked documents <!-- doc-gen: 45 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -2473,6 +2532,29 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-10-26, second run (closing BUG-629 / BUG-569 `4056ecd`; FULL 48/48 before it):
+59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke 858/858 (infra-retries=0),
+round-trip byte-identical, `boundary` 39/0, `output_sweep` 466 identical (465 cache hits / 1
+miss -- the BUG-629 fix moved one emit), `full_sweep` / `divergence` 0 regressions,
+`regen-recover` from `4056ecd`, `gramgen` 0/0, and `leakgen` 100/0 with the new `lambdas` cap
+generating capturing lambdas and their reassignment -- the cap that went red on the pre-fix
+compiler (18 leaks / 7 signatures).
+
+**DAILY tier 2026-10-26 (closing BUG-534 `e2fb50a`, the trapping `toInt8..toUint64` family; FULL
+48/48 before it): 59/59 PASS in ONE invocation at JOBS=2 on the committed tree, ~100 min of gate
+time.** smoke 854/854 (infra-retries=0), round-trip byte-identical, `boundary` 39/0,
+`release-mode` with its new `300.toUint8()` trap leg, `output_sweep` 466 identical,
+`full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover` from `e2fb50a`,
+`gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`. The first daily since
+round-trip gained its BUG-302 retry. Whether that retry fired is NOT known: the board cuts
+round-trip's line before its `(infra-retries=N)`, and a passing gate's log is not kept.
+
+**DAILY tier 2026-10-25 (closing BUG-546/531/563/625/627 `aff4599`, BUG-628 filed
+`e8c7c6a`; FULL 48/48 before it): 56/57 in ONE invocation at JOBS=2, then round-trip green
+standalone -- ASSEMBLED.** `regen-recover`, `gramgen` 0/0 and `leakgen` 100/0 all green -- the
+last is the one that could have objected to the new "cannot fail" refusal. The red was BUG-302 in
+round-trip, which had no retry; it has one now (see the BUG-302 section).
 
 **DAILY tier 2026-10-22 (the rc8 release commit `561b7b1`, on top of BUG-569 step 4 / BUG-607
 `cda2ddc`, whose FULL was 46/46): 57/57 PASS in ONE invocation at JOBS=2, ~2h32m; tagged
@@ -3441,7 +3523,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **877** <!-- doc-gen: 877 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **890** <!-- doc-gen: 890 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

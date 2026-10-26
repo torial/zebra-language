@@ -6,7 +6,8 @@ semantics"). Drafted by Opus 5.5 on 2026-10-21. **Steps 1-3 of §6 are built (20
 §7)**: read-only capture by copy, written captures refused by name. **Step 4's implicit half
 is built (2026-10-22, §8)**: a written `var` local is shared through a cell. **So is
 BUG-607 (§9)**: a closure VALUE is a reference. §5's three questions were answered by Sean
-on 2026-10-21.
+on 2026-10-21. **Step 5's tail closed BUG-569 (2026-10-26, §10)**: leakgen generates
+capturing lambdas.
 **Bug:** BUG-569 (`BUGS.md`). Its scope turned out wider than filed; see §1.
 
 ---
@@ -325,3 +326,27 @@ still makes that sharing visible.
 Probe `test/boundary/bv_closure_value_ref.zbr`, committed unrun with §8's: it matched on its
 first compiling run (before the change it did not compile at all -- the stored and assigned
 rows were zig errors).
+
+## 10. Step 5's tail: leakgen generates capturing lambdas (2026-10-26)
+
+`fuzz/gen.py` gained the `lambdas` cap, on by default, so the leakgen gate's fixed seeds
+carry closures: an expression lambda over the enclosing locals and parameters (with or
+without a parameter of its own), called at once; a statement lambda whose body is an
+ordinary generated block -- declarations, loops, prints -- plus a write to an enclosing
+`var`, which makes that variable a shared cell; a capturing lambda handed to `map`,
+`filter`, `any`, `all` or `reduce`; and a lambda local reassigned with another. Only names
+the generator already treats as assignable are written from a lambda body: a parameter, loop
+variable or `as` binding written after a closure reads it is a refusal (§7), and generating
+one would only produce rejects. `?` is never generated inside a lambda.
+
+Counted on the gate's 100 programs: 88 contain a lambda, 247 in all (49 reassignments); 29
+of the 100 emits hold a `_zbr_cell`. The first 500 generated programs found nothing. The by-hand probe of
+the remaining sinks found BUG-629 -- reassigning an unannotated lambda local -- which the
+generator now produces as well: against the compiler before that fix, the gate fails with
+18 leaks in 7 signatures, all of them that bug.
+
+What the generator does not produce: closures stored in fields or lists, returned from
+factories, or passed to user functions with `def(P): R` parameters (each is covered by a
+hand-written fixture -- `bv_closure_value_ref`, `bug629_lambda_reassign_test`); a `capture`
+block; `sys.go`. Those are the next shapes to add if a leak of that kind is ever found by
+hand.

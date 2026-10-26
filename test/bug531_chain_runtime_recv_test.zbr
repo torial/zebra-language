@@ -1,0 +1,21 @@
+# BUG-531: a method chained on a runtime-type temporary in a `var` initializer or an
+# assignment was hoisted into `_mc_N` and called raw, skipping the runtime's dispatch:
+# `var r = Regex.compile("a").groups(s)` reached zig as "no member named 'groups'".
+# The class receiver is the control: a user method on a temporary still hoists.
+class Tally
+    var n: int = 1
+    def bump(): int
+        .n = .n + 1
+        return .n
+
+def mk(): Tally
+    return Tally()
+
+def main()
+    var g = Regex.compile("(a)(b)").groups("xab")
+    var m = Regex.compile("b+").test("abbc")
+    var s = StringBuilder().toString()
+    var h = Regex.compile("z").groups("abc")
+    h = Regex.compile("(c)").groups("abc")
+    var t = mk().bump()
+    print("bug531: ${g.len} ${m} ${s.len} ${h.len} ${t}")

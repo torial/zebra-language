@@ -228,6 +228,7 @@ pub fn _intern(s: []const u8) []const u8 {
     // is the scoped arena, and the pool would then hand out freed memory after the block.
     const owned = _prog_alloc().dupe(u8, s) catch @panic("OOM");
     _str_pool.put(owned, owned) catch @panic("OOM");
+    _zbr_cens_intern(owned.len);
     return owned;
 }
 
@@ -328,6 +329,13 @@ pub inline fn _zbr_set(xs: anytype, i: i64, v: std.meta.Elem(@TypeOf(xs))) void 
 
 pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
+}
+
+// BUG-534: the checked integer conversions (`n.toUint64()`, `u.toInt()`...). Out of range
+// TRAPS in every build mode: @intCast there is a panic in Debug but undefined behaviour in
+// ReleaseFast, which is what `zebra --release` ships. `name` is the Zebra type, for the message.
+pub fn _zbr_int_to(comptime T: type, comptime name: []const u8, x: anytype) T {
+    return std.math.cast(T, x) orelse std.debug.panic("integer conversion out of range: {d} does not fit in {s}", .{ x, name });
 }
 
 inline fn _zbr_shift_t(comptime T: type) type {
@@ -1069,9 +1077,18 @@ pub fn _zebra_map_entries(map: anytype) _ZbrList(struct { @FieldType(_MapKV(@Typ
 // holds from the OS).  Because the arena bump-allocates and only grows until an
 // arena_scope reset, this is the high-water mark for the main allocator.  A
 // struct (not a bare int) so fields can be added later without breaking callers.
-pub const MemStats = struct { arenaBytes: i64 };
+// The census fields (2026-10-23) are measured only under `--census`; without it they
+// are -1, never 0 -- an unmeasured count must not read as "nothing allocated".
+pub const MemStats = struct { arenaBytes: i64, censusOn: bool, allocations: i64, allocBytes: i64, liveBytes: i64 };
 pub fn _mem_stats() MemStats {
-    return .{ .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())) };
+    const on = _zbr_cens_on;
+    return .{
+        .arenaBytes = @as(i64, @intCast(_arena.queryCapacity())),
+        .censusOn = on,
+        .allocations = if (on) @intCast(_zbr_cens.allocs) else -1,
+        .allocBytes = if (on) @intCast(_zbr_cens.bytes) else -1,
+        .liveBytes = if (on) _zbr_cens.live else -1,
+    };
 }
 
 // `allocate Debug()` allocation-stats reporter.  Wraps a real allocator and
@@ -1393,32 +1410,62 @@ fn _stdin_reader() *std.Io.File.Reader {
     if (_stdin_rdr == null) _stdin_rdr = std.Io.File.stdin().readerStreaming(_io, &_stdin_buf);
     return &_stdin_rdr.?;
 }
+// BUG-619 (2026-10-23): both readers took ONE BYTE per `readSliceShort`, and on an empty
+// buffer that call reads straight into the caller's 1-byte slice -- a read per byte, so the
+// 4 KB buffer was never used: 10 MB of stdin took 18.5 s, ReleaseFast as well as Debug (plain
+// Zig, same call: 18.5 s; `takeByte`: 0.09 s). They now scan the buffer itself (`peekGreedy`
+// fills it), and a line that fits in it is ONE exact-size allocation instead of a List grown
+// from 8 bytes (the census measured 123 bytes allocated per ~50-byte line).
 pub fn _sys_readline() ?[]const u8 {
-    const rdr = _stdin_reader();
-    var line: std.ArrayList(u8) = .empty;
-    var byte_buf: [1]u8 = undefined;
+    const r = &_stdin_reader().interface;
+    var line: std.ArrayList(u8) = .empty; // only for a line longer than what is buffered
     while (true) {
-        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (line.items.len > 0) line.items else null;
-        if (n == 0) return if (line.items.len > 0) line.items else null;
-        const b = byte_buf[0];
-        if (b == '\n') break;
-        if (b != '\r') line.append(_allocator, b) catch return null;
+        const avail = r.peekGreedy(1) catch return _zbr_line_done(&line, null);
+        if (std.mem.indexOfScalar(u8, avail, '\n')) |i| {
+            const done = _zbr_line_done(&line, avail[0..i]);
+            r.toss(i + 1);
+            return done;
+        }
+        line.appendSlice(_allocator, avail) catch return null;
+        r.toss(avail.len);
     }
-    return line.items;
+}
+// The line without its '\n' and with every '\r' dropped (as before); `tail` is the part
+// still in the reader's buffer, copied before the caller tosses it. null = end of input
+// with nothing read.
+fn _zbr_line_done(line: *std.ArrayList(u8), tail: ?[]const u8) ?[]const u8 {
+    if (tail) |t| {
+        if (line.items.len == 0) {
+            const out = _allocator.alloc(u8, t.len - std.mem.count(u8, t, "\r")) catch return null;
+            var j: usize = 0;
+            for (t) |c| if (c != '\r') {
+                out[j] = c;
+                j += 1;
+            };
+            return out;
+        }
+        line.appendSlice(_allocator, t) catch return null;
+    } else if (line.items.len == 0) return null;
+    var j: usize = 0;
+    for (line.items) |c| if (c != '\r') {
+        line.items[j] = c;
+        j += 1;
+    };
+    return line.items[0..j];
 }
 // Read EXACTLY `count` bytes from stdin via the shared reader (so read-ahead from
 // a preceding readLine is consumed, not lost — LSP Content-Length framing).
 // Returns null at clean EOF; a short read at EOF returns what was read.
 pub fn _sys_read_bytes(count: i64) ?[]const u8 {
     if (count <= 0) return "";
-    const rdr = _stdin_reader();
+    const r = &_stdin_reader().interface;
+    const want: usize = @intCast(count);
     var out: std.ArrayList(u8) = .empty;
-    var byte_buf: [1]u8 = undefined;
-    var i: i64 = 0;
-    while (i < count) : (i += 1) {
-        const n = rdr.interface.readSliceShort(&byte_buf) catch return if (out.items.len > 0) out.items else null;
-        if (n == 0) return if (out.items.len > 0) out.items else null;
-        out.append(_allocator, byte_buf[0]) catch return null;
+    while (out.items.len < want) {
+        const avail = r.peekGreedy(1) catch return if (out.items.len > 0) out.items else null;
+        const take = @min(avail.len, want - out.items.len);
+        out.appendSlice(_allocator, avail[0..take]) catch return null;
+        r.toss(take);
     }
     return out.items;
 }
@@ -5312,6 +5359,299 @@ pub fn _profile_start(name: []const u8) void {
     _profile_time_stack.append(std.heap.page_allocator, std.Io.Timestamp.now(_io, .awake).nanoseconds) catch @panic("OOM");
 }
 // ── line coverage (2026-09-23) ──────────────────────────────────────────────────
+// `--census` (2026-10-23, memory_model.md §3 item 6): who allocates, where, how much.
+// Codegen sets `_zbr_site` beside each statement's `// zbr:` marker and saves/restores it
+// around every function, constructor and statement lambda, so an allocation made after a
+// call returns is charged to the CALLER's line, not to the callee's last one. The entry
+// prologue wraps whatever `_allocator` is at that moment (the program arena, or a host's
+// allocator in --library-mode) with `_ZbrCensAlloc`, and every scoped `allocate` block wraps
+// its own; each allocation is counted under (source line, return address). The return
+// address names the KIND -- `_str_concat`, `ensureTotalCapacityPrecise` (container growth),
+// `Parser.init` -- once symbolised at report time from the binary's debug info; a build
+// without debug info (--release) prints the address and says the kind is unresolved.
+// `_zbr_cens_flush` prints the report on stderr and writes zebra-census.json
+// ($ZEBRA_CENSUS_OUT) at exit; a host can call it any time. NOT counted: the runtime's
+// page-allocator escape hatches (JSON values, raise messages, HTTP buffers, the pool
+// headers) -- the report says so rather than letting their absence read as zero.
+pub const _ZbrSite = struct { path: []const u8 = "<init>", line: u32 = 0 };
+pub threadlocal var _zbr_site: _ZbrSite = .{};
+pub var _zbr_cens_on: bool = false;
+// A row is (site, return address). The innermost frame is usually a std function
+// (`concatMaybeSentinel`, `ensureTotalCapacityPrecise`), so the first time a row is seen the
+// census walks the stack and keeps its first frames; the report names the first frame OUTSIDE
+// std as the kind and the innermost one as `via`. Walking only on a row's FIRST allocation is
+// what makes the census affordable: a walk costs ~6 us on Windows, measured, and a loop makes
+// the same row hundreds of thousands of times. (So a row's frames are those of its first
+// allocation; the line and the return address pin all but a std-internal path.)
+const _zbr_cens_depth = 12;
+const _ZbrCensKey = struct { path: usize, line: u32, ra: usize };
+const _ZbrCensVal = struct { path: []const u8, frames: [_zbr_cens_depth]usize = @splat(0), count: u64 = 0, bytes: u64 = 0 };
+var _zbr_cens_map: std.AutoHashMapUnmanaged(_ZbrCensKey, _ZbrCensVal) = .empty;
+var _zbr_cens_mu: std.Io.Mutex = .init;
+pub const _ZbrCensTotals = struct {
+    allocs: u64 = 0, // successful allocations
+    bytes: u64 = 0, // bytes requested: allocations plus in-place growth
+    frees: u64 = 0,
+    freed: u64 = 0, // bytes handed back (an arena keeps most of them -- see the gap)
+    live: i64 = 0, // requested minus handed back: under the arena, everything never freed
+    peak: i64 = 0,
+    interned: u64 = 0, // strings the intern pool copied (they bypass `_allocator`)
+    interned_bytes: u64 = 0,
+    released_scopes: u64 = 0, // scoped `allocate` blocks that ended (their arena freed at once)
+};
+pub var _zbr_cens: _ZbrCensTotals = .{};
+fn _zbr_cens_lock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_cens_mu.lockUncancelable(_io);
+}
+fn _zbr_cens_unlock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_cens_mu.unlock(_io);
+}
+fn _zbr_cens_note(w: *_ZbrCensAlloc, len: usize, ra: usize) void {
+    const site = _zbr_site;
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    w.live += @intCast(len);
+    _zbr_cens.allocs += 1;
+    _zbr_cens.bytes += len;
+    _zbr_cens.live += @intCast(len);
+    if (_zbr_cens.live > _zbr_cens.peak) _zbr_cens.peak = _zbr_cens.live;
+    const gop = _zbr_cens_map.getOrPut(std.heap.page_allocator, .{ .path = @intFromPtr(site.path.ptr), .line = site.line, .ra = ra }) catch return;
+    if (!gop.found_existing) {
+        gop.value_ptr.* = .{ .path = site.path };
+        const st = std.debug.captureCurrentStackTrace(.{ .first_address = ra }, &gop.value_ptr.frames);
+        if (st.return_addresses.len == 0) gop.value_ptr.frames[0] = ra; // no unwinder: the one address we have
+    }
+    gop.value_ptr.count += 1;
+    gop.value_ptr.bytes += len;
+}
+fn _zbr_cens_shrink(w: *_ZbrCensAlloc, len: usize) void {
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    w.live -= @intCast(len);
+    w.freed += len;
+    _zbr_cens.frees += 1;
+    _zbr_cens.freed += len;
+    _zbr_cens.live -= @intCast(len);
+}
+pub fn _zbr_cens_intern(len: usize) void {
+    if (!_zbr_cens_on) return;
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    _zbr_cens.interned += 1;
+    _zbr_cens.interned_bytes += len;
+}
+/// A counting wrapper over `child`. `live` is this wrapper's own share, so a scoped block's
+/// arena -- freed all at once by deinit, with no per-allocation free -- can be released in one
+/// step (`_zbr_cens_release`).
+pub const _ZbrCensAlloc = struct {
+    child: std.mem.Allocator,
+    live: i64 = 0,
+    freed: u64 = 0, // bytes this wrapper handed back to its child
+    pub const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
+    pub fn allocator(self: *_ZbrCensAlloc) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &_vt };
+    }
+    fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        const p = self.child.vtable.alloc(self.child.ptr, len, al, ra) orelse return null;
+        _zbr_cens_note(self, len, ra);
+        return p;
+    }
+    fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        if (!self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra)) return false;
+        self._moved(mem.len, new_len, ra);
+        return true;
+    }
+    fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        const p = self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra) orelse return null;
+        self._moved(mem.len, new_len, ra);
+        return p;
+    }
+    fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void {
+        const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
+        self.child.vtable.free(self.child.ptr, mem, al, ra);
+        _zbr_cens_shrink(self, mem.len);
+    }
+    fn _moved(self: *_ZbrCensAlloc, old: usize, new: usize, ra: usize) void {
+        if (new > old) {
+            _zbr_cens_note(self, new - old, ra);
+            _zbr_cens_lock();
+            _zbr_cens.allocs -= 1; // growth in place is bytes, not a new allocation
+            _zbr_cens_unlock();
+        } else if (old > new) {
+            _zbr_cens_lock();
+            defer _zbr_cens_unlock();
+            self.live -= @intCast(old - new);
+            self.freed += old - new;
+            _zbr_cens.freed += old - new;
+            _zbr_cens.live -= @intCast(old - new);
+        }
+    }
+};
+pub var _zbr_cens_root: _ZbrCensAlloc = .{ .child = undefined };
+var _zbr_cens_root_is_arena: bool = false;
+/// Entry prologue: wrap the allocator in force NOW (the arena, or a library host's).
+pub fn _zbr_cens_install() void {
+    if (_zbr_cens_on) return;
+    _zbr_cens_on = true;
+    _zbr_cens_root_is_arena = !_host_alloc_set;
+    _zbr_cens_root = .{ .child = _allocator };
+    _allocator = _zbr_cens_root.allocator();
+}
+/// A scoped `allocate` block's wrapper, emitted as a local: `.child` is the block's own
+/// allocator; on exit the block's arena frees everything it held at once.
+pub fn _zbr_cens_release(w: *_ZbrCensAlloc) void {
+    if (w.live <= 0) return;
+    _zbr_cens_lock();
+    defer _zbr_cens_unlock();
+    _zbr_cens.freed += @intCast(w.live);
+    _zbr_cens.live -= w.live;
+    _zbr_cens.released_scopes += 1;
+    w.live = 0;
+}
+const _ZbrCensRow = struct { path: []const u8, line: u32, frames: [_zbr_cens_depth]usize, count: u64, bytes: u64 };
+const _ZbrCensSym = struct { name: ?[]const u8, in_std: bool };
+const _ZbrCensKind = struct { kind: ?[]const u8, via: ?[]const u8 };
+const _ZbrCensOut = struct { path: []const u8, line: u32, kind: ?[]const u8, via: ?[]const u8, f0: usize, count: u64, bytes: u64 };
+fn _zbr_cens_sym(ra: usize, cache: *std.AutoHashMapUnmanaged(usize, _ZbrCensSym), syms: *std.ArrayList(std.debug.Symbol), text: std.mem.Allocator) _ZbrCensSym {
+    if (cache.get(ra)) |c| return c;
+    var r: _ZbrCensSym = .{ .name = null, .in_std = false };
+    if (std.debug.getSelfDebugInfo()) |si| {
+        syms.clearRetainingCapacity();
+        if (si.getSymbols(_io, std.heap.page_allocator, text, ra -| 1, false, syms)) |_| {
+            for (syms.items) |s| if (s.name) |n| {
+                const file: []const u8 = if (s.source_location) |sl| sl.file_name else "";
+                r = .{ .name = n, .in_std = std.mem.indexOf(u8, file, "lib/std/") != null or std.mem.indexOf(u8, file, "lib\\std\\") != null };
+                break;
+            };
+        } else |_| {}
+    } else |_| {}
+    cache.put(text, ra, r) catch {};
+    return r;
+}
+fn _zbr_cens_kind(frames: [_zbr_cens_depth]usize, cache: *std.AutoHashMapUnmanaged(usize, _ZbrCensSym), syms: *std.ArrayList(std.debug.Symbol), text: std.mem.Allocator) _ZbrCensKind {
+    var via: ?[]const u8 = null;
+    for (frames, 0..) |ra, i| {
+        if (ra == 0) break;
+        const s = _zbr_cens_sym(ra, cache, syms, text);
+        const n = s.name orelse return .{ .kind = null, .via = via };
+        if (!s.in_std) return .{ .kind = n, .via = via };
+        if (i == 0) via = n;
+    }
+    return .{ .kind = via, .via = null }; // every frame we kept is std: name the innermost
+}
+fn _zbr_cens_mb(b: anytype) f64 {
+    return @as(f64, @floatFromInt(b)) / (1024.0 * 1024.0);
+}
+fn _zbr_cens_json_str(out: *std.ArrayList(u8), a: std.mem.Allocator, s: []const u8) void {
+    out.append(a, '"') catch return;
+    for (s) |c| {
+        switch (c) {
+            '"' => out.appendSlice(a, "\\\"") catch return,
+            '\\' => out.appendSlice(a, "\\\\") catch return,
+            else => if (c < 0x20) {} else out.append(a, c) catch return,
+        }
+    }
+    out.append(a, '"') catch return;
+}
+/// The census report: stderr summary + top sites, and the JSON file. Safe to call more than
+/// once (a host can dump mid-run); allocates only from the page allocator, so it does not
+/// count itself.
+pub fn _zbr_cens_flush() void {
+    if (!_zbr_cens_on) return;
+    const pa = std.heap.page_allocator;
+    var text_arena = std.heap.ArenaAllocator.init(pa);
+    defer text_arena.deinit();
+    const ta = text_arena.allocator();
+    _zbr_cens_lock();
+    const t = _zbr_cens;
+    var rows: std.ArrayList(_ZbrCensRow) = .empty;
+    var it = _zbr_cens_map.iterator();
+    while (it.next()) |e| rows.append(ta, .{ .path = e.value_ptr.path, .line = e.key_ptr.line, .frames = e.value_ptr.frames, .count = e.value_ptr.count, .bytes = e.value_ptr.bytes }) catch break;
+    _zbr_cens_unlock();
+    // Name each row's kind, then merge rows that differ only in deeper frames: the report is
+    // about (line, kind, via), and three callers of the same growth path are one row to a reader.
+    var syms: std.ArrayList(std.debug.Symbol) = .empty;
+    var sym_cache: std.AutoHashMapUnmanaged(usize, _ZbrCensSym) = .empty;
+    var merged: std.StringHashMapUnmanaged(usize) = .empty;
+    var outs: std.ArrayList(_ZbrCensOut) = .empty;
+    var unresolved: usize = 0;
+    for (rows.items) |r| {
+        const k = _zbr_cens_kind(r.frames, &sym_cache, &syms, ta);
+        const key = std.fmt.allocPrint(ta, "{x}\x00{d}\x00{s}\x00{s}\x00{x}", .{ @intFromPtr(r.path.ptr), r.line, k.kind orelse "", k.via orelse "", if (k.kind == null) r.frames[0] else 0 }) catch continue;
+        const gop = merged.getOrPut(ta, key) catch continue;
+        if (gop.found_existing) {
+            outs.items[gop.value_ptr.*].count += r.count;
+            outs.items[gop.value_ptr.*].bytes += r.bytes;
+        } else {
+            gop.value_ptr.* = outs.items.len;
+            outs.append(ta, .{ .path = r.path, .line = r.line, .kind = k.kind, .via = k.via, .f0 = r.frames[0], .count = r.count, .bytes = r.bytes }) catch continue;
+            if (k.kind == null) unresolved += 1;
+        }
+    }
+    const _Cmp = struct {
+        fn gt(_: void, x: _ZbrCensOut, y: _ZbrCensOut) bool {
+            return if (x.bytes != y.bytes) x.bytes > y.bytes else x.count > y.count;
+        }
+    };
+    std.mem.sort(_ZbrCensOut, outs.items, {}, _Cmp.gt);
+    var err: std.ArrayList(u8) = .empty;
+    const w = struct {
+        fn p(o: *std.ArrayList(u8), a: std.mem.Allocator, comptime f: []const u8, args: anytype) void {
+            const s = std.fmt.allocPrint(a, f, args) catch return;
+            o.appendSlice(a, s) catch {};
+        }
+    };
+    w.p(&err, ta, "── Allocation census (--census) ─────────────────────────────────\n", .{});
+    w.p(&err, ta, "  allocations {d}, {d:.2} MB requested; {d} frees, {d:.2} MB handed back; {d:.2} MB never freed (peak {d:.2} MB)\n", .{ t.allocs, _zbr_cens_mb(t.bytes), t.frees, _zbr_cens_mb(t.freed), _zbr_cens_mb(t.live), _zbr_cens_mb(t.peak) });
+    w.p(&err, ta, "  interned strings: {d} ({d:.2} MB, outside the counts above)\n", .{ t.interned, _zbr_cens_mb(t.interned_bytes) });
+    if (t.released_scopes > 0) w.p(&err, ta, "  scoped allocate blocks ended: {d} (their arenas returned what they held)\n", .{t.released_scopes});
+    if (_zbr_cens_root_is_arena) {
+        // What the arena holds = what was never freed + what was freed and KEPT (an arena
+        // returns only its newest allocation: outgrown List/map/builder buffers land here) +
+        // slack (the unused end of its newest chunk, alignment, chunk headers).
+        const cap: i64 = @intCast(_arena.queryCapacity());
+        const held: i64 = _zbr_cens_root.live + @as(i64, @intCast(t.interned_bytes));
+        const kept: i64 = @intCast(_zbr_cens_root.freed);
+        w.p(&err, ta, "  program arena holds {d:.2} MB from the OS: {d:.2} MB never freed, {d:.2} MB freed but kept (outgrown buffers), {d:.2} MB slack (chunk tail, alignment)\n", .{ _zbr_cens_mb(cap), _zbr_cens_mb(held), _zbr_cens_mb(kept), _zbr_cens_mb(@max(cap - held - kept, 0)) });
+    } else {
+        w.p(&err, ta, "  allocator: the host's (--library-mode); the arena line does not apply\n", .{});
+    }
+    w.p(&err, ta, "  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)\n", .{});
+    w.p(&err, ta, "  {d} sites; top by bytes:\n", .{outs.items.len});
+    for (outs.items[0..@min(outs.items.len, 25)]) |r| {
+        const loc = std.fmt.allocPrint(ta, "{s}:{d}", .{ std.fs.path.basename(r.path), r.line }) catch continue;
+        const k: []const u8 = if (r.kind) |kk|
+            (if (r.via) |v| (std.fmt.allocPrint(ta, "{s} (via {s})", .{ kk, v }) catch kk) else kk)
+        else
+            std.fmt.allocPrint(ta, "?0x{x}", .{r.f0}) catch "?";
+        w.p(&err, ta, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes) });
+    }
+    if (unresolved > 0) w.p(&err, ta, "  {d} of {d} sites have an UNRESOLVED kind: this binary carries no debug info for that address (a --release build has none) -- shown as ?0x<address>\n", .{ unresolved, outs.items.len });
+    std.Io.File.stderr().writeStreamingAll(_io, err.items) catch {};
+
+    var out: std.ArrayList(u8) = .empty;
+    w.p(&out, ta, "{{\"version\": 1, \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
+    if (_zbr_cens_root_is_arena) w.p(&out, ta, ", \"arenaCapacity\": {d}, \"arenaFreedKept\": {d}", .{ _arena.queryCapacity(), _zbr_cens_root.freed });
+    w.p(&out, ta, "}}, \"sites\": [", .{});
+    for (outs.items, 0..) |r, i| {
+        if (i > 0) out.appendSlice(ta, ", ") catch {};
+        out.appendSlice(ta, "{\"file\": ") catch {};
+        _zbr_cens_json_str(&out, ta, r.path);
+        w.p(&out, ta, ", \"line\": {d}, \"kind\": ", .{r.line});
+        if (r.kind) |k| _zbr_cens_json_str(&out, ta, k) else out.appendSlice(ta, "null") catch {};
+        out.appendSlice(ta, ", \"via\": ") catch {};
+        if (r.via) |v| _zbr_cens_json_str(&out, ta, v) else out.appendSlice(ta, "null") catch {};
+        w.p(&out, ta, ", \"count\": {d}, \"bytes\": {d}}}", .{ r.count, r.bytes });
+    }
+    out.appendSlice(ta, "]}\n") catch {};
+    const path: []const u8 = _sys_getenv("ZEBRA_CENSUS_OUT") orelse "zebra-census.json";
+    const _f = std.Io.Dir.cwd().createFile(_io, path, .{}) catch return;
+    defer _f.close(_io);
+    _f.writeStreamingAll(_io, out.items) catch {};
+}
 // Each module compiled with `--coverage` ends with a `_zbr_covf` record: its path, the
 // sorted instrumented source lines (the denominator) and a counter per source line;
 // genStmt bumps the counter beside the `// zbr:` marker. The entry prologue attaches
@@ -5389,6 +5729,7 @@ pub fn _zbr_assert_msg_at(loc: []const u8, msg: []const u8) []const u8 {
 }
 pub fn _zbr_exit(code: i64) noreturn {
     _zbr_cov_flush();
+    _zbr_cens_flush();
     std.process.exit(@truncate(@as(u64, @bitCast(code))));
 }
 pub fn _profile_end() void {
@@ -5560,6 +5901,347 @@ pub fn _zbr_list_join(sep: []const u8, items: anytype) []const u8 {
 fn _zbr_show_float(sb: *std.ArrayList(u8), x: anytype) !void {
     try _zbr_show_fmt(sb, "{d}", .{x});
     if (std.math.isFinite(x) and @floor(x) == x) try sb.appendSlice(_allocator, ".0");
+}
+
+// ── _zbr_ffmt: a float formatted to a precision (2026-10-26) ────────────────────────────
+// `${x:.2f}` / `${x:.2}` / `${x:.2e}` round the EXACT BINARY VALUE, ties to even -- Python's
+// digits and the UCRT's printf (the legacy msvcrt rounds exact halves away). So 2.675 (stored
+// as 2.67499999...) prints 2.67, 0.125 prints 0.12, 2.5 at .0f prints 2. Zig's own `{d:.2}`
+// rounds the SHORTEST decimal half away from zero (2.68, 0.13, 3): it rounds a number that
+// was already rounded, and the printed digits then claim a value the float does not hold.
+// Decided jointly (Opus + Fable) under Sean's standing rule; QUICKSTART "Format specifiers".
+//
+// No heap: the value is m * 2^e, the integer part and the fraction numerator F (over 2^k)
+// live in fixed limb arrays, and fraction digits come from F*10 one at a time. A double's
+// expansion is finite (at most 1074 fraction digits), so once F is zero every later digit is
+// 0 and nothing rounds. Width, fill and alignment are applied here, with Zig's defaults
+// (right-aligned, the same padding split), because `{f}` hands the writer to us unpadded.
+const _ZbrFfmtBig = struct {
+    limbs: [40]u32 = @splat(0),
+    len: usize = 0,
+    fn fromU64(v: u64) _ZbrFfmtBig {
+        var b: _ZbrFfmtBig = .{};
+        b.limbs[0] = @truncate(v);
+        b.limbs[1] = @truncate(v >> 32);
+        b.len = 2;
+        b.norm();
+        return b;
+    }
+    fn norm(b: *_ZbrFfmtBig) void {
+        while (b.len > 0 and b.limbs[b.len - 1] == 0) b.len -= 1;
+    }
+    fn isZero(b: *const _ZbrFfmtBig) bool {
+        return b.len == 0;
+    }
+    fn bit(b: *const _ZbrFfmtBig, i: usize) bool {
+        const li = i / 32;
+        if (li >= b.len) return false;
+        return (b.limbs[li] >> @intCast(i % 32)) & 1 == 1;
+    }
+    fn shl(b: *_ZbrFfmtBig, n: usize) void {
+        if (b.len == 0) return;
+        const ls = n / 32;
+        const bs: u5 = @intCast(n % 32);
+        var i: usize = b.len + ls + 1;
+        while (i > 0) {
+            i -= 1;
+            var v: u32 = 0;
+            if (i >= ls) {
+                const src = i - ls;
+                if (src < b.len) v = if (bs == 0) b.limbs[src] else b.limbs[src] << bs;
+                if (bs != 0 and src >= 1 and src - 1 < b.len) v |= b.limbs[src - 1] >> @intCast(32 - @as(u6, bs));
+            }
+            b.limbs[i] = v;
+        }
+        b.len = b.len + ls + 1;
+        b.norm();
+    }
+    fn mulSmall(b: *_ZbrFfmtBig, m: u32) void {
+        var carry: u64 = 0;
+        for (b.limbs[0..b.len]) |*l| {
+            const t = @as(u64, l.*) * m + carry;
+            l.* = @truncate(t);
+            carry = t >> 32;
+        }
+        if (carry != 0) {
+            b.limbs[b.len] = @truncate(carry);
+            b.len += 1;
+        }
+    }
+    fn divSmall(b: *_ZbrFfmtBig, d: u32) u32 {
+        var rem: u64 = 0;
+        var i: usize = b.len;
+        while (i > 0) {
+            i -= 1;
+            const cur = (rem << 32) | b.limbs[i];
+            b.limbs[i] = @intCast(cur / d);
+            rem = cur % d;
+        }
+        b.norm();
+        return @intCast(rem);
+    }
+    // F*10, then the digit is the bits at and above k, and F keeps the bits below k.
+    fn nextDigit(b: *_ZbrFfmtBig, k: usize) u8 {
+        b.mulSmall(10);
+        var d: u8 = 0;
+        var j: usize = 0;
+        while (j < 4) : (j += 1) {
+            if (b.bit(k + j)) d |= @as(u8, 1) << @intCast(j);
+        }
+        const li = k / 32;
+        if (li < b.len) {
+            const off: u5 = @intCast(k % 32);
+            b.limbs[li] &= if (off == 0) 0 else (@as(u32, 1) << off) - 1;
+            for (b.limbs[li + 1 .. b.len]) |*l| l.* = 0;
+            b.len = li + 1;
+            b.norm();
+        }
+        return d;
+    }
+    // Compare F / 2^k against one half: -1 below, 0 exactly, 1 above.
+    fn cmpHalf(b: *const _ZbrFfmtBig, k: usize) i8 {
+        if (k == 0 or !b.bit(k - 1)) return -1;
+        var i: usize = 0;
+        while (i < k - 1) : (i += 1) {
+            if (b.bit(i)) return 1;
+        }
+        return 0;
+    }
+};
+
+pub const _ZbrFfmt = struct {
+    x: f64,
+    prec: usize,
+    emode: bool,
+    fill: []const u8,
+    alignc: u8,
+    width: usize,
+
+    pub fn format(self: _ZbrFfmt, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        var head: [1800]u8 = undefined; // sign + kept digits + point: at most 1 + 309 + 1 + 1074
+        var hl: usize = 0;
+        var zeros: usize = 0; // digits past the exact expansion: all 0, written after head
+        var suffix: [8]u8 = undefined;
+        var sl: usize = 0;
+        const x = self.x;
+        const neg = std.math.signbit(x);
+        if (std.math.isNan(x) or std.math.isInf(x)) {
+            if (neg) {
+                head[0] = '-';
+                hl = 1;
+            }
+            const word = if (std.math.isNan(x)) "nan" else "inf";
+            @memcpy(head[hl .. hl + 3], word);
+            hl += 3;
+            return _pad(self, w, head[0..hl], 0, "");
+        }
+        if (neg) {
+            head[0] = '-';
+            hl = 1;
+        }
+        // x = m * 2^e
+        const bits: u64 = @bitCast(x);
+        const be: i32 = @intCast((bits >> 52) & 0x7ff);
+        const frac: u64 = bits & ((@as(u64, 1) << 52) - 1);
+        const m: u64 = if (be == 0) frac else frac | (@as(u64, 1) << 52);
+        const e: i32 = if (be == 0) -1074 else be - 1075;
+        var ip: _ZbrFfmtBig = undefined;
+        var f: _ZbrFfmtBig = .{};
+        var k: usize = 0;
+        if (m == 0) {
+            ip = .{};
+        } else if (e >= 0) {
+            ip = _ZbrFfmtBig.fromU64(m);
+            ip.shl(@intCast(e));
+        } else {
+            k = @intCast(-e);
+            ip = _ZbrFfmtBig.fromU64(if (k < 64) m >> @intCast(k) else 0);
+            f = _ZbrFfmtBig.fromU64(if (k < 64) m & ((@as(u64, 1) << @intCast(k)) - 1) else m);
+        }
+        // the integer part's decimal digits
+        var idig: [320]u8 = undefined;
+        var il: usize = 0;
+        if (ip.isZero()) {
+            idig[0] = '0';
+            il = 1;
+        } else {
+            var chunks: [40]u32 = undefined;
+            var nc: usize = 0;
+            while (!ip.isZero()) {
+                chunks[nc] = ip.divSmall(1_000_000_000);
+                nc += 1;
+            }
+            var ci: usize = nc;
+            while (ci > 0) {
+                ci -= 1;
+                var tmp9: [9]u8 = undefined;
+                var v = chunks[ci];
+                var t: usize = 9;
+                while (t > 0) {
+                    t -= 1;
+                    tmp9[t] = @intCast('0' + v % 10);
+                    v /= 10;
+                }
+                if (ci == nc - 1) {
+                    var s: usize = 0;
+                    while (s < 8 and tmp9[s] == '0') s += 1;
+                    @memcpy(idig[il .. il + 9 - s], tmp9[s..9]);
+                    il += 9 - s;
+                } else {
+                    @memcpy(idig[il .. il + 9], tmp9[0..9]);
+                    il += 9;
+                }
+            }
+        }
+        const int_is_zero = il == 1 and idig[0] == '0';
+        // kept digits go into `dig`; `tail` is the rounding verdict for what follows them
+        var dig: [1500]u8 = undefined;
+        var dl: usize = 0;
+        var tail: i8 = -1;
+        var exp10: i32 = 0;
+        if (!self.emode) {
+            @memcpy(dig[0..il], idig[0..il]);
+            dl = il;
+            var i: usize = 0;
+            while (i < self.prec) : (i += 1) {
+                if (f.isZero()) {
+                    zeros = self.prec - i;
+                    break;
+                }
+                dig[dl] = '0' + f.nextDigit(k);
+                dl += 1;
+            }
+            if (zeros == 0) tail = f.cmpHalf(k);
+        } else {
+            const need = self.prec + 1;
+            if (m == 0) {
+                dig[0] = '0';
+                dl = 1;
+                zeros = self.prec;
+            } else if (!int_is_zero) {
+                exp10 = @intCast(il - 1);
+                if (need <= il) {
+                    @memcpy(dig[0..need], idig[0..need]);
+                    dl = need;
+                    const rest = idig[need..il];
+                    if (rest.len == 0) {
+                        tail = f.cmpHalf(k);
+                    } else if (rest[0] > '5') {
+                        tail = 1;
+                    } else if (rest[0] < '5') {
+                        tail = -1;
+                    } else {
+                        tail = 0;
+                        for (rest[1..]) |c| {
+                            if (c != '0') tail = 1;
+                        }
+                        if (!f.isZero()) tail = 1;
+                    }
+                } else {
+                    @memcpy(dig[0..il], idig[0..il]);
+                    dl = il;
+                    while (dl < need) {
+                        if (f.isZero()) {
+                            zeros = need - dl;
+                            break;
+                        }
+                        dig[dl] = '0' + f.nextDigit(k);
+                        dl += 1;
+                    }
+                    if (zeros == 0) tail = f.cmpHalf(k);
+                }
+            } else {
+                var z: i32 = 0;
+                var d0 = f.nextDigit(k);
+                while (d0 == 0) {
+                    z += 1;
+                    d0 = f.nextDigit(k);
+                }
+                exp10 = -(z + 1);
+                dig[0] = '0' + d0;
+                dl = 1;
+                while (dl < need) {
+                    if (f.isZero()) {
+                        zeros = need - dl;
+                        break;
+                    }
+                    dig[dl] = '0' + f.nextDigit(k);
+                    dl += 1;
+                }
+                if (zeros == 0) tail = f.cmpHalf(k);
+            }
+        }
+        // round: above half up; exactly half to even
+        if (tail > 0 or (tail == 0 and (dig[dl - 1] - '0') % 2 == 1)) {
+            var j: usize = dl;
+            var carry = true;
+            while (carry and j > 0) {
+                j -= 1;
+                if (dig[j] == '9') {
+                    dig[j] = '0';
+                } else {
+                    dig[j] += 1;
+                    carry = false;
+                }
+            }
+            if (carry) {
+                if (self.emode) {
+                    // 9.99 -> 10.0: one more power of ten, the same number of digits
+                    dig[0] = '1';
+                    exp10 += 1;
+                } else {
+                    std.mem.copyBackwards(u8, dig[1 .. dl + 1], dig[0..dl]);
+                    dig[0] = '1';
+                    dl += 1;
+                    il += 1;
+                }
+            }
+        }
+        // assemble
+        if (!self.emode) {
+            @memcpy(head[hl .. hl + il], dig[0..il]);
+            hl += il;
+            if (self.prec > 0) {
+                head[hl] = '.';
+                hl += 1;
+                @memcpy(head[hl .. hl + (dl - il)], dig[il..dl]);
+                hl += dl - il;
+            }
+        } else {
+            head[hl] = dig[0];
+            hl += 1;
+            if (self.prec > 0) {
+                head[hl] = '.';
+                hl += 1;
+                @memcpy(head[hl .. hl + (dl - 1)], dig[1..dl]);
+                hl += dl - 1;
+            }
+            suffix[0] = 'e';
+            // |exp10| <= 324, so at most 4 characters with the sign; 7 are free
+            const es = std.fmt.bufPrint(suffix[1..], "{d}", .{exp10}) catch suffix[1..1];
+            sl = 1 + es.len;
+        }
+        return _pad(self, w, head[0..hl], zeros, suffix[0..sl]);
+    }
+
+    fn _pad(self: _ZbrFfmt, w: *std.Io.Writer, head: []const u8, zeros: usize, suffix: []const u8) std.Io.Writer.Error!void {
+        const total = head.len + zeros + suffix.len;
+        const pad = if (self.width > total) self.width - total else 0;
+        const left = switch (self.alignc) {
+            '<' => 0,
+            '^' => pad / 2,
+            else => pad,
+        };
+        try w.splatBytesAll(self.fill, left);
+        try w.writeAll(head);
+        try w.splatByteAll('0', zeros);
+        try w.writeAll(suffix);
+        try w.splatBytesAll(self.fill, pad - left);
+    }
+};
+
+pub fn _zbr_ffmt(x: anytype, prec: usize, emode: bool, fill: []const u8, alignc: u8, width: usize) _ZbrFfmt {
+    return .{ .x = @as(f64, x), .prec = prec, .emode = emode, .fill = fill, .alignc = alignc, .width = width };
 }
 
 pub fn _zbr_show(x: anytype) []const u8 {

@@ -1,0 +1,54 @@
+# census_probe.zbr -- the oracle for tools/census_check.sh lives in these comments:
+# `# cens:none`      = no allocation is charged to this line,
+# `# cens:>=N`       = at least N allocations are charged to this line,
+# `# cens:kind=TEXT` = one of this line's rows has a kind (the first allocating frame outside std) containing TEXT,
+# `# cens:via=TEXT`  = one of this line's rows has a via (the innermost std frame) containing TEXT.
+# Derived from the source text, never from the compiler (the debug-map lesson). The
+# `post-call` lines are the reason the census saves and restores the site around every
+# call: without it, the allocation after `tail` returns is charged to `tail`'s last line.
+use census_probe_dep exposing build_list
+
+var registry: HashMap(str, int) = HashMap(str, int)()
+
+class Point
+    var x: int
+    var y: int
+
+    cue init(x: int, y: int)
+        .x = x
+        .y = y
+
+def tail(s: str): str
+    var t = s + "?"                                          # cens:>=1
+    return t                                                 # cens:none
+
+def main()
+    var acc: str = ""                                        # cens:none
+    var i: int = 0                                           # cens:none
+    while i < 200                                            # cens:none
+        acc = "k" + i.toString()                             # cens:>=200 kind=_str_concat
+        i = i + 1                                            # cens:none
+    var u = tail(acc) + "!"                                  # cens:>=1 post-call
+    var pts: List(Point) = List(Point)()                     # cens:>=1
+    var j: int = 0                                           # cens:none
+    while j < 50                                             # cens:none
+        pts.add(Point(j, j))                                 # cens:>=50 kind=init
+        j = j + 1                                            # cens:none
+    var xs = build_list(300)                                 # cens:none post-call
+    var label = def(n: int): str
+        return "n=" + n.toString()                           # cens:>=40
+    var k: int = 0                                           # cens:none
+    var total: int = 0                                       # cens:none
+    while k < 40                                             # cens:none
+        total = total + label(k).len                         # cens:none post-call
+        k = k + 1                                            # cens:none
+    var n2: int = 0                                          # cens:none
+    allocate Arena()
+        var m: int = 0                                       # cens:none
+        while m < 100                                        # cens:none
+            var tmp = "t" + m.toString()                     # cens:>=100
+            n2 = n2 + tmp.len                                # cens:none
+            m = m + 1                                        # cens:none
+    registry.set("a", 1)
+    print("${u.len} ${pts.len()} ${xs.len()} ${total} ${n2}")
+    sys.exit(0)

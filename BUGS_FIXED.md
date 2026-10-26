@@ -6,6 +6,399 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-629: reassigning an unannotated lambda local passed the front end and failed inside zig -- FIXED 2026-10-26
+- **Found by:** writing a by-hand probe of closure sinks while teaching leakgen to generate
+  capturing lambdas (BUG-569's step-5 tail). Filed and fixed the same day.
+- **Repro:**
+  ```
+  def main()
+      var k = 3
+      var h = def(x: int): int = x + k
+      h = def(x: int): int = x - k
+      print(h(5))
+  ```
+  zig: `struct 'main__struct_N' has no member named 'from'`. Without a capture,
+  `variable of type 'fn (i64) i64' must be const or comptime`; a void statement lambda,
+  `expected type '_ZbrFn(fn () void)', found 'main__struct_N'`; `h = h2` (another lambda
+  local) the same as the first. The ANNOTATED forms -- `var h: def(int): int` or a `sig` --
+  always worked.
+- **Cause:** each lambda is its own Zig type (a fn, or a closure struct). The reassignment
+  was already lowered as a sig conversion (`h = .from(...)`), but the declaration kept the
+  first lambda's own type, so the slot had no `from` to land in.
+- **Fix:** an unannotated `var` bound to a lambda and reassigned is declared as a sig value,
+  `var h: _ZbrFn(fn(P...) R) = .from(<lambda>)`, exactly as the annotated form is
+  (CodeGen genLocalVar, beside the BUG-427 fn-reference precedent; `emitLambdaSigType`). A
+  void statement lambda's local is tracked (`sig_lambda_locals`) so its reassignment converts
+  too. A local that is never reassigned is emitted as before.
+- **The sibling path, found by an advisor review before landing:** a reassigned lambda local
+  that ANOTHER closure reads is shared through a cell (BUG-569 step 4), and `emitBoxedLocal`
+  typed the cell as the first lambda's own type -- the same leak by a second route
+  (`var g = def(): int = h(1)` then `h = ...`; or `h` rebound inside an enclosing closure).
+  The cell holds the sig type now. And `sig_lambda_locals` is scoped per FUNCTION
+  (`genStmts`): unscoped, a module var sharing the name of an earlier function's reassigned
+  lambda local had its plain `h = 5` emitted as `h = .from(5)` -- caught by a probe, never
+  shipped.
+- **Refused where the signature cannot be named:** an expression lambda with no return type
+  (`def(x: int) = x + 1`), an untyped parameter, or a statement lambda with no declared return
+  type that does `return 5` (legal when the local is not reassigned -- `stmtReturnsValue`, a
+  statement walker opted into `lint_expr_walkers`, red-checked by deleting one arm). TypeChecker marks such a local at its
+  declaration (`lambdaSigNameable`) and refuses the reassignment: `'h' holds a lambda whose
+  type cannot be named, so it cannot be reassigned -- give the lambda its parameter and return
+  types (...) or declare the variable with a function type (...)`.
+- **Measured:** the run fixture fails on the pre-fix compiler (`:25 ... must be const or
+  comptime`); the pre-fix `-c` accepts the refusal fixture whole. leakgen's gate on the
+  pre-fix compiler with the new generator: 18 LEAKs, 7 signatures, every one this bug; on the
+  fixed one 100/0, and 400 exploratory programs (seed 57) 0 leaks / 0 rejects.
+- **Not this bug, filed as BUG-630:** reassigning with a DIFFERENT signature
+  (`h = def(x: int): float = 1.5` into a `def(int): int` slot) fails inside the runtime's
+  `_ZbrFn`, for the annotated form too, on the pre-fix compiler as well.
+- Fixtures: `test/bug629_lambda_reassign_test.zbr` (smoke_run: no capture, capture, `h = h2`,
+  `h = twice`, a void lambda sharing a `var`, a `capture` closure replaced, reassignment in a
+  loop over the loop variable, a class method reading `this`, `map` and a sig parameter after
+  reassignment, a sibling closure reading the reassigned local, a rebind inside an enclosing
+  closure, a module var sharing the name -- every value derived by hand),
+  `test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr` (three smoke_tc_fail
+  coordinates).
+
+### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- FIXED 2026-10-26 (decided: capture by reference; found 2026-10-13)
+- **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
+  should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
+- **Repro (QUICKSTART §19, "Implicit closure capture", verbatim shape):**
+  ```
+  def main()
+      var counter = 0
+      var bump = def()
+          counter += 1
+      bump()
+      bump()
+      print(counter)
+  ```
+  `lam_int.zbr:4: error: cannot assign to constant` (zig's, remapped). The same for a struct
+  field (`c.n = c.n + 1` inside the lambda), and for a mutating method on a captured struct
+  (`def(): int = c.bump()`: "expected '*Counter', found '*const Counter'"; with `c` made `var`
+  outside, zig says "mutable 'c' not accessible from here").
+- **What works:** an explicit `capture` block for per-closure state (§19.1), and module-level
+  variables. **Corrected 2026-10-21:** "reading a captured local" works only when the local is
+  a compile-time constant (`var k = 10` is emitted as `const k: i64 = 10` and Zig folds it).
+  Every runtime value fails inside zig with `"k" not accessible from inner function`, even if
+  it is only read: a local, a parameter, `self` in a method, a `for` variable, the receiver of
+  `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
+- **STEPS 1-3 LANDED 2026-10-21** (design note §7): every runtime value a lambda reads is
+  captured by COPY -- locals, parameters, loop variables, a factory's own locals (typed from
+  inference); a REBOUND captured variable is refused by name (Resolver), a struct changed in
+  place after capture is refused at build (codegen's mutation scan), and a `sys.go` lambda keeps
+  the explicit-capture rule. QUICKSTART §19's `counter += 1` example is now a named refusal and
+  the section says so. STILL OPEN: step 4, shared capture (it removes those refusals), which
+  waits on §5's three questions. `this` in a lambda landed the same day: captured in a class
+  method (a reference, so writes through it are shared), refused by name in a struct method. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
+  `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
+- **STEP 4, IMPLICIT HALF, LANDED 2026-10-22** (design note §8): a `var` local a closure
+  captures and something writes -- the function, that closure, a sibling or a nested one --
+  is SHARED through a heap cell (`_zbr_cell`, the program arena), so QUICKSTART §19's
+  `counter += 1` works as written. A class instance or container is boxed only when rebound.
+  Still refused, with the fix named: a parameter, loop counter or binding written after a
+  closure reads it, and a struct parameter changed in place (at build). The four step-3
+  refusals became `test/bug569_shared_{written,rebound,struct_field,struct_method}_test.zbr`;
+  new negatives `test/fail_fixtures/bug569_for_counter_written_capture_test.zbr` and
+  `bug569_param_struct_capture_test.zbr`; probe `test/boundary/bv_closure_capture_shared.zbr`
+  (intent-first). BUG-607 (a closure VALUE as a reference) landed in the next commit.
+  (Step 5's tail, below, closed the bug.)
+- **STEP 5's TAIL, LANDED 2026-10-26: leakgen generates capturing lambdas** (`fuzz/gen.py`,
+  cap `lambdas`): expression lambdas over the enclosing locals and parameters, called at once;
+  statement lambdas whose bodies declare, loop and WRITE an enclosing `var` (a shared cell);
+  capturing lambdas handed to `map` / `filter` / `any` / `all` / `reduce`; and a lambda local
+  reassigned with another. 88 of the gate's 100 programs carry at least one (247 lambdas, 49
+  reassignments), and 29 of the 100 emits hold a `_zbr_cell`, so the shared-write path is in
+  what zig checks.
+  Generating them for the first time found nothing in its first 500 programs -- and writing the probe
+  for the next sink found **BUG-629** (a reassigned lambda local), which the generator now
+  produces too: on the pre-fix compiler the gate goes red with 18 leaks / 7 signatures.
+- **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
+  that nothing writes, box one that something writes, refuse written captures by name until
+  boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;
+  BUG-608 (assigning a `for ... in` variable) is refused.
+- **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
+  the bullet right under it says implicit capture is for "read-only access in most cases".
+- **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the
+  enclosing local (Python `nonlocal`, C# lambdas); or (b) it is READ-ONLY -- refuse a write to a
+  captured local in the front end, naming `capture` as the way to keep state, and fix §19's
+  example. (a) is what the example promises; (b) is what the implementation does today, minus
+  the error message.
+- **DECIDED 2026-10-14 (Sean): (a), BY REFERENCE** -- "similar to C# semantics": the closure
+  shares the enclosing local, so a write through it is seen outside and by every other closure
+  that captured it. §19's example becomes correct as written; the "read-only access in most
+  cases" bullet under it goes. Design questions to settle in the note before codegen: a closure
+  that OUTLIVES its frame (returned, stored in a field or list) needs the captured local
+  heap-boxed, as C# lifts it into a display class; and a loop variable captured per iteration
+  (C# 5 gives each `foreach` iteration its own variable -- say which Zebra does).
+- **Why no gate saw it:** doc_example_check runs the front end only, and the front end accepts
+  the example (pattern search 4 -- a full-build leg for doc examples -- is aimed at exactly this).
+
+### BUG-534: a runtime `int` flowing into ANY sized-int slot passed `-c` and failed inside zig, and there was no Zebra spelling for the conversion -- FIXED 2026-10-25
+- **Reported** (2026-10-05) as an `int` argument to a `uint64` extern parameter
+  (`f(p, text.len)` -> zig "expected type 'u64', found 'i64'"); re-scoped 2026-10-25 to every
+  sized slot -- a `def`'s `uint64` parameter, an extern's `int32`, a typed `var`, an
+  assignment, a `return` -- whenever the value is not a comptime-folded constant.
+- **Decision (Sean, 2026-10-25): a trapping family named for the target type.** Every
+  integer gains `toInt8/16/32/64()`, `toUint()`, `toUint8/16/32/64()`; sized integers also
+  gain `toInt()`, `toFloat()`, `toString()`. Each lowers to the runtime's
+  `_zbr_int_to(T, name, x)` = `std.math.cast` or a panic naming the value and the target
+  ("integer conversion out of range: 300 does not fit in byte"). Never `@intCast`: out of
+  range is UB under `--release`, the A4 class.
+- **The refusal** (TypeChecker `intNarrowHint`): a NAMED integer value (ident, member, call,
+  index) whose type zig will not coerce into the slot is refused at the call argument, the
+  `var` initializer, the assignment and the `return`, naming the method:
+  `type mismatch: expected uint64, got int -- convert it with `.toUint64()``. Literals keep
+  their comptime coercion. Widening that zig accepts (same sign and wider, or unsigned into
+  strictly wider signed) is not refused.
+- **A second defect under it: sized PARAMETER types were never recorded.** The per-function
+  parameter tag serialised `int32`/`uint64`/`byte` as "unknown", so call arguments to sized
+  parameters were not type-checked AT ALL -- which is also why BUG-431's documented byte
+  refusal never reached call arguments. `paramTag` / `paramTypeFromTag` carry the width now,
+  at both registration sites (class methods and top-level fns).
+- **Also fixed:** `u.toInt()` on a sized integer lowered to `@intCast` and was UB under
+  `--release` for a `uint64` above `i64` max; it traps now. And SIMD integer reductions
+  (`i32x4.sum()`) typed as `int` rather than their lane type, which the new refusal turned
+  into a false error in `simd_test` -- `simdLaneScalar` returns the lane's own width.
+- **Measured before landing** (the cost the entry warned of: comptime-folded `var n = 2` ...
+  `f(n)` builds today): `-c` over every tracked `.zbr` in this repo, zebra-ide and the
+  GameEngine, 3,029 files, before and after. **One file newly refused -- the fixture.** No
+  file anywhere has a BUG-534 message as its first error. (A first-error sweep cannot see a
+  second refusal behind an earlier one in an already-refused file.)
+- **Red-checked:** `release_mode_check.sh` gained a leg -- `300.toUint8()` under `--release`
+  must print the panic, with an in-range control. With `_zbr_int_to` mutated to
+  `@intCast`, the release build printed garbage ("failed to parse environment variables")
+  and the leg failed; restored, it traps.
+- Fixtures: `test/bug534_sized_conversions_test.zbr` (smoke_run, every conversion's value),
+  `test/bug534_conversion_trap_test.zbr` (smoke_run_fail, the Debug trap),
+  `test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr` (six smoke_tc_fail coordinates:
+  extern param, def param, var, byte param, assignment, return). QUICKSTART §21.
+
+---
+
+### BUG-546: a `catch` or `?` on a call that cannot fail passed `-c` and failed inside zig -- FIXED 2026-10-25
+
+**Reported by** Fable (GameEngine) on `File.listDir(".") catch List(str)()`; zig said
+"expected error union type, found 'List(str)'". **Wider than filed:** the same for a
+same-module function or class method that does not throw, with `catch` OR `?`.
+
+**Fix.** Refused where the emit is decided, as §28b's implicit-try rule already is: the
+`catch` and `?` arms of genExpr ask `cannotFailCallName`, and main.zbr prints each site
+and exits 1 (`-c` included). The claim "cannot fail" is made ONLY for shapes this
+generator decides, by the rule that writes the signature (`declMayFail`: declared
+`throws`, a `raise` or `?` in the body, or a `test_*` fn): a same-module top-level fn, a
+method of a same-module class or struct, and `File.*`, whose 15 generators all panic on
+failure (no `try` in genFileCall). Everything else is left alone -- a local or param, a
+bare owner call inside a method, a dep module, other namespaces, interfaces -- because a
+wrong "cannot fail" would refuse a program zig accepts.
+
+**Measured before landing:** `-c` over every tracked file of this repo, zebra-ide and the
+GameEngine (3,047): 0 files carry the refusal. Positive control (a planted
+`f() catch 0`) fired. Then for the whole batch (546, 563, 625, 627): the new compiler over
+3,026 tracked files, and the committed one re-run on each of the 1,264 it refuses -- the
+files refused NOW and accepted BEFORE are exactly three, this batch's own fail fixtures.
+**The denominator is 1,762, not 3,026:** the 1,264 refused by both compilers -- mostly
+engine sources compiled without the engine's `--module-path` -- stop before codegen, where
+this check runs, so they say nothing about it. Seam found probing it: BUG-628 (a method
+that throws by inference is not a throwing callee to `isClassMethodThrows`). Fixtures: `test/fail_fixtures/bug546_catch_cannot_fail_fail.zbr`
+(four shapes, `smoke_tc_fail`) and `test/bug546_catch_can_fail_test.zbr` -- declared,
+raise-inferred and `?`-inferred throwers, a throwing method, a raise-inferred method, and
+a bare owner call inside a method all keep their `catch`. Red-checked on the pre-fix
+compiler: `-c` exited 0 on the fail fixture.
+
+**Not covered:** other builtin namespaces (which of their members can fail is not
+written down anywhere -- Fable's surface question stands), cross-module calls, and the
+IDE: like the implicit-try refusal, it is raised by the driver after codegen, so `zebra
+lsp` does not show it.
+
+### BUG-531: a method chained on a runtime-type temporary in a `var` initializer or assignment failed inside zig -- FIXED 2026-10-25
+
+`var r = Regex.compile("a").groups(s)` -> "no member named 'groups' in 'zebra_rt.Regex'";
+`var s = StringBuilder().toString()` the same. The BUG-079 hoist (`var _mc_N = f();` then
+`_mc_N.m(...)`) is right for a user class -- a `*Self` method cannot be called on a
+temporary -- and wrong for every runtime type, whose methods genMemberCall dispatches.
+The var-init and assignment paths hoisted everything but a hand-kept deny list (string,
+DateTime, value types); the return path already allowed only `Type_.named`.
+`chainRecvNeedsHoist` now ALLOWS named / cross-module / unknown receivers, so a new
+runtime variant defaults to dispatch. Measured: an emit diff of the committed compiler
+against the new one over the three repos moved ONE file -- `GameEngine/zbra/luaustring.zbr`'s
+`luaMatch`, `Regex.compile(pattern).find(s)` in a typed var, which did not compile before
+(latent: nothing calls it, so zig never analysed it) and runs now. Fixture
+`test/bug531_chain_runtime_recv_test.zbr` (Regex var-init and assignment, StringBuilder,
+and a user-class chain as the control); red on the pre-fix compiler.
+
+### BUG-563: a list literal of lambdas -- FIXED 2026-10-25
+
+Three layers, the first two not in the ticket. (1) An ANNOTATED `var fns: List(Step) =
+[def ..., ...]` failed inside zig ("expected _ZbrFn(fn (i64) i64), found fn (i64) i64"):
+the annotated-literal path appended each element raw, where `fns.add(def ...)` converts
+it into the sig; it converts now (genSigValue). (2) `fns[0](4)` was untyped -- a call
+through any callee other than a name; now a callee of a sig or `def(P): R` type yields
+its return. (3) An UNANNOTATED list of lambdas is refused, naming the `sig` + `List(Step)`
+form: a lambda's own type has no name to infer (it was guessed `List(str)`). Fixtures
+`test/bug563_sig_list_literal_test.zbr` (with a capturing element) and
+`test/fail_fixtures/bug563_lambda_list_unannotated_fail.zbr`; QUICKSTART §20.
+Still open nearby: a lambda with no declared return type is untyped, so
+`var f = def(x: int) = x + 1` then `f(4) + 1` is refused for inference.
+
+### BUG-625: `List(str?)()` in a function made it throw -- FIXED 2026-10-25
+
+Found probing BUG-531. A type argument's nilable suffix parses as a postfix `?`
+(BUG-503's shape), and `exprHasTry` counted it, so a function holding `List(str?)()` or
+`HashMap(str, int?)()` was emitted `anyerror!` and every caller was told "throws call
+needs '?'". `exprHasTry` no longer descends into the arguments of a `List` / `HashMap` /
+`Set` / `Chan` constructor. The only two corpus uses were in `main`, so no caller's `?`
+was stranded. Fixture `test/bug625_optional_type_arg_no_throw_test.zbr`, red on the
+pre-fix compiler.
+
+### BUG-627: an unknown method in a non-primitive typed var's initializer passed `-c` -- FIXED 2026-10-25
+
+Found probing BUG-534: `var p: ^byte = text.toCPtr()` passed `-c` while `var p =
+text.toCPtr()` and `var p: int = ...` were refused. `checkVarDecl` returned before
+inferring the initializer whenever the annotation was not a primitive (`^T`, `List(T)`,
+`T?`), and the unknown-method refusal lives in inference. It now infers first (addErr
+drops the exact duplicate). Fixture `test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr`,
+three annotations; `-c` exited 0 on the pre-fix compiler.
+
+---
+
+### BUG-623 / BUG-624: a `^T` field passed to a `^T` parameter, or assigned to a local's `^T` field, failed inside zig -- FIXED 2026-10-24
+
+**Found by:** writing BUG-621's fix (`StmtForIn(..., fi.iter, ...)` in the compiler's own
+source did not build), then probing it.
+
+**Repros.** `Box(a.e)` / `take(a.e)` with a `^Node` parameter: "expected type '*Node', found
+'Node'" (623). `b.e = a.e` with `b` written nowhere else: "local variable is never mutated"
+(624). The same probe found a third shape nobody had filed: `c.e = Node(7)` on a LOCAL `c`
+emitted `c.e.* = _rp`, a `*Node` stored into a `Node`.
+
+**Cause -- one rule read two ways.** A `^T` field of a local (or param, branch or for
+binding) reads through its pointer: genExpr emits `a.e.*`, the QUICKSTART §22 "pointer is
+transparent" rule. Two other places asked the TYPE instead, which says ref: the call-argument
+boxing (`isBoxableValueOf` -> `rhsIsAlreadyRef`) concluded "already a pointer, do not box"
+and passed `a.e.*`; and the assignment box path both skipped boxing for a field RHS and
+emitted its TARGET with genExpr, so the store went through the old pointer (`b.e.* = ...`),
+which is also why `b` itself was never written.
+
+**Fix.** `memberEmitsDeref` mirrors genExpr's auto-deref rule exactly. A ref that is
+emitted dereferenced is a VALUE: boxed as a copy at a `^T` parameter, and boxed on
+assignment (`rhsIsPointerValue`). The target of a `^T`-field assignment is the pointer slot
+(`genRefSlot`: `b.e = _rp`), so the field is rebound and `var b` is genuinely mutated.
+
+**Decision taken (owed by the 623 entry):** COPY, not alias. Assignment already copied the
+value, and §22 says a `^T` field reads as a value; `test/bug623_624_ref_field_pass_assign_test.zbr`
+pins it (a write to `a.e` after `Box(a.e)`, `b.e = a.e`, or a method's `.e = other.e` does not
+show through the new box). A `^T` PARAMETER or local passed on is still a pointer copy, as
+before. A `^T?` field passed to a `^T?` parameter is also still a pointer copy (genExpr
+does not deref it), which aliases; not changed here, noted rather than decided.
+
+**Red-check:** both minimal repros failed on the pre-fix compiler (623 with the zig type
+error, 624 with three "never mutated" plus the `*Node`-into-`Node` error) and pass after.
+
+### BUG-622: `f(g(x)?)?` inside a function-level `catch` gave the outer call TWO catch wrappers -- FIXED 2026-10-24
+
+**Found by:** leakgen, the day its generator grew raw strings (BUG-620): the new random
+stream produced `var _cw = h10(h10(r'...')?)?` in a function ending in `catch`, and zig
+refused `... catch |_tc_e| {...} catch |_tc_e| {...}` ("expected error union type, found
+'[]const u8'"). Not about raw strings: `h(h("x")?)?` is enough.
+
+**Cause.** The `?` emitter set `in_try_expr = true` around its operand and then set it to
+`false` -- not back to what it was. An inner `?` in the outer call's ARGUMENTS therefore
+cleared the flag before the outer call finished, so the call took the method-level
+catch-break wrapper itself (`not in_try_expr`) and the outer `?` added a second. The
+BUG-436 postfix-`catch` arm already saved and restored; this arm did not.
+
+**Fix.** Save and restore, in all four places in the arm.
+
+**Fixture:** `test/bug622_nested_try_in_catch_test.zbr` (`smoke_run`) -- the nested form
+succeeding, the INNER call raising into the function's `catch`, and the plain `throws` path.
+Red: LEAK_00's program and a 7-line repro failed with the zig error before the fix.
+
+### BUG-621: `for i, x in <iterator>` -- split/lines failed inside zig, chars/bytes/to refused an untyped index -- FIXED 2026-10-24
+
+**Found by:** the same quine (`for i, line in s.split(b)`). Measured over every iterator form:
+
+| iterable | before |
+|---|---|
+| `split`, `lines` | front end accepted; zig: `no field named 'items'` on the iterator |
+| `n.to(m)` | front end accepted; zig: `invalid digit 't'` (fell to the MAP form) |
+| `chars`, `bytes` | refused: "cannot infer the type of `i`" |
+| a List, `0..n`, `tokenize` | worked |
+
+**Cause.** Codegen has one indexed path, `genForInIndexedList` (`for (x.items, 0..)`), chosen
+when the iterable INFERS as a List -- and `split` infers as `List(str)` while emitting a lazy
+`splitSequence` iterator in loop position. Everything else with two variables fell to the
+map form. The checker typed the index only for a List.
+
+**Fix.** Codegen: for split/lines/chars/bytes/to, `genForInCounted` emits the ONE-variable
+loop over the same iterable inside `{ var _zbr_ix_N: i64 = 0; ... }`, and `emitForGuard` --
+which every one-variable path calls where its body starts -- declares the index there,
+before the guard, so a filtered element still counts (as for a List). The pending index is
+keyed on the loop's `line:col`, because `Generator` copies carry the field into nested loops.
+Checker: a two-variable loop over anything but a map or a list of tuples types the first
+variable `int` and the second as the one-variable form would -- but only when the iterable's
+type, or that element type, is KNOWN: an iterable inference cannot see may be a map, and
+typing its key `int` would fabricate an answer.
+
+**Not covered:** `for i, x in set` (a set still goes to the map form) and
+`s.split(",").reverse()` (inference does not type the receiver; refused as before).
+
+**Fixture:** `test/bug621_indexed_for_iterators_test.zbr` (`smoke_run`) -- each iterator, a
+guard (`02`), a for-else with the index unused, a map (`k7`: the first variable stays the
+KEY) and a List literal. Watched red before the fix.
+
+### BUG-620: a `"` inside a raw string closed the emitted Zig literal -- QUICKSTART's own `r'{"key": "value"}'` never compiled -- FIXED 2026-10-24
+
+**Found by:** writing a Zebra quine (free time, 2026-10-24). QUICKSTART §14 documents
+`r'...'` as THE way to carry a double quote (`var json_tmpl = r'{"key": "value"}'`), and
+every such program failed inside zig: `error: expected ';' after statement` at the
+literal's line -- a Zig diagnostic about code the user never wrote.
+
+**Cause.** `stripRawAndEscape` (AstBuilder) prepares a raw string's text for
+`genStringLit`, which wraps it in a Zig `"..."`. It doubled every backslash and left `"`
+bare, so the first quote in the content closed the Zig literal.
+
+**Fix.** It also escapes `"` as `\"` (after doubling backslashes, so `r'a\"b'` keeps both
+characters literal: 4 bytes). `genStringLit` is the only reader of that text.
+
+**Why nothing caught it:** `doc-example` runs the front end only (`-c`), which accepts the
+program; no tracked `.zbr` puts a `"` in a raw string (checked: zero), so no corpus gate
+emits one; and leakgen's `gen.py` never generates a raw string with a quote. A
+front-end-accepts / zig-rejects leak of exactly leakgen's class, outside its generator.
+
+**Fixture:** `test/bug620_raw_string_dquote_test.zbr` (`smoke_run`) -- the QUICKSTART
+example, a backslash before a quote, a lone quote, `${` with a quote (no interpolation),
+`r"it's"`, and equality with the escaped plain-string spelling. Red: the QUICKSTART
+example compiled with the pre-fix binary failed with the zig error above.
+
+### BUG-619: `sys.readLine()` / `sys.readBytes(n)` read stdin ONE BYTE PER READ -- 10 MB took 18.5 s, in `--release` too -- FIXED 2026-10-23
+
+**Found by:** the allocation census (`--census`, 2026-10-23), timing Sean's large-file loop
+(`while var line = sys.readLine(), line != nil` over `C:\tmp\zzrc\data.txt`). 197,258 lines
+(10 MB) took 22 s in a Debug build and **19 s in `--release`** -- about 1.9 µs a byte.
+
+**Cause.** Both readers called `rdr.interface.readSliceShort(&byte_buf)` with a one-byte
+`byte_buf`. Zig 0.17's `readSliceShort` copies what is buffered, and when the buffer is empty
+calls `readVec` into the CALLER's slice -- one byte -- so the stdin reader's 4 KB buffer was
+never filled and every byte was its own read. Isolated in plain Zig (no Zebra runtime), same
+call, same 10 MB: **18.5 s**; `takeByte()` on the same reader: **0.09 s**.
+
+**Fix.** `_sys_readline` scans the buffer itself (`peekGreedy(1)` fills it, `indexOfScalar`
+finds the newline, `toss` consumes), and a line that fits in the buffer is copied with ONE
+exact-size allocation. Before, every line was a `List(u8)` grown from 8 bytes: the census
+measured **123 bytes allocated per ~50-byte line**. `_sys_read_bytes` copies buffered chunks the
+same way. Semantics unchanged: '\n' stripped, every '\r' dropped, a final line without '\n' is
+a line, nil at end of input with nothing read; `readBytes` and `readLine` still share one
+reader (the LSP's Content-Length framing).
+
+**Regression gate:** `stdin-read` (`tools/stdin_read_check.sh`, FAST): correctness from the
+input bytes (CRLF, empty lines, a 10,000-byte line across the buffer, no final newline,
+readBytes-then-readLine), and 4 MB of lines in under 1.5 s (min of two runs): 3.84 s with the
+old runtime -- red-checked against it, the real attacker -- and 0.42 s fixed.
+
+**Effect on Sean's loop** (10 MB slice): 22 s -> 0.93 s; arena 82.6 -> 60.7 MB; `readLine`'s
+grown Lists 197,258 -> 2,413 (only the lines straddling a 4 KB refill).
+
 ### BUG-617: `allocate Arena()` reclaims nothing in an ordinary program -- the scoped arena is backed by the program arena -- FIXED 2026-10-23 (found 2026-10-22)
 - **Found by:** measuring Sean's loop (`docs/design/memory_model.md` §1). Over a 100 MB file,
   `a = line!.upper().split("*")[0]` grows the arena 942 MB; the same loop with the body in

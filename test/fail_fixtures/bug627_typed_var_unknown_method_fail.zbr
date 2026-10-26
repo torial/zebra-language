@@ -1,0 +1,8 @@
+# BUG-627: an unknown method in the initializer of a var annotated with a NON-primitive
+# type (a pointer, a List, an optional) passed `-c` -- the checker returned before it
+# inferred the initializer, where the refusal is made -- and the typo reached zig.
+def main()
+    var t = "x"
+    var p: ^byte = t.toCPtr()
+    var xs: List(int) = t.sizee()
+    var n: int? = t.lenn()

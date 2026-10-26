@@ -1,0 +1,52 @@
+# BUG-623: a `^T` field passed to a `^T` parameter (constructor or function) is boxed as
+# a COPY -- the field reads as a value (QUICKSTART §22), as `b.e = a.e` already copies.
+# BUG-624: assigning to a local's `^T` field rebinds the field's pointer (`b.e = <box>`),
+# never writes through the old one -- which stored a `*T` into a `T` for a value RHS and
+# left `var b` never mutated for a field RHS.
+struct Node
+    var v: int
+
+struct Box
+    var e: ^Node
+    var n: int
+    cue init(e: ^Node)
+        .e = e
+        .n = 0
+    def adopt(other: Box)
+        .e = other.e                # a param's ^T field into this one's
+
+def take(n: ^Node): int
+    return n.v
+
+def main()
+    var a = Box(Node(1))
+    var b = Box(a.e)                # BUG-623: constructor arg
+    print("ctor ${b.e.v}")
+    print("fn ${take(a.e)}")        # BUG-623: function arg
+    a.e.v = 5
+    print("copy ${b.e.v} ${a.e.v}") # b's box is its own: 1 5
+
+    var c = Box(Node(2))
+    c.e = a.e                       # BUG-624: the only write to c
+    a.e.v = 6
+    print("assign ${c.e.v}")        # 5: a copy, not an alias
+
+    var d = Box(Node(2))
+    d.e = Node(7)                   # a value RHS
+    print("value ${d.e.v}")
+
+    var f = Box(Node(3))
+    var g = Node(9)
+    f.e = g
+    g.v = 10
+    print("local ${f.e.v}")         # 9
+
+    var h = Box(Node(0))
+    h.adopt(a)
+    a.e.v = 7
+    print("method ${h.e.v}")        # 6
+
+    var k = Box(Node(4))
+    k.n = 3                         # control: an ordinary field write keeps `var k`
+    print("plain ${k.n} ${k.e.v}")
+    print("bug623_624: ${b.e.v} ${c.e.v} ${d.e.v} ${f.e.v} ${h.e.v} ${k.n}")

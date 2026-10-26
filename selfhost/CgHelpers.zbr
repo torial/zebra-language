@@ -247,6 +247,12 @@ def exprHasTry(expr: Expr): bool
         on Expr.call as c
             if exprHasTry(c.callee)
                 return true
+            # BUG-625: `List(str?)()` -- a constructor's arguments are TYPES, and the
+            # nilable suffix parses as a postfix `?` (BUG-503's shape). Counting it made a
+            # function holding one throw by inference, so every caller was told to add `?`.
+            if c.callee is Expr.ident as gid
+                if gid.name == "List" or gid.name == "HashMap" or gid.name == "Set" or gid.name == "Chan"
+                    return false
             for arg in c.args
                 if exprHasTry(arg.value)
                     return true

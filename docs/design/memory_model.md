@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Memory in long-running programs — the model, brainstormed
 
-**Status:** BRAINSTORM for Sean, nothing decided. Written 2026-10-22 by Opus 5.5 (the
+**Status:** BRAINSTORM for Sean. Decided so far: §6.2, weak by default for declared parent links (Sean, 2026-10-23), and what Destroy severs (joint, 2026-10-26); §6.3, class instances are counted (joint; Sean 2026-10-23: "anything you and Fable agree on -- please consider that pre approved"). §6.1 measured, with Fable's review pending. Written 2026-10-22 by Opus 5.5 (the
 compiler session) with Fable (the GameEngine session), at Sean's request: "coordinate with
 Fable ... and brainstorm on the best way forward". Where the two of us agree it says so;
 where we disagree, both positions are kept. The 2026-10-11 decision ("reference counting for
@@ -114,6 +114,19 @@ measured.
    Per TYPE **and per SITE** (Fable, reviewing this note): the engine's 8.3 MB/s is spread
    across every section, so a per-type count alone will not say which GUI path to fix.
    Fable can land the engine side.
+   **Runtime side DONE 2026-10-23: `zebra --census`** (QUICKSTART §28, gate `census`). Per
+   SITE (the source line, with save/restore across calls so a post-call allocation lands on the
+   caller) and per KIND (the first frame outside Zig's std, plus the std frame under it as `via`).
+   It also counts interned strings and scoped blocks, splits what the arena holds into
+   never-freed / freed-but-kept / slack, and names the escape hatches it cannot count. Not done:
+   the profiler line. For the engine: a `--library-mode` host gets its own allocator wrapped and
+   calls `_zbr_cens_flush()` whenever it wants a report (the gate's leg 3 does exactly that).
+   First reading, Sean's loop on a 10 MB slice (197k lines): 4 allocations a line -- `split`'s
+   List storage 137 B, `readLine` 123 B, `upper` 47 B, the List header 23 B. The arena holds
+   82.6 MB = 65.2 never freed + **0 freed-but-kept** + 17.4 slack. So item 3 (outgrown buffers)
+   saves NOTHING on this loop -- every growth happens in place on the arena's newest allocation.
+   It matters where other allocations interleave with growth (the census probe shows that case).
+   The census also found **BUG-619**: `readLine` read stdin a byte per read call.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
    witnesses whatever model lands.
@@ -170,15 +183,99 @@ representation**. F and G ranked below by both of us.
    - Fable: views are the normal design for immutable strings, and copying the GUI's per-frame
      `split` results is a real cost. Keep views and measure.
    - Agreed: **measure first** (the census, item 6 in §3); take copies if they are cheap enough.
+   - **Measured 2026-10-23 (Opus; Sean: "let's measure"). Fable's review is PENDING** -- Fable is
+     out of tokens until about 2026-10-26, so this is one side's reading of one benchmark, not a
+     joint conclusion.
+
+     Today `split` and `substring` are already views (slices into the parent) and nothing is
+     freed, so the question only exists under a freeing model. `bench/split_copy_view/` (Zig,
+     `bash bench/split_copy_view/run.sh 5`, raw output in `results_2026-10-23.txt`) simulates
+     what a counted runtime would free, and when, over Zig's `smp_allocator`, three policies:
+     **view** (a kept piece keeps its parent alive), **copy_all** (`split` copies every piece,
+     the parent dies at once), **copy_kept** (pieces are views while temporary; the one that is
+     KEPT is copied at the store). Medians of 5 interleaved rounds; checksums agree across the
+     policies of each workload, freed variants end with 0 MB live, the arena variant shows its
+     full growth.
+
+     | workload | view | copy_kept | copy_all |
+     |---|---|---|---|
+     | W1 Sean's loop, `a = line.upper().split("*")[0]`, 2M lines of ~50 B | 280 ms | 305 ms (+9%) | 430 ms (+54%) |
+     | W2 keep field 0 of every line, 2M lines of ~50 B: time / live at end | 336 ms / **166 MB** | 307 ms / **53 MB** | 456 ms / 53 MB |
+     | W2, 500k lines of ~200 B (20 fields): time / live at end | 232 ms / **117 MB** | 191 ms / **15 MB** | 348 ms / 15 MB |
+     | W3 `"rect\|120\|340\|64\|32\|Play".split("\|")`, parsed and dropped, 2M times | 123 ms (61 ns each) | = view (nothing kept) | 358 ms (179 ns each) |
+
+     Today's arena on W1, for scale: 294 ms and **464 MB** live at the end, against under 1 MB
+     for every freeing policy.
+
+     **What the numbers say.** Copying every piece is the expensive policy, about 3x on a short
+     temporary split. Copying only what is kept costs about 9% on Sean's loop. It costs nothing
+     on temporaries, and on the retention workload it is *faster* than view (it keeps less
+     memory live). The retention trap is real and grows with the row/field ratio: 3x the live
+     memory on 50-byte rows, 8x on 200-byte rows (the end-live totals include the results list
+     itself, 16 B a piece in both policies, so the ratio of the string data alone is higher).
+     Absolute scale for the engine: 1,000 `copy_all` splits a frame is 0.12 ms more per 16.6 ms
+     frame. The engine's GUI flush (`guitree.zbr`, `gui.zbr`) contains no `split`. Its 85 `split`
+     sites are elsewhere, many in ported scripts; how many run per frame is not measured.
+
+     **Limits, so nobody reads more into this than it holds.**
+     - copy_kept is a **store-site rule** the compiler would have to apply. W1 copied on a plain
+       local assignment (`a = ...`), so in this model every `var x = s.split(..)[0]` pays the
+       copy. A narrower rule (copy only into a field, container element, module var, return or
+       capture) costs less on W1 and keeps a parent alive through a long-lived local. Which
+       stores count is a design decision this benchmark does not make.
+     - **view is under-costed.** It omits the parent pointer every view would carry (a `str` of
+       ptr+len+parent) and the count increment/decrement on the parent per piece. The
+       simulation's list of pinned parents stands in for the first.
+     - One allocator (`smp_allocator`), one machine; the runtime's real counted header is not
+       modelled. Spreads were tight except for three outlier maxima (W2 short copy_kept 524,
+       W2 wide copy_all 661, W1 arena 332); all are in the raw file.
+
+     **Opus's reading:** copy at the store, views for temporaries. That puts the retention
+     protection behind a rule a reader can see, at single-digit cost. It is also the shape the
+     compiler already has for `_intern` on a field store (BUG-618) and that escape analysis (§4
+     C) needs anyway. Through the UNGIT tests: a view that pins its parent is *withheld*
+     retention, since nothing at the use site says a 9-byte field is holding a 200-byte row.
+     Copy-at-store happens at a declared point the compiler can name on request.
 2. **Cycles: `weak` by default on parent-shaped fields, or opt-in?**
+   - **DECIDED 2026-10-23 (Sean): weak by default**, the joint recommendation below. Precisely:
+     weak by default for a field whose *kind* declares it a parent link (a declared shape the
+     reader can see), never a compiler guess at which fields "look like" parents. A guessed
+     weak reference would fail "nothing ambient", and a wrong guess would surface as a
+     use-after-free rather than a leak.
    - Every engine tree node is a cycle from day one (`Instance.parent` <-> `children`), and
      signals hold closures that capture their owner. An opt-in `weak` is one a port forgets.
    - **Joint recommendation:** a field kind that is weak by default where the shape is declared
      (a parent link), plus explicit `weak` elsewhere; subscriber lists weak or Maid-style
      connection objects the owner drops (the ports already use Maid). Keep the debug-mode leak
      report for what remains.
+   - **Joint (Opus + Fable, 2026-10-26; pre-approved under Sean's 2026-10-23 rule): which
+     references are weak, and what Destroy severs.** In the engine's object graph the cycles are
+     there by design: Parent against children, a Signal's handlers capturing the signal's owner,
+     a Tween and its target. The rules:
+     - Instance links (Parent, children, a tween's target) are **handles** (model E), not
+       counted references. Instance <-> children and Tween <-> target are therefore not
+       counted cycles at all.
+     - A declared parent link between counted objects is weak (decided above).
+     - A connection holds its handler strongly and its owner weakly.
+     - **Destroy disconnects every connection on the object, unparents it, and invalidates its
+       handle.** The disconnect is what breaks the cycle. Owner -> connection (kept in a Maid or
+       a field) -> handler -> owner runs through the handler's capture, and the weak owner field
+       is not on it. That field only lets a connection outlive its owner without keeping it
+       alive.
+     - The census reports any counted cycle still alive after Destroy as a leak, with the path
+       of references holding it.
+     - A plain script object with no Destroy of its own gets the same report when the last
+       reference from outside its cycle is dropped (released from a Maid, or a local going out
+       of scope) while a connection is still live. Without that, the rule would never fire for
+       objects that never see Destroy.
+
+     So the counted cycles are the Zebra-side ones, such as a script class holding a connection
+     whose handler captures `this`. Destroy and the census cover those.
 3. **Are class instances counted?** The 2026-10-11 decision named strings and containers. A
    `Parser()` made per line grows the same way; the recommendation is yes.
+   - **DECIDED 2026-10-23: yes**, the joint recommendation. Sean's standing rule the same day:
+     a position both of us hold is pre-approved. So class instances join strings and
+     containers under the counted representation; cycles through them are §6.2's concern.
 4. **Order of work:** the no-regret steps (§3) first -- they are small, measurable, and fix the
    workaround users are told to use -- then a design for the counted representation before
    any code. Within §3, Fable would put the **census (item 6) first**: its per-site list is what
@@ -223,6 +320,21 @@ steady state (a longer run at a bigger live heap would show the collection cycle
 host-boundary hazard above is UNTESTED, because the V host's rows never keep a Zebra pointer past
 the frame. `VGC=boehm` on the row script repeats it.
 
+**Pauses, measured (Fable, 2026-10-26).** The flat working set above hid the pauses, because
+the budget guard needs thirty bad frames in a row. With a gc-pause line on the V profiler
+(`GC_get_full_gc_total_time` per window) and a worst-frame figure beside the frame line, the
+same autoplay shows a stop-the-world collection **every 1-2 s, 31-93 ms (median ~47) at a 69-125
+MB heap**, plus one of 297 ms in 40 s. Each pause drops one or more frames. A microbenchmark
+against a built live set (explicit full collections, min of five) fits
+`pause_ms ≈ 0.08 per 1,000 live pointer-bearing objects + 0.46 per scanned MB + 0.05 per heap MB`.
+Unscanned payloads cost nothing, since V allocates `[]u8` as atomic. The fit holds to about a
+million objects and is superlinear beyond that: a kept array of 4M pointers overflows the mark
+stack, at 817 ms min and 2.2 s median. Right after an allocation burst the max runs 2-4x the min.
+The full table is in the wiki, `pages/fable/fieldnotes_boehm-pause_2026-10-26.md`. This is the
+"pauses nobody reports" failure of §6b, now reported. It argues for the handle ABI plus counting
+over a collector inside the frame. The open alternative is Boehm's incremental mode, whose write
+barriers have not been measured.
+
 **Why `-gc none` drifts about five times faster -- apportioned by section (Fable, 2026-10-23).**
 Per 2 s window of the engine's plain run, gross (bytes charged before any free) and net. The V
 column samples Boehm's total at every profiler section boundary (three windows; with `-gc none`
@@ -257,7 +369,11 @@ What it says:
   emit an interpolation whose arguments are numbers as ONE formatted write -- V's stdlib has no
   allocation-free float formatting (every path ends in a `tos_clone`), so through a C-level
   `snprintf` into a stack buffer and one final string: one allocation per interpolation. Witness:
-  the same gui-flush line, 30 MB a window before. **Dropped:** an engine-side per-flush command
+  the same gui-flush line, 30 MB a window before. **Landed** (d67ee8d on v-backend-poc,
+  2026-10-23): **30 -> 4.5-10.6 MB a window** (the gui section 46 -> 11-29); the spelling is the
+  Zig backend's by a tie rule, since V's `str_intp` and C's `printf` each spell ties and specials
+  differently (`docs/design/v_backend_poc.md`, "Float interpolation as one formatted write").
+  **Dropped:** an engine-side per-flush command
   buffer -- the Zig flush is already one `allocPrint` per command (2.5 MB a window; a buffer takes
   it to ~1.5), and on V the cost is inside each number's formatting, which a builder around the
   commands does not reach. **The other third (~16 MB) is
