@@ -1,7 +1,7 @@
 <!-- doc-status: design -->
 # Memory in long-running programs — the model, brainstormed
 
-**Status:** BRAINSTORM for Sean. Decided so far: §6.2, weak by default for declared parent links (Sean, 2026-10-23); §6.3, class instances are counted (joint; Sean 2026-10-23: "anything you and Fable agree on -- please consider that pre approved"). §6.1 measured, with Fable's review pending. Written 2026-10-22 by Opus 5.5 (the
+**Status:** BRAINSTORM for Sean. Decided so far: §6.2, weak by default for declared parent links (Sean, 2026-10-23), and what Destroy severs (joint, 2026-10-26); §6.3, class instances are counted (joint; Sean 2026-10-23: "anything you and Fable agree on -- please consider that pre approved"). §6.1 measured, with Fable's review pending. Written 2026-10-22 by Opus 5.5 (the
 compiler session) with Fable (the GameEngine session), at Sean's request: "coordinate with
 Fable ... and brainstorm on the best way forward". Where the two of us agree it says so;
 where we disagree, both positions are kept. The 2026-10-11 decision ("reference counting for
@@ -248,6 +248,29 @@ representation**. F and G ranked below by both of us.
      (a parent link), plus explicit `weak` elsewhere; subscriber lists weak or Maid-style
      connection objects the owner drops (the ports already use Maid). Keep the debug-mode leak
      report for what remains.
+   - **Joint (Opus + Fable, 2026-10-26; pre-approved under Sean's 2026-10-23 rule): which
+     references are weak, and what Destroy severs.** In the engine's object graph the cycles are
+     there by design: Parent against children, a Signal's handlers capturing the signal's owner,
+     a Tween and its target. The rules:
+     - Instance links (Parent, children, a tween's target) are **handles** (model E), not
+       counted references. Instance <-> children and Tween <-> target are therefore not
+       counted cycles at all.
+     - A declared parent link between counted objects is weak (decided above).
+     - A connection holds its handler strongly and its owner weakly.
+     - **Destroy disconnects every connection on the object, unparents it, and invalidates its
+       handle.** The disconnect is what breaks the cycle. Owner -> connection (kept in a Maid or
+       a field) -> handler -> owner runs through the handler's capture, and the weak owner field
+       is not on it. That field only lets a connection outlive its owner without keeping it
+       alive.
+     - The census reports any counted cycle still alive after Destroy as a leak, with the path
+       of references holding it.
+     - A plain script object with no Destroy of its own gets the same report when the last
+       reference from outside its cycle is dropped (released from a Maid, or a local going out
+       of scope) while a connection is still live. Without that, the rule would never fire for
+       objects that never see Destroy.
+
+     So the counted cycles are the Zebra-side ones, such as a script class holding a connection
+     whose handler captures `this`. Destroy and the census cover those.
 3. **Are class instances counted?** The 2026-10-11 decision named strings and containers. A
    `Parser()` made per line grows the same way; the recommendation is yes.
    - **DECIDED 2026-10-23: yes**, the joint recommendation. Sean's standing rule the same day:
