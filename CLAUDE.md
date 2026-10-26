@@ -1472,9 +1472,13 @@ python tools/lint_stale_bugs.py    # THE STALE-OPEN-BUG SCANNER — REPORT ONLY,
                                 #   Two of the three were found by someone picking the bug
                                 #   up to work on it and discovering it already done.
                                 #   NOT A GATE, because it produces real false positives
-                                #   and must: BUG-106 ranks top on an old "BUG-106 fixed"
-                                #   commit, but today's entry is a NEW conflict filed under
-                                #   the same number and is legitimately open. A tool that
+                                #   and must -- though its example was WRONG for eleven
+                                #   weeks: BUG-106 ranked top on its "BUG-106 fixed"
+                                #   commit, and this note called the open entry (a fixture
+                                #   role conflict) "legitimately open". e6cbe72 had
+                                #   resolved that conflict the same day it was filed; the
+                                #   entry left the ledger 2026-10-25, when Sean was asked
+                                #   to decide it. The scanner was right. A tool that
                                 #   would close that is worse than none. It ranks
                                 #   suspicion, names its evidence, and closes nothing.
                                 #   CARRIES A BOUNDARY CONTROL, because its first version

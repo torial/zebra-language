@@ -853,45 +853,6 @@ for. Nothing needs retiring.
 was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
 byte-identical `.zbr` and generated `.zig` before this note was written.*
 
-### BUG-106 (front-end check) — CONFLICT: the fixture serves two incompatible roles — NEEDS A DECISION
-
-**Not a new defect. A collision, surfaced 2026-08-04**, and recorded because acting on it
-without a decision would silently break a gate.
-
-The selfhost does **not** implement BUG-106's heterogeneous-literal check. Verified:
-
-| compiler | `var xs = [1, "two", 3]` |
-|---|---|
-| bootstrap | ✅ `error: list literal has heterogeneous element types: 'String' is not compatible with 'int'` |
-| **selfhost** (`zebra.exe`, what ships) | ❌ `-c` exits **0**; fails later inside emitted Zig |
-
-By the selfhost-equivalence rule that gap should simply be closed — as BUG-248 was, the
-same night, for BUG-108. **It cannot be, without a decision**, because
-`test/bug106_heterogeneous_list_test.zbr` is simultaneously:
-
-1. **the regression fixture for BUG-106** — it must be REJECTED by the front end; and
-2. **one of three asymmetry witnesses** named in `selfhost/main.zbr` and required by
-   `tools/check_mode_check.sh` — it must PASS `-c` and fail `--check-full`, proving the
-   documented `-c` limitation is real.
-
-Those are contradictory. Porting the check satisfies (1) and destroys (2) for this file.
-
-**It is survivable but not free:** `check_mode_check` fails only when *no* witness
-survives, and there are three, so fixing this leaves two. What it costs is a **witness**,
-and the comment in `selfhost/main.zbr` naming all three would go stale with it.
-
-**The options:**
-- **a.** Port the check; retire this file as a witness; pick a replacement witness first so
-  the set never drops below two; update the `main.zbr` comment.
-- **b.** Port the check and split the file: a new negative fixture for the check, and leave
-  a *different* construct here as the witness.
-- **c.** Leave the gap, and record explicitly that the selfhost does not implement it — the
-  worst option, because the two compilers then disagree on what is a valid program.
-
-**Recommend (b)** — a witness should not be load-bearing for a bug fixture, and the
-coupling is what made this invisible. Sean's call.
-
-
 ### BUG-243: fifteen corpus files have never compiled, and no gate could say so
 
 **Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
