@@ -1460,6 +1460,16 @@ smoke_run test/bug625_optional_type_arg_no_throw_test.zbr "bug625: 3 1"
 smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:6:22: error: 'str' has no method 'toCPtr'"
 smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:7:27: error: 'str' has no method 'sizee'"
 smoke_tc_fail test/fail_fixtures/bug627_typed_var_unknown_method_fail.zbr "bug627_typed_var_unknown_method_fail.zbr:8:21: error: 'str' has no method 'lenn'"
+# BUG-534: the checked sized-integer conversions (toInt8..toInt64, toUint, toUint8..toUint64),
+# a conversion that does not fit trapping, and the refusal of a named int into a sized slot.
+smoke_run test/bug534_sized_conversions_test.zbr "bug534: OK"
+smoke_run_fail test/bug534_conversion_trap_test.zbr "integer conversion out of range: 300 does not fit in byte"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:15:7: error: type mismatch: expected uint64, got int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:16:35: error: type mismatch: expected uint64, got int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:17:20: error: type mismatch: expected int32, found uint64 -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:18:7: error: type mismatch: expected byte, got int"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:20:5: error: type mismatch: expected uint32, found int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr "bug534_int_into_sized_slot_fail.zbr:24:12: error: type mismatch: expected int, got uint64 -- convert it with"
 smoke_quine test/quine_test.zbr
 smoke_tc_fail test/fail_fixtures/bug616_sortby_unordered_key_test.zbr "bug616_sortby_unordered_key_test.zbr:16:8: error: 'Suit' is \`@unordered\`"
 smoke_tc_fail test/fail_fixtures/bug616_sortby_no_compare_key_test.zbr "bug616_sortby_no_compare_key_test.zbr:18:8: error: 'P' has no ordering, so it cannot be a \`.sortBy\` key"

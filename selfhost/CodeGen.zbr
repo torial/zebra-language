@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -18931,9 +18931,11 @@ struct Generator
                 # BUG-445: an INTEGER receiver (uint64, int32, byte...) converts with a
                 # checked @intCast -- it was emitted as @intFromFloat, so the conversion
                 # the mixed-sign refusal points at did not compile. Out of range traps.
-                w.emit("@as(i64, @intCast(")
+                # BUG-534: through _zbr_int_to, which traps in --release too (@intCast
+                # out of range is undefined there, not a trap).
+                w.emit("_zbr_int_to(i64, \"int\", ")
                 genExpr(m.object)
-                w.emit("))")
+                w.emit(")")
             else
                 w.emit("@as(i64, @intFromFloat(")
                 genExpr(m.object)
@@ -18965,6 +18967,23 @@ struct Generator
                 genExpr(m.object)
                 w.emit(")")
                 return
+        # BUG-534: the checked sized conversions (`n.toUint64()`, `u.toInt32()`...) on any
+        # integer receiver. Out of range traps in every build mode (std.math.cast in the
+        # runtime), never @intCast, whose out-of-range case is undefined under --release.
+        if args.len == 0 and .infer_ctx != nil
+            var cv_target: Type_ = intConvTarget(mname)
+            if not (cv_target is Type_.unresolved)
+                var cv_src: Type_ = inferExpr(m.object, .infer_ctx!)
+                if numKind(cv_src) == 1 or numKind(cv_src) == 2
+                    var cv_zig: str = "u64"
+                    if cv_target is Type_.int_n as cv_iw
+                        cv_zig = "i" + cv_iw.toString()
+                    if cv_target is Type_.uint_n as cv_uw
+                        cv_zig = "u" + cv_uw.toString()
+                    w.emit("_zbr_int_to(" + cv_zig + ", \"" + numTypeName(cv_target) + "\", ")
+                    genExpr(m.object)
+                    w.emit(")")
+                    return
         # BUG-146: try* parse a string, returning null on failure (?f64/?i64).
         if mname == "tryFloat"
             w.emit("(std.fmt.parseFloat(f64, ")

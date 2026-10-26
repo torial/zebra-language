@@ -1085,7 +1085,7 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                     if pti > 0
                         ptypes_pipe = ptypes_pipe + "|"
                     if p2.type_ != nil
-                        ptypes_pipe = ptypes_pipe + typeTag(typeFromRef(p2.type_!))
+                        ptypes_pipe = ptypes_pipe + paramTag(typeFromRef(p2.type_!))
                     else
                         ptypes_pipe = ptypes_pipe + "?"
                     pti += 1
@@ -1301,7 +1301,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     if tl_pti > 0
                         tl_ptypes = tl_ptypes + "|"
                     if tl_p.type_ != nil
-                        tl_ptypes = tl_ptypes + typeTag(typeFromRef(tl_p.type_!))
+                        tl_ptypes = tl_ptypes + paramTag(typeFromRef(tl_p.type_!))
                     else
                         tl_ptypes = tl_ptypes + "?"
                     tl_pti += 1
@@ -3145,6 +3145,11 @@ def simdLaneScalar(tn: str): Type_
         return Type_.float_
     if tn.startsWith("bool")
         return Type_.bool_
+    # BUG-534: the lane's own width (i32x4 -> int32), not `int` -- the sized-slot
+    # refusal would otherwise reject `var s: int32 = v.sum()`, which zig accepts.
+    var lane: Type_ = typeFromName(tn.split("x").at(0))
+    if lane is Type_.int_n or lane is Type_.uint_n
+        return lane
     return Type_.int_
 
 # the mask type of a vector type: u8x16 -> boolx16
@@ -3775,6 +3780,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             # BUG-431: the int -> byte narrowing (truncating, low 8 bits)
                             if mem.member == "toByte"
                                 return Type_.uint_n(8)
+                            var iconv_t: Type_ = intConvTarget(mem.member)   # BUG-534
+                            if not (iconv_t is Type_.unresolved)
+                                return iconv_t
                             # `n.to(m)` is the method-form range (§28a); its element
                             # type is handled by isRangeIterExpr, the range itself
                             # stays untyped here as it always was.
@@ -3783,8 +3791,23 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if ctx.methodReturnAny("$extend:int", mem.member) as iext_ret   # BUG-573
                                 return iext_ret
                             ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString; abs, min, max, pow are Math.* functions)")
+                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString, the checked toInt8..toInt64/toUint/toUint8..toUint64; abs, min, max, pow are Math.* functions)")
                             return Type_.unknown_
+                        # BUG-534: a SIZED integer receiver converts the same way. Only the
+                        # conversion names are typed here; anything else falls through to
+                        # the untyped path it always took.
+                        on Type_.int_n as _
+                            var snconv_t: Type_ = sizedIntMethodType(mem.member)
+                            if not (snconv_t is Type_.unresolved)
+                                return snconv_t
+                        on Type_.uint_n as _
+                            var suconv_t: Type_ = sizedIntMethodType(mem.member)
+                            if not (suconv_t is Type_.unresolved)
+                                return suconv_t
+                        on Type_.uint_
+                            var uconv_t: Type_ = sizedIntMethodType(mem.member)
+                            if not (uconv_t is Type_.unresolved)
+                                return uconv_t
                         on Type_.float_
                             if mem.member == "toInt"
                                 return Type_.int_
@@ -5493,6 +5516,78 @@ def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
 
 const BYTE_NARROW_HINT: str = "-- an int does not narrow to a byte on its own; use `.toByte()` (low 8 bits) (QUICKSTART §21)"
 
+# BUG-534 (Sean, 2026-10-25): the checked conversions to each sized integer, named for the
+# target. Out of range TRAPS in every build mode (the runtime's `_zbr_int_to`), because a
+# wrong length handed silently to C is the worse failure. `unresolved` = not one of them.
+def intConvTarget(name: str): Type_
+    if name == "toInt8"
+        return Type_.int_n(8)
+    if name == "toInt16"
+        return Type_.int_n(16)
+    if name == "toInt32"
+        return Type_.int_n(32)
+    if name == "toInt64"
+        return Type_.int_n(64)
+    if name == "toUint"
+        return Type_.uint_
+    if name == "toUint8"
+        return Type_.uint_n(8)
+    if name == "toUint16"
+        return Type_.uint_n(16)
+    if name == "toUint32"
+        return Type_.uint_n(32)
+    if name == "toUint64"
+        return Type_.uint_n(64)
+    return Type_.unresolved
+
+# The methods a sized integer receiver (int32, uint64, uint, byte...) answers to: the same
+# conversions as `int`, plus toInt / toFloat / toString. `unresolved` for anything else.
+def sizedIntMethodType(name: str): Type_
+    if name == "toInt"
+        return Type_.int_
+    if name == "toFloat" or name == "toFloat32"
+        return Type_.float_
+    if name == "toString"
+        return Type_.string_
+    return intConvTarget(name)
+
+# BUG-534: a NAMED integer value flowing into an integer slot zig will not coerce it to at
+# run time (`f(n)` with `n: int` and a `uint64` parameter: "expected type 'u64', found
+# 'i64'"). Zig coerces only when the slot holds every value of the source: same sign and
+# at least as wide, or unsigned into a strictly wider signed. Returns the hint naming the
+# conversion, "" when the flow is fine. The byte case keeps BYTE_NARROW_HINT (`.toByte()`).
+# Same shapes as narrowsIntToByte: literals and arithmetic are left to zig, which folds them.
+def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
+    var dk: int = numKind(declared)
+    var sk: int = numKind(inferred)
+    if dk == 0 or dk == 3 or sk == 0 or sk == 3
+        return ""
+    branch e
+        on Expr.ident as _
+            pass
+        on Expr.member as _
+            pass
+        on Expr.call as _
+            pass
+        on Expr.index as _
+            pass
+        else
+            return ""
+    var dw: int = numWidth(declared)
+    var sw: int = numWidth(inferred)
+    if dk == sk and dw >= sw
+        return ""
+    if sk == 2 and dk == 1 and dw > sw
+        return ""
+    var meth: str = "toInt"
+    if dk == 1 and declared is Type_.int_n
+        meth = "toInt" + dw.toString()
+    if dk == 2
+        meth = "toUint"
+        if declared is Type_.uint_n
+            meth = "toUint" + dw.toString()
+    return "-- convert it with `." + meth + "()` (checked: traps if the value does not fit; QUICKSTART §21)"
+
 def typesCompatible(declared: Type_, inferred: Type_): bool
     if not isPrimitive(declared)
         return true
@@ -5685,6 +5780,10 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if narrowsIntToByte(exp, inferred, e)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected byte, got int " + BYTE_NARROW_HINT)
         return exp
+    var ex_hint: str = intNarrowHint(exp, inferred, e)   # BUG-534
+    if ex_hint != ""
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + numTypeName(exp) + ", got " + numTypeName(inferred) + " " + ex_hint)
+        return exp
     if not isPrimitive(exp)
         return inferred
     if optionalIntoPlain(exp, inferred)
@@ -5714,7 +5813,19 @@ def optionalIntoPlain(declared: Type_, inferred: Type_): bool
 
 # Reconstruct a primitive Type_ from a typeTag string. Returns nil for
 # non-primitive tags so checkCallExpr skips those param positions.
+# BUG-534: a sized INTEGER parameter is tagged by its Zebra name (`int32`, `uint64`, `byte`)
+# rather than typeTag's "?", which decoded to nil -- so no argument passed to an int32, a
+# uint64 or a byte parameter was ever checked (BUG-431's call-argument refusal included).
+def paramTag(t: Type_): str
+    if t is Type_.int_n or t is Type_.uint_n
+        return numTypeName(t)
+    return typeTag(t)
+
 def paramTypeFromTag(tag: str): Type_?
+    if tag.startsWith("int") and tag.len > 3
+        return typeFromName(tag)
+    if (tag.startsWith("uint") and tag.len > 4) or tag == "byte"
+        return typeFromName(tag)
     if tag == "int"
         return Type_.int_
     if tag == "uint"
@@ -6947,6 +7058,12 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
             if narrowsIntToByte(declared, inferExpr(dv.init_expr!, ctx), dv.init_expr!)
                 ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
                 return
+        # BUG-534: the same for every other integer slot zig will not coerce to.
+        var nv_inf: Type_ = inferExpr(dv.init_expr!, ctx)
+        var nv_hint: str = intNarrowHint(declared, nv_inf, dv.init_expr!)
+        if nv_hint != ""
+            ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + numTypeName(declared) + ", found " + numTypeName(nv_inf) + " " + nv_hint)
+            return
     if not isPrimitive(declared)
         # BUG-627: the refusals inference makes on the way (an unknown method or field)
         # must reach a var whose annotation is not a primitive too. `var p: ^byte =
@@ -7353,9 +7470,15 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         sa_slot = sa_el
                 else
                     sa_slot = inferExpr(sasn.target, ctx)
-                if narrowsIntToByte(sa_slot, inferExpr(sasn.value, ctx), sasn.value)
+                var sa_val_t: Type_ = inferExpr(sasn.value, ctx)
+                if narrowsIntToByte(sa_slot, sa_val_t, sasn.value)
                     ctx.addErr(file, sasn.span.line, sasn.span.col,
                                "type mismatch: expected byte, found int " + BYTE_NARROW_HINT)
+                else
+                    var sa_hint: str = intNarrowHint(sa_slot, sa_val_t, sasn.value)   # BUG-534
+                    if sa_hint != ""
+                        ctx.addErr(file, sasn.span.line, sasn.span.col,
+                                   "type mismatch: expected " + numTypeName(sa_slot) + ", found " + numTypeName(sa_val_t) + " " + sa_hint)
             on Stmt.expr as se
                 checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.

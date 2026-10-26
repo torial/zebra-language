@@ -28,9 +28,23 @@ confirmed via `tools/bootstrap_check.sh`.
 - **`HashMap.clear()`** empties a map in place and keeps its capacity, as `List.clear()` and
   `Set.clear()` do -- reuse one map per frame or per line instead of building a fresh one.
   (`List.clear()` already kept its capacity; QUICKSTART now says so.)
+- **Checked sized-integer conversions (BUG-534):** `toInt8`, `toInt16`, `toInt32`, `toInt64`,
+  `toUint`, `toUint8`, `toUint16`, `toUint32`, `toUint64` on any integer, named for the target
+  type -- `strlen(p, text.len.toUint64())`. A value that does not fit stops the program
+  ("integer conversion out of range: 300 does not fit in byte"), in `--release` as in Debug.
+  A sized integer (`uint64`, `int32`...) also takes `toInt`, `toFloat` and `toString`.
 
 ### Fixes
 
+- **An `int` passed, assigned or returned into a sized integer slot is a compile error naming
+  the conversion (BUG-534).** `f(n)` into a `uint64` parameter (an `extern`'s included), `var x:
+  int32 = big`, `return u` from an `int` function: each failed inside zig ("expected type 'u64',
+  found 'i64'"). Only a widening zig makes on its own (`int32` into `int`) still flows. **A
+  variable that zig folded as a constant (`var n = 2` then `f(n)`) is refused too**; add the
+  conversion. Arguments to `byte`, `int32`, `uint64`... parameters were not checked at all
+  before, so BUG-431's `.toByte()` refusal now reaches call arguments as documented.
+- **`u.toInt()` on a `uint64` traps in `--release` when the value does not fit.** It compiled
+  to an unchecked cast there, which is undefined behaviour.
 - **`allocate Arena()` frees its memory at block exit (BUG-617).** A scoped block was backed by
   the program's own arena, which frees nothing, so the documented way to bound a loop's memory
   freed nothing -- with `<<-` inside the block it used MORE memory than no block at all (a 100 MB

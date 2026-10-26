@@ -306,37 +306,6 @@
   decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
   output must hold no `NTSTATUS` line (Windows-only leg).
 
-### BUG-534: a runtime `int` flowing into ANY sized-int slot passes `-c` and fails inside zig -- and there is no Zebra spelling for the conversion -- OPEN, NEEDS A DECISION (found 2026-10-05; re-scoped 2026-10-25)
-- **Reported as** an `int` argument to a `uint64` EXTERN parameter (`f(p, text.len)` ->
-  zig "expected type 'u64', found 'i64'"), with "`var u: uint64 = n` builds fine".
-- **Measured 2026-10-25, it is wider and that note was wrong.** `var u: uint64 = n` builds
-  only when `n` is a never-mutated local that Zig folds as a comptime constant; with `n` a
-  PARAMETER it fails the same way. Every slot leaks, for every sized type: a Zebra `def`'s
-  `uint64` parameter, an extern's `uint32` / `int32` parameter, a typed `var`, a `return`
-  from a `uint64` function. Repro (no C dependency):
-  ```
-  def f(x: uint64): uint64
-      return x
-
-  def go(n: int): uint64
-      return f(n)        # zig: expected type 'u64', found 'i64'
-  ```
-- **Why it is not just a missing refusal.** BUG-431 closed the same hole for `byte` by
-  adding `.toByte()` AND refusing an int value in a byte slot by name. For `uint64`,
-  `uint32`, `int32`... no conversion method exists, so a refusal could only name
-  `zig"@intCast(n)"` -- and for `text.len` the user cannot annotate their way out. A
-  silent `@intCast` at the boundary is rejected: out-of-range is illegal behaviour, UB
-  under `--release` (the A4 class).
-- **The decision (Sean's; no joint position while Fable is away):** the conversion
-  spelling -- names (a family `toInt32()` / `toUint32()` / `toUint64()`..., or one form) and
-  semantics (TRAP when out of range, like `u.toInt()`, or TRUNCATE, like `.toByte()`).
-  Then the refusal names it, BUG-431's shape. Proposed default: a trapping family named
-  for the target type, because a silent wrong length into C is the worse failure.
-- Before landing the refusal, measure: keyed on named values it also refuses the
-  comptime-folded cases that build today (`var n = 2` ... `f(n)`).
-
----
-
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a

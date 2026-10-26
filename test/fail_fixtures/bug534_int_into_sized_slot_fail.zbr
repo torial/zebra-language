@@ -1,0 +1,27 @@
+# BUG-534: a named int flowing into an integer slot zig will not coerce it to was accepted
+# by the front end and failed inside zig ("expected type 'u64', found 'i64'"). Refused now,
+# naming the conversion -- for a parameter, an extern parameter, a typed var, a return and
+# an assignment. The byte call-argument case (BUG-431) was never checked either: sized
+# parameter types were recorded as "?" and decoded to nothing.
+extern def zz_take(p: ^byte, n: uint64): int32
+
+def f(x: uint64): uint64
+    return x
+
+def h(x: byte): byte
+    return x
+
+def go(n: int, t: str, big: uint64): int32
+    f(n)
+    var r: int32 = zz_take(nil, t.len)
+    var s: int32 = big
+    h(n)
+    var q: uint32 = 1
+    q = n
+    return r
+
+def back(u: uint64): int
+    return u
+
+def main()
+    print(go(3, "abc", 4))

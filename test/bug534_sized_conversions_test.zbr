@@ -1,0 +1,30 @@
+# BUG-534 (2026-10-25): the checked sized-integer conversions, named for the target type.
+# Each one converts a value that fits; an out-of-range value traps (bug534_conversion_trap_test).
+def f(x: uint64): uint64
+    return x
+
+def g(x: int32): int32
+    return x
+
+def go(n: int): uint64
+    return f(n.toUint64())
+
+def main()
+    var n = 300
+    print(go(n))                          # 300
+    print(g(n.toInt32()))                 # 300
+    var u: uint64 = f(n.toUint64())
+    print(u.toInt() + 1)                  # 301: a sized receiver converts back
+    var b: uint32 = n.toUint32()
+    print(b.toUint16())                   # 300: sized to sized
+    var small: int8 = (n - 250).toInt8()
+    print(small)                          # 50
+    var w: uint = n.toUint()
+    print(w)                              # 300
+    var neg = 0 - 5
+    print(neg.toInt16())                  # -5
+    var k: int64 = neg.toInt64()
+    print(k)                              # -5
+    var lo = 255
+    print(lo.toUint8())                   # 255: the edge that fits
+    print("bug534: OK")

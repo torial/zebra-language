@@ -2499,6 +2499,20 @@ a cast in another language:
   VALUE flowing into a byte slot without it -- `buf[i] = n`, `var b: byte = n`,
   a byte parameter -- is refused by the checker naming `.toByte()`; a literal or
   arithmetic on literals (`buf[i] = 2`) still folds, as before.
+- For the other **sized integers**, convert with the method named for the target:
+  `toInt8` `toInt16` `toInt32` `toInt64` `toUint` `toUint8` `toUint16` `toUint32`
+  `toUint64`, on any integer (BUG-534). These are CHECKED: a value that does not fit stops
+  the program -- `integer conversion out of range: 300 does not fit in byte` -- in
+  `--release` too. (`toByte` is the one that truncates.) A named int flowing into a sized
+  slot on its own -- `f(text.len)` with a `uint64` parameter, `var x: int32 = n` -- is
+  refused naming the conversion; only a widening (`int32` into `int`, `byte` into `uint32`)
+  flows by itself. A sized integer converts back with `.toInt()` (checked the same way),
+  and has `.toFloat()` / `.toString()`.
+  ```zebra
+  extern def write_n(p: ^byte, n: uint64): int32
+  def send(buf: ^byte, text: str): int
+      return write_n(buf, text.len.toUint64()).toInt()
+  ```
 - For raw bit-pattern conversions, drop into `zig"…"` (§23).
 
 ---

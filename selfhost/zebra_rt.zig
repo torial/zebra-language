@@ -331,6 +331,13 @@ pub inline fn _zbr_byte(x: anytype) u8 {
     return @truncate(@as(u64, @bitCast(@as(i64, x))));
 }
 
+// BUG-534: the checked integer conversions (`n.toUint64()`, `u.toInt()`...). Out of range
+// TRAPS in every build mode: @intCast there is a panic in Debug but undefined behaviour in
+// ReleaseFast, which is what `zebra --release` ships. `name` is the Zebra type, for the message.
+pub fn _zbr_int_to(comptime T: type, comptime name: []const u8, x: anytype) T {
+    return std.math.cast(T, x) orelse std.debug.panic("integer conversion out of range: {d} does not fit in {s}", .{ x, name });
+}
+
 inline fn _zbr_shift_t(comptime T: type) type {
     return if (T == comptime_int) i64 else T;
 }

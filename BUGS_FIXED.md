@@ -6,6 +6,48 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-534: a runtime `int` flowing into ANY sized-int slot passed `-c` and failed inside zig, and there was no Zebra spelling for the conversion -- FIXED 2026-10-25
+- **Reported** (2026-10-05) as an `int` argument to a `uint64` extern parameter
+  (`f(p, text.len)` -> zig "expected type 'u64', found 'i64'"); re-scoped 2026-10-25 to every
+  sized slot -- a `def`'s `uint64` parameter, an extern's `int32`, a typed `var`, an
+  assignment, a `return` -- whenever the value is not a comptime-folded constant.
+- **Decision (Sean, 2026-10-25): a trapping family named for the target type.** Every
+  integer gains `toInt8/16/32/64()`, `toUint()`, `toUint8/16/32/64()`; sized integers also
+  gain `toInt()`, `toFloat()`, `toString()`. Each lowers to the runtime's
+  `_zbr_int_to(T, name, x)` = `std.math.cast` or a panic naming the value and the target
+  ("integer conversion out of range: 300 does not fit in byte"). Never `@intCast`: out of
+  range is UB under `--release`, the A4 class.
+- **The refusal** (TypeChecker `intNarrowHint`): a NAMED integer value (ident, member, call,
+  index) whose type zig will not coerce into the slot is refused at the call argument, the
+  `var` initializer, the assignment and the `return`, naming the method:
+  `type mismatch: expected uint64, got int -- convert it with `.toUint64()``. Literals keep
+  their comptime coercion. Widening that zig accepts (same sign and wider, or unsigned into
+  strictly wider signed) is not refused.
+- **A second defect under it: sized PARAMETER types were never recorded.** The per-function
+  parameter tag serialised `int32`/`uint64`/`byte` as "unknown", so call arguments to sized
+  parameters were not type-checked AT ALL -- which is also why BUG-431's documented byte
+  refusal never reached call arguments. `paramTag` / `paramTypeFromTag` carry the width now,
+  at both registration sites (class methods and top-level fns).
+- **Also fixed:** `u.toInt()` on a sized integer lowered to `@intCast` and was UB under
+  `--release` for a `uint64` above `i64` max; it traps now. And SIMD integer reductions
+  (`i32x4.sum()`) typed as `int` rather than their lane type, which the new refusal turned
+  into a false error in `simd_test` -- `simdLaneScalar` returns the lane's own width.
+- **Measured before landing** (the cost the entry warned of: comptime-folded `var n = 2` ...
+  `f(n)` builds today): `-c` over every tracked `.zbr` in this repo, zebra-ide and the
+  GameEngine, 3,029 files, before and after. **One file newly refused -- the fixture.** No
+  file anywhere has a BUG-534 message as its first error. (A first-error sweep cannot see a
+  second refusal behind an earlier one in an already-refused file.)
+- **Red-checked:** `release_mode_check.sh` gained a leg -- `300.toUint8()` under `--release`
+  must print the panic, with an in-range control. With `_zbr_int_to` mutated to
+  `@intCast`, the release build printed garbage ("failed to parse environment variables")
+  and the leg failed; restored, it traps.
+- Fixtures: `test/bug534_sized_conversions_test.zbr` (smoke_run, every conversion's value),
+  `test/bug534_conversion_trap_test.zbr` (smoke_run_fail, the Debug trap),
+  `test/fail_fixtures/bug534_int_into_sized_slot_fail.zbr` (six smoke_tc_fail coordinates:
+  extern param, def param, var, byte param, assignment, return). QUICKSTART §21.
+
+---
+
 ### BUG-546: a `catch` or `?` on a call that cannot fail passed `-c` and failed inside zig -- FIXED 2026-10-25
 
 **Reported by** Fable (GameEngine) on `File.listDir(".") catch List(str)()`; zig said
