@@ -1556,6 +1556,12 @@ class InferCtx
     # to a numeric loop whose variable is assignable). Each is a Zig `const` capture, so
     # assigning one leaked "cannot assign to constant". Same shape as params_here.
     var loop_consts: str
+    # BUG-629: locals an UNANNOTATED `var` bound to a lambda whose signature cannot be
+    # written down (an expression lambda with no return type, or an untyped parameter).
+    # Each lambda is its own Zig type, so reassigning one leaked "has no member named
+    # 'from'" / "must be const or comptime"; a nameable one becomes a sig value in
+    # codegen, these are refused at the assignment. Same shape as params_here.
+    var opaque_lambdas: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1577,6 +1583,7 @@ class InferCtx
         .params_here = " "
         .copy_locals = " "
         .loop_consts = " "
+        .opaque_lambdas = " "
 
     def setParamsHere(names: str)
         .params_here = names
@@ -1610,6 +1617,17 @@ class InferCtx
 
     def resetCopyLocals()
         .copy_locals = " "
+        .opaque_lambdas = " "
+
+    def markOpaqueLambda(name: str)
+        if not ((" " + name + " ") in .opaque_lambdas)
+            .opaque_lambdas = .opaque_lambdas + name + " "
+
+    def unmarkOpaqueLambda(name: str)
+        .opaque_lambdas = .opaque_lambdas.replace(" " + name + " ", " ")
+
+    def isOpaqueLambda(name: str): bool
+        return (" " + name + " ") in .opaque_lambdas
 
     def isParamHere(name: str): bool
         return (" " + name + " ") in .params_here
@@ -3340,8 +3358,9 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # BUG-596: a METHOD read as a value (`c.bump`, `xs.map(p.score)`). On a class
                 # it binds to the object (CodeGen `_zbr_bind`) and is typed as a callable
                 # returning what the method returns. On a STRUCT it would bind the VARIABLE by
-                # reference (Sean, 2026-10-16) -- which needs the escaping-capture design
-                # BUG-569 still owes -- so it is refused for now rather than reaching zig.
+                # reference (Sean, 2026-10-16) -- not built yet, though BUG-569's shared cells
+                # (2026-10-22) are what it would stand on -- so it is refused rather than
+                # reaching zig.
                 if boundMethodRet(tn, m.member, m.span.line, m.span.col, ctx) as bm_ret
                     return bm_ret
                 if unknownUserMember(tn, m.member, ctx)
@@ -5248,6 +5267,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     is_compound = false
                 else
                     pass
+            if not is_compound
+                if sasn.target is Expr.ident as olt
+                    if ctx.isOpaqueLambda(olt.name)
+                        ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col),
+                                   "'" + olt.name + "' holds a lambda whose type cannot be named, so it cannot be reassigned -- give the lambda its parameter and return types (`def(x: int): int = ...`) or declare the variable with a function type (`var " + olt.name + ": def(int): int = ...`)")
             if is_compound
                 var lhs_t: Type_ = inferExpr(sasn.target, ctx)
                 # BUG-412: `s += "x"` on a str is concatenation (codegen lowers it to
@@ -5296,6 +5320,11 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr!, ctx)
             ctx.bind(dv.name, t)
+            ctx.unmarkOpaqueLambda(dv.name)
+            if dv.type_ == nil and dv.init_expr != nil
+                if dv.init_expr! is Expr.lambda as dvlam
+                    if not lambdaSigNameable(dvlam)
+                        ctx.markOpaqueLambda(dv.name)
             # BUG-314: `var r = parent.at(i)` binds a COPY of the inner container.
             ctx.unmarkCopyLocal(dv.name)
             if dv.init_expr != nil
@@ -8112,6 +8141,106 @@ def interfaceHasMethod(ctx: InferCtx, iface: str, method: str, depth: int): bool
 
 # BUG-596: the type of METHOD `member` of user class `tn` read as a value -- a callable
 # returning the method's declared type (unknown_ for a method declared without one) -- or
+# BUG-629: can this lambda's signature be written as `def(P...): R`? Every parameter
+# typed, and a return type -- declared, or void for a statement body without one that
+# never returns a value. An expression lambda with no return type, or a statement body
+# that does `return 5` without declaring it, has a result only Zig knows.
+def lambdaSigNameable(lam: ExprLambda): bool
+    var i = 0
+    while i < lam.params.len
+        if lam.params.at(i).type_ == nil
+            return false
+        i += 1
+    if lam.return_type != nil
+        return true
+    if lam.body_ is LambdaBody.stmts as lbs
+        return not stmtsReturnValue(lbs)
+    return false
+
+def stmtsReturnValue(stmts: List(Stmt)): bool
+    for s in stmts
+        if stmtReturnsValue(s)
+            return true
+    return false
+
+# Does this statement -- or one nested in its body -- `return` a value? A nested lambda's
+# returns are its own: they sit inside an Expr, which this does not walk.
+# stmt-walker: exhaustive
+def stmtReturnsValue(s: Stmt): bool
+    branch s
+        on Stmt.return_ as r
+            return r.value != nil
+        on Stmt.if_ as si
+            if stmtsReturnValue(si.then_stmts)
+                return true
+            for ei in si.else_ifs
+                if stmtsReturnValue(ei.stmts)
+                    return true
+            if si.else_stmts as se
+                return stmtsReturnValue(se)
+            return false
+        on Stmt.while_ as sw
+            return stmtsReturnValue(sw.stmts)
+        on Stmt.for_in as sf
+            if stmtsReturnValue(sf.stmts)
+                return true
+            if sf.else_ as sfe
+                return stmtsReturnValue(sfe)
+            return false
+        on Stmt.for_num as sn
+            if stmtsReturnValue(sn.stmts)
+                return true
+            if sn.else_ as sne
+                return stmtsReturnValue(sne)
+            return false
+        on Stmt.branch_ as sb
+            for bc in sb.cases
+                if stmtsReturnValue(bc.stmts)
+                    return true
+            if sb.else_ as sbe
+                return stmtsReturnValue(sbe)
+            return false
+        on Stmt.with_ as swi
+            return stmtsReturnValue(swi.stmts)
+        on Stmt.in_scope as sis
+            return stmtsReturnValue(sis.stmts)
+        on Stmt.try_catch as stc
+            if stmtsReturnValue(stc.stmts)
+                return true
+            for cl in stc.clauses
+                if stmtsReturnValue(cl.stmts)
+                    return true
+            return false
+        on Stmt.allocate_ as sa
+            return stmtsReturnValue(sa.stmts)
+        # no statement body below: what they hold are expressions
+        on Stmt.assert_
+            return false
+        on Stmt.assign
+            return false
+        on Stmt.var_
+            return false
+        on Stmt.expr
+            return false
+        on Stmt.raise_
+            return false
+        on Stmt.destruct
+            return false
+        on Stmt.copy_out
+            return false
+        on Stmt.print_
+            return false
+        on Stmt.contract
+            return false
+        on Stmt.yield_
+            return false
+        on Stmt.pass_
+            return false
+        on Stmt.break_
+            return false
+        on Stmt.continue_
+            return false
+
 # nil when `member` is not such a method (a field of that name wins: it is what is read).
 # A struct's method read as a value is refused here (BUG-596's struct half waits on BUG-569).
 def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Type_?
@@ -8126,7 +8255,7 @@ def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Ty
     if ctx.fieldTypeAny(tn, member) != nil or ctx.methodReturnAny(tn, member) == nil
         return nil
     if ct.is_struct
-        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which needs the escaping-capture design BUG-569 still owes -- call it in place, or make '" + tn + "' a class to pass its methods around")
+        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which is not built yet (BUG-596) -- call it in place, or make '" + tn + "' a class to pass its methods around")
         return Type_.unknown_
     if ct.methodReturnRef(member) as rr
         return Type_.fn_type_(rr)

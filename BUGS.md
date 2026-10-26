@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-628. Next new bug: BUG-629.**
+**Last bug number generated: BUG-630. Next new bug: BUG-631.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -96,8 +96,30 @@
   zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
   (an empty literal, a generic) that must stay compatible.
 
-### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers wait on BUG-569)
-<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until BUG-569's escaping-capture design, which by-reference binding of a struct variable needs. Move it when the struct half lands. -->
+### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- OPEN (found 2026-10-26)
+- **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
+  Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that
+  fix's doing.
+- **Repro:**
+  ```
+  def main()
+      var h: def(int): int = def(x: int): int = x + 1
+      h = def(x: int): float = 1.5
+      print(h(1))
+  ```
+  zig, inside `zebra_rt.zig`'s `_ZbrFn.from`: `expected type 'i64', found 'f64'`. With
+  `h = def(): int = 1` (a different arity), `expected 0 argument(s), found 1`. The same through
+  a `sig` (`var h: Op = ...`). The user is shown a runtime line they never wrote.
+- **Why the front end cannot see it today:** `Type_.fn_type_` carries the RETURN type only, so
+  the checker cannot compare a lambda's parameters against the slot's. A return-type mismatch
+  is visible to it already and is not compared either.
+- **Expected:** refused at the assignment (and at a call argument, a return, a field store --
+  every place a value flows into a sig slot), naming both signatures.
+- **Control when fixing:** the two repros above must be refused with a coordinate; a matching
+  signature, a function reference (`h = twice`) and `nil` into an optional slot must still pass.
+
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers OPEN)
+<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until the struct half is built. Move it when it lands. -->
 - **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
   functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
   it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
@@ -115,74 +137,12 @@
   Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
 - **Struct receivers, OPEN:** refused, naming the reason and the alternatives (call it in
   place, or make the type a class). Binding the variable by reference needs the variable to
-  outlive the closure -- BUG-569's escaping-capture boxing. Fixture
+  outlive the closure. **That mechanism exists since 2026-10-22** (BUG-569 step 4, closed
+  2026-10-26): a written `var` local a closure shares lives in a heap cell (`_zbr_cell`) that a
+  returned closure keeps alive. What is left is binding a struct method value onto such a
+  cell. Fixture
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
-
-### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- OPEN, DECIDED: capture by reference (found 2026-10-13)
-- **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
-  should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
-- **Repro (QUICKSTART §19, "Implicit closure capture", verbatim shape):**
-  ```
-  def main()
-      var counter = 0
-      var bump = def()
-          counter += 1
-      bump()
-      bump()
-      print(counter)
-  ```
-  `lam_int.zbr:4: error: cannot assign to constant` (zig's, remapped). The same for a struct
-  field (`c.n = c.n + 1` inside the lambda), and for a mutating method on a captured struct
-  (`def(): int = c.bump()`: "expected '*Counter', found '*const Counter'"; with `c` made `var`
-  outside, zig says "mutable 'c' not accessible from here").
-- **What works:** an explicit `capture` block for per-closure state (§19.1), and module-level
-  variables. **Corrected 2026-10-21:** "reading a captured local" works only when the local is
-  a compile-time constant (`var k = 10` is emitted as `const k: i64 = 10` and Zig folds it).
-  Every runtime value fails inside zig with `"k" not accessible from inner function`, even if
-  it is only read: a local, a parameter, `self` in a method, a `for` variable, the receiver of
-  `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
-- **STEPS 1-3 LANDED 2026-10-21** (design note §7): every runtime value a lambda reads is
-  captured by COPY -- locals, parameters, loop variables, a factory's own locals (typed from
-  inference); a REBOUND captured variable is refused by name (Resolver), a struct changed in
-  place after capture is refused at build (codegen's mutation scan), and a `sys.go` lambda keeps
-  the explicit-capture rule. QUICKSTART §19's `counter += 1` example is now a named refusal and
-  the section says so. STILL OPEN: step 4, shared capture (it removes those refusals), which
-  waits on §5's three questions. `this` in a lambda landed the same day: captured in a class
-  method (a reference, so writes through it are shared), refused by name in a struct method. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
-  `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
-- **STEP 4, IMPLICIT HALF, LANDED 2026-10-22** (design note §8): a `var` local a closure
-  captures and something writes -- the function, that closure, a sibling or a nested one --
-  is SHARED through a heap cell (`_zbr_cell`, the program arena), so QUICKSTART §19's
-  `counter += 1` works as written. A class instance or container is boxed only when rebound.
-  Still refused, with the fix named: a parameter, loop counter or binding written after a
-  closure reads it, and a struct parameter changed in place (at build). The four step-3
-  refusals became `test/bug569_shared_{written,rebound,struct_field,struct_method}_test.zbr`;
-  new negatives `test/fail_fixtures/bug569_for_counter_written_capture_test.zbr` and
-  `bug569_param_struct_capture_test.zbr`; probe `test/boundary/bv_closure_capture_shared.zbr`
-  (intent-first). BUG-607 (a closure VALUE as a reference) landed in the next commit.
-  STILL OPEN: design note §6 step 5's tail -- leakgen should GENERATE capturing lambdas, so
-  the next sink that does not take a closure struct is found by the fuzzer, not a user.
-- **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
-  that nothing writes, box one that something writes, refuse written captures by name until
-  boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;
-  BUG-608 (assigning a `for ... in` variable) is refused.
-- **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
-  the bullet right under it says implicit capture is for "read-only access in most cases".
-- **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the
-  enclosing local (Python `nonlocal`, C# lambdas); or (b) it is READ-ONLY -- refuse a write to a
-  captured local in the front end, naming `capture` as the way to keep state, and fix §19's
-  example. (a) is what the example promises; (b) is what the implementation does today, minus
-  the error message.
-- **DECIDED 2026-10-14 (Sean): (a), BY REFERENCE** -- "similar to C# semantics": the closure
-  shares the enclosing local, so a write through it is seen outside and by every other closure
-  that captured it. §19's example becomes correct as written; the "read-only access in most
-  cases" bullet under it goes. Design questions to settle in the note before codegen: a closure
-  that OUTLIVES its frame (returned, stored in a field or list) needs the captured local
-  heap-boxed, as C# lifts it into a display class; and a loop variable captured per iteration
-  (C# 5 gives each `foreach` iteration its own variable -- say which Zebra does).
-- **Why no gate saw it:** doc_example_check runs the front end only, and the front end accepts
-  the example (pattern search 4 -- a full-build leg for doc examples -- is aimed at exactly this).
 
 ### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.

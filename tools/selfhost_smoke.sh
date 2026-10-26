@@ -1430,6 +1430,11 @@ smoke_run_fail test/fail_fixtures/bug569_param_struct_capture_test.zbr "'p' is c
 smoke_run test/bug569_this_capture_test.zbr "bug569_this: 5 <ab>:ab 6 AB"
 smoke_tc_fail test/fail_fixtures/bug569_struct_this_capture_test.zbr "bug569_struct_this_capture_test.zbr:7:31: error: a closure in a struct method cannot read \`this\`"
 smoke_tc_fail test/fail_fixtures/bug569_go_this_capture_test.zbr "bug569_go_this_capture_test.zbr:12:21: error: a \`sys.go\` closure names what it uses"
+# BUG-629: a reassigned, unannotated lambda local is a sig value; one whose type cannot be named is refused
+smoke_run test/bug629_lambda_reassign_test.zbr "bug629: 4 4,9 21 2 42 11 1,100 6 60 6 4,10 102 3 5"
+smoke_tc_fail test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr "bug629_opaque_lambda_reassign_fail.zbr:8:5: error: 'h' holds a lambda whose type cannot be named, so it cannot be reassigned"
+smoke_tc_fail test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr "bug629_opaque_lambda_reassign_fail.zbr:11:5: error: 'g' holds a lambda whose type cannot be named, so it cannot be reassigned"
+smoke_tc_fail test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr "bug629_opaque_lambda_reassign_fail.zbr:15:5: error: 'r' holds a lambda whose type cannot be named, so it cannot be reassigned"
 smoke_tc_fail test/fail_fixtures/bug612_lambda_body_method_test.zbr "bug612_lambda_body_method_test.zbr:5:34: error: 'str' has no method 'toUpper'"
 smoke_tc_fail test/fail_fixtures/bug612_lambda_param_assign_test.zbr "bug612_lambda_param_assign_test.zbr:6:9: error: cannot assign to parameter 'x'"
 smoke_run test/bug612_lambda_body_ok_test.zbr "bug612: [3, 6, 9] 18 2 6 3"

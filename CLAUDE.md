@@ -710,6 +710,12 @@ python fuzz/leakgen.py --gate   # THE "ZEBRA ACCEPTS, ZIG REJECTS" FUZZER, regis
                                 #   The gate refuses (exit 2) if it stops leaking. Fixed seeds; the
                                 #   `-n/--seed` mode explores, `--update-baseline` never
                                 #   accepts a signature silently (it writes BUG-FILE-ME).
+                                #   CAPTURING LAMBDAS SINCE 2026-10-26 (cap `lambdas`, BUG-569
+                                #   step 5): expression and statement lambdas over the env, a
+                                #   write to an enclosing `var` (a shared cell), map/filter/
+                                #   any/all/reduce, and a reassigned lambda local. Writing the
+                                #   probe for it found BUG-629; on the pre-fix compiler the gate
+                                #   is red, 18 leaks / 7 signatures.
                                 #   CANNOT SEE: wrong-but-compiling output (output_sweep's
                                 #   job), anything gen.py does not generate (its caps list
                                 #   is the coverage -- grow it with every bug class), and a
@@ -3509,7 +3515,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **889** <!-- doc-gen: 889 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **890** <!-- doc-gen: 890 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

@@ -2173,6 +2173,11 @@ print(counter)                               # 2
   method share it. Inside a **struct** method that is refused (a struct is a value): bind
   what the closure needs to a local first (`var n = .n`).
 - A lambda handed to `sys.go` names what it uses in a `capture` block (§19.1).
+- A lambda variable may be REASSIGNED with another lambda of the same signature
+  (`h = def(x: int): int = x - k`, or `h = other`, or a function): it is then a function
+  value, as if declared `var h: def(int): int`. That needs the signature to be nameable --
+  every parameter typed, and a return type (a statement lambda without one is void) --
+  otherwise the reassignment is refused with both fixes named. (BUG-629.)
 - An explicit `capture` block at the top of a lambda body declares persistent
   per-instance state — see §19.1 below.
 
@@ -2353,8 +2358,7 @@ def main()
 ```
 
 A STRUCT's method cannot be used as a value yet: it would bind the struct variable itself,
-which needs the escaping-capture design still owed (BUG-569). Call it in place, or make the
-type a class.
+which is not built yet (BUG-596). Call it in place, or make the type a class.
 
 ---
 

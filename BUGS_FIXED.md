@@ -6,6 +6,134 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-629: reassigning an unannotated lambda local passed the front end and failed inside zig -- FIXED 2026-10-26
+- **Found by:** writing a by-hand probe of closure sinks while teaching leakgen to generate
+  capturing lambdas (BUG-569's step-5 tail). Filed and fixed the same day.
+- **Repro:**
+  ```
+  def main()
+      var k = 3
+      var h = def(x: int): int = x + k
+      h = def(x: int): int = x - k
+      print(h(5))
+  ```
+  zig: `struct 'main__struct_N' has no member named 'from'`. Without a capture,
+  `variable of type 'fn (i64) i64' must be const or comptime`; a void statement lambda,
+  `expected type '_ZbrFn(fn () void)', found 'main__struct_N'`; `h = h2` (another lambda
+  local) the same as the first. The ANNOTATED forms -- `var h: def(int): int` or a `sig` --
+  always worked.
+- **Cause:** each lambda is its own Zig type (a fn, or a closure struct). The reassignment
+  was already lowered as a sig conversion (`h = .from(...)`), but the declaration kept the
+  first lambda's own type, so the slot had no `from` to land in.
+- **Fix:** an unannotated `var` bound to a lambda and reassigned is declared as a sig value,
+  `var h: _ZbrFn(fn(P...) R) = .from(<lambda>)`, exactly as the annotated form is
+  (CodeGen genLocalVar, beside the BUG-427 fn-reference precedent; `emitLambdaSigType`). A
+  void statement lambda's local is tracked (`sig_lambda_locals`) so its reassignment converts
+  too. A local that is never reassigned is emitted as before.
+- **The sibling path, found by an advisor review before landing:** a reassigned lambda local
+  that ANOTHER closure reads is shared through a cell (BUG-569 step 4), and `emitBoxedLocal`
+  typed the cell as the first lambda's own type -- the same leak by a second route
+  (`var g = def(): int = h(1)` then `h = ...`; or `h` rebound inside an enclosing closure).
+  The cell holds the sig type now. And `sig_lambda_locals` is scoped per FUNCTION
+  (`genStmts`): unscoped, a module var sharing the name of an earlier function's reassigned
+  lambda local had its plain `h = 5` emitted as `h = .from(5)` -- caught by a probe, never
+  shipped.
+- **Refused where the signature cannot be named:** an expression lambda with no return type
+  (`def(x: int) = x + 1`), an untyped parameter, or a statement lambda with no declared return
+  type that does `return 5` (legal when the local is not reassigned -- `stmtReturnsValue`, a
+  statement walker opted into `lint_expr_walkers`, red-checked by deleting one arm). TypeChecker marks such a local at its
+  declaration (`lambdaSigNameable`) and refuses the reassignment: `'h' holds a lambda whose
+  type cannot be named, so it cannot be reassigned -- give the lambda its parameter and return
+  types (...) or declare the variable with a function type (...)`.
+- **Measured:** the run fixture fails on the pre-fix compiler (`:25 ... must be const or
+  comptime`); the pre-fix `-c` accepts the refusal fixture whole. leakgen's gate on the
+  pre-fix compiler with the new generator: 18 LEAKs, 7 signatures, every one this bug; on the
+  fixed one 100/0, and 400 exploratory programs (seed 57) 0 leaks / 0 rejects.
+- **Not this bug, filed as BUG-630:** reassigning with a DIFFERENT signature
+  (`h = def(x: int): float = 1.5` into a `def(int): int` slot) fails inside the runtime's
+  `_ZbrFn`, for the annotated form too, on the pre-fix compiler as well.
+- Fixtures: `test/bug629_lambda_reassign_test.zbr` (smoke_run: no capture, capture, `h = h2`,
+  `h = twice`, a void lambda sharing a `var`, a `capture` closure replaced, reassignment in a
+  loop over the loop variable, a class method reading `this`, `map` and a sig parameter after
+  reassignment, a sibling closure reading the reassigned local, a rebind inside an enclosing
+  closure, a module var sharing the name -- every value derived by hand),
+  `test/fail_fixtures/bug629_opaque_lambda_reassign_fail.zbr` (three smoke_tc_fail
+  coordinates).
+
+### BUG-569: a closure that MUTATES an implicitly captured local fails inside zig -- including QUICKSTART §19's own example -- FIXED 2026-10-26 (decided: capture by reference; found 2026-10-13)
+- **Found by:** pattern search 1 (walker coverage), while measuring whether the mutation scanner
+  should descend into lambda bodies. Reproduced on HEAD `e247060` and on the N-1 anchor.
+- **Repro (QUICKSTART §19, "Implicit closure capture", verbatim shape):**
+  ```
+  def main()
+      var counter = 0
+      var bump = def()
+          counter += 1
+      bump()
+      bump()
+      print(counter)
+  ```
+  `lam_int.zbr:4: error: cannot assign to constant` (zig's, remapped). The same for a struct
+  field (`c.n = c.n + 1` inside the lambda), and for a mutating method on a captured struct
+  (`def(): int = c.bump()`: "expected '*Counter', found '*const Counter'"; with `c` made `var`
+  outside, zig says "mutable 'c' not accessible from here").
+- **What works:** an explicit `capture` block for per-closure state (§19.1), and module-level
+  variables. **Corrected 2026-10-21:** "reading a captured local" works only when the local is
+  a compile-time constant (`var k = 10` is emitted as `const k: i64 = 10` and Zig folds it).
+  Every runtime value fails inside zig with `"k" not accessible from inner function`, even if
+  it is only read: a local, a parameter, `self` in a method, a `for` variable, the receiver of
+  `xs.map(def(x) = x + xs.len)`. So the leak is all of implicit capture, not just writes.
+- **STEPS 1-3 LANDED 2026-10-21** (design note §7): every runtime value a lambda reads is
+  captured by COPY -- locals, parameters, loop variables, a factory's own locals (typed from
+  inference); a REBOUND captured variable is refused by name (Resolver), a struct changed in
+  place after capture is refused at build (codegen's mutation scan), and a `sys.go` lambda keeps
+  the explicit-capture rule. QUICKSTART §19's `counter += 1` example is now a named refusal and
+  the section says so. STILL OPEN: step 4, shared capture (it removes those refusals), which
+  waits on §5's three questions. `this` in a lambda landed the same day: captured in a class
+  method (a reference, so writes through it are shared), refused by name in a struct method. Fixtures: `test/boundary/bv_closure_capture_read.zbr` (intent, 9 rows),
+  `test/bug569_capture_refs_test.zbr`, five `test/fail_fixtures/bug569_*`.
+- **STEP 4, IMPLICIT HALF, LANDED 2026-10-22** (design note §8): a `var` local a closure
+  captures and something writes -- the function, that closure, a sibling or a nested one --
+  is SHARED through a heap cell (`_zbr_cell`, the program arena), so QUICKSTART §19's
+  `counter += 1` works as written. A class instance or container is boxed only when rebound.
+  Still refused, with the fix named: a parameter, loop counter or binding written after a
+  closure reads it, and a struct parameter changed in place (at build). The four step-3
+  refusals became `test/bug569_shared_{written,rebound,struct_field,struct_method}_test.zbr`;
+  new negatives `test/fail_fixtures/bug569_for_counter_written_capture_test.zbr` and
+  `bug569_param_struct_capture_test.zbr`; probe `test/boundary/bv_closure_capture_shared.zbr`
+  (intent-first). BUG-607 (a closure VALUE as a reference) landed in the next commit.
+  (Step 5's tail, below, closed the bug.)
+- **STEP 5's TAIL, LANDED 2026-10-26: leakgen generates capturing lambdas** (`fuzz/gen.py`,
+  cap `lambdas`): expression lambdas over the enclosing locals and parameters, called at once;
+  statement lambdas whose bodies declare, loop and WRITE an enclosing `var` (a shared cell);
+  capturing lambdas handed to `map` / `filter` / `any` / `all` / `reduce`; and a lambda local
+  reassigned with another. 88 of the gate's 100 programs carry at least one (247 lambdas, 49
+  reassignments), and 29 of the 100 emits hold a `_zbr_cell`, so the shared-write path is in
+  what zig checks.
+  Generating them for the first time found nothing in its first 500 programs -- and writing the probe
+  for the next sink found **BUG-629** (a reassigned lambda local), which the generator now
+  produces too: on the pre-fix compiler the gate goes red with 18 leaks / 7 signatures.
+- **Design note:** `docs/design/closure_capture.md` (2026-10-21): copy a captured variable
+  that nothing writes, box one that something writes, refuse written captures by name until
+  boxing lands; three questions there are Sean's. BUG-606 (closure comparators) is fixed;
+  BUG-608 (assigning a `for ... in` variable) is refused.
+- **The reference contradicts itself:** §19's example mutates `counter` through the closure, and
+  the bullet right under it says implicit capture is for "read-only access in most cases".
+- **Decision (Sean):** (a) implicit capture is BY REFERENCE -- the closure sees and changes the
+  enclosing local (Python `nonlocal`, C# lambdas); or (b) it is READ-ONLY -- refuse a write to a
+  captured local in the front end, naming `capture` as the way to keep state, and fix §19's
+  example. (a) is what the example promises; (b) is what the implementation does today, minus
+  the error message.
+- **DECIDED 2026-10-14 (Sean): (a), BY REFERENCE** -- "similar to C# semantics": the closure
+  shares the enclosing local, so a write through it is seen outside and by every other closure
+  that captured it. §19's example becomes correct as written; the "read-only access in most
+  cases" bullet under it goes. Design questions to settle in the note before codegen: a closure
+  that OUTLIVES its frame (returned, stored in a field or list) needs the captured local
+  heap-boxed, as C# lifts it into a display class; and a loop variable captured per iteration
+  (C# 5 gives each `foreach` iteration its own variable -- say which Zebra does).
+- **Why no gate saw it:** doc_example_check runs the front end only, and the front end accepts
+  the example (pattern search 4 -- a full-build leg for doc examples -- is aimed at exactly this).
+
 ### BUG-534: a runtime `int` flowing into ANY sized-int slot passed `-c` and failed inside zig, and there was no Zebra spelling for the conversion -- FIXED 2026-10-25
 - **Reported** (2026-10-05) as an `int` argument to a `uint64` extern parameter
   (`f(p, text.len)` -> zig "expected type 'u64', found 'i64'"); re-scoped 2026-10-25 to every

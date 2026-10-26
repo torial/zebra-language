@@ -1,0 +1,96 @@
+# BUG-629: reassigning a lambda local that had no type annotation passed the front end and
+# failed inside zig -- "has no member named 'from'" when the lambda captured something,
+# "variable of type 'fn (i64) i64' must be const or comptime" when it did not. Each lambda
+# is its own Zig type; a reassigned one is now a sig value, as `var h: def(int): int` was.
+# Found 2026-10-26 while teaching fuzz/gen.py to generate capturing lambdas (BUG-569).
+
+def twice(x: int): int
+    return x * 2
+
+# a module var sharing its name with another function's reassigned lambda local: its plain
+# `hh = 5` must stay a plain assignment (the set of sig locals is per function)
+var hh = 0
+
+def firstUse(): int
+    var hh = def(x: int): int = x + 1
+    hh = def(x: int): int = x + 2
+    return hh(1)
+
+def secondUse(): int
+    hh = 5
+    return hh
+
+def ho(f: def(int): int, x: int): int
+    return f(x)
+
+class Acc
+    var base: int
+    cue init(base: int)
+        .base = base
+    def run(): int
+        var g = def(x: int): int = x + .base
+        g = def(x: int): int = x * .base
+        .base += 1
+        return g(10)
+
+def main()
+    # no capture: a plain function pointer before the fix
+    var p = def(x: int): int = x + 1
+    p = def(x: int): int = x - 1
+    # capture: a closure struct before the fix
+    var k = 3
+    var h = def(x: int): int = x + k
+    var xs = [1, 2, 3]
+    var a: List(int) = xs.map(h)
+    h = def(x: int): int = x * k
+    var b: List(int) = xs.map(h)
+    var viaHo = ho(h, 7)
+    # from another lambda local, then from a top-level function
+    var h2 = def(x: int): int = x - k
+    h = h2
+    var fromH2 = h(5)
+    h = twice
+    var fromTwice = h(21)
+    # a void statement lambda sharing a written `var`
+    var n = 0
+    var bump = def()
+        n += 1
+    bump()
+    bump = def()
+        n += 10
+    bump()
+    # a `capture` closure replaced by a plain one
+    var c = def(): int
+        capture
+            var cnt: int = 0
+        cnt += 1
+        return cnt
+    var c1 = c()
+    c = def(): int
+        return 100
+    var c2 = c()
+    # reassigned in a loop, capturing the loop variable
+    var tot = 0
+    for i in [1, 2, 3]
+        h = def(x: int): int = x + i
+        tot += h(0)
+    var acc = Acc(5)
+    var run = acc.run()
+    # a reassigned lambda local another closure reads: it lives in a cell of the sig type,
+    # so the reader sees the new lambda
+    var sib = def(x: int): int = x + k
+    var viaSib = def(): int = sib(1)
+    var s1 = viaSib()
+    sib = def(x: int): int = x * 10
+    var s2 = viaSib()
+    # rebound INSIDE an enclosing closure
+    var m = 1
+    var hb = def()
+        m += 1
+    var outer = def()
+        hb()
+        hb = def()
+            m += 100
+    outer()
+    hb()
+    print("bug629: ${p(5)} ${a.at(0)},${b.at(2)} ${viaHo} ${fromH2} ${fromTwice} ${n} ${c1},${c2} ${tot} ${run} ${acc.base} ${s1},${s2} ${m} ${firstUse()} ${secondUse()}")

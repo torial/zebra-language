@@ -40,6 +40,7 @@ class Gen:
         self._shadow_used = set()  # primitive-shadowing names already declared (must stay unique)
         self._throw_ok = False  # true in a `throws` fn body or a catch-wrapper body — where a
                                 # throws call `f()?` is legal (§28b: always explicit `?`)
+        self._lam_depth = 0     # statement lambdas currently open (nesting is capped at 2)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def fresh(self, prefix='v'):
@@ -302,6 +303,20 @@ class Gen:
             if self.vars_of(env, 'str'):
                 choices += ['splitat']      # BUG-336: `s.split(sep).at(i)` / `.len`
             choices += ['jsonlist']         # BUG-337 List(JsonValue) .len/.at + BUG-338 List(JsonValue)() + BUG-331 reads
+        # LAMBDAS (BUG-569 step 5, 2026-10-26): closures that CAPTURE. Implicit capture
+        # reads the enclosing locals, params and loop variables, and SHARES a written `var`
+        # through a heap cell; every place a closure value goes (a local, a call, map/filter)
+        # has to take that closure struct, and the sinks that did not were found by people.
+        # Only `assignable` names are written from a lambda body -- a param, loop variable
+        # or `as` binding written after a closure reads it is a Zebra refusal, and
+        # generating one would only produce rejects.
+        prim_lists = [k for k, v in env.items() if v in ('List(int)', 'List(float)', 'List(str)')]
+        if self.caps.get('lambdas'):
+            choices += ['lamexpr']
+            if indent < self.caps['depth'] and self._lam_depth < 2:
+                choices += ['lamstmt']
+            if prim_lists:
+                choices += ['lamlist']
         if indent < self.caps['depth']:
             choices += ['if', 'while']
             if opt_in_scope:
@@ -329,6 +344,85 @@ class Gen:
                     f'{ind}    {n} = {tl}.len + {xs}.len + ({j}.tryObj("o")?.tryInt("k") orelse 0)',
                     f'{ind}    if {j}.has("xs")',
                     f'{ind}        {xs}.add({tl}.at(0))']
+        if k == 'lamexpr':
+            # `var f = def(): T = <expr over env>` / `def(a: P): T = ...`, called at once.
+            ty = self.pick(PRIMS)
+            f = self.fresh('fl'); r = self.fresh('r')
+            saved_t = self._throw_ok; self._throw_ok = False   # `?` in a lambda is not modelled
+            if self.maybe(0.5):
+                pt = self.pick(PRIMS)
+                a = self.fresh('a')
+                env2 = dict(env); env2[a] = pt
+                self._params.add(a)
+                body = self._lam_use(a, pt, ty, env2, d)
+                re_ = None
+                if self.maybe(0.3):
+                    re_ = f'{f} = def({a}: {pt}): {ty} = {self._lam_use(a, pt, ty, env2, d)}'
+                self._params.discard(a)
+                self._throw_ok = saved_t
+                call = f'{f}({self.gen_expr(pt, env, d)})'
+                decl = f'var {f} = def({a}: {pt}): {ty} = {body}'
+            else:
+                body = self.gen_expr(ty, env, d)
+                re_ = f'{f} = def(): {ty} = {self.gen_expr(ty, env, d)}' if self.maybe(0.3) else None
+                self._throw_ok = saved_t
+                call = f'{f}()'
+                decl = f'var {f} = def(): {ty} = {body}'
+            env[r] = ty
+            out = [ind + decl]
+            if re_:
+                out.append(ind + re_)    # BUG-629: a reassigned lambda local is a sig value
+            return out + [f'{ind}var {r}: {ty} = {call}']
+        if k == 'lamstmt':
+            # A statement-body lambda: its block may declare, loop, print -- and WRITE an
+            # enclosing `var`, which makes that var a shared cell. Called once or twice.
+            f = self.fresh('fs')
+            ret = self.pick(PRIMS + (None, None))
+            ind1 = '    ' * (indent + 1)
+            saved_t = self._throw_ok; self._throw_ok = False
+            self._lam_depth += 1
+            env2 = dict(env)
+            body = self.gen_block(env2, indent + 1, budget)
+            if assignable and self.maybe(0.7):
+                w = self.pick(assignable)
+                body.append(f'{ind1}{w} = {self.gen_expr(env[w], env2, d)}')
+            if ret:
+                body.append(f'{ind1}return {self.gen_expr(ret, env2, d)}')
+            self._lam_depth -= 1
+            self._throw_ok = saved_t
+            out = [f'{ind}var {f} = def(): {ret}' if ret else f'{ind}var {f} = def()'] + body
+            if not ret and self.maybe(0.3):
+                saved_t = self._throw_ok; self._throw_ok = False
+                self._lam_depth += 1
+                body2 = self.gen_block(dict(env), indent + 1, budget)
+                self._lam_depth -= 1
+                self._throw_ok = saved_t
+                out += [f'{ind}{f}()', f'{ind}{f} = def()'] + body2   # BUG-629 (void form)
+            for _ in range(self.rng.randint(1, 2)):
+                if ret:
+                    r = self.fresh('r'); env[r] = ret
+                    out.append(f'{ind}var {r}: {ret} = {f}()')
+                else:
+                    out.append(f'{ind}{f}()')
+            return out
+        if k == 'lamlist':
+            # A capturing lambda handed to map / filter / any / all / reduce.
+            lv = self.pick(prim_lists)
+            et = env[lv][5:-1]
+            e = self.fresh('e')
+            x = self.gen_expr(et, env, max(0, d - 1))
+            op = self.pick(('map', 'filter', 'any', 'all', 'reduce'))
+            if op == 'map':
+                name = self.fresh('mp'); env[name] = f'List({et})'
+                return [f'{ind}var {name}: List({et}) = {lv}.map(def({e}) = {e} + {x})']
+            if op == 'filter':
+                name = self.fresh('fi'); env[name] = f'List({et})'
+                return [f'{ind}var {name}: List({et}) = {lv}.filter(def({e}) = {e} != {x})']
+            if op in ('any', 'all'):
+                name = self.fresh('b'); env[name] = 'bool'
+                return [f'{ind}var {name}: bool = {lv}.{op}(def({e}) = {e} == {x})']
+            acc = self.fresh('acc'); name = self.fresh('t'); env[name] = et
+            return [f'{ind}var {name}: {et} = {lv}.reduce({self.lit(et)}, def({acc}, {e}) = {acc} + {e} + {x})']
         if k == 'splitat':
             s_ = self.pick(self.vars_of(env, 'str'))
             name = self.fresh('sp')
@@ -511,6 +605,23 @@ class Gen:
             inc = '    ' * (indent + 1) + f'{ctr} = {ctr} + 1'
             return [f'{ind}var {ctr} = 0', f'{ind}while {ctr} < {lim}'] + body + [inc]
         return [f'{ind}pass']
+
+    def _lam_use(self, a, pt, ty, env, d):
+        """An expression of type `ty` that is sure to USE the lambda parameter `a: pt`
+        (Zig refuses an unused parameter, so a body that happened not to name it would be
+        a generator artefact, not a finding)."""
+        x = self.gen_expr(ty, env, max(0, d - 1))
+        if ty == 'bool':
+            if pt == 'bool':
+                return f'({a} and {x})'
+            return f'(({a} == {self.gen_expr(pt, env, 0)}) or {x})'
+        if ty == 'str':
+            return f'("${{{a}}}" + {x})'
+        if pt == ty:
+            return f'({a} + {x})'
+        if pt == 'str' and ty == 'int':
+            return f'({a}.len + {x})'
+        return f'if({a} == {self.gen_expr(pt, env, 0)}, {x}, {self.lit(ty)})'
 
     # ── program ──────────────────────────────────────────────────────────────
     def _use_unused(self, lines):
@@ -730,6 +841,9 @@ DEFAULT_CAPS = {
     'strmethods': True,  # str methods — upper/lower/trim*/replace/contains/startsWith/len (NOT indexOf; BUG-174)
     'chains': True,      # methods on EXPRESSION results, toString, interpolation (leakgen, 2026-09-09)
     'rawstr': True,      # r'..."...' / r"...'..." with literal backslashes (BUG-620, 2026-10-24)
+    'lambdas': True,     # capturing closures: expression + statement lambdas reading the env,
+                         # writing a shared `var`, handed to map/filter/any/all/reduce (BUG-569),
+                         # and a lambda local REASSIGNED with another lambda (BUG-629)
     'leakclass': True,   # the hand-found "Zebra accepts, Zig rejects" shapes, kept as regression
                          # coverage now they are fixed: BUG-336 split().at/len, BUG-337 getList
                          # as a List, BUG-338 List(JsonValue)(), BUG-339 ctor field initialiser

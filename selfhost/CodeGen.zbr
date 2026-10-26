@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -3850,6 +3850,7 @@ struct Generator
     var lp_renamed           : StrSet   # original names that were renamed in THIS lambda
     var lp_prefix            : str      # the prefix they were renamed with (uid-unique)
     var closure_vars         : StrSet   # local vars holding capture-lambdas → .call() dispatch
+    var sig_lambda_locals    : StrSet   # BUG-629: unannotated lambda locals declared as a sig value
     # Phase 16c additions — ModuleTypes for this module and merged deps.
     # Plumbed now, consumed incrementally: heuristics retire (16c..17).
     var module_types         : ModuleTypes
@@ -3980,6 +3981,7 @@ struct Generator
         .lp_renamed            = StrSet()          # BUG-233
         .lp_prefix             = ""
         .closure_vars          = StrSet()
+        .sig_lambda_locals     = StrSet()
         .module_types          = module_types
         .dep_types             = dep_types
         .infer_ctx             = nil
@@ -7961,6 +7963,11 @@ struct Generator
         # emission paths) falls back to the name-based over-approximation.
         var ms: StrSet = scanMutations(stmts, .infer_ctx)
         mut_set = ms
+        # BUG-629: sig_lambda_locals is per FUNCTION -- a module var or a later function's
+        # local may share the name, and a stale entry turned its plain `h = 5` into `.from(5)`.
+        var saved_sll: StrSet = sig_lambda_locals
+        if fn_mut_all == nil
+            sig_lambda_locals = StrSet()
         var saved_fma = fn_mut_all
         if fn_mut_all == nil
             fn_mut_all = ms
@@ -8027,6 +8034,7 @@ struct Generator
             eei -= 1
         mut_set = saved_ms
         fn_mut_all = saved_fma
+        sig_lambda_locals = saved_sll
         fn_boxed = saved_fb
 
     # BUG-569 step 4. `var counter = 0` shared with a closure becomes
@@ -8036,6 +8044,25 @@ struct Generator
     # `@TypeOf` of the hidden local when inference has nothing.
     def emitBoxedLocal(n: DeclVar)
         var hid: str = "_zbr_bx_" + n.name
+        # BUG-629: a lambda local a closure shares is boxed because something REBINDS it, so
+        # the cell holds a sig value, as genLocalVar's unboxed reassigned lambda does.
+        if n.type_ == nil and n.init_expr != nil
+            if n.init_expr! is Expr.lambda as blam
+                if lambdaSigNameable(blam)
+                    writeIndent()
+                    w.emit("const " + hid + ": ")
+                    emitLambdaSigType(blam)
+                    w.emit(" = .from(")
+                    genExpr(n.init_expr!)
+                    w.emit(");\n")
+                    writeIndent()
+                    w.emit("const ")
+                    emitName(n.name)
+                    w.emit(" = _zbr_cell(")
+                    emitLambdaSigType(blam)
+                    w.emit(", " + hid + ");\n")
+                    sig_lambda_locals.add(n.name)
+                    return
         var hn = n except
             name = hid
         var bty: Type_ = Type_.unknown_
@@ -8054,6 +8081,23 @@ struct Generator
         w.emit("const ")
         emitName(n.name)
         w.emit(" = _zbr_cell(" + bt + ", " + hid + ");\n")
+
+    # BUG-629: `_ZbrFn(fn(P...) R)` for a lambda lambdaSigNameable accepts -- the type an
+    # annotated `var h: def(P): R` gets.
+    def emitLambdaSigType(lam: ExprLambda)
+        w.emit("_ZbrFn(fn(")
+        var li = 0
+        while li < lam.params.len
+            if li > 0
+                w.emit(", ")
+            genType(lam.params.at(li).type_!)
+            li += 1
+        w.emit(") ")
+        if lam.return_type as lret
+            genType(lret)
+        else
+            w.emit("void")
+        w.emit(")")
 
     # True when genLocalVar will emit an inline constraint-check block for a
     # local declared with this type — a named / parametric alias with a `where`
@@ -8233,6 +8277,7 @@ struct Generator
         atomic_locals.removeOne(name)
         thread_pool_locals.removeOne(name)
         closure_vars.removeOne(name)
+        sig_lambda_locals.removeOne(name)
         dynlib_vars.removeOne(name)
         datetime_vars.removeOne(name)
         var tp: int = 0
@@ -8414,6 +8459,21 @@ struct Generator
                     # going through genIdent, so it needs the prefix applied explicitly.
                     var zn_target: str = topLevelFnZigName(fid.name)
                     w.emit("var " + zn_fnref + ": _ZbrFn(@TypeOf(" + zn_target + ")) = .from(" + zn_target + ");\n")
+                    return
+            # BUG-629: a reassigned, unannotated lambda local is a sig value, exactly as if
+            # it were declared `var h: def(P): R`. Each lambda is its own Zig type (a fn,
+            # or a closure struct), so the reassignment's `.from(...)` needs a slot of the
+            # sig type to land in. A lambda whose signature cannot be named is refused at
+            # the assignment by the checker (lambdaSigNameable).
+            if n.init_expr! is Expr.lambda as rlam
+                if lambdaSigNameable(rlam)
+                    writeIndent()
+                    w.emit("var " + zigSafeName(n.name) + ": ")
+                    emitLambdaSigType(rlam)
+                    w.emit(" = .from(")
+                    genExpr(n.init_expr!)
+                    w.emit(");\n")
+                    sig_lambda_locals.add(n.name)
                     return
         # Interface coercion: `var x: IFace = ClassCtor()` or `var x: ^IFace = ClassCtor()`
         if n.init_expr != nil
@@ -9740,6 +9800,14 @@ struct Generator
                 genSigValue(a.value)
                 w.emit(";\n")
                 return
+        # BUG-629: a void statement lambda has no inferred fn type, but its local was
+        # declared as a sig value all the same.
+        if a.op == AssignOp.assign
+            if a.target is Expr.ident as slt
+                if sig_lambda_locals.contains_(slt.name)
+                    genSigValue(a.value)
+                    w.emit(";\n")
+                    return
         # fn-ref reassignment: `pred = isDigit` → `pred = .from(isDigit)`. A mutable
         # fn-ref local is a sig value (`_ZbrFn`) since 2026-09-30, like every other
         # callable slot, so the function converts rather than decaying to a pointer.

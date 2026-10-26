@@ -36,6 +36,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A lambda variable can be reassigned without a type annotation (BUG-629).**
+  `var h = def(x: int): int = x + k` then `h = def(x: int): int = x - k` failed inside zig;
+  the variable is now a function value as if declared `var h: def(int): int`, also when
+  another closure reads it. A lambda whose type cannot be named (no return type on an
+  expression lambda, an untyped parameter, or a `def()` body that returns a value without
+  declaring it) is refused at the reassignment, naming both fixes.
 - **An `int` passed, assigned or returned into a sized integer slot is a compile error naming
   the conversion (BUG-534).** `f(n)` into a `uint64` parameter (an `extern`'s included), `var x:
   int32 = big`, `return u` from an `int` function: each failed inside zig ("expected type 'u64',
