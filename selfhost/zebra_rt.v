@@ -1874,3 +1874,65 @@ fn zfmt_val(zf_out &u8, zf_cap int, zf_pos int, zf_x f64, zf_prec int) int {
 	}
 	return zf_pos + zf_len
 }
+
+// -- zshow_f: a bare float hole's spelling, the Zig backend's (2026-10-26) --
+// A hole with no spec (`${x}`) and a float's toString go through the Zig backend's _zbr_show_float:
+// std.fmt's `{d}` -- the shortest digits that read back to the value, never an exponent -- plus
+// ".0" when the value is whole and finite; nan, -nan, inf, -inf as they are. V's f64.str() gives the
+// same shortest digits but switches to an exponent past a magnitude ("1e+20", "1e-07"), so the
+// digits are taken from it and the exponent is expanded into plain digits here. One allocation for
+// V's string and one for the result; the fixed-precision holes take zfmt_f, this is parity only.
+pub fn zshow_f(zf_x f64) string {
+	if zf_x != zf_x {
+		return if zfmt_signbit(zf_x) { '-nan' } else { 'nan' }
+	}
+	if zf_x > 1.7976931348623157e308 {
+		return 'inf'
+	}
+	if zf_x < -1.7976931348623157e308 {
+		return '-inf'
+	}
+	zf_s := zf_x.str()
+	zf_epos := zf_s.index_u8(`e`)
+	if zf_epos < 0 {
+		// no exponent: V's digits are the plain digits; make sure a whole value ends in ".0"
+		if zf_s.index_u8(`.`) < 0 {
+			return zf_s + '.0'
+		}
+		return zf_s
+	}
+	// d[.ddd]e[+-]NN -> the point moved by NN places
+	mut zf_mant := zf_s[..zf_epos]
+	zf_exp := zf_s[zf_epos + 1..].int()
+	mut zf_neg := false
+	if zf_mant.len > 0 && zf_mant[0] == `-` {
+		zf_neg = true
+		zf_mant = zf_mant[1..]
+	}
+	mut zf_digits := ''
+	mut zf_point := zf_mant.len
+	zf_dot := zf_mant.index_u8(`.`)
+	if zf_dot >= 0 {
+		zf_digits = zf_mant[..zf_dot] + zf_mant[zf_dot + 1..]
+		zf_point = zf_dot
+	} else {
+		zf_digits = zf_mant
+	}
+	// shortest digits carry no trailing zeros in the fraction; drop any V left ("1.0e+20")
+	for zf_digits.len > zf_point && zf_digits[zf_digits.len - 1] == `0` {
+		zf_digits = zf_digits[..zf_digits.len - 1]
+	}
+	zf_newpoint := zf_point + zf_exp
+	mut zf_out := ''
+	if zf_newpoint <= 0 {
+		zf_out = '0.' + '0'.repeat(-zf_newpoint) + zf_digits
+	} else if zf_newpoint >= zf_digits.len {
+		zf_out = zf_digits + '0'.repeat(zf_newpoint - zf_digits.len) + '.0'
+	} else {
+		zf_out = zf_digits[..zf_newpoint] + '.' + zf_digits[zf_newpoint..]
+	}
+	if zf_neg {
+		return '-' + zf_out
+	}
+	return zf_out
+}

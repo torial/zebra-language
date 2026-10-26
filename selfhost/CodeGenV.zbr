@@ -3409,6 +3409,10 @@ class VGen
                     if spec != "" and isFixedFloatSpec(spec) and .vTypeOf(ex) == "f64"
                         out = out + "\${zfmt_one(f64(" + .exprStr(ex) + "), " + spec.substring(1, 2) + ")}"
                         i = i + 1   # the spec, taken with its hole
+                    else if .vTypeOf(ex) == "f64"
+                        # a bare float hole: the Zig backend's _zbr_show_float spelling (the
+                        # shortest digits, never an exponent, ".0" when whole), not V's str()
+                        out = out + "\${zshow_f(" + .exprStr(ex) + ")}"
                     else
                         out = out + "\${" + .exprStr(ex) + "}"
                 on StringPart.format as f
@@ -4042,7 +4046,9 @@ class VGen
             if name == "tryRecv" and args.count() == 0: return "zchan_try_recv[" + et + "](" + obj + ")"
             if name == "recvTimeout" and args.count() == 1: return "zchan_recv_timeout[" + et + "](" + obj + ", f64(" + .argsStr(args) + "))"
             if name == "close" and args.count() == 0: return obj + ".close()"
-        if name == "toString" and args.count() == 0: return obj + ".str()"
+        if name == "toString" and args.count() == 0
+            if rtype == "f64": return "zshow_f(" + obj + ")"   # a float's toString: the Zig backend's spelling
+            return obj + ".str()"
         if name == "concat" and args.count() == 1: return "(" + obj + " + " + .argsStr(args) + ")"
         if name == "isNumeric" and args.count() == 0: return "zstr_is_numeric(" + obj + ")"
         if name == "toFloat" and args.count() == 0: return "f64(" + obj + ")"

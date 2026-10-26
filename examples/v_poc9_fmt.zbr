@@ -10,13 +10,12 @@
 # the slow path, printed beside them so the two paths read alike.
 
 # The positive control for the runtime's naming rule (v_backend_poc.md item 22, 2026-10-26): module
-# consts named after the formatter's former locals. The runtime file is compiled into this program's
+# consts named after the formatter's former locals (those the rest of the runtime does not also use
+# bare: `buf` and `pos` are still bare elsewhere in zebra_rt.v, the docket's). The runtime file is compiled into this program's
 # module, and V 0.5.2 silently miscompiles a runtime local that shares a const's name; with every
 # runtime local prefixed this prints, and a bare name returning to zebra_rt.v fails the C stage here.
 const tmp: int = 7
-const buf: str = "b"
 const tp: int = 9
-const pos: int = 2
 const hole: int = 1
 const at: int = 4
 
@@ -88,4 +87,25 @@ def main()
     print("carry2|${c7:.2f}|${c8:.2f}|${c7:.0f}|${c8:.0f}")
     # a mixed interpolation's float holes go the same way (one at a tie, one carrying)
     print("mixed|${name}|${t2:.2f}|${k}|${c3:.2f}|${c5:.1f}")
-    print("consts|${tmp}|${buf}|${tp}|${pos}|${hole}|${at}")
+    print("consts|${tmp}|${tp}|${hole}|${at}")
+    # a BARE float hole (no spec) and a float's toString: the Zig backend's {d} spelling -- the
+    # shortest round-trip digits, never an exponent, ".0" when whole (V's own str() says 1e+20)
+    var b1: float = 100000000000000000000.0
+    var b2: float = 1.0 / 3.0
+    var b3: float = 123456789012345680000.0
+    var b4: float = 0.0 - 0.00000000015
+    var b5: float = 2.0
+    var b6: float = 0.1
+    var b7: float = 12345.678
+    print("bare|${b1}|${g}|${b2}|${nan}|${inf}|${ninf}|${negz}|${b3}|${b4}|${b5}|${b6}|${b7}|${tiny}")
+    var b8: float = 1.0
+    var i2: int = 0
+    while i2 < 300
+        b8 = b8 * 10.0
+        i2 = i2 + 1
+    var b8s: str = "${b8}"
+    print("bare300|" + b8s.len.toString() + "|" + b8s.substring(0, 5) + "|" + b8s.substring(b8s.len - 3, b8s.len))
+    print("tostr|" + b1.toString() + "|" + b5.toString() + "|" + b4.toString())
+    # negative zero itself (0.0 - 0.0 is positive zero): bare, at .1f, and through toString
+    var nz: float = 0.0 * (0.0 - 1.0)
+    print("negzero|${nz}|${nz:.1f}|" + nz.toString())
