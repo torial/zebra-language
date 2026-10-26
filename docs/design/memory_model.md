@@ -297,6 +297,21 @@ steady state (a longer run at a bigger live heap would show the collection cycle
 host-boundary hazard above is UNTESTED, because the V host's rows never keep a Zebra pointer past
 the frame. `VGC=boehm` on the row script repeats it.
 
+**Pauses, measured (Fable, 2026-10-26).** The flat working set above hid the pauses, because
+the budget guard needs thirty bad frames in a row. With a gc-pause line on the V profiler
+(`GC_get_full_gc_total_time` per window) and a worst-frame figure beside the frame line, the
+same autoplay shows a stop-the-world collection **every 1-2 s, 31-93 ms (median ~47) at a 69-125
+MB heap**, plus one of 297 ms in 40 s. Each pause drops one or more frames. A microbenchmark
+against a built live set (explicit full collections, min of five) fits
+`pause_ms ≈ 0.08 per 1,000 live pointer-bearing objects + 0.46 per scanned MB + 0.05 per heap MB`.
+Unscanned payloads cost nothing, since V allocates `[]u8` as atomic. The fit holds to about a
+million objects and is superlinear beyond that: a kept array of 4M pointers overflows the mark
+stack, at 817 ms min and 2.2 s median. Right after an allocation burst the max runs 2-4x the min.
+The full table is in the wiki, `pages/fable/fieldnotes_boehm-pause_2026-10-26.md`. This is the
+"pauses nobody reports" failure of §6b, now reported. It argues for the handle ABI plus counting
+over a collector inside the frame. The open alternative is Boehm's incremental mode, whose write
+barriers have not been measured.
+
 **Why `-gc none` drifts about five times faster -- apportioned by section (Fable, 2026-10-23).**
 Per 2 s window of the engine's plain run, gross (bytes charged before any free) and net. The V
 column samples Boehm's total at every profiler section boundary (three windows; with `-gc none`
