@@ -44,7 +44,9 @@ def main()
     var g: float = 0.123456
     print("one|${r:.1f}|${g:.4f}")
     print("ten|${r:.1f}|${g:.1f}|${r:.1f}|${g:.1f}|${r:.4f}|${g:.4f}|${r:.4f}|${g:.4f}|${r:.4f}|${g:.1f}")
-    # ties and near-ties: 0.125 is exact in binary, 2.675 is 2.67499...
+    # ties and near-ties under the language's rule since 2026-10-26 (exact binary, ties to even:
+    # Python's digits): 0.125 is an exact tie -> 0.12 (even), 2.675 is 2.67499... -> 2.67,
+    # 0.5 -> 0, 1.5 -> 2, 2.5 -> 2
     var t1: float = 0.125
     var t2: float = 2.675
     var t3: float = 0.5
@@ -87,10 +89,9 @@ def main()
     print("slow|${k}|${name}|${r}|${r:.1f}")
     # a call in a hole
     print("call|${mk(2.5):.2f}|${mk(r) * 2.0:.1f}")
-    # the tie rule's carries and signs: 1.005, 0.045 and 9.995 are binary values just under their
-    # decimal ties, which Zig rounds UP from their shortest digits (1.01, 0.05, 10.00 with a carry;
-    # C's %.2f would say 1.00, 0.04, 9.99), 99.5 and 0.5 are exact ties (up: half away from zero),
-    # -2.675 keeps its sign; 1e16 at .0f is an exact integer (V's own .0f printed "10" for it on 0.5.2)
+    # carries and signs: 1.005, 0.045 and 9.995 are binary values just under their decimal ties and
+    # round down (1.00, 0.04, 9.99); 99.5 and 0.5 are exact ties and go to even (100, 0); -2.675
+    # keeps its sign (-2.67); 1e16 at .0f is an exact integer (V's own .0f printed "10" for it on 0.5.2)
     var c1: float = 1.005
     var c2: float = 0.045
     var c3: float = 9.995
@@ -98,10 +99,20 @@ def main()
     var c5: float = 0.0 - 2.675
     var c6: float = 10000000000000000.0
     print("carry|${c1:.2f}|${c2:.2f}|${c3:.2f}|${c4:.0f}|${t3:.0f}|${c5:.2f}|${c6:.0f}")
-    # a carry through the sign and one through the point
+    # the sign and the point: -9.995 and 0.995 lie under their ties (-9.99, 0.99); at .0f they are
+    # no ties (-10, 1); and the Zig fixture's own two: 1.45 holds 1.4499... (1.4), 9.996 carries (10.00)
     var c7: float = 0.0 - 9.995
     var c8: float = 0.995
-    print("carry2|${c7:.2f}|${c8:.2f}|${c7:.0f}|${c8:.0f}")
+    var c9: float = 1.45
+    var c10: float = 9.996
+    print("carry2|${c7:.2f}|${c8:.2f}|${c7:.0f}|${c8:.0f}|${c9:.1f}|${c10:.2f}")
+    # exact ties at every parity, .0f and .2f: 0.5 2.5 -> even down, 1.5 3.5 -> even up; 0.125 ->
+    # 0.12, 0.375 -> 0.38; the negative halves mirror (-0.5 -> -0, -1.5 -> -2)
+    var h1: float = 3.5
+    var h2: float = 0.375
+    var h3: float = 0.0 - 0.5
+    var h4: float = 0.0 - 1.5
+    print("halves|${t3:.0f}|${t4:.0f}|${t5:.0f}|${h1:.0f}|${t1:.2f}|${h2:.2f}|${h3:.0f}|${h4:.0f}")
     # a mixed interpolation's float holes go the same way (one at a tie, one carrying)
     print("mixed|${name}|${t2:.2f}|${k}|${c3:.2f}|${c5:.1f}")
     print("consts|${tmp}|${tp}|${hole}|${at}|${buf}|${pos}|${m}|${out}|${x}|${c}|${r}|${n}|${p}|${old}|${i}|${s}|${k}|${b}|${l}")

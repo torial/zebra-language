@@ -2435,6 +2435,29 @@ Zig's answer too. Exact while ulp(x) < 10^-(N+1), i.e. |x| < 2^52 / 10^(N+1)
 (`zfmt_bounds`); beyond that the C library's exact digits, where Zig pads the
 shortest digits with zeros (a 2^62 at `.1f` differs; a GUI never gets there).
 
+**The rule changed on 2026-10-26, and the V side owns its formatter.** Sean
+decided, on Opus's and my joint recommendation, that a float at a precision
+rounds the exact binary value with ties to even -- Python's digits (2.675 ->
+2.67, 0.125 -> 0.12, 2.5 -> 2, 1.45 -> 1.4) -- and main's 8f8bd14 made the
+Zig backend do it (`_zbr_ffmt`, verified against Python over 3,000 outputs).
+The tie rule above, which matched the old spelling, was replaced by
+`zfmt_fixed`: the double taken apart (x = m * 2^e), the integer part as a
+40-limb base-2^32 integer (m << e, up to 2^1024), the fraction's digits one
+at a time by multiplying the low -e bits by ten, rounded at N places half to
+even with the whole remainder known. No C runtime takes part and no
+magnitude bound remains: Opus showed that legacy msvcrt (what tcc links on
+Windows) prints only 17 exact significant digits, so a test that read the
+expansion through `%.Nf` called 1.05, 1.45, 1.55, 1.95, 10.15, 10.35, 10.65
+and 10.85 exact ties, and msvcrt's own rounding of 1.45 at .1f is 1.5 where
+Python's is 1.4. `tools/float_oracle.py` holds the runtime against Python's
+format() over 2,485 rows (355 values x seven precisions: every exact-half
+parity, those eight near-ties, 1e300 and 5e-324, the smallest normal and
+the largest double, -0.0, 2^53 and its neighbours, 300 seeded random
+values of five kinds): 0 rows differ; against the old rule 306 did, and
+`--control` flips one expectation and must see it. The witness carries the
+Zig fixture's own rows (1.45 at .1f, 9.996 at .2f) and the halves at every
+parity, pinned against a fresh Zig control from the merged compiler.
+
 **The witness** is `examples/v_poc9_fmt.zbr` through `tools/v_check.sh`'s
 example lane (byte-for-byte against a fresh Zig control): the ties (0.125,
 2.675, 0.5/1.5/2.5 at `.0f`), the near-ties that round up from their shortest

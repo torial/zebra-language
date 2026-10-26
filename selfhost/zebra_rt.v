@@ -1698,25 +1698,25 @@ fn zbr_panic(zr_msg string) {
 // ten floats each and two hundred a frame, cost 30 MB a window that way (the memory-model note,
 // §6a). A string the buffer cannot hold is formatted again into a heap buffer of its size.
 //
-// The spelling is the Zig backend's (std.fmt's `{d:.N}`: the shortest round-trip digits, rounded
-// half away from zero at N places; nan, -nan, inf, -inf), not the C library's: C's `%.Nf` rounds
-// the exact binary value, so the two differ exactly when the shortest digits end in a 5 at place
-// N+1 and the binary value lies below that tie (2.675 is 2.67499...: Zig 2.68, C 2.67), and
-// msvcrt spells inf as "1.$". The rule: format at N+1 places; when the last digit is 5 and that
-// decimal parses back to x, it IS the shortest digits' tie and the N-place prefix is rounded up by
-// hand; else `%.Nf` is Zig's answer too. Exact while ulp(x) < 10^-(N+1), i.e. |x| < 2^52 / 10^(N+1)
-// (zfmt_bounds); beyond that the C library's digits (Zig pads the shortest digits with zeros
-// there). V's own `${x:.Nf}` is a third spelling (2.67, +inf, -+inf, and "10" for 1e16 at .0f on
-// 0.5.2), which is why the emitter routes every fixed-precision float hole through zfmt_one, in
-// a mixed interpolation too (one allocation per hole there, as before, but Zig's digits).
+// The spelling is the language's rule since 2026-10-26 (Sean's decision on Opus's and my joint
+// recommendation; the Zig backend's _zbr_ffmt is the reference, verified against Python's format()
+// over 3,000 outputs): the EXACT binary value rounded at N places with ties to even -- Python's
+// digits (2.675 -> 2.67, 0.125 -> 0.12, 2.5 -> 2, 1.45 -> 1.4) -- and nan, -nan, inf, -inf. Until
+// that day the Zig backend rounded the shortest digits half away from zero and this runtime
+// matched it (2.68). No C runtime takes part: legacy msvcrt (what tcc links on Windows) prints
+// only 17 exact significant digits and so rounds a near-tie that sits closer than that to the
+// decimal tie as if it were on it (1.45 -> 1.5; 10.35 -> 10.4), and the UCRT differs from it on
+// exact halves. zfmt_fixed below takes the double apart (x = m * 2^e) and produces the digits
+// itself; it also spells inf as inf where msvcrt says "1.$". V's own `${x:.Nf}` is a third
+// spelling (2.67 but +inf, -+inf, and "10" for 1e16 at .0f on 0.5.2), which is why the emitter
+// routes every fixed-precision float hole through zfmt_val, in a mixed interpolation too (one
+// allocation per hole there, as before, but the language's digits).
 //
 // Every local and parameter here is prefixed zf_: this file is compiled into the same module as
 // the emitted program, and a local that shares a name with one of the program's module consts
 // miscompiles silently under V 0.5.2 (an engine module has a const `tmp`; 2026-10-26).
 fn C.snprintf(buf &char, n usize, fmt &char, ...) int
 
-const zfmt_specs = ['%.0f', '%.1f', '%.2f', '%.3f', '%.4f', '%.5f', '%.6f', '%.7f', '%.8f', '%.9f', '%.10f']
-const zfmt_bounds = [450359962737049.6, 45035996273704.96, 4503599627370.496, 450359962737.0496, 45035996273.70496, 4503599627.370496, 450359962.7370496, 45035996.27370496, 4503599.627370496, 450359.9627370496]
 
 pub fn zfmt_f(zf_fmt string, zf_v []f64) string {
 	mut zf_buf := [1024]u8{}
@@ -1857,14 +1857,7 @@ fn zfmt_val(zf_out &u8, zf_cap int, zf_pos int, zf_x f64, zf_prec int) int {
 	} else if zf_x < -1.7976931348623157e308 {
 		zf_len = zfmt_lit(zf_tp, '-inf')
 	} else {
-		zf_len = C.snprintf(&char(zf_tp), 400, &char(zfmt_specs[zf_prec + 1].str), zf_x)
-		zf_ax := if zf_x < 0 { -zf_x } else { zf_x }
-		if zf_len > 0 && zf_len < 400 && zf_tmp[zf_len - 1] == `5` && zf_ax < zfmt_bounds[zf_prec]
-			&& unsafe { tos(zf_tp, zf_len) }.f64() == zf_x {
-			zf_len = zfmt_round_up(zf_tp, zf_len - 1)
-		} else {
-			zf_len = C.snprintf(&char(zf_tp), 400, &char(zfmt_specs[zf_prec].str), zf_x)
-		}
+		zf_len = zfmt_fixed(zf_tp, 400, zf_x, zf_prec)
 	}
 	if zf_len > 400 {
 		zf_len = 400
@@ -1873,6 +1866,254 @@ fn zfmt_val(zf_out &u8, zf_cap int, zf_pos int, zf_x f64, zf_prec int) int {
 		zfmt_put(zf_out, zf_cap, zf_pos + zf_k, zf_tmp[zf_k])
 	}
 	return zf_pos + zf_len
+}
+
+// -- zfmt_fixed: the exact fixed-point digits of a double, half to even (2026-10-26) --
+// x = m * 2^e with m the 53-bit significand (the hidden bit set for a normal; a subnormal is its
+// fraction over 2^1074). The integer part is m << e when e >= 0 (a big integer: up to 2^1024) and
+// m >> -e otherwise (under 2^53); the fraction is the low -e bits of m over 2^-e, and its decimal
+// digits come one at a time by multiplying that big integer by ten and taking what crosses the
+// point. N+1 digits are taken and the remainder's being zero is known, so the rounding at N
+// places is exact: up above the half, down below it, to even on it. Every digit is produced here;
+// no C runtime, no magnitude bound: 1e300 at .1f is its 301 digits.
+const zfmt_limbs = 40 // 40 x 32 bits = 1280: 2^1024 and a 1074-bit fraction both fit
+
+struct ZfBig {
+mut:
+	limb [zfmt_limbs]u32
+}
+
+fn zfbig_is_zero(zf_b &ZfBig) bool {
+	for zf_i in 0 .. zfmt_limbs {
+		if zf_b.limb[zf_i] != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// b = v << s, for v under 2^53 and s under 1100
+fn zfbig_set_shifted(mut zf_b ZfBig, zf_v u64, zf_s int) {
+	for zf_i in 0 .. zfmt_limbs {
+		zf_b.limb[zf_i] = 0
+	}
+	zf_words := zf_s / 32
+	zf_bits := u64(zf_s % 32)
+	zf_lo := zf_v & 0xffffffff
+	zf_hi := zf_v >> 32
+	zf_p0 := zf_lo << zf_bits // under 2^64
+	zf_p1 := zf_hi << zf_bits // under 2^53
+	if zf_words < zfmt_limbs {
+		zf_b.limb[zf_words] = u32(zf_p0 & 0xffffffff)
+	}
+	if zf_words + 1 < zfmt_limbs {
+		zf_b.limb[zf_words + 1] = u32(((zf_p0 >> 32) + (zf_p1 & 0xffffffff)) & 0xffffffff)
+	}
+	if zf_words + 2 < zfmt_limbs {
+		zf_b.limb[zf_words + 2] = u32((((zf_p0 >> 32) + (zf_p1 & 0xffffffff)) >> 32) + (zf_p1 >> 32))
+	}
+}
+
+// b *= 10
+fn zfbig_mul10(mut zf_b ZfBig) {
+	mut zf_carry := u64(0)
+	for zf_i in 0 .. zfmt_limbs {
+		zf_t := u64(zf_b.limb[zf_i]) * 10 + zf_carry
+		zf_b.limb[zf_i] = u32(zf_t & 0xffffffff)
+		zf_carry = zf_t >> 32
+	}
+}
+
+// the bits of b at and above position k, as a small number (under 16 here), and those bits cleared
+fn zfbig_take_above(mut zf_b ZfBig, zf_k int) int {
+	zf_words := zf_k / 32
+	zf_bits := zf_k % 32
+	mut zf_d := u64(0)
+	if zf_words < zfmt_limbs {
+		zf_d = u64(zf_b.limb[zf_words]) >> u64(zf_bits)
+		zf_b.limb[zf_words] &= u32((u64(1) << u64(zf_bits)) - 1)
+	}
+	if zf_words + 1 < zfmt_limbs {
+		zf_d |= u64(zf_b.limb[zf_words + 1]) << u64(32 - zf_bits)
+		zf_b.limb[zf_words + 1] = 0
+	}
+	return int(zf_d)
+}
+
+// the decimal digits of b into out (most significant first), by repeated division by 10^9
+fn zfbig_decimal(zf_b ZfBig, zf_out &u8) int {
+	mut zf_w := zf_b
+	mut zf_n := zfmt_limbs
+	for zf_n > 0 && zf_w.limb[zf_n - 1] == 0 {
+		zf_n--
+	}
+	if zf_n == 0 {
+		unsafe {
+			zf_out[0] = `0`
+		}
+		return 1
+	}
+	mut zf_chunks := [40]u32{} // base-10^9 chunks, least significant first
+	mut zf_nc := 0
+	for zf_n > 0 {
+		mut zf_rem := u64(0)
+		mut zf_i := zf_n - 1
+		for zf_i >= 0 {
+			zf_cur := (zf_rem << 32) | u64(zf_w.limb[zf_i])
+			zf_w.limb[zf_i] = u32(zf_cur / 1000000000)
+			zf_rem = zf_cur % 1000000000
+			zf_i--
+		}
+		zf_chunks[zf_nc] = u32(zf_rem)
+		zf_nc++
+		for zf_n > 0 && zf_w.limb[zf_n - 1] == 0 {
+			zf_n--
+		}
+	}
+	mut zf_len := 0
+	mut zf_c := zf_nc - 1
+	for zf_c >= 0 {
+		mut zf_v := zf_chunks[zf_c]
+		mut zf_digits := [9]u8{}
+		mut zf_nd := 0
+		for zf_v > 0 {
+			zf_digits[zf_nd] = u8(48 + zf_v % 10)
+			zf_v /= 10
+			zf_nd++
+		}
+		if zf_c == zf_nc - 1 {
+			// the top chunk: its own digits, no padding
+			mut zf_j := zf_nd - 1
+			for zf_j >= 0 {
+				unsafe {
+					zf_out[zf_len] = zf_digits[zf_j]
+				}
+				zf_len++
+				zf_j--
+			}
+		} else {
+			for zf_j in 0 .. 9 - zf_nd {
+				unsafe {
+					zf_out[zf_len] = `0`
+				}
+				zf_len++
+			}
+			mut zf_j := zf_nd - 1
+			for zf_j >= 0 {
+				unsafe {
+					zf_out[zf_len] = zf_digits[zf_j]
+				}
+				zf_len++
+				zf_j--
+			}
+		}
+		zf_c--
+	}
+	return zf_len
+}
+
+// the exact fixed-point spelling of a finite x at prec places into out (cap bytes); returns the length
+fn zfmt_fixed(zf_out &u8, zf_cap int, zf_x f64, zf_prec int) int {
+	zf_bits := unsafe { *(&u64(&zf_x)) }
+	zf_neg := (zf_bits >> 63) != 0
+	zf_expf := int((zf_bits >> 52) & 0x7ff)
+	zf_frac := zf_bits & 0xfffffffffffff
+	mut zf_m := zf_frac
+	mut zf_e := 0
+	if zf_expf == 0 {
+		zf_e = -1074
+	} else {
+		zf_m = zf_frac | (u64(1) << 52)
+		zf_e = zf_expf - 1075
+	}
+	// the integer part and the fraction
+	mut zf_int := ZfBig{}
+	mut zf_fr := ZfBig{}
+	mut zf_k := 0 // the fraction's bit count
+	if zf_m == 0 {
+		// zero: nothing to do
+	} else if zf_e >= 0 {
+		zfbig_set_shifted(mut zf_int, zf_m, zf_e)
+	} else {
+		zf_k = -zf_e
+		if zf_k < 64 {
+			zfbig_set_shifted(mut zf_int, zf_m >> u64(zf_k), 0)
+			zfbig_set_shifted(mut zf_fr, zf_m & ((u64(1) << u64(zf_k)) - 1), 0)
+		} else {
+			zfbig_set_shifted(mut zf_fr, zf_m, 0)
+		}
+	}
+	// the digits: the integer part's, then prec + 1 of the fraction's
+	mut zf_digits := [400]u8{}
+	mut zf_nint := zfbig_decimal(zf_int, unsafe { &zf_digits[0] })
+	mut zf_n := zf_nint
+	for _ in 0 .. zf_prec + 1 {
+		mut zf_d := 0
+		if zf_k > 0 {
+			zfbig_mul10(mut zf_fr)
+			zf_d = zfbig_take_above(mut zf_fr, zf_k)
+		}
+		zf_digits[zf_n] = u8(48 + zf_d)
+		zf_n++
+	}
+	// the rounding at prec places: the extra digit and whether anything follows it
+	zf_extra := int(zf_digits[zf_n - 1]) - 48
+	zf_n--
+	zf_rest := zf_k > 0 && !zfbig_is_zero(&zf_fr)
+	mut zf_up := false
+	if zf_extra > 5 {
+		zf_up = true
+	} else if zf_extra == 5 {
+		if zf_rest {
+			zf_up = true
+		} else {
+			// an exact tie: to even
+			zf_last := if zf_n > 0 { int(zf_digits[zf_n - 1]) - 48 } else { 0 }
+			zf_up = zf_last % 2 == 1
+		}
+	}
+	if zf_up {
+		mut zf_i := zf_n - 1
+		for zf_i >= 0 {
+			if zf_digits[zf_i] == `9` {
+				zf_digits[zf_i] = `0`
+				zf_i--
+			} else {
+				zf_digits[zf_i]++
+				break
+			}
+		}
+		if zf_i < 0 {
+			// a carry out of the top digit: shift right and lead with a 1
+			mut zf_j := zf_n
+			for zf_j > 0 {
+				zf_digits[zf_j] = zf_digits[zf_j - 1]
+				zf_j--
+			}
+			zf_digits[0] = `1`
+			zf_n++
+			zf_nint++
+		}
+	}
+	// the spelling: sign, the integer digits, the point, the fraction digits
+	mut zf_len := 0
+	if zf_neg {
+		zfmt_put(zf_out, zf_cap, zf_len, `-`)
+		zf_len++
+	}
+	for zf_i in 0 .. zf_nint {
+		zfmt_put(zf_out, zf_cap, zf_len, zf_digits[zf_i])
+		zf_len++
+	}
+	if zf_prec > 0 {
+		zfmt_put(zf_out, zf_cap, zf_len, `.`)
+		zf_len++
+		for zf_i in zf_nint .. zf_n {
+			zfmt_put(zf_out, zf_cap, zf_len, zf_digits[zf_i])
+			zf_len++
+		}
+	}
+	return zf_len
 }
 
 // -- zshow_f: a bare float hole's spelling, the Zig backend's (2026-10-26) --
