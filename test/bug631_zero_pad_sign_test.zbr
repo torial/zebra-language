@@ -1,0 +1,8 @@
+# BUG-631: the `0` flag pads AFTER the sign, as Python and C do -- `${-5:04d}` is `-005`,
+# not `00-5`. An explicit fill and alignment (`${n:0>4}`) is a fill, not the flag, and keeps
+# its meaning. Expected values are Python's format() for the same specs.
+def main()
+    var n = -5
+    var d = -2.5
+    var h = 0.5
+    print("bug631: [${n:04d}] [${5:04d}] [${n:04}] [${n:0>4}] [${d:06.1f}] [${d:06}] [${-123456:04d}] [${h:06.2f}]")

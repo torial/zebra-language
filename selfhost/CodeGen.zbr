@@ -91,10 +91,12 @@ def parseFmtSpec(spec: str): List(str)
     # Skip alternate form #
     if i < spec.len and spec[i] == c'#'
         i = i + 1
-    # Zero-pad
+    # Zero-pad. The `0` flag is SIGN-AWARE (`${-5:04d}` is `-005`), which Zig's padding is
+    # not, so it reads back as the align "=" -- Python's name for "pad after the sign" --
+    # and zigFmtSpec / floatPrecArgs / zeroPadArgs each decide what that means (BUG-631).
     if i < spec.len and spec[i] == c'0' and align_s == ""
         fill_s = "0"
-        align_s = ">"
+        align_s = "="
         i = i + 1
     # Width digits
     var w_start: int = i
@@ -173,6 +175,10 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
                 else
                     pass
     var has_opts: bool = fill_s != "" or align_s != "" or width_s != "" or prec_s != ""
+    if align_s == "="
+        # The holes where the sign matters went to zeroPadArgs / floatPrecArgs; what is
+        # left (hex, octal, binary, chars) has no sign to place.
+        align_s = ">"
     if has_opts
         out = out + ":" + fill_s + align_s + width_s + prec_s
     return out
@@ -219,6 +225,40 @@ def floatPrecArgs(spec: str, ex_type: Type_): str
     if width_s == ""
         width_s = "0"
     return ", " + prec_s[1..prec_s.len] + ", " + emode + ", \"" + fill_s + "\", '" + align_s + "', " + width_s + ")"
+
+# BUG-631. A number hole with the `0` flag and no precision (`${n:04d}`, `${n:04}`,
+# `${x:06}`) puts its zeros AFTER the sign, which Zig's `{d:0>4}` cannot: it pads before
+# the whole text and printed `00-5`. Such a hole becomes `{f}` over the runtime's
+# `_zbr_zpad(x, width)`. Returns the call's trailing `, width)`, or "" when the hole keeps
+# Zig's formatting (no `0` flag, not a number, a precision -- floatPrecArgs has those --
+# or a type with no sign to place: `x`, `o`, `b` print the bits unsigned, `c` a byte).
+def zeroPadArgs(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var is_num: bool = false
+    branch ex_type
+        on Type_.int_
+            is_num = true
+        on Type_.int_n as _
+            is_num = true
+        on Type_.float_
+            is_num = true
+        on Type_.float_n as _
+            is_num = true
+        else
+            pass
+    if not is_num
+        return ""
+    var parts = parseFmtSpec(spec)
+    if parts.at(1) != "=" or parts.at(3) != ""
+        return ""
+    var type_s: str = parts.at(4)
+    if not (type_s == "" or type_s == "d" or type_s == "i" or type_s == "n" or type_s == "f" or type_s == "g" or type_s == "G")
+        return ""
+    var width_s: str = parts.at(2)
+    if width_s == ""
+        width_s = "0"
+    return ", " + width_s + ")"
 
 # BUG-301. `:c` renders one BYTE, and Zig's {c} takes a u8. An int literal coerced at
 # comptime so `"${206:c}"` worked; a COMPUTED value did not, and the user got a raw Zig
@@ -15958,6 +15998,7 @@ struct Generator
         var needs_tostring: List(bool) = List(bool)()
         var show_wraps: List(bool) = List(bool)()     # {show}: wrap the arg in _zbr_show()
         var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
+        var zpad_args: List(str) = List(str)()        # a number with the `0` flag: _zbr_zpad(arg + these)
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -15978,7 +16019,8 @@ struct Generator
                         if .infer_ctx != nil
                             ex_type = inferExpr(e, .infer_ctx!)
                         var fpa: str = floatPrecArgs(fmt_spec, ex_type)
-                        if fpa != ""
+                        var zpa: str = zeroPadArgs(fmt_spec, ex_type)
+                        if fpa != "" or zpa != ""
                             fmt_str = fmt_str + "{f}"
                             cast_types.add("")
                             cast_trunc.add(false)
@@ -15988,6 +16030,7 @@ struct Generator
                             cast_types.add(bitCastType(fmt_spec, ex_type))
                             cast_trunc.add(fmt_spec.endsWith("c"))
                         ffmt_args.add(fpa)
+                        zpad_args.add(zpa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
                     else
@@ -16026,6 +16069,7 @@ struct Generator
                         cast_types.add("")
                         cast_trunc.add(false)
                         ffmt_args.add("")
+                        zpad_args.add("")
                         needs_tostring.add(ts)
                 on StringPart.format as _
                     pass
@@ -16044,10 +16088,15 @@ struct Generator
                 var cast: str = cast_types.at(arg_idx)
                 var ts: bool = needs_tostring.at(arg_idx)
                 var fpa: str = ffmt_args.at(arg_idx)
+                var zpa: str = zpad_args.at(arg_idx)
                 if fpa != ""
                     w.emit("_zbr_ffmt(")
                     genExpr(e)
                     w.emit(fpa)
+                else if zpa != ""
+                    w.emit("_zbr_zpad(")
+                    genExpr(e)
+                    w.emit(zpa)
                 else if cast != ""
                     if cast_trunc.at(arg_idx)
                         # BUG-301. One preamble helper rather than an inline cast: the

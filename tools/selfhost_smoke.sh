@@ -1451,6 +1451,8 @@ smoke_run test/hashmap_clear_test.zbr "hashmap_clear: 0 1 3 1 seven none"
 smoke_run test/float_round_rule_test.zbr "float_round: 2.67 0.12 2 -2 1.4 2.67 2.67e0"
 smoke_run test/float_round_rule_test.zbr "float_round_halves: 0 2 -0.00 10.00 1.00e1"
 smoke_run test/float_round_rule_test.zbr "float_round_pad: [    2.67] [2.67    ] [**2.67***]"
+# BUG-631: the `0` flag pads after the sign; an explicit `0>` fill does not.
+smoke_run test/bug631_zero_pad_sign_test.zbr "bug631: [-005] [0005] [-005] [00-5] [-002.5] [-002.5] [-123456] [000.50]"
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"

@@ -1553,7 +1553,9 @@ var result = sb.build()              # str (drains the builder)
   octal, `b` binary, `f` float, `e`/`E` scientific, `c` char-or-byte (below), `s`
   string.  Examples: `${n:08x}` → `000000ff`, `${v:.2f}` → `3.14`,
   `${s:>20}` right-aligns in a 20-char field, `${s:-<15}` left-aligns with
-  `-` fill.  A part the formatter does not support -- a sign (`+`), `#`, digit
+  `-` fill.  A `0` before the width is the zero-pad flag, and it puts the zeros after
+  the sign: `${-5:04d}` → `-005`, `${-2.5:06.1f}` → `-002.5`. An explicit fill and
+  alignment is a plain fill: `${-5:0>4}` → `00-5`.  A part the formatter does not support -- a sign (`+`), `#`, digit
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
 - **How a float is rounded to a precision** (`.2f`, `.2`, `.2e`): Zebra rounds the

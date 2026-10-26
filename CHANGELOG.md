@@ -46,6 +46,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **The `0` flag puts the zeros after the sign (BUG-631).** `${-5:04d}` printed `00-5` and
+  `${-2.5:06.1f}` printed `00-2.5`; they print `-005` and `-002.5` now, as in Python and C,
+  for ints and floats with or without a precision. An explicit fill (`${n:0>4}`) is unchanged.
+
 - **A lambda variable can be reassigned without a type annotation (BUG-629).**
   `var h = def(x: int): int = x + k` then `h = def(x: int): int = x - k` failed inside zig;
   the variable is now a function value as if declared `var h: def(int): int`, also when

@@ -6227,6 +6227,18 @@ pub const _ZbrFfmt = struct {
     fn _pad(self: _ZbrFfmt, w: *std.Io.Writer, head: []const u8, zeros: usize, suffix: []const u8) std.Io.Writer.Error!void {
         const total = head.len + zeros + suffix.len;
         const pad = if (self.width > total) self.width - total else 0;
+        if (self.alignc == '=') {
+            // the `0` flag (BUG-631): the sign first, the fill between it and the digits
+            var body = head;
+            if (body.len > 0 and (body[0] == '-' or body[0] == '+')) {
+                try w.writeByte(body[0]);
+                body = body[1..];
+            }
+            try w.splatBytesAll(self.fill, pad);
+            try w.writeAll(body);
+            try w.splatByteAll('0', zeros);
+            return w.writeAll(suffix);
+        }
         const left = switch (self.alignc) {
             '<' => 0,
             '^' => pad / 2,
@@ -6242,6 +6254,35 @@ pub const _ZbrFfmt = struct {
 
 pub fn _zbr_ffmt(x: anytype, prec: usize, emode: bool, fill: []const u8, alignc: u8, width: usize) _ZbrFfmt {
     return .{ .x = @as(f64, x), .prec = prec, .emode = emode, .fill = fill, .alignc = alignc, .width = width };
+}
+
+// BUG-631. `${n:04d}` / `${x:06}`: a number zero-padded to a width with the sign FIRST
+// (`-005`), as Python and C do. Zig's `{d:0>4}` pads before the whole text (`00-5`), so
+// CodeGen's zeroPadArgs routes such a hole here through `{f}`. The digits are Zig's own
+// `{d}` -- the same text the hole printed before, only the zeros move. 512 bytes holds any
+// i128 and the longest `{d}` of an f64.
+pub const _ZbrZpad = struct {
+    buf: [512]u8,
+    len: usize,
+    width: usize,
+
+    pub fn format(self: _ZbrZpad, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        var body: []const u8 = self.buf[0..self.len];
+        const pad = if (self.width > body.len) self.width - body.len else 0;
+        if (body.len > 0 and (body[0] == '-' or body[0] == '+')) {
+            try w.writeByte(body[0]);
+            body = body[1..];
+        }
+        try w.splatByteAll('0', pad);
+        try w.writeAll(body);
+    }
+};
+
+pub fn _zbr_zpad(x: anytype, width: usize) _ZbrZpad {
+    var r: _ZbrZpad = .{ .buf = undefined, .len = 0, .width = width };
+    const s: []const u8 = std.fmt.bufPrint(&r.buf, "{d}", .{x}) catch "";
+    r.len = s.len;
+    return r;
 }
 
 pub fn _zbr_show(x: anytype) []const u8 {

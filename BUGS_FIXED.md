@@ -6,6 +6,33 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-631: zero-padding a negative number puts the zeros before the sign -- FIXED 2026-10-26
+- **Found by:** writing the rounding fixture for the exact-binary formatter; measured against
+  Python on the way. Pre-existing: the N-1 compiler prints the same.
+- **Repro:**
+  ```
+  def main()
+      var n = -5
+      var d = -2.5
+      print("[${n:04d}] [${d:06.1f}]")
+  ```
+  Zebra prints `[00-5] [00-2.5]`; Python, C and the spec this syntax follows print
+  `[-005] [-002.5]`. The `0` flag is mapped to fill `0` with right alignment (CodeGen
+  `zigFmtSpec`), and Zig's padding puts the fill before the whole text, sign included.
+- **Expected:** with the `0` flag the sign comes first and the zeros go between it and the
+  digits, for ints and floats, with and without a precision. An explicit fill and alignment
+  (`${n:0>4}`) keeps today's meaning: that is a fill, not the `0` flag.
+- **Control when fixing:** the two repros above print `[-005] [-002.5]`; `${5:04d}` stays
+  `0005`; `${n:0>4}` stays `00-5`; a float with a precision through `_zbr_ffmt` and one
+  without both get the sign-aware form.
+- **Fix:** CodeGen's `parseFmtSpec` reads the `0` flag as the sign-aware align `=` (Python's
+  name for it). A number hole with a precision goes through `_zbr_ffmt`, whose padding now
+  writes the sign before the fill for `=`; one without a precision goes through the new
+  runtime `_zbr_zpad(x, width)` (`zeroPadArgs`), which formats with Zig's own `{d}` and moves
+  only the zeros. Hex, octal, binary and `:c` print unsigned bits or a byte, so `=` maps back
+  to `>` there and they are unchanged. Fixture `test/bug631_zero_pad_sign_test.zbr`, eight
+  holes, every value Python's `format()`; the N-1 anchor prints `[00-5] ... [00-2.5]` on it.
+
 ### BUG-629: reassigning an unannotated lambda local passed the front end and failed inside zig -- FIXED 2026-10-26
 - **Found by:** writing a by-hand probe of closure sinks while teaching leakgen to generate
   capturing lambdas (BUG-569's step-5 tail). Filed and fixed the same day.

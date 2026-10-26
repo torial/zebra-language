@@ -96,26 +96,6 @@
   zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
   (an empty literal, a generic) that must stay compatible.
 
-### BUG-631: zero-padding a negative number puts the zeros before the sign -- OPEN (found 2026-10-26)
-- **Found by:** writing the rounding fixture for the exact-binary formatter; measured against
-  Python on the way. Pre-existing: the N-1 compiler prints the same.
-- **Repro:**
-  ```
-  def main()
-      var n = -5
-      var d = -2.5
-      print("[${n:04d}] [${d:06.1f}]")
-  ```
-  Zebra prints `[00-5] [00-2.5]`; Python, C and the spec this syntax follows print
-  `[-005] [-002.5]`. The `0` flag is mapped to fill `0` with right alignment (CodeGen
-  `zigFmtSpec`), and Zig's padding puts the fill before the whole text, sign included.
-- **Expected:** with the `0` flag the sign comes first and the zeros go between it and the
-  digits, for ints and floats, with and without a precision. An explicit fill and alignment
-  (`${n:0>4}`) keeps today's meaning: that is a fill, not the `0` flag.
-- **Control when fixing:** the two repros above print `[-005] [-002.5]`; `${5:04d}` stays
-  `0005`; `${n:0>4}` stays `00-5`; a float with a precision through `_zbr_ffmt` and one
-  without both get the sign-aware form.
-
 ### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- OPEN (found 2026-10-26)
 - **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
   Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that
