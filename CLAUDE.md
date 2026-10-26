@@ -2527,6 +2527,15 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-26 (closing BUG-534 `e2fb50a`, the trapping `toInt8..toUint64` family; FULL
+48/48 before it): 59/59 PASS in ONE invocation at JOBS=2 on the committed tree, ~100 min of gate
+time.** smoke 854/854 (infra-retries=0), round-trip byte-identical, `boundary` 39/0,
+`release-mode` with its new `300.toUint8()` trap leg, `output_sweep` 466 identical,
+`full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover` from `e2fb50a`,
+`gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`. The first daily since
+round-trip gained its BUG-302 retry. Whether that retry fired is NOT known: the board cuts
+round-trip's line before its `(infra-retries=N)`, and a passing gate's log is not kept.
+
 **DAILY tier 2026-10-25 (closing BUG-546/531/563/625/627 `aff4599`, BUG-628 filed
 `e8c7c6a`; FULL 48/48 before it): 56/57 in ONE invocation at JOBS=2, then round-trip green
 standalone -- ASSEMBLED.** `regen-recover`, `gramgen` 0/0 and `leakgen` 100/0 all green -- the
