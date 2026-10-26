@@ -67,9 +67,9 @@ def isUpperCase(s: str): bool
 def isAlignChar(c: char): bool
     return c == c'<' or c == c'>' or c == c'^'
 
-def zigFmtSpec(spec: str, ex_type: Type_): str
-    if spec.len == 0
-        return ""
+# A format spec's parts, [fill, align, width, precision (with its '.'), type char], read
+# the one way both zigFmtSpec and floatPrecArgs need them.
+def parseFmtSpec(spec: str): List(str)
     var i: int = 0
     var fill_s: str = ""
     var align_s: str = ""
@@ -114,6 +114,17 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
     # Type char
     if i < spec.len
         type_s = spec[i..i+1]
+    return [fill_s, align_s, width_s, prec_s, type_s]
+
+def zigFmtSpec(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var parts = parseFmtSpec(spec)
+    var fill_s: str = parts.at(0)
+    var align_s: str = parts.at(1)
+    var width_s: str = parts.at(2)
+    var prec_s: str = parts.at(3)
+    var type_s: str = parts.at(4)
     # Map Python type char to Zig type prefix
     var out: str = ""
     if type_s == "s"
@@ -165,6 +176,49 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
     if has_opts
         out = out + ":" + fill_s + align_s + width_s + prec_s
     return out
+
+# A float hole with a precision (`.2f`, `.2`, `.2e`) does not go through Zig's `{d:.2}`,
+# which rounds the SHORTEST decimal half away from zero (2.675 -> 2.68). It becomes `{f}`
+# over the runtime's `_zbr_ffmt(x, <these args>)`, which rounds the exact binary value with
+# ties to even (2.67), as Python and the UCRT do (2026-10-26; QUICKSTART "Format
+# specifiers"). Returns the call's trailing arguments, `, prec, emode, "fill", 'align',
+# width)`, or "" when the hole keeps Zig's formatting (not a float, no precision, or a
+# type such as `x` that is not a float rendering).
+def floatPrecArgs(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var is_float: bool = false
+    branch ex_type
+        on Type_.float_
+            is_float = true
+        on Type_.float_n as _
+            is_float = true
+        else
+            pass
+    if not is_float
+        return ""
+    var parts = parseFmtSpec(spec)
+    var prec_s: str = parts.at(3)
+    if prec_s.len < 2
+        return ""
+    var type_s: str = parts.at(4)
+    var emode: str = "false"
+    if type_s == "e" or type_s == "E"
+        emode = "true"
+    else if type_s == "s" or type_s == "c" or type_s == "u" or type_s == "x" or type_s == "X" or type_s == "o" or type_s == "b"
+        return ""
+    var fill_s: str = parts.at(0)
+    if fill_s == ""
+        fill_s = " "
+    if fill_s == "\"" or fill_s == "\\"
+        fill_s = "\\" + fill_s
+    var align_s: str = parts.at(1)
+    if align_s == ""
+        align_s = ">"
+    var width_s: str = parts.at(2)
+    if width_s == ""
+        width_s = "0"
+    return ", " + prec_s[1..prec_s.len] + ", " + emode + ", \"" + fill_s + "\", '" + align_s + "', " + width_s + ")"
 
 # BUG-301. `:c` renders one BYTE, and Zig's {c} takes a u8. An int literal coerced at
 # comptime so `"${206:c}"` worked; a COMPUTED value did not, and the user got a raw Zig
@@ -15903,6 +15957,7 @@ struct Generator
         var cast_trunc: List(bool) = List(bool)()
         var needs_tostring: List(bool) = List(bool)()
         var show_wraps: List(bool) = List(bool)()     # {show}: wrap the arg in _zbr_show()
+        var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -15922,10 +15977,17 @@ struct Generator
                         var ex_type: Type_ = Type_.unknown_
                         if .infer_ctx != nil
                             ex_type = inferExpr(e, .infer_ctx!)
-                        var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
-                        fmt_str = fmt_str + "{" + zig_spec + "}"
-                        cast_types.add(bitCastType(fmt_spec, ex_type))
-                        cast_trunc.add(fmt_spec.endsWith("c"))
+                        var fpa: str = floatPrecArgs(fmt_spec, ex_type)
+                        if fpa != ""
+                            fmt_str = fmt_str + "{f}"
+                            cast_types.add("")
+                            cast_trunc.add(false)
+                        else
+                            var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
+                            fmt_str = fmt_str + "{" + zig_spec + "}"
+                            cast_types.add(bitCastType(fmt_spec, ex_type))
+                            cast_trunc.add(fmt_spec.endsWith("c"))
+                        ffmt_args.add(fpa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
                     else
@@ -15963,6 +16025,7 @@ struct Generator
                                 show_wraps.add(false)
                         cast_types.add("")
                         cast_trunc.add(false)
+                        ffmt_args.add("")
                         needs_tostring.add(ts)
                 on StringPart.format as _
                     pass
@@ -15980,7 +16043,12 @@ struct Generator
                 first = false
                 var cast: str = cast_types.at(arg_idx)
                 var ts: bool = needs_tostring.at(arg_idx)
-                if cast != ""
+                var fpa: str = ffmt_args.at(arg_idx)
+                if fpa != ""
+                    w.emit("_zbr_ffmt(")
+                    genExpr(e)
+                    w.emit(fpa)
+                else if cast != ""
                     if cast_trunc.at(arg_idx)
                         # BUG-301. One preamble helper rather than an inline cast: the
                         # inline form broke the LITERAL case (@bitCast cannot take a

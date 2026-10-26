@@ -25,6 +25,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **A float formatted to a precision rounds its exact binary value, ties to even.**
+  `${x:.2f}`, `${x:.2}` and `${x:.2e}` now print Python's digits (and glibc's and the UCRT's):
+  `${2.675:.2f}` is `2.67` (the float holds 2.67499999...), `${0.125:.2f}` is `0.12`,
+  `${2.5:.0f}` is `2`. They printed `2.68`, `0.13` and `3` before: Zig's `{d:.2}` rounds the
+  shortest decimal half away from zero, i.e. a number already rounded once. Checked against
+  Python's `format()` over 300 values x 10 specs, all equal; the previous compiler differed on
+  106 of the 300. **A behaviour change**: output that formats a near-tie or an exact half with
+  a precision prints different digits. Width, fill and alignment are unchanged. (Opus + Fable,
+  2026-10-26, under Sean's standing rule for joint agreements.)
+
 - **`HashMap.clear()`** empties a map in place and keeps its capacity, as `List.clear()` and
   `Set.clear()` do -- reuse one map per frame or per line instead of building a fresh one.
   (`List.clear()` already kept its capacity; QUICKSTART now says so.)

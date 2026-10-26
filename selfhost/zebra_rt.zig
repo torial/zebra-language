@@ -5903,6 +5903,347 @@ fn _zbr_show_float(sb: *std.ArrayList(u8), x: anytype) !void {
     if (std.math.isFinite(x) and @floor(x) == x) try sb.appendSlice(_allocator, ".0");
 }
 
+// ── _zbr_ffmt: a float formatted to a precision (2026-10-26) ────────────────────────────
+// `${x:.2f}` / `${x:.2}` / `${x:.2e}` round the EXACT BINARY VALUE, ties to even -- Python's
+// digits and the UCRT's printf (the legacy msvcrt rounds exact halves away). So 2.675 (stored
+// as 2.67499999...) prints 2.67, 0.125 prints 0.12, 2.5 at .0f prints 2. Zig's own `{d:.2}`
+// rounds the SHORTEST decimal half away from zero (2.68, 0.13, 3): it rounds a number that
+// was already rounded, and the printed digits then claim a value the float does not hold.
+// Decided jointly (Opus + Fable) under Sean's standing rule; QUICKSTART "Format specifiers".
+//
+// No heap: the value is m * 2^e, the integer part and the fraction numerator F (over 2^k)
+// live in fixed limb arrays, and fraction digits come from F*10 one at a time. A double's
+// expansion is finite (at most 1074 fraction digits), so once F is zero every later digit is
+// 0 and nothing rounds. Width, fill and alignment are applied here, with Zig's defaults
+// (right-aligned, the same padding split), because `{f}` hands the writer to us unpadded.
+const _ZbrFfmtBig = struct {
+    limbs: [40]u32 = @splat(0),
+    len: usize = 0,
+    fn fromU64(v: u64) _ZbrFfmtBig {
+        var b: _ZbrFfmtBig = .{};
+        b.limbs[0] = @truncate(v);
+        b.limbs[1] = @truncate(v >> 32);
+        b.len = 2;
+        b.norm();
+        return b;
+    }
+    fn norm(b: *_ZbrFfmtBig) void {
+        while (b.len > 0 and b.limbs[b.len - 1] == 0) b.len -= 1;
+    }
+    fn isZero(b: *const _ZbrFfmtBig) bool {
+        return b.len == 0;
+    }
+    fn bit(b: *const _ZbrFfmtBig, i: usize) bool {
+        const li = i / 32;
+        if (li >= b.len) return false;
+        return (b.limbs[li] >> @intCast(i % 32)) & 1 == 1;
+    }
+    fn shl(b: *_ZbrFfmtBig, n: usize) void {
+        if (b.len == 0) return;
+        const ls = n / 32;
+        const bs: u5 = @intCast(n % 32);
+        var i: usize = b.len + ls + 1;
+        while (i > 0) {
+            i -= 1;
+            var v: u32 = 0;
+            if (i >= ls) {
+                const src = i - ls;
+                if (src < b.len) v = if (bs == 0) b.limbs[src] else b.limbs[src] << bs;
+                if (bs != 0 and src >= 1 and src - 1 < b.len) v |= b.limbs[src - 1] >> @intCast(32 - @as(u6, bs));
+            }
+            b.limbs[i] = v;
+        }
+        b.len = b.len + ls + 1;
+        b.norm();
+    }
+    fn mulSmall(b: *_ZbrFfmtBig, m: u32) void {
+        var carry: u64 = 0;
+        for (b.limbs[0..b.len]) |*l| {
+            const t = @as(u64, l.*) * m + carry;
+            l.* = @truncate(t);
+            carry = t >> 32;
+        }
+        if (carry != 0) {
+            b.limbs[b.len] = @truncate(carry);
+            b.len += 1;
+        }
+    }
+    fn divSmall(b: *_ZbrFfmtBig, d: u32) u32 {
+        var rem: u64 = 0;
+        var i: usize = b.len;
+        while (i > 0) {
+            i -= 1;
+            const cur = (rem << 32) | b.limbs[i];
+            b.limbs[i] = @intCast(cur / d);
+            rem = cur % d;
+        }
+        b.norm();
+        return @intCast(rem);
+    }
+    // F*10, then the digit is the bits at and above k, and F keeps the bits below k.
+    fn nextDigit(b: *_ZbrFfmtBig, k: usize) u8 {
+        b.mulSmall(10);
+        var d: u8 = 0;
+        var j: usize = 0;
+        while (j < 4) : (j += 1) {
+            if (b.bit(k + j)) d |= @as(u8, 1) << @intCast(j);
+        }
+        const li = k / 32;
+        if (li < b.len) {
+            const off: u5 = @intCast(k % 32);
+            b.limbs[li] &= if (off == 0) 0 else (@as(u32, 1) << off) - 1;
+            for (b.limbs[li + 1 .. b.len]) |*l| l.* = 0;
+            b.len = li + 1;
+            b.norm();
+        }
+        return d;
+    }
+    // Compare F / 2^k against one half: -1 below, 0 exactly, 1 above.
+    fn cmpHalf(b: *const _ZbrFfmtBig, k: usize) i8 {
+        if (k == 0 or !b.bit(k - 1)) return -1;
+        var i: usize = 0;
+        while (i < k - 1) : (i += 1) {
+            if (b.bit(i)) return 1;
+        }
+        return 0;
+    }
+};
+
+pub const _ZbrFfmt = struct {
+    x: f64,
+    prec: usize,
+    emode: bool,
+    fill: []const u8,
+    alignc: u8,
+    width: usize,
+
+    pub fn format(self: _ZbrFfmt, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        var head: [1800]u8 = undefined; // sign + kept digits + point: at most 1 + 309 + 1 + 1074
+        var hl: usize = 0;
+        var zeros: usize = 0; // digits past the exact expansion: all 0, written after head
+        var suffix: [8]u8 = undefined;
+        var sl: usize = 0;
+        const x = self.x;
+        const neg = std.math.signbit(x);
+        if (std.math.isNan(x) or std.math.isInf(x)) {
+            if (neg) {
+                head[0] = '-';
+                hl = 1;
+            }
+            const word = if (std.math.isNan(x)) "nan" else "inf";
+            @memcpy(head[hl .. hl + 3], word);
+            hl += 3;
+            return _pad(self, w, head[0..hl], 0, "");
+        }
+        if (neg) {
+            head[0] = '-';
+            hl = 1;
+        }
+        // x = m * 2^e
+        const bits: u64 = @bitCast(x);
+        const be: i32 = @intCast((bits >> 52) & 0x7ff);
+        const frac: u64 = bits & ((@as(u64, 1) << 52) - 1);
+        const m: u64 = if (be == 0) frac else frac | (@as(u64, 1) << 52);
+        const e: i32 = if (be == 0) -1074 else be - 1075;
+        var ip: _ZbrFfmtBig = undefined;
+        var f: _ZbrFfmtBig = .{};
+        var k: usize = 0;
+        if (m == 0) {
+            ip = .{};
+        } else if (e >= 0) {
+            ip = _ZbrFfmtBig.fromU64(m);
+            ip.shl(@intCast(e));
+        } else {
+            k = @intCast(-e);
+            ip = _ZbrFfmtBig.fromU64(if (k < 64) m >> @intCast(k) else 0);
+            f = _ZbrFfmtBig.fromU64(if (k < 64) m & ((@as(u64, 1) << @intCast(k)) - 1) else m);
+        }
+        // the integer part's decimal digits
+        var idig: [320]u8 = undefined;
+        var il: usize = 0;
+        if (ip.isZero()) {
+            idig[0] = '0';
+            il = 1;
+        } else {
+            var chunks: [40]u32 = undefined;
+            var nc: usize = 0;
+            while (!ip.isZero()) {
+                chunks[nc] = ip.divSmall(1_000_000_000);
+                nc += 1;
+            }
+            var ci: usize = nc;
+            while (ci > 0) {
+                ci -= 1;
+                var tmp9: [9]u8 = undefined;
+                var v = chunks[ci];
+                var t: usize = 9;
+                while (t > 0) {
+                    t -= 1;
+                    tmp9[t] = @intCast('0' + v % 10);
+                    v /= 10;
+                }
+                if (ci == nc - 1) {
+                    var s: usize = 0;
+                    while (s < 8 and tmp9[s] == '0') s += 1;
+                    @memcpy(idig[il .. il + 9 - s], tmp9[s..9]);
+                    il += 9 - s;
+                } else {
+                    @memcpy(idig[il .. il + 9], tmp9[0..9]);
+                    il += 9;
+                }
+            }
+        }
+        const int_is_zero = il == 1 and idig[0] == '0';
+        // kept digits go into `dig`; `tail` is the rounding verdict for what follows them
+        var dig: [1500]u8 = undefined;
+        var dl: usize = 0;
+        var tail: i8 = -1;
+        var exp10: i32 = 0;
+        if (!self.emode) {
+            @memcpy(dig[0..il], idig[0..il]);
+            dl = il;
+            var i: usize = 0;
+            while (i < self.prec) : (i += 1) {
+                if (f.isZero()) {
+                    zeros = self.prec - i;
+                    break;
+                }
+                dig[dl] = '0' + f.nextDigit(k);
+                dl += 1;
+            }
+            if (zeros == 0) tail = f.cmpHalf(k);
+        } else {
+            const need = self.prec + 1;
+            if (m == 0) {
+                dig[0] = '0';
+                dl = 1;
+                zeros = self.prec;
+            } else if (!int_is_zero) {
+                exp10 = @intCast(il - 1);
+                if (need <= il) {
+                    @memcpy(dig[0..need], idig[0..need]);
+                    dl = need;
+                    const rest = idig[need..il];
+                    if (rest.len == 0) {
+                        tail = f.cmpHalf(k);
+                    } else if (rest[0] > '5') {
+                        tail = 1;
+                    } else if (rest[0] < '5') {
+                        tail = -1;
+                    } else {
+                        tail = 0;
+                        for (rest[1..]) |c| {
+                            if (c != '0') tail = 1;
+                        }
+                        if (!f.isZero()) tail = 1;
+                    }
+                } else {
+                    @memcpy(dig[0..il], idig[0..il]);
+                    dl = il;
+                    while (dl < need) {
+                        if (f.isZero()) {
+                            zeros = need - dl;
+                            break;
+                        }
+                        dig[dl] = '0' + f.nextDigit(k);
+                        dl += 1;
+                    }
+                    if (zeros == 0) tail = f.cmpHalf(k);
+                }
+            } else {
+                var z: i32 = 0;
+                var d0 = f.nextDigit(k);
+                while (d0 == 0) {
+                    z += 1;
+                    d0 = f.nextDigit(k);
+                }
+                exp10 = -(z + 1);
+                dig[0] = '0' + d0;
+                dl = 1;
+                while (dl < need) {
+                    if (f.isZero()) {
+                        zeros = need - dl;
+                        break;
+                    }
+                    dig[dl] = '0' + f.nextDigit(k);
+                    dl += 1;
+                }
+                if (zeros == 0) tail = f.cmpHalf(k);
+            }
+        }
+        // round: above half up; exactly half to even
+        if (tail > 0 or (tail == 0 and (dig[dl - 1] - '0') % 2 == 1)) {
+            var j: usize = dl;
+            var carry = true;
+            while (carry and j > 0) {
+                j -= 1;
+                if (dig[j] == '9') {
+                    dig[j] = '0';
+                } else {
+                    dig[j] += 1;
+                    carry = false;
+                }
+            }
+            if (carry) {
+                if (self.emode) {
+                    // 9.99 -> 10.0: one more power of ten, the same number of digits
+                    dig[0] = '1';
+                    exp10 += 1;
+                } else {
+                    std.mem.copyBackwards(u8, dig[1 .. dl + 1], dig[0..dl]);
+                    dig[0] = '1';
+                    dl += 1;
+                    il += 1;
+                }
+            }
+        }
+        // assemble
+        if (!self.emode) {
+            @memcpy(head[hl .. hl + il], dig[0..il]);
+            hl += il;
+            if (self.prec > 0) {
+                head[hl] = '.';
+                hl += 1;
+                @memcpy(head[hl .. hl + (dl - il)], dig[il..dl]);
+                hl += dl - il;
+            }
+        } else {
+            head[hl] = dig[0];
+            hl += 1;
+            if (self.prec > 0) {
+                head[hl] = '.';
+                hl += 1;
+                @memcpy(head[hl .. hl + (dl - 1)], dig[1..dl]);
+                hl += dl - 1;
+            }
+            suffix[0] = 'e';
+            // |exp10| <= 324, so at most 4 characters with the sign; 7 are free
+            const es = std.fmt.bufPrint(suffix[1..], "{d}", .{exp10}) catch suffix[1..1];
+            sl = 1 + es.len;
+        }
+        return _pad(self, w, head[0..hl], zeros, suffix[0..sl]);
+    }
+
+    fn _pad(self: _ZbrFfmt, w: *std.Io.Writer, head: []const u8, zeros: usize, suffix: []const u8) std.Io.Writer.Error!void {
+        const total = head.len + zeros + suffix.len;
+        const pad = if (self.width > total) self.width - total else 0;
+        const left = switch (self.alignc) {
+            '<' => 0,
+            '^' => pad / 2,
+            else => pad,
+        };
+        try w.splatBytesAll(self.fill, left);
+        try w.writeAll(head);
+        try w.splatByteAll('0', zeros);
+        try w.writeAll(suffix);
+        try w.splatBytesAll(self.fill, pad - left);
+    }
+};
+
+pub fn _zbr_ffmt(x: anytype, prec: usize, emode: bool, fill: []const u8, alignc: u8, width: usize) _ZbrFfmt {
+    return .{ .x = @as(f64, x), .prec = prec, .emode = emode, .fill = fill, .alignc = alignc, .width = width };
+}
+
 pub fn _zbr_show(x: anytype) []const u8 {
     var sb: std.ArrayList(u8) = .empty;
     _zbr_show_into(&sb, x, false) catch return "?";
