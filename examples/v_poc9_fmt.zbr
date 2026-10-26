@@ -10,14 +10,31 @@
 # the slow path, printed beside them so the two paths read alike.
 
 # The positive control for the runtime's naming rule (v_backend_poc.md item 22, 2026-10-26): module
-# consts named after the formatter's former locals (those the rest of the runtime does not also use
-# bare: `buf` and `pos` are still bare elsewhere in zebra_rt.v, the docket's). The runtime file is compiled into this program's
+# consts named after the runtime's former locals -- the formatter's (tmp, tp, hole, at) and the
+# most common of the rest of the file's before tools/prefix_rt_locals.py prefixed them all (buf, pos,
+# m, out, x, c, r, n, p, old, i, s, k, b, l). The runtime file is compiled into this program's
 # module, and V 0.5.2 silently miscompiles a runtime local that shares a const's name; with every
-# runtime local prefixed this prints, and a bare name returning to zebra_rt.v fails the C stage here.
+# runtime local prefixed this prints, and a bare name returning to zebra_rt.v fails the lane here
+# (the C stage, or the lane's own CONST SHADOW refusal of V's warning).
 const tmp: int = 7
 const tp: int = 9
 const hole: int = 1
 const at: int = 4
+const buf: str = "b"
+const pos: int = 2
+const m: int = 3
+const out: int = 5
+const x: int = 6
+const c: int = 8
+const r: int = 10
+const n: int = 11
+const p: int = 12
+const old: int = 13
+const i: int = 14
+const s: int = 15
+const k: int = 16
+const b: int = 17
+const l: int = 18
 
 def mk(x: float): float
     return x
@@ -87,7 +104,7 @@ def main()
     print("carry2|${c7:.2f}|${c8:.2f}|${c7:.0f}|${c8:.0f}")
     # a mixed interpolation's float holes go the same way (one at a tie, one carrying)
     print("mixed|${name}|${t2:.2f}|${k}|${c3:.2f}|${c5:.1f}")
-    print("consts|${tmp}|${tp}|${hole}|${at}")
+    print("consts|${tmp}|${tp}|${hole}|${at}|${buf}|${pos}|${m}|${out}|${x}|${c}|${r}|${n}|${p}|${old}|${i}|${s}|${k}|${b}|${l}")
     # a BARE float hole (no spec) and a float's toString: the Zig backend's {d} spelling -- the
     # shortest round-trip digits, never an exponent, ".0" when whole (V's own str() says 1e+20)
     var b1: float = 100000000000000000000.0

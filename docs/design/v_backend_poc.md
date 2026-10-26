@@ -1663,14 +1663,20 @@ health test is 9,000 lines of V and about two seconds with tcc.
     example lane in the C stage, as d67ee8d's did when the control was run
     against it. The lane also refuses V's "duplicate of a const name"
     warning outright (`CONST SHADOW`), so any program const meeting any
-    runtime local is a red, not a warning in a log. What the rule has not
-    reached yet, the docket's: the rest of `zebra_rt.v` still declares bare
-    locals (`m` 12 times, `out` 10, `x` 6, `c` 5, `tmp` 4, `r` 4, `buf` 4,
-    `p`, `old`, `n` 3 each, and a dozen more), so a program const of one of
-    those names fails the lane today -- the control's own `buf` and `pos`
-    did, and were taken out of it until the file is prefixed throughout.
-    **They go back in when that lands** (the docket's item 6 below): a
-    control that stays narrow where the debt is would be no control.
+    runtime local is a red, not a warning in a log. The rest of the file
+    followed the same day: `tools/prefix_rt_locals.py` prefixes every local
+    and parameter of every top-level fn with `zr_` (418 names in 181 of the
+    200 functions), renaming whole words except after a single `.` (a field
+    or method; after a range's `..` it is a local), before a `:` that is not
+    `:=` (a struct literal's field), inside a string's plain text (but inside
+    its `${...}`) and inside a char literal; it refuses to write if its own
+    re-scan still finds a bare name, and `--control` proves each case on a
+    scratch fn. Two bugs the lane caught in its first cuts, each now a
+    control case: a char literal's `b` renamed (the literal was skipped but
+    never cut out of the code segment) and `i` after `..` left bare (the
+    dot rule). The control consts are the broad set now: the formatter's
+    four and the file's fifteen most common former names (`buf`, `pos`,
+    `m`, `out`, `x`, `c`, `r`, `n`, `p`, `old`, `i`, `s`, `k`, `b`, `l`).
 
 ## Main merged, the workarounds out (2026-10-13)
 
@@ -2385,11 +2391,11 @@ In the order they pay, each with the witness that says it is done:
    literal names the binding's misspelled fields. #30999's name clashes
    stand until V fixes them.
 
-6. **`zebra_rt.v` prefixed throughout** (opened 2026-10-26 by item 22's
-   control): every bare local and parameter in the runtime file gets a
-   prefix (`zf_` in zfmt, `zr_` elsewhere), the lane's CONST SHADOW
-   refusal being the proof that none is left, and `buf` and `pos` return
-   to `examples/v_poc9_fmt.zbr`'s control consts in the same commit.
+6. **`zebra_rt.v` prefixed throughout** -- DONE the same day (2026-10-26,
+   the commit after 2519e52): `tools/prefix_rt_locals.py` put `zr_` on
+   every local and parameter (418 names), the lane's 20 rows identical
+   and its CONST SHADOW refusal silent against nineteen control consts
+   named like the former locals; item 22 has the account.
 
 ## Float interpolation as one formatted write (2026-10-23)
 
