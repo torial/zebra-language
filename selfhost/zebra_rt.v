@@ -1706,167 +1706,171 @@ fn zbr_panic(msg string) {
 // decimal parses back to x, it IS the shortest digits' tie and the N-place prefix is rounded up by
 // hand; else `%.Nf` is Zig's answer too. Exact while ulp(x) < 10^-(N+1), i.e. |x| < 2^52 / 10^(N+1)
 // (zfmt_bounds); beyond that the C library's digits (Zig pads the shortest digits with zeros
-// there). V's own `${x:.Nf}` is a third spelling (2.67, +inf, -+inf, and "10" for 1e20 at .0f on
-// 0.5.2), which is why the emitter routes every fixed-precision float hole through zfmt_val, in
+// there). V's own `${x:.Nf}` is a third spelling (2.67, +inf, -+inf, and "10" for 1e16 at .0f on
+// 0.5.2), which is why the emitter routes every fixed-precision float hole through zfmt_one, in
 // a mixed interpolation too (one allocation per hole there, as before, but Zig's digits).
+//
+// Every local and parameter here is prefixed zf_: this file is compiled into the same module as
+// the emitted program, and a local that shares a name with one of the program's module consts
+// miscompiles silently under V 0.5.2 (an engine module has a const `tmp`; 2026-10-26).
 fn C.snprintf(buf &char, n usize, fmt &char, ...) int
 
 const zfmt_specs = ['%.0f', '%.1f', '%.2f', '%.3f', '%.4f', '%.5f', '%.6f', '%.7f', '%.8f', '%.9f', '%.10f']
 const zfmt_bounds = [450359962737049.6, 45035996273704.96, 4503599627370.496, 450359962737.0496, 45035996273.70496, 4503599627.370496, 450359962.7370496, 45035996.27370496, 4503599.627370496, 450359.9627370496]
 
-pub fn zfmt_f(fmt string, v []f64) string {
-	mut buf := [1024]u8{}
-	n := zfmt_into(unsafe { &buf[0] }, 1024, fmt, v)
-	if n < 1024 {
-		return unsafe { tos_clone(&buf[0]) }
+pub fn zfmt_f(zf_fmt string, zf_v []f64) string {
+	mut zf_buf := [1024]u8{}
+	zf_n := zfmt_into(unsafe { &zf_buf[0] }, 1024, zf_fmt, zf_v)
+	if zf_n < 1024 {
+		return unsafe { tos_clone(&zf_buf[0]) }
 	}
-	big := []u8{len: n + 1}
-	zfmt_into(&u8(big.data), n + 1, fmt, v)
-	return unsafe { tos_clone(&u8(big.data)) }
+	zf_big := []u8{len: zf_n + 1}
+	zfmt_into(&u8(zf_big.data), zf_n + 1, zf_fmt, zf_v)
+	return unsafe { tos_clone(&u8(zf_big.data)) }
 }
 
 // one float at a precision, as a string (the mixed interpolation's hole)
-pub fn zfmt_one(x f64, prec int) string {
-	mut buf := [400]u8{}
-	n := zfmt_val(unsafe { &buf[0] }, 400, 0, x, prec)
+pub fn zfmt_one(zf_x f64, zf_prec int) string {
+	mut zf_buf := [400]u8{}
+	zf_n := zfmt_val(unsafe { &zf_buf[0] }, 400, 0, zf_x, zf_prec)
 	unsafe {
-		buf[if n < 399 { n } else { 399 }] = 0
+		zf_buf[if zf_n < 399 { zf_n } else { 399 }] = 0
 	}
-	return unsafe { tos_clone(&buf[0]) }
+	return unsafe { tos_clone(&zf_buf[0]) }
 }
 
-fn zfmt_put(out &u8, cap int, pos int, c u8) {
-	if pos < cap - 1 {
+fn zfmt_put(zf_out &u8, zf_cap int, zf_pos int, zf_c u8) {
+	if zf_pos < zf_cap - 1 {
 		unsafe {
-			out[pos] = c
+			zf_out[zf_pos] = zf_c
 		}
 	}
 }
 
 // fmt's literal bytes and each `%.Nf` hole's value into out (cap bytes, NUL-terminated at what
 // fits); returns the whole's length, as snprintf does
-fn zfmt_into(out &u8, cap int, fmt string, v []f64) int {
-	mut pos := 0
-	mut i := 0
-	mut hole := 0
-	for i < fmt.len {
-		c := fmt[i]
-		if c != `%` {
-			zfmt_put(out, cap, pos, c)
-			pos++
-			i++
+fn zfmt_into(zf_out &u8, zf_cap int, zf_fmt string, zf_v []f64) int {
+	mut zf_pos := 0
+	mut zf_i := 0
+	mut zf_hole := 0
+	for zf_i < zf_fmt.len {
+		zf_c := zf_fmt[zf_i]
+		if zf_c != `%` {
+			zfmt_put(zf_out, zf_cap, zf_pos, zf_c)
+			zf_pos++
+			zf_i++
 			continue
 		}
-		if i + 1 < fmt.len && fmt[i + 1] == `%` {
-			zfmt_put(out, cap, pos, `%`)
-			pos++
-			i += 2
+		if zf_i + 1 < zf_fmt.len && zf_fmt[zf_i + 1] == `%` {
+			zfmt_put(zf_out, zf_cap, zf_pos, `%`)
+			zf_pos++
+			zf_i += 2
 			continue
 		}
-		if i + 3 < fmt.len && fmt[i + 1] == `.` && fmt[i + 3] == `f` && hole < v.len {
-			d := int(fmt[i + 2]) - 48
-			if d >= 0 && d <= 9 {
-				pos = zfmt_val(out, cap, pos, v[hole], d)
-				hole++
-				i += 4
+		if zf_i + 3 < zf_fmt.len && zf_fmt[zf_i + 1] == `.` && zf_fmt[zf_i + 3] == `f` && zf_hole < zf_v.len {
+			zf_d := int(zf_fmt[zf_i + 2]) - 48
+			if zf_d >= 0 && zf_d <= 9 {
+				zf_pos = zfmt_val(zf_out, zf_cap, zf_pos, zf_v[zf_hole], zf_d)
+				zf_hole++
+				zf_i += 4
 				continue
 			}
 		}
 		// any other spec: its bytes as they are (the emitter writes none)
-		zfmt_put(out, cap, pos, c)
-		pos++
-		i++
+		zfmt_put(zf_out, zf_cap, zf_pos, zf_c)
+		zf_pos++
+		zf_i++
 	}
-	end := if pos < cap { pos } else { cap - 1 }
+	zf_end := if zf_pos < zf_cap { zf_pos } else { zf_cap - 1 }
 	unsafe {
-		out[end] = 0
+		zf_out[zf_end] = 0
 	}
-	return pos
+	return zf_pos
 }
 
-fn zfmt_signbit(x f64) bool {
-	u := unsafe { *(&u64(&x)) }
-	return (u >> 63) != 0
+fn zfmt_signbit(zf_x f64) bool {
+	zf_u := unsafe { *(&u64(&zf_x)) }
+	return (zf_u >> 63) != 0
 }
 
-fn zfmt_lit(t &u8, s string) int {
-	for k in 0 .. s.len {
+fn zfmt_lit(zf_t &u8, zf_s string) int {
+	for zf_k in 0 .. zf_s.len {
 		unsafe {
-			t[k] = s[k]
+			zf_t[zf_k] = zf_s[zf_k]
 		}
 	}
-	return s.len
+	return zf_s.len
 }
 
 // the digits t[0..n0) rounded up by one in the last place, the sign kept, a carry out of the
 // first digit prepending a 1; a trailing '.' (precision 0) dropped first; returns the new length
-fn zfmt_round_up(t &u8, n0 int) int {
-	mut n := n0
-	if n > 0 && unsafe { t[n - 1] } == `.` {
-		n--
+fn zfmt_round_up(zf_t &u8, zf_n0 int) int {
+	mut zf_n := zf_n0
+	if zf_n > 0 && unsafe { zf_t[zf_n - 1] } == `.` {
+		zf_n--
 	}
-	mut k := n - 1
-	for k >= 0 {
-		c := unsafe { t[k] }
-		if c == `.` {
-			k--
+	mut zf_k := zf_n - 1
+	for zf_k >= 0 {
+		zf_c := unsafe { zf_t[zf_k] }
+		if zf_c == `.` {
+			zf_k--
 			continue
 		}
-		if c == `-` {
+		if zf_c == `-` {
 			break
 		}
-		if c == `9` {
+		if zf_c == `9` {
 			unsafe {
-				t[k] = `0`
+				zf_t[zf_k] = `0`
 			}
-			k--
+			zf_k--
 			continue
 		}
 		unsafe {
-			t[k] = c + 1
+			zf_t[zf_k] = zf_c + 1
 		}
-		return n
+		return zf_n
 	}
-	at := k + 1
-	mut j := n
-	for j > at {
+	zf_at := zf_k + 1
+	mut zf_j := zf_n
+	for zf_j > zf_at {
 		unsafe {
-			t[j] = t[j - 1]
+			zf_t[zf_j] = zf_t[zf_j - 1]
 		}
-		j--
+		zf_j--
 	}
 	unsafe {
-		t[at] = `1`
+		zf_t[zf_at] = `1`
 	}
-	return n + 1
+	return zf_n + 1
 }
 
 // one value at a precision into out at pos, in Zig's spelling (see above); returns the new pos
-fn zfmt_val(out &u8, cap int, pos int, x f64, prec int) int {
-	mut tmp := [400]u8{}
-	tp := unsafe { &tmp[0] }
-	mut len := 0
-	if x != x {
-		len = zfmt_lit(tp, if zfmt_signbit(x) { '-nan' } else { 'nan' })
-	} else if x > 1.7976931348623157e308 {
-		len = zfmt_lit(tp, 'inf')
-	} else if x < -1.7976931348623157e308 {
-		len = zfmt_lit(tp, '-inf')
+fn zfmt_val(zf_out &u8, zf_cap int, zf_pos int, zf_x f64, zf_prec int) int {
+	mut zf_tmp := [400]u8{}
+	zf_tp := unsafe { &zf_tmp[0] }
+	mut zf_len := 0
+	if zf_x != zf_x {
+		zf_len = zfmt_lit(zf_tp, if zfmt_signbit(zf_x) { '-nan' } else { 'nan' })
+	} else if zf_x > 1.7976931348623157e308 {
+		zf_len = zfmt_lit(zf_tp, 'inf')
+	} else if zf_x < -1.7976931348623157e308 {
+		zf_len = zfmt_lit(zf_tp, '-inf')
 	} else {
-		len = C.snprintf(&char(tp), 400, &char(zfmt_specs[prec + 1].str), x)
-		ax := if x < 0 { -x } else { x }
-		if len > 0 && len < 400 && tmp[len - 1] == `5` && ax < zfmt_bounds[prec]
-			&& unsafe { tos(tp, len) }.f64() == x {
-			len = zfmt_round_up(tp, len - 1)
+		zf_len = C.snprintf(&char(zf_tp), 400, &char(zfmt_specs[zf_prec + 1].str), zf_x)
+		zf_ax := if zf_x < 0 { -zf_x } else { zf_x }
+		if zf_len > 0 && zf_len < 400 && zf_tmp[zf_len - 1] == `5` && zf_ax < zfmt_bounds[zf_prec]
+			&& unsafe { tos(zf_tp, zf_len) }.f64() == zf_x {
+			zf_len = zfmt_round_up(zf_tp, zf_len - 1)
 		} else {
-			len = C.snprintf(&char(tp), 400, &char(zfmt_specs[prec].str), x)
+			zf_len = C.snprintf(&char(zf_tp), 400, &char(zfmt_specs[zf_prec].str), zf_x)
 		}
 	}
-	if len > 400 {
-		len = 400
+	if zf_len > 400 {
+		zf_len = 400
 	}
-	for k in 0 .. len {
-		zfmt_put(out, cap, pos + k, tmp[k])
+	for zf_k in 0 .. zf_len {
+		zfmt_put(zf_out, zf_cap, zf_pos + zf_k, zf_tmp[zf_k])
 	}
-	return pos + len
+	return zf_pos + zf_len
 }
