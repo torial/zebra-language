@@ -1,0 +1,52 @@
+# BUG-542: a WebSocket close frame goes out AT MOST ONCE.
+#
+# The peer closes; `recv()` sees the close frame, answers it, and returns nil. The
+# handler then calls `ws.close()` -- the ordinary shape of every server loop. Before the
+# fix that sent a SECOND close frame, into a socket the peer had already dropped, and on
+# Windows Zig's std printed `error.Unexpected NTSTATUS=0xc000013b (LOCAL_DISCONNECT)` and
+# a trace for it before the runtime's `catch {}` ran: a normal end reported as a failure,
+# about runtime code the user never wrote. 8 of 8 runs before the fix, 0 of 8 after.
+#
+# The smoke registration asserts the output holds NO `NTSTATUS` line (Windows is where the
+# trace appears; elsewhere the leg holds trivially) and that the host saw both messages,
+# which proves the close path ran at all. Bounded like ws_echo_test: the server runs on a
+# `sys.go` thread, the connect retries with a ceiling, the host's report is awaited with
+# a timeout (a channel, not a sleep), and main returns when done.
+
+var host_done: Chan(int) = Chan(int)(1)
+
+def host(ws: WsConn)
+    var n: int = 0
+    while true
+        var m = ws.recv()
+        if m as msg
+            n = n + 1
+        else
+            break
+    ws.close()
+    host_done.send(n)
+
+def main()
+    sys.go(def()
+        Ws.serve(19916, host)
+    )
+    var sent: bool = false
+    var attempts: int = 0
+    while attempts < 40 and not sent
+        var c = Ws.connect("ws://127.0.0.1:19916/")
+        if c as ws
+            ws.send("a")
+            ws.send("b")
+            ws.close()
+            sent = true
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+    assert sent, "client reached the in-process server within 40 attempts"
+    # The host reports after it has answered the close AND called ws.close() -- the
+    # second-close site -- so by the time main prints, both writes have happened.
+    var got: int? = host_done.recvTimeout(20.0)
+    if got as n
+        print("bug542: host saw ${n} messages, then the close")
+    else
+        print("bug542: host never finished")

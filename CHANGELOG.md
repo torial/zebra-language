@@ -58,6 +58,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A WebSocket close frame is sent once (BUG-542).** When the peer closed, `recv()`
+  answered its close frame and the handler's `ws.close()` sent a second one into the dropped
+  socket; on Windows Zig's std printed an "unexpected NTSTATUS" trace for that write. The
+  runtime now records that a close frame went out, or that a read found the peer gone.
+
 - **A `zebra` run inside a clone of the Zebra repo uses its own runtime (BUG-543).** The
   runtime files read at codegen time were looked up in `./selfhost/` before the copy beside
   the binary, so the working directory decided which runtime a program was built against. They

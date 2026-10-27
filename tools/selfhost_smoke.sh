@@ -712,7 +712,9 @@ smoke_run_flag() {
     fi
 }
 
-# smoke_run_bounded <zbr> <expected> [secs] — smoke_run with a HARD wall-clock ceiling.
+# smoke_run_bounded <zbr> <expected> [secs] [forbidden] — smoke_run with a HARD wall-clock
+# ceiling. `forbidden`, when given, must NOT appear anywhere in the output (BUG-542: a std
+# trace printed on the way to a correct answer is still a failure the user sees).
 #
 # WHY THIS EXISTS: no other helper here has a timeout, so a fixture that fails to
 # terminate hangs the entire tier rather than failing it. That is not hypothetical --
@@ -729,6 +731,7 @@ smoke_run_bounded() {
     local zbr="$1"
     local expected="$2"
     local secs="${3:-30}"
+    local forbidden="${4:-}"
     local label
     label="$(basename "$zbr" .zbr)_run"
     local got rc
@@ -743,6 +746,10 @@ smoke_run_bounded() {
     elif [[ $rc -ne 0 ]]; then
         echo "  FAIL: $label (non-zero exit $rc)" >&2
         echo "$got" >&2
+        FAIL=$((FAIL + 1))
+    elif [[ -n "$forbidden" ]] && echo "$got" | grep -qF -- "$forbidden"; then
+        echo "  FAIL: $label ('$forbidden' must not appear in output)" >&2
+        echo "    got: $got" >&2
         FAIL=$((FAIL + 1))
     elif echo "$got" | grep -qF -- "$expected"; then
         echo "  PASS: $label"
@@ -1780,6 +1787,10 @@ smoke_run_bounded test/shell_test.zbr    "shell_test: OK" 90
 smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
 # BUG-611: the handshake's accept value against RFC 6455's own sample key, read back over raw TCP
 smoke_run_bounded test/bug611_ws_accept_test.zbr "bug611_ws_accept: OK" 90
+# BUG-542: a close frame goes out once -- recv() answers the peer's close, and the handler's
+# ws.close() must not write a second one into the dropped socket (on Windows std printed an
+# "unexpected NTSTATUS" trace for it). The expected line proves the close path ran.
+smoke_run_bounded test/bug542_ws_close_once_test.zbr "bug542: host saw 2 messages, then the close" 90 "NTSTATUS"
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60

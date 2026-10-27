@@ -43,6 +43,53 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-542: on Windows, a WebSocket whose peer has already gone prints a Zig "unexpected NTSTATUS" error trace when the runtime answers its close frame -- FIXED 2026-10-27 (found 2026-10-08)
+- **Severity:** Low-Medium (the program is correct and continues; but a user sees a
+  40-line Zig trace about runtime code they never wrote -- UNGIT "nothing fabricated" in
+  reverse: a normal end reported as a failure).
+- **Reported by:** Fable, GameEngine (`net_host_test`, Zig 0.16, Debug). NOT yet reproduced
+  here, and not yet checked under Zig 0.17, whose std may map these statuses.
+- **Path:** the peer closes; `_ws_recv` sees opcode 8 and calls `_ws_send_close_frame`;
+  `conn.writeAll(&frame) catch {}` flushes into std's `netWriteWindows`, which maps only the
+  NTSTATUS values it knows and returns `windows.unexpectedStatus(status)` for
+  CONNECTION_RESET (0xc000020d) / CONNECTION_ABORTED (0xc0000241) -- and that function
+  PRINTS the trace itself in Debug (`std.options.unexpected_error_tracing`), before the
+  runtime's `catch {}` sees `error.Unexpected`. A second trace comes from the read side
+  (`netReadWindows` -> `readExact` -> `_ws_recv`).
+- **Fix directions (pick with a repro in hand):** (a) do not write the close reply when the
+  read that delivered the close already showed the peer gone, and treat a reset on the
+  read side as end-of-stream in the runtime; (b) set `unexpected_error_tracing = false` in
+  the emitted root's `std_options` -- broader: it silences every such std trace in Zebra
+  programs, which the runtime already handles as errors, but it also hides genuinely
+  unexpected statuses from anyone debugging the runtime. Prefer (a) for the close path;
+  decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
+  output must hold no `NTSTATUS` line (Windows-only leg).
+- **REPRODUCED AND FIXED 2026-10-27, and the path was not the one written above.** The
+  repro (a host looping on `recv()` until nil, then `ws.close()`; a client that sends two
+  messages and closes) printed `error.Unexpected NTSTATUS=0xc000013b (LOCAL_DISCONNECT)` on
+  8 of 8 runs under Zig 0.17. Markers on every read and write named the line: the close
+  reply in `_ws_recv` SUCCEEDED; it was the handler's `ws.close()` that wrote a SECOND close
+  frame, because `_ws_recv` answered the peer's close without recording it. `Ws.serve`'s
+  fallback had the same shape.
+- **The fix (direction (a)):** `_WsConn.close_sent`. `_ws_send_close_frame` sends at most
+  once, and every failed read in `_ws_recv` sets the flag, so nothing is written into a
+  socket the peer has dropped. `closed` keeps meaning "the stream was closed" -- the stream
+  is still closed by `ws.close()` and by the fallback. 0 of 8 runs after, same generated
+  source, only the runtime differing. Direction (b) was not taken: no std trace is silenced.
+- **The ABRUPT case (no close frame; the peer's process exits) is already quiet under Zig
+  0.17**, which maps `CONNECTION_RESET` on reads. Under the shared 0.16 it still printed one
+  `CONNECTION_RESET` trace per disconnect, from std's read path, with the fix in place --
+  measured, and first mistaken for a failure of the fix until the binary turned out to have
+  been built by the 0.16 on PATH rather than the repo's pin. The tree builds with 0.17.
+- **Fixture:** `test/bug542_ws_close_once_test.zbr`, registered `smoke_run_bounded` with a
+  new optional fourth argument -- a string that must NOT appear in the output (`NTSTATUS`).
+  The expected line comes from main after the host reports over a channel, so it proves the
+  close path ran. Red-checked by putting back the pre-fix preamble: the registration fails
+  on the forbidden string 3 of 3, `ws_echo_test` beside it unaffected.
+- **Not covered:** an unmapped status (`CONNECTION_ABORTED`) on the FIRST close reply, if the
+  peer resets between our read of its close and our answer. That write still goes out and
+  std would still print. Not observed.
+
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- FIXED 2026-10-27 (found 2026-10-08; gate half 2026-10-10)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).
 - **Mechanism:** `defaultPreamblePath()` (selfhost/main.zbr) tries

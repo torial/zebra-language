@@ -46,28 +46,6 @@
 
 ---
 
-### BUG-542: on Windows, a WebSocket whose peer has already gone prints a Zig "unexpected NTSTATUS" error trace when the runtime answers its close frame -- OPEN (found 2026-10-08)
-- **Severity:** Low-Medium (the program is correct and continues; but a user sees a
-  40-line Zig trace about runtime code they never wrote -- UNGIT "nothing fabricated" in
-  reverse: a normal end reported as a failure).
-- **Reported by:** Fable, GameEngine (`net_host_test`, Zig 0.16, Debug). NOT yet reproduced
-  here, and not yet checked under Zig 0.17, whose std may map these statuses.
-- **Path:** the peer closes; `_ws_recv` sees opcode 8 and calls `_ws_send_close_frame`;
-  `conn.writeAll(&frame) catch {}` flushes into std's `netWriteWindows`, which maps only the
-  NTSTATUS values it knows and returns `windows.unexpectedStatus(status)` for
-  CONNECTION_RESET (0xc000020d) / CONNECTION_ABORTED (0xc0000241) -- and that function
-  PRINTS the trace itself in Debug (`std.options.unexpected_error_tracing`), before the
-  runtime's `catch {}` sees `error.Unexpected`. A second trace comes from the read side
-  (`netReadWindows` -> `readExact` -> `_ws_recv`).
-- **Fix directions (pick with a repro in hand):** (a) do not write the close reply when the
-  read that delivered the close already showed the peer gone, and treat a reset on the
-  read side as end-of-stream in the runtime; (b) set `unexpected_error_tracing = false` in
-  the emitted root's `std_options` -- broader: it silences every such std trace in Zebra
-  programs, which the runtime already handles as errors, but it also hides genuinely
-  unexpected statuses from anyone debugging the runtime. Prefer (a) for the close path;
-  decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
-  output must hold no `NTSTATUS` line (Windows-only leg).
-
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a

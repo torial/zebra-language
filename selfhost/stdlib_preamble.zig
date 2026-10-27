@@ -2725,6 +2725,13 @@ pub const _WsConn = struct {
     },
     server_side: bool,
     closed: bool,
+    // BUG-542: a close frame goes out at most once, and never after a read has shown the
+    // peer gone. Without it a peer's close was answered by `_ws_recv` AND again by the
+    // handler's `ws.close()` (or Ws.serve's fallback); the second write met a socket the
+    // peer had already dropped, and on Windows std printed an "unexpected NTSTATUS" trace
+    // (LOCAL_DISCONNECT / CONNECTION_ABORTED are unmapped) before our `catch {}` ran.
+    // `closed` still means "the stream was closed" -- the two are different events.
+    close_sent: bool = false,
 
     pub fn readExact(self: *_WsConn, buf: []u8) !void {
         switch (self.impl) {
@@ -2803,6 +2810,8 @@ pub fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []cons
 }
 
 pub fn _ws_send_close_frame(conn: *_WsConn) void {
+    if (conn.close_sent) return;
+    conn.close_sent = true;
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
@@ -2870,6 +2879,7 @@ pub fn _ws_connect(url: []const u8) ?*_WsConn {
         // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
         conn.server_side = false;
         conn.closed = false;
+        conn.close_sent = false;
         conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
         conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
         conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
@@ -2954,28 +2964,28 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
-        conn.readExact(&hdr2) catch return null;
+        conn.readExact(&hdr2) catch { conn.close_sent = true; return null; };
         const fin     = (hdr2[0] & 0x80) != 0;
         const opcode  = hdr2[0] & 0x0f;
         const has_mask = (hdr2[1] & 0x80) != 0;
         var plen: u64 = hdr2[1] & 0x7f;
         if (plen == 126) {
             var ext2: [2]u8 = undefined;
-            conn.readExact(&ext2) catch return null;
+            conn.readExact(&ext2) catch { conn.close_sent = true; return null; };
             plen = (@as(u64, ext2[0]) << 8) | ext2[1];
         } else if (plen == 127) {
             var ext8: [8]u8 = undefined;
-            conn.readExact(&ext8) catch return null;
+            conn.readExact(&ext8) catch { conn.close_sent = true; return null; };
             plen = 0;
             for (ext8) |b| plen = (plen << 8) | b;
         }
         var mk: [4]u8 = .{ 0, 0, 0, 0 };
-        if (has_mask) conn.readExact(&mk) catch return null;
+        if (has_mask) conn.readExact(&mk) catch { conn.close_sent = true; return null; };
         // Read payload (cap at 64 MiB)
         const safe: usize = @intCast(@min(plen, 64 * 1024 * 1024));
         const payload = alloc.alloc(u8, safe) catch return null;
         defer alloc.free(payload);
-        conn.readExact(payload) catch return null;
+        conn.readExact(payload) catch { conn.close_sent = true; return null; };
         if (has_mask) { for (payload, 0..) |*b, i| { b.* = b.* ^ mk[i % 4]; } }
         switch (opcode) {
             0, 1, 2 => {
@@ -3062,6 +3072,7 @@ pub fn _ws_serve(port: u16, handler: anytype) void {
             defer _pa.destroy(ws);
             ws.server_side = true;
             ws.closed = false;
+            ws.close_sent = false;
             ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
             ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
             ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
