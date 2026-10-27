@@ -163,11 +163,15 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `nextBool` `nextFloat` `nextInt`
 
-## Namespaces (31) and static members (175; 1 namespace(s) OPEN: Math)
+## Namespaces (32) and static members (179; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
 `parse`
+
+### Base64 (4) <!-- genBase64Call -->
+
+`decode` `decodeUrl` `encode` `encodeUrl`
 
 ### Build (1) <!-- genBuildStaticCall -->
 

@@ -37,7 +37,9 @@ smaller surface diffed against a smaller file is still "matches".
 Usage:
     python tools/surface_inventory.py            # print the inventory
     python tools/surface_inventory.py --write    # write docs/SURFACE.md
-    python tools/surface_inventory.py --check    # gate: docs/SURFACE.md must equal the derivation
+    python tools/surface_inventory.py --check    # gate: docs/SURFACE.md must equal the derivation,
+                                                 #   and TypeChecker's namespaceMembers too (BUG-638)
+    python tools/surface_inventory.py --print-checker-table   # regenerate namespaceMembers
 """
 import pathlib
 import re
@@ -127,11 +129,13 @@ def namespaces():
     lines = read(CODEGEN)
     disp = {}
     for i, ln in enumerate(lines):
-        m = re.search(r'id\.name == "([A-Za-z]+)"', ln)
+        # [A-Za-z][A-Za-z0-9]*: `Base64` has a digit, and the letters-only pattern left it
+        # out of the surface entirely until 2026-10-27 (found writing BUG-638's table).
+        m = re.search(r'id\.name == "([A-Za-z][A-Za-z0-9]*)"', ln)
         if not m:
             continue
         for j in range(i + 1, min(i + 4, len(lines))):
-            c = re.search(r"\b(gen[A-Za-z]+Call)\(", lines[j])
+            c = re.search(r"\b(gen[A-Za-z0-9]+Call)\(", lines[j])
             if c:
                 disp.setdefault(m.group(1), c.group(1))
                 break
@@ -199,6 +203,67 @@ def receivers():
     if total < FLOORS["receiver_methods"]:
         refuse("only %d receiver methods derived (floor %d)" % (total, FLOORS["receiver_methods"]))
     return res
+
+
+# ---- the checker's namespace table (BUG-638) ----------------------------------------------
+# An unknown member of a CLOSED namespace is refused by the checker, from a table in
+# TypeChecker.zbr (`namespaceMembers`). That table is GENERATED from the derivation above
+# (`--print-checker-table`) and `--check` asserts the two are equal, so a member added to a
+# generator and not to the table -- which would be refused as unknown -- fails this gate
+# instead of reaching a user. An OPEN namespace (Math) is not in the table: unknown names
+# pass through to Zig by design.
+CHECKER_TABLE_FN = "namespaceMembers"
+
+
+def checker_table_text():
+    ns, _ = namespaces()
+    out = ["def %s(ns: str): str" % CHECKER_TABLE_FN]
+    for name in sorted(ns):
+        fn, mem, open_to = ns[name]
+        if open_to:
+            continue
+        out.append('    if ns == "%s"' % name)
+        out.append('        return "|%s|"' % "|".join(mem))
+    out.append('    return ""')
+    return out
+
+
+def checker_table():
+    body = _body(read(CHECKER), CHECKER_TABLE_FN)
+    if body is None:
+        refuse("%s not found in TypeChecker.zbr" % CHECKER_TABLE_FN)
+    res, cur = {}, None
+    for l in body:
+        m = re.match(r'\s*if ns == "([A-Za-z0-9_]+)"', l)
+        if m:
+            cur = m.group(1)
+            continue
+        m = re.match(r'\s*return "\|(.*)\|"', l)
+        if m and cur:
+            res[cur] = sorted(x for x in m.group(1).split("|") if x)
+            cur = None
+    if len(res) < FLOORS["namespaces"] - 1:
+        refuse("only %d namespaces in %s (floor %d)" % (len(res), CHECKER_TABLE_FN, FLOORS["namespaces"] - 1))
+    return res
+
+
+def check_checker_table():
+    want = {}
+    ns, _ = namespaces()
+    for name, (fn, mem, open_to) in ns.items():
+        if not open_to:
+            want[name] = sorted(mem)
+    have = checker_table()
+    bad = []
+    for name in sorted(set(want) | set(have)):
+        a, b = set(have.get(name, [])), set(want.get(name, []))
+        if name not in have:
+            bad.append("  %s: missing from %s" % (name, CHECKER_TABLE_FN))
+        elif name not in want:
+            bad.append("  %s: in %s but no closed generator" % (name, CHECKER_TABLE_FN))
+        elif a != b:
+            bad.append("  %s:%s%s" % (name, "".join("  +%s" % x for x in sorted(b - a)), "".join("  -%s" % x for x in sorted(a - b))))
+    return bad, len(have)
 
 
 # ---- render -----------------------------------------------------------------------------
@@ -269,7 +334,18 @@ def main():
         OUT.write_text(text, encoding="utf-8", newline="\n")
         print("surface-inventory: wrote %s" % OUT.relative_to(REPO))
         return
+    if mode == "--print-checker-table":
+        print("\n".join(checker_table_text()))
+        return
     if mode == "--check":
+        bad, n = check_checker_table()
+        if bad:
+            print("\n".join(bad))
+            print("surface-inventory: TypeChecker.zbr's %s DIFFERS from the namespace derivation -- "
+                  "a member the checker would refuse, or allow and zig would refuse (BUG-638). "
+                  "Replace it with `python tools/surface_inventory.py --print-checker-table`." % CHECKER_TABLE_FN)
+            sys.exit(1)
+        print("surface-inventory: %s matches the derivation (%d closed namespaces)" % (CHECKER_TABLE_FN, n))
         if not OUT.exists():
             print("surface-inventory: %s missing -- run --write" % OUT.relative_to(REPO))
             sys.exit(1)

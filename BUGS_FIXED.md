@@ -43,6 +43,49 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-638: an unknown member of a NAMESPACE (`Random.seeded`, `Csv.writer`) passes `-c` and fails inside zig, sometimes as "unreachable code" -- FIXED 2026-10-27 (found the same day)
+- **Severity:** Medium (a leak, and the worst-worded one: `Random.seeded(3)` reaches zig as
+  `@compileError("selfhost: unknown Random.seeded")`, and zig reported `unreachable code` at
+  the user's line, so the one sentence that names the problem never reaches them).
+- **Found** probing BUG-637 with two API names that do not exist (`Random.seeded`,
+  `Csv.writer`); `zebra -c` exited 0 on both.
+- **Measured:** 33 such `@compileError("selfhost: unknown <NS>...")` fallbacks in
+  selfhost/CodeGen.zbr across 31 namespaces -- every generator's last arm. The receivers had
+  the same gap until BUG-369, closed by a `*MethodKnown` predicate per type in the checker;
+  the namespaces never got one. `surface-freeze` already DERIVES each namespace's members from
+  these dispatch arms (docs/SURFACE.md), so the oracle exists.
+- **Fix direction:** the BUG-369 recipe -- a checker predicate per namespace (or one table
+  keyed by namespace), refusing an unknown member at the call with the known list, and
+  `surface-freeze` asserting the predicate equals the derived member set so the two cannot
+  drift. `Math` is OPEN (members pass through to `std.math`) and must stay exempt.
+- **Repro:** `def main()` / `    var r = Random.seeded(3)` -- `-c` exits 0.
+- **FIXED -- the BUG-369 recipe, with the table generated rather than written.**
+  `namespaceMembers(ns)` in TypeChecker.zbr holds every CLOSED namespace's members; it is
+  produced by `python tools/surface_inventory.py --print-checker-table` from the same
+  derivation that writes docs/SURFACE.md, and `surface-freeze` (`--check`) now fails when the
+  two differ, so a member added to a generator and not to the table cannot reach a user as a
+  false refusal. `checkNamespaceMember` runs from `checkCallExpr` -- every call, statement
+  position included, which `inferExpr` alone never reached (`Terminal.clearScreen()` on its
+  own line) -- and BUG-398's hand-written DateTime and Crypto refusals now call it too, so a
+  site both paths visit produces one identical message and addErr's duplicate filter reports
+  it once. The message lists the members that exist. A local, parameter, class, enum, union,
+  module variable or `use`d module of the same name is the user's and is left alone
+  (`ModuleTypes.use_stems`, filled beside `exposed_from`). `Math` stays OPEN and exempt.
+- **Found on the way:** surface_inventory's dispatch and generator patterns were
+  `[A-Za-z]+`, so `Base64` (a digit) was missing from docs/SURFACE.md entirely -- 4 members.
+  Both patterns take digits now; the surface is 32 namespaces / 179 members. And QUICKSTART
+  documented three members that never existed (`Log.defaultLevel()`, `Mime.lookup`,
+  `Terminal.clearScreen`); each now shows a real call.
+- **False-refusal sweep:** `-c` with the new compiler over every `.zbr` in this repo,
+  zebra-ide and the GameEngine (10,605 files): the refusal fired in 4, all intended -- the two
+  new fixtures and `bug398_datetime_static_fail` (twice: once in a stale `.claude` worktree).
+  The static scan's GameEngine candidates (`sys.delay`, `Path.computeAsync` in
+  `ported_scripts/`) never reach the checker: those files already fail earlier.
+- **Fixtures:** `test/fail_fixtures/bug638_namespace_stmt_fail.zbr` (statement position) and
+  `bug638_namespace_init_fail.zbr` (initialiser), both passing `-c` on the N-1 anchor;
+  `test/bug638_namespace_shadow_test.zbr` (a local, a parameter and a class named like a
+  namespace) -- red-checked by deleting the guard: three refusals, one per leg.
+
 ### BUG-639: `sys.selfExe()` had no type, so `var e = sys.selfExe()` then `e.len()` failed inside zig -- FIXED 2026-10-27 (found the same day)
 - **Found** by BUG-637's corpus census: the only list literal whose element 0 the checker
   could not type began with `sys.selfExe()`. A probe then showed the leak: `e.len()` on the

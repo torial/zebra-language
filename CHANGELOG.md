@@ -58,6 +58,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **An unknown member of a builtin namespace is refused (BUG-638).** `Random.seeded(3)` or
+  `Terminal.clearScreen()` passed `zebra -c` and failed inside zig, often reported as
+  "unreachable code"; the front end now names the namespace and lists the members it has. A
+  local, parameter, class or module of the same name is unaffected. `Math` stays open (unknown
+  names pass through to `std.math`). `Base64` (encode/decode/encodeUrl/decodeUrl) now appears
+  in docs/SURFACE.md -- it had been left out by the inventory's pattern, not by the language.
+
 - **A list literal of runtime values compiles (BUG-637).** `[t1, t2]` of CSV tables, `sys.run`
   results, regexes, dates, timers, processes or memory stats passed `zebra -c` and failed in
   zig, because the element type was spelled wrong or guessed as `str`. Element 0's type now

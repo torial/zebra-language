@@ -989,6 +989,13 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   diff, naming the member (`str: -trimLeft`); `--write`
                                 #   re-derives. After 1.0 a change here is a promise
                                 #   change and gets a CHANGELOG line in the same commit.
+                                #   IT ALSO GENERATES AND CHECKS THE CHECKER'S NAMESPACE
+                                #   TABLE (BUG-638, 2026-10-27): TypeChecker's
+                                #   `namespaceMembers` refuses an unknown member of a closed
+                                #   namespace at -c, and is emitted by `--print-checker-table`;
+                                #   `--check` fails, naming the member, when the two differ.
+                                #   Writing it found `Base64` missing from SURFACE.md -- the
+                                #   dispatch pattern was letters-only.
                                 #   IT SAYS WHICH NAMESPACES ARE OPEN. A generator that
                                 #   emits `mname` verbatim outside a @compileError arm
                                 #   passes unlisted members through to Zig -- Math is the
@@ -1013,7 +1020,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   a *MethodKnown predicate per type, derived from the
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
-                                #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
+                                #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 32 namespaces / 179 members,
                                 #   23 receivers / 289 methods by SURFACE.md's section counts (5 / 120
                                 #   on the day it was written; the SIMD vector/mask table and the
                                 #   Random instance joined 2026-09-18).
@@ -3532,7 +3539,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **902** <!-- doc-gen: 902 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **903** <!-- doc-gen: 903 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

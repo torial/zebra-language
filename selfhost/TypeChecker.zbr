@@ -480,6 +480,9 @@ class ModuleTypes
     # own table (buildModuleTypes), never for the merged dependency table, so one module's
     # imports cannot leak into another's lookups.
     var exposed_from: HashMap(str, str)
+    # BUG-638: the stems this FILE `use`s (`use pkg/Random` -> "Random"), filled like
+    # exposed_from, so a module named like a builtin namespace stays the user's.
+    var use_stems: HashMap(str, bool)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -505,6 +508,7 @@ class ModuleTypes
         dep_struct_recv = ""
         generic_fn_tparams = HashMap()
         exposed_from = HashMap()
+        use_stems = HashMap()
 
     def addModuleVar(name: str)
         .module_vars.put(internString(name), true)
@@ -1480,6 +1484,7 @@ def buildModuleTypes(m: Module): ModuleTypes
     for d in m.decls                                    # BUG-604
         if d is Decl.use_ as du
             var stem: str = moduleStemOf(du.path)
+            mt.use_stems.put(internString(stem), true)
             for xn in du.exposed
                 mt.exposed_from.put(internString(xn), internString(stem))
     return mt
@@ -1850,6 +1855,10 @@ class InferCtx
             return true
         return .dep_types.hasUnion(name)
 
+    # BUG-638: this file has `use .../<name>`.
+    def isUsedModule(name: str): bool
+        return .module_types.use_stems.contains(name)
+
     def bind(name: str, t: Type_)
         scope.put(name, t)
 
@@ -2120,6 +2129,98 @@ def extendTargetName(target: TypeRef): str
     if target is TypeRef.generic as eg
         return eg.name
     return ""
+
+# BUG-638: the static members of each CLOSED builtin namespace, "|a|b|". GENERATED -- do not
+# edit by hand: `python tools/surface_inventory.py --print-checker-table` derives it from the
+# CodeGen generators (genXxxCall), and surface-freeze fails when the two differ. Math is OPEN
+# (unknown names pass through to std.math) and is not here; "" = not a closed namespace.
+def namespaceMembers(ns: str): str
+    if ns == "Arg"
+        return "|parse|"
+    if ns == "Base64"
+        return "|decode|decodeUrl|encode|encodeUrl|"
+    if ns == "Build"
+        return "|new|"
+    if ns == "Compress"
+        return "|gunzip|gzip|"
+    if ns == "Crypto"
+        return "|decrypt|deriveKey|encrypt|"
+    if ns == "Csv"
+        return "|parse|parseFile|"
+    if ns == "DateTime"
+        return "|fromEpoch|now|of|"
+    if ns == "Dir"
+        return "|create|createAll|delete|deleteAll|exists|list|tryDeleteAll|walk|"
+    if ns == "File"
+        return "|append|copy|delete|exists|isDir|isFile|listDir|modtime|read|readLines|rename|size|tryDelete|write|writeLines|"
+    if ns == "Gui"
+        return "|clipboardText|getDpi|registerIcon|run|scaleAllSizes|setClipboardText|setColor|setColorsDark|setStyleFloat|setVec2|"
+    if ns == "Hash"
+        return "|blake3|crc32|fnv64|hmac256|hmac512|md5|sha256|sha512|xxHash64|"
+    if ns == "Http"
+        return "|get|json|post|postJson|serve|"
+    if ns == "Json"
+        return "|array|object|parse|parseStrict|stringify|"
+    if ns == "Log"
+        return "|debug|err|error|info|json|setFile|setLevel|setOutput|timestamp|warn|"
+    if ns == "Mime"
+        return "|fromExt|toExt|"
+    if ns == "Net"
+        return "|resolve|"
+    if ns == "Path"
+        return "|absolute|basename|dirname|ext|extension|isAbsolute|join|stem|"
+    if ns == "Profile"
+        return "|dump_folded|end|report|reset|start|"
+    if ns == "Progress"
+        return "|bar|"
+    if ns == "Random"
+        return "|bytes|choice|gaussian|new|randBool|randFloat|randInt|seed|shuffle|weighted|"
+    if ns == "Reflect"
+        return "|className|fieldNames|fieldTypes|hostKind|"
+    if ns == "Regex"
+        return "|compile|"
+    if ns == "Shell"
+        return "|run|"
+    if ns == "Sqlite"
+        return "|open|"
+    if ns == "Tcp"
+        return "|connect|serve|"
+    if ns == "Terminal"
+        return "|height|isTty|width|write|writeln|"
+    if ns == "Timer"
+        return "|start|"
+    if ns == "Udp"
+        return "|bind|socket|"
+    if ns == "Uri"
+        return "|parse|"
+    if ns == "Ws"
+        return "|connect|serve|"
+    if ns == "sys"
+        return "|args|cwd|err|errln|exec_inherit|exit|getenv|go|memStats|readBytes|readLine|readStdinAvailable|run|selfExe|setenv|sleep|spawn|spawnPiped|spawnPipedIn|stdinClosed|writeStdout|"
+    return ""
+
+# BUG-638: an unknown member of a closed builtin namespace (`Random.seeded`, `Csv.writer`)
+# passed -c and reached zig as the generator's @compileError, which zig reported as
+# "unreachable code" at the user's line -- the sentence naming the mistake never arrived.
+# A local, parameter, class, enum, union, module variable or used module of the same name is
+# the USER's, so it is left alone. Called from checkCallExpr (every call, statement position
+# included) and from inferExpr's DateTime/Crypto arms; the message is identical from both,
+# so addErr's duplicate filter reports a site once.
+def checkNamespaceMember(ns: str, mem: ExprMember, ctx: InferCtx)
+    var known: str = namespaceMembers(ns)
+    if known == ""
+        return
+    if known.contains("|" + mem.member + "|")
+        return
+    if ctx.hasLocal(ns) or ctx.hasClassAny(ns) or ctx.hasEnumAny(ns) or ctx.hasUnion(ns)
+        return
+    if ctx.isUsedModule(ns) or ctx.module_types.hasModuleVar(ns)
+        return
+    var shown: str = known.substring(1, known.len - 1).replaceAll("|", ", ")
+    var hint: str = ""
+    if ns == "DateTime"
+        hint = "; inZone and the rest are methods on a DateTime value"
+    ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'" + ns + "' has no static function '" + mem.member + "' (it has: " + shown + hint + ")")
 
 def strMethodKnown(name: str): bool
     return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
@@ -3738,13 +3839,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(Type_.string_)
                             # BUG-398: anything else was typed str? and then a
                             # @compileError in codegen ("unreachable code" one line on).
-                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Crypto' has no function '" + mem.member + "' (encrypt/decrypt/deriveKey)")
+                            # BUG-638: refused by the general namespace check.
+                            checkNamespaceMember(bname, mem, ctx)
                             return Type_.unknown_
                         if bname == "DateTime" and not ctx.hasClassAny("DateTime")
                             if mem.member != "now" and mem.member != "fromEpoch" and mem.member != "of"
                                 # BUG-398: `DateTime.listZones()` does not exist and `inZone`
                                 # is an instance method; both were a @compileError.
-                                ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'DateTime' has no static function '" + mem.member + "' (now/fromEpoch/of; inZone and the rest are methods on a DateTime value)")
+                                # BUG-638: refused by the general namespace check.
+                                checkNamespaceMember(bname, mem, ctx)
                                 return Type_.unknown_
                         if bname == "Json"
                             if mem.member == "object" or mem.member == "array"
@@ -7201,6 +7304,7 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
             if mem.object is Expr.ident as nsid
                 if nsid.name == "sys" and not ctx.hasLocal("sys")
                     checkSysArgv(mem, call, file, line, ctx)
+                checkNamespaceMember(nsid.name, mem, ctx)
             var recv: Type_ = inferExpr(mem.object, ctx)
             if recv is Type_.ref_to as rrt
                 recv = rrt

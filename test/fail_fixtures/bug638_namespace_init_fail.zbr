@@ -1,0 +1,5 @@
+# BUG-638: an unknown member of a builtin namespace in a var initialiser. `Random.new(seed)`
+# makes a seeded generator; there is no `Random.seeded`.
+def main()
+    var r = Random.seeded(3)
+    print(r)

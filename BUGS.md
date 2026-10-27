@@ -46,23 +46,6 @@
 
 ---
 
-### BUG-638: an unknown member of a NAMESPACE (`Random.seeded`, `Csv.writer`) passes `-c` and fails inside zig, sometimes as "unreachable code" -- OPEN (found 2026-10-27)
-- **Severity:** Medium (a leak, and the worst-worded one: `Random.seeded(3)` reaches zig as
-  `@compileError("selfhost: unknown Random.seeded")`, and zig reported `unreachable code` at
-  the user's line, so the one sentence that names the problem never reaches them).
-- **Found** probing BUG-637 with two API names that do not exist (`Random.seeded`,
-  `Csv.writer`); `zebra -c` exited 0 on both.
-- **Measured:** 33 such `@compileError("selfhost: unknown <NS>...")` fallbacks in
-  selfhost/CodeGen.zbr across 31 namespaces -- every generator's last arm. The receivers had
-  the same gap until BUG-369, closed by a `*MethodKnown` predicate per type in the checker;
-  the namespaces never got one. `surface-freeze` already DERIVES each namespace's members from
-  these dispatch arms (docs/SURFACE.md), so the oracle exists.
-- **Fix direction:** the BUG-369 recipe -- a checker predicate per namespace (or one table
-  keyed by namespace), refusing an unknown member at the call with the known list, and
-  `surface-freeze` asserting the predicate equals the derived member set so the two cannot
-  drift. `Math` is OPEN (members pass through to `std.math`) and must stay exempt.
-- **Repro:** `def main()` / `    var r = Random.seeded(3)` -- `-c` exits 0.
-
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 
 `var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a

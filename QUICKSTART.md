@@ -547,7 +547,7 @@ open(path: "data.txt", mode: "w")       # all named
 - Default expressions are evaluated at the **call site** (not at definition time).  You can
   use runtime values as defaults:
   ```zebra
-  def log(msg: str, level: int = Log.defaultLevel())
+  def show(msg: str, width: int = Terminal.width())
       ...
   ```
 - Type annotation on the default is required — `name = "r"` without `: str` is a
@@ -4441,9 +4441,11 @@ r.close()
 
 | Call                              | Returns      | Notes                                       |
 |-----------------------------------|--------------|----------------------------------------------|
-| `Mime.lookup(filename)`           | str          | MIME type by extension                       |
+| `Mime.fromExt(".png")`            | str          | MIME type by extension (with the dot)        |
+| `Mime.toExt("image/png")`         | str          | Extension for a MIME type                    |
 | `Uri.parse(s)`                    | `UriResult?` | Scheme/host/path/query/fragment              |
-| `Terminal.clearScreen()` etc.     | void         | ANSI helpers                                 |
+| `Terminal.isTty()` / `.width()` / `.height()` | bool / int | Is stdout a terminal; its size  |
+| `Terminal.write(s)` / `.writeln(s)` | void       | Write to the terminal                        |
 | `Timer.start()`                   | `Timer`      | `t.elapsed()` ms as float; `t.elapsedMicros()` int; `t.reset()` |
 
 ### `Compress` — gzip compression

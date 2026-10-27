@@ -1,0 +1,24 @@
+# BUG-638: the namespace-member refusal must leave a USER's name alone -- a local, a
+# parameter and a class that share a builtin namespace's name, each calling a member the
+# builtin does not have. (A `use`d module named like one is covered by the same guard; the
+# test tree has no subdirectory modules to host it.)
+
+class Dice
+    var n: int = 0
+    def seeded(s: int): int
+        return s + 1
+
+class Crypto
+    static def safeDiv(a: int, b: int): int
+        return a / b
+
+def viaParam(Random: Dice): int
+    return Random.seeded(10)
+
+def main()
+    var Random = Dice()
+    var a: int = Random.seeded(3)
+    var b: int = viaParam(Dice())
+    var c: int = Crypto.safeDiv(9, 3)
+    var e: str = Base64.encode("hi")
+    print("bug638: local=${a} param=${b} class=${c} base64=${e}")

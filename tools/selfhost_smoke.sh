@@ -1804,6 +1804,11 @@ smoke_run_bounded test/bug636_sys_argv_ok_test.zbr "bug636 ok: 5 of 5 children r
 smoke_run_bounded test/bug637_runtime_value_list_test.zbr "bug637: tables=2 ran=2 matched=2 dates=2 stats=2 direct=2" 120
 # BUG-639: sys.selfExe() is a str.
 smoke_run test/bug639_sys_selfexe_str_test.zbr "bug639: len>0=true exists=true argv=2"
+# BUG-638: an unknown member of a closed builtin namespace is refused (statement position and
+# a var initialiser), and a user's local / parameter / class of the same name is left alone.
+smoke_tc_fail test/fail_fixtures/bug638_namespace_stmt_fail.zbr "bug638_namespace_stmt_fail.zbr:5:14: error: 'Terminal' has no static function 'clearScreen' (it has: height, isTty, width, write, writeln)"
+smoke_tc_fail test/fail_fixtures/bug638_namespace_init_fail.zbr "bug638_namespace_init_fail.zbr:4:20: error: 'Random' has no static function 'seeded'"
+smoke_run test/bug638_namespace_shadow_test.zbr "bug638: local=4 param=11 class=3 base64=aGk="
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60
