@@ -1038,6 +1038,12 @@ nested container inside it is still shared; `<<-` is the deep copy).
 size, and element-wise equal -- strings by content, nested collections recursively, class
 instances by identity (BUG-506).
 
+**A container's element type is part of its type.** A `List(int)` cannot go where a
+`List(str)` is declared, nor a `List(int?)` where a `List(int)` is -- an argument, a typed
+`var`, an assignment, a field store or a `return` is refused naming both types:
+`type mismatch: expected List(str), got List(int)`. A literal takes the slot's element type,
+so `var xs: List(float) = [1, 2]` is fine (2026-10-26, BUG-626).
+
 ```zebra
 # List
 var items = List(int)()              # empty list, constructor form

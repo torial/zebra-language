@@ -46,6 +46,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A container with the wrong element type is refused (BUG-626).** A `List(int)` passed for
+  a `List(str)`, a `List(int?)` bound to a `List(int)`, a `HashMap(str, int)` into a
+  `HashMap(str, str)` -- as an argument, a typed `var`, an assignment, a field store or a
+  `return` -- passed `zebra -c` and failed inside zig. It is now refused at the value, naming
+  both types. Only element types the compiler knows for certain are compared; a literal takes
+  the slot's type.
+
 - **A method that throws by inference needs `?` at its calls (BUG-628).** A `raise` or `?`
   in a body makes a function throw without `throws` written. For a class or struct method,
   a call without `?` passed `zebra -c` and then failed inside zig ("expected type 'i64',

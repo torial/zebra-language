@@ -1459,6 +1459,18 @@ smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_in
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23: error: throws call needs '?'"
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25: error: throws call needs '?'"
 smoke_run test/bug628_inferred_throws_ok_test.zbr "bug628: 9 5 8"
+# BUG-626: a container whose element type differs from the slot's -- a return, a field store,
+# a call argument, typed vars (List, optional element, HashMap, Set, nested) and an assignment.
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:9:12: error: type mismatch: expected List(int), got List(str)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:14:18: error: type mismatch: expected List(int), found List(str)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:18:13: error: type mismatch: expected List(str), got List(int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:19:24: error: type mismatch: expected List(str), found List(int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:20:24: error: type mismatch: expected List(int), found List(int?)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:22:33: error: type mismatch: expected HashMap(str, str), found HashMap(str, int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:24:24: error: type mismatch: expected Set(str), found Set(int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:26:31: error: type mismatch: expected List(List(str)), found List(List(int))"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:28:9: error: type mismatch: expected List(str), found List(int)"
+smoke_run test/bug626_container_elem_ok_test.zbr "bug626: 2 0 6 2 1 1 1"
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-631. Next new bug: BUG-632.**
+**Last bug number generated: BUG-632. Next new bug: BUG-633.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,28 +46,21 @@
 
 ---
 
-### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- OPEN (found 2026-10-25)
-- **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding
-  it to a `List(str)` passed the front end.
-- **Repro:** all three pass `zebra -c`; zig refuses each.
+### BUG-632: a list literal passed as an ARGUMENT does not take the parameter's element type -- `f([1, 2])` into a `List(float)` fails inside zig -- OPEN (found 2026-10-26)
+- **Found by:** writing BUG-626's positive fixture. The same literal in a typed `var` works.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'List(float)', found 'List(int)'".
   ```
-  def f(xs: List(str)): int
+  def f(xs: List(float)): int
       return xs.len
 
   def main()
-      var a = [1, 2]
-      print(f(a))                    # expected type 'List(str)', found 'List(int)'
-      var b: List(str) = a           # the same, for a typed var
-      var c: List(int) = List(int?)()   # found 'List(?i64)'
+      print(f([1, 2]))          # var xs: List(float) = [1, 2] is fine; f([1.5, 2.0]) is fine
   ```
-- **Mechanism:** `typesCompatible` answers `true` whenever either side is not a primitive,
-  so no container slot -- argument, typed var, assignment, return -- compares element types.
-  The zig message already names the Zebra types, so the user is told what is wrong, but in
-  zig's words and after the build.
-- **Why it was not fixed with BUG-531:** the check would run on every container assignment
-  in every program; it needs the §28a treatment (measure the refusals across the corpus,
-  zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
-  (an empty literal, a generic) that must stay compatible.
+  Reproduced on the N-1 anchor (`f5afd86`) too, so it predates BUG-626.
+- **Expected:** a literal argument takes the parameter's element type, as a literal initialiser
+  does; or, if that is not wanted, a refusal at the literal naming both types.
+- **Control when fixing:** the repro must run and print 2; `f([1.5, 2.0])` and a `List(int)`
+  variable passed to `List(int)` must keep working.
 
 ### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- OPEN (found 2026-10-26)
 - **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.

@@ -5813,6 +5813,9 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if ex_hint != ""
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + numTypeName(exp) + ", got " + numTypeName(inferred) + " " + ex_hint)
         return exp
+    if containerMismatch(exp, inferred, e)
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + userTypeName(exp) + ", got " + userTypeName(inferred))
+        return exp
     if not isPrimitive(exp)
         return inferred
     if optionalIntoPlain(exp, inferred)
@@ -5839,6 +5842,92 @@ def optionalIntoPlain(declared: Type_, inferred: Type_): bool
         if isPrimitive(inner)
             return typesCompatible(declared, inner)
     return false
+
+# BUG-626: a container whose ELEMENT type differs from the slot's -- `List(int)` passed for a
+# `List(str)`, `List(int?)` into a `List(int)` -- passed -c and failed inside zig. Only a
+# DEFINITE difference counts: both sides a primitive (int/uint/float/bool/char/str), an
+# optional of one against a plain one, or containers of those, recursively. A named class, a
+# generic parameter, a sized integer, a tuple or anything inferred `unknown` is left to zig,
+# so an inference gap can never turn into a refusal. A literal is never checked: its
+# elements take the slot's type (`var xs: List(float) = [1, 2]`).
+def containerMismatch(declared: Type_, inferred: Type_, e: Expr): bool
+    if e is Expr.list_lit or e is Expr.set_lit or e is Expr.dict_lit
+        return false
+    return containersDiffer(declared, inferred)
+
+def containersDiffer(a: Type_, b: Type_): bool
+    if a is Type_.list_ as al
+        if b is Type_.list_ as bl
+            return elemsDiffer(al, bl)
+        return false
+    if a is Type_.set_ as aset
+        if b is Type_.set_ as bset
+            return elemsDiffer(aset, bset)
+        return false
+    if a is Type_.chan_ as ach
+        if b is Type_.chan_ as bch
+            return elemsDiffer(ach, bch)
+        return false
+    if a is Type_.hashmap_ as ahm
+        if b is Type_.hashmap_ as bhm
+            return elemsDiffer(ahm.key_t, bhm.key_t) or elemsDiffer(ahm.val_t, bhm.val_t)
+        return false
+    return false
+
+def isContainerType(t: Type_): bool
+    return t is Type_.list_ or t is Type_.set_ or t is Type_.chan_ or t is Type_.hashmap_
+
+def isDefiniteElem(t: Type_): bool
+    return isPrimitive(t) or isContainerType(t)
+
+def elemsDiffer(a: Type_, b: Type_): bool
+    if a is Type_.optional as ao
+        if b is Type_.optional as bo
+            return elemsDiffer(ao, bo)
+        return isDefiniteElem(b)
+    if b is Type_.optional
+        return isDefiniteElem(a)
+    if isPrimitive(a) and isPrimitive(b)
+        return typeTag(a) != typeTag(b)
+    if isContainerType(a) and isContainerType(b)
+        if containersDiffer(a, b)
+            return true
+        # Two different container kinds (List against Set) are a difference too.
+        return containerKind(a) != containerKind(b)
+    if isPrimitive(a) and isContainerType(b)
+        return true
+    if isContainerType(a) and isPrimitive(b)
+        return true
+    return false
+
+def containerKind(t: Type_): str
+    if t is Type_.list_
+        return "List"
+    if t is Type_.set_
+        return "Set"
+    if t is Type_.chan_
+        return "Chan"
+    if t is Type_.hashmap_
+        return "HashMap"
+    return ""
+
+# The spelling a user writes, for the BUG-626 message: `List(int?)`, `HashMap(str, int)`.
+def userTypeName(t: Type_): str
+    if t is Type_.optional as o
+        return userTypeName(o) + "?"
+    if t is Type_.list_ as l
+        return "List(" + userTypeName(l) + ")"
+    if t is Type_.set_ as st
+        return "Set(" + userTypeName(st) + ")"
+    if t is Type_.chan_ as ch
+        return "Chan(" + userTypeName(ch) + ")"
+    if t is Type_.hashmap_ as hm
+        return "HashMap(" + userTypeName(hm.key_t) + ", " + userTypeName(hm.val_t) + ")"
+    if isPrimitive(t)
+        return typeTag(t)
+    if t is Type_.named as n
+        return n
+    return "?"
 
 # Reconstruct a primitive Type_ from a typeTag string. Returns nil for
 # non-primitive tags so checkCallExpr skips those param positions.
@@ -5867,7 +5956,45 @@ def paramTypeFromTag(tag: str): Type_?
         return Type_.char_
     if tag == "str"
         return Type_.string_
+    # BUG-626: a container parameter, so its argument's element type is compared. An element
+    # this cannot decode (`opt` carries no payload, a class, a sized int) is `unknown`, which
+    # the comparison never refuses on.
+    if tag.endsWith(")")
+        var open_at: int = tag.indexOf("(")
+        if open_at > 0
+            var kind: str = tag[0 .. open_at]
+            var inner: str = tag[open_at + 1 .. tag.len - 1]
+            if kind == "list"
+                return Type_.list_(paramElemFromTag(inner))
+            if kind == "set"
+                return Type_.set_(paramElemFromTag(inner))
+            if kind == "chan"
+                return Type_.chan_(paramElemFromTag(inner))
+            if kind == "hmap"
+                var comma_at: int = topLevelComma(inner)
+                if comma_at > 0
+                    return Type_.hashmap_(HashMapType_(paramElemFromTag(inner[0 .. comma_at]), paramElemFromTag(inner[comma_at + 1 .. inner.len])))
     return nil
+
+def paramElemFromTag(tag: str): Type_
+    if paramTypeFromTag(tag) as t
+        return t
+    return Type_.unknown_
+
+# The index of the first comma not inside parentheses, or -1.
+def topLevelComma(s: str): int
+    var depth: int = 0
+    var i: int = 0
+    while i < s.len
+        var c: str = s[i .. i + 1]
+        if c == "("
+            depth += 1
+        else if c == ")"
+            depth -= 1
+        else if c == "," and depth == 0
+            return i
+        i += 1
+    return -1
 
 # Check argument types against declared param types at a call site.
 # Only catches primitive-to-primitive mismatches; skips named args, non-primitive
@@ -7099,7 +7226,9 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         # t.toCPtr()`, `var xs: List(int) = s.sizee()` returned here first, passed `-c`,
         # and the typo reached zig. addErr drops an exact duplicate.
         if dv.init_expr != nil
-            inferExpr(dv.init_expr!, ctx)
+            var nd_inferred: Type_ = inferExpr(dv.init_expr!, ctx)
+            if containerMismatch(declared, nd_inferred, dv.init_expr!)   # BUG-626
+                ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + userTypeName(declared) + ", found " + userTypeName(nd_inferred))
         return
     if dv.init_expr == nil
         return
@@ -7508,6 +7637,9 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     if sa_hint != ""
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "type mismatch: expected " + numTypeName(sa_slot) + ", found " + numTypeName(sa_val_t) + " " + sa_hint)
+                    else if sasn.op == AssignOp.assign and containerMismatch(sa_slot, sa_val_t, sasn.value)   # BUG-626
+                        ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                   "type mismatch: expected " + userTypeName(sa_slot) + ", found " + userTypeName(sa_val_t))
             on Stmt.expr as se
                 checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.

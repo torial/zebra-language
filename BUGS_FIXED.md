@@ -6,6 +6,52 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- FIXED 2026-10-26
+- **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding
+  it to a `List(str)` passed the front end.
+- **Repro:** all three pass `zebra -c`; zig refuses each.
+  ```
+  def f(xs: List(str)): int
+      return xs.len
+
+  def main()
+      var a = [1, 2]
+      print(f(a))                    # expected type 'List(str)', found 'List(int)'
+      var b: List(str) = a           # the same, for a typed var
+      var c: List(int) = List(int?)()   # found 'List(?i64)'
+  ```
+- **Mechanism:** `typesCompatible` answers `true` whenever either side is not a primitive,
+  so no container slot -- argument, typed var, assignment, return -- compares element types.
+  The zig message already names the Zebra types, so the user is told what is wrong, but in
+  zig's words and after the build.
+- **Why it was not fixed with BUG-531:** the check would run on every container assignment
+  in every program; it needs the §28a treatment (measure the refusals across the corpus,
+  zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
+  (an empty literal, a generic) that must stay compatible.
+- **Fix:** `containerMismatch` (TypeChecker.zbr) compares element types and refuses only a
+  DEFINITE difference: both elements primitives (int/uint/float/bool/char/str) with different
+  tags, an optional against a plain primitive or container, or containers of those,
+  recursively (List, Set, Chan, HashMap key and value). A class, a generic parameter, a sized
+  integer, a tuple or an `unknown` element is never refused, so an inference gap cannot become
+  a refusal; a list, set or dict LITERAL is never checked, because its elements take the slot's
+  type. Wired into `checkExpr` (call arguments, returns, field inits), the typed-`var` check
+  (in its non-primitive branch, which returned before) and plain assignment, including a
+  field store. Call arguments needed the parameter's container type to survive
+  `paramTypeFromTag`, which decoded only primitives: it now decodes `list(..)`, `set(..)`,
+  `chan(..)` and `hmap(k,v)` tags, an undecodable element (`opt` carries no payload) becoming
+  `unknown`. The message spells types as a user writes them (`List(int?)`,
+  `HashMap(str, int)`). Fixtures `test/fail_fixtures/bug626_container_elem_mismatch_test.zbr`
+  (nine refusals, each at its column; the N-1 anchor reports none) and
+  `test/bug626_container_elem_ok_test.zbr` (literals, an empty literal, optional elements on
+  both sides, nested containers).
+- **Measured before landing, 0 refusals outside the control:** `-c` over 3,002 files (this
+  repo's corpus and examples, zebra-ide, the GameEngine's `zbra`, `ported_scripts`, and its
+  `game`/`bbat_port`/`tools` with `--module-path zbra`) produced the new message only in a
+  planted control file, where it named all ten positions. The compiler's own source: the
+  round-trip is byte-identical.
+- **Not covered:** a class-element mismatch (`List(Dog)` for `List(Animal)`) and sized integers
+  are left to zig. A list LITERAL as an argument is BUG-632.
+
 ### BUG-628: a method that throws only by INFERENCE (a `raise`, no `throws`), called without `?`, is not refused and fails inside zig -- FIXED 2026-10-26
 - **Found by:** probing the seam behind BUG-546's fix. Two throw rules disagree: genMethod
   (and `declMayFail`, `isTopLevelMethodThrows`) treat a body with a `raise` or `?` as
