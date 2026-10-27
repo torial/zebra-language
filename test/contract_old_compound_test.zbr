@@ -7,7 +7,7 @@ class Ratchet
 
     def advance(n: int)
         ensure
-            val in @[old val, n]
+            val in [old val, n]
         val = n
 
 def main()

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-632. Next new bug: BUG-633.**
+**Last bug number generated: BUG-633. Next new bug: BUG-634.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -71,28 +71,6 @@
   cell. Fixture
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
-
-### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- OPEN (found 2026-10-12)
-- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
-- **Repro (QUICKSTART's own example, "Array literal"):**
-  ```
-  def main()
-      var nums = @[3, 1, 4, 1, 5]
-      if 3 in nums
-          print("three is present")
-  ```
-  `error: expected type 'str', found 'struct { comptime T = 3, ... }'` (zig's). Also:
-  `var arr = @[9, 10, 11]` then `arr[2]` -> std.meta "Expected pointer, slice, array or vector
-  type, found 'struct { comptime comptime_int = 9, ... }'"; `for v in arr` -> "no field named
-  'items' in tuple".
-- **What works:** `if name in @["match", "find"]` -- a string literal tested inline
-  (`test/array_in_test.zbr`, the only fixture). The literal is emitted as an anonymous Zig
-  tuple, and `_zebra_in` takes strings.
-- **Why no gate saw it:** `doc_example_check` runs the front end only (`zebra -c`), and the
-  front end accepts the example.
-- **Expected:** either `@[...]` is a real fixed array (indexable, iterable, any element type,
-  bindable), or it is documented as the inline membership form only and the front end refuses
-  the other uses by name. Today the reference documents a use that cannot compile.
 
 ### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- OPEN (found 2026-10-12)
 - **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it

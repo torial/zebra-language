@@ -1,16 +1,16 @@
 def main()
-    # @[...] array literal in a variable
+    # a list literal right after `in` (BUG-565: the old `@[...]` spelling was removed)
     var name = "findAll"
 
-    # in @[...] — membership test via _zebra_in + inline-for
-    if name in @["match", "find", "findAll", "groups"]
+    # in [...] — membership test via _zebra_in + inline-for, no List built
+    if name in ["match", "find", "findAll", "groups"]
         print("is regex method")
     else
         print("not regex method")
 
     # negative case
     var other = "unknown"
-    if other in @["match", "find", "findAll", "groups"]
+    if other in ["match", "find", "findAll", "groups"]
         print("found")
     else
         print("not found")

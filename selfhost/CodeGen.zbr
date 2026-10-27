@@ -15576,7 +15576,23 @@ struct Generator
                 w.emit("_zebra_in(")
                 genExpr(b.left)
                 w.emit(", ")
-                genExpr(b.right)
+                # BUG-565: `x in [a, b]` with a literal of primitives is tested against a
+                # tuple, inline -- no List is built, so it costs nothing in a loop. This is
+                # what `@[...]` was for; with it, `@[...]` was a second spelling and was
+                # removed. Other literals (classes, structs, nested lists) keep the List,
+                # whose comparison is structural.
+                if inLitAsTuple(b.right)
+                    if b.right is Expr.list_lit as in_ll
+                        w.emit(".{")
+                        var in_i: int = 0
+                        while in_i < in_ll.elems.len
+                            if in_i > 0
+                                w.emit(", ")
+                            genExpr(in_ll.elems.at(in_i))
+                            in_i += 1
+                        w.emit("}")
+                else
+                    genExpr(b.right)
                 w.emit(")")
                 return
             # Default: string substring check via std.mem.indexOf.
@@ -20406,6 +20422,19 @@ struct Generator
                         w.emit(") catch @panic(\"OOM\"); ")
                     w.emit("break :" + lbl + " " + nm + "; })")
                     return true
+        return false
+
+    # BUG-565: the right operand of `in` is a non-empty, untyped list literal whose elements
+    # are all primitives (int, float, bool, char, str) -- emitted as a tuple, not a List.
+    def inLitAsTuple(e: Expr): bool
+        if e is Expr.list_lit as ll
+            if ll.elems.len == 0 or ll.elem_type != nil or .infer_ctx == nil
+                return false
+            for el in ll.elems
+                var et: Type_ = inferExpr(el, .infer_ctx!)
+                if not (et is Type_.int_ or et is Type_.float_ or et is Type_.bool_ or et is Type_.char_ or et is Type_.string_ or et is Type_.uint_)
+                    return false
+            return true
         return false
 
     # BUG-501 1d: `first(int)([])` -- the empty list a GENERIC parameter receives. Its type

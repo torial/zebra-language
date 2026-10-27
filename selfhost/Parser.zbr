@@ -3540,8 +3540,10 @@ class Parser
             .advance()
             return PNode.expr_str(PLit(text, ds_line, ds_col))
         else if .isAtLbracket()
-            # @[elem, elem, ...] — array literal
-            .advance()
+            # BUG-565 (Sean, 2026-10-27): `@[...]` is REMOVED. It worked only right after
+            # `in`, and `x in [a, b]` now emits the same allocation-free test, so it was a
+            # second spelling of the list literal. Refused naming the one spelling left.
+            raise .errorAt("`@[...]` was removed: write `[...]` -- `x in [a, b]` is the same allocation-free membership test, and `[a, b]` anywhere else is a List")
             var elems = List(PNode)()
             if not .textIs("]")
                 elems.add(.parseExpr()?)

@@ -646,6 +646,10 @@ pub fn _zebra_in(item: anytype, container: anytype) bool {
             for (container.items) |elem| {
                 if (comptime _zbr_is_bytes(I)) {
                     if (std.mem.eql(u8, elem, item)) return true;
+                } else if (comptime _zbr_is_container(@TypeOf(elem)) or _zbr_cont_ptr(@TypeOf(elem))) {
+                    // A list of collections: `in` compares contents, as `==` does (BUG-506).
+                    // It compared the element POINTERS, so `[1, 2] in [[1, 2], [3]]` was false.
+                    if (_zbr_cont_eql(elem, item)) return true;
                 } else {
                     if (elem == item) return true;
                 }

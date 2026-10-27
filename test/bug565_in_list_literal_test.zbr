@@ -1,0 +1,14 @@
+# BUG-565: `x in [a, b]` with a literal of primitives is the allocation-free membership test
+# (a tuple, checked inline) that `@[...]` used to be -- which is why `@[...]` was removed.
+# A literal of anything else keeps the List and its structural comparison -- BUG-633:
+# `nested in [[1, 2], [3]]` must compare CONTENTS (it compared pointers and printed false).
+def main()
+    var hits: int = 0
+    var i: int = 0
+    while i < 1000
+        if i in [3, 500, 999]
+            hits += 1
+        i += 1
+    var name = "find"
+    var nested = [1, 2]
+    print("bug565: ${hits} ${name in ["match", "find"]} ${2.5 in [1.5, 2.5]} ${'c' in ['a', 'b']} ${nested in [[1, 2], [3]]}")

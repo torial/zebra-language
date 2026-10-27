@@ -1,0 +1,5 @@
+# BUG-565: `@[...]` was removed (Sean, 2026-10-27); the refusal names `[...]`, the one
+# spelling left. QUICKSTART documented `var nums = @[3, 1, 4, 1, 5]`, which never compiled.
+def main()
+    var nums = @[3, 1, 4, 1, 5]
+    print(nums.len)

@@ -392,7 +392,7 @@ smoke test/generic_iface_test.zbr
 # call the method directly, not fall back to std.fmt.allocPrint("{}", .{obj}).
 smoke test/generic_tostring_test.zbr
 
-# @[...] array literal in expression + `in @[...]` membership test.
+# `in [...]` membership test on a literal (BUG-565: once spelled `@[...]`).
 smoke test/array_in_test.zbr
 
 # Float suffix literals: 1.5_f32, 2.5_f64, 0.5f32, 3.0f64 → @as(fNN, val).
@@ -1481,6 +1481,11 @@ smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_f
 smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:17:5: error: a function cannot go into 'o': its parameter 1 is str where int is expected"
 smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:18:11: error: a function cannot go into parameter 'f': it takes 2 argument(s) where 1 are expected"
 smoke_run test/bug630_fn_signature_ok_test.zbr "bug630: 4 4 101 8 true"
+# BUG-565: `@[...]` removed, refused naming `[...]`; `x in [a, b]` of primitives is the inline
+# tuple test (no List built) -- and BUG-633: a list of collections compares by contents.
+smoke_tc_fail test/fail_fixtures/bug565_at_bracket_removed_test.zbr "bug565_at_bracket_removed_test.zbr:4:16: error: \`@[...]\` was removed: write \`[...]\`"
+smoke_run test/bug565_in_list_literal_test.zbr "bug565: 3 true true false true"
+smoke_emit_contains test/bug565_in_list_literal_test.zbr "_zebra_in(i, .{3, 500, 999})"
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"

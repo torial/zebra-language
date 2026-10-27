@@ -18,5 +18,5 @@ def main()
     var i = noSuchInPipeline -> f()
     var j: bool = 1 < noSuchInChain < 3
     var k = def(x: int): int = x + noSuchInLambda
-    var m = @[noSuchInArray]
+    var m = [noSuchInArray]
     print("${a} ${b} ${c} ${d} ${g} ${h} ${i} ${j} ${k(1)} ${m}")

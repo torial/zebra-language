@@ -1196,9 +1196,11 @@ for n, s in pairs           # n: int, s: str
 for n, s in pairs if n > 0 # where clause supported
     print(n)
 
-# Array literal
-var nums = @[3, 1, 4, 1, 5]
-if 3 in nums
+# Membership in a literal: `x in [a, b, c]`. With primitive elements no List is built --
+# the test is checked inline, so it costs nothing in a loop. (`@[...]` was this form's old
+# spelling; it was removed 2026-10-27, BUG-565.) Elements that are collections compare by
+# contents, as `==` does.
+if 3 in [3, 1, 4, 1, 5]
     print("three is present")
 ```
 

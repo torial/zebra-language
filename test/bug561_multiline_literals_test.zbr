@@ -30,10 +30,10 @@ def main()
     var m = {"a": 1,
         "b": 2}
     print(m["a"] + m["b"])
-    # an @[ ] array literal, which an ordinary ] closes (used inline with `in`, the one form
-    # @[ ] supports today -- BUG-565)
+    # a list literal after `in` (BUG-565 removed the `@[ ]` spelling this line used to
+    # test; an ordinary ] closes it either way)
     var name = "findAll"
-    if name in @["match", "find",
+    if name in ["match", "find",
         "findAll", "groups"]
         print("findAll is in the array")
     # a subscript and a call argument that span lines inside brackets

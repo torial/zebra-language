@@ -25,6 +25,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **`@[...]` is removed (BUG-565).** It worked only right after `in` -- QUICKSTART's own
+  `var nums = @[3, 1, 4, 1, 5]` never compiled -- and was a second spelling of the list
+  literal. Write `[...]`: `x in [a, b]` with primitive elements is now the same inline,
+  allocation-free test `@[...]` gave, and `[a, b]` anywhere else is a List. `@[` is refused
+  naming the replacement.
+
 - **A float formatted to a precision rounds its exact binary value, ties to even.**
   `${x:.2f}`, `${x:.2}` and `${x:.2e}` now print Python's digits (and glibc's and the UCRT's):
   `${2.675:.2f}` is `2.67` (the float holds 2.67499999...), `${0.125:.2f}` is `0.12`,
@@ -45,6 +51,9 @@ confirmed via `tools/bootstrap_check.sh`.
   A sized integer (`uint64`, `int32`...) also takes `toInt`, `toFloat` and `toString`.
 
 ### Fixes
+
+- **`in` on a list of collections compares contents (BUG-633).** `[1, 2] in [[1, 2], [3]]`
+  was false (the elements were compared as pointers); it now agrees with `==`.
 
 - **`--source-root DIR`: generated code no longer carries the build machine's paths
   (BUG-547).** Every source path written into the emitted `.zig` -- the `// Source:` header,

@@ -6,6 +6,51 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-633: `in` compared a list of COLLECTIONS by element pointer, so `[1, 2] in [[1, 2], [3]]` was false -- FIXED 2026-10-27 (found the same day)
+- **Found by:** BUG-565's positive fixture. On the N-1 anchor (`f5afd86`) the same program did
+  not compile at all ("expected type '*T', found 'T'"); on HEAD it compiled and answered
+  `false` -- for a literal, a List variable, and `outer.contains(inner)` alike.
+- **Cause:** `_zebra_in`'s List branch compared elements with `==`; a list of lists holds
+  boxed headers, so that compared pointers. `==` on two collections compares contents
+  (BUG-506), and `in` disagreed with it.
+- **Fix:** the branch compares collection elements with `_zbr_cont_eql`, the comparison `==`
+  uses; other elements are unchanged. Pinned by `test/bug565_in_list_literal_test.zbr`
+  (`... true` for the nested case).
+
+### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- FIXED 2026-10-27 (`@[...]` REMOVED)
+- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
+- **Repro (QUICKSTART's own example, "Array literal"):**
+  ```
+  def main()
+      var nums = @[3, 1, 4, 1, 5]
+      if 3 in nums
+          print("three is present")
+  ```
+  `error: expected type 'str', found 'struct { comptime T = 3, ... }'` (zig's). Also:
+  `var arr = @[9, 10, 11]` then `arr[2]` -> std.meta "Expected pointer, slice, array or vector
+  type, found 'struct { comptime comptime_int = 9, ... }'"; `for v in arr` -> "no field named
+  'items' in tuple".
+- **What works:** `if name in @["match", "find"]` -- a string literal tested inline
+  (`test/array_in_test.zbr`, the only fixture). The literal is emitted as an anonymous Zig
+  tuple, and `_zebra_in` takes strings.
+- **Why no gate saw it:** `doc_example_check` runs the front end only (`zebra -c`), and the
+  front end accepts the example.
+- **Expected:** either `@[...]` is a real fixed array (indexable, iterable, any element type,
+  bindable), or it is documented as the inline membership form only and the front end refuses
+  the other uses by name. Today the reference documents a use that cannot compile.
+- **Decision (Sean, 2026-10-27):** remove `@[...]` rather than make it a real array. It was a
+  second spelling of the list literal, useful only right after `in`, where it avoided building
+  a List. Zebra has no array type, so a "real" `@[...]` would have been a value with no type
+  a user could write.
+- **Fix:** `x in [a, b]` with a non-empty literal of primitives (int, uint, float, bool, char,
+  str) emits the tuple `@[...]` used to -- `_zebra_in(x, .{a, b})`, checked inline, no List and
+  no allocation (`inLitAsTuple`, CodeGen.zbr). Any other literal keeps the List. The parser
+  refuses `@[` naming `[...]`. Eight corpus files migrated; QUICKSTART's example is now
+  `if 3 in [3, 1, 4, 1, 5]`. The lexer still has the token, so the refusal can name it.
+  Fixtures `test/fail_fixtures/bug565_at_bracket_removed_test.zbr` and
+  `test/bug565_in_list_literal_test.zbr` (run, plus an emit check that the loop's test is a
+  tuple). Writing that fixture found BUG-633.
+
 ### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- FIXED 2026-10-27
 - **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
   the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).

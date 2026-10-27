@@ -19,7 +19,7 @@ class Shapes
         return xs.len
 
     def viaArrayLit(): int
-        var a = @[this.v, 9]
+        var a = [this.v, 9]
         return a.len
 
     def viaSetLit(): int
