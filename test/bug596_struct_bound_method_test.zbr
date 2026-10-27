@@ -1,0 +1,58 @@
+# BUG-596's struct half: a STRUCT's method used as a value binds the VARIABLE by reference
+# (Sean, 2026-10-16), so the bound value and the variable see each other's changes. The
+# variable lives in a heap cell (BUG-569's), which is why a bound value can outlive the
+# function it was made in. A copy implementation prints 1, 2, ... for these.
+struct P
+    var x: int
+    def move(): int
+        .x += 1
+        return .x
+    def peek(): int
+        return .x
+    def addTo(n: int): int
+        return .x + n
+
+sig IntFn(): int
+sig AddFn(n: int): int
+
+def apply(f: IntFn): int
+    return f()
+
+def makeMover(): IntFn
+    var q = P(x: 100)
+    var g: IntFn = q.move
+    return g
+
+def main()
+    var p = P(x: 1)
+    var f = p.move
+    f()
+    f()
+    var a1 = p.x                    # 3: the calls moved p itself
+    p.x = 10
+    var a2 = f()                    # 11: the binding sees the write
+    var h: IntFn = p.peek
+    var a3 = apply(h)               # 11, through a sig slot
+    var ad: AddFn = p.addTo
+    var a4 = ad(5)                  # 16
+    var viaLam = def(): int
+        var k = p.move
+        return k()
+    var a5 = viaLam()               # 12, bound inside a closure over p
+    var m = makeMover()
+    m()
+    var a6 = m()                    # 102: the cell outlived makeMover
+    var inLam = def(): int
+        var q = P(x: 40)
+        var g = q.move
+        g()
+        return q.x
+    var a7 = inLam()                # 41: a struct var declared in a lambda
+    var total = 0
+    for i in 0..3
+        var r = P(x: i)
+        var rh: IntFn = r.move
+        rh()
+        total += r.x                # 1 + 2 + 3
+    var xs = [1, 2, 3]
+    print("bug596s: ${a1} ${a2} ${a3} ${a4} ${a5} ${p.x} ${a6} ${a7} ${total} ${xs.map(p.addTo)}")

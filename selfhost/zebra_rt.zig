@@ -1342,7 +1342,7 @@ pub fn _sys_stdin_closed() bool {
 }
 // Raw bytes to stdout, no newline, no formatting (DAP frames must be byte-exact).
 pub fn _sys_write_stdout(s: []const u8) void {
-    std.Io.File.stdout().writeStreamingAll(_io, s) catch {};
+    _zbr_stdout().writeStreamingAll(_io, s) catch {};
 }
 pub fn _sys_process_read_available(p: *_SysProcess) []const u8 {
     return _sys_pipe_read_available(p.child.stdout);
@@ -1900,7 +1900,7 @@ pub fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     std.process.exit(1);
 }
 pub fn _build_list_targets(b: *_Build) void {
-    const _stdout = std.Io.File.stdout();
+    const _stdout = _zbr_stdout();
     _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
     for (b.targets.items, 0..) |t, i| {
         if (i > 0) _stdout.writeStreamingAll(_io, ",") catch {};
@@ -3393,8 +3393,11 @@ pub fn _ZbrBound(comptime Recv: type, comptime name: []const u8) type {
 // A class receiver is a reference: a method that does not mutate gets a `*const` self in
 // the emit, but the bound call may reach one that does, so the binding holds `*T`.
 pub fn _ZbrBindRecv(comptime T: type) type {
+    // A STRUCT receiver must arrive as a pointer -- its variable's cell (BUG-596). A struct
+    // VALUE here would bind a copy: compiles, runs, and prints stale numbers. Refused instead.
     return switch (@typeInfo(T)) {
         .pointer => |pi| *pi.child,
+        .@"struct" => @compileError("internal: a struct method bound by value would bind a copy (BUG-596): " ++ @typeName(T)),
         else => T,
     };
 }
@@ -5080,7 +5083,7 @@ pub fn _arg_parse() ArgResult {
     return ArgResult{ ._raw = _out };
 }
 pub fn _term_is_tty() bool {
-    return std.Io.File.stdout().isTty(_io) catch false;
+    return _zbr_stdout().isTty(_io) catch false;
 }
 pub fn _term_width() i64 { return 80; }
 pub fn _term_height() i64 { return 24; }
@@ -5111,6 +5114,48 @@ pub fn _term_ansi(color: []const u8) []const u8 {
 // One syscall per print, where std.debug.print was also unbuffered but lock-protected.
 // Not measured. If a print-heavy program regresses, buffering belongs here, not at the
 // call site -- but measure before assuming, per FINDINGS.
+// BUG-635: Zig's `File.stdout()` / `File.stderr()` assume a SYNCHRONOUS handle. A parent
+// may hand the program an ASYNCHRONOUS (overlapped) pipe -- Git Bash does -- and then a
+// write that cannot complete at once (the 64 KiB pipe buffer is full: `prog | grep` on a
+// large output) returns PENDING, which std's blocking path treats as `unreachable`
+// (Io/Threaded.zig: "wrong File nonblocking flag"): a panic, the output lost. Ask Windows
+// how the handle was opened, once, and mark an asynchronous one `nonblocking`, so std takes
+// its path that waits for the write to finish.
+var _zbr_std_mode_checked: bool = false;
+var _zbr_stdout_async: bool = false;
+var _zbr_stderr_async: bool = false;
+fn _zbr_handle_is_async(h: std.os.windows.HANDLE) bool {
+    const w = std.os.windows;
+    var iosb: w.IO_STATUS_BLOCK = undefined;
+    // FileModeInformation (class 16) as a raw ULONG: FILE_SYNCHRONOUS_IO_ALERT is 0x10,
+    // _NONALERT 0x20; neither means the handle was opened for overlapped I/O. Raw, because
+    // 0.16 and 0.17 spell the struct and the enum differently (dual-version tree).
+    var mode: u32 = 0;
+    const st = w.ntdll.NtQueryInformationFile(h, &iosb, &mode, @sizeOf(u32), @enumFromInt(16));
+    if (st != .SUCCESS) return false;
+    return (mode & 0x30) == 0;
+}
+fn _zbr_std_mode_check() void {
+    if (_zbr_std_mode_checked) return;
+    _zbr_std_mode_checked = true;
+    if (comptime builtin.os.tag == .windows) {
+        _zbr_stdout_async = _zbr_handle_is_async(std.Io.File.stdout().handle);
+        _zbr_stderr_async = _zbr_handle_is_async(std.Io.File.stderr().handle);
+    }
+}
+pub fn _zbr_stdout() std.Io.File {
+    var f = std.Io.File.stdout();
+    _zbr_std_mode_check();
+    if (_zbr_stdout_async) f.flags.nonblocking = true;
+    return f;
+}
+pub fn _zbr_stderr() std.Io.File {
+    var f = std.Io.File.stderr();
+    _zbr_std_mode_check();
+    if (_zbr_stderr_async) f.flags.nonblocking = true;
+    return f;
+}
+
 pub fn _zbr_print(comptime fmt: []const u8, args: anytype) void {
     var buf: [4096]u8 = undefined;
     const s = std.fmt.bufPrint(&buf, fmt, args) catch {
@@ -5118,14 +5163,14 @@ pub fn _zbr_print(comptime fmt: []const u8, args: anytype) void {
         // Truncating would be the fabrication this bug is about.
         const heap = std.fmt.allocPrint(_allocator, fmt, args) catch return;
         defer _allocator.free(heap);
-        std.Io.File.stdout().writeStreamingAll(_io, heap) catch {};
+        _zbr_stdout().writeStreamingAll(_io, heap) catch {};
         return;
     };
-    std.Io.File.stdout().writeStreamingAll(_io, s) catch {};
+    _zbr_stdout().writeStreamingAll(_io, s) catch {};
 }
 
 pub fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
-    const _f = std.Io.File.stdout();
+    const _f = _zbr_stdout();
     if (_term_is_tty() and color.len > 0) {
         const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
         defer _allocator.free(_s);
@@ -5146,7 +5191,7 @@ pub fn _log_ts() []const u8 {
 }
 pub fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
-    const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
+    const _f = if (_log_to_stderr) _zbr_stderr() else _zbr_stdout();
     if (_log_timestamps) {
         const _s = std.fmt.allocPrint(_allocator, "[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch return;
         defer _allocator.free(_s);
@@ -5202,7 +5247,7 @@ pub fn _log_json(level: []const u8, msg: []const u8, data: []const u8) void {
         const st = f.stat(_io) catch return;
         f.writePositionalAll(_io, buf.items, st.size) catch {};
     }
-    std.Io.File.stderr().writeStreamingAll(_io, buf.items) catch {};
+    _zbr_stderr().writeStreamingAll(_io, buf.items) catch {};
 }
 pub const UriResult = struct {
     scheme: []const u8,
@@ -5634,7 +5679,7 @@ pub fn _zbr_cens_flush() void {
         w.p(&err, ta, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes) });
     }
     if (unresolved > 0) w.p(&err, ta, "  {d} of {d} sites have an UNRESOLVED kind: this binary carries no debug info for that address (a --release build has none) -- shown as ?0x<address>\n", .{ unresolved, outs.items.len });
-    std.Io.File.stderr().writeStreamingAll(_io, err.items) catch {};
+    _zbr_stderr().writeStreamingAll(_io, err.items) catch {};
 
     var out: std.ArrayList(u8) = .empty;
     w.p(&out, ta, "{{\"version\": 1, \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
@@ -5766,7 +5811,7 @@ pub fn _profile_report() void {
         fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
     };
     std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
-    const _stdout = std.Io.File.stdout();
+    const _stdout = _zbr_stdout();
     _stdout.writeStreamingAll(_io, "── Profile report ───────────────────────────────────────────────\n") catch {};
     for (list.items) |e| {
         const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
@@ -5776,7 +5821,7 @@ pub fn _profile_report() void {
     }
 }
 pub fn _profile_dump_folded() void {
-    const _stdout = std.Io.File.stdout();
+    const _stdout = _zbr_stdout();
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
         const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));

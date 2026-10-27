@@ -376,7 +376,241 @@ def computeBoxCandidates(stmts: List(Stmt), ic: InferCtx?, rebound: StrSet): Str
     for nm in caps.items()
         if writes.contains_(nm) and decls.contains_(nm)
             out.add(nm)
+    # BUG-596: a struct `var` whose METHOD is read as a value (`var f = p.move`) is bound by
+    # reference, so it lives in a cell whatever else happens to it: the bound value holds the
+    # cell's pointer and may outlive the frame. `rebound` too, so boxedFor keeps it.
+    if ic as bic
+        var bexprs = List(Expr)()
+        exprsInStmts(stmts, bexprs)
+        var binds = StrSet()
+        for be in bexprs
+            structBindsInExpr(be, bic, binds)
+        for bn in binds.items()
+            if decls.contains_(bn)
+                out.add(bn)
+                rebound.add(bn)
     return out
+
+# BUG-596: the name of the struct local `m` reads a method of as a VALUE, or "". A field of
+# the same name wins (it is what is read). Callee position is the caller's business.
+def structBindRecv(m: ExprMember, ic: InferCtx): str
+    if m.object is Expr.ident as oid
+        var rt: Type_ = inferExpr(m.object, ic)
+        if rt is Type_.named as rn
+            var ct_opt = ic.module_types.classOf(rn)
+            if ct_opt == nil
+                ct_opt = ic.dep_types.classOf(rn)
+            if ct_opt as ct
+                if ct.is_struct and not ct.is_interface
+                    if ic.fieldTypeAny(rn, m.member) == nil and ic.methodReturnAny(rn, m.member) != nil
+                        return oid.name
+    return ""
+
+# BUG-596: every expression a statement list holds directly -- conditions, initialisers,
+# targets, arguments -- in nested blocks too; not the sub-expressions of those.
+# stmt-walker: exhaustive
+def exprsInStmts(stmts: List(Stmt), out: List(Expr))
+    for st in stmts
+        branch st
+            on Stmt.var_ as sv
+                if sv.init_expr as svi
+                    out.add(svi)
+            on Stmt.destruct as sd
+                out.add(sd.init_expr)
+            on Stmt.if_ as si
+                out.add(si.cond)
+                exprsInStmts(si.then_stmts, out)
+                for ei in si.else_ifs
+                    out.add(ei.cond)
+                    exprsInStmts(ei.stmts, out)
+                if si.else_stmts as ies
+                    exprsInStmts(ies, out)
+            on Stmt.while_ as sw
+                out.add(sw.cond)
+                exprsInStmts(sw.stmts, out)
+            on Stmt.for_in as sfi
+                out.add(sfi.iter)
+                if sfi.filter as sff
+                    out.add(sff)
+                exprsInStmts(sfi.stmts, out)
+                if sfi.else_ as fie
+                    exprsInStmts(fie, out)
+            on Stmt.for_num as sfn
+                out.add(sfn.start)
+                out.add(sfn.stop_)
+                if sfn.step as sfs
+                    out.add(sfs)
+                exprsInStmts(sfn.stmts, out)
+                if sfn.else_ as fne
+                    exprsInStmts(fne, out)
+            on Stmt.branch_ as sbr
+                out.add(sbr.expr)
+                for arm in sbr.cases
+                    for av in arm.values
+                        out.add(av)
+                    for ag in arm.guard_expr
+                        out.add(ag)
+                    exprsInStmts(arm.stmts, out)
+                if sbr.else_ as bre
+                    exprsInStmts(bre, out)
+            on Stmt.with_ as swi
+                out.add(swi.target)
+                exprsInStmts(swi.stmts, out)
+            on Stmt.in_scope as sis
+                out.add(sis.expr)
+                exprsInStmts(sis.stmts, out)
+            on Stmt.try_catch as stc
+                exprsInStmts(stc.stmts, out)
+                for cc in stc.clauses
+                    exprsInStmts(cc.stmts, out)
+            on Stmt.allocate_ as sal
+                out.add(sal.source)
+                exprsInStmts(sal.stmts, out)
+            on Stmt.return_ as sr
+                if sr.value as srv
+                    out.add(srv)
+            on Stmt.yield_ as sy
+                out.add(sy.value)
+            on Stmt.assert_ as sas
+                out.add(sas.cond)
+                if sas.message as sam
+                    out.add(sam)
+            on Stmt.assign as sa
+                out.add(sa.target)
+                out.add(sa.value)
+            on Stmt.expr as se
+                out.add(se)
+            on Stmt.raise_ as sra
+                if sra.message as srm
+                    out.add(srm)
+                if sra.details as srd
+                    out.add(srd)
+            on Stmt.copy_out as sco
+                out.add(sco.target)
+                out.add(sco.value)
+            on Stmt.print_ as spr
+                for pa in spr.args
+                    out.add(pa)
+            on Stmt.contract as sct
+                for cx in sct.exprs
+                    out.add(cx)
+            else
+                pass
+
+# BUG-596: the struct locals whose method `e` reads as a value, lambda bodies included. A
+# member in callee position (`p.move()`) is a call, not a bind.
+# expr-walker: exhaustive
+# expr-walker-ok: ident -- a bare name is not a member read.
+# expr-walker-ok: zig_lit -- raw Zig text binds nothing.
+def structBindsInExpr(e: Expr, ic: InferCtx, out: StrSet)
+    branch e
+        on Expr.member as mem
+            var sbr: str = structBindRecv(mem, ic)
+            if sbr != ""
+                out.add(sbr)
+            structBindsInExpr(mem.object, ic, out)
+        on Expr.call as c
+            if c.callee is Expr.member as ccm
+                structBindsInExpr(ccm.object, ic, out)
+            else
+                structBindsInExpr(c.callee, ic, out)
+            for a in c.args
+                structBindsInExpr(a.value, ic, out)
+        on Expr.lambda as lam
+            # The body's own locals are typed only inside it: bind the parameters and walk
+            # the body (quietly -- this measures, the checker has reported), then restore the
+            # enclosing scope, as checkLambdaBody does. Without it a struct `var` declared in
+            # a lambda is not seen, not boxed, and its bind fails inside zig.
+            var lsaved = HashMap(str, Type_)()
+            for lsk, lsv in ic.scope
+                lsaved.set(lsk, lsv)
+            var lquiet: bool = ic.quiet_errors
+            ic.quiet_errors = true
+            for lp in lam.params
+                if lp.type_ != nil
+                    ic.bind(lp.name, typeFromRef(lp.type_!))
+                else
+                    ic.bind(lp.name, Type_.unknown_)
+            branch lam.body_
+                on LambdaBody.stmts as lbs
+                    walkStmts(lbs, ic)
+                    var les = List(Expr)()
+                    exprsInStmts(lbs, les)
+                    for le in les
+                        structBindsInExpr(le, ic, out)
+                on LambdaBody.expr_ as lbe
+                    structBindsInExpr(lbe, ic, out)
+            ic.quiet_errors = lquiet
+            ic.scope = lsaved
+        on Expr.catch_ as ec
+            structBindsInExpr(ec.expr, ic, out)
+            structBindsInExpr(ec.fallback, ic, out)
+        on Expr.unary as u
+            structBindsInExpr(u.operand, ic, out)
+        on Expr.binary as b
+            structBindsInExpr(b.left, ic, out)
+            structBindsInExpr(b.right, ic, out)
+        on Expr.index as ix
+            structBindsInExpr(ix.object, ic, out)
+            structBindsInExpr(ix.index, ic, out)
+        on Expr.slice as slc
+            structBindsInExpr(slc.object, ic, out)
+            if slc.start as sst
+                structBindsInExpr(sst, ic, out)
+            if slc.stop_ as ssp
+                structBindsInExpr(ssp, ic, out)
+        on Expr.cast as ca
+            structBindsInExpr(ca.expr, ic, out)
+        on Expr.to_non_nil as tnn
+            structBindsInExpr(tnn.expr, ic, out)
+        on Expr.is_nil as isn
+            structBindsInExpr(isn.expr, ic, out)
+        on Expr.orelse_ as oe
+            structBindsInExpr(oe.expr, ic, out)
+            structBindsInExpr(oe.fallback, ic, out)
+        on Expr.if_expr as ie
+            structBindsInExpr(ie.cond, ic, out)
+            structBindsInExpr(ie.then_expr, ic, out)
+            structBindsInExpr(ie.else_expr, ic, out)
+        on Expr.try_ as tr
+            structBindsInExpr(tr.expr, ic, out)
+        on Expr.list_lit as ll
+            for le2 in ll.elems
+                structBindsInExpr(le2, ic, out)
+        on Expr.array_lit as al
+            for ae in al.elems
+                structBindsInExpr(ae, ic, out)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                structBindsInExpr(se, ic, out)
+        on Expr.tuple_lit as tl
+            for te in tl.elems
+                structBindsInExpr(te, ic, out)
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                structBindsInExpr(de.key, ic, out)
+                structBindsInExpr(de.value, ic, out)
+        on Expr.string_interp as sip
+            for sp in sip.parts
+                if sp is StringPart.expr_ as spe
+                    structBindsInExpr(spe, ic, out)
+        on Expr.type_check as tck
+            structBindsInExpr(tck.expr, ic, out)
+        on Expr.chained_cmp as ccmp
+            for co in ccmp.operands
+                structBindsInExpr(co, ic, out)
+        on Expr.except_ as exc
+            structBindsInExpr(exc.base, ic, out)
+            for ef in exc.fields
+                structBindsInExpr(ef.value, ic, out)
+        on Expr.old_ as eo
+            structBindsInExpr(eo.operand, ic, out)
+        on Expr.opt_chain as oc
+            structBindsInExpr(oc.base, ic, out)
+            for oa in oc.args
+                structBindsInExpr(oa.value, ic, out)
+        else
+            pass
 
 def boxInfoStmts(stmts: List(Stmt), caps: StrSet, writes: StrSet, decls: StrSet, rebound: StrSet, ic: InferCtx?)
     scanMutationsInto(stmts, writes, ic)
@@ -14229,6 +14463,19 @@ struct Generator
                     genExpr(m.object)
                     w.emit(", \"" + m.member + "\")")
                     return
+                # A STRUCT's method binds the variable by reference: the cell's POINTER, not
+                # `p.*`. A receiver that is not a boxed local emits as the value it is, which
+                # `_zbr_bind` refuses at comptime rather than binding a silent copy.
+                if not is_callee and .infer_ctx != nil
+                    var sb_recv: str = structBindRecv(m, .infer_ctx!)
+                    if sb_recv != ""
+                        w.emit("_zbr_bind(")
+                        if not lp_renamed.contains_(sb_recv) and (fnBoxedHas(sb_recv) or capture_boxed.contains_(sb_recv))
+                            w.emit(boxPtrSpelling(sb_recv))
+                        else
+                            genExpr(m.object)
+                        w.emit(", \"" + m.member + "\")")
+                        return
                 # Catch-variable member: e.message → _zbr_error_msg(), e.details → _error_ctx.details
                 if catch_var != ""
                     if m.object is Expr.ident as mid

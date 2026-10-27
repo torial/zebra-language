@@ -2381,8 +2381,32 @@ def main()
     print([1, 2, 3].map(c.add))     # [16, 18, 21]
 ```
 
-A STRUCT's method cannot be used as a value yet: it would bind the struct variable itself,
-which is not built yet (BUG-596). Call it in place, or make the type a class.
+A STRUCT's method binds the struct VARIABLE it is read from, by reference: the variable and
+the bound value see each other's changes, and the bound value may outlive the function (the
+variable is kept alive for it).
+
+```zebra
+sig IntFn(): int
+
+struct P
+    var x: int
+    def move(): int
+        .x += 1
+        return .x
+
+def main()
+    var p = P(x: 1)
+    var f: IntFn = p.move
+    f()
+    f()
+    print(p.x)                      # 3: the calls moved p
+    p.x = 10
+    print(f())                      # 11: the binding sees the write
+```
+
+So the receiver must be a `var` local of the function. A parameter, a loop variable, `this`,
+a field (`h.p.move`) or a temporary (`P(x: 1).move`) is refused: copy it into a `var` first,
+call the method in place, or make the type a class.
 
 ---
 

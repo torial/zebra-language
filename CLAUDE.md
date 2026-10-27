@@ -1126,6 +1126,14 @@ bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `str
                                 #   The markers on the two streams are DIFFERENT strings, so a
                                 #   harness that captured one stream twice fails rather than
                                 #   passes. 0 failures = clean.
+                                #   LEG 8 (2026-10-27, BUG-635): one 200,001-byte print through
+                                #   a pipe whose reader sleeps first must arrive whole. Git Bash
+                                #   hands a child an OVERLAPPED pipe, Zig's File.stdout() assumes
+                                #   a synchronous one, and a write that had to wait hit
+                                #   `.PENDING => unreachable` in std: a panic and 0 bytes for any
+                                #   `prog | x` over 64 KiB. Legs 1-7 print a few lines and can
+                                #   never fill a pipe. Red-checked by making the runtime's mode
+                                #   query answer "synchronous": 0 bytes, the panic.
                                 #   (`selfhost_divergence_check.sh`, the COMPILER-SOURCES
                                 #   AGREEMENT GATE `selfhost-div`, sat here 2026-09-05 ..
                                 #   2026-09-15: both compilers read the modules the compiler
@@ -2490,7 +2498,7 @@ than "what do we know":
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
 | **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 39 probes / 406 assertions | <!-- doc-gen: 39 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 406 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
-| **an Expr walker descends into every variant that holds exprs** (and a PNode walker into every expression-bearing parse node) | **`lint_expr_walkers`** (oracles = `Ast.zbr`'s `Expr`, `Parser.zbr`'s `PNode`) | 15 opted in; the gate prints the ratio | <!-- doc-gen: 15 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
+| **an Expr walker descends into every variant that holds exprs** (and a PNode walker into every expression-bearing parse node) | **`lint_expr_walkers`** (oracles = `Ast.zbr`'s `Expr`, `Parser.zbr`'s `PNode`) | 16 opted in; the gate prints the ratio | <!-- doc-gen: 16 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_fallthrough` (`lint_interp_escape` retired 2026-09-15 with the bootstrap) | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
@@ -3523,7 +3531,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **897** <!-- doc-gen: 897 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **898** <!-- doc-gen: 898 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

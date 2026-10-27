@@ -43,6 +43,71 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-635: on Windows, a program printing more than 64 KiB into a pipe panicked "reached unreachable code" and delivered nothing -- FIXED 2026-10-27 (found the same day)
+- **Found by:** BUG-596's before/after emit sweep, which hashed `zebra --emit-zig f.zbr | md5sum`
+  over ~3,000 files: four GameEngine files with 67-105 KB of emitted Zig read as empty on
+  some runs and not others. Redirected to a FILE they were whole and identical. The compiler
+  was panicking -- its `--emit-zig` ends in an ordinary `print`.
+- **Repro:** any program whose single `print` is 65,537 bytes or more, run as `prog | wc -c`
+  from Git Bash: `thread N panic: reached unreachable code`, exit 1, 0 bytes. 65,536 bytes
+  passes; a file or the console takes any size. Measured threshold, not a guess.
+- **Cause:** Zig's `File.stdout()` builds a File flagged `nonblocking = false`, i.e. it assumes
+  a synchronous handle. Git Bash hands a child an OVERLAPPED pipe. A write that cannot finish
+  at once (the 64 KiB pipe buffer is full) returns STATUS_PENDING, and std's blocking path has
+  `.PENDING => unreachable, // unrecoverable: wrong File nonblocking flag`
+  (lib/std/Io/Threaded.zig, fileWriteStreamingWindows). Chunking the writes was tried first
+  and is NOT a fix: it turned the panic into a silent truncation at 65,536 bytes (the panic
+  went to stderr, which the probe had discarded) -- the worse failure, caught by measuring.
+- **Fix:** the runtime asks Windows how stdout and stderr were opened, once
+  (`NtQueryInformationFile`, FileModeInformation, read as a raw ULONG so 0.16 and 0.17 both
+  build), and flags an asynchronous handle `nonblocking`, so std takes its path that waits for
+  the write to complete. Every runtime use of `File.stdout()` / `File.stderr()` goes through
+  `_zbr_stdout()` / `_zbr_stderr()`. `sys.errln` was never affected (`std.debug.print` writes in
+  pieces). Measured after: 65,536 / 70,000 / 1,000,000 bytes arrive whole through a pipe, with a
+  reader that sleeps 2 s first, and a reader that closes early still ends cleanly.
+- **Gate:** `stream-sep` leg 8 -- a 200,001-byte print through a slow pipe must arrive whole
+  with nothing on stderr; the fixture's `big` mode, count derived from its own loop.
+  Red-checked by making the mode query report every handle synchronous: leg 8 fails with
+  0 bytes and the panic.
+
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" -- FIXED 2026-10-27 (class receivers 2026-10-16, struct receivers 2026-10-27)
+- **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
+  functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
+  it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
+  BUG-569's by-reference capture.
+- **Class receivers, FIXED:** `c.bump` read as a value emits `_zbr_bind(c, "bump")` -- a runtime
+  helper that reads the method's signature by reflection and returns a struct holding the
+  receiver with a `call` of the method's arity, which a sig slot's `.from` and an untyped
+  local's `_zbr_invoke` already take. Nothing about the method is spelled at the bind, so a
+  used module's class binds the same way. A callee is not a value: codegen marks callee
+  position (`genCalleeExpr`) so `c.bump()` is untouched. The checker types the value as a
+  callable returning the method's type (`f()` then types), and codegen's string-shape name
+  list no longer takes a bound `n.name` for a str. The list helpers (`map`, `filter`,
+  `reduce`, `any`, `all`, `find`) took only bare functions; they apply a function OR a value
+  with `call` now (`_zbr_apply1` / `_zbr_apply2`, the spelling `Result.map` already used).
+  Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
+- **Struct receivers, FIXED 2026-10-27:** a struct `var` whose method is read as a value lives
+  in a heap cell (BUG-569 step 4's `_zbr_cell`) whatever else happens to it, and the bind
+  receives the cell's POINTER (`boxPtrSpelling`), so `_zbr_bind` binds the variable exactly as
+  it binds a class instance -- struct methods already take `self` by pointer. CodeGen's
+  `computeBoxCandidates` finds such receivers with a new walker pair (`exprsInStmts`, a
+  statement walker; `structBindsInExpr`, an expression walker that types a lambda body's own
+  locals the way `checkLambdaBody` does), both marked exhaustive for `lint_expr_walkers`.
+  The receiver must be a `var` local of the function -- the set CodeGen can box. The checker
+  keeps that set (`var_locals`, marked wherever a `var` or destructured name is bound, a
+  lambda's parameters taken out while its body is checked) and refuses every other receiver
+  by name in `checkCallsInExpr`'s member arm (`checkStructBind`): `this`, a parameter, a
+  field, a temporary, a loop variable, a lambda parameter. It reports there and not in
+  inference, because the pass that reports for a lambda body runs before its parameters are
+  typed and the typed pass infers quietly -- the first version refused nothing inside
+  lambdas. A struct VALUE reaching `_zbr_bind` would bind a copy that compiles and prints
+  stale numbers; `_ZbrBindRecv` refuses it at comptime ("internal: ... would bind a copy"),
+  red-checked by forcing the value path.
+  Fixtures `test/bug596_struct_bound_method_test.zbr` (aliasing both ways, a sig slot, a
+  closure, a bound value returned out of its function, a struct `var` in a lambda and in a
+  loop, `map`; `bug596s: 3 11 11 16 12 12 102 41 6 [13, 14, 15]` -- the N-1 anchor fails it
+  "mutable 'p' not accessible") and `test/fail_fixtures/bug596_struct_bind_receiver_test.zbr`
+  (the six refused receivers).
 ### BUG-634: inside an open statement-body lambda, a multi-line call or literal in the body ended its statement at the first newline -- FIXED 2026-10-27 (found the same day)
 - **Found by:** BUG-564's fixture (a nested lambda whose body calls `add(x,` over two lines).
   Same on the N-1 anchor in the older indentation form, so it predates BUG-564's fix.

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-634. Next new bug: BUG-635.**
+**Last bug number generated: BUG-635. Next new bug: BUG-636.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,32 +45,6 @@
 > measured in.
 
 ---
-
-### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" (CLASS receivers ✅ FIXED 2026-10-16; struct receivers OPEN)
-<!-- bug-open-ok: PARTIAL -- a class's method binds; a struct's is refused until the struct half is built. Move it when it lands. -->
-- **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
-  functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
-  it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
-  BUG-569's by-reference capture.
-- **Class receivers, FIXED:** `c.bump` read as a value emits `_zbr_bind(c, "bump")` -- a runtime
-  helper that reads the method's signature by reflection and returns a struct holding the
-  receiver with a `call` of the method's arity, which a sig slot's `.from` and an untyped
-  local's `_zbr_invoke` already take. Nothing about the method is spelled at the bind, so a
-  used module's class binds the same way. A callee is not a value: codegen marks callee
-  position (`genCalleeExpr`) so `c.bump()` is untouched. The checker types the value as a
-  callable returning the method's type (`f()` then types), and codegen's string-shape name
-  list no longer takes a bound `n.name` for a str. The list helpers (`map`, `filter`,
-  `reduce`, `any`, `all`, `find`) took only bare functions; they apply a function OR a value
-  with `call` now (`_zbr_apply1` / `_zbr_apply2`, the spelling `Result.map` already used).
-  Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
-- **Struct receivers, OPEN:** refused, naming the reason and the alternatives (call it in
-  place, or make the type a class). Binding the variable by reference needs the variable to
-  outlive the closure. **That mechanism exists since 2026-10-22** (BUG-569 step 4, closed
-  2026-10-26): a written `var` local a closure shares lives in a heap cell (`_zbr_cell`) that a
-  returned closure keeps alive. What is left is binding a struct method value onto such a
-  cell. Fixture
-  `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
-  positive fixture when this half lands.
 
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).

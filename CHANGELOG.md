@@ -25,6 +25,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **A struct's method can be used as a value (BUG-596).** `var f = p.move` binds the struct
+  VARIABLE `p` by reference: calls through `f` change `p`, a write to `p` is seen by `f`, and
+  `f` may be returned or stored (the variable is kept alive for it). The receiver must be a
+  `var` local; a parameter, loop variable, `this`, field or temporary is refused by name.
+  A class's method has bound to its object since 2026-10-16.
+
 - **`@[...]` is removed (BUG-565).** It worked only right after `in` -- QUICKSTART's own
   `var nums = @[3, 1, 4, 1, 5]` never compiled -- and was a second spelling of the list
   literal. Write `[...]`: `x in [a, b]` with primitive elements is now the same inline,
@@ -51,6 +57,11 @@ confirmed via `tools/bootstrap_check.sh`.
   A sized integer (`uint64`, `int32`...) also takes `toInt`, `toFloat` and `toString`.
 
 ### Fixes
+
+- **Printing more than 64 KiB into a pipe works on Windows (BUG-635).** From Git Bash,
+  `prog | grep` (or `zebra --emit-zig f.zbr | ...`) panicked "reached unreachable code" and
+  delivered nothing once one write filled the pipe. The runtime now detects the overlapped
+  pipe handle such a parent passes and lets the write wait for the reader.
 
 - **A statement-body lambda on a continuation line may indent its body past that line
   (BUG-564), and a call inside a lambda body may span lines (BUG-634).** In

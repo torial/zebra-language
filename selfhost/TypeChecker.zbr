@@ -1573,6 +1573,11 @@ class InferCtx
     # to a numeric loop whose variable is assignable). Each is a Zig `const` capture, so
     # assigning one leaked "cannot assign to constant". Same shape as params_here.
     var loop_consts: str
+    # BUG-596: the names declared with `var` (or destructured) in the function being checked,
+    # lambda bodies included -- the locals CodeGen can keep in a heap cell. A struct method
+    # read as a value binds THAT variable by reference, so only these receivers are accepted.
+    # Same shape as params_here; reset per function.
+    var var_locals: str
     # BUG-629: locals an UNANNOTATED `var` bound to a lambda whose signature cannot be
     # written down (an expression lambda with no return type, or an untyped parameter).
     # Each lambda is its own Zig type, so reassigning one leaked "has no member named
@@ -1600,6 +1605,7 @@ class InferCtx
         .params_here = " "
         .copy_locals = " "
         .loop_consts = " "
+        .var_locals = " "
         .opaque_lambdas = " "
 
     def setParamsHere(names: str)
@@ -1635,6 +1641,23 @@ class InferCtx
     def resetCopyLocals()
         .copy_locals = " "
         .opaque_lambdas = " "
+        .var_locals = " "
+
+    def markVarLocal(name: str)
+        if not ((" " + name + " ") in .var_locals)
+            .var_locals = .var_locals + name + " "
+
+    def unmarkVarLocal(name: str)
+        .var_locals = .var_locals.replace(" " + name + " ", " ")
+
+    def isVarLocal(name: str): bool
+        return (" " + name + " ") in .var_locals
+
+    def varLocals(): str
+        return .var_locals
+
+    def setVarLocals(names: str)
+        .var_locals = names
 
     def markOpaqueLambda(name: str)
         if not ((" " + name + " ") in .opaque_lambdas)
@@ -3378,7 +3401,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # reference (Sean, 2026-10-16) -- not built yet, though BUG-569's shared cells
                 # (2026-10-22) are what it would stand on -- so it is refused rather than
                 # reaching zig.
-                if boundMethodRet(tn, m.member, m.span.line, m.span.col, ctx) as bm_ret
+                if boundMethodRet(tn, m.member, m.object, m.span.line, m.span.col, ctx) as bm_ret
                     return bm_ret
                 if unknownUserMember(tn, m.member, ctx)
                     var owning_mixin: str = mixinOwningField(tn, m.member, ctx)
@@ -5019,6 +5042,8 @@ def copyReceiverName(recv: Expr, ctx: InferCtx): str
 # and had no destructure arm, so `var (x, z) = ("ab", 0)` in a sibling block kept the earlier
 # block's `var x: int` and `x.upper()` was refused.
 def bindDestructNames(sds: StmtDestruct, ctx: InferCtx)
+    for dvn in sds.names
+        ctx.markVarLocal(dvn)                               # BUG-596
     var rt: Type_ = inferExpr(sds.init_expr, ctx)
     if rt is Type_.ref_to as dr
         rt = dr
@@ -5343,6 +5368,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr!, ctx)
             ctx.bind(dv.name, t)
+            ctx.markVarLocal(dv.name)                        # BUG-596
             ctx.unmarkOpaqueLambda(dv.name)
             if dv.type_ == nil and dv.init_expr != nil
                 if dv.init_expr! is Expr.lambda as dvlam
@@ -6729,6 +6755,9 @@ def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
             ctx.bind(lp.name, Type_.unknown_)
         lp_names = lp_names + lp.name + " "
     ctx.setParamsHere(lp_names)
+    var saved_vlocals: str = ctx.varLocals()                 # BUG-596: a param shadows a var
+    for lpv in lam.params
+        ctx.unmarkVarLocal(lpv.name)
     ctx.withYieldType(nil)
     if lam.return_type != nil
         ctx.withReturnType(typeFromRef(lam.return_type!))
@@ -6744,6 +6773,7 @@ def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
     ctx.withReturnType(saved_ret)
     ctx.withYieldType(saved_yield)
     ctx.setParamsHere(saved_params)
+    ctx.setVarLocals(saved_vlocals)
     ctx.setLoopConsts(saved_loops)
 
 # expr-walker: exhaustive
@@ -6824,6 +6854,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 checkCallsInExpr(a.value, file, line, ctx)
         on Expr.member as m
             checkCallsInExpr(m.object, file, line, ctx)
+            checkStructBind(m, file, ctx)                   # BUG-596
         on Expr.index as ix
             # BUG-331: a JSON read can fail, so it is marked like any other failing call.
             if inferExpr(ix.object, ctx) is Type_.json_value
@@ -7539,6 +7570,7 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         bt = inferExpr(dv.init_expr!, ctx)
                         ctx.quiet_errors = saved_q
                 ctx.bind(dv.name, bt)
+                ctx.markVarLocal(dv.name)                    # BUG-596
             on Stmt.if_ as si
                 checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
                 # `if x orelse d as n` always binds (walkStmt allows it), so an `else` on it
@@ -8471,8 +8503,10 @@ def stmtReturnsValue(s: Stmt): bool
             return false
 
 # nil when `member` is not such a method (a field of that name wins: it is what is read).
-# A struct's method read as a value is refused here (BUG-596's struct half waits on BUG-569).
-def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Type_?
+# A STRUCT's method binds the VARIABLE by reference (Sean, 2026-10-16), so the receiver must
+# be a `var` local of this function (structBindRecvOk); any other is typed unknown here and
+# refused by checkStructBind, in the one pass that sees every expression typed and reports.
+def boundMethodRet(tn: str, member: str, recv: Expr, line: int, col: int, ctx: InferCtx): Type_?
     var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
     if ct_opt == nil
         ct_opt = ctx.dep_types.classOf(tn)
@@ -8483,12 +8517,36 @@ def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Ty
         return nil
     if ctx.fieldTypeAny(tn, member) != nil or ctx.methodReturnAny(tn, member) == nil
         return nil
-    if ct.is_struct
-        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which is not built yet (BUG-596) -- call it in place, or make '" + tn + "' a class to pass its methods around")
+    if ct.is_struct and not structBindRecvOk(recv, ctx)
         return Type_.unknown_
     if ct.methodReturnRef(member) as rr
         return Type_.fn_type_(FnType_(rr, List(Type_)(), -1))
     return Type_.unknown_
+
+# BUG-596: a struct method may be bound only through a `var` local of this function -- the
+# locals CodeGen keeps in a heap cell (computeBoxCandidates' `decls`). Lambda parameters are
+# taken out of var_locals while their body is checked, so one that shadows a `var` is not one.
+def structBindRecvOk(recv: Expr, ctx: InferCtx): bool
+    if recv is Expr.ident as rid
+        return ctx.isVarLocal(rid.name) and not ctx.isParamHere(rid.name) and not ctx.isLoopConst(rid.name)
+    return false
+
+# BUG-596: refuse a struct method read as a value through anything but a `var` local. Called
+# from checkCallsInExpr's member arm, which a callee never reaches (the call arm walks only
+# its receiver), so every member here is a value read.
+def checkStructBind(m: ExprMember, file: str, ctx: InferCtx)
+    var rt: Type_ = inferExpr(m.object, ctx)
+    if rt is Type_.ref_to as rr
+        rt = rr
+    if rt is Type_.named as rn
+        var ct_opt: ClassTypes? = ctx.module_types.classOf(rn)
+        if ct_opt == nil
+            ct_opt = ctx.dep_types.classOf(rn)
+        if ct_opt as ct
+            if ct.is_struct and not ct.is_interface
+                if ctx.fieldTypeAny(rn, m.member) == nil and ctx.methodReturnAny(rn, m.member) != nil
+                    if not structBindRecvOk(m.object, ctx)
+                        ctx.addErr(file, m.span.line, m.span.col, "a method of a STRUCT used as a value (`" + m.member + "` of '" + rn + "') binds the struct VARIABLE it is read from, so that must be a `var` local of this function -- not a parameter, a loop variable, `this`, a field or a temporary; copy it into a `var` first, call the method in place, or make '" + rn + "' a class")
 
 # BUG-594: `member` is not a field, method or extension of `tn`, a user class or struct whose
 # member set is fully known. False for anything else (interfaces, unions, enums, aliases,
