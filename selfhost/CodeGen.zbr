@@ -314,6 +314,13 @@ def getVariantKey(e: Expr): str?
         var obj_name = getIdentName(m.object)
         if obj_name as obj_n
             return makeDottedKey(obj_n, m.member)
+        # BUG-237: `on Mod.Union.v` -- the key is module-local, "Union.v", exactly as for
+        # an exposed union. Without this a qualified arm never found its boxed flag and
+        # bound the raw `*T` payload.
+        var q_union = getMemberName(m.object)
+        if q_union as qu
+            if getMemberObjectIdent(m.object) != nil
+                return makeDottedKey(qu, m.member)
     return nil
 
 # B4: collect names that are the target of a DIRECT assignment (`x = …`,

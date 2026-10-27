@@ -1,0 +1,36 @@
+# BUG-237: a union reached by MODULE QUALIFICATION (`lib.Part.expr_`) rather than through
+# an `exposing` list. Before the fix:
+#   - `on lib.Part.expr_ as e` bound the raw `*Expr` payload, so `ev(e)` failed in zig
+#     ("expected type 'Expr', found '*Expr'") -- the boxed-variant lookup knew only the
+#     two-part `Part.expr_` spelling;
+#   - a branch naming every variant through the qualified form kept its `else` prong,
+#     which zig refuses as unreachable;
+#   - `if p is lib.Part.expr_ as e` did not get past the AST builder ("`is` member object
+#     must be a plain identifier").
+
+use bug237_qualified_union_lib exposing mkExpr, mkLit
+
+def ev(e: bug237_qualified_union_lib.Expr): int
+    branch e
+        on bug237_qualified_union_lib.Expr.num as n
+            return n
+        on bug237_qualified_union_lib.Expr.neg as inner
+            return 0 - ev(inner)
+
+def describe(p: bug237_qualified_union_lib.Part): str
+    branch p
+        on bug237_qualified_union_lib.Part.expr_ as e
+            return "expr ${ev(e)}"
+        on bug237_qualified_union_lib.Part.lit as s
+            return "lit ${s}"
+        else
+            return "unreachable"
+
+def main()
+    var a = mkExpr()
+    var b = mkLit()
+    var via_is: int = 0
+    if a is bug237_qualified_union_lib.Part.expr_ as e
+        via_is = ev(e)
+    var tag_only = b is bug237_qualified_union_lib.Part.lit
+    print("bug237: ${describe(a)} | ${describe(b)} | is=${via_is} | lit=${tag_only}")

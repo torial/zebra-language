@@ -1812,6 +1812,10 @@ smoke_run test/bug638_namespace_shadow_test.zbr "bug638: local=4 param=11 class=
 # BUG-263: `exposing` on a native dep -- a hand-written .zig and a C source with a header.
 smoke_run test/bug263_zig_exposing_test.zbr "bug263 zig: square=49 clamp=10 abs=42"
 smoke_run test/bug263_c_exposing_test.zbr "bug263 c: add=5 mul=42 qualified=9"
+# BUG-237: a union reached as `lib.Union.variant` -- boxed payload, covered branch + else, `is`.
+smoke_run test/bug237_qualified_union_test.zbr "bug237: expr -5 | lit hi | is=-5 | lit=true"
+# BUG-640: `x is Mod.Class` -- the two-part form names a module, not a union.
+smoke_tc_fail test/bug640_is_module_class_test.zbr "'bug235_use_lib' is a module, not a union. For a class, expose it"
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60

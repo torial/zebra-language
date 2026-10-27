@@ -263,6 +263,15 @@ def getObjectIdentName(e: Expr): str?
         else
             return nil
 
+# BUG-237: the union of a MODULE-QUALIFIED variant, `Mod.Union` in `x is Mod.Union.v` --
+# `Union` when `e` is `member(ident(Mod), Union)`, else nil. Union-variant keys are
+# module-local ("Union.v"), the same spelling an exposed union reaches codegen with.
+def qualifiedUnionName(e: Expr): str?
+    if e is Expr.member as qm
+        if getObjectIdentName(qm.object) != nil
+            return qm.member
+    return nil
+
 def isScopedAllocatorExpr(e: Expr): bool
     if e is Expr.call as c
         if c.callee is Expr.ident as id
@@ -1211,6 +1220,8 @@ class ASTBuilder
                         on Expr.member as em
                             # em.object is ^Expr; auto-deref passes Expr value to getObjectIdentName
                             var obj_name = getObjectIdentName(em.object)
+                            if obj_name == nil
+                                obj_name = qualifiedUnionName(em.object)    # BUG-237
                             if obj_name as obj_n
                                 var tc = ExprTypeCheck(spanOf(left_expr), left_expr, obj_n)
                                 tc.variant_name = em.member

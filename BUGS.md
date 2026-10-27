@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-639. Next new bug: BUG-640.**
+**Last bug number generated: BUG-640. Next new bug: BUG-641.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -592,118 +592,6 @@ look like coverage.
 (delete/quarantine). Then close the class — see `tools/registration_check.py`, which makes
 an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 
-
-### BUG-237: a union used WITHOUT being `exposing`-imported silently mis-emits `^T` payloads ⚠ OPEN
-
-> **Triaged 2026-08-17 — still OPEN; `lint_stale_bugs` scores this a false positive.**
-> The commit it counts as "claiming a fix" is the **BUG-232 unblock** noted at the bottom
-> of this entry — adding `StringPart` to an exposing list, which is the WORKAROUND this
-> ticket exists to remove, not a fix for it. Same false-positive class as BUG-106, and
-> that tool ranks suspicion rather than closing anything, exactly so this stays a
-> judgement call. Recorded so the next triage pass does not re-derive it.
-
-**ROOT CAUSE FOUND 2026-07-31** — it is not about union payloads in general. It is that
-**referencing a union that is not in the module's `use X exposing ...` list silently
-skips its boxed-variant registration.**
-
-```zebra
-use Ast exposing Expr              # StringPart NOT exposed
-if part is StringPart.expr_ as e   # still RESOLVES and compiles the front end
-    someFn(e)                      # emits `someFn(e)` -- a raw *Expr. Zig rejects it.
-
-use Ast exposing StringPart, Expr  # exposed
-if part is StringPart.expr_ as e   # emits `const e_ptr = ...; const e = e_ptr.*;`
-    someFn(e)                      # correct
-```
-
-`selfhost/CodeGen.zbr:6917` gates the deref on
-`boxed_variants.contains_(union + "." + variant)`, and `boxed_variants` is populated
-from same-module unions plus `populateBoxedVariants(..., deps_mt)` on each `use` — which
-evidently follows the **exposed** names. So an unexposed union is still *referenceable*
-(the front end resolves `StringPart.expr_` fine) but codegen has no record that its
-payload is boxed.
-
-**That combination — resolves, compiles the front end, emits wrong Zig — is the defect.**
-Either the reference should be rejected ("StringPart is not exposed in this module"), or
-the registration should follow reachability rather than the exposing list. The current
-behaviour fails in the worst available way: a Zig type error naming `Ast.Expr` vs
-`*Ast.Expr`, in generated code, for a mistake that is really a missing import clause.
-
-**Cost of the ambiguity, measured:** six spellings tried before the import list was
-suspected — bare binding, renamed binding, annotated local, pointer-typed parameter,
-direct payload access, and a call in condition position. Every one emitted the pointer,
-because none of them was the actual variable. `CgHelpers.zbr` "mysteriously" worked for
-exactly one reason: it exposes `StringPart` and `TypeChecker` did not.
-
-**Severity:** medium (silent mis-emit; the diagnostic points at generated types, and the
-real fix is a missing name in an import list).
-**Found:** 2026-07-31 while fixing BUG-232, which it blocked until the cause was found.
-
-```zebra
-union StringPart
-    literal: String
-    expr_: ^Expr
-
-# inside a walker taking `Expr`:
-if part is StringPart.expr_ as e
-    someFn(e)          # emits `someFn(e)` where e is *Expr
-                       # -> error: expected type 'Ast.Expr', found '*Ast.Expr'
-```
-
-A `^T` **struct field** derefs correctly — `cm.object` two lines away emits
-`cm.object.*`, and `sx.start` (a `^Expr?`) emits `sx.start.?.*`. The gap is specific to
-a `^T` reached through a **union payload binding**.
-
-**Six spellings were tried, all emitting the bare pointer:**
-
-1. bare binding as an argument — `someFn(e)`
-2. renamed binding (matching a working precedent's names exactly) — `someFn(se)`
-3. annotated local — `var pex: Expr = pe` emitted `const pex: Expr = pe;`, no deref
-4. pointer-typed parameter — a `def f(be: ^Expr)` wrapper, which passed it on unchanged
-5. direct payload access without a binding — `someFn(part.expr_)`
-6. call in CONDITION position — `if boolReturningWrapper(e)`
-
-**What makes it genuinely odd:** `selfhost/CgHelpers.zbr:268-269` does *the same thing*
-and emits the deref (`const e_ptr = part.expr_; const e = e_ptr.*;`) — verified against a
-FRESH emit from today's bootstrap, so it is not a stale artefact. The two source sites
-are structurally identical down to the loop shape. Reduced probes of the same shape (bare
-argument, void statement call, interpolated call, over a `union Part { expr_: ^Node }`)
-all compile fine, so the trigger is not the construct alone and was not isolated.
-
-Whatever the discriminator is, it is worth finding: it means the same source line emits
-different code in two places, which is the kind of thing that makes a codegen bug look
-like a user error.
-
-**BUG-232 is no longer blocked** — adding `StringPart` to the exposing list fixed it, and
-`bv_arity_interp_unchecked.zbr` now asserts the warning instead of pinning the silence.
-This entry remains open on its own merits: the next person to reference an unexposed
-union will lose the same hours, and a compiler that silently emits wrong code for a
-missing import clause is a poor trade for the convenience of not writing the name.
-
-**REPRODUCTION ATTEMPTED 2026-08-30 — THE STATED MECHANISM DOES NOT REPRODUCE.**
-Tested against the compiler's own code, not a synthetic case: `selfhost/AstWalk.zbr:27`
-exposes `StringPart` and `:118` uses `if part is StringPart.expr_ as ex`, i.e. the
-workaround this entry exists to remove is currently in place. Removed it on a COPY and
-emitted with `zebra.exe`:
-
-| | result |
-|---|---|
-| control (StringPart exposed) | **emits**; only error is `unable to load 'Ast.zig': FileNotFound`, the expected DEPMISS for a library module emitted standalone |
-| StringPart removed from `exposing` | **`zz_walk_nox.zbr:118:28: error: undefined name: 'StringPart'`** — front end REFUSES, nothing emitted |
-
-The entry's mechanism requires that the reference *"still RESOLVES and compiles the front
-end"* and then emits a raw `*Expr`. It does not: the resolver refuses, with a correct
-line and column. Two synthetic constructions (union unreachable, union reachable through
-an exposed struct field) refuse the same way.
-
-**So the SILENT half — the G1 property — is closed.** What remains is at most a usability
-question (a union must be `exposing`-imported to be named), which is a defensible rule and
-not a 0.9 blocker. **Reclassified: not a silent-wrong-answer bug.** Whoever picks this up
-should decide whether the refusal IS the intended resolution and close it, rather than
-implementing the boxed-variant registration the entry proposes.
-
-
----
 
 ### BUG-201: nested-container dispatch on call-result / mutable-loop receivers ⛔ OPEN (found probing BUG-196)
 Two distinct facets surfaced when probing BUG-196, each its own mechanism:

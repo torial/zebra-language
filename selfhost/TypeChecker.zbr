@@ -7149,16 +7149,22 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 checkCallsInExpr(f.value, file, line, ctx)
         on Expr.type_check as tc
             checkCallsInExpr(tc.expr, file, line, ctx)
+            # BUG-640: `x is Mod.Name` reaches here as "variant `Name` of a union `Mod`" -- the
+            # AST builder cannot tell a module from a union -- and codegen then compared a tag
+            # against whatever `x` is, failing inside zig. A three-part `Mod.Union.v` arrives
+            # with the union as `type_name` (BUG-237), so only the two-part form lands here.
+            if tc.variant_name as tcv
+                if ctx.isUsedModule(tc.type_name) and not ctx.hasUnion(tc.type_name) and not ctx.hasLocal(tc.type_name)
+                    ctx.addErr(ctx.file, tc.span.line, tc.span.col, "`is " + tc.type_name + "." + tcv + "`: '" + tc.type_name + "' is a module, not a union. For a class, expose it (`use " + tc.type_name + " exposing " + tcv + "`) and write `is " + tcv + "`; for a union variant, write `is " + tc.type_name + ".<Union>." + tcv + "`")
         on Expr.is_nil as isn
             checkCallsInExpr(isn.expr, file, line, ctx)
         on Expr.old_ as ol
             checkCallsInExpr(ol.operand, file, line, ctx)
         on Expr.string_interp as si
-            # Requires `StringPart` in this module's `use Ast exposing ...` list --
-            # see BUG-237. Without it the union is still REFERENCEABLE, but codegen
-            # never registers its boxed variants, so `^Expr` payloads emit as raw
-            # pointers and Zig rejects them. That silent dependency cost six attempted
-            # spellings before the exposing list turned out to be the difference.
+            # `StringPart` is in this module's `use Ast exposing ...` list. Before BUG-237
+            # was fixed (2026-10-27) leaving it out still RESOLVED and emitted `^Expr`
+            # payloads as raw pointers; today the bare name is refused when unexposed, and
+            # `Ast.StringPart.expr_` works.
             var last_fe: Expr? = nil
             for part in si.parts
                 if part is StringPart.expr_ as se

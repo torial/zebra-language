@@ -1,0 +1,11 @@
+# BUG-640: `w is bug235_use_lib.Widget` names a CLASS through its module. The AST builder
+# reads a two-part `is` operand as `Union.variant`, so this passed -c and failed inside zig
+# ("incompatible types: 'Widget' and '@EnumLiteral()'"). It is refused now, naming both
+# spellings that work.
+
+use bug235_use_lib
+
+def main()
+    var w = bug235_use_lib.Widget(3)
+    if w is bug235_use_lib.Widget
+        print("widget")

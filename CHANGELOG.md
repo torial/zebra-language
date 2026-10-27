@@ -58,6 +58,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **`x is Mod.Class` is refused at `-c` (BUG-640).** It passed the front end and failed
+  inside zig; the message names `use Mod exposing Class` + `is Class`.
+
+- **A union reached by module qualification works like an exposed one (BUG-237).**
+  `on lib.Part.expr_ as e` bound the raw pointer of a `^T` payload, a fully covered qualified
+  `branch` with an `else` was refused by zig, and `if x is lib.Part.expr_ as e` did not
+  compile at all. All three now behave as they do with `use lib exposing Part`.
+
 - **`use foo exposing bar` works on native deps (BUG-263).** For a C source with a header and
   for a hand-written `.zig` file, an exposed name was bound to nothing (C) or to a symbol the
   file does not have (Zig), and the call failed inside zig. Both now bind the dep's own name.

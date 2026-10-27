@@ -43,6 +43,159 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-640: `x is Mod.Class` (a module-qualified CLASS check) passes `-c` and fails inside zig -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+use C                      # C.zbr declares `class Foo`
+def main()
+    var f = C.Foo()
+    if f is C.Foo          # -c: clean. Build: "incompatible types: 'C.Foo' and '@EnumLiteral()'"
+        print("foo")
+```
+
+The AST builder reads every two-part `is` right-hand side as `Union.variant`, so `C.Foo`
+becomes "variant `Foo` of a union named `C`" and codegen emits a tag comparison against a
+class value. The builder has no symbol information to tell a module alias from a union; the
+checker does (`isUsedModule`, BUG-638). Either the checker refuses it by name, or `is` on a
+module-qualified class lowers like the bare form. Same result on the N-1 anchor, so not a
+regression. Found probing BUG-237, whose fix covers the THREE-part `Mod.Union.variant` form.
+
+**FIXED -- refused, by name.** `checkCallsInExpr`'s `type_check` arm refuses a two-part
+`is Mod.Name` when `Mod` is a `use`d module and not a union or local of that name, and the
+message gives both spellings that work: `use Mod exposing Name` + `is Name` for a class,
+`is Mod.<Union>.Name` for a variant. Making the qualified class form LOWER instead would touch
+every consumer of an `is` (capture, narrowing, three codegen sites) for a spelling `exposing`
+already covers; a refusal that names the fix is the smaller promise. Fixture
+`test/bug640_is_module_class_test.zbr` (`smoke_tc_fail`); the N-1 anchor passes it at `-c`
+and fails inside zig with the message above.
+
+
+### BUG-237: a union used WITHOUT being `exposing`-imported silently mis-emits `^T` payloads -- FIXED 2026-10-27
+
+> **Triaged 2026-08-17 — still OPEN; `lint_stale_bugs` scores this a false positive.**
+> The commit it counts as "claiming a fix" is the **BUG-232 unblock** noted at the bottom
+> of this entry — adding `StringPart` to an exposing list, which is the WORKAROUND this
+> ticket exists to remove, not a fix for it. Same false-positive class as BUG-106, and
+> that tool ranks suspicion rather than closing anything, exactly so this stays a
+> judgement call. Recorded so the next triage pass does not re-derive it.
+
+**ROOT CAUSE FOUND 2026-07-31** — it is not about union payloads in general. It is that
+**referencing a union that is not in the module's `use X exposing ...` list silently
+skips its boxed-variant registration.**
+
+```zebra
+use Ast exposing Expr              # StringPart NOT exposed
+if part is StringPart.expr_ as e   # still RESOLVES and compiles the front end
+    someFn(e)                      # emits `someFn(e)` -- a raw *Expr. Zig rejects it.
+
+use Ast exposing StringPart, Expr  # exposed
+if part is StringPart.expr_ as e   # emits `const e_ptr = ...; const e = e_ptr.*;`
+    someFn(e)                      # correct
+```
+
+`selfhost/CodeGen.zbr:6917` gates the deref on
+`boxed_variants.contains_(union + "." + variant)`, and `boxed_variants` is populated
+from same-module unions plus `populateBoxedVariants(..., deps_mt)` on each `use` — which
+evidently follows the **exposed** names. So an unexposed union is still *referenceable*
+(the front end resolves `StringPart.expr_` fine) but codegen has no record that its
+payload is boxed.
+
+**That combination — resolves, compiles the front end, emits wrong Zig — is the defect.**
+Either the reference should be rejected ("StringPart is not exposed in this module"), or
+the registration should follow reachability rather than the exposing list. The current
+behaviour fails in the worst available way: a Zig type error naming `Ast.Expr` vs
+`*Ast.Expr`, in generated code, for a mistake that is really a missing import clause.
+
+**Cost of the ambiguity, measured:** six spellings tried before the import list was
+suspected — bare binding, renamed binding, annotated local, pointer-typed parameter,
+direct payload access, and a call in condition position. Every one emitted the pointer,
+because none of them was the actual variable. `CgHelpers.zbr` "mysteriously" worked for
+exactly one reason: it exposes `StringPart` and `TypeChecker` did not.
+
+**Severity:** medium (silent mis-emit; the diagnostic points at generated types, and the
+real fix is a missing name in an import list).
+**Found:** 2026-07-31 while fixing BUG-232, which it blocked until the cause was found.
+
+```zebra
+union StringPart
+    literal: String
+    expr_: ^Expr
+
+# inside a walker taking `Expr`:
+if part is StringPart.expr_ as e
+    someFn(e)          # emits `someFn(e)` where e is *Expr
+                       # -> error: expected type 'Ast.Expr', found '*Ast.Expr'
+```
+
+A `^T` **struct field** derefs correctly — `cm.object` two lines away emits
+`cm.object.*`, and `sx.start` (a `^Expr?`) emits `sx.start.?.*`. The gap is specific to
+a `^T` reached through a **union payload binding**.
+
+**Six spellings were tried, all emitting the bare pointer:**
+
+1. bare binding as an argument — `someFn(e)`
+2. renamed binding (matching a working precedent's names exactly) — `someFn(se)`
+3. annotated local — `var pex: Expr = pe` emitted `const pex: Expr = pe;`, no deref
+4. pointer-typed parameter — a `def f(be: ^Expr)` wrapper, which passed it on unchanged
+5. direct payload access without a binding — `someFn(part.expr_)`
+6. call in CONDITION position — `if boolReturningWrapper(e)`
+
+**What makes it genuinely odd:** `selfhost/CgHelpers.zbr:268-269` does *the same thing*
+and emits the deref (`const e_ptr = part.expr_; const e = e_ptr.*;`) — verified against a
+FRESH emit from today's bootstrap, so it is not a stale artefact. The two source sites
+are structurally identical down to the loop shape. Reduced probes of the same shape (bare
+argument, void statement call, interpolated call, over a `union Part { expr_: ^Node }`)
+all compile fine, so the trigger is not the construct alone and was not isolated.
+
+Whatever the discriminator is, it is worth finding: it means the same source line emits
+different code in two places, which is the kind of thing that makes a codegen bug look
+like a user error.
+
+**BUG-232 is no longer blocked** — adding `StringPart` to the exposing list fixed it, and
+`bv_arity_interp_unchecked.zbr` now asserts the warning instead of pinning the silence.
+This entry remains open on its own merits: the next person to reference an unexposed
+union will lose the same hours, and a compiler that silently emits wrong code for a
+missing import clause is a poor trade for the convenience of not writing the name.
+
+**REPRODUCTION ATTEMPTED 2026-08-30 — THE STATED MECHANISM DOES NOT REPRODUCE.**
+Tested against the compiler's own code, not a synthetic case: `selfhost/AstWalk.zbr:27`
+exposes `StringPart` and `:118` uses `if part is StringPart.expr_ as ex`, i.e. the
+workaround this entry exists to remove is currently in place. Removed it on a COPY and
+emitted with `zebra.exe`:
+
+| | result |
+|---|---|
+| control (StringPart exposed) | **emits**; only error is `unable to load 'Ast.zig': FileNotFound`, the expected DEPMISS for a library module emitted standalone |
+| StringPart removed from `exposing` | **`zz_walk_nox.zbr:118:28: error: undefined name: 'StringPart'`** — front end REFUSES, nothing emitted |
+
+The entry's mechanism requires that the reference *"still RESOLVES and compiles the front
+end"* and then emits a raw `*Expr`. It does not: the resolver refuses, with a correct
+line and column. Two synthetic constructions (union unreachable, union reachable through
+an exposed struct field) refuse the same way.
+
+**So the SILENT half — the G1 property — is closed.** What remains is at most a usability
+question (a union must be `exposing`-imported to be named), which is a defensible rule and
+not a 0.9 blocker. **Reclassified: not a silent-wrong-answer bug.** Whoever picks this up
+should decide whether the refusal IS the intended resolution and close it, rather than
+implementing the boxed-variant registration the entry proposes.
+
+**FIXED 2026-10-27 -- in the form it still had.** The BARE form in the entry (`StringPart`
+named without being exposed) is refused today, "undefined name: 'StringPart'", so it can no
+longer reach codegen. What remained was the MODULE-QUALIFIED form, `on Ast.StringPart.expr_ as
+e`, and that one still mis-emitted: `getVariantKey` built the boxed-variant key only from a
+two-part `Union.variant`, so a three-part arm never found its `^T` flag and bound the raw
+pointer ("expected type 'T', found '*T'"). It now yields the same module-local key
+(`StringPart.expr_`) for both spellings. Two more failures of the same form went with it:
+a branch naming every variant through the qualified form kept its `else` prong
+(`branchCoversAllVariants` reads the same key), which zig refuses as unreachable; and
+`if x is Mod.Union.v as e` stopped in the AST builder with "`is` member object must be a
+plain identifier", no location (`qualifiedUnionName`).
+
+Fixture `test/bug237_qualified_union_test.zbr` (+ `bug237_qualified_union_lib.zbr`); each of
+the three legs was run separately on the N-1 anchor and fails there with the message above.
+Found beside it: BUG-640, the two-part `x is Mod.Class`.
+
+
 ### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep -- FIXED 2026-10-27
 
 **Found 2026-08-05** while fixing BUG-261, by reading the bootstrap branch being
