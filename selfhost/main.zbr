@@ -433,7 +433,7 @@ class MultiCompiler
                         # --target node-addon: N-API glue instead of an entry thunk,
                         # plus the JS require() shim and TypeScript declarations,
                         # written next to the SOURCE (not the temp .zig dir).
-                        zig_src = generateNodeAddon(module, zbr_path, preamble_path, "selfhost/napi_preamble.zig", strip_contracts)?
+                        zig_src = generateNodeAddon(module, zbr_path, preamble_path, runtimeFilePath("napi_preamble.zig"), strip_contracts)?
                         var stem_na: str = zbr_path
                         if stem_na.endsWith(".zbr")
                             for s in zbr_path.split(".zbr")
@@ -1423,17 +1423,31 @@ def extractConflictSide(src: str, want_ours: bool): str
 # Run the selfhost TC pipeline on src (a string), collecting diagnostics into diags.
 # Catches parse/resolve/build errors and reports them as diagnostic strings so the
 # caller gets a clean list regardless. Does not compile to Zig.
-# The preamble lives in the repo (selfhost/) or, for an installed zebra.exe, next
-# to the binary. One resolver, used by the compile route and by the side-check
-# route (`tcCheckSide`) so BUG-359's reserved-name check sees the same runtime.
+# One resolver, used by the compile route and by the side-check route (`tcCheckSide`)
+# so BUG-359's reserved-name check sees the same runtime.
 def defaultPreamblePath(): str
-    var pp: str = "selfhost/stdlib_preamble.zig"
-    if not File.exists(pp)
-        var pre_exe_dir: str = Path.dirname(sys.selfExe())
-        if pre_exe_dir == ""
-            pre_exe_dir = "."
-        pp = pre_exe_dir + "/stdlib_preamble.zig"
-    return pp
+    return runtimeFilePath("stdlib_preamble.zig")
+
+# A runtime file the compiler reads at codegen time (the preamble, a GUI section, the
+# napi helpers, the V runtime), found from the BINARY rather than from the working
+# directory (BUG-543): first the checkout the binary was built in
+# (<checkout>/zig-out/bin/zebra.exe -> <checkout>/selfhost/NAME), then beside the binary
+# (an installed zebra), and only then ./selfhost/NAME, for a compiler built into a
+# scratch directory and run from a checkout (tools/regen_recover.sh). The cwd used to
+# come FIRST, so any zebra run inside a clone of this repo took the clone's runtime --
+# the N-1 anchor emitted its own codegen against today's runtime that way.
+def runtimeFilePath(name: str): str
+    var exe_dir: str = Path.dirname(sys.selfExe())
+    if exe_dir == ""
+        exe_dir = "."
+    if exe_dir.replace("\\", "/").endsWith("/zig-out/bin")
+        var built_in: str = exe_dir + "/../../selfhost/" + name
+        if File.exists(built_in)
+            return built_in
+    var beside: str = exe_dir + "/" + name
+    if File.exists(beside)
+        return beside
+    return "selfhost/" + name
 
 # --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
 # .v beside the source, the refusals listed (never skipped silently), the run
@@ -1628,15 +1642,10 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
     modules = vRenameCollisions(modules)?
     if modules.count() > 0
         # the V runtime (the boxed containers), inlined into the emitted file:
-        # in the repo, or next to an installed zebra.exe, as the preamble is
-        var rt_path: str = "selfhost/zebra_rt.v"
+        # found as the preamble is (runtimeFilePath)
+        var rt_path: str = runtimeFilePath("zebra_rt.v")
         if not File.exists(rt_path)
-            var exe_dir: str = Path.dirname(sys.selfExe())
-            if exe_dir == ""
-                exe_dir = "."
-            rt_path = exe_dir + "/zebra_rt.v"
-        if not File.exists(rt_path)
-            sys.errln("zebra --target v: the V runtime zebra_rt.v is not at selfhost/zebra_rt.v nor beside zebra.exe: nothing written")
+            sys.errln("zebra --target v: the V runtime zebra_rt.v is not in the checkout this zebra was built in, nor beside zebra.exe, nor at selfhost/zebra_rt.v: nothing written")
             sys.exit(1)
         var res: VResult = generateV(modules, File.read(rt_path))
         # a GUI program: the libui-ng section (Gui, the run loop, the libui-ng
@@ -1645,12 +1654,7 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
         # widgets are a V compile error naming the method)
         var gui_note: str = ""
         if gui_backend == "libui_ng"
-            var sec_path: str = "selfhost/gui_libui_ng_section.v"
-            if not File.exists(sec_path)
-                var exe_dir2: str = Path.dirname(sys.selfExe())
-                if exe_dir2 == ""
-                    exe_dir2 = "."
-                sec_path = exe_dir2 + "/gui_libui_ng_section.v"
+            var sec_path: str = runtimeFilePath("gui_libui_ng_section.v")
             if not File.exists(sec_path)
                 sys.errln("zebra --target v --gui-backend=libui_ng: the section gui_libui_ng_section.v is not at selfhost/ nor beside zebra.exe: nothing written")
                 sys.exit(1)

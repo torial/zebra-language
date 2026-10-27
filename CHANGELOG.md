@@ -58,6 +58,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A `zebra` run inside a clone of the Zebra repo uses its own runtime (BUG-543).** The
+  runtime files read at codegen time were looked up in `./selfhost/` before the copy beside
+  the binary, so the working directory decided which runtime a program was built against. They
+  are found from the binary now: the checkout it was built in, then beside it, then the cwd.
+
 - **Printing more than 64 KiB into a pipe works on Windows (BUG-635).** From Git Bash,
   `prog | grep` (or `zebra --emit-zig f.zbr | ...`) panicked "reached unreachable code" and
   delivered nothing once one write filled the pipe. The runtime now detects the overlapped

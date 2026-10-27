@@ -2585,7 +2585,7 @@ def generateErrorMsgHelperWith(dep_modules: List(str)): str
 # ── Full file generator ───────────────────────────────────────────────────────
 #
 # Returns a complete, self-contained .zig file.
-# preamble_path must be relative to the current working directory.
+# preamble_path is any readable path (main.zbr's runtimeFilePath finds it).
 
 # Normalize path separators to forward slash so emitted `// Source:` / `// zbr:`
 # markers are byte-identical regardless of the host path separator. On Windows

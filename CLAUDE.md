@@ -99,7 +99,8 @@ preamble edit was invisible until the bootstrap was rebuilt — observed 2026-07
 on 2026-08-26 a `src/*.zig` edit failed the same way with a type error naming the very
 feature being added. `rebuild.sh` pre-built the bootstrap when an input was newer, and
 `rebuild_guard_check.sh` falsified that guard. The selfhost reads the preamble FROM DISK
-at codegen time, repo-relative first, so there is no embedding binary to be stale against;
+at codegen time -- from the checkout the binary was built in, then beside it, then the cwd
+(`runtimeFilePath`, BUG-543) -- so there is no embedding binary to be stale against;
 the guard and its check went to `tools/attic/` with the bootstrap, sunset Step 3.)
 
 **`--module NAME` is the inner loop, and it is ~10 s against several minutes.** The full
@@ -1401,7 +1402,7 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 60 assertions, 0 pins (2026-10-27: BUG-547 -- `--source-root` emits byte-identical code from two cwds, a control that the two DIFFER without it, and a missing directory refused by name; 2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
+                                #   past `repl` starting. 63 assertions, 0 pins (2026-10-27: BUG-543 -- a planted clone's `selfhost/` runtime must not reach this checkout's emit or an installed copy's, and must reach a bare copy's (the control); BUG-547 -- `--source-root` emits byte-identical code from two cwds, a control that the two DIFFER without it, and a missing directory refused by name; 2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
                                 #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
                                 #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325

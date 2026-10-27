@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
 # pins: BUG-547 --source-root makes emitted source paths machine-independent (two cwds, one output)
 # pins: BUG-516 a --module-path dep that is not emitted is named in a note, silent under --library-mode
 # pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
@@ -596,6 +597,34 @@ run --source-root no_such_dir_547 -c hello.zbr
 chk "--source-root naming no directory is refused, naming it" \
     "$( [ "$RC" = 2 ] && case "$ERR" in *"no_such_dir_547"*"no such directory"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
+
+# ---- BUG-543: the runtime is found from the BINARY, not the cwd. A zebra run inside a
+# clone of this repo used to take the clone's selfhost/stdlib_preamble.zig (the N-1 anchor
+# emitted its own codegen against today's runtime that way). The attacker is that clone:
+# a directory whose selfhost/ preamble carries a marker. Three binaries are run in it --
+# this checkout's (must take its own runtime), an INSTALLED copy with a marked preamble
+# beside it (must take that one), and a bare copy with nothing beside it, which falls back
+# to ./selfhost and so must SEE the clone's marker: that leg is the control proving the
+# marker reaches an emit at all, without which the two absences prove nothing.
+mkdir -p "$W/rt543/clone/selfhost" "$W/rt543/inst" "$W/rt543/bare"
+RT_SRC="$REPO/selfhost/stdlib_preamble.zig"
+{ cat "$RT_SRC"; echo '// ZZ543_CLONE'; } > "$W/rt543/clone/selfhost/stdlib_preamble.zig"
+{ cat "$RT_SRC"; echo '// ZZ543_INSTALLED'; } > "$W/rt543/inst/stdlib_preamble.zig"
+cp "$W/hello.zbr" "$W/rt543/clone/hello.zbr"
+for d in inst bare; do cp "$ZEBRA" "$W/rt543/$d/"; cp "$(dirname "$ZEBRA")"/*.dll "$W/rt543/$d/" 2>/dev/null; done
+rt543() {  # rt543 <zebra> <outdir> -> the runtime markers its emit carries, or EMPTY
+    ( cd "$W/rt543/clone" && timeout "$TMO" "$1" --emit-zig --output-dir "$2" hello.zbr >/dev/null 2>&1 </dev/null )
+    [ -s "$W/rt543/clone/$2/zebra_rt.zig" ] || { echo EMPTY; return; }
+    grep -oE 'ZZ543_[A-Z]+' "$W/rt543/clone/$2/zebra_rt.zig" | tr '\n' ' '
+}
+ZB=$(basename "$ZEBRA")
+R_BARE=$(rt543 "$W/rt543/bare/$ZB" o_bare); R_DEV=$(rt543 "$ZEBRA" o_dev); R_INST=$(rt543 "$W/rt543/inst/$ZB" o_inst)
+chk "runtime lookup control: a bare copy falls back to ./selfhost and its emit carries the clone's marker (BUG-543)" \
+    "$(case "$R_BARE" in "ZZ543_CLONE ") echo 0;; *) echo 1;; esac)" "markers=[$R_BARE]"
+chk "...this checkout's zebra run inside a clone takes ITS OWN runtime, not the clone's" \
+    "$(case "$R_DEV" in "") echo 0;; *) echo 1;; esac)" "markers=[$R_DEV]"
+chk "...an installed zebra run inside a clone takes the runtime BESIDE it" \
+    "$(case "$R_INST" in "ZZ543_INSTALLED ") echo 0;; *) echo 1;; esac)" "markers=[$R_INST]"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"

@@ -43,6 +43,63 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- FIXED 2026-10-27 (found 2026-10-08; gate half 2026-10-10)
+- **Severity:** Medium (a gate that can stop seeing a whole class without going red).
+- **Mechanism:** `defaultPreamblePath()` (selfhost/main.zbr) tries
+  `selfhost/stdlib_preamble.zig` RELATIVE TO THE CWD first and only then the copy beside the
+  exe. `divergence_check.sh` runs the anchor from the repo root, so the anchor's emit is
+  "N-1 codegen + today's runtime".
+- **Measured (the discriminating probe):** the 2026-10-03 anchor's own preamble says
+  `_zbr_ref_containers = false`, the tree's says `true`. The anchor emitting hello-world
+  from the repo root wrote `true` into its `zebra_rt.zig`; from a scratch cwd, `false`.
+- **Consequences:** (1) a regression in the runtime is invisible -- both sides compile
+  against the same preamble; (2) removing a runtime helper that the anchor's codegen still
+  calls (the BUG-501 shims: `_zbr_ref`, `_ZbrRefOf`, `_zbr_unboxed`, `_zbr_cderef`) makes
+  EVERY anchor-side file fail to compile, so every file scores as an ADVANCE and the
+  REGRESSION count reads 0 forever -- green, and measuring nothing. This is why the BUG-501
+  runtime-shim deletion is held (see container_reference_semantics.md §9).
+- **Also ambient for users:** any `zebra` run from a directory holding
+  `selfhost/stdlib_preamble.zig` (a clone of this repo) takes that runtime instead of its
+  own -- the UNGIT "nothing ambient" test, failed by a fallback order.
+- **Fix directions:** the anchor reads its own runtime (run it from its cache dir with
+  absolute input paths, or an explicit `--runtime-dir` / env the gate passes -- explicit
+  intent over cwd), and the gate asserts it: the anchor's emitted `zebra_rt.zig` must match
+  the preamble in its own cache, or the run REFUSES. Moving the anchor tag past a deletion
+  only postpones the vacuity to the next one.
+- **Reproduced by accident, 2026-10-10** (closing BUG-501): the anchor binary
+  (`/c/Projects/zebra-n1-cache/f5afd86a49fd/zebra.exe`) run with this repo as the cwd printed
+  the post-switch answers for a container program; the same binary run from its own cache
+  directory printed the pre-switch answers. Same binary, same source, two behaviours,
+  decided by the working directory -- the UNGIT "nothing ambient" failure, in the gate meant
+  to compare versions.
+- **GATE HALF FIXED 2026-10-10:** `divergence_check` runs the anchor from its own cache
+  directory (every path it passes is absolute), and `tools/n1_runtime_check.sh` runs before
+  the sweep: lines only in the anchor's preamble must reach its emitted `zebra_rt.zig`, lines
+  only in the tree's must not, or the run refuses (exit 2). Derived each run, so it does not
+  rot with the next runtime change. Red-checked with the old invocation (the anchor run from
+  the repo root): 0/9 anchor-only lines, 20/20 tree-only, REFUSED. Still open: the compiler
+  half -- `defaultPreamblePath()` still tries the CWD first, so a user's `zebra` run inside a
+  clone of this repo takes the clone's runtime.
+- **COMPILER HALF FIXED 2026-10-27.** Every runtime file the compiler reads at codegen time
+  (the preamble, the GUI sections, `napi_preamble.zig`, the V runtime and section) goes
+  through one resolver, `runtimeFilePath` (selfhost/main.zbr), which looks from the BINARY:
+  first the checkout it was built in (an exe in `<checkout>/zig-out/bin` reads
+  `<checkout>/selfhost/NAME`), then beside the exe (an installed zebra, the N-1 anchor's
+  cache dir), and only then `./selfhost/NAME` -- kept as the last resort for a compiler built
+  into a scratch directory and run from a checkout (`regen_recover.sh`). The node-addon path
+  was a hard-coded `selfhost/napi_preamble.zig` and the V runtime had its own copy of the old
+  order; both use the resolver now.
+- **Gate:** `cli-surface`, three legs run inside a planted clone whose `selfhost/` preamble
+  carries a marker: this checkout's zebra must not take it, an installed copy must take the
+  marked preamble beside it, and a bare copy with nothing beside it must take the clone's --
+  the control proving the marker reaches an emit at all. Red-checked with the pre-fix binary
+  swapped into `zig-out/bin`: the two absence legs fail with `markers=[ZZ543_CLONE ]`, the
+  control passes.
+- **What changed for a developer:** the dev binary run OUTSIDE the repo used to read the copy
+  `zig build` installs in `zig-out/bin`; it now reads the checkout's `selfhost/` directly, so
+  a preamble edit is seen from any directory without a build. From the repo root nothing
+  changed (same file).
+
 ### BUG-635: on Windows, a program printing more than 64 KiB into a pipe panicked "reached unreachable code" and delivered nothing -- FIXED 2026-10-27 (found the same day)
 - **Found by:** BUG-596's before/after emit sweep, which hashed `zebra --emit-zig f.zbr | md5sum`
   over ~3,000 files: four GameEngine files with 67-105 KB of emitted Zig read as empty on

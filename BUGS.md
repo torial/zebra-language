@@ -46,44 +46,6 @@
 
 ---
 
-### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
-- **Severity:** Medium (a gate that can stop seeing a whole class without going red).
-- **Mechanism:** `defaultPreamblePath()` (selfhost/main.zbr) tries
-  `selfhost/stdlib_preamble.zig` RELATIVE TO THE CWD first and only then the copy beside the
-  exe. `divergence_check.sh` runs the anchor from the repo root, so the anchor's emit is
-  "N-1 codegen + today's runtime".
-- **Measured (the discriminating probe):** the 2026-10-03 anchor's own preamble says
-  `_zbr_ref_containers = false`, the tree's says `true`. The anchor emitting hello-world
-  from the repo root wrote `true` into its `zebra_rt.zig`; from a scratch cwd, `false`.
-- **Consequences:** (1) a regression in the runtime is invisible -- both sides compile
-  against the same preamble; (2) removing a runtime helper that the anchor's codegen still
-  calls (the BUG-501 shims: `_zbr_ref`, `_ZbrRefOf`, `_zbr_unboxed`, `_zbr_cderef`) makes
-  EVERY anchor-side file fail to compile, so every file scores as an ADVANCE and the
-  REGRESSION count reads 0 forever -- green, and measuring nothing. This is why the BUG-501
-  runtime-shim deletion is held (see container_reference_semantics.md §9).
-- **Also ambient for users:** any `zebra` run from a directory holding
-  `selfhost/stdlib_preamble.zig` (a clone of this repo) takes that runtime instead of its
-  own -- the UNGIT "nothing ambient" test, failed by a fallback order.
-- **Fix directions:** the anchor reads its own runtime (run it from its cache dir with
-  absolute input paths, or an explicit `--runtime-dir` / env the gate passes -- explicit
-  intent over cwd), and the gate asserts it: the anchor's emitted `zebra_rt.zig` must match
-  the preamble in its own cache, or the run REFUSES. Moving the anchor tag past a deletion
-  only postpones the vacuity to the next one.
-- **Reproduced by accident, 2026-10-10** (closing BUG-501): the anchor binary
-  (`/c/Projects/zebra-n1-cache/f5afd86a49fd/zebra.exe`) run with this repo as the cwd printed
-  the post-switch answers for a container program; the same binary run from its own cache
-  directory printed the pre-switch answers. Same binary, same source, two behaviours,
-  decided by the working directory -- the UNGIT "nothing ambient" failure, in the gate meant
-  to compare versions.
-- **GATE HALF FIXED 2026-10-10:** `divergence_check` runs the anchor from its own cache
-  directory (every path it passes is absolute), and `tools/n1_runtime_check.sh` runs before
-  the sweep: lines only in the anchor's preamble must reach its emitted `zebra_rt.zig`, lines
-  only in the tree's must not, or the run refuses (exit 2). Derived each run, so it does not
-  rot with the next runtime change. Red-checked with the old invocation (the anchor run from
-  the repo root): 0/9 anchor-only lines, 20/20 tree-only, REFUSED. Still open: the compiler
-  half -- `defaultPreamblePath()` still tries the CWD first, so a user's `zebra` run inside a
-  clone of this repo takes the clone's runtime.
-
 ### BUG-542: on Windows, a WebSocket whose peer has already gone prints a Zig "unexpected NTSTATUS" error trace when the runtime answers its close frame -- OPEN (found 2026-10-08)
 - **Severity:** Low-Medium (the program is correct and continues; but a user sees a
   40-line Zig trace about runtime code they never wrote -- UNGIT "nothing fabricated" in
