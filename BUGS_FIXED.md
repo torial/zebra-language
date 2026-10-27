@@ -43,6 +43,56 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-639: `sys.selfExe()` had no type, so `var e = sys.selfExe()` then `e.len()` failed inside zig -- FIXED 2026-10-27 (found the same day)
+- **Found** by BUG-637's corpus census: the only list literal whose element 0 the checker
+  could not type began with `sys.selfExe()`. A probe then showed the leak: `e.len()` on the
+  un-annotated local lowered as a List length, "no member named 'items' in 'str'".
+- **Fix:** the checker types `sys.selfExe()` as `str`, beside `sys.cwd` (BUG-392 typed the
+  rest of that table). Fixture `test/bug639_sys_selfexe_str_test.zbr` (`e.len()`,
+  `File.exists(e)`, a literal starting with it); the probe of the same shape failed on the
+  pre-fix compiler.
+
+### BUG-637: a list literal of runtime VALUES (`[t1, t2]` of CsvTable, SysRunResult, ...) emits an element type zig cannot resolve -- FIXED 2026-10-27 (found the same day)
+- **Severity:** Medium (a leak: `-c` passes, zig refuses, and the message names a type the
+  user never wrote -- `CsvTable` undeclared, or `expected type 'str'`).
+- **Found:** writing BUG-636's positive fixture, `for r in [r1, r2, r3]` over `sys.run`
+  results. Two shapes, one cause -- the list-literal emit in `genExpr` (`Expr.list_lit`)
+  does not go through the runtime-type table `genType` uses:
+  - an element the checker types as a RUNTIME named type (`Csv.parse` -> `CsvTable`)
+    goes through `typeZigName`, which knows user types, and comes out as the bare Zebra
+    name: `_ZbrList(CsvTable)` -> "use of undeclared identifier 'CsvTable'" (genType spells
+    it `_CsvTable`);
+  - an element the checker cannot type at all (`sys.run(...)` has no result type in the
+    checker) takes the documented fallback, `[]const u8` -- "wrong for non-str, but at
+    least the resulting Zig error points here": a fabricated default (UNGIT), and the
+    error does not point at the literal, it says `expected type 'str', found SysRunResult`.
+- **Repro:** `var a = Csv.parse("x,y")`, `var b = Csv.parse("z,w")`, `for t in [a, b]`.
+- **Fix directions:** (1) one function for "runtime type name -> Zig spelling", used by
+  genType's table and by every Type_-driven emitter (the list literal is one; check the
+  others with the same probe); (2) give `sys.run` a result type in the checker; (3) the
+  fallback should become a refusal naming the element -- an element type nobody inferred
+  is not `str` (§28a inference-or-error). (3) alone would turn both leaks into honest
+  refusals and is the endstate; (1) and (2) make the common cases work.
+- **MEASURED BEFORE FIXING:** eight runtime value types in a two-element literal --
+  `DateTime`, `Timer`, `Regex`, `SysProcess`, `StringBuilder`, `SysRunResult`, `MemStats`,
+  `CsvTable` -- every one passed `-c` and failed in zig; only `HttpResponse` worked.
+- **FIXED, directions (1) and (3) -- not (2).** A named runtime type now goes through
+  `zigTypeText` (genType's own table, captured as a string) instead of `typeZigName`, which
+  knows user types only. And an element type the checker cannot name no longer becomes
+  `[]const u8`: element 0 is bound to a `const` inside the literal's block and the list is
+  `_ZbrList(@TypeOf(that))` -- zig's answer, not a guess, evaluated once and in the same order.
+  A string-shaped element 0 (`isStringExpr`) keeps the old `[]const u8`: an unknown-typed
+  string whose Zig type is narrower (`[]u8`, a sentinel slice) would otherwise give the list a
+  type later string appends cannot meet. A per-type table for (2) was not needed.
+- **Blast radius, measured:** the corpus (test/ + examples/, 958 files; 57 emit a list
+  literal) was emitted with the new compiler and every binding counted: ONE file takes the
+  new path, `bug636_sys_argv_ok_test`, element 0 `sys.selfExe()` -- which is what found
+  BUG-639.
+- **Fixture:** `test/bug637_runtime_value_list_test.zbr` -- CsvTable, sys.run results (names
+  and direct calls), Regex, DateTime, MemStats, each literal's elements USED (`r.stdout`,
+  `re.test`, `m.arenaBytes`). Red-checked with HEAD's CodeGen.zbr swapped in: "use of
+  undeclared identifier 'CsvTable'"; the eight-type probe was red on the same compiler.
+
 ### BUG-636: `sys.run("git status")` passed the front end and failed inside zig, in runtime code the user never wrote -- FIXED 2026-10-27 (found the same day)
 - **Severity:** Medium (a leak: `-c` passes, and zig's error names `argv.items` in
   `zebra_rt.zig` with no line of the user's). One string as the command is the shape every

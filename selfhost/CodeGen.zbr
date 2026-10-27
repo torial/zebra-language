@@ -14916,14 +14916,14 @@ struct Generator
                 var ll_kw: str = "var "
                 if ll.elems.len == 0
                     ll_kw = "const "
-                w.emit("(" + ll_label + ": { " + ll_kw + ll_var + ": _ZbrList(")
+                w.emit("(" + ll_label + ": { ")
                 var elem_zig: str = "[]const u8"
+                # BUG-637: set when element 0's type is unknown -- it is bound to this
+                # const first and the list takes `@TypeOf` of the binding.
+                var e0_var: str = ""
                 if ll.elem_type != nil
                     # honoured for future explicit-typed list literal
-                    genType(ll.elem_type!)
-                    w.emit(") = _zbr_new(_ZbrList(")
-                    genType(ll.elem_type!)
-                    w.emit(")); ")
+                    elem_zig = zigTypeText(ll.elem_type!)
                 else if ll.elems.len > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx!)
                     # §27a: user class/struct elements render *Class (classes) /
@@ -14945,21 +14945,41 @@ struct Generator
                             # Zig with "use of undeclared identifier 'Color'".
                             if class_names.contains_(et_snm)
                                 elem_zig = "*" + typeZigName(et_snm)
-                            else
+                            else if "." in et_snm or isUserTypeName(et_snm)
                                 elem_zig = typeZigName(et_snm)
+                            else
+                                # BUG-637: a RUNTIME value type (`CsvTable`, `SysProcess`,
+                                # ...) is spelled by genType's table; typeZigName knows
+                                # user types only and returned the bare Zebra name, which
+                                # zig reported as an undeclared identifier.
+                                var sp637: Span = Span(0, 0, 0, 0)
+                                elem_zig = zigTypeText(TypeRef.named(NamedTypeRef(sp637, et_snm)))
                         else if isBoxedElemType(et)
                             # a literal of containers: the elements are boxed (2026-09-24)
                             var nz: str = genFieldZigType(et)
                             elem_zig = if(nz == "", "[]const u8", nz)
                         else
                             elem_zig = zigTypeForListElem(et)
-                    w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
-                else
-                    w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
+                            # BUG-637: an element the checker cannot type (a runtime value:
+                            # a DateTime, a Regex, a sys.run result...) fell back to
+                            # `[]const u8`, a fabricated type zig then refused. Bind element
+                            # 0 first and let zig say what it is -- evaluated once, in the
+                            # same order as before.
+                            if elem_zig == "[]const u8" and not isString(et) and not isStringExpr(ll.elems.at(0))
+                                e0_var = ll_var + "_e0"
+                                elem_zig = "@TypeOf(" + e0_var + ")"
+                if e0_var != ""
+                    w.emit("const " + e0_var + " = ")
+                    genExpr(ll.elems.at(0))
+                    w.emit("; ")
+                w.emit(ll_kw + ll_var + ": _ZbrList(" + elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
                 var li = 0
                 while li < ll.elems.len
                     w.emit(ll_var + ".append(_allocator, ")
-                    genExpr(ll.elems.at(li))
+                    if li == 0 and e0_var != ""
+                        w.emit(e0_var)
+                    else
+                        genExpr(ll.elems.at(li))
                     w.emit(") catch @panic(\"OOM\"); ")
                     li += 1
                 w.emit("break :" + ll_label + " " + ll_var + "; })")

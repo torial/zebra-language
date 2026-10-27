@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-637. Next new bug: BUG-638.**
+**Last bug number generated: BUG-639. Next new bug: BUG-640.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,27 +46,22 @@
 
 ---
 
-### BUG-637: a list literal of runtime VALUES (`[t1, t2]` of CsvTable, SysRunResult, ...) emits an element type zig cannot resolve -- OPEN (found 2026-10-27)
-- **Severity:** Medium (a leak: `-c` passes, zig refuses, and the message names a type the
-  user never wrote -- `CsvTable` undeclared, or `expected type 'str'`).
-- **Found:** writing BUG-636's positive fixture, `for r in [r1, r2, r3]` over `sys.run`
-  results. Two shapes, one cause -- the list-literal emit in `genExpr` (`Expr.list_lit`)
-  does not go through the runtime-type table `genType` uses:
-  - an element the checker types as a RUNTIME named type (`Csv.parse` -> `CsvTable`)
-    goes through `typeZigName`, which knows user types, and comes out as the bare Zebra
-    name: `_ZbrList(CsvTable)` -> "use of undeclared identifier 'CsvTable'" (genType spells
-    it `_CsvTable`);
-  - an element the checker cannot type at all (`sys.run(...)` has no result type in the
-    checker) takes the documented fallback, `[]const u8` -- "wrong for non-str, but at
-    least the resulting Zig error points here": a fabricated default (UNGIT), and the
-    error does not point at the literal, it says `expected type 'str', found SysRunResult`.
-- **Repro:** `var a = Csv.parse("x,y")`, `var b = Csv.parse("z,w")`, `for t in [a, b]`.
-- **Fix directions:** (1) one function for "runtime type name -> Zig spelling", used by
-  genType's table and by every Type_-driven emitter (the list literal is one; check the
-  others with the same probe); (2) give `sys.run` a result type in the checker; (3) the
-  fallback should become a refusal naming the element -- an element type nobody inferred
-  is not `str` (§28a inference-or-error). (3) alone would turn both leaks into honest
-  refusals and is the endstate; (1) and (2) make the common cases work.
+### BUG-638: an unknown member of a NAMESPACE (`Random.seeded`, `Csv.writer`) passes `-c` and fails inside zig, sometimes as "unreachable code" -- OPEN (found 2026-10-27)
+- **Severity:** Medium (a leak, and the worst-worded one: `Random.seeded(3)` reaches zig as
+  `@compileError("selfhost: unknown Random.seeded")`, and zig reported `unreachable code` at
+  the user's line, so the one sentence that names the problem never reaches them).
+- **Found** probing BUG-637 with two API names that do not exist (`Random.seeded`,
+  `Csv.writer`); `zebra -c` exited 0 on both.
+- **Measured:** 33 such `@compileError("selfhost: unknown <NS>...")` fallbacks in
+  selfhost/CodeGen.zbr across 31 namespaces -- every generator's last arm. The receivers had
+  the same gap until BUG-369, closed by a `*MethodKnown` predicate per type in the checker;
+  the namespaces never got one. `surface-freeze` already DERIVES each namespace's members from
+  these dispatch arms (docs/SURFACE.md), so the oracle exists.
+- **Fix direction:** the BUG-369 recipe -- a checker predicate per namespace (or one table
+  keyed by namespace), refusing an unknown member at the call with the known list, and
+  `surface-freeze` asserting the predicate equals the derived member set so the two cannot
+  drift. `Math` is OPEN (members pass through to `std.math`) and must stay exempt.
+- **Repro:** `def main()` / `    var r = Random.seeded(3)` -- `-c` exits 0.
 
 ### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
 

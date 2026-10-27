@@ -1,0 +1,10 @@
+# BUG-639: `sys.selfExe()` had no type in the checker, so an un-annotated local holding it
+# was not a str: `e.len()` lowered as a List length (`.items`) and failed inside zig, and a
+# list literal starting with it fell back to a guessed element type. It is a str.
+
+def main()
+    var e = sys.selfExe()
+    var n: int = e.len()
+    var exists: bool = File.exists(e)
+    var argv = [sys.selfExe(), "x"]
+    print("bug639: len>0=${n > 0} exists=${exists} argv=${argv.count()}")

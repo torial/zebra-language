@@ -3671,6 +3671,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # output, valid Zig). `hostname` is not a sys function.
                         if bname == "sys" and mem.member == "cwd"
                             return Type_.string_
+                        # BUG-639: untyped, so `var e = sys.selfExe()` then `e.len()` was
+                        # lowered as a List length (`.items`) and failed inside zig.
+                        if bname == "sys" and mem.member == "selfExe"
+                            return Type_.string_
                         if bname == "Arg" and mem.member == "parse"
                             return Type_.named("$Arg")
                         if bname == "Compress"

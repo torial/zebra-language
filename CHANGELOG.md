@@ -58,6 +58,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A list literal of runtime values compiles (BUG-637).** `[t1, t2]` of CSV tables, `sys.run`
+  results, regexes, dates, timers, processes or memory stats passed `zebra -c` and failed in
+  zig, because the element type was spelled wrong or guessed as `str`. Element 0's type now
+  comes from genType's own table, or from zig when the checker cannot name it.
+
+- **`sys.selfExe()` is a `str` (BUG-639).** `var e = sys.selfExe()` then `e.len()` failed in zig.
+
 - **`sys.run` / `sys.spawn` / `sys.spawnPiped` / `sys.spawnPipedIn` check their arguments
   (BUG-636).** A command given as one string (`sys.run("git status")`), a list of non-strings
   or a missing argument passed `zebra -c` and then failed inside zig, in runtime code. Each is
