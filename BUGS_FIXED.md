@@ -6,6 +6,30 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-632: a list literal passed as an ARGUMENT does not take the parameter's element type -- `f([1, 2])` into a `List(float)` fails inside zig -- FIXED 2026-10-26
+- **Found by:** writing BUG-626's positive fixture. The same literal in a typed `var` works.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'List(float)', found 'List(int)'".
+  ```
+  def f(xs: List(float)): int
+      return xs.len
+
+  def main()
+      print(f([1, 2]))          # var xs: List(float) = [1, 2] is fine; f([1.5, 2.0]) is fine
+  ```
+  Reproduced on the N-1 anchor (`f5afd86`) too, so it predates BUG-626.
+- **Expected:** a literal argument takes the parameter's element type, as a literal initialiser
+  does; or, if that is not wanted, a refusal at the literal naming both types.
+- **Control when fixing:** the repro must run and print 2; `f([1.5, 2.0])` and a `List(int)`
+  variable passed to `List(int)` must keep working.
+- **Fix:** `emitListLitForParam` (CodeGen.zbr) emits a non-empty untyped literal handed to a
+  `List(X)` parameter as BUG-230's labelled block built with the PARAMETER's type, beside
+  BUG-463's empty-literal case. Reached from `genCallWithTypeHint` (free functions, named and
+  defaulted calls), the user-method positional loop and the owner-call loop. Only a primitive
+  element or an optional one: a generic parameter's `T` means nothing at the call site, and the
+  general path already spells a class element. Fixture `test/bug632_list_literal_arg_test.zbr`
+  (`bug632: 3.0 3.5 3 2 3 2`); the N-1 anchor fails it inside zig at the free-function call.
+  Two rebuilds gave the same `CodeGen.zig`; the round-trip is byte-identical.
+
 ### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- FIXED 2026-10-26
 - **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding
   it to a `List(str)` passed the front end.
@@ -50,7 +74,7 @@ Open bugs live in `BUGS.md`.
   planted control file, where it named all ten positions. The compiler's own source: the
   round-trip is byte-identical.
 - **Not covered:** a class-element mismatch (`List(Dog)` for `List(Animal)`) and sized integers
-  are left to zig. A list LITERAL as an argument is BUG-632.
+  are left to zig. A list LITERAL as an argument was BUG-632, fixed the same day.
 
 ### BUG-628: a method that throws only by INFERENCE (a `raise`, no `throws`), called without `?`, is not refused and fails inside zig -- FIXED 2026-10-26
 - **Found by:** probing the seam behind BUG-546's fix. Two throw rules disagree: genMethod

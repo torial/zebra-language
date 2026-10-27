@@ -46,6 +46,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A list literal passed as an argument takes the parameter's element type (BUG-632).**
+  `f([1, 2])` into a `List(float)` built a `List(int)` and failed inside zig; it now builds the
+  parameter's list, as `var xs: List(float) = [1, 2]` always did -- for a function, a method
+  and a call inside the class, primitive and optional elements.
+
 - **A container with the wrong element type is refused (BUG-626).** A `List(int)` passed for
   a `List(str)`, a `List(int?)` bound to a `List(int)`, a `HashMap(str, int)` into a
   `HashMap(str, str)` -- as an argument, a typed `var`, an assignment, a field store or a

@@ -3539,6 +3539,15 @@ def recordImplicitTry(site: str)
 # `?` in the body (the `test_*` harness rule is the one addition, applied in genMethod
 # and declMayFail). BUG-628: every "is this call a throws call" lookup asks this, so a
 # method that throws by inference gets the same implicit-try refusal as a declared one.
+# BUG-632: `int`, `float`, `str`, a sized integer..., or one of those under `?`.
+def isPrimitiveElemRef(t: TypeRef): bool
+    if t is TypeRef.nilable as inner
+        return isPrimitiveElemRef(inner)
+    if t is TypeRef.named as n
+        var nm: str = n.name
+        return nm == "int" or nm == "uint" or nm == "float" or nm == "bool" or nm == "char" or nm == "str" or nm == "byte" or nm == "float32" or nm == "float64" or nm == "int8" or nm == "int16" or nm == "int32" or nm == "int64" or nm == "uint8" or nm == "uint16" or nm == "uint32" or nm == "uint64"
+    return false
+
 def methodEmitsErrorUnion(m: DeclMethod): bool
     return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
 
@@ -10407,6 +10416,8 @@ struct Generator
         # used to fall back to `std.ArrayList([]const u8)` -- a Zig type error at every
         # `total([])` whose parameter is not `List(str)`.
         if emitEmptyListForParam(e, hint)
+            return
+        if emitListLitForParam(e, hint)
             return
         if e is Expr.call as c
             if c.args.len == 0
@@ -18425,6 +18436,8 @@ struct Generator
                                     pass
                                 else if ump_p.type_ != nil
                                     um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
+                                    if not um_emitted
+                                        um_emitted = emitListLitForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-632
                         if not um_emitted
                             genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
@@ -20331,6 +20344,34 @@ struct Generator
                     return true
         return false
 
+    # BUG-632: a NON-empty `[a, b]` passed to a `List(X)` parameter takes X too, as a typed
+    # `var` initialiser does (BUG-230's labelled block). The general list-literal path infers
+    # the element type from the first element, so `f([1, 2])` into a `List(float)` built a
+    # List(i64) and zig refused it. Only a primitive element (or an optional one): a generic
+    # parameter's `T` means nothing at the call site, and a class element is already
+    # spelled correctly by the general path.
+    def emitListLitForParam(e: Expr, hint: TypeRef): bool
+        if e is Expr.list_lit as ll
+            if ll.elems.len == 0 or ll.elem_type != nil
+                return false
+            if hint is TypeRef.generic as gt
+                if gt.name == "List" and gt.args.len == 1 and isPrimitiveElemRef(gt.args.at(0))
+                    var uid: int = w.nextUid()
+                    var lbl: str = "blk632_" + uid.toString()
+                    var nm: str = "_ll632_" + uid.toString()
+                    w.emit("(" + lbl + ": { var " + nm + ": ")
+                    genType(hint)
+                    w.emit(" = _zbr_new(")
+                    genType(hint)
+                    w.emit("); ")
+                    for el in ll.elems
+                        w.emit(nm + ".append(_allocator, ")
+                        genExpr(el)
+                        w.emit(") catch @panic(\"OOM\"); ")
+                    w.emit("break :" + lbl + " " + nm + "; })")
+                    return true
+        return false
+
     # BUG-501 1d: `first(int)([])` -- the empty list a GENERIC parameter receives. Its type
     # is the parameter's `List(...)` with the callee's type parameters replaced by the
     # call's type arguments, spelled through `_zbr_new` so it builds a header once
@@ -20461,6 +20502,8 @@ struct Generator
                 if ps.at(i).type_ as pt
                     if isSigTypeRef(pt)
                         genSigValue(a.value)
+                        done = true
+                    else if emitListLitForParam(a.value, pt)   # BUG-632
                         done = true
             if not done
                 genExpr(a.value)

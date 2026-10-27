@@ -46,22 +46,6 @@
 
 ---
 
-### BUG-632: a list literal passed as an ARGUMENT does not take the parameter's element type -- `f([1, 2])` into a `List(float)` fails inside zig -- OPEN (found 2026-10-26)
-- **Found by:** writing BUG-626's positive fixture. The same literal in a typed `var` works.
-- **Repro:** `zebra -c` exits 0; zig: "expected type 'List(float)', found 'List(int)'".
-  ```
-  def f(xs: List(float)): int
-      return xs.len
-
-  def main()
-      print(f([1, 2]))          # var xs: List(float) = [1, 2] is fine; f([1.5, 2.0]) is fine
-  ```
-  Reproduced on the N-1 anchor (`f5afd86`) too, so it predates BUG-626.
-- **Expected:** a literal argument takes the parameter's element type, as a literal initialiser
-  does; or, if that is not wanted, a refusal at the literal naming both types.
-- **Control when fixing:** the repro must run and print 2; `f([1.5, 2.0])` and a `List(int)`
-  variable passed to `List(int)` must keep working.
-
 ### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- OPEN (found 2026-10-26)
 - **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
   Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that
