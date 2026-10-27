@@ -459,26 +459,6 @@ only inside a query bind list). It is NOT fixed by this — that construct is a 
 not a `zig_lit` — but it is worth checking against whatever fix lands here.
 
 
-### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep
-
-**Found 2026-08-05** while fixing BUG-261, by reading the bootstrap branch being
-ported rather than by hitting it.
-
-Both compilers attach the exposed-name aliasing to the **Zebra-dep** branch of
-`genUse` only (`src/CodeGen.zig:4899-4930`, `selfhost/CodeGen.zbr` genUse). So on
-a dep that resolved to `.c` or `.zig`:
-
-    use CUtils exposing c_add          # c_add is never bound to anything
-
-The `use` itself still works — `CUtils.c_add(...)` resolves — so this is a missing
-convenience, not a miscompile. It fails at the Zig stage with an undefined
-identifier rather than silently, which is why it has gone unnoticed.
-
-**It is a SHARED hole, and that is the point.** Fixing it in the selfhost alone
-would open a selfhost gap in `divergence_check`, which is currently 0 and is the
-property the port exists to preserve. Either fix both compilers together or
-neither. Filed rather than fixed for that reason.
-
 ### BUG-252: BUG-099's check is present but disabled by default — OPEN (blocked on §28a)
 
 > **Heading corrected 2026-08-05.** It read *"BUG-099's check is missing from the selfhost,

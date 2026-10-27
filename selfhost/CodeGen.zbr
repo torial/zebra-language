@@ -3993,6 +3993,18 @@ def addNativeLibUse(path: str)
 def isNativeLibUse(path: str): bool
     return _hasNativeUse(_native_lib_uses, path)
 
+# BUG-263: a `use foo` that resolved to a hand-written `foo.zig`. It is @imported like a
+# Zebra module, but its declarations carry no `_zbr_fn_` / `_zbr_ty_` prefix, so an
+# `exposing` alias must name the dep's symbol as written. A List like the library set
+# (module-scope StrSet caution, BUG-264).
+var _native_zig_uses: List(str) = List(str)()
+
+def addNativeZigUse(path: str)
+    _native_zig_uses.add(path)
+
+def isNativeZigUse(path: str): bool
+    return _hasNativeUse(_native_zig_uses, path)
+
 # True once a user `extern def` has actually been EMITTED (BUG-265). main.zbr uses
 # this to keep such a program off the self-hosted backend, which silently produces a
 # binary that faults at the foreign call.
@@ -5317,18 +5329,15 @@ struct Generator
         # at the last dot and slash-converts it; the selfhost uses n.path verbatim
         # here, as it does in the plain @import arm below — a pre-existing shared
         # limit, not something these arms introduce), INCLUDING the fact that neither emits
-        # the exposed-name aliases below: in the bootstrap that aliasing lives in
-        # the Zebra-dep branch only, so `use foo exposing bar` on a C dep produces
-        # nothing in either compiler.  That is a real hole (filed as BUG-263), but
-        # it is a SHARED one — "fixing" it on this side alone would open a
-        # selfhost gap in divergence_check, which is the thing this port exists to
-        # keep at zero.
+        # the exposed-name aliases (BUG-263, fixed 2026-10-27 once the bootstrap was gone:
+        # the header branch now emits them below, through the same genExposedAliases).
         if isCWithHeaderUse(alias)
             # C source + matching header: the symbols come from the header, so
-            # Zebra code calls them as `alias.some_fn(...)`.
+            # Zebra code calls them as `alias.some_fn(...)` -- or bare, when exposed.
             w.emit("const ")
             w.emit(modAliasSymbol(alias))                   # BUG-483
             w.emit(" = @import(\"" + cHeaderZigFile(alias) + "\");\n")   # Zig 0.17: no @cImport
+            genExposedAliases(n, alias, true)
             return
         if isCNoHeaderUse(alias)
             # C source, no header: nothing to import.  The author declares the
@@ -5397,44 +5406,55 @@ struct Generator
                 w.emit(" = ")
                 w.emit(imp)
                 w.emit(";\n")
-            var i: int = 0
-            while i < n.exposed.len
-                var ename: str = n.exposed.at(i)
-                # BUG-158: an exposed cross-module module var has no plain `alias.name`
-                # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
-                # import) — genIdent rewrites each reference, so emit no `const` here.
-                if ename != alias and not .exposed_module_vars.contains(ename)
-                    # BUG-220: an exposed top-level `def` is emitted by its defining module
-                    # under the reserved `_zbr_fn_` prefix, so the alias must name the
-                    # prefixed symbol. The alias binding is ALSO a file-scope declaration,
-                    # so it takes the prefix too — otherwise `const count = Mod._zbr_fn_count;`
-                    # would reintroduce the very collision the prefix exists to prevent.
-                    var uname: str = ename
-                    if toplevel_fns.contains_(ename)
-                        uname = topLevelFnZigName(ename)
-                    # BUG-281 B: an exposed TYPE is emitted by its defining module under
-                    # the `_zbr_ty_` prefix, for the same reason and with the same
-                    # both-halves rule as the `_zbr_fn_` case above.
-                    else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename) and not isNamespaceName(ename)   # BUG-476 / BUG-490 / BUG-579: sigs, interfaces and namespaces are unprefixed
-                        uname = zbrTypeSymbol(ename)
-                    # BUG-587 (BUG-286's namespace half, across a module): a namespace keeps
-                    # its own name, escaped as its defining module escaped it (`opaque`).
-                    else if isNamespaceName(ename)
-                        uname = zigSafeName(ename)
-                    w.emit("const ")
+            genExposedAliases(n, alias, isNativeZigUse(alias))
+
+    # `use Mod exposing a, b`: bind each exposed name in this file. The LOCAL binding is
+    # spelled the way this module's own references are (`_zbr_fn_` / `_zbr_ty_`, BUG-220 /
+    # BUG-281 B); the DEP's symbol is spelled that way only when the dep is a Zebra module.
+    # A native dep -- a C header or a hand-written `.zig` (BUG-263) -- exports its names as
+    # written, so `const _zbr_fn_zadd = _zbr_mod_Zhelp.zadd;`.
+    def genExposedAliases(n: DeclUse, alias: str, native: bool)
+        var i: int = 0
+        while i < n.exposed.len
+            var ename: str = n.exposed.at(i)
+            # BUG-158: an exposed cross-module module var has no plain `alias.name`
+            # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
+            # import) — genIdent rewrites each reference, so emit no `const` here.
+            if ename != alias and not .exposed_module_vars.contains(ename)
+                # BUG-220: an exposed top-level `def` is emitted by its defining module
+                # under the reserved `_zbr_fn_` prefix, so the alias must name the
+                # prefixed symbol. The alias binding is ALSO a file-scope declaration,
+                # so it takes the prefix too — otherwise `const count = Mod._zbr_fn_count;`
+                # would reintroduce the very collision the prefix exists to prevent.
+                var uname: str = ename
+                if toplevel_fns.contains_(ename)
+                    uname = topLevelFnZigName(ename)
+                # BUG-281 B: an exposed TYPE is emitted by its defining module under
+                # the `_zbr_ty_` prefix, for the same reason and with the same
+                # both-halves rule as the `_zbr_fn_` case above.
+                else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename) and not isNamespaceName(ename)   # BUG-476 / BUG-490 / BUG-579: sigs, interfaces and namespaces are unprefixed
+                    uname = zbrTypeSymbol(ename)
+                # BUG-587 (BUG-286's namespace half, across a module): a namespace keeps
+                # its own name, escaped as its defining module escaped it (`opaque`).
+                else if isNamespaceName(ename)
+                    uname = zigSafeName(ename)
+                w.emit("const ")
+                w.emit(uname)
+                w.emit(" = ")
+                w.emit(modAliasSymbol(alias))           # BUG-483
+                w.emit(".")
+                if native
+                    w.emit(ename)
+                else
                     w.emit(uname)
-                    w.emit(" = ")
-                    w.emit(modAliasSymbol(alias))           # BUG-483
-                    w.emit(".")
-                    w.emit(uname)
-                    w.emit(";\n")
-                    # BUG-588: an exposed @reflectable class brings its strict JSON parser
-                    # with it, so `Json.parse(Point, s)` here names the same symbol.
-                    if .dep_types.hasClass("$refl:" + ename)
-                        w.emit("const _json_parse_strict_" + ename + " = ")
-                        w.emit(modAliasSymbol(alias))
-                        w.emit("._json_parse_strict_" + ename + ";\n")
-                i = i + 1
+                w.emit(";\n")
+                # BUG-588: an exposed @reflectable class brings its strict JSON parser
+                # with it, so `Json.parse(Point, s)` here names the same symbol.
+                if .dep_types.hasClass("$refl:" + ename)
+                    w.emit("const _json_parse_strict_" + ename + " = ")
+                    w.emit(modAliasSymbol(alias))
+                    w.emit("._json_parse_strict_" + ename + ";\n")
+            i = i + 1
 
     # ── genFieldDecl ──────────────────────────────────────────────────────────
 

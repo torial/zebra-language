@@ -43,6 +43,45 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep -- FIXED 2026-10-27
+
+**Found 2026-08-05** while fixing BUG-261, by reading the bootstrap branch being
+ported rather than by hitting it.
+
+Both compilers attach the exposed-name aliasing to the **Zebra-dep** branch of
+`genUse` only (`src/CodeGen.zig:4899-4930`, `selfhost/CodeGen.zbr` genUse). So on
+a dep that resolved to `.c` or `.zig`:
+
+    use CUtils exposing c_add          # c_add is never bound to anything
+
+The `use` itself still works — `CUtils.c_add(...)` resolves — so this is a missing
+convenience, not a miscompile. It fails at the Zig stage with an undefined
+identifier rather than silently, which is why it has gone unnoticed.
+
+**It is a SHARED hole, and that is the point.** Fixing it in the selfhost alone
+would open a selfhost gap in `divergence_check`, which is currently 0 and is the
+property the port exists to preserve. Either fix both compilers together or
+neither. Filed rather than fixed for that reason.
+
+**FIXED 2026-10-27.** The "shared hole" reason for leaving it retired with the bootstrap
+(2026-09-16), and it was wider than filed: a hand-written `.zig` dep was broken too. Measured
+first, with the shipping compiler: `use CUtils exposing c_add` then `c_add(2, 3)` passed `-c`
+and failed in zig ("use of undeclared identifier '_zbr_fn_c_add'"); `use ZigMath exposing
+square` emitted `const _zbr_fn_square = ZigMath._zbr_fn_square;` ("no member named
+'_zbr_fn_square'"), because a native file exports its names unprefixed. A headerless C file
+and a prebuilt library were already fine -- their symbols come from `extern def`.
+
+The fix: the driver records a native `.zig` dep (`addNativeZigUse`, beside the C and library
+registries), the header-C branch of `genUse` now emits the exposed aliases, and both go
+through one `genExposedAliases`: the LOCAL binding keeps this module's prefix (BUG-220 /
+BUG-281 B), and the DEP side is spelled as written when the dep is native. Regenerating the
+compiler moved only CodeGen.zig and main.zig -- every Zebra-module `exposing` emits as before.
+
+Fixtures `test/bug263_zig_exposing_test.zbr` and `test/bug263_c_exposing_test.zbr` (exposed
+and qualified calls side by side); both fail on the N-1 anchor with the two messages above.
+The C fixture joins `c_interop_test` on positive_set.sh's skip list: the standalone emit the
+sweeps compile does not carry the `.c`.
+
 ### BUG-638: an unknown member of a NAMESPACE (`Random.seeded`, `Csv.writer`) passes `-c` and fails inside zig, sometimes as "unreachable code" -- FIXED 2026-10-27 (found the same day)
 - **Severity:** Medium (a leak, and the worst-worded one: `Random.seeded(3)` reaches zig as
   `@compileError("selfhost: unknown Random.seeded")`, and zig reported `unreachable code` at

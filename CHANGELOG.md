@@ -58,6 +58,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **`use foo exposing bar` works on native deps (BUG-263).** For a C source with a header and
+  for a hand-written `.zig` file, an exposed name was bound to nothing (C) or to a symbol the
+  file does not have (Zig), and the call failed inside zig. Both now bind the dep's own name.
+
 - **An unknown member of a builtin namespace is refused (BUG-638).** `Random.seeded(3)` or
   `Terminal.clearScreen()` passed `zebra -c` and failed inside zig, often reported as
   "unreachable code"; the front end now names the namespace and lists the members it has. A

@@ -1809,6 +1809,9 @@ smoke_run test/bug639_sys_selfexe_str_test.zbr "bug639: len>0=true exists=true a
 smoke_tc_fail test/fail_fixtures/bug638_namespace_stmt_fail.zbr "bug638_namespace_stmt_fail.zbr:5:14: error: 'Terminal' has no static function 'clearScreen' (it has: height, isTty, width, write, writeln)"
 smoke_tc_fail test/fail_fixtures/bug638_namespace_init_fail.zbr "bug638_namespace_init_fail.zbr:4:20: error: 'Random' has no static function 'seeded'"
 smoke_run test/bug638_namespace_shadow_test.zbr "bug638: local=4 param=11 class=3 base64=aGk="
+# BUG-263: `exposing` on a native dep -- a hand-written .zig and a C source with a header.
+smoke_run test/bug263_zig_exposing_test.zbr "bug263 zig: square=49 clamp=10 abs=42"
+smoke_run test/bug263_c_exposing_test.zbr "bug263 c: add=5 mul=42 qualified=9"
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60

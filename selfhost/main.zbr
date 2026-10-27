@@ -42,7 +42,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, censusOn, setSourceRoot
+use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, addNativeZigUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, censusOn, setSourceRoot
 use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
@@ -668,6 +668,7 @@ class MultiCompiler
                 zsi = zsi + 1
             if not zs_seen
                 zig_sources.add(zig_dep_path)
+            addNativeZigUse(u.path)                         # BUG-263
             return
         # Nothing matched. Until 2026-09-16 this fell off the end and compilation went on
         # with the `use` unresolved -- genUse still emitted `@import("<dep>.zig")`, the
