@@ -465,7 +465,9 @@ the acceptance test for Phase 1.
      `_zbr_cderef`, `_zbr_unboxed`) are HELD by BUG-543:** the N-1 anchor emits against the
      current tree's preamble, still calls them, and deleting them would make every anchor
      emit fail -- `divergence` would score everything an advance and never report a
-     regression. Delete them when the anchor reads its own runtime.
+     regression. Delete them when the anchor reads its own runtime. **Deleted 2026-10-27:** the
+     gate half of BUG-543 (2026-10-10) runs the anchor against its own preamble, and the
+     compiler half made that the compiler's behaviour wherever it runs.
    - **1d. The flip** -- the definitions become pointers, the boxing and mutable-parameter
      machinery is deleted. Fable reviews it (Sean, 2026-10-01: "coordinate w/ Fable as a
      reviewer -- that way progress can be made independent of me"); it is staged

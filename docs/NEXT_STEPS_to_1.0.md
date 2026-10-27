@@ -98,8 +98,10 @@ as they land, so this list stays the one place that says what is left.
    large part and is fixed). The memory model states the arena rule (G, "lives until the
    program exits"); the question is whether 1.0 ships it as the rule for long-running
    programs, with `allocate` blocks as the tool, or needs something more.
-2. [ ] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
-   cannot see a runtime regression. After 1.0 it is the main regression witness.
+2. [x] **BUG-543** -- `divergence` builds the N-1 anchor against the CURRENT runtime, so it
+   cannot see a runtime regression. After 1.0 it is the main regression witness. (Gate half
+   2026-10-10; compiler half 2026-10-27 -- the runtime is found from the binary, not the cwd --
+   and the four container shims it held were deleted the same day.)
 3. **Decisions.**
    - [x] `cue deinit` -- NOT in 1.0 (2026-10-10; stability_policy.md §6).
    - [ ] Arena scopes under threads: ship with "`allocate` is single-threaded" stated in
