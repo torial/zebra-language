@@ -43,6 +43,33 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-636: `sys.run("git status")` passed the front end and failed inside zig, in runtime code the user never wrote -- FIXED 2026-10-27 (found the same day)
+- **Severity:** Medium (a leak: `-c` passes, and zig's error names `argv.items` in
+  `zebra_rt.zig` with no line of the user's). One string as the command is the shape every
+  shell API teaches, so it is the first thing a newcomer writes.
+- **Found** writing BUG-542's abrupt-disconnect repro. The argv family -- `sys.run`,
+  `sys.spawn`, `sys.spawnPiped`, `sys.spawnPipedIn`, `sys.exec_inherit` -- hands its first
+  argument to a runtime helper taking `anytype`, and the checker typed only their RESULTS,
+  never their arguments. `sys.run()` with no argument emitted `_sys_run(undefined)`.
+- **The wider class, measured:** ten wrongly typed namespace calls (`sys.sleep("x")`,
+  `File.exists(3)`, `Path.join(1, 2)`, `Math.sqrt("x")`, ...) all pass `-c`. Where the runtime
+  parameter has a concrete type, zig's error is remapped onto the user's line, in Zig's
+  vocabulary (`expected type 'str', found 'comptime_int'`); only the `anytype` ones land in
+  the runtime. This fix covers the argv family, the worst shape; the rest is open (no
+  namespace call's argument types are checked in the front end).
+- **Fix:** `checkSysArgv` (selfhost/TypeChecker.zbr), called for any `sys.<member>(...)`
+  when `sys` is not a local: the argument count, a first argument that inference KNOWS is a
+  primitive or a list of non-strings (an argument it cannot type is not refused -- the #5a
+  rule, so an inference gap cannot refuse valid code), and `spawnPipedIn`'s cwd as `str`.
+  The message gives the right shape: `sys.run(["git", "status"])`.
+- **Fixtures:** `test/fail_fixtures/bug636_sys_argv_fail.zbr` (four refusals, each
+  registered with its coordinate; every one passed `-c` on the pre-fix compiler) and
+  `test/bug636_sys_argv_ok_test.zbr` (five legitimate argv shapes -- a literal, an
+  annotated local, a built list, a function's result, calls as elements -- each spawning the
+  program itself as a child; 5 of 5 ran before and after). False-refusal sweep: every file
+  calling an argv function in this repo, zebra-ide and the GameEngine (14) checked with the
+  new compiler -- the only refusals were the fail fixture's.
+
 ### BUG-542: on Windows, a WebSocket whose peer has already gone prints a Zig "unexpected NTSTATUS" error trace when the runtime answers its close frame -- FIXED 2026-10-27 (found 2026-10-08)
 - **Severity:** Low-Medium (the program is correct and continues; but a user sees a
   40-line Zig trace about runtime code they never wrote -- UNGIT "nothing fabricated" in

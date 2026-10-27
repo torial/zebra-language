@@ -58,6 +58,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **`sys.run` / `sys.spawn` / `sys.spawnPiped` / `sys.spawnPipedIn` check their arguments
+  (BUG-636).** A command given as one string (`sys.run("git status")`), a list of non-strings
+  or a missing argument passed `zebra -c` and then failed inside zig, in runtime code. Each is
+  now refused at the call, naming the right shape: `sys.run(["git", "status"])`.
+
 - **A WebSocket close frame is sent once (BUG-542).** When the peer closed, `recv()`
   answered its close frame and the handler's `ws.close()` sent a second one into the dropped
   socket; on Windows Zig's std printed an "unexpected NTSTATUS" trace for that write. The

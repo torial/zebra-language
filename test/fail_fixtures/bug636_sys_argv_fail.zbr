@@ -1,0 +1,11 @@
+# BUG-636: the argv family of `sys` is checked in the front end. Each call below passed
+# `-c` and failed inside zig, with an error about `argv.items` in zebra_rt.zig -- runtime
+# code the user never wrote, on no line of theirs.
+
+def main()
+    var nums: List(int) = [1, 2]
+    var a = sys.run("git status")
+    var b = sys.spawn(nums)
+    var c = sys.run()
+    var d = sys.spawnPipedIn(["ls"], 3)
+    print("${a.exit_code} ${b.pid} ${c.exit_code} ${d.pid}")

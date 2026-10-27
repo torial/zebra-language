@@ -4032,7 +4032,7 @@ Zig 0.17.
 | `sys.errln(msg)`    | void              | Write to stderr + newline                    |
 | `sys.getenv(name)`  | `str?`            | Environment variable or nil                  |
 | `sys.cwd()`         | `str`             | Current working directory (absolute path)    |
-| `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}` |
+| `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}`. `argv` is a `List(str)`, one element per argument -- `sys.run(["git", "status"])`; no shell splits a string (the same for every `argv` below) |
 | `sys.sleep(ms)`     | void              | Sleep for `ms` milliseconds                  |
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
 | `sys.spawn(argv)`   | `SysProcess`      | Start a child (stdin/stdout ignored); `.isRunning()`, `.kill()`, `.pid` |

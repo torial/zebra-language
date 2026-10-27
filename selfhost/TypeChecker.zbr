@@ -7135,6 +7135,46 @@ def checkContainerArgs(recv: Type_, mem: ExprMember, call: ExprCall, file: str, 
                 checkExpr(arg.value, exp_t, file, aline, acol, ctx)
         idx += 1
 
+# BUG-636: the argv family of `sys` hands its first argument to a runtime helper that
+# takes `anytype`, so a wrong one was not refused anywhere before zig -- whose error then
+# named `argv.items` inside zebra_rt.zig, a line the user never wrote and with no line of
+# theirs. `sys.run("git status")` (one string, the shape every shell API teaches) was the
+# case found. Checked here: the argument count, and that the command is not a primitive or
+# a list of non-strings. Only a KNOWN wrong type is refused (the #5a rule): an argument
+# inference cannot type gets no check, so an inference gap cannot refuse valid code.
+def checkSysArgv(mem: ExprMember, call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var m: str = mem.member
+    var want: int = 0
+    if m == "run" or m == "spawn" or m == "spawnPiped" or m == "exec_inherit"
+        want = 1
+    else if m == "spawnPipedIn"
+        want = 2
+    else
+        return
+    var eline: int = line
+    var ecol: int = 0
+    if mem.span.line > 0
+        eline = mem.span.line
+        ecol = mem.span.col
+    var shape: str = "sys." + m + "([\"git\", \"status\"])"
+    if want == 2
+        shape = "sys." + m + "([\"git\", \"status\"], \"path/to/dir\")"
+    if call.args.len != want
+        ctx.addErr(file, eline, ecol, "sys." + m + " takes " + want.toString() + " argument(s), found " + call.args.len.toString() + " -- `" + shape + "`")
+        return
+    var at: Type_ = inferExpr(call.args.at(0).value, ctx)
+    var wrong: bool = isPrimitive(at)
+    if at is Type_.list_ as ael
+        if isPrimitive(ael) and not isString(ael)
+            wrong = true
+    if wrong
+        var why: str = ""
+        if isString(at)
+            why = "; no shell splits a string here"
+        ctx.addErr(file, eline, ecol, "sys." + m + " takes the command as a List(str), one element per argument, found " + userTypeName(at) + " -- `" + shape + "`" + why)
+    if want == 2
+        checkExpr(call.args.at(1).value, Type_.string_, file, eline, ecol, ctx)
+
 def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Bail if any arg is named — reordering complicates positional indexing.
     for arg in call.args
@@ -7154,6 +7194,9 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 cline = cid.span.line
                 ccol = cid.span.col
         on Expr.member as mem
+            if mem.object is Expr.ident as nsid
+                if nsid.name == "sys" and not ctx.hasLocal("sys")
+                    checkSysArgv(mem, call, file, line, ctx)
             var recv: Type_ = inferExpr(mem.object, ctx)
             if recv is Type_.ref_to as rrt
                 recv = rrt

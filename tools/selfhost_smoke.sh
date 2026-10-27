@@ -1791,6 +1791,14 @@ smoke_run_bounded test/bug611_ws_accept_test.zbr "bug611_ws_accept: OK" 90
 # ws.close() must not write a second one into the dropped socket (on Windows std printed an
 # "unexpected NTSTATUS" trace for it). The expected line proves the close path ran.
 smoke_run_bounded test/bug542_ws_close_once_test.zbr "bug542: host saw 2 messages, then the close" 90 "NTSTATUS"
+# BUG-636: the argv family of sys is checked in the front end -- a str command, a List(int),
+# a missing argument and a non-str cwd were each accepted by -c and failed inside zig, in
+# runtime code. The ok fixture runs every legitimate argv shape (bounded: it spawns itself).
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:7:17: error: sys.run takes the command as a List(str), one element per argument, found str"
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:8:17: error: sys.spawn takes the command as a List(str), one element per argument, found List(int)"
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:9:17: error: sys.run takes 1 argument(s), found 0"
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:10:38: error: type mismatch: expected str, got int"
+smoke_run_bounded test/bug636_sys_argv_ok_test.zbr "bug636 ok: 5 of 5 children ran" 120
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60
