@@ -394,7 +394,7 @@ ZBR
 RC=$?
 chk "a build with NO explicit b.run() still produces the binary (auto-run)" \
     "$([ -x "$W/proj_autorun/zig-out/bin/demo" ] || [ -x "$W/proj_autorun/zig-out/bin/demo.exe" ] && echo 0 || echo 1)" \
-    "exit=$RC  zig-out/bin: $(ls "$W/proj_autorun/zig-out/bin" 2>/dev/null | tr "\n" " ")"
+    "exit=$RC  zig-out/bin: $(ls "$W/proj_autorun/zig-out/bin" 2>/dev/null | tr "\n" " ")  stderr: $(tail -4 "$E" 2>/dev/null | tr "\n" " ")"
 
 # `--list-targets` must LIST and must NOT build. Asserted in both directions on purpose:
 # "prints something" passes against a run that also built, and "built nothing" passes
