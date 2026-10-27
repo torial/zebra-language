@@ -115,8 +115,9 @@ Hello, Zebra!
 - A statement continues across lines inside `( )`, `[ ]` and `{ }`: a newline there does not
   end it, and the continuation lines' indentation is free. That is how a long call, a nested
   list or a dict literal is written over several lines. A statement-body lambda inside one
-  still indents its body one level past the *statement*. Outside brackets a newline ends the
-  statement (a multi-line pipeline needs parentheses, §3).
+  indents its body one level past the line its `def(` is on (or, equally, one level past the
+  statement), and a call or literal inside that body may itself continue over several lines.
+  Outside brackets a newline ends the statement (a multi-line pipeline needs parentheses, §3).
 
 **A slightly larger example** — reading command-line arguments:
 
@@ -2342,6 +2343,16 @@ result = outer(def()
 - The `def(params)` keyword starts the lambda; its body is the indented block that follows.
 - The call's closing `)` must be dedented to the level of the **call site** (not the lambda body).
 - Nesting is unlimited — each inner `def(` starts its own indented body.
+- On a continuation line of a multi-line call, the body goes one level past **that line**
+  (or one level past the statement, the older form; both are accepted):
+  ```zebra
+  var t = add(first,
+      applyTo2(def(x: int): int
+          return x * 3
+      ))
+  ```
+- The body's last line cannot also close the call (`return y))`): put the closer on its own
+  line.
 - Named keyword arguments work the same way: `f(key: def() body )`.
 
 ### §19.5 A method as a value — bound to its object

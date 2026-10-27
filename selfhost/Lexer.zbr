@@ -89,6 +89,18 @@ class Lexer
     var lambdaParamDepth : int
     var afterLambdaParams: bool
     var lambdaStack      : List(int)   # one entry per active lambda body (its start indent depth)
+    # BUG-564: a lambda opened on a CONTINUATION line (inside a multi-line call or literal)
+    # may indent its body past that line rather than past the statement. Continuation lines
+    # never set indentDepth, so the header line's level is recorded here and decided on the
+    # first body line; lambdaRestore is the depth to return to, without a token, when the
+    # body ends.
+    var lambdaHeader     : List(int)   # header line's level, or -1 once the first body line decided
+    var lambdaRestore    : List(int)
+    # BUG-634: parenDepth + bracketDepth when the body opened. Only a line at exactly that
+    # depth is a body line; a deeper one is a continuation of a call or literal INSIDE the
+    # body and must not end a statement or move the indentation.
+    var lambdaNest       : List(int)
+    var curLineLevel     : int         # indentation level of the current physical line
     # Ensure-block context-sensitive keyword tracking
     var afterEnsureEol  : bool
     var ensureBaseDepth : int
@@ -107,6 +119,10 @@ class Lexer
         lambdaParamDepth  = 0
         afterLambdaParams = false
         lambdaStack       = List()
+        lambdaHeader      = List()
+        lambdaRestore     = List()
+        lambdaNest        = List()
+        curLineLevel      = 0
         afterEnsureEol    = false
         ensureBaseDepth   = 0
 
@@ -243,10 +259,25 @@ class Lexer
         else
             level = tabs
         var oldDepth = indentDepth
+        if lambdaStack.len > 0
+            var k = lambdaStack.len - 1
+            var hdr = lambdaHeader.at(k)
+            if hdr >= 0
+                lambdaHeader.set(k, -1)
+                # The first body line is deeper than the continuation line the lambda opened
+                # on: measure the body from that line. The level between was never emitted, so
+                # it is entered without a token and left the same way (lambdaRestore).
+                if hdr > indentDepth and level > hdr
+                    indentDepth = hdr
+                    oldDepth = hdr
+                    lambdaStack.set(k, hdr)
         while level > indentDepth
             emit(TokenKind.indent(), "", ln, 1)
             indentDepth = indentDepth + 1
         while level < indentDepth
+            if lambdaStack.len > 0 and indentDepth <= lambdaStack.at(lambdaStack.len - 1)
+                popLambda()
+                continue
             emit(TokenKind.dedent(), "", ln, 1)
             indentDepth = indentDepth - 1
         if afterEnsureEol
@@ -256,7 +287,49 @@ class Lexer
         if ensureBaseDepth > 0 and level < ensureBaseDepth
             ensureBaseDepth = 0
         while lambdaStack.len > 0 and indentDepth <= lambdaStack.at(lambdaStack.len - 1)
-            lambdaStack.remove(lambdaStack.len - 1)
+            popLambda()
+
+    def popLambda()
+        var k = lambdaStack.len - 1
+        indentDepth = lambdaRestore.at(k)
+        lambdaStack.remove(k)
+        lambdaHeader.remove(k)
+        lambdaRestore.remove(k)
+        lambdaNest.remove(k)
+
+    def pushLambda()
+        lambdaStack.add(indentDepth)
+        lambdaHeader.add(curLineLevel)
+        lambdaRestore.add(indentDepth)
+        lambdaNest.add(parenDepth + bracketDepth)
+
+    # A closer that takes the depth BELOW where an open lambda body started can only be on
+    # a body line -- a closer on its own line at the call's level pops the lambda first, in
+    # processIndentation. The parser would report "unexpected ')'" there; say what to do.
+    def checkLambdaCloser(ch: str, ln: int, cl: int) throws
+        if lambdaStack.len > 0 and parenDepth + bracketDepth <= lambdaNest.at(lambdaNest.len - 1)
+            raise ln.toString() + ":" + cl.toString() + ": error: `" + ch + "` closes the call or literal around a statement-body lambda on the lambda's own body line -- put it on a line of its own, back at the level of the line the lambda's `def(` is on"
+
+    # A line is a lambda BODY line only at the bracket depth its body opened at.
+    def inLambdaBody(): bool
+        return lambdaStack.len > 0 and parenDepth + bracketDepth == lambdaNest.at(lambdaNest.len - 1)
+
+    # The indentation level of the line at pos, without consuming it: a continuation line
+    # (no processIndentation) still needs its level known for BUG-564. Alignment inside a
+    # continuation need not be a multiple of 4, so this rounds down rather than refusing.
+    def peekLineLevel(): int
+        var i = pos
+        var tabs = 0
+        var spaces = 0
+        while i < src.len and (src[i] == c' ' or src[i] == c'\t')
+            if src[i] == c'\t'
+                tabs = tabs + 1
+            else
+                spaces = spaces + 1
+            i = i + 1
+        if spaces > 0
+            return spaces / 4
+        return tabs
 
     # -- Block comment  /# ... #/ --------------------------------------------
 
@@ -900,6 +973,7 @@ class Lexer
             emit(TokenKind.lparen(), "(", ln, cl)
             return
         if c == c')'
+            checkLambdaCloser(")", ln, cl)?
             if inLambdaParams and parenDepth == lambdaParamDepth
                 inLambdaParams    = false
                 afterLambdaParams = true
@@ -911,6 +985,7 @@ class Lexer
             emit(TokenKind.lbracket(), "[", ln, cl)
             return
         if c == c']'
+            checkLambdaCloser("]", ln, cl)?
             if bracketDepth > 0
                 bracketDepth = bracketDepth - 1
             emit(TokenKind.rbracket(), "]", ln, cl)
@@ -920,6 +995,7 @@ class Lexer
             emit(TokenKind.lcurly(), "{", ln, cl)
             return
         if c == c'}'
+            checkLambdaCloser("}", ln, cl)?
             if bracketDepth > 0
                 bracketDepth = bracketDepth - 1
             emit(TokenKind.rcurly(), "}", ln, cl)
@@ -963,11 +1039,11 @@ class Lexer
                         var ln = line
                         var cl = col()
                         advanceNewline()
-                        if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or lambdaStack.len > 0
+                        if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or inLambdaBody()
                             emit(TokenKind.eol(), "\n", ln, cl)
                             if afterLambdaParams
                                 afterLambdaParams = false
-                                lambdaStack.add(indentDepth)
+                                pushLambda()
                         atLineStart = true
                         continue
                     on LineKind.whitespace_only
@@ -998,7 +1074,8 @@ class Lexer
                         atLineStart = true
                         continue
                     on LineKind.has_content
-                        if (parenDepth == 0 and bracketDepth == 0) or lambdaStack.len > 0
+                        curLineLevel = peekLineLevel()
+                        if (parenDepth == 0 and bracketDepth == 0) or inLambdaBody()
                             processIndentation()?
 
             var c = src[pos]
@@ -1011,11 +1088,11 @@ class Lexer
                 var ln = line
                 var cl = col()
                 advanceNewline()
-                if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or lambdaStack.len > 0
+                if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or inLambdaBody()
                     emit(TokenKind.eol(), "\n", ln, cl)
                     if afterLambdaParams
                         afterLambdaParams = false
-                        lambdaStack.add(indentDepth)
+                        pushLambda()
                 atLineStart = true
                 continue
 

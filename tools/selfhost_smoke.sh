@@ -1339,6 +1339,7 @@ smoke_run test/cue_using_test.zbr "cue_using: <a>x<b>y</b></a>"
 smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
 smoke_run test/bug556_json_parse_arena_test.zbr "bug556: parsed into the arena, 200 items"
 smoke_run test/bug561_multiline_literals_test.zbr "bug561: 4 7 3 [3, 6, 5]"
+smoke_run test/bug564_lambda_continuation_indent_test.zbr "bug564: 9 11 101 13"
 smoke_run test/bug562_subscript_write_const_test.zbr "bug562: [101, 5] [1, 1, 2] 15 [2, 3] 9"
 smoke_run test/bug559_chain_on_value_result_test.zbr "bug559: 13 2 4 1024 8.0 12.0 4.0"
 smoke_run test/bug560_imported_field_len_test.zbr "bug560: 5 2 5"
@@ -1483,6 +1484,7 @@ smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_f
 smoke_run test/bug630_fn_signature_ok_test.zbr "bug630: 4 4 101 8 true"
 # BUG-565: `@[...]` removed, refused naming `[...]`; `x in [a, b]` of primitives is the inline
 # tuple test (no List built) -- and BUG-633: a list of collections compares by contents.
+smoke_tc_fail test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr "bug564_closer_on_lambda_body_line_test.zbr:8:22: error: \`)\` closes the call or literal around a statement-body lambda"
 smoke_tc_fail test/fail_fixtures/bug565_at_bracket_removed_test.zbr "bug565_at_bracket_removed_test.zbr:4:16: error: \`@[...]\` was removed: write \`[...]\`"
 smoke_run test/bug565_in_list_literal_test.zbr "bug565: 3 true true false true"
 smoke_emit_contains test/bug565_in_list_literal_test.zbr "_zebra_in(i, .{3, 500, 999})"

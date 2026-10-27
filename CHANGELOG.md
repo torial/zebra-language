@@ -52,6 +52,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A statement-body lambda on a continuation line may indent its body past that line
+  (BUG-564), and a call inside a lambda body may span lines (BUG-634).** In
+  `add(a,\n    applyTo2(def(x: int): int\n        return x * 3\n    ))` the body is one level
+  past the `applyTo2(` line; it had to be one level past the statement, and anything deeper
+  failed with "unexpected end of input" at a later line. Both indentations are accepted. A
+  multi-line call or literal INSIDE a lambda body no longer ends its statement at the first
+  newline. A closer on the body's own last line (`return y))`) is refused by name.
+
 - **`in` on a list of collections compares contents (BUG-633).** `[1, 2] in [[1, 2], [3]]`
   was false (the elements were compared as pointers); it now agrees with `==`.
 

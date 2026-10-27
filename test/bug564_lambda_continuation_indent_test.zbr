@@ -1,0 +1,41 @@
+# BUG-564: a statement-body lambda opened on a CONTINUATION line (inside a multi-line call
+# or literal) may indent its body past that line. Continuation lines never set the indent
+# depth, so the body used to be measured from the statement: two indents, a dedent that
+# never closed the lambda, and "unexpected end of input" at an unrelated line.
+# The older form -- body one level past the STATEMENT -- must keep working.
+sig Step(x: int): int
+
+def applyTo2(f: def(int): int): int
+    return f(2)
+
+def add(a: int, b: int): int
+    return a + b
+
+def main()
+    # body past the continuation line
+    var t = add(applyTo2(def(x: int) = x + 1),
+        applyTo2(def(x: int): int
+            var y: int = x * 3
+            return y
+        ))
+    # body past the statement (the form that always worked)
+    var u = add(applyTo2(def(x: int) = x + 1),
+        applyTo2(def(x: int): int
+        var y: int = x * 4
+        return y
+    ))
+    # in a multi-line list literal, closer back at the statement's level
+    var fs: List(Step) = [
+        def(x: int): int
+            return x + 100
+    ]
+    # nested: a lambda body that opens another lambda on its own continuation line. BUG-634:
+    # the body's own `add(x,` spans two lines -- that ended the statement at the newline.
+    var n = add(1,
+        applyTo2(def(x: int): int
+            return add(x,
+                applyTo2(def(z: int): int
+                    return z * 5
+                ))
+        ))
+    print("bug564: ${t} ${u} ${fs[0](1)} ${n}")

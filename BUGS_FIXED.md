@@ -6,6 +6,61 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- FIXED 2026-10-27
+- **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
+  predates BUG-561.
+- **Repro:**
+  ```
+  def main()
+      var t = add(applyTo2(def(x: int) = x + 1),
+          applyTo2(def(x: int): int
+              var y: int = x * 3
+              return y
+          ))
+      print(t)
+  ```
+  `9:1: error: unexpected end of input while parsing an expression`. Written with the body one
+  level past the STATEMENT (8 spaces) and `))` back at the statement's level, it prints 9.
+- **Cause:** inside a continuation the lexer does not process indentation, so the
+  continuation line (`applyTo2(` at 8 spaces) never sets the depth; the lambda's body is
+  measured against the statement (depth 1), and a body at 12 spaces is two indents. Its
+  dedent then never returns to the lambda's start depth, the lambda stack is never popped, and
+  the rest of the file is read as one expression.
+- **Expected:** measure the body against the line the lambda STARTS on -- record that line's
+  indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
+  indent with a message naming the lambda, not end-of-input on the line after.
+- **Fix:** the lexer records the indentation level of every physical line, continuation lines
+  included (`curLineLevel`), and a lambda pushed on a continuation line remembers it. On the
+  lambda's first body line, a body deeper than that header line is measured from it: the
+  depth moves to the header's level without a token and returns to the statement's level the
+  same way when the body ends (`lambdaRestore`). A body one level past the STATEMENT -- the
+  form that always worked -- is still measured from the statement. A closer on the body's own
+  last line (`return y))`) never worked in either form; it is now refused by name
+  ("`)` closes the call or literal around a statement-body lambda on the lambda's own body
+  line -- put it on a line of its own ...") instead of "unexpected expression token". Fixtures
+  `test/bug564_lambda_continuation_indent_test.zbr` (both forms, a list literal, a nested
+  lambda; `bug564: 9 11 101 13`) and
+  `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
+  first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
+
+### BUG-634: inside an open statement-body lambda, a multi-line call or literal in the body ended its statement at the first newline -- FIXED 2026-10-27 (found the same day)
+- **Found by:** BUG-564's fixture (a nested lambda whose body calls `add(x,` over two lines).
+  Same on the N-1 anchor in the older indentation form, so it predates BUG-564's fix.
+- **Repro:**
+  ```
+  var n = add(1, applyTo2(def(x: int): int
+      return add(x,
+          7)
+  ))
+  ```
+  `9:22: error: unexpected expression token: '\n'`.
+- **Cause:** the lexer emitted end-of-line and processed indentation inside brackets whenever
+  ANY lambda body was open (`lambdaStack.len > 0`), so the body's own continuation lines were
+  read as statements.
+- **Fix:** each lambda records `parenDepth + bracketDepth` when its body opens
+  (`lambdaNest`); only a line at exactly that depth is a body line (`inLambdaBody()`). Pinned
+  by the nested case in `test/bug564_lambda_continuation_indent_test.zbr`.
+
 ### BUG-633: `in` compared a list of COLLECTIONS by element pointer, so `[1, 2] in [[1, 2], [3]]` was false -- FIXED 2026-10-27 (found the same day)
 - **Found by:** BUG-565's positive fixture. On the N-1 anchor (`f5afd86`) the same program did
   not compile at all ("expected type '*T', found 'T'"); on HEAD it compiled and answered

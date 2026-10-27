@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-633. Next new bug: BUG-634.**
+**Last bug number generated: BUG-634. Next new bug: BUG-635.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -71,30 +71,6 @@
   cell. Fixture
   `test/fail_fixtures/bug596_struct_bound_method_test.zbr` pins the refusal; it becomes a
   positive fixture when this half lands.
-
-### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- OPEN (found 2026-10-12)
-- **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
-  predates BUG-561.
-- **Repro:**
-  ```
-  def main()
-      var t = add(applyTo2(def(x: int) = x + 1),
-          applyTo2(def(x: int): int
-              var y: int = x * 3
-              return y
-          ))
-      print(t)
-  ```
-  `9:1: error: unexpected end of input while parsing an expression`. Written with the body one
-  level past the STATEMENT (8 spaces) and `))` back at the statement's level, it prints 9.
-- **Cause:** inside a continuation the lexer does not process indentation, so the
-  continuation line (`applyTo2(` at 8 spaces) never sets the depth; the lambda's body is
-  measured against the statement (depth 1), and a body at 12 spaces is two indents. Its
-  dedent then never returns to the lambda's start depth, the lambda stack is never popped, and
-  the rest of the file is read as one expression.
-- **Expected:** measure the body against the line the lambda STARTS on -- record that line's
-  indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
-  indent with a message naming the lambda, not end-of-input on the line after.
 
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).

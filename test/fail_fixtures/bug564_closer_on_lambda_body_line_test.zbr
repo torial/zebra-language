@@ -1,0 +1,9 @@
+# BUG-564: the call around a statement-body lambda cannot close on the lambda's last body
+# line -- the body is still open there. Refused by name, not as "unexpected ')'".
+def applyTo2(f: def(int): int): int
+    return f(2)
+
+def main()
+    var w = applyTo2(def(x: int): int
+        return x * 10)
+    print(w)
