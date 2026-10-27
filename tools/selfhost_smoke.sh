@@ -1473,6 +1473,14 @@ smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626
 smoke_run test/bug626_container_elem_ok_test.zbr "bug626: 2 0 6 2 1 1 1"
 # BUG-632: a list literal ARGUMENT takes the parameter's element type (free fn, method, owner call).
 smoke_run test/bug632_list_literal_arg_test.zbr "bug632: 3.0 3.5 3 2 3 2"
+# BUG-630: a function value with a different signature than its function-typed slot -- a return,
+# an assignment (return type, arity), a typed `sig` var and a call argument.
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:11:5: error: a function cannot go into this function-typed slot: it returns float where int is expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:15:5: error: a function cannot go into this function-typed slot: it returns float where int is expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:16:5: error: a function cannot go into this function-typed slot: it takes 0 argument(s) where 1 are expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:17:5: error: a function cannot go into 'o': its parameter 1 is str where int is expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:18:11: error: a function cannot go into parameter 'f': it takes 2 argument(s) where 1 are expected"
+smoke_run test/bug630_fn_signature_ok_test.zbr "bug630: 4 4 101 8 true"
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"

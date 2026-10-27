@@ -1,0 +1,18 @@
+# BUG-630: a function value whose signature differs from a function-typed slot's is refused
+# at the value -- a return, an assignment (different return type, different arity), a
+# typed `var` of a `sig` type, and a call argument. Before, each passed `zebra -c` and
+# failed inside the runtime's `_ZbrFn.from`.
+sig Op(x: int): int
+
+def apply(f: Op, v: int): int
+    return f(v)
+
+def make(): Op
+    return def(x: int): float = 1.5
+
+def main()
+    var h: def(int): int = def(x: int): int = x + 1
+    h = def(x: int): float = 1.5
+    h = def(): int = 1
+    var o: Op = def(x: str): int = 2
+    print(apply(def(a: int, b: int): int = a + b, 3))

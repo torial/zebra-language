@@ -46,6 +46,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A function value with the wrong signature is refused (BUG-630).** A lambda assigned,
+  passed, returned or bound into a `sig` or `def(P): R` slot with a different arity,
+  parameter type or return type passed `zebra -c` and failed inside the runtime's
+  `_ZbrFn.from`. It is now refused at the value, naming the difference. BUG-626's messages
+  now spell `float` rather than the internal `flt`.
+
 - **A list literal passed as an argument takes the parameter's element type (BUG-632).**
   `f([1, 2])` into a `List(float)` built a `List(int)` and failed inside zig; it now builds the
   parameter's list, as `var xs: List(float) = [1, 2]` always did -- for a function, a method

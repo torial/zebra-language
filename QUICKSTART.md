@@ -2401,6 +2401,11 @@ def main
   function. Any named function, lambda or `capture` closure converts into one where it
   meets a sig-typed slot — a parameter, a typed variable or field, a `List(Sig)` element,
   a `return`. Two sigs with the same signature are the same type. At most 8 parameters.
+- **The signature must match.** A lambda (or bound method) whose arity, parameter types or
+  return type differ from the slot's is refused where it meets the slot, naming the
+  difference: `a function cannot go into 'o': its parameter 1 is str where int is expected`.
+  The same holds for an inline `def(P): R` type (2026-10-26, BUG-630). Parameter NAMES may
+  differ; a type the compiler cannot see on either side is not compared.
 - **From Zig** (a `zig"..."` block or a host program): call one as `cb.call(args)` and
   build one with the decl literal `.from(f)` (`f` a function, a function pointer, or a
   closure struct). A sig is not a C function pointer and cannot cross an `extern`

@@ -6,6 +6,46 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- FIXED 2026-10-26
+- **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
+  Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that
+  fix's doing.
+- **Repro:**
+  ```
+  def main()
+      var h: def(int): int = def(x: int): int = x + 1
+      h = def(x: int): float = 1.5
+      print(h(1))
+  ```
+  zig, inside `zebra_rt.zig`'s `_ZbrFn.from`: `expected type 'i64', found 'f64'`. With
+  `h = def(): int = 1` (a different arity), `expected 0 argument(s), found 1`. The same through
+  a `sig` (`var h: Op = ...`). The user is shown a runtime line they never wrote.
+- **Why the front end cannot see it today:** `Type_.fn_type_` carries the RETURN type only, so
+  the checker cannot compare a lambda's parameters against the slot's. A return-type mismatch
+  is visible to it already and is not compared either.
+- **Expected:** refused at the assignment (and at a call argument, a return, a field store --
+  every place a value flows into a sig slot), naming both signatures.
+- **Control when fixing:** the two repros above must be refused with a coordinate; a matching
+  signature, a function reference (`h = twice`) and `nil` into an optional slot must still pass.
+- **Fix:** `Type_.fn_type_` carries an `FnType_` now -- the return TypeRef it always carried,
+  plus the parameter types (`unknown_` where one is not written) and the arity (-1 when the
+  list is not known, a bound method). A `sig` registers its parameter list beside its return
+  type. `fnValueMismatch` (TypeChecker.zbr) compares a function value against an inline
+  `def(P): R` or a `sig` slot -- arity, then each parameter, then the return -- by BUG-626's
+  definite-difference rule (`elemsDiffer`), so an unwritten or unknown type is never refused.
+  Wired into `checkExpr` (returns, field inits; before the named-type branch, which returned
+  first for a sig), the typed-`var` check, plain assignment, and the call-argument loop, which
+  reads the callee's Param list because a function-typed parameter has no decodable tag.
+  BUG-626's messages spelled `float` as the internal `flt`; `userTypeName` fixes both.
+  Fixtures `test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr` (five refusals; the N-1
+  anchor reports none) and `test/bug630_fn_signature_ok_test.zbr` (matching signatures with
+  different parameter names, a function reference, an optional sig slot, a lambda argument).
+- **Measured before landing, 0 refusals outside the controls:** `-c` over 3,004 files (this
+  repo, zebra-ide, the GameEngine with `--module-path zbra` for its game files) produced the
+  new message only in a planted control, at all five positions.
+- **Not covered:** a lambda with no written return type infers no function type, so it is not
+  compared, arity included.
+
 ### BUG-632: a list literal passed as an ARGUMENT does not take the parameter's element type -- `f([1, 2])` into a `List(float)` fails inside zig -- FIXED 2026-10-26
 - **Found by:** writing BUG-626's positive fixture. The same literal in a typed `var` works.
 - **Repro:** `zebra -c` exits 0; zig: "expected type 'List(float)', found 'List(int)'".

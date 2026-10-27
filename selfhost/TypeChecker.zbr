@@ -82,6 +82,19 @@ class HashMapType_
         .key_t = key_t
         .val_t = val_t
 
+# BUG-630: a function value's shape. `ret` is what a call on it returns (all the variant
+# carried before); `params` are the parameter types, `unknown_` where one is not written,
+# and `arity` is -1 when the parameter list itself is not known (a bound method).
+class FnType_
+    var ret: ^TypeRef
+    var params: List(Type_)
+    var arity: int
+
+    cue init(ret: TypeRef, params: List(Type_), arity: int)
+        .ret = ret
+        .params = params
+        .arity = arity
+
 class TupleType_
     var elems: List(Type_)
     # Maintained element count (#219); read as the plain field `tt.len`.
@@ -194,7 +207,7 @@ union Type_
 
     # Inline function-pointer type `def(P): R` — carries the RETURN type ref so a
     # call on a value of this type infers R (matches src/TypeChecker.zig fn_type).
-    fn_type_: ^TypeRef
+    fn_type_: FnType_
 
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
@@ -954,7 +967,10 @@ def typeFromRef(tr: TypeRef): Type_
         on TypeRef.fn_type as ftr
             # Inline function-pointer type `def(P): R` — carry R so a call on a
             # value of this type infers R (see inferExpr Expr.call).
-            return Type_.fn_type_(ftr.ret)
+            var ftps: List(Type_) = List(Type_)()
+            for ftp in ftr.params
+                ftps.add(typeFromRef(ftp))
+            return Type_.fn_type_(FnType_(ftr.ret, ftps, ftps.len))
         else
             # error_union, stream, same_ — handled as unknown.
             return Type_.unknown_
@@ -1257,6 +1273,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # §28a: a `sig` value is callable; `f(1)` on one returns the sig's type.
                 # Registered like `$Arg` (a pseudo-class the member tables already search).
                 var sgct: ClassTypes = ClassTypes("$sig:" + sgd.name)
+                sgct.setFnParamList("call", sgd.params)        # BUG-630: its parameter types
                 if sgd.return_type as sgr
                     sgct.setMethodReturn("call", typeFromRef(sgr))
                 else
@@ -3480,7 +3497,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     if ctx.hasLocal(cname)
                         var lt: Type_ = ctx.localType(cname)
                         if lt is Type_.fn_type_ as fret
-                            return typeFromRef(fret)
+                            return typeFromRef(fret.ret)
                     # Bare call: check current class first, then module-level
                     # functions registered under the "" sentinel in ModuleTypes.
                     if ctx.current_class != ""
@@ -4413,7 +4430,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # through a local of that type already did.
                     var oc_t: Type_ = inferExpr(c.callee, ctx)
                     if oc_t is Type_.fn_type_ as oc_ret
-                        return typeFromRef(oc_ret)
+                        return typeFromRef(oc_ret.ret)
                     if oc_t is Type_.named as oc_nm
                         if ctx.methodReturnAny("$sig:" + oc_nm, "call") as oc_sig_rt
                             return oc_sig_rt
@@ -4434,7 +4451,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # §28a: a lambda with a declared return type is a callable of that type,
             # so `var inner = def(): int ...` then `inner() + 10` is typed.
             if elam.return_type != nil
-                return Type_.fn_type_(elam.return_type!)
+                var elps: List(Type_) = List(Type_)()
+                for elp in elam.params
+                    if elp.type_ as elpt
+                        elps.add(typeFromRef(elpt))
+                    else
+                        elps.add(Type_.unknown_)
+                return Type_.fn_type_(FnType_(elam.return_type!, elps, elps.len))
             return Type_.unknown_
         on Expr.old_ as eold
             # `old x` in an ensure is a snapshot of x taken at entry: x's type
@@ -5795,6 +5818,10 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     var exp: Type_ = expected!  # safe: nil checked above
     if inferred is Type_.context_dependent
         return exp
+    var fv_why: str = fnValueMismatch(exp, inferred, ctx)   # BUG-630
+    if fv_why != ""
+        ctx.addErr(file, d_line, d_col, "a function cannot go into this function-typed slot: " + fv_why)
+        return exp
     if exp is Type_.named as exp_class
         # Type aliases are transparent — skip conformance check when expected is an alias.
         if ctx.isTypeAlias(exp_class)
@@ -5911,6 +5938,52 @@ def containerKind(t: Type_): str
         return "HashMap"
     return ""
 
+# BUG-630: a function VALUE flowing into a function-typed slot -- an inline `def(P): R` or a
+# `sig` -- with a different arity, parameter type or return type passed -c and failed inside
+# the runtime's `_ZbrFn.from`, a line the user never wrote. "" when the shapes agree or are
+# not both known; otherwise the reason, for the message. Types compare by `elemsDiffer`
+# (BUG-626's definite-difference rule), so an unwritten or unknown type is never refused.
+def fnValueMismatch(slot: Type_, val: Type_, ctx: InferCtx): str
+    if not (val is Type_.fn_type_)
+        return ""
+    var s_known: bool = false
+    var s_params: List(Type_) = List(Type_)()
+    var s_arity: int = -1
+    var s_ret: Type_ = Type_.unknown_
+    var st: Type_ = slot
+    if st is Type_.optional as so
+        st = so
+    if st is Type_.fn_type_ as sf
+        s_known = true
+        s_params = sf.params
+        s_arity = sf.arity
+        s_ret = typeFromRef(sf.ret)
+    else if st is Type_.named as sn
+        if ctx.fnParamListAny("$sig:" + sn, "call") as sps
+            s_known = true
+            for sp in sps
+                if sp.type_ as spt
+                    s_params.add(typeFromRef(spt))
+                else
+                    s_params.add(Type_.unknown_)
+            s_arity = s_params.len
+            if ctx.methodReturnAny("$sig:" + sn, "call") as srt
+                s_ret = srt
+    if not s_known
+        return ""
+    if val is Type_.fn_type_ as vf
+        if vf.arity >= 0 and s_arity >= 0 and vf.arity != s_arity
+            return "it takes " + vf.arity.toString() + " argument(s) where " + s_arity.toString() + " are expected"
+        var i: int = 0
+        while i < vf.params.len and i < s_params.len
+            if elemsDiffer(s_params.at(i), vf.params.at(i))
+                return "its parameter " + (i + 1).toString() + " is " + userTypeName(vf.params.at(i)) + " where " + userTypeName(s_params.at(i)) + " is expected"
+            i += 1
+        var v_ret: Type_ = typeFromRef(vf.ret)
+        if elemsDiffer(s_ret, v_ret)
+            return "it returns " + userTypeName(v_ret) + " where " + userTypeName(s_ret) + " is expected"
+    return ""
+
 # The spelling a user writes, for the BUG-626 message: `List(int?)`, `HashMap(str, int)`.
 def userTypeName(t: Type_): str
     if t is Type_.optional as o
@@ -5923,6 +5996,8 @@ def userTypeName(t: Type_): str
         return "Chan(" + userTypeName(ch) + ")"
     if t is Type_.hashmap_ as hm
         return "HashMap(" + userTypeName(hm.key_t) + ", " + userTypeName(hm.val_t) + ")"
+    if t is Type_.float_
+        return "float"          # typeTag spells it `flt`
     if isPrimitive(t)
         return typeTag(t)
     if t is Type_.named as n
@@ -7112,6 +7187,20 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                     aline = amem.span.line
                     acol = amem.span.col
             checkExpr(arg.value, expected, file, aline, acol, ctx)
+        else
+            # BUG-630: a function-typed parameter (a `sig`, an inline `def(P): R`) has no
+            # tag the positional check decodes, so its argument is compared here.
+            var fps: List(Param)? = nil
+            if lookup_class != ""
+                fps = ctx.fnParamListAny(lookup_class, lookup_method)
+            if fps == nil
+                fps = ctx.fnParamListAny("", lookup_method)
+            if fps as fpl
+                if idx < fpl.len and arg.name == nil
+                    if fpl.at(idx).type_ as fpt
+                        var fa_why: str = fnValueMismatch(typeFromRef(fpt), inferExpr(arg.value, ctx), ctx)
+                        if fa_why != ""
+                            ctx.addErr(file, anchorLine(arg.value, cline), anchorCol(arg.value, ccol), "a function cannot go into parameter '" + fpl.at(idx).name + "': " + fa_why)
         idx += 1
 
 # BUG-288 batch 3: anchor a diagnostic on the EXPRESSION it is about, when there is one.
@@ -7195,6 +7284,11 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     var declared: Type_ = typeFromRef(dv.type_!)  # safe: nil returned above
     if dv.init_expr != nil
         if checkJsonInto(declared, dv.init_expr!, file, varDiagLine(dv), varDiagCol(dv), true, ctx)
+            return
+    if dv.init_expr != nil
+        var fvd_why: str = fnValueMismatch(declared, inferExpr(dv.init_expr!, ctx), ctx)   # BUG-630
+        if fvd_why != ""
+            ctx.addErr(file, anchorLine(dv.init_expr!, varDiagLine(dv)), anchorCol(dv.init_expr!, varDiagCol(dv)), "a function cannot go into '" + dv.name + "': " + fvd_why)
             return
     if declared is Type_.named as dec_class
         # Type aliases are transparent — skip the conformance check; codegen resolves to base.
@@ -7637,6 +7731,9 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     if sa_hint != ""
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "type mismatch: expected " + numTypeName(sa_slot) + ", found " + numTypeName(sa_val_t) + " " + sa_hint)
+                    else if sasn.op == AssignOp.assign and fnValueMismatch(sa_slot, sa_val_t, ctx) != ""   # BUG-630
+                        ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                   "a function cannot go into this function-typed slot: " + fnValueMismatch(sa_slot, sa_val_t, ctx))
                     else if sasn.op == AssignOp.assign and containerMismatch(sa_slot, sa_val_t, sasn.value)   # BUG-626
                         ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
                                    "type mismatch: expected " + userTypeName(sa_slot) + ", found " + userTypeName(sa_val_t))
@@ -8390,7 +8487,7 @@ def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Ty
         ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which is not built yet (BUG-596) -- call it in place, or make '" + tn + "' a class to pass its methods around")
         return Type_.unknown_
     if ct.methodReturnRef(member) as rr
-        return Type_.fn_type_(rr)
+        return Type_.fn_type_(FnType_(rr, List(Type_)(), -1))
     return Type_.unknown_
 
 # BUG-594: `member` is not a field, method or extension of `tn`, a user class or struct whose
