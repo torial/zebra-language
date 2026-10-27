@@ -6,6 +6,50 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-628: a method that throws only by INFERENCE (a `raise`, no `throws`), called without `?`, is not refused and fails inside zig -- FIXED 2026-10-26
+- **Found by:** probing the seam behind BUG-546's fix. Two throw rules disagree: genMethod
+  (and `declMayFail`, `isTopLevelMethodThrows`) treat a body with a `raise` or `?` as
+  throwing and emit `anyerror!`; `throws_methods`, behind `isClassMethodThrows` /
+  `isOwnerMethodThrows`, records only a DECLARED `throws`.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'i64', found 'anyerror!i64'".
+  ```
+  class Box
+      var n: int = 1
+      def inferred(): int
+          if .n > 0
+              raise "inferred"
+          return .n
+
+  def main()
+      var b = Box()
+      var x = b.inferred()     # no `?`: the §28b implicit-try refusal does not fire
+  ```
+  The same through a bare owner call inside another method (`return inferred()`).
+- **Knock-on (BUG-546):** in that owner-call shape the CALLER (`caller(): int` holding
+  `return inferred()`) has no `raise` or `?` of its own, so `b.caller() catch 9` is refused
+  as "cannot fail" -- on a program that is invalid anyway, but naming the wrong line. With
+  the `?` written (`return inferred()?`) it compiles and nothing is refused.
+- **Fix direction:** populate `throws_methods` (and `isOwnerMethodThrows`) by the same rule
+  as genMethod -- one predicate, `declMayFail` -- then measure: methods in the corpus that
+  throw by inference and are called bare become implicit-try refusals.
+- **Fix:** one predicate, `methodEmitsErrorUnion` (CodeGen.zbr): declared `throws`, or a
+  `raise` or `?` in the body -- the rule genMethod already used for `anyerror!`. The
+  `throws_methods` registry (class, class-namespace and struct methods), `isOwnerMethodThrows`,
+  `isTopLevelMethodThrows`, `declMayFail` and the single-file `main` shim all ask it now, so a
+  method that throws by inference is a throws callee everywhere a call is classified. The
+  knock-on goes with it: the bare owner call is refused at its own line, before BUG-546's
+  "cannot fail" can name the caller. Fixtures `test/fail_fixtures/bug628_inferred_throws_call_test.zbr`
+  (a class method, a bare owner call, a struct method, each refused at its line; the N-1 anchor
+  passes `-c` on it) and `test/bug628_inferred_throws_ok_test.zbr` (the same calls with `?` /
+  `catch`, `bug628: 9 5 8`).
+- **Measured before landing, 0 new refusals:** `-c` over 3,002 files -- this repo's tracked
+  corpus and examples, zebra-ide, and the GameEngine's `zbra`, `game`, `bbat_port`, `tools` and
+  `ported_scripts` -- found "throws call needs" only in the four existing must-fail fixtures.
+  The engine's game files need `--module-path zbra` to reach codegen at all (without it 5 of 5
+  `game/mm` samples stopped at `use instance`); re-run that way, 164 of 172 reached codegen
+  and none was refused, with the new compiler or the anchor. The compiler's own source: the
+  round-trip is byte-identical.
+
 ### BUG-631: zero-padding a negative number puts the zeros before the sign -- FIXED 2026-10-26
 - **Found by:** writing the rounding fixture for the exact-binary formatter; measured against
   Python on the way. Pre-existing: the N-1 compiler prints the same.

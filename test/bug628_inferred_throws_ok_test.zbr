@@ -1,0 +1,28 @@
+# BUG-628's positive half: the same inferred-throws methods, called with `?` (or under
+# `catch`), compile and propagate the error.
+class Box
+    var n: int = 1
+    def inferred(): int
+        if .n > 0
+            raise "inferred"
+        return .n
+    def caller(): int
+        return inferred()?
+
+struct Pt
+    var n: int = 0
+    def inferred(): int
+        if .n > 0
+            raise "inferred"
+        return .n + 7
+
+def run(): int
+    var p = Pt()
+    return p.inferred()? + 1
+
+def main()
+    var b = Box()
+    var x = b.inferred() catch 9
+    var y = b.caller() catch 5
+    var z = run() catch 0
+    print("bug628: ${x} ${y} ${z}")

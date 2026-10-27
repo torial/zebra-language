@@ -1,0 +1,26 @@
+# BUG-628: a method that throws only by INFERENCE (a `raise` in its body, no `throws`)
+# is a throws callee like a declared one. Called without `?` it must be refused at the
+# call's line -- before, `zebra -c` passed and zig refused "expected type 'i64', found
+# 'anyerror!i64'". Three shapes: a class method, a bare owner call, a struct method.
+class Box
+    var n: int = 1
+    def inferred(): int
+        if .n > 0
+            raise "inferred"
+        return .n
+    def caller(): int
+        return inferred()
+
+struct Pt
+    var n: int = 1
+    def inferred(): int
+        if .n > 0
+            raise "inferred"
+        return .n
+
+def main()
+    var b = Box()
+    var x = b.inferred()
+    var p = Pt()
+    var y = p.inferred()
+    print(x + y + b.caller()?)

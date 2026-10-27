@@ -1472,14 +1472,16 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 for mem in c.members
                     branch mem
                         on Decl.method as dm
-                            if dm.throws_
+                            # BUG-628: genMethod's rule for `anyerror!` (declared, or a
+                            # `raise`/`?` in the body), not the declaration alone.
+                            if methodEmitsErrorUnion(dm)
                                 g.throws_methods.add(makeDottedKey(c.name, dm.name))
                             if dm.name == "toString"
                                 g.toString_types.add(c.name)
                         on Decl.namespace_ as ns2
                             for nmem in ns2.decls
                                 if nmem is Decl.method as ndm
-                                    if ndm.throws_
+                                    if methodEmitsErrorUnion(ndm)
                                         g.throws_methods.add(makeDottedKey(c.name, ndm.name))
                         else
                             pass
@@ -1588,7 +1590,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     g.struct_with_init.add(s.name)
                 for mem in s.members
                     if mem is Decl.method as dm
-                        if dm.throws_
+                        if methodEmitsErrorUnion(dm)
                             g.throws_methods.add(makeDottedKey(s.name, dm.name))
                         if dm.name == "toString"
                             g.toString_types.add(s.name)
@@ -1779,7 +1781,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
             for decl in m.decls
                 if decl is Decl.method as tm
                     if tm.name == "main" and not tm.mods.is_static and tm.params.len == 0
-                        var tm_throws: bool = tm.throws_ or (tm.stmts != nil and bodyHasRaise(tm.stmts!))
+                        var tm_throws: bool = methodEmitsErrorUnion(tm)
                         if tm_throws
                             return "pub fn main(_zinit: std.process.Init) anyerror!void {\n    return _Mod.main(_zinit);\n}\n"
                         return "pub fn main(_zinit: std.process.Init) void {\n    _Mod.main(_zinit);\n}\n"
@@ -3532,6 +3534,13 @@ var _implicit_try_sites: List(str) = List(str)()
 
 def recordImplicitTry(site: str)
     _implicit_try_sites.add(site)
+
+# Does genMethod give `m` an `anyerror!` return type? Declared `throws`, or a `raise` or
+# `?` in the body (the `test_*` harness rule is the one addition, applied in genMethod
+# and declMayFail). BUG-628: every "is this call a throws call" lookup asks this, so a
+# method that throws by inference gets the same implicit-try refusal as a declared one.
+def methodEmitsErrorUnion(m: DeclMethod): bool
+    return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
 
 def implicitTrySites(): List(str)
     return _implicit_try_sites
@@ -6984,7 +6993,7 @@ struct Generator
             w.emit("_zinit: std.process.Init")
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
-        var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre!))
+        var auto_throws = methodEmitsErrorUnion(m)
         # BUG-386: a `test_*` fn (the harness's own inclusion rule: the prefix and no
         # params) whose body has a plain `assert` returns an error union too, so the
         # assert can FAIL THE TEST instead of panicking the whole run.
@@ -9106,15 +9115,13 @@ struct Generator
                 if m.name == name
                     # The same rule genMethod uses for the `anyerror!` in the signature, so a
                     # function that throws by inference is a throwing callee (BUG-467).
-                    return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
+                    return methodEmitsErrorUnion(m)
         return false
 
     # genMethod's rule for `anyerror!` in a signature, plus the `test_*` harness rule
     # (BUG-386), as one predicate: can a call to `m` produce an error?
     def declMayFail(m: DeclMethod): bool
-        if m.throws_ or m.name.startsWith("test_")
-            return true
-        return m.stmts != nil and bodyHasRaise(m.stmts!)
+        return m.name.startsWith("test_") or methodEmitsErrorUnion(m)
 
     # BUG-546: the name of the call `e` if it certainly emits a plain value, not an
     # error union -- so a `catch` or `?` on it would reach zig as "expected error union
@@ -10184,7 +10191,7 @@ struct Generator
         for d in owner_members
             if d is Decl.method as dm
                 if dm.name == name
-                    return dm.throws_
+                    return methodEmitsErrorUnion(dm)
         return false
 
     # Look up if a same-module class method throws (pre-populated at module init).

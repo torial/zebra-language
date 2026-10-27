@@ -46,6 +46,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A method that throws by inference needs `?` at its calls (BUG-628).** A `raise` or `?`
+  in a body makes a function throw without `throws` written. For a class or struct method,
+  a call without `?` passed `zebra -c` and then failed inside zig ("expected type 'i64',
+  found 'anyerror!i64'"). It is now refused at the call's line like a call to a declared
+  `throws` method.
+
 - **The `0` flag puts the zeros after the sign (BUG-631).** `${-5:04d}` printed `00-5` and
   `${-2.5:06.1f}` printed `00-2.5`; they print `-005` and `-002.5` now, as in Python and C,
   for ints and floats with or without a precision. An explicit fill (`${n:0>4}`) is unchanged.

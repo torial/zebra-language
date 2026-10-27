@@ -1453,6 +1453,12 @@ smoke_run test/float_round_rule_test.zbr "float_round_halves: 0 2 -0.00 10.00 1.
 smoke_run test/float_round_rule_test.zbr "float_round_pad: [    2.67] [2.67    ] [**2.67***]"
 # BUG-631: the `0` flag pads after the sign; an explicit `0>` fill does not.
 smoke_run test/bug631_zero_pad_sign_test.zbr "bug631: [-005] [0005] [-005] [00-5] [-002.5] [-002.5] [-123456] [000.50]"
+# BUG-628: a method that throws by inference (a `raise`, no `throws`) is a throws callee --
+# a class method, a bare owner call and a struct method, each refused at its line.
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:12: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25: error: throws call needs '?'"
+smoke_run test/bug628_inferred_throws_ok_test.zbr "bug628: 9 5 8"
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"

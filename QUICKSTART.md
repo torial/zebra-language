@@ -1305,7 +1305,9 @@ var got = someObj.method()?          # propagates if method throws
 # NEW: var r = divide(10, 2)?
 ```
 
-- `throws` on a `def` makes it return `anyerror!T`.
+- `throws` on a `def` makes it return `anyerror!T`. So does a `raise` or a `?` in its
+  body, with no `throws` written: such a function or method is a throwing callee like a
+  declared one, and the `?` rule below applies to its calls too (BUG-628, 2026-10-26).
 - **Write `?` on every call to a `throws` function.** As of §28b step 5
   (2026-07-15) the legacy auto-propagation is a **compile error**: an omitted
   `?` on a throws call is rejected with `throws call needs '?'` in both
