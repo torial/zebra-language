@@ -42,7 +42,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, censusOn
+use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, censusOn, setSourceRoot
 use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
@@ -1108,6 +1108,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
     usageLine("  zebra --target v --also=a.zbr,b.zbr <root.zbr>  emit these modules into the V file too (what a host calls that the root does not use; the = form: a space-separated value reads as the source)", to_stdout)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
+    usageLine("  zebra --source-root DIR <source.zbr>     spell source paths in the generated .zig relative to DIR (markers, failure locations)", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
     usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
     usageLine("  zebra --target v --gc <source.zbr>       ... and say the run line with V's collector on (off by default: nothing is freed, as Zebra's arena)", to_stdout)
@@ -4427,7 +4428,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--also --gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--also --gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --source-root --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4911,6 +4912,18 @@ def main()
     # source (e.g. an engine's zbra/ next to game/scripts/).  Found deps are
     # parsed for types only, not emitted — BUG-125.
     var module_path: str   = args.option("--module-path", "")
+    # --source-root DIR (BUG-547): source paths EMITTED into generated code are spelled
+    # relative to DIR, so a committed .zig is the same on every machine. Checked here, when
+    # declared, rather than discovered as absolute paths in the output.
+    var source_root: str = args.option("--source-root", "")
+    if args.contains("--source-root") and source_root == ""
+        sys.errln("zebra: --source-root needs a directory: --source-root DIR")
+        sys.exit(2)
+    if source_root != ""
+        if not (File.exists(source_root) and File.isDir(source_root))
+            sys.errln("zebra: --source-root " + source_root + ": no such directory -- give the directory the generated paths should be relative to")
+            sys.exit(2)
+        setSourceRoot(source_root)
 
     # ── Selfhost pipeline (the only pipeline since 2026-09-15; --zig-backend is gone) ──
     # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──

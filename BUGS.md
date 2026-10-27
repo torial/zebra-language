@@ -118,22 +118,6 @@
   indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
   indent with a message naming the lambda, not end-of-input on the line after.
 
-### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- OPEN (found 2026-10-09)
-- **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
-  the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).
-- **Reported by:** Fable, GameEngine, the day 0ad017b put a location into every failure
-  message: the engine's regen passes absolute paths, so its asserts read
-  `assert failed at C:/Projects/GameEngine/zbra/x.zbr:12`. The `// zbr:<file>:<line>`
-  markers have carried the absolute path since they were introduced. The engine strips its
-  root after emission; nothing in the compiler does.
-- **Fix direction:** an explicit `--source-root <dir>`: every location (markers, failure
-  messages, `_error_ctx.at`) is spelled relative to it when the source lies under it. NOT
-  "relative to the cwd" -- that makes the emitted bytes depend on where the command was
-  run, the UNGIT "nothing ambient" failure. `zebra debug` maps markers back to files, so it
-  must resolve a relative marker against the same root (debug-map's gate covers the map).
-  Fixture: the same source emitted from two different cwds with `--source-root` gives
-  byte-identical files.
-
 ### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- OPEN (found 2026-10-08)
 - **Severity:** Medium (a gate that can stop seeing a whole class without going red).
 - **Mechanism:** `defaultPreamblePath()` (selfhost/main.zbr) tries

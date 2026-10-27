@@ -46,6 +46,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **`--source-root DIR`: generated code no longer carries the build machine's paths
+  (BUG-547).** Every source path written into the emitted `.zig` -- the `// Source:` header,
+  the `// zbr:` markers, assert, contract and raise locations, the coverage record -- was
+  spelled as the path was given, so a project emitted with absolute paths committed its
+  author's disk layout and differed per machine. With `--source-root DIR` those paths are
+  relative to DIR when the source lies under it, and the same source emitted from any
+  directory is byte-identical. Explicit only: nothing is made relative to the cwd. Messages
+  the compiler prints keep the path as given. A new flag; `docs/SURFACE.md` re-derived.
+
 - **A function value with the wrong signature is refused (BUG-630).** A lambda assigned,
   passed, returned or bound into a `sig` or `def(P): R` slot with a different arity,
   parameter type or return type passed `zebra -c` and failed inside the runtime's

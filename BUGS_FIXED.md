@@ -6,6 +6,35 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- FIXED 2026-10-27
+- **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
+  the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).
+- **Reported by:** Fable, GameEngine, the day 0ad017b put a location into every failure
+  message: the engine's regen passes absolute paths, so its asserts read
+  `assert failed at C:/Projects/GameEngine/zbra/x.zbr:12`. The `// zbr:<file>:<line>`
+  markers have carried the absolute path since they were introduced. The engine strips its
+  root after emission; nothing in the compiler does.
+- **Fix direction:** an explicit `--source-root <dir>`: every location (markers, failure
+  messages, `_error_ctx.at`) is spelled relative to it when the source lies under it. NOT
+  "relative to the cwd" -- that makes the emitted bytes depend on where the command was
+  run, the UNGIT "nothing ambient" failure. `zebra debug` maps markers back to files, so it
+  must resolve a relative marker against the same root (debug-map's gate covers the map).
+  Fixture: the same source emitted from two different cwds with `--source-root` gives
+  byte-identical files.
+- **Fix:** `--source-root DIR` (main.zbr; refused when DIR is missing or not a directory).
+  CodeGen spells every emitted source path through one helper, `emitLoc` -- the 15 sites that
+  were `fwdSlashes(file)` / `fwdSlashes(source_file)`: the `// Source:` header, the `// zbr:`
+  markers, assert / contract / raise locations (`failAt`, `raiseAt`, `_error_ctx.at`), the
+  coverage record. With a root set, a path under it is written relative to it; both sides are
+  compared absolute (a relative one resolved against the cwd), so the OUTPUT does not depend on
+  where the command ran. A source outside the root keeps its path as given; diagnostics the
+  compiler prints are unchanged. Gate: three `cli-surface` legs -- the same source emitted
+  from two cwds is byte-identical and spelled `sub/a.zbr`, the control that without the flag
+  the two emits differ, and a missing root refused by name. The N-1 anchor refuses the flag.
+- **Not covered:** `zebra debug` builds its own emit and is not handed a root, so its markers
+  stay absolute (its map needs them to find files); a coverage JSON written under a root
+  carries relative paths, which a reader must resolve against the same root.
+
 ### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- FIXED 2026-10-26
 - **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
   Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that

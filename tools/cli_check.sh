@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-547 --source-root makes emitted source paths machine-independent (two cwds, one output)
 # pins: BUG-516 a --module-path dep that is not emitted is named in a note, silent under --library-mode
 # pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
 #       asymmetry (usage for a BAD invocation stays on stderr, non-zero). A CLI bug
@@ -576,6 +577,25 @@ run --library-mode --module-path mp516 -c mpuse.zbr
 chk "...and the note is silent under --library-mode (the host build provides the dep)" \
     "$(case "$ERR" in *"module-path"*) echo 1;; *) echo 0;; esac)" \
     "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
+
+# ---- BUG-547: --source-root DIR spells EMITTED source paths relative to DIR, so the same
+# source emitted from two different cwds is byte-identical. The control: without the flag the
+# two emits DIFFER (each spells the path as given), so the identity is the flag's doing.
+mkdir -p "$W/sr547/sub" "$W/sr547o"
+printf 'def main()\n    var x = 3\n    assert x == 3\n    print(x)\n' > "$W/sr547/sub/a.zbr"
+EA=$(cd "$W" && timeout "$TMO" "$ZEBRA" --source-root sr547 --emit-zig sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+EB=$(cd "$W/sr547o" && timeout "$TMO" "$ZEBRA" --source-root ../sr547 --emit-zig ../sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+NA=$(cd "$W" && timeout "$TMO" "$ZEBRA" --emit-zig sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+NB=$(cd "$W/sr547o" && timeout "$TMO" "$ZEBRA" --emit-zig ../sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+chk "--source-root: two cwds emit byte-identical code, the path spelled sub/a.zbr (BUG-547)" \
+    "$( [ -n "$EA" ] && [ "$EA" = "$EB" ] && case "$EA" in *"zbr:sub/a.zbr:3"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "bytes=${#EA}/${#EB} marker=[$(printf '%s\n' "$EA" | grep -m1 'zbr:')]"
+chk "...control: without it the same two emits DIFFER (each spells the path as given)" \
+    "$( [ -n "$NA" ] && [ "$NA" != "$NB" ] && echo 0 || echo 1)" "bytes=${#NA}/${#NB}"
+run --source-root no_such_dir_547 -c hello.zbr
+chk "--source-root naming no directory is refused, naming it" \
+    "$( [ "$RC" = 2 ] && case "$ERR" in *"no_such_dir_547"*"no such directory"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"
