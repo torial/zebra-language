@@ -1,0 +1,6 @@
+# BUG-654: an `is` with a non-type right-hand side was refused by the AST builder with no
+# position, so `zebra diagnostics` (and the LSP) dropped it and showed the file as clean.
+def main()
+    var m: str? = nil
+    var b: bool = m is nil
+    print(b)

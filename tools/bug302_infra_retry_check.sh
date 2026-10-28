@@ -108,16 +108,44 @@ check wrap-negative "$(wrap_leg real)"    "1 1 0 yes yes"
 check wrap-persist  "$(wrap_leg persist)" "1 3 2 yes yes"
 check wrap-success  "$(wrap_leg success)" "0 1 0 yes yes"
 
-# The predicate must also discriminate on REAL captured evidence, not just stub text.
+# The predicate must also discriminate on REAL zig output, not just stub text. This leg
+# used to read full_sweep's kept evidence and demand >= 5 genuine errors there -- a
+# control pinned to a KNOWN GAP: every leak fixed shrinks that set, and on 2026-10-28
+# (BUG-650 moved two files from zig-refused to front-end-refused) it fell to 4 and the
+# gate went red on a correct tree. It was also skipped outright where the directory did
+# not exist. Now real zig refuses five programs with five different genuine errors, every
+# run, and none may be classified as infra.
+REAL_ZIG="$( . "$REPO/tools/zig_toolchain.sh" >/dev/null 2>&1 && command -v zig )"
+if [ -z "$REAL_ZIG" ]; then
+  echo "  FAIL  evidence  the pinned zig (tools/zig_toolchain.sh) could not be resolved"; fail=1
+else
+  G="$TMP/genuine"; mkdir -p "$G"
+  printf 'pub fn main() void { const x: i64 = "s"; _ = x; }\n'           > "$G/type_mismatch.zig"
+  printf 'pub fn main() void { _ = undeclared_name; }\n'                  > "$G/undeclared.zig"
+  printf 'fn f() i64 { }\npub fn main() void { _ = f(); }\n'             > "$G/missing_return.zig"
+  printf 'fn f(a: i64) i64 { return a; }\npub fn main() void { _ = f(); }\n' > "$G/arity.zig"
+  printf 'const S = struct { a: i64 };\npub fn main() void { const s = S{ .a = 1 }; _ = s.b; }\n' > "$G/no_field.zig"
+  inf=0; gen=0; empty=0
+  for z in "$G"/*.zig; do
+    ( cd "$G" && "$REAL_ZIG" build-exe -fno-emit-bin "$(basename "$z")" ) 2> "${z%.zig}.err" >/dev/null && { empty=$((empty+1)); continue; }
+    grep -q 'error:' "${z%.zig}.err" || { empty=$((empty+1)); continue; }
+    if zbr_zig_infra_error "${z%.zig}.err"; then inf=$((inf+1)); else gen=$((gen+1)); fi
+  done
+  if [ "$gen" -eq 5 ] && [ "$inf" -eq 0 ] && [ "$empty" -eq 0 ]; then
+    echo "  ok    evidence  5/5 real zig refusals classified genuine, 0 as infra"
+  else
+    echo "  FAIL  evidence  real zig refusals: $gen genuine, $inf misread as infra, $empty did not refuse with an error"; fail=1
+  fi
+fi
+# full_sweep's kept evidence, as information only: it shrinks as leaks are fixed.
 EV="${LOCALAPPDATA:-/c/Users/$USER/AppData/Local}/Temp/zebra_full_sweep/evidence"
 if [ -d "$EV" ]; then
-  inf=0; gen=0
+  einf=0; egen=0
   for f in "$EV"/*.cfail.err; do
     [ -e "$f" ] || continue
-    if zbr_zig_infra_error "$f"; then inf=$((inf+1)); else gen=$((gen+1)); fi
+    if zbr_zig_infra_error "$f"; then einf=$((einf+1)); else egen=$((egen+1)); fi
   done
-  printf '  ok    evidence  %d infra / %d genuine, from real captured errors\n' "$inf" "$gen"
-  [ "$gen" -lt 5 ] && { echo "  FAIL  evidence  too few genuine errors to prove discrimination"; fail=1; }
+  printf '  info  evidence  full_sweep kept %d infra / %d genuine (not gated)\n' "$einf" "$egen"
 fi
 
 [ $fail -eq 0 ] && echo "bug302-control: all legs pass" || echo "bug302-control: FAILED"

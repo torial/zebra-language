@@ -1,0 +1,13 @@
+# BUG-656: a dependency class constructed through its MODULE name (`lib.Pt(...)`) took the
+# given arguments in written order: an omitted default was not filled (zig refused the
+# call) and named arguments were passed positionally (`lib.Pt(y: 20, x: 1)` built x=20).
+# The exposed spelling `Pt(...)` was right all along; both are checked here.
+use bug656_dep_ctor_lib
+use bug656_dep_ctor_lib exposing Pt
+
+def main()
+    var a = bug656_dep_ctor_lib.Pt(1)
+    var b = bug656_dep_ctor_lib.Pt(y: 20, x: 1)
+    var c = bug656_dep_ctor_lib.Pt(3, 4)
+    var d = Pt(5)
+    print("bug656: ${a.x} ${a.y} ${b.x} ${b.y} ${c.x} ${c.y} ${d.x} ${d.y}")

@@ -92,5 +92,6 @@ bug641_qualified_fn_lib2  # helper module imported by bug641_qualified_fn_infer_
 bug026_method_result_lib  # helper module imported by bug026_method_result_mutation_test; has no main()
 bug649_static_container_lib  # helper module imported by bug649_static_container_field_test; has no main()
 bug652_dep_static_lib  # helper module imported by bug652_dep_static_strname_test; has no main()
+bug656_dep_ctor_lib  # helper module imported by bug656_dep_ctor_defaults_test; has no main()
 bug099_unresolved_test  # a check_mode_check WITNESS (tools/check_mode_check.sh WITNESSES): passes -c and fails --check-full by design; asserted by that gate, not by smoke
 bug106_cast_test  # documentation only (no main): records why `expr to Type` casts cannot be written; nothing to run

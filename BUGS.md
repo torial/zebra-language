@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-652. Next new bug: BUG-653.**
+**Last bug number generated: BUG-657. Next new bug: BUG-658.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,27 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-657: the compiler's own unit tests (`selfhost/*_test.zbr`) are run by nothing -- 5 of 9 fail, 4 of them inside zig — OPEN (found 2026-10-28)
+
+`registration_check` covers `test/*.zbr` only, so these nine files sit outside every gate.
+Run on 2026-10-28 (the same result on HEAD's compiler, so none of it is new):
+
+| file | result |
+|---|---|
+| `astbuilder_test`, `cg_helpers_test` | pass |
+| `parser_test`, `resolver_test` | exit 0 but print `FAILED:` lines -- test sources in pre-`print()` / `try`-block syntax |
+| `pipeline_test` | its own assert fails (`pub const Foo` -- types emit as `_zbr_ty_Foo` since BUG-281 B). Its three stale `generateEntryPoint(m)` calls were fixed with BUG-656 |
+| `ast_test` | **zig refuses**: `struct 'Ast' has no member named 'IntBase'` |
+| `codegen_test` | **zig refuses**: `use of undeclared identifier 'Expr'` |
+| `lexer_test` | **zig refuses**: `duplicate struct member name 'main'` |
+| `typechecker_test` | **zig refuses**: `std.mem.zeroes` of a non-nullable pointer |
+
+The four zig refusals are leaks -- `-c` accepts each file -- and each is its own
+defect to reduce to a repro. Then: register the passing ones (`smoke_run`), and widen
+`registration_check` to `selfhost/*_test.zbr` so the set cannot drift out of view again.
 
 ---
 
@@ -422,89 +443,7 @@ recommended shape, so this is a documented limit rather than a blocker.
 only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
 not a `zig_lit` — but it is worth checking against whatever fix lands here.
 
-
-### BUG-252: BUG-099's check is present but disabled by default — OPEN (blocked on §28a)
-
-> **Heading corrected 2026-08-05.** It read *"BUG-099's check is missing from the selfhost,
-> same class as BUG-106/248"*. That was wrong on both counts — the check exists, and it is
-> not that class. The original text is kept below because the reasoning that produced the
-> wrong conclusion is the useful part; the correction is at the end of the entry.
-
-**Found 2026-08-04** by auditing the `check_mode_check` witness set against a new criterion
-(Sean): a witness must show a genuine LIMIT of front-end checking, not a check the selfhost
-happens to lack. Two of the three failed that test.
-
-    test/bug099_unresolved_test.zbr
-      bootstrap  -> error: use of undeclared identifier 'Math'
-      selfhost   -> `-c` exits 0
-
-**Third instance of the pattern** (BUG-248 = BUG-108, BUG-106, now BUG-099): a check shipped
-in the bootstrap in May 2026 and never ported to the compiler that ships. All three were
-found the same way — by asking what the *reference implementation* does with a file the
-selfhost accepts.
-
-**It is currently load-bearing as a witness**, which is why it is filed rather than fixed on
-the spot: retiring it drops the set to two. `witness_zig_backend_literal` was added first so
-the set never falls below that. Port the check, then remove this file from `WITNESSES` in
-`tools/check_mode_check.sh` and from the note in `selfhost/main.zbr`.
-
-**Worth a sweep, not just a fix.** Three confirmed instances suggests the right question is
-not "port this one" but *"which other bootstrap diagnostics never reached the selfhost?"* —
-enumerable by diffing the two compilers' error strings.
-
-### Correction 2026-08-05 — the check is NOT missing. It is present and switched off.
-
-**The title above is wrong and the classification with it.** `selfhost/TypeChecker.zbr`
-has this check. It lives in `checkVarDecl`, it is guarded by `ctx.strict`, and `strict` is
-set by exactly one caller: `selfhost/main.zbr:651`, the **LSP diagnostics** seam. Normal
-compilation constructs `InferCtx` with `.strict = false`, so `zebra -c` never runs it.
-
-    if ctx.strict and inferred is Type_.unresolved
-        ctx.addErr(…, "unresolved type for init expr of '" + dv.name + "' (TC gap)")
-
-This is why `diagnostic_parity.py` counted it absent: the tool matches error *strings*, and
-the selfhost's wording (`unresolved type for init expr of 'x' (TC gap)`) shares no phrase
-with the bootstrap's (`cannot determine type for value assigned to 'x: int'`). A fuzzy
-string matcher cannot distinguish "never ported" from "ported, reworded, and disabled" —
-worth remembering before reading its remaining candidates as a defect count.
-
-**So this is not a port. It is a decision about a default, and the measurement says no.**
-
-Flipping `.strict = true`, regenerating, and compiling all 487 tracked `test/` +
-`examples/` + `selfhost/*.zbr` files:
-
-| | files newly rejected |
-|---|---|
-| `test/` | 9 |
-| `examples/` | 6 |
-| **`selfhost/`** | **13** |
-| **total** | **28** |
-
-The selfhost 13 include `CodeGen.zbr`, `Resolver.zbr`, `TypeChecker.zbr`, `AstBuilder.zbr`
-and `main.zbr` — **the compiler could not compile itself.** The examples include
-`lisp.zbr`, `pratt_calc.zbr` and `kv_store.zbr`, which are working programs.
-
-Not one of those 28 is a bug in the program. Each is a place where selfhost inference
-returns `unresolved` for something it ought to have derived — §28a, the same gap that makes
-every diagnostic ported this week deliberately narrower than its bootstrap original. The
-flag is off for a reason, and the comment above it (*"alarm bell for TC gaps"*) is accurate:
-it is an instrument for finding inference gaps, not a user-facing check.
-
-**Reframed, therefore:** BUG-252 is not "port BUG-099's check". It is **"close enough of
-§28a that the alarm bell can be armed by default"**, and the 28-file list is a ready-made
-worklist for that, ordered by how much it would embarrass us (`selfhost/` first — a
-compiler that cannot compile itself under its own strictest setting is the honest measure
-of the gap). Until then the LSP-only default is correct, not an oversight.
-
-**Consequence for the witness set:** `test/bug099_unresolved_test.zbr` stays a valid
-`check_mode_check` witness, and for a *better* reason than it was filed under. It does not
-demonstrate a check the selfhost happens to lack; it demonstrates a genuine limit — the
-front end declines to assert a type it could not derive. That is the criterion Sean asked
-for. Nothing needs retiring.
-
-*Measured with a positive control: with strict on, the bug099 fixture MUST be rejected, and
-was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
-byte-identical `.zbr` and generated `.zig` before this note was written.*
+---
 
 ### BUG-014: Regex lazy match is global, not per-quantifier
 - **Severity:** Medium

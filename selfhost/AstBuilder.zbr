@@ -338,6 +338,7 @@ def pnDeclaredNames(stmts: List(PNode), out: HashMap(str, bool))
 
 class ASTBuilder
     var next_old_uid: int
+    var file: str   # BUG-654: so a refusal raised here can say where
     # BUG-595: while a mixin is built, its field names -> their stored names, and the subset
     # a BARE reference in the current method means (those the method does not declare itself).
     var mx_fields: HashMap(str, str)
@@ -345,12 +346,14 @@ class ASTBuilder
 
     cue init()
         .next_old_uid = 0
+        .file = ""
         .mx_fields = HashMap()
         .mx_bare = HashMap()
 
     # Entry point: convert a parsed PModule into a full Ast.zbr Module.
     static def build(pm: PModule, file: str): Module throws
         var ab = ASTBuilder()
+        ab.file = file
         var decls = ab.buildTopDecls(pm.decls)?
         return Module(file, decls)
 
@@ -1227,9 +1230,13 @@ class ASTBuilder
                                 tc.variant_name = em.member
                                 return Expr.type_check(tc)
                             else
-                                raise "buildExpr: `is` member object must be a plain identifier"
+                                var isp: Span = spanOf(right_expr)
+                                raise .file + ":" + isp.line.toString() + ":" + isp.col.toString() + ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`, `x is Mod.U.v`)"
                         else
-                            raise "buildExpr: `is` RHS must be a plain identifier or Union.variant"
+                            # BUG-654: this had no position, so `zebra diagnostics` (and the
+                            # LSP) dropped it and showed a file that does not compile as clean.
+                            var isp2: Span = spanOf(right_expr)
+                            raise .file + ":" + isp2.line.toString() + ":" + isp2.col.toString() + ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`); to test for nil, write `x == nil`"
                 const op = .toBinaryOp(pb.op)?
                 return Expr.binary(ExprBinary(spanOf(left_expr), op, left_expr, right_expr))
 

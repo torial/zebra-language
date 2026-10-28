@@ -1151,6 +1151,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
         arg_ct.setMethodReturn("contains", Type_.bool_)
         arg_ct.setMethodReturn("optionInt", Type_.int_)
         arg_ct.setMethodReturn("usage", Type_.string_)       # §28a: `args.usage().len` guessed
+        arg_ct.setMethodReturn("unknownFlag", Type_.string_) # BUG-252: the one ArgResult method missing
         mt.addClass(arg_ct)
     # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
@@ -3791,12 +3792,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # output, valid Zig). `hostname` is not a sys function.
                         if bname == "sys" and mem.member == "cwd"
                             return Type_.string_
+                        if bname == "sys" and mem.member == "exec_inherit"   # BUG-252: the child's exit code
+                            return Type_.int_
                         # BUG-639: untyped, so `var e = sys.selfExe()` then `e.len()` was
                         # lowered as a List length (`.items`) and failed inside zig.
                         if bname == "sys" and mem.member == "selfExe"
                             return Type_.string_
                         if bname == "Arg" and mem.member == "parse"
                             return Type_.named("$Arg")
+                        if bname == "Base64" and not ctx.hasLocal(bname) and not ctx.hasClassAny(bname)   # BUG-252
+                            if mem.member == "decode" or mem.member == "decodeUrl"
+                                return Type_.optional(Type_.string_)
+                            if mem.member == "encode" or mem.member == "encodeUrl"
+                                return Type_.string_
                         if bname == "Compress"
                             # QUICKSTART said List(byte); the runtime returns str (gunzip: str?).
                             if mem.member == "gunzip"
@@ -4365,6 +4373,17 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                            "'Gui' has no method '" + mem.member + "' (QUICKSTART §30 lists the Gui widget calls)")
                                 return Type_.unknown_
+                            # BUG-252: the getters' results were untyped. The three GuiContext
+                            # definitions (stub, tui, libui_ng) declare these and agree.
+                            var gmn: str = mem.member
+                            if gmn == "takeKey" or gmn == "tabSelected" or gmn == "tableSelectedRow" or gmn == "tableActivatedRow"
+                                return Type_.int_
+                            if gmn == "getDpi" or gmn == "canvasWidth" or gmn == "canvasHeight"
+                                return Type_.float_
+                            if gmn == "beginTable"
+                                return Type_.bool_
+                            if gmn == "openFile" or gmn == "saveFile" or gmn == "openFolder"
+                                return Type_.optional(Type_.string_)
                         on Type_.http_request
                             if not httpRequestMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
@@ -4403,6 +4422,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(list_elem)
                             if lmname == "contains"
                                 return Type_.bool_
+                            # BUG-252: the runtime types a fold by its function's result, which
+                            # is only knowable here when the init and the element agree (an int
+                            # init over a float list folds to float).
+                            if lmname == "reduce" and c.args.len == 2
+                                var red_init: Type_ = inferExpr(c.args.at(0).value, ctx)
+                                if isConcretePrimitive(red_init) and typeTag(red_init) == typeTag(list_elem)
+                                    return red_init
                             # BUG-369: an unknown List method was a Zig error about `.items`.
                             if ctx.methodReturnAny("$extend:List", lmname) as lext_ret
                                 return lext_ret
@@ -4925,6 +4951,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             for op in cc.operands
                 walkExpr(op, ctx)
             return Type_.bool_
+        # BUG-252: `x is T` / `x is U.v` and `x is nil` are bool; both fell to `else`.
+        on Expr.type_check as etc
+            walkExpr(etc.expr, ctx)
+            return Type_.bool_
+        on Expr.is_nil as eisn
+            walkExpr(eisn.expr, ctx)
+            return Type_.bool_
         on Expr.opt_chain as oc
             # Infer args so their types are recorded.
             if oc.has_args
@@ -5215,6 +5248,32 @@ def walkStmts(stmts: List(Stmt), ctx: InferCtx)
         ctx.bind(ee_names.at(eei), ee_saved.at(eei))
         eei -= 1
 
+# The type an `if COND as n` / `else if COND as n` binds `n` to: a union variant's
+# payload for `x is U.v as n`, the inner T for `x is T as n` / `x as n` over a T?, and
+# context_dependent when neither applies. walkStmt's main `if` keeps its own copy
+# because it also refuses `as` on a non-optional and allows `orelse`; the else-if arm
+# and the check pass both use this one (BUG-252: the check pass bound every
+# `is U.v as n` capture as context_dependent, so a field read on it was untyped).
+def ifCaptureType(cond: Expr, ctx: InferCtx): Type_
+    if cond is Expr.type_check as tce
+        if tce.variant_name as var_nm
+            var pt: Type_? = ctx.module_types.variantPayload(tce.type_name, var_nm)
+            if pt == nil
+                pt = ctx.dep_types.variantPayload(tce.type_name, var_nm)
+            if pt as cap_pt
+                return cap_pt
+            return Type_.context_dependent
+        var subj_t: Type_ = inferExpr(tce.expr, ctx)
+        if subj_t is Type_.optional as inner
+            return inner
+        return Type_.context_dependent
+    var cond_t: Type_ = inferExpr(cond, ctx)
+    if cond_t is Type_.ref_to as rt
+        cond_t = rt
+    if cond_t is Type_.optional as inner2
+        return inner2
+    return Type_.context_dependent
+
 def walkStmt(s: Stmt, ctx: InferCtx)
     branch s
         on Stmt.if_ as si
@@ -5295,26 +5354,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)
                 if ei.is_capture as ei_cap_name
-                    var ei_cap_t: Type_ = Type_.context_dependent
-                    if ei.cond is Expr.type_check as eice
-                        if eice.variant_name as e_var_nm
-                            var e_type_nm: str = eice.type_name
-                            var e_pt: Type_? = ctx.module_types.variantPayload(e_type_nm, e_var_nm)
-                            if e_pt == nil
-                                e_pt = ctx.dep_types.variantPayload(e_type_nm, e_var_nm)
-                            if e_pt as ei_cap_pt
-                                ei_cap_t = ei_cap_pt
-                        else
-                            var ei_subj_t: Type_ = inferExpr(eice.expr, ctx)
-                            if ei_subj_t is Type_.optional as ei_inner
-                                ei_cap_t = ei_inner
-                    else
-                        var ei_cond_t: Type_ = inferExpr(ei.cond, ctx)
-                        if ei_cond_t is Type_.ref_to as ei_rt
-                            ei_cond_t = ei_rt
-                        if ei_cond_t is Type_.optional as ei_inner
-                            ei_cap_t = ei_inner
-                    ctx.bind(ei_cap_name, ei_cap_t)
+                    ctx.bind(ei_cap_name, ifCaptureType(ei.cond, ctx))
                 walkStmts(ei.stmts, ctx)
             if si.else_stmts as se
                 walkStmts(se, ctx)
@@ -7541,7 +7581,9 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     var inferred: Type_ = inferExpr(dv.init_expr!, ctx)  # safe: nil returned above
     # Strict mode (typecheck-merge only): flag inference gaps — TC should have
     # known the init-expr type for a primitive-annotated var but didn't.
-    if ctx.strict and inferred is Type_.unresolved
+    # A `zig"..."` literal has no Zebra type by design; its annotation IS its type, so it
+    # is not an inference gap (BUG-252: the LSP flagged every annotated one).
+    if ctx.strict and inferred is Type_.unresolved and not (dv.init_expr! is Expr.zig_lit)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "unresolved type for init expr of '" + dv.name + "' (TC gap)")
         return
     if optionalIntoPlain(declared, inferred)
@@ -7833,17 +7875,10 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                 var c_cap_had: bool = false
                 var c_cap_saved: Type_ = Type_.unknown_
                 if si.is_capture as c_cap_name
-                    var c_cap_t: Type_ = Type_.context_dependent
-                    if not (si.cond is Expr.type_check)
-                        var c_cond_t: Type_ = inferExpr(si.cond, ctx)
-                        if c_cond_t is Type_.ref_to as c_crt
-                            c_cond_t = c_crt
-                        if c_cond_t is Type_.optional as c_cap_inner
-                            c_cap_t = c_cap_inner
                     if ctx.hasLocal(c_cap_name)
                         c_cap_had = true
                         c_cap_saved = ctx.localType(c_cap_name)
-                    ctx.bind(c_cap_name, c_cap_t)
+                    ctx.bind(c_cap_name, ifCaptureType(si.cond, ctx))
                 checkStmts(si.then_stmts, file, ctx)
                 var c_nri: int = c_nr_names.len - 1
                 while c_nri >= 0
@@ -7855,7 +7890,19 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     else
                         ctx.bind(c_cap_name2, Type_.unknown_)
                 for ei in si.else_ifs
-                    checkStmts(ei.stmts, file, ctx)
+                    if ei.is_capture as ei_cap
+                        var ei_had: bool = ctx.hasLocal(ei_cap)
+                        var ei_saved: Type_ = Type_.unknown_
+                        if ei_had
+                            ei_saved = ctx.localType(ei_cap)
+                        ctx.bind(ei_cap, ifCaptureType(ei.cond, ctx))
+                        checkStmts(ei.stmts, file, ctx)
+                        if ei_had
+                            ctx.bind(ei_cap, ei_saved)
+                        else
+                            ctx.bind(ei_cap, Type_.unknown_)
+                    else
+                        checkStmts(ei.stmts, file, ctx)
                 if si.else_stmts as cse
                     checkStmts(cse, file, ctx)
             on Stmt.while_ as sw

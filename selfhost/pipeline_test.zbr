@@ -90,7 +90,7 @@ class PipelineTest
         branch pm_node
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
-                var entry: str = generateEntryPoint(module)
+                var entry: str = generateEntryPoint(module, false)
                 assert "pub fn main()" in entry, "expected pub fn main()"
                 assert "_arena.allocator()" in entry, "expected allocator setup"
                 assert "Main.main()" in entry, "expected Main.main() call"
@@ -105,7 +105,7 @@ class PipelineTest
         branch pm_node
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
-                var entry: str = generateEntryPoint(module)
+                var entry: str = generateEntryPoint(module, false)
                 assert "App.main() catch" in entry, "expected catch for throws main"
                 assert "ZebraError" in entry, "expected ZebraError handler"
             else
@@ -118,7 +118,7 @@ class PipelineTest
         branch pm_node
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
-                var entry: str = generateEntryPoint(module)
+                var entry: str = generateEntryPoint(module, false)
                 assert entry == "", "no entry point for class without static main"
             else
                 raise "expected module"

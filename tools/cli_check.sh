@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-653 `zebra diagnostics` (the LSP's view) knows a `use`d module's types; a real mismatch through one is still reported
 # pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
 # pins: BUG-547 --source-root makes emitted source paths machine-independent (two cwds, one output)
 # pins: BUG-516 a --module-path dep that is not emitted is named in a note, silent under --library-mode
@@ -503,6 +504,59 @@ chk "\`--out\` outside \`zebra diagnostics\` is refused" \
 run diagnostics hello.zbr --out zz_diag.json
 chk "...while \`zebra diagnostics F --out J\` still writes J" \
     "$([ "$RC" = 0 ] && [ -f "$W/zz_diag.json" ] && echo 0 || echo 1)" "exit=$RC"
+# `zebra diagnostics` (and the LSP, which shares tcCheckSide) checks in STRICT mode: an
+# annotated local whose init the checker cannot type is reported as a "TC gap". Every
+# such report on valid code is a false error in the editor.
+# Control first: strict mode is live -- `var x: int = Math` (a namespace as a value) must
+# be reported, or every `[]` below proves nothing.
+printf 'def main()\n    var x: int = Math\n    print(x)\n' > "$W/zz_gap.zbr"
+run diagnostics zz_gap.zbr
+chk "\`zebra diagnostics\` is strict: a namespace used as a value is reported (control)" \
+    "$(case "$OUT" in *"TC gap"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 200)]"
+# BUG-252: is-checks, if/else-if captures (also over a ^Union field), reduce, Base64 and
+# an annotated zig"..." literal -- each reported as a gap until 2026-10-28.
+run diagnostics "$REPO/test/bug252_inference_gaps_test.zbr"
+chk "BUG-252: no false 'TC gap' on is / captures / reduce / Base64 (diagnostics = [])" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "[]" ] && echo 0 || echo 1)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+# The ratchet: the compiler's own source -- the largest Zebra corpus there is, using the
+# `use` graph throughout -- is clean in the editor's view. On 2026-10-28 it was not:
+# 13 gaps in TypeChecker, 3 in main (reported 35 lines off, BUG-655) and every imported
+# type in every module (BUG-653).
+sh_dirty=""
+for sh_f in $(cd "$REPO" && git ls-files 'selfhost/*.zbr'); do
+    run diagnostics "$REPO/$sh_f"
+    [ "$RC" = 0 ] && [ "$OUT" = "[]" ] || sh_dirty="$sh_dirty $sh_f"
+done
+chk "the compiler's own selfhost/*.zbr are clean under \`zebra diagnostics\`" \
+    "$([ -z "$sh_dirty" ] && echo 0 || echo 1)" "dirty:$sh_dirty"
+printf 'def main()\n    var v: str = zig"\\"x\\""\n    print(v)\n' > "$W/zz_zl.zbr"
+run diagnostics zz_zl.zbr
+chk "BUG-252: an annotated zig\"...\" literal is not a TC gap (diagnostics = [])" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "[]" ] && echo 0 || echo 1)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+# BUG-653: the side-check read no `use`d module, so an imported class was an "unknown
+# type" that `-c` accepts. Positive: a clean two-module program is []. Negative: a real
+# mismatch through the imported class is still reported, at its line.
+printf 'class Pt\n    var x: int\n    cue init(x: int)\n        .x = x\n' > "$W/zzlib.zbr"
+printf 'use zzlib exposing Pt\n\ndef main()\n    var p: Pt = Pt(3)\n    var n: int = p.x\n    print(n)\n' > "$W/zzmain.zbr"
+printf 'use zzlib exposing Pt\n\ndef main()\n    var p: Pt = Pt(3)\n    var s: str = p.x\n    print(s)\n' > "$W/zzmainbad.zbr"
+run diagnostics zzmain.zbr
+chk "BUG-653: an imported class is known to \`zebra diagnostics\` (diagnostics = [])" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "[]" ] && echo 0 || echo 1)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+run diagnostics zzmainbad.zbr
+chk "...and a real mismatch through it is still reported at its line (5:20)" \
+    "$(case "$OUT" in *'"line":5,"col":20'*"expected str, found int"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+# BUG-654: an error with no position was DROPPED, so a file that does not compile showed
+# `[]` -- clean. The `is` refusal carries its position now; a dep that does not parse is
+# reported on THIS file's `use` line (raised as is, the dep's `4:14` landed on line 4 here).
+printf 'def main()\n    var m: str? = nil\n    var b: bool = m is nil\n    print(b)\n' > "$W/zz_isnil.zbr"
+run diagnostics zz_isnil.zbr
+chk "BUG-654: a refused \`is\` reaches \`zebra diagnostics\` at its line (3)" \
+    "$(case "$OUT" in *'"line":3,'*"to test for nil"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+printf 'class Pt\n    var x: int\n    cue init(x: int)\n        .x = = x\n' > "$W/zzbroken.zbr"
+printf '# a comment first, so the use line is not line 1\nuse zzbroken exposing Pt\n\ndef main()\n    var p: Pt = Pt(3)\n    print(p.x)\n' > "$W/zzusebroken.zbr"
+run diagnostics zzusebroken.zbr
+chk "BUG-654: a dep that does not parse is reported on the \`use\` line (2), naming it" \
+    "$(case "$OUT" in *'"line":2,'*"module 'zzbroken' does not compile"*"zzbroken.zbr:4:14"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
 # `--single-threaded` promises no threads (2026-09-26). A call that starts one is refused
 # in Zebra's words at the USER's line -- it used to be Zig's @compileError from inside
 # std/Thread.zig. Control: a threadless program still builds and runs with the flag.

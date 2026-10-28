@@ -669,7 +669,12 @@ class Lexer
                     pos = pos + 3
                     emit(TokenKind.doc_string_line(), src[start..pos], ln, cl)
                     return
-                pos = pos + 1
+                # BUG-655: a string whose text starts on the opening line may still span
+                # lines; uncounted, every position after it was off by its newlines.
+                if src[pos] == c'\n'
+                    advanceNewline()
+                else
+                    pos = pos + 1
             raise line.toString() + ":1: error: string literal is never closed on this line"
 
         if pos < src.len and src[pos] == c'\n'

@@ -1716,6 +1716,43 @@ catch |e|
     sys.errln("zebra --target v: " + e.message)
     sys.exit(1)
 
+# BUG-653: the types of the modules a side-checked file `use`s. Without them the LSP and
+# `zebra diagnostics` refused every imported class as an "unknown type" that `-c` accepts.
+# Same resolution the compile route reads types from: a dep beside the file (and its own
+# deps, recursively, by scanDepForTypes). A dep that does not build is reported ON THIS
+# FILE's `use` line, naming the dep and where its error is -- raised as is, its own
+# `dep.zbr:4:14` was shown at line 4 of the file being edited.
+def sideDepTypes(pm: PModule, path: str, src: str): ModuleTypes throws
+    var drv = MultiCompiler(defaultPreamblePath(), "")
+    var dir: str = drv.dirOf(lspUriToPath(path))
+    for decl in pm.decls
+        if decl is PNode.use_ as u
+            var dep: str = u.path + ".zbr"
+            if dir != ""
+                dep = dir + "/" + dep
+            if fileExistsExact(dep)
+                var dmsg: str = depScanError(drv, dep)
+                if dmsg != ""
+                    raise path + ":" + useLineOf(src, u.path).toString() + ":0: error: module '" + u.path + "' does not compile: " + dmsg
+    return drv.dep_types
+
+# "" when the dep's types were read, else its error.
+def depScanError(drv: MultiCompiler, dep: str): str
+    drv.scanDepForTypes(dep)
+    return ""
+catch |de|
+    return de.message
+
+# The 1-based line of `use NAME` in src (PUse carries no position); 1 if not found.
+def useLineOf(src: str, name: str): int
+    var ln: int = 0
+    for l in src.split("\n")
+        ln += 1
+        var t: str = l.trim()
+        if t == "use " + name or t.startsWith("use " + name + " ")
+            return ln
+    return 1
+
 def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = false)
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
@@ -1730,6 +1767,7 @@ def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = fal
         var tc_mt: ModuleTypes = buildModuleTypes(module)
         var tc_ctx: InferCtx = InferCtx(tc_mt, "")
         tc_ctx.withSource(src)
+        tc_ctx.withDepTypes(sideDepTypes(pm, path, src)?)
         tc_ctx.enableStrict()
         tc_ctx.withReservedRuntimeNames(rtReservedNames(defaultPreamblePath()))   # BUG-359
         tc_ctx.withRuntimePublicNames(rtPublicNames(defaultPreamblePath()))       # BUG-446
@@ -1745,7 +1783,11 @@ def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = fal
                 if wline.trimLeft() != ""
                     diags.add(wline)
 catch |e|
-    diags.add("error: " + e.message)
+    # BUG-654: a raised error that already says where (`file:L:C: error: ...`) is kept as is.
+    if e.message.contains(": error: ")
+        diags.add(e.message)
+    else
+        diags.add("error: " + e.message)
 
 # ── LSP diagnostics (JSON seam) ───────────────────────────────────────────────
 # `zebra diagnostics <file>` runs the front-end (parse → resolve → typecheck) and
@@ -1840,6 +1882,10 @@ def collectLspDiags(src: str, path: str): List(LspDiag)
             var d = parseDiagLine(ln)
             if d as dd
                 diags.add(dd)
+            else if ln.startsWith("error: ")
+                # BUG-654: an error with no position was DROPPED, so a file that does not
+                # compile showed no diagnostics at all. It goes on line 1, and says why.
+                diags.add(LspDiag(1, 0, "error", ln[7..ln.len] + " (the compiler gave no position; shown on line 1)"))
     return diags
 
 def buildDiagnosticsJson(path: str): str throws

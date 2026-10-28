@@ -1834,6 +1834,10 @@ smoke_run test/bug649_static_container_field_test.zbr "bug649: 2 ab 3 2 7 2 2"
 smoke_run test/bug306_module_strset_test.zbr "bug306: 2 1 1 7 11 1 2 0"
 # BUG-652: an imported class's static methods named like str builtins (exposed + qualified).
 smoke_run test/bug652_dep_static_strname_test.zbr "bug652: true 4 10 true 9"
+# BUG-252: is / if-captures (incl. else-if, ^Union field) / reduce / Base64 inferred (the strict half: cli_check).
+smoke_run test/bug252_inference_gaps_test.zbr "bug252: true false true 9 6 16 aGk= aGV5 hey pair 7 leaf z"
+# BUG-656: a dep class built through its module name fills defaults and honours named args.
+smoke_run test/bug656_dep_ctor_defaults_test.zbr "bug656: 1 7 1 20 3 4 5 7"
 # BUG-650 negative control: alias / enum / bare variant into their own types stay accepted.
 smoke_run test/bug650_primitive_slot_ok_test.zbr "bug650: 5 13"
 # BUG-243: files that had never been asserted by anything.
@@ -2527,6 +2531,10 @@ smoke_tc_fail test/bug105_enum_member_test.zbr "bug105_enum_member_test.zbr:19:2
 smoke_tc_fail test/bug105_union_variant_test.zbr "bug105_union_variant_test.zbr:13:23: error: type mismatch: expected int, found Wrap (a union value)"
 # BUG-651: a dotted `use` names the real limit. Flips the day subdirectory modules land.
 smoke_tc_fail test/expose_dotted_test.zbr "a dotted module path is not supported (there are no subdirectory modules)"
+# BUG-654: the `is` refusal says where (it had no position, so the LSP showed the file clean).
+smoke_tc_fail test/fail_fixtures/bug654_is_nil_fail.zbr "bug654_is_nil_fail.zbr:5:24: error: \`is\` takes a type or a union variant on its right"
+# BUG-655: positions after a multi-line """ string whose text starts on its opening line.
+smoke_tc_fail test/fail_fixtures/bug655_triple_quote_lines_fail.zbr "bug655_triple_quote_lines_fail.zbr:11:18: error: type mismatch: expected int, found str"
 # ...and --allow-inference-guess (one release) guesses as before, with a warning.
 smoke_run_flag test/infer_guess_hatch_test.zbr --allow-inference-guess "infer_hatch: 6"
 # ...and WITHOUT the hatch the same file is refused (this also declares it must-reject,

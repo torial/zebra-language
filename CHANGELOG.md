@@ -69,6 +69,25 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **`lib.Pt(...)` fills defaults and honours named arguments (BUG-656).** Constructing a
+  dependency's class through its module name passed the given arguments in written order:
+  an omitted default failed inside zig, and `lib.Pt(y: 20, x: 1)` built x=20, y=1.
+
+- **Positions after a multi-line `"""` string are right (BUG-655).** One whose text starts on
+  its opening line did not count its newlines, so every later diagnostic, debugger marker and
+  coverage line was early by that many lines.
+
+- **The editor sees imported types and every error (BUG-653, BUG-654).** `zebra lsp` and
+  `zebra diagnostics` knew no type from a `use`d module (two false errors per use, and real
+  ones missed), dropped any error without a position (a file that did not compile showed as
+  clean), and placed a broken dependency's error on the edited file's line numbers. An `is`
+  with a non-type right-hand side (`x is nil`) now says where and what to write.
+
+- **No false "TC gap" errors in the editor (BUG-252).** `x is T`, a field of an
+  `if ... is U.v as n` capture (including `else if`), `reduce`, the Gui getters, `Base64.*`,
+  `sys.exec_inherit` and an annotated `zig"..."` literal were reported by `zebra lsp` /
+  `zebra diagnostics` as untyped. Unannotated locals initialised from them are typed too.
+
 - **An enum, union or class value in a primitive slot is refused at `-c` (BUG-650).**
   `var c: int = Color.red`, `x = Color.red`, `f(Color.red)` for an `int` parameter, and
   `var f: bool = Pt(3)` passed the front end and failed inside zig. A type alias into its base

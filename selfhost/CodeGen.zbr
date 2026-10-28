@@ -16739,6 +16739,20 @@ struct Generator
                     w.emit(".")
                     w.emit(zbrTypeSymbol(cm_mem!))          # BUG-281 B
                 w.emit(".init(")
+                # BUG-656: `lib.Pt(1)` for `cue init(x: int, y: int = 7)` emitted `.init(1)`
+                # and zig refused it -- this path wrote the given arguments only, where the
+                # exposed `Pt(1)` fills defaults and matches named arguments.
+                var xm_ps: List(Param)? = lookupFnParams(cm_mem! + ".init")
+                var xm_fill: bool = false
+                for xm_ck in c.args
+                    if xm_ck.name != nil
+                        xm_fill = true
+                if xm_ps != nil and c.args.len < xm_ps!.len
+                    xm_fill = true
+                if xm_fill
+                    genArgListFull(c.args, xm_ps)
+                    w.emit(")")
+                    return
                 var fc = true
                 var xm_ai: int = 0
                 for a in c.args

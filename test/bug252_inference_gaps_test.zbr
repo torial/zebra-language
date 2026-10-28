@@ -1,0 +1,53 @@
+# BUG-252: shapes whose result inference left untyped. `zebra lsp` / `zebra diagnostics`
+# run the checker in strict mode, where an untyped init of an annotated local is reported
+# as a "TC gap" -- every one of these was a false error in the editor. The locals below
+# are deliberately UNANNOTATED too, so codegen has to use the inferred type.
+# The strict half is checked by tools/cli_check.sh (`zebra diagnostics` must return []).
+
+union Shape
+    dot
+    circle: Circ
+
+struct Circ
+    var r: int
+
+struct Inner
+    var name: str
+    var n: int
+
+union Node
+    leaf: Inner
+    pair: Circ
+
+struct Holder
+    var node: ^Node
+
+def describe(nd: Node): str
+    if nd is Node.pair as pr
+        var rr: int = pr.r
+        return "pair ${rr}"
+    else if nd is Node.leaf as lf
+        var ln: str = lf.name           # an else-if capture: the check pass never bound it
+        return "leaf ${ln}"
+    return "?"
+
+def main()
+    var s: Shape = Shape.dot
+    var a: bool = s is Shape.dot        # `is` was untyped
+    var a2 = s is Shape.circle
+    var maybe: str? = nil
+    var b: bool = maybe == nil
+    var h: Holder = Holder(Node.leaf(Inner("abc", 3)))
+    var lens: int = 0
+    if h.node is Node.leaf as lf        # a capture over a ^Union field
+        var nm: str = lf.name
+        var nn: int = lf.n
+        var nm2 = lf.name
+        lens = nm.len + nn + nm2.len
+    var xs: List(int) = [1, 2, 3]
+    var total: int = xs.reduce(0, def(acc, x) = acc + x)
+    var total2 = xs.reduce(10, def(acc, x) = acc + x)
+    var e: str = Base64.encode("hi")
+    var e2 = Base64.encode("hey")
+    var d = Base64.decode(e2) orelse "?"
+    print("bug252: ${a} ${a2} ${b} ${lens} ${total} ${total2} ${e} ${e2} ${d} ${describe(Node.pair(Circ(7)))} ${describe(Node.leaf(Inner("z", 0)))}")

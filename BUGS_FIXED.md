@@ -43,6 +43,180 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-656: a dependency class built through its MODULE name took its arguments in written order -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+use lib
+var a = lib.Pt(1)               # cue init(x: int, y: int = 7): zig "expected 2 argument(s), found 1"
+var b = lib.Pt(y: 20, x: 1)     # built x=20, y=1 -- valid Zig, wrong values
+```
+
+The module-qualified constructor path wrote the call's arguments one by one; the exposed
+`Pt(...)` path fills declared defaults and matches named arguments (`genArgListFull`). It
+now takes the same path when an argument is named or fewer are given than declared. The
+named case was the worse half: no error anywhere, the fields swapped. Found by running
+`selfhost/pipeline_test.zbr` (BUG-657), whose `Resolver.Resolver("<test>")` relies on
+`source: str = ""`. Fixture `test/bug656_dep_ctor_defaults_test.zbr` (+ `_lib`); HEAD refuses
+it inside zig.
+
+### BUG-655: positions after a multi-line `"""` string were short by its newlines -- FIXED 2026-10-28 (found the same day)
+
+A `"""` string whose text starts on its opening line was scanned to its closing quotes
+without counting the newlines in between, so every diagnostic after it -- and every
+`// zbr:` source marker the debugger and coverage read -- pointed too early. In
+`selfhost/main.zbr` the offset was 35 lines from line ~3620 on. Found because the strict
+diagnostics sweep named `bad_flag` at line 4453 when it is on 4488. Fixture
+`test/fail_fixtures/bug655_triple_quote_lines_fail.zbr` (11:18; HEAD says 8:18). The
+compiler's own emit moved only in its markers.
+
+### BUG-654: an error with no position vanished from `zebra diagnostics` and the LSP -- FIXED 2026-10-28 (found the same day)
+
+`tcCheckSide` caught a raised error as `error: <message>`, which `parseDiagLine` cannot
+place, so it was DROPPED: `m is nil` (refused by the AST builder) showed as `[]` -- a file
+that does not compile reported clean. Three changes: the builder's two user-reachable `is`
+refusals carry `file:line:col` and say what to write (`x == nil`); a raised message that
+already has a position is kept as is; and anything still position-less is shown on line 1
+saying so, never dropped. A `use`d module that does not parse is reported on THIS file's
+`use` line, naming the module and its own location (raised as is, `dep.zbr:4:14` landed on
+line 4 of the file being edited). Fixture `test/fail_fixtures/bug654_is_nil_fail.zbr`;
+`cli_check` legs for both diagnostics paths.
+
+### BUG-653: `zebra diagnostics` and the LSP knew no type from a `use`d module -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+use zzlib exposing Pt
+var p: Pt = Pt(3)     # diagnostics: "unknown type 'Pt'" -- `-c` accepts it
+```
+
+The side-check built its checker with an empty dependency table, so every imported class
+was an unknown type and every value read through one an inference gap: two false errors
+per use in the editor, and real errors through an imported type were missed. It now reads
+the dependencies' types the way the compile route does (`scanDepForTypes`, beside the
+file). zebra-ide's `ide.zbr` went from a page of false errors to `[]`. `cli_check` legs: a
+clean two-module program is `[]`, and an int-into-str through the imported class is still
+reported at 5:20. (`zebra types`, the expression-type dumper, has the same empty table and
+was not changed.)
+
+### BUG-252: BUG-099's check is present but disabled by default — CLOSED 2026-10-28 (the inference gaps it measured are closed; arming it in `-c` is a separate decision)
+
+> **Heading corrected 2026-08-05.** It read *"BUG-099's check is missing from the selfhost,
+> same class as BUG-106/248"*. That was wrong on both counts — the check exists, and it is
+> not that class. The original text is kept below because the reasoning that produced the
+> wrong conclusion is the useful part; the correction is at the end of the entry.
+
+**Found 2026-08-04** by auditing the `check_mode_check` witness set against a new criterion
+(Sean): a witness must show a genuine LIMIT of front-end checking, not a check the selfhost
+happens to lack. Two of the three failed that test.
+
+    test/bug099_unresolved_test.zbr
+      bootstrap  -> error: use of undeclared identifier 'Math'
+      selfhost   -> `-c` exits 0
+
+**Third instance of the pattern** (BUG-248 = BUG-108, BUG-106, now BUG-099): a check shipped
+in the bootstrap in May 2026 and never ported to the compiler that ships. All three were
+found the same way — by asking what the *reference implementation* does with a file the
+selfhost accepts.
+
+**It is currently load-bearing as a witness**, which is why it is filed rather than fixed on
+the spot: retiring it drops the set to two. `witness_zig_backend_literal` was added first so
+the set never falls below that. Port the check, then remove this file from `WITNESSES` in
+`tools/check_mode_check.sh` and from the note in `selfhost/main.zbr`.
+
+**Worth a sweep, not just a fix.** Three confirmed instances suggests the right question is
+not "port this one" but *"which other bootstrap diagnostics never reached the selfhost?"* —
+enumerable by diffing the two compilers' error strings.
+
+### Correction 2026-08-05 — the check is NOT missing. It is present and switched off.
+
+**The title above is wrong and the classification with it.** `selfhost/TypeChecker.zbr`
+has this check. It lives in `checkVarDecl`, it is guarded by `ctx.strict`, and `strict` is
+set by exactly one caller: `selfhost/main.zbr:651`, the **LSP diagnostics** seam. Normal
+compilation constructs `InferCtx` with `.strict = false`, so `zebra -c` never runs it.
+
+    if ctx.strict and inferred is Type_.unresolved
+        ctx.addErr(…, "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+
+This is why `diagnostic_parity.py` counted it absent: the tool matches error *strings*, and
+the selfhost's wording (`unresolved type for init expr of 'x' (TC gap)`) shares no phrase
+with the bootstrap's (`cannot determine type for value assigned to 'x: int'`). A fuzzy
+string matcher cannot distinguish "never ported" from "ported, reworded, and disabled" —
+worth remembering before reading its remaining candidates as a defect count.
+
+**So this is not a port. It is a decision about a default, and the measurement says no.**
+
+Flipping `.strict = true`, regenerating, and compiling all 487 tracked `test/` +
+`examples/` + `selfhost/*.zbr` files:
+
+| | files newly rejected |
+|---|---|
+| `test/` | 9 |
+| `examples/` | 6 |
+| **`selfhost/`** | **13** |
+| **total** | **28** |
+
+The selfhost 13 include `CodeGen.zbr`, `Resolver.zbr`, `TypeChecker.zbr`, `AstBuilder.zbr`
+and `main.zbr` — **the compiler could not compile itself.** The examples include
+`lisp.zbr`, `pratt_calc.zbr` and `kv_store.zbr`, which are working programs.
+
+Not one of those 28 is a bug in the program. Each is a place where selfhost inference
+returns `unresolved` for something it ought to have derived — §28a, the same gap that makes
+every diagnostic ported this week deliberately narrower than its bootstrap original. The
+flag is off for a reason, and the comment above it (*"alarm bell for TC gaps"*) is accurate:
+it is an instrument for finding inference gaps, not a user-facing check.
+
+**Reframed, therefore:** BUG-252 is not "port BUG-099's check". It is **"close enough of
+§28a that the alarm bell can be armed by default"**, and the 28-file list is a ready-made
+worklist for that, ordered by how much it would embarrass us (`selfhost/` first — a
+compiler that cannot compile itself under its own strictest setting is the honest measure
+of the gap). Until then the LSP-only default is correct, not an oversight.
+
+**Consequence for the witness set:** `test/bug099_unresolved_test.zbr` stays a valid
+`check_mode_check` witness, and for a *better* reason than it was filed under. It does not
+demonstrate a check the selfhost happens to lack; it demonstrates a genuine limit — the
+front end declines to assert a type it could not derive. That is the criterion Sean asked
+for. Nothing needs retiring.
+
+*Measured with a positive control: with strict on, the bug099 fixture MUST be rejected, and
+was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
+byte-identical `.zbr` and generated `.zig` before this note was written.*
+
+### Closed 2026-10-28 -- re-measured, and the gap that blocked it is closed
+
+**Where the alarm bell is already armed.** `strict` is not only an LSP setting: `zebra lsp`
+and `zebra diagnostics` both check through `tcCheckSide`, which enables it. So every "TC
+gap" was a false ERROR in the editor -- nine of them in zebra-ide's own `ide.zbr`.
+
+**Measured** with `.strict = true` built into a scratch compiler, over every tracked `.zbr`
+of this repo, zebra-ide and the GameEngine (3,110 files; positive control: this entry's own
+`bug099` fixture must be refused, and was): 35 distinct sites in 12 files, against 28 files
+in August. The real gaps were five shapes, all fixed:
+
+| shape | fix |
+|---|---|
+| `x is T` / `x is U.v` had no type (fell to `else`) | inferred `bool` |
+| a field of an `if ... is U.v as n` capture -- the CHECK pass bound every such capture as `context_dependent`, and never bound an `else if` capture at all | one `ifCaptureType` for the walk and the check pass |
+| Gui getters (`takeKey`, `tabSelected`, `tableActivatedRow`, ...) | their return types, which the stub, tui and libui_ng `GuiContext` all declare alike |
+| `xs.reduce(init, f)` | the init's type when it equals the element type (the runtime types a fold by `f`'s result) |
+| `Base64.*`, `sys.exec_inherit`, `ArgResult.unknownFlag` | their runtime return types |
+
+After: 11 sites, none an inference gap -- `Math` as a value (the fixture), a union variant
+into `int` (refused by BUG-650 anyway), foreign C/Zig functions (no Zebra signature exists),
+a fail fixture, and annotated `zig"..."` literals, which are now exempt (a raw literal's
+annotation IS its type). The same `-c` error sweep before and after: 2,819 error lines,
+byte-identical -- the inference changes refused nothing new. The compiler's own emit moved
+only where an unannotated `var x = y is U.v` now gets `: bool`.
+
+`zebra diagnostics` over the compiler's own `selfhost/*.zbr` then found what the `-c`
+sweep could not: BUG-653 (no imported type known), BUG-654 (errors without a position
+dropped) and BUG-655 (positions 35 lines off in `main.zbr`). With those fixed it is clean,
+and `cli_check` keeps it so (a leg runs it over every compiler module; its control is that
+`var x: int = Math` is still reported).
+
+**What is NOT done, and is a decision rather than a bug:** arming the check in `-c`. It
+would refuse only genuine errors today, but every future inference gap would then refuse a
+correct program whose annotation zig would have accepted. Recommendation: do not arm it;
+the editor view plus the ratchet catch a regrowing gap without making users pay for one.
+
 ### BUG-652: a static method of an IMPORTED class named like a str builtin took the string lowering -- FIXED 2026-10-27 (found the same day)
 
 ```zebra

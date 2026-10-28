@@ -1409,7 +1409,7 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 63 assertions, 0 pins (2026-10-27: BUG-543 -- a planted clone's `selfhost/` runtime must not reach this checkout's emit or an installed copy's, and must reach a bare copy's (the control); BUG-547 -- `--source-root` emits byte-identical code from two cwds, a control that the two DIFFER without it, and a missing directory refused by name; 2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
+                                #   past `repl` starting. 71 assertions, 0 pins (2026-10-28: `zebra diagnostics` -- the strict view the LSP shares -- is clean on the compiler's own selfhost/*.zbr (the ratchet) and on BUG-252's gap shapes, knows `use`d types (BUG-653), shows a refused `is` and a broken dep at a real line (BUG-654), with the control that `var x: int = Math` is still reported; 2026-10-27: BUG-543 -- a planted clone's `selfhost/` runtime must not reach this checkout's emit or an installed copy's, and must reach a bare copy's (the control); BUG-547 -- `--source-root` emits byte-identical code from two cwds, a control that the two DIFFER without it, and a missing directory refused by name; 2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
                                 #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
                                 #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325
@@ -2362,6 +2362,14 @@ a stub `zig` emitting the verbatim error, failing once then succeeding. Four leg
 **leg 2 is the load-bearing one** — a genuine compile error must NOT be retried, or the
 retry masks breakage and triples runtime. It sources the SHIPPED predicate, so it cannot
 pass against logic the gates do not have.
+
+**Its real-output leg is pinned to the mechanism now, not to a known gap (2026-10-28).** It
+demanded >= 5 genuine zig errors in `full_sweep`'s kept evidence -- a set every fixed leak
+shrinks. BUG-650 moved two files from zig-refused to front-end-refused, the set fell to 4,
+and the FULL tier went red on a correct tree (it was also skipped where the directory did
+not exist). Real zig now refuses five programs with five different genuine errors every
+run, and each must classify as genuine; the evidence count is printed, not gated.
+Red-checked with an always-infra predicate: 0 genuine, 5 misread.
 
 **The smoke suite retries it too (2026-10-20)**, through `zbr_run_retrying` in the same
 library: every compiler run that builds through zig goes through it (15 sites; the one under
@@ -3539,7 +3547,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **927** <!-- doc-gen: 927 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **930** <!-- doc-gen: 930 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
