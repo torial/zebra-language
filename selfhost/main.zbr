@@ -38,7 +38,7 @@
 
 # File, Arg, sys, Shell are built-in stdlib globals — no `use` needed.
 
-use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
+use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch, useFilePath, useBindName
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
@@ -99,6 +99,7 @@ class MultiCompiler
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
     var warnings_as_errors: bool   # --warnings-as-errors: a warning fails the compile (2026-09-24)
+    var strict_check: bool         # --strict: the editor's strict view on every module checked (2026-10-28)
     var uses_sqlite: bool      # true when root generated code calls Sqlite.open/query
     var module_path: str       # --module-path DIR: extra search dir for `use` deps
     var type_scanned: List(str)  # deps scanned for types only (not emitted)
@@ -139,6 +140,7 @@ class MultiCompiler
         .tag_filter = nil
         .warn_non_exhaustive = false
         .warnings_as_errors = false
+        .strict_check = false
         .uses_sqlite = false
         .module_path = ""
         .type_scanned = List(str)()
@@ -400,6 +402,11 @@ class MultiCompiler
                 tc_ctx.withDepTypes(dep_types)
                 if warn_non_exhaustive
                     tc_ctx.enableWarnNonExhaustive()
+                # --strict (Sean, 2026-10-28): the checks `zebra lsp` / `zebra diagnostics`
+                # run, opted into from the command line -- `-c --strict` is the editor's view
+                # of a whole program. Off by default, so a plain `-c` costs nothing extra.
+                if strict_check
+                    tc_ctx.enableStrict()
                 tc_ctx.withReservedRuntimeNames(rtReservedNames(.preamble_path))   # BUG-359
                 tc_ctx.withRuntimePublicNames(rtPublicNames(.preamble_path))       # BUG-446
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
@@ -529,11 +536,19 @@ class MultiCompiler
     def compileDep_use(u: PUse, parent_path: str) throws
         # Resolve dep path: same directory: parent. Try .zbr first, then .c.
         var src_dir: str = .dirOf(parent_path)
-        var dep_name: str = u.path
+        # `use pkg.mod` is the file pkg/mod.zbr; the module it brings in is `mod`
+        # (PUse.bindName), which is the name every native-dep registration below uses.
+        var dep_name: str = useFilePath(u.path)
         var dep_path: str = dep_name + ".zbr"
         if src_dir != ""
             dep_path = src_dir + "/" + dep_name + ".zbr"
         if fileExistsExact(dep_path)
+            # A module is known by its file's stem from here on -- the `use` binding, the
+            # emitted <stem>.zig -- so a second file with the same stem would silently take
+            # the first one's place. Refuse it, naming both.
+            var clash: str = .stemClash(dep_path)
+            if clash != ""
+                raise parent_path + ":" + useLineOf(File.read(parent_path), u.path).toString() + ":1: error: `use " + u.path + "`: this program already has a module named `" + useBindName(u.path) + "` (" + clash + "); a module is known by its file name, so two files called " + useBindName(u.path) + ".zbr cannot both be used -- rename one"
             .recordImportEdge(dep_path, parent_path)
             .noteModDep(parent_path, dep_path)
             .compileDep(dep_path, false)?
@@ -554,8 +569,8 @@ class MultiCompiler
                 # FileNotFound` about a file the compiler chose not to write. Recorded
                 # here and reported ONCE by reportModulePathDeps after the graph is known
                 # -- one line per dep buried a hand-compiled engine test in ten.
-                if not mp_noted.contains(dep_name)
-                    mp_noted.add(dep_name)
+                if not mp_noted.contains(useBindName(u.path))
+                    mp_noted.add(useBindName(u.path))
                 return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
         var c_path: str = dep_name + ".c"
@@ -569,14 +584,14 @@ class MultiCompiler
             # BUG-261: tell the codegen this `use` is native C.  Without this the
             # path below records the -I dir and the .c file for zig, but genUse
             # still emits `@import("<dep>.zig")` for a file that does not exist.
-            # Registered on `u.path` (the name as WRITTEN in the `use`), because
+            # Registered on the module's name (`use pkg.foo` -> `foo`), because
             # that is the key genUse looks up — not the resolved filesystem path.
-            addNativeCUse(u.path, File.exists(h_path))
+            addNativeCUse(useBindName(u.path), File.exists(h_path))
             if File.exists(h_path)
                 var c_dir: str = .dirOf(c_path)
                 if c_dir == ""
                     c_dir = "."
-                c_headers.add(u.path + "\t" + h_path + "\t" + c_dir)
+                c_headers.add(useBindName(u.path) + "\t" + h_path + "\t" + c_dir)
                 var already_added: bool = false
                 var dchk: int = 0
                 while dchk < c_i_dirs.len
@@ -618,12 +633,19 @@ class MultiCompiler
         # missed the library, fell through to importing `foo.zig`, and the extern stayed
         # undefined at link time (found by tools/ffi_lib_check.sh on the first Linux CI).
         # The bare name is tried first at each extension, so Windows is unchanged.
+        # A dotted `use pkg.foo` puts the `lib` prefix on the FILE name: pkg/libfoo.a.
+        var lib_pre: str = ""
+        var lib_base: str = dep_name
+        var lib_sl: int = dep_name.lastIndexOf("/")
+        if lib_sl >= 0
+            lib_pre = dep_name.substring(0, lib_sl + 1)
+            lib_base = dep_name.substring(lib_sl + 1, dep_name.len)
         var lib_names: List(str) = List(str)()
         var lx: int = 0
         while lx < lib_exts.len
-            lib_names.add(dep_name + "." + lib_exts.at(lx))
+            lib_names.add(lib_pre + lib_base + "." + lib_exts.at(lx))
             if lib_exts.at(lx) != "lib"
-                lib_names.add("lib" + dep_name + "." + lib_exts.at(lx))
+                lib_names.add(lib_pre + "lib" + lib_base + "." + lib_exts.at(lx))
             lx = lx + 1
         var ln: int = 0
         while ln < lib_names.len
@@ -635,7 +657,7 @@ class MultiCompiler
                 lib_path = module_path + "/" + lib_name
             if fileExistsExact(lib_path)
                 lib_sources.add(lib_path)
-                addNativeLibUse(u.path)
+                addNativeLibUse(useBindName(u.path))
                 return
             ln = ln + 1
         # BUG-262: a native `.zig` dep, and it is LAST on purpose.
@@ -668,7 +690,7 @@ class MultiCompiler
                 zsi = zsi + 1
             if not zs_seen
                 zig_sources.add(zig_dep_path)
-            addNativeZigUse(u.path)                         # BUG-263
+            addNativeZigUse(useBindName(u.path))                   # BUG-263
             return
         # Nothing matched. Until 2026-09-16 this fell off the end and compilation went on
         # with the `use` unresolved -- genUse still emitted `@import("<dep>.zig")`, the
@@ -685,14 +707,18 @@ class MultiCompiler
         if near != ""
             var near_stem: str = near.substring(0, near.len - 4)
             raise "`use " + u.path + "`: module not found -- module names are case-sensitive, and the file here is " + near + "; did you mean `use " + near_stem + "`?"
-        # BUG-651: `use pkg.mod` meant pkg/mod.zbr in the retired bootstrap; the selfhost
-        # never had subdirectory modules, so it looked for a file named `pkg.mod.zbr` and
-        # said so -- true, and no help to someone who wrote a directory path.
-        if u.path.contains(".")
-            raise "`use " + u.path + "`: module not found -- a dotted module path is not supported (there are no subdirectory modules); put the module beside this file, or name its directory with --module-path, and `use` it by its file name"
         # Worded "module not found" so tools/doc_example_check.py files a doc fragment
         # whose `use` target is not beside it as an ARTIFACT, not a broken example.
         raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib, lib" + dep_name + ".a/.so/.dylib, .zig) " + looked
+
+    # The visited module whose stem equals dep_path's while the file differs, or "".
+    def stemClash(dep_path: str): str
+        var stem: str = .moduleNameOf(dep_path)
+        var want: str = dep_path.replace("\\", "/")
+        for vp in visited
+            if .moduleNameOf(vp) == stem and vp.replace("\\", "/") != want
+                return vp
+        return ""
 
     def alreadyTypeScanned(p: str): bool
         var i: int = 0
@@ -723,7 +749,7 @@ class MultiCompiler
                 for decl in pm.decls
                     branch decl
                         on PNode.use_ as sub_use
-                            var sub_name: str = sub_use.path
+                            var sub_name: str = useFilePath(sub_use.path)
                             var sub_dir: str = .dirOf(zbr_path)
                             var sub_adj: str = sub_name + ".zbr"
                             if sub_dir != ""
@@ -1122,6 +1148,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --census <source.zbr>              allocation census: who allocates, where, how much -> stderr + zebra-census.json on exit", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
+    usageLine("  zebra -c --strict <source.zbr>           also report what the editor reports: an annotated local whose initialiser has no inferable type", to_stdout)
     usageLine("  zebra --allow-inference-guess <f.zbr>    one-release migration aid: guess a type that cannot be inferred (warns) instead of refusing", to_stdout)
     usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build and print its directory (kept and printed anyway on failure)", to_stdout)
@@ -1727,7 +1754,7 @@ def sideDepTypes(pm: PModule, path: str, src: str): ModuleTypes throws
     var dir: str = drv.dirOf(lspUriToPath(path))
     for decl in pm.decls
         if decl is PNode.use_ as u
-            var dep: str = u.path + ".zbr"
+            var dep: str = useFilePath(u.path) + ".zbr"
             if dir != ""
                 dep = dir + "/" + dep
             if fileExistsExact(dep)
@@ -4484,7 +4511,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--also --gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --source-root --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--also --gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --source-root --strict --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4859,6 +4886,7 @@ def main()
     # The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
     var warn_ne              = args.contains("--warn-non-exhaustive")
     var werror               = args.contains("--warnings-as-errors")
+    var strict_ck            = args.contains("--strict")
     var gui_backend: str     = args.option("--gui-backend", "")
     # --gui-backend=tui|libui_ng are emitted+scaffolded by this compiler; no flag is the
     # stub backend (prints to stderr, for tests), and `--gui-backend=stub` is the same
@@ -4998,6 +5026,7 @@ def main()
     mc.tag_filter = run_tag_filter
     mc.warn_non_exhaustive = warn_ne
     mc.warnings_as_errors = werror
+    mc.strict_check = strict_ck
     mc.module_path = module_path
     mc.node_addon = mode_node
     mc.keep_temp = keep_temp

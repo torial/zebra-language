@@ -14,7 +14,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next` `cue begin` `cue end`
 
-## Command forms (44)
+## Command forms (45)
 
 - `zebra <source.zbr>`
 - `zebra repl`
@@ -47,6 +47,7 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra --census <source.zbr>`
 - `zebra --warn-non-exhaustive <source.zbr>`
 - `zebra --warnings-as-errors <source.zbr>`
+- `zebra -c --strict <source.zbr>`
 - `zebra --allow-inference-guess <f.zbr>`
 - `zebra --gui-backend=BACKEND <source.zbr>`
 - `zebra --keep-temp <source.zbr>`
@@ -61,9 +62,9 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra fmt --print <file.zbr>`
 - `zebra up`
 
-## Flags (35)
+## Flags (36)
 
-`--allow-inference-guess` `--also` `--build-file` `--census` `--check` `--check-full` `--coverage` `--cpu` `--dump-map` `--dump-transform` `--emit-zig` `--gc` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--module-path` `--only` `--out` `--output-dir` `--print` `--release` `--scaffold-only` `--shared` `--single-threaded` `--source-root` `--tag` `--target` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--warnings-as-errors` `-c` `-h`
+`--allow-inference-guess` `--also` `--build-file` `--census` `--check` `--check-full` `--coverage` `--cpu` `--dump-map` `--dump-transform` `--emit-zig` `--gc` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--module-path` `--only` `--out` `--output-dir` `--print` `--release` `--scaffold-only` `--shared` `--single-threaded` `--source-root` `--strict` `--tag` `--target` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--warnings-as-errors` `-c` `-h`
 
 ## Generic constructors (7)
 
@@ -163,7 +164,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `nextBool` `nextFloat` `nextInt`
 
-## Namespaces (32) and static members (179; 1 namespace(s) OPEN: Math)
+## Namespaces (33) and static members (180; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
@@ -212,6 +213,10 @@ named in the tool's header; what it cannot see is listed there too.
 ### Http (5) <!-- genHttpCall -->
 
 `get` `json` `post` `postJson` `serve`
+
+### HttpRequest (1) <!-- genHttpRequestCall -->
+
+`new`
 
 ### Json (5) <!-- genJsonCall -->
 

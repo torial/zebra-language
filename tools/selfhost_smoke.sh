@@ -2545,8 +2545,17 @@ smoke_tc_fail test/fail_fixtures/bug650_enum_assign_fail.zbr "bug650_enum_assign
 smoke_tc_fail test/fail_fixtures/bug650_class_into_bool_fail.zbr "bug650_class_into_bool_fail.zbr:8:19: error: type mismatch: expected bool, found Pt"
 smoke_tc_fail test/bug105_enum_member_test.zbr "bug105_enum_member_test.zbr:19:24: error: type mismatch: expected int, found Color (an enum value)"
 smoke_tc_fail test/bug105_union_variant_test.zbr "bug105_union_variant_test.zbr:13:23: error: type mismatch: expected int, found Wrap (a union value)"
-# BUG-651: a dotted `use` names the real limit. Flips the day subdirectory modules land.
-smoke_tc_fail test/expose_dotted_test.zbr "a dotted module path is not supported (there are no subdirectory modules)"
+# Subdirectory modules (2026-10-28; BUG-651's pin flipped): `use pkg.mod` is pkg/mod.zbr and
+# binds `mod`; a used module's own `use` resolves beside it; two files with one stem refused.
+smoke_run test/expose_dotted_test.zbr "expose_dotted_test: all OK"
+smoke_run test/subdir_modules_test.zbr "subdir: 12 10 9 12 24 inner inner true"
+smoke_tc_fail test/fail_fixtures/subdir_stem_clash_fail.zbr "subdir_stem_clash_fail.zbr:4:1: error: \`use clash_b.util\`: this program already has a module named \`util\` (test/fail_fixtures/clash_a/util.zbr)"
+# BUG-449: an HttpRequest built by hand -- positional, named, and the .new spelling.
+smoke_run test/bug449_httprequest_ctor_test.zbr "bug449: 200 hi name=zebra | 200 payload | 404 no DELETE /x | PUT /p [] []"
+# BUG-661: a module const assigned to -- own module, exposed, qualified -- is refused at -c.
+smoke_tc_fail test/fail_fixtures/bug661_module_const_assign_fail.zbr "bug661_module_const_assign_fail.zbr:8:5: error: cannot assign to 'OWN' -- it is a \`const\` of module bug661_module_const_assign_fail"
+smoke_tc_fail test/fail_fixtures/bug661_module_const_assign_fail.zbr "bug661_module_const_assign_fail.zbr:9:5: error: cannot assign to 'LIMIT' -- it is a \`const\` of module bug661_const_lib"
+smoke_tc_fail test/fail_fixtures/bug661_module_const_assign_fail.zbr "bug661_module_const_assign_fail.zbr:10:5: error: cannot assign to 'bug661_const_lib.LIMIT'"
 # BUG-654: the `is` refusal says where (it had no position, so the LSP showed the file clean).
 smoke_tc_fail test/fail_fixtures/bug654_is_nil_fail.zbr "bug654_is_nil_fail.zbr:5:24: error: \`is\` takes a type or a union variant on its right"
 # BUG-655: positions after a multi-line """ string whose text starts on its opening line.

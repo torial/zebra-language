@@ -1,0 +1,12 @@
+# BUG-661: a module-level `const` assigned to -- here, through `exposing`, and through the
+# module -- passed -c and reached zig as "cannot assign to constant". A `var` stays writable.
+use bug661_const_lib exposing LIMIT
+
+const OWN: int = 1
+
+def main()
+    OWN = 2
+    LIMIT = 6
+    bug661_const_lib.LIMIT += 1
+    bug661_const_lib.count = bug661_const_lib.count + 1
+    print(OWN)

@@ -119,6 +119,7 @@ const _zbr_ty_ExprChainedCmp = _zbr_mod_Ast._zbr_ty_ExprChainedCmp;
 const _zbr_ty_ExprOptChain = _zbr_mod_Ast._zbr_ty_ExprOptChain;
 const _zbr_ty_ExprIf = _zbr_mod_Ast._zbr_ty_ExprIf;
 const _zbr_mod_Parser = @import("Parser.zig");
+const _zbr_fn_useBindName = _zbr_mod_Parser._zbr_fn_useBindName;
 const _zbr_ty_PNode = _zbr_mod_Parser._zbr_ty_PNode;
 const _zbr_ty_PModule = _zbr_mod_Parser._zbr_ty_PModule;
 const _zbr_ty_PClass = _zbr_mod_Parser._zbr_ty_PClass;
@@ -792,7 +793,7 @@ pub const _zbr_ty_ASTBuilder = struct {
             .use_ => |_ptr_u| {
                 const u = _ptr_u.*;
 // zbr:selfhost/AstBuilder.zbr:371
-                return _zbr_ty_Decl{ .use_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Decl, "use_")) = _zbr_ty_DeclUse.init(_zbr_fn_zspan(), u.path, u.exposed); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
+                return _zbr_ty_Decl{ .use_ = blk_box_1: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Decl, "use_")) = _zbr_ty_DeclUse.init(_zbr_fn_zspan(), _zbr_fn_useBindName(u.path), u.exposed); const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_1 _bp; } };
             },
             .namespace_decl => |_ptr_ns| {
                 const ns = _ptr_ns.*;

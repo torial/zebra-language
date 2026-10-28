@@ -1,0 +1,14 @@
+# Subdirectory modules: `use pkg.mod` is the file pkg/mod.zbr beside this one, and the
+# module it brings in is called `mod` (qualified access `mod.x`, types `mod.T`). The
+# used module's own `use helpers` resolves beside IT (test/subdir_mod/helpers.zbr).
+# BUG-660 rides along: `geom.made` reads and writes a used module's top-level var.
+use subdir_mod.geom
+use subdir_mod.deep.inner exposing tag
+
+def main()
+    var b: geom.Box = geom.Box(2, 5)
+    var c = geom.Box(3, 3)
+    var lv = inner.Level.high
+    geom.made = geom.made + 10
+    var total: int = geom.made * 2
+    print("subdir: ${geom.area(3, 4)} ${b.size()} ${c.size()} ${geom.made} ${total} ${tag()} ${inner.tag()} ${lv == inner.Level.high}")

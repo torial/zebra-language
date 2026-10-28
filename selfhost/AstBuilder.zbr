@@ -17,7 +17,7 @@
 #     annotate explicitly where needed.
 
 use Ast exposing StmtYield, Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
+use Parser exposing useBindName, PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
@@ -368,7 +368,7 @@ class ASTBuilder
     def buildTopDecl(pn: PNode): Decl throws
         branch pn
             on PNode.use_ as u
-                return Decl.use_(DeclUse(zspan(), u.path, u.exposed))
+                return Decl.use_(DeclUse(zspan(), useBindName(u.path), u.exposed))   # `use pkg.mod` is the module `mod`
             on PNode.namespace_decl as ns
                 var nested: List(Decl) = .buildTopDecls(ns.decls)?
                 return Decl.namespace_(DeclNamespace(nameSpan(ns.line, ns.col, ns.name), ns.name, nested))

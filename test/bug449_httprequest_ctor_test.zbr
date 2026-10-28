@@ -1,0 +1,15 @@
+# BUG-449: an HttpRequest built by hand, so a router can be tested without a server.
+# `HttpRequest(method, path, content: "", query: "")` defaults, and the `.new` spelling.
+def route(req: HttpRequest): HttpResponse
+    if req.method == "GET" and req.path == "/hello"
+        return HttpResponse.ok("hi ${req.query}")
+    if req.method == "POST" and req.path == "/echo"
+        return HttpResponse.ok(req.content)
+    return HttpResponse.notFound("no ${req.method} ${req.path}")
+
+def main()
+    var a = route(HttpRequest("GET", "/hello", query: "name=zebra"))
+    var b = route(HttpRequest("POST", "/echo", "payload"))
+    var c = route(HttpRequest.new("DELETE", "/x"))
+    var r: HttpRequest = HttpRequest(path: "/p", method: "PUT")
+    print("bug449: ${a.status} ${a.text} | ${b.status} ${b.text} | ${c.status} ${c.text} | ${r.method} ${r.path} [${r.content}] [${r.query}]")

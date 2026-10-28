@@ -14756,6 +14756,12 @@ struct Generator
                         w.emit(".")
                         w.emit(zbrTypeSymbol(m.member))
                         return
+                    # BUG-660: `lib.count` -- a used module's top-level `var`, read or
+                    # written through the module. The declaration is `_zbr_mv_count` there;
+                    # the bare member made zig say "has no member named 'count'".
+                    if import_aliases.contains_(xm_alias.name) and not unwrapped_imports.contains_(xm_alias.name) and not isLocalOrParamName(xm_alias.name) and .dep_types.hasModuleVar("$mv:" + xm_alias.name + "." + m.member)
+                        w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mv_" + m.member)
+                        return
                 genExpr(m.object)
                 w.emit(".")
                 # BUG-280: a field may be named for a ZIG keyword (align, volatile,
@@ -16722,6 +16728,11 @@ struct Generator
         if c.callee is Expr.ident as hr_ctor
             if hr_ctor.name == "HttpResponse"
                 genHttpResponseFactory("new", c.args)
+                return
+            # BUG-449: the request a handler receives, built by hand (the checker has
+            # already held the arguments to method, path, content, query).
+            if hr_ctor.name == "HttpRequest" and not isLocalOrParamName("HttpRequest") and not class_names.contains_("HttpRequest")
+                genHttpRequestCall("new", c.args)
                 return
         # Cross-module constructor: Module.ClassName(args) → Module.ClassName.init(args)
         # Two detection paths:
@@ -19669,6 +19680,9 @@ struct Generator
             if id.name == "HttpResponse"
                 genHttpResponseFactory(mname, args)
                 return
+            if id.name == "HttpRequest" and not isLocalOrParamName("HttpRequest") and not class_names.contains_("HttpRequest")
+                genHttpRequestCall(mname, args)
+                return
             if id.name == "Regex"
                 genRegexCall(mname, args)
                 return
@@ -22328,6 +22342,41 @@ struct Generator
         w.emit("\")")
 
     # ── genHttpResponseFactory ───────────────────────────────────────────────
+    # BUG-449: `HttpRequest(method, path, content = "", query = "")` / `HttpRequest.new(...)`.
+    def genHttpRequestCall(mname: str, args: List(Arg))
+        if mname == "new"
+            var slots: List(str) = List(str)()
+            slots.add("method")
+            slots.add("path")
+            slots.add("content")
+            slots.add("query")
+            w.emit("HttpRequest{")
+            var si: int = 0
+            while si < 4
+                if si > 0
+                    w.emit(",")
+                w.emit(" ." + slots.at(si) + " = ")
+                var found: bool = false
+                var pos: int = 0
+                for a in args
+                    if a.name as an
+                        if an == slots.at(si) and not found
+                            genExpr(a.value)
+                            found = true
+                    else
+                        if pos == si and not found
+                            genExpr(a.value)
+                            found = true
+                        pos = pos + 1
+                if not found
+                    w.emit("\"\"")
+                si = si + 1
+            w.emit(" }")
+            return
+        w.emit("@compileError(\"selfhost: unknown HttpRequest.")
+        w.emit(mname)
+        w.emit("\")")
+
     def genHttpResponseFactory(mname: str, args: List(Arg))
         if mname == "ok"
             w.emit("HttpResponse{ .status = 200, .text = ")

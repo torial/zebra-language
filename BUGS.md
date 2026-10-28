@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-659. Next new bug: BUG-660.**
+**Last bug number generated: BUG-661. Next new bug: BUG-662.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,14 +43,6 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
-
----
-
-### BUG-449: `HttpRequest` cannot be constructed from Zebra — OPEN (found 2026-09-25)
-
-`var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
-router written as `def route(req: HttpRequest): HttpResponse` (the book's Project 2) cannot be
-unit-tested without starting a server. A limitation, not a leak.
 
 ---
 

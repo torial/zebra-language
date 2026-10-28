@@ -1932,6 +1932,25 @@ var v: math_utils.Vec2 = math_utils.Vec2(1.0, 2.0)
 var v: Vec2 = Vec2(1.0, 2.0)
 ```
 
+**Subdirectory modules** — a dotted `use` names a file in a subdirectory, relative to
+the importing file (or to `--module-path`):
+
+```zebra
+# file: main.zbr, beside a directory geo/ holding shapes.zbr
+use geo.shapes                       # the file geo/shapes.zbr
+use geo.deep.util exposing clamp     # geo/deep/util.zbr
+
+def main
+    var a = shapes.area(3, 4)        # the module is called `shapes`: the LAST segment
+    var b: shapes.Box = shapes.Box(2, 5)
+    shapes.count = shapes.count + 1  # a module's top-level var, read and written through it
+```
+
+A module's own `use` lines resolve beside *that* file, so `geo/shapes.zbr` reaches its
+sibling `geo/helpers.zbr` with a plain `use helpers`. A module is known by its file name
+everywhere after the `use`, so two files with the same name (`a/util.zbr`, `b/util.zbr`)
+cannot both be in one program; the second `use` is refused, naming the first.
+
 **Partial files** — `Foo.zbr` is the primary; `Foo.json.zbr`, `Foo.ui.zbr`
 etc. are partials whose `class Foo` members merge into the primary.
 
@@ -4301,7 +4320,8 @@ Representative zones (≈ 75 total):
 | `HttpResponse.ok(body)` / `.notFound(body)` / `.err(body)` | `HttpResponse` |
 | `HttpResponse.new(status, body)` — **any status code** | `HttpResponse` |
 | `r.status / r.text / r.headers`               | mixed           |
-| `req.method / req.path / req.content` (handler arg) | `str`     |
+| `req.method / req.path / req.content / req.query` (handler arg) | `str` |
+| `HttpRequest(method, path, content: "", query: "")` / `HttpRequest.new(...)` | `HttpRequest` |
 
 `HttpResponse.new(status, body)` is how you build a response with a status the
 named factories do not cover — a 405, a 302, a 422:
@@ -4312,10 +4332,26 @@ var r = HttpResponse.new(405, "method not allowed")
 
 It was reachable but undocumented until 2026-08-08, and a framework author
 shipped a 404 in place of a 405 for want of this line.  The bare-constructor
-form `HttpResponse(405, "…")` does **not** work — that is BUG-250.
+form `HttpResponse(405, "…")` is the same call (BUG-250, fixed 2026-08-20).
 
-`Http.serve`'s handler receives an `HttpRequest` whose `method`, `path` and
-`content` are ordinary `str`, so they compare with `==` like any other string.
+`Http.serve`'s handler receives an `HttpRequest` whose `method`, `path`,
+`content` and `query` are ordinary `str`, so they compare with `==` like any other string.
+
+A handler can be tested without starting a server by building the request yourself:
+`HttpRequest(method, path, content: "", query: "")`. `method` and `path` are required;
+the others default to `""`. `HttpRequest.new(...)` is the same constructor, matching
+`HttpResponse.new`.
+
+```zebra
+def route(req: HttpRequest): HttpResponse
+    if req.path == "/hello"
+        return HttpResponse.ok("hi ${req.query}")
+    return HttpResponse.notFound("no ${req.path}")
+
+def main()
+    var r = route(HttpRequest("GET", "/hello", query: "name=zebra"))
+    assert r.status == 200
+```
 
 ### `Ws` — WebSocket client and server
 

@@ -69,6 +69,24 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **Subdirectory modules.** `use pkg.mod` is the file `pkg/mod.zbr` beside the importing
+  file (or on `--module-path`), and brings in the module `mod`: `mod.f()`, `mod.T`,
+  `use pkg.mod exposing f`. A module's own `use` resolves beside it. Two modules whose files
+  share a name cannot both be in one program; the second `use` is refused, naming the first.
+  (Until now a dotted `use` was refused, BUG-651.)
+
+- **`HttpRequest(method, path, content: "", query: "")` (BUG-449).** A handler can be tested
+  without a server; `HttpRequest.new(...)` is the same constructor, as for `HttpResponse`.
+
+- **`zebra -c --strict`.** The editor's strict view from the command line: also reports an
+  annotated local whose initialiser has no type the checker can infer, so the annotation is
+  unchecked. Plain `-c` is unchanged and does none of that work.
+
+- **`lib.count` reads and writes a used module's `var` (BUG-660)**; it failed inside zig.
+
+- **Assigning to a module `const` is refused (BUG-661)** -- in its own module, through
+  `exposing`, or as `lib.LIMIT`; each reached zig as "cannot assign to constant".
+
 - **A constructor call with the wrong number of arguments is refused (BUG-659).** `Pt(1)`
   for `cue init(x: int, y: int)` compiled and ran with `y = 0`; `Pt(1, 2, 3)` failed inside
   zig. Both are refused at `-c`, as function calls already were.

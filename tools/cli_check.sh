@@ -513,6 +513,18 @@ printf 'def main()\n    var x: int = Math\n    print(x)\n' > "$W/zz_gap.zbr"
 run diagnostics zz_gap.zbr
 chk "\`zebra diagnostics\` is strict: a namespace used as a value is reported (control)" \
     "$(case "$OUT" in *"TC gap"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 200)]"
+# `-c --strict` (2026-10-28): the same strict view, opted into on the command line. A plain
+# `-c` must NOT pay for it (the opt-in is the point), `--strict` must report the gap at its
+# line, and a clean program must still pass under it.
+run -c zz_gap.zbr
+chk "plain \`-c\` does not run the strict check (exit 0 on the gap)" \
+    "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC stderr=[$(echo "$ERR" | grep error | head -1)]"
+run -c --strict zz_gap.zbr
+chk "\`-c --strict\` reports the gap at its line and fails" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"zz_gap.zbr:2:"*"TC gap"*) true;; *) false;; esac && echo 0 || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep error | head -1)]"
+run -c --strict hello.zbr
+chk "\`-c --strict\` passes a clean program" "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC"
 # BUG-252: is-checks, if/else-if captures (also over a ^Union field), reduce, Base64 and
 # an annotated zig"..." literal -- each reported as a gap until 2026-10-28.
 run diagnostics "$REPO/test/bug252_inference_gaps_test.zbr"

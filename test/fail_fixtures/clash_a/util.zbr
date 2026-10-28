@@ -1,0 +1,2 @@
+def which(): str
+    return "a"

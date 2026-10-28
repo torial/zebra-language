@@ -1,0 +1,3 @@
+# Used by bug661_module_const_assign_fail.zbr.
+const LIMIT: int = 5
+var count: int = 0

@@ -1364,6 +1364,9 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # BUG-158: record the module-var name so an exposed cross-module
                 # reference emits `alias._zbr_mv_name`.
                 mt.addModuleVar(mv.name)
+                mt.addModuleVar("$mv:" + moduleStemOf(m.file) + "." + mv.name)   # BUG-660: `lib.count`
+                if mv.is_const                                                      # BUG-661
+                    mt.addModuleVar("$mc:" + moduleStemOf(m.file) + "." + mv.name)
                 # Module-level var/const: register its type under the "" sentinel
                 # class so inferExpr resolves bare references (e.g. int-method
                 # dispatch on `counter.str()`). Untyped literal inits are inferred
@@ -1391,6 +1394,13 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                         else
                             pass
                     module_fns.setField(mv.name, mv_t)
+                # BUG-660: the same type under this module's own `$fns:<mod>`, so a
+                # qualified `lib.count` is typed from lib's var and not a same-named one.
+                var mv_key: str = "$fns:" + moduleStemOf(m.file)
+                if mt.classOf(mv_key) == nil
+                    mt.addClass(ClassTypes(mv_key))
+                if module_fns.fieldType(mv.name) as mv_ft
+                    mt.classOf(mv_key)!.setField(mv.name, mv_ft)
             on Decl.namespace_ as ns_decl
                 # Register namespace types so member-access inference works.
                 # Dotted name "Outer.Inner" → create ClassTypes for each path
@@ -2136,6 +2146,8 @@ def extendTargetName(target: TypeRef): str
 # CodeGen generators (genXxxCall), and surface-freeze fails when the two differ. Math is OPEN
 # (unknown names pass through to std.math) and is not here; "" = not a closed namespace.
 def namespaceMembers(ns: str): str
+    if ns == "HttpRequest"
+        return "|new|"
     if ns == "Arg"
         return "|parse|"
     if ns == "Base64"
@@ -3464,6 +3476,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             if m.object is Expr.ident as qmod
                 if ctx.isUsedModule(qmod.name) and not ctx.hasLocal(qmod.name) and ctx.dep_types.hasClass(m.member)
                     return Type_.named(m.member)
+                # BUG-660: `lib.count`, a used module's top-level var.
+                if ctx.isUsedModule(qmod.name) and not ctx.hasLocal(qmod.name) and ctx.dep_types.hasModuleVar("$mv:" + qmod.name + "." + m.member)
+                    if ctx.dep_types.classOf("$fns:" + qmod.name) as qmv_fns
+                        if qmv_fns.fieldType(m.member) as qmv_t
+                            return qmv_t
             # Phase 17d — infer the object's type recursively, then look up
             # the field through module_types + dep_types. Unwraps `^T` and
             # `T?` because field access through a pointer or nilable has the
@@ -3906,6 +3923,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # to have a receiver type to dispatch on at all.
                         if bname == "HttpResponse"
                             return Type_.named("HttpResponse")
+                        if bname == "HttpRequest" and mem.member == "new"   # BUG-449
+                            return Type_.http_request
                     # ── Json static-method TC inference ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
@@ -6500,7 +6519,103 @@ def namedArgsIsStruct(name: str, ctx: InferCtx): bool
         return dct.is_struct
     return false
 
+# BUG-449: `HttpRequest(method, path, content = "", query = "")`, or `HttpRequest.new(...)`
+# -- the request a handler receives, built by hand, so a router can be tested without a
+# server. Its four fields are the slots, in that order; method and path are required.
+def isHttpRequestCtor(call: ExprCall, ctx: InferCtx): bool
+    if ctx.hasLocal("HttpRequest") or ctx.hasClassAny("HttpRequest")
+        return false
+    if call.callee is Expr.ident as hid
+        return hid.name == "HttpRequest"
+    if call.callee is Expr.member as hmem
+        if hmem.object is Expr.ident as hobj
+            return hobj.name == "HttpRequest" and hmem.member == "new"
+    return false
+
+def httpRequestSlot(name: str): int
+    if name == "method"
+        return 0
+    if name == "path"
+        return 1
+    if name == "content"
+        return 2
+    if name == "query"
+        return 3
+    return -1
+
+def httpRequestFieldName(slot: int): str
+    if slot == 0
+        return "method"
+    if slot == 1
+        return "path"
+    if slot == 2
+        return "content"
+    return "query"
+
+def checkHttpRequestCtor(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var cline: int = line
+    var ccol: int = 0
+    if call.callee is Expr.ident as hid
+        cline = hid.span.line
+        ccol = hid.span.col
+    else if call.callee is Expr.member as hmem
+        cline = hmem.span.line
+        ccol = hmem.span.col
+    var filled: List(bool) = List(bool)()
+    filled.add(false)
+    filled.add(false)
+    filled.add(false)
+    filled.add(false)
+    var pos: int = 0
+    var named_seen: bool = false
+    for arg in call.args
+        var slot: int = pos
+        if arg.name as an
+            named_seen = true
+            slot = httpRequestSlot(an)
+            if slot < 0
+                ctx.addErr(file, cline, ccol, "HttpRequest has no field '" + an + "' (its fields are method, path, content, query)")
+                return
+        else
+            if named_seen
+                ctx.addErr(file, cline, ccol, "HttpRequest: a positional argument cannot follow a named one")
+                return
+            if pos >= 4
+                ctx.addErr(file, cline, ccol, "too many arguments to 'HttpRequest': expected at most 4 (method, path, content, query), found " + call.args.len.toString())
+                return
+            pos = pos + 1
+        if filled.at(slot)
+            ctx.addErr(file, cline, ccol, "HttpRequest: '" + httpRequestFieldName(slot) + "' is given twice")
+            return
+        filled.set(slot, true)
+        var at: Type_ = inferExpr(arg.value, ctx)
+        if isPrimitive(at) and not (at is Type_.string_)
+            ctx.addErr(file, cline, ccol, "type mismatch: HttpRequest's " + httpRequestFieldName(slot) + " is a str, found " + userTypeName(at))
+            return
+    if not filled.at(0) or not filled.at(1)
+        ctx.addErr(file, cline, ccol, "too few arguments to 'HttpRequest': method and path are required -- `HttpRequest(\"GET\", \"/\")`, with content and query optional")
+
+# BUG-661: a module-level `const` assigned to -- in its own module (`LIMIT = 7`) or through
+# `exposing` -- passed the front end and reached zig as "cannot assign to constant". The
+# owning module's stem, or nil when `name` is not a module const visible here.
+def moduleConstOwner(name: str, file: str, ctx: InferCtx): str?
+    if ctx.hasLocal(name) or ctx.isParamHere(name)
+        return nil
+    var own: str = moduleStemOf(file)
+    if ctx.module_types.hasModuleVar("$mc:" + own + "." + name)
+        return own
+    if ctx.module_types.exposedOwner(name) as xo
+        if ctx.dep_types.hasModuleVar("$mc:" + xo + "." + name)
+            return xo
+    return nil
+
+def moduleConstMsg(shown: str, owner: str): str
+    return "cannot assign to '" + shown + "' -- it is a `const` of module " + owner + "; declare it `var` there to make it writable"
+
 def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if isHttpRequestCtor(call, ctx)   # BUG-449: positional and named, checked together
+        checkHttpRequestCtor(call, file, line, ctx)
+        return
     # Named args reorder positional slots — skip (parity with checkCallExpr).
     for arg in call.args
         if arg.name != nil
@@ -7609,12 +7724,12 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.init_expr == nil
         return
     var inferred: Type_ = inferExpr(dv.init_expr!, ctx)  # safe: nil returned above
-    # Strict mode (typecheck-merge only): flag inference gaps — TC should have
+    # Strict mode (`zebra lsp`, `zebra diagnostics`, typecheck-merge, `-c --strict`): flag inference gaps — TC should have
     # known the init-expr type for a primitive-annotated var but didn't.
     # A `zig"..."` literal has no Zebra type by design; its annotation IS its type, so it
     # is not an inference gap (BUG-252: the LSP flagged every annotated one).
     if ctx.strict and inferred is Type_.unresolved and not (dv.init_expr! is Expr.zig_lit)
-        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "the initialiser of '" + dv.name + "' has no type the checker can infer, so its " + typeTag(declared) + " annotation is unchecked (strict check: a TC gap)")
         return
     if optionalIntoPlain(declared, inferred)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(declared) + "? " + UNWRAP_HINT)
@@ -8043,6 +8158,13 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     else if ctx.isLoopConst(sa_id.name)
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "cannot assign to '" + sa_id.name + "' -- it is the variable of a `for ... in` loop; bind a new local (var " + sa_id.name + "2 = ...)")
+                    else if moduleConstOwner(sa_id.name, file, ctx) as mc_owner
+                        ctx.addErr(file, sasn.span.line, sasn.span.col, moduleConstMsg(sa_id.name, mc_owner))
+                # BUG-661: `lib.LIMIT = ...`, a used module's const through the module.
+                if sasn.target is Expr.member as sa_mem
+                    if sa_mem.object is Expr.ident as sa_mobj
+                        if ctx.isUsedModule(sa_mobj.name) and not ctx.hasLocal(sa_mobj.name) and ctx.dep_types.hasModuleVar("$mc:" + sa_mobj.name + "." + sa_mem.member)
+                            ctx.addErr(file, sasn.span.line, sasn.span.col, moduleConstMsg(sa_mobj.name + "." + sa_mem.member, sa_mobj.name))
                 # BUG-319. `s[i] = x` on a string was checked by NOTHING. It reached codegen,
                 # emitted a store into a `[]const u8`, and surfaced as Zig's `local variable is
                 # never mutated` -- a message that flatly contradicts the line the user just

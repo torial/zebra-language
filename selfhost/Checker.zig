@@ -87,6 +87,7 @@ const _zbr_ty_PUse = _zbr_mod_Parser._zbr_ty_PUse;
 const _zbr_ty_PModule = _zbr_mod_Parser._zbr_ty_PModule;
 const _zbr_fn_fileExistsExact = _zbr_mod_Parser._zbr_fn_fileExistsExact;
 const _zbr_fn_caseOnlyMatch = _zbr_mod_Parser._zbr_fn_caseOnlyMatch;
+const _zbr_fn_useFilePath = _zbr_mod_Parser._zbr_fn_useFilePath;
 const _zbr_ty_Resolver = @import("Resolver.zig")._zbr_ty_Resolver;
 const _zbr_mod_AstBuilder = @import("AstBuilder.zig");
 const _zbr_ty_ASTBuilder = _zbr_mod_AstBuilder._zbr_ty_ASTBuilder;
@@ -1587,7 +1588,7 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: _ZbrList([]const u8), 
                 const u_ptr = _zbr_at(pm.decls.items, di).use_;
                 const u = u_ptr.*;
 // zbr:selfhost/Checker.zbr:725
-                const dep_name: []const u8 = u.path;
+                const dep_name: []const u8 = _zbr_fn_useFilePath(u.path);
 // zbr:selfhost/Checker.zbr:726
                 const src_dir: []const u8 = _zbr_fn_checkerDirOf(path);
 // zbr:selfhost/Checker.zbr:727

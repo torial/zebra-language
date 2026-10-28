@@ -43,6 +43,59 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-661: a module-level `const` could be assigned to -- the front end let it through to zig -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+const LIMIT: int = 5          # in k.zbr
+...
+LIMIT = 7                     # in k.zbr itself: passed -c
+k.LIMIT = 7                   # through the module: passed -c
+LIMIT = 7                     # after `use k exposing LIMIT`: passed -c
+```
+
+All three reached zig as `cannot assign to constant`, a message about generated code.
+Function-local consts, parameters (BUG-354) and loop variables were already refused; a
+MODULE const was not, in any spelling. A module's consts are now recorded by module
+(`$mc:<module>.<name>` in ModuleTypes, beside BUG-660's `$mv:`), and an assignment -- plain
+or compound -- to one is refused at `-c` naming the owning module and the fix (`declare it
+var there`). A local that shadows the name is not the const and is untouched. Found while
+writing BUG-660's probe. Fixture `test/fail_fixtures/bug661_module_const_assign_fail.zbr`
+(+ `bug661_const_lib.zbr`): the three refusals at their columns, and a `var` of the same
+module written through it in the same file, not refused.
+
+### BUG-660: a used module's top-level `var` read or written as `lib.count` failed inside zig -- FIXED 2026-10-28 (found the same day)
+
+`use geom` then `geom.made`: zig said `root source file struct 'geom' has no member named
+'made'`. A module var is declared `_zbr_mv_made` (BUG-137's prefix); the `exposing` spelling
+was rewritten to it (BUG-158) and the qualified one never was -- the same half-done shape as
+BUG-483's qualified `m.f()`. The member now emits `<module>._zbr_mv_<name>` when the object
+is a used module and `$mv:<module>.<name>` says that module declares the var, so a field or
+type of the same name is untouched; reads and writes both, compound assignment included.
+The checker types it from the module's own `$fns:<module>` facts (BUG-604's table), so
+`geom.made + 10` is an int and not "cannot infer the type". Found while writing the
+subdirectory-modules fixture. Pinned in `test/subdir_modules_test.zbr`: a constructor in the
+dep bumps the var, the root adds 10 to it through the module and doubles the result.
+
+### BUG-449: `HttpRequest` cannot be constructed from Zebra — FIXED 2026-10-28 (found 2026-09-25)
+
+`var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
+router written as `def route(req: HttpRequest): HttpResponse` (the book's Project 2) cannot be
+unit-tested without starting a server. A limitation, not a leak.
+
+**Fixed 2026-10-28** (Sean: the surface may change, we are its only users).
+`HttpRequest(method, path, content: "", query: "")` builds the request a handler receives,
+and `HttpRequest.new(...)` is the same constructor -- the `HttpResponse` / `HttpResponse.new`
+pair, so neither type has a spelling the other lacks. `method` and `path` are required; the
+named form takes the four field names in any order after the positional ones. The checker
+holds it like a call with a signature: too few, too many, an unknown name (`body:` names the
+four that exist), a field given twice, a positional after a named one, and a non-`str` value
+are each refused at `-c` at the constructor's column; codegen is a struct literal in field
+order, with `""` for an omitted field. `HttpRequest` joined the stdlib-namespace set (so the
+resolver knows the name as a value) and the checker's closed-namespace table (`|new|`; a
+`HttpRequest.make` is refused naming `new`). Fixture `test/bug449_httprequest_ctor_test.zbr`
+routes four requests through a handler with no server: positional, `query:` named, the `.new`
+spelling, and an all-named request printed with its two defaults.
+
 ### BUG-659: a `cue init` had no arity check -- a missing argument was silently zero -- FIXED 2026-10-28 (found the same day)
 
 ```zebra
@@ -313,6 +366,20 @@ other change it made anywhere in the three corpora: `selfhost/parser_test.zbr` c
 unresolved receiver had hidden; the call now has its `?`.
 
 ### BUG-651: `use pkg.mod` was refused as "no pkg.mod.zbr" -- the refusal now names the real limit -- FIXED 2026-10-27 (found the same day)
+
+> **SUPERSEDED 2026-10-28: subdirectory modules exist** (Sean asked for them). `use pkg.mod`
+> is the file `pkg/mod.zbr` beside the importing file (or on `--module-path`), and the module
+> is called `mod` -- the last segment, as Go and Python's `from pkg import mod` bind it. A
+> module's own `use` resolves beside it. Every stage after the parser knows a module by that
+> name only (the AST's `DeclUse.path`, the emitted `mod.zig`, `$fns:mod`), so the change is at
+> the two ends: `useFilePath` where a file is looked for (the driver, the checker's dep loader,
+> the module-path type scan, the LSP side-check, a native C / library / `.zig` dep -- whose
+> `lib` prefix goes on the file name, `pkg/libmod.a`) and `useBindName` where the name is bound
+> (the resolver's scope, the AST builder). Because a module is known by its stem, two files
+> with one stem in a program would silently replace one another; that is refused at the second
+> `use`, at its line, naming the first file. The refusal below is gone; `expose_dotted_test`
+> moved from `smoke_tc_fail` to `smoke_run`, and `test/subdir_modules_test.zbr` covers two
+> levels, a sibling `use` inside a subdirectory, qualified types and an enum.
 
 The retired bootstrap mapped a dotted `use` to a subdirectory (`pkg/mod.zbr`). The selfhost
 never had subdirectory modules; since 2026-09-16 an unresolved `use` is refused, and for a

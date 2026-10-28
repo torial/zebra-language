@@ -1,0 +1,20 @@
+# Reached as `use subdir_mod.geom` (test/subdir_modules_test.zbr); its own `use` is
+# resolved relative to THIS file's directory.
+use helpers
+
+var made: int = 0
+
+def area(w: int, h: int): int
+    return helpers.mul(w, h)
+
+struct Box
+    var w: int
+    var h: int
+
+    cue init(w: int, h: int)
+        .w = w
+        .h = h
+        made = made + 1
+
+    def size(): int
+        return area(.w, .h)

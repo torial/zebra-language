@@ -301,6 +301,21 @@ struct PUse
         .path = path
         .exposed = exposed
 
+# `use pkg.mod` is the file pkg/mod.zbr (relative to the importing file, or to
+# --module-path), and the module it brings in is called `mod` -- the last segment, as
+# Go and Python's `from pkg import mod` bind it. Every later stage knows a module by
+# that name only (DeclUse.path, the emitted `mod.zig`), so two modules with the same
+# last segment in one program are refused by the driver. (Free functions, not PUse
+# methods: a method takes `*Self`, and a `use` is reached through a const capture.)
+def useFilePath(path: str): str
+    return path.replace(".", "/")
+
+def useBindName(path: str): str
+    var dot: int = path.lastIndexOf(".")
+    if dot < 0
+        return path
+    return path.substring(dot + 1, path.len)
+
 struct PModule
     var decls: List(PNode)
     cue init(decls: List(PNode))

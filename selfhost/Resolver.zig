@@ -30,6 +30,7 @@ const _zbr_ty_PIfExpr = _zbr_mod_Parser._zbr_ty_PIfExpr;
 const _zbr_ty_PCaptureVar = _zbr_mod_Parser._zbr_ty_PCaptureVar;
 const _zbr_ty_PExprId = _zbr_mod_Parser._zbr_ty_PExprId;
 const _zbr_ty_PPos = _zbr_mod_Parser._zbr_ty_PPos;
+const _zbr_fn_useBindName = _zbr_mod_Parser._zbr_fn_useBindName;
 const _zbr_mod_CgHelpers = @import("CgHelpers.zig");
 const _zbr_fn_isStdlibNs = _zbr_mod_CgHelpers._zbr_fn_isStdlibNs;
 const _zbr_fn_isBuiltinTypeName = _zbr_mod_CgHelpers._zbr_fn_isBuiltinTypeName;
@@ -363,7 +364,7 @@ pub const _zbr_ty_Resolver = struct {
             .use_ => |_ptr_u| {
                 const u = _ptr_u.*;
 // zbr:selfhost/Resolver.zbr:247
-                self.module_scope.put(_intern(u.path), 5) catch @panic("OOM");
+                self.module_scope.put(_intern(_zbr_fn_useBindName(u.path)), 5) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:248
                 for (u.exposed.items) |name| {
 // zbr:selfhost/Resolver.zbr:249
