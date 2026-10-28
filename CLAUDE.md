@@ -2562,6 +2562,15 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-10-28 (closing BUG-252 and BUG-650..659, `7c4d803`; FULL 48/48 before it):
+59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke **949/949**
+(infra-retries=0; 919 s, against ~700 before the nine `selfhost/*_test.zbr` unit tests were
+registered), round-trip byte-identical, `registration` 933 tracked / 0 unasserted, `boundary`
+39/0, `cli-surface` 71, `output_sweep` 466 identical, `full_sweep` / `divergence` 0 regressions,
+`regen-recover` from `7c4d803`, `gramgen` 0/0, `leakgen` 100/0. The BUG-659 constructor-arity
+refusal was measured over 3,110 files of this repo, zebra-ide and the GameEngine before it
+landed. The only new refusals were the compiler's own stale unit tests.
+
 **DAILY tier 2026-10-26, second run (closing BUG-629 / BUG-569 `4056ecd`; FULL 48/48 before it):
 59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke 858/858 (infra-retries=0),
 round-trip byte-identical, `boundary` 39/0, `output_sweep` 466 identical (465 cache hits / 1
