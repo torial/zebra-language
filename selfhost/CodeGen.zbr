@@ -1489,6 +1489,25 @@ def isDeferredModuleVar(mv: DeclVar): bool
         return mv.init_expr! is Expr.call
     return false
 
+# BUG-649: a `static var` is a file-lifetime global inside its class's struct, so it
+# has the module var's problem (BUG-153/496) and gets the module var's answer: declared
+# `= undefined` and assigned in _initModuleVars(). Two shapes. An initializer that is not
+# a comptime literal -- since containers became references (BUG-501 1d) every container
+# constructor allocates, and `static var seen: List(int) = []` stopped compiling ("unable
+# to resolve comptime value"). And a CONTAINER with no initializer, which was `= undefined`
+# and stayed so: QUICKSTART's own `static var instances: List(Registry)` wrote through
+# garbage on its first `.add`. A generic class's statics are not covered (per
+# instantiation; the caller excludes them).
+def isDeferredStaticField(f: DeclVar): bool
+    if not f.mods.is_static
+        return false
+    if f.type_ != nil
+        if isContainerTypeRef(f.type_!)
+            return true
+    if f.init_expr != nil
+        return not isComptimeModuleInit(f.init_expr!)
+    return false
+
 # BUG-548: an initializer that allocates at run time.
 def isAllocatingModuleInit(e: Expr): bool
     branch e
@@ -1955,8 +1974,36 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 w.emit("    _zbr_mv_")
                 w.emit(mv.name)
                 w.emit(" = ")
-                g.genModuleVarInit(mv.init_expr!)
+                g.genModuleVarInit(mv.init_expr!, mv.type_)
                 w.emit(";\n")
+    # BUG-649: the statics genFieldDecl declared `= undefined` (non-generic classes and
+    # structs at top level -- the ones whose Zig name is a file-scope struct).
+    for sd in m.decls
+        var sd_name: str = ""
+        var sd_members = List(Decl)()
+        if sd is Decl.class_ as sdc
+            if sdc.type_params.len == 0
+                sd_name = sdc.name
+                sd_members = sdc.members
+        else if sd is Decl.struct_ as sds
+            sd_name = sds.name
+            sd_members = sds.members
+        if sd_name != ""
+            for sm in sd_members
+                if sm is Decl.var_ as sv
+                    if isDeferredStaticField(sv)
+                        w.emit("    ")
+                        g.emitTypeName(sd_name)
+                        w.emit(".")
+                        g.emitName(sv.name)
+                        w.emit(" = ")
+                        if sv.init_expr != nil
+                            g.genModuleVarInit(sv.init_expr!, sv.type_)
+                        else
+                            w.emit("_zbr_new(")
+                            g.genType(sv.type_!)
+                            w.emit(")")
+                        w.emit(";\n")
     w.emit("}\n")
     if _coverage
         # This module's coverage record. Order-independent at top level, so it can
@@ -5486,6 +5533,13 @@ struct Generator
         genFieldInitExprIn(fexpr, tr)
 
     def genFieldInitExprIn(fexpr: Expr, tr: TypeRef?)
+        # BUG-648: `var vals: List(int) = []` -- an empty literal has no element to infer
+        # from, so the expression-position emit took its `[]const u8` fallback and the
+        # constructor assigned a List(str) to a List(int) field. The declared type is the
+        # only source, exactly as for an empty `[]` passed to a List(T) parameter (BUG-463).
+        if tr != nil
+            if emitEmptyListForParam(fexpr, tr!)
+                return
         if tr != nil and isBareCollectionCtor(fexpr)
             genCallWithTypeHint(fexpr, tr!)
         else
@@ -5535,7 +5589,24 @@ struct Generator
                         w.emit(dmv_ann)
                     else
                         w.emit("@TypeOf(")
-                        genModuleVarInit(n.init_expr!)
+                        genModuleVarInit(n.init_expr!, n.type_)
+                        w.emit(")")
+                w.emit(" = undefined;\n")
+                return
+            # BUG-649: a static built at run time -- assigned in _initModuleVars().
+            if n.mods.is_static and not .is_generic and isDeferredStaticField(n)
+                w.emit(": ")
+                if n.type_ != nil
+                    genType(n.type_!)
+                else
+                    var dsf_ann: str = ""
+                    if .module_types.fieldType(owner, n.name) as dsf_t
+                        dsf_ann = tcTypeAnnotation(dsf_t)
+                    if dsf_ann != ""
+                        w.emit(dsf_ann)
+                    else
+                        w.emit("@TypeOf(")
+                        genModuleVarInit(n.init_expr!, n.type_)
                         w.emit(")")
                 w.emit(" = undefined;\n")
                 return
@@ -10629,11 +10700,11 @@ struct Generator
     # BUG-496: a module var's initializer, emitted with a module-level inference context.
     # It binds no locals, so a reference to another module var still resolves through
     # the "" sentinel and keeps its `_zbr_mv_` spelling in genIdent.
-    def genModuleVarInit(e: Expr)
+    def genModuleVarInit(e: Expr, tr: TypeRef?)
         var mctx = InferCtx(.module_types, "")
         mctx.withDepTypes(.dep_types)
         var mg = withInferCtx(mctx)
-        mg.genExpr(e)
+        mg.genFieldInitExprIn(e, tr)       # BUG-648: the declared type types an empty `[]`
 
     # Is this type a `sig` (or `def(P): R`) -- a fat pointer a value must be CONVERTED
     # into? The checker registers every sig as the pseudo-class `$sig:Name`.
@@ -14577,7 +14648,17 @@ struct Generator
                                 # `self.source.items.len` on a `[]const u8`).
                                 is_list_obj = isListField(fn2)
                             else if _len_unknown
-                                is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
+                                # BUG-017: a DECLARED local is decided by its own type, as in
+                                # fieldAwareIsList (BUG-141): the name lookups below answer for
+                                # some other class's field, or the compiler's own AST
+                                # (isKnownListField: `args`, `message`, `value`...). An
+                                # untyped `var vals = zig"..."` beside any class with a
+                                # `vals: List(int)` emitted `vals.items.len` -- a zig error
+                                # in place of the §28a refusal it gets under another name.
+                                if m.object is Expr.ident and .infer_ctx != nil and (.infer_ctx!).hasLocal(fn2)
+                                    is_list_obj = localIsList(fn2)
+                                else
+                                    is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
                         if _len_unknown
                             is_hm_obj = fieldAwareIsHashMap(fn2)
                     if is_list_obj

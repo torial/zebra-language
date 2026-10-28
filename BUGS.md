@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-647. Next new bug: BUG-648.**
+**Last bug number generated: BUG-649. Next new bug: BUG-650.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -614,14 +614,6 @@ an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 - **Root cause:** The current Thompson NFA passes a global `shortest: bool` to `matchAt`. When ANY `*?`/`+?`/`??` is parsed, `flags.lazy_match = true` is set for the whole regex.
 - **Fix (architectural):** Requires either a priority-first NFA simulation or a backtracking regex engine.
 - **Workaround:** For patterns needing mixed lazy/greedy, split into multiple regex calls or restructure the pattern.
-
----
-
-### BUG-017: `len` on unknown-TC-type emits `.items.len` heuristic — imprecise
-- **Severity:** Low
-- **Status:** Open — known imprecision; deferred until ModuleInterface preserves return types
-- **Symptom:** When a local variable's TC type is `.unknown` and `.len` is accessed on it, CodeGen emits `.items.len` as a last-resort fallback. Correct for `ArrayList`-backed `List(T)` values but wrong for user-defined structs with a field named `len`.
-- **Proper fix:** Add a `.list { elem_type }` variant to `TypeChecker.Type`, store it in `ModuleInterface.methods` for list-returning methods, propagate through `inferCall` for cross-module calls.
 
 ---
 

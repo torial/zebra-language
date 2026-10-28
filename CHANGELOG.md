@@ -69,6 +69,18 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **A `static var` of a container type works (BUG-649).** `static var seen: List(int) = []`
+  stopped compiling when containers became references, and one with no initializer (the
+  form QUICKSTART documents) was left undefined. Both are built at program start now.
+
+- **`var vals: List(int) = []` as a field or module var builds a `List(int)` (BUG-648).**
+  It built a `List(str)` and failed inside zig.
+
+- **An untyped local's `.len` is refused rather than guessed from another class's field
+  name (BUG-017).** A local named like some class's List field, or like one of the
+  compiler's own AST fields (`args`, `message`...), took the List spelling and failed
+  inside zig; it gets the "cannot infer the type" refusal every other name gets.
+
 - **StringBuilder: `sb.len` works, and `list.at(i).append(s)` on a StringBuilder element
   works (BUG-646, BUG-647).** Both passed `-c` and failed inside zig.
 

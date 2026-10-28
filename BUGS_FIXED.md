@@ -43,6 +43,61 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-649: a `static var` of a container type did not compile, or was left undefined -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+class Reg
+    static var seen: List(int) = []       # unable to resolve comptime value
+    static var names: List(str)           # compiled; first .add wrote through garbage
+```
+
+A static field is a file-lifetime global declared inside its class's struct, initialised at
+comptime. Since containers became references (BUG-501 1d, 2026-10-06) every container
+constructor allocates, so a static with a `[]`, `List(T)()`, `HashMap(...)()` or user-class
+initializer stopped compiling; the N-1 anchor still built the first shape. A container static
+with NO initializer -- the form QUICKSTART documents (`static var instances: List(Registry)`)
+-- was emitted `= undefined` and stayed so. Statics now take the module var's answer
+(BUG-153/496): `isDeferredStaticField` -- a container type, or an initializer that is not a
+comptime literal -- declares the field `= undefined` and `_initModuleVars()` assigns it
+(`_zbr_new(T)` when there is no initializer). Generic classes are not covered (their statics
+are per instantiation). Nothing in the corpus, the examples or the GameEngine has a static
+container, which is why no gate saw it. Fixture `test/bug649_static_container_field_test.zbr`
+(+ `bug649_static_container_lib.zbr`, the documented form read across a module): red on N-1.
+
+### BUG-648: an empty `[]` default for a `List(T)` field or module var built a `List(str)` -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+class Holder
+    var vals: List(int) = []      # expected '*ArrayList(i64)', found '*ArrayList([]const u8)'
+```
+
+An empty literal has no element to infer from, so its expression-position emit used the
+`[]const u8` fallback; only `genLocalVar` and a `List(T)` parameter (BUG-463) passed the
+declared type down. A field default (`genFieldInitExpr`) and a deferred module var
+(`genModuleVarInit`, which now takes the declared type) use the BUG-463 helper. Found
+probing BUG-017. Class fields, a nested `List(List(int))`, a struct's `List(float)` and a
+module var; red on the N-1 anchor. Fixture `test/bug648_empty_list_field_default_test.zbr`.
+
+### BUG-017: `len` on unknown-TC-type emits `.items.len` heuristic — imprecise -- FIXED 2026-10-27
+- **Severity:** Low
+- **Status:** Open — known imprecision; deferred until ModuleInterface preserves return types
+- **Symptom:** When a local variable's TC type is `.unknown` and `.len` is accessed on it, CodeGen emits `.items.len` as a last-resort fallback. Correct for `ArrayList`-backed `List(T)` values but wrong for user-defined structs with a field named `len`.
+- **Proper fix:** Add a `.list { elem_type }` variant to `TypeChecker.Type`, store it in `ModuleInterface.methods` for list-returning methods, propagate through `inferCall` for cross-module calls.
+
+**Fixed 2026-10-27.** The entry described the bootstrap's fallback (any unknown receiver ->
+`.items.len`). The selfhost had already replaced that with the §28a refusal ("cannot infer the
+type of `x`, so `.len` cannot be resolved -- annotate it"), and cross-module returns are typed
+(BUG-641) -- the "proper fix" the entry asked for. What was left was a hole in front of the
+refusal: for an untyped BARE IDENT, `.len` first asked four NAME oracles -- the current class's
+fields, any class's List field of that name (`fieldIsList`), and `isKnownListField`, a
+hardcoded list of the compiler's own AST field names (`args`, `message`, `params`, `value`,
+`start`...). A local `vals` beside any class with a `vals: List(int)`, or a local named `args`
+in a program with no classes at all, emitted `.items.len` and the user read a zig error about
+`items` instead of the refusal. A declared local is now decided by its own type, as
+`fieldAwareIsList` (BUG-141) already ruled for indexing; the name oracles stay for receivers
+that are not locals. Fixtures `test/fail_fixtures/bug017_len_field_name_fail.zbr` and
+`bug017_len_ast_name_fail.zbr`, both red (a zig error) on the N-1 anchor.
+
 ### BUG-647: `list.at(i).append(s)` on a StringBuilder element, as a statement, emitted a raw `.append(s)` -- FIXED 2026-10-27 (found the same day)
 
 ```zebra

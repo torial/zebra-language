@@ -1826,6 +1826,10 @@ smoke_run test/bug026_method_result_mutation_test.zbr "bug026: 11 2 2 9 7 1 2 2"
 smoke_run test/bug645_sb_method_set_test.zbr "bug645: abc 3 z 1"
 # BUG-646/647: `sb.len` (local, field, list element) and `list.at(i).append(s)` on a StringBuilder.
 smoke_run test/bug646_sb_len_and_chain_test.zbr "bug646: 4 2 1 4 qrs!"
+# BUG-648: an empty `[]` default takes T from the declared List(T) (field, nested, struct, module var).
+smoke_run test/bug648_empty_list_field_default_test.zbr "bug648: 2 5 x 1 6 11 1.5"
+# BUG-649: static container fields (with/without initializer, user-class, map, across a module).
+smoke_run test/bug649_static_container_field_test.zbr "bug649: 2 ab 3 2 7 2 2"
 # BUG-642..644: `??`, two statements on one line, a missing comma between call arguments.
 smoke_tc_fail test/bug642_double_question_fail.zbr "operator in Zebra -- write"
 smoke_tc_fail test/bug643_same_line_statements_fail.zbr "follows a complete statement on the same line"
@@ -2498,6 +2502,9 @@ smoke_run test/bug515_iface_field_assign_test.zbr "bug515: OK"
 smoke_tc_fail test/fail_fixtures/infer_guess_add_fail.zbr "infer_guess_add_fail.zbr:6:11: error: cannot infer the type of \`x\`, an operand of \`+\`"
 smoke_tc_fail test/fail_fixtures/infer_guess_len_fail.zbr "infer_guess_len_fail.zbr:5:11: error: cannot infer the type of \`xs\`, so \`.len\` cannot be resolved"
 smoke_tc_fail test/fail_fixtures/infer_guess_list_fail.zbr "infer_guess_list_fail.zbr:5:5: error: cannot infer the type of \`xs\`, so \`.add()\` cannot be resolved"
+# BUG-017: an untyped LOCAL is not typed by a same-named field elsewhere (user class / compiler AST list).
+smoke_tc_fail test/fail_fixtures/bug017_len_field_name_fail.zbr "bug017_len_field_name_fail.zbr:10:14: error: cannot infer the type of \`vals\`, so \`.len\` cannot be resolved"
+smoke_tc_fail test/fail_fixtures/bug017_len_ast_name_fail.zbr "bug017_len_ast_name_fail.zbr:5:14: error: cannot infer the type of \`args\`, so \`.len\` cannot be resolved"
 # ...and --allow-inference-guess (one release) guesses as before, with a warning.
 smoke_run_flag test/infer_guess_hatch_test.zbr --allow-inference-guess "infer_hatch: 6"
 # ...and WITHOUT the hatch the same file is refused (this also declares it must-reject,

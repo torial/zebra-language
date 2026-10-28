@@ -1,0 +1,24 @@
+# BUG-648: an empty `[]` default for a List(T) field or module var takes T from the declaration
+# (it took `[]const u8`, the expression-position fallback, whatever T was).
+struct Acc
+    var xs: List(float) = []
+    var n: int = 0
+
+class Holder
+    var vals: List(int) = []
+    var names: List(str) = []
+    var nest: List(List(int)) = []
+    var some: List(int) = [5, 6]
+
+var gl: List(int) = []
+
+def main()
+    var h = Holder()
+    h.vals.add(3)
+    h.vals.add(4)
+    h.names.add("x")
+    h.nest.add([1])
+    gl.add(11)
+    var a = Acc()
+    a.xs.add(1.5)
+    print("bug648: ${h.vals.len} ${h.vals.at(1) + 1} ${h.names.at(0)} ${h.nest.at(0).at(0)} ${h.some.at(1)} ${gl.at(0)} ${a.xs.at(0)}")

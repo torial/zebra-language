@@ -90,3 +90,4 @@ bug527_iface_mod  # support module for bug527_iface_field_assign_test (the inter
 bug641_qualified_fn_lib  # helper module imported by bug641_qualified_fn_infer_test; has no main()
 bug641_qualified_fn_lib2  # helper module imported by bug641_qualified_fn_infer_test; has no main()
 bug026_method_result_lib  # helper module imported by bug026_method_result_mutation_test; has no main()
+bug649_static_container_lib  # helper module imported by bug649_static_container_field_test; has no main()
