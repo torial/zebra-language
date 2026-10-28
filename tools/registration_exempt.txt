@@ -87,3 +87,5 @@ bug415_dep_catch_lib  # helper module used by bug415_dep_module_catch_message_te
 bug237_qualified_union_lib  # helper module imported by bug237_qualified_union_test; has no main()
 deprecated_warning_dep  # helper module imported by deprecated_warning_test (the @deprecated def lives here so the warning is witnessed across `use`); has no main()
 bug527_iface_mod  # support module for bug527_iface_field_assign_test (the interface + Holder in ANOTHER module); exercised through its importer
+bug641_qualified_fn_lib  # helper module imported by bug641_qualified_fn_infer_test; has no main()
+bug641_qualified_fn_lib2  # helper module imported by bug641_qualified_fn_infer_test; has no main()

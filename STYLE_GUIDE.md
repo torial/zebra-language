@@ -512,7 +512,7 @@ expression. Inside an `if` test, prefer the binding form.
 ### 8.2 Nil-coalescing for defaults ✅ ESTABLISHED
 
 ```zebra
-var name = config.name ?? "anonymous"    # ✓
+var name = config.name orelse "anonymous"    # ✓
 ```
 
 ### 8.3 Optional chaining for one-shot reads ✅ ESTABLISHED

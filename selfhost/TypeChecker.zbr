@@ -3666,6 +3666,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if ctx.methodReturnAny(bname, mem.member) as user_static_ret
                                 ctx.noteDeprecated(bname, mem.member, mem.span.line, mem.span.col)
                                 return user_static_ret
+                        # BUG-641: a qualified call to a used module's top-level def, `lib.f()`,
+                        # typed from that module's own `$fns:<mod>` facts (BUG-604) -- the
+                        # exposed spelling `f()` always was. Without it every un-annotated
+                        # `var x = lib.f()` was untyped and `.len` / `.add()` on it refused.
+                        if ctx.isUsedModule(bname) and not ctx.hasLocal(bname) and not ctx.hasClassAny(bname)
+                            if ctx.dep_types.classOf("$fns:" + bname) as qual_fns
+                                if qual_fns.methodReturn(mem.member) as qual_rt
+                                    return qual_rt
                         # The frame-callback `Gui.run(title, w, h, frame)` retired 2026-09-21
                         # (CHANGELOG): its only reason to exist was the value-returning
                         # widgets, which went with it. Six arguments or a refusal that names

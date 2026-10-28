@@ -1,0 +1,19 @@
+# BUG-641 helper: top-level defs reached as `bug641_qualified_fn_lib.f()`, never exposed.
+
+class Seg
+    var len: int
+
+    cue init(n: int)
+        .len = n
+
+def mkSeg(n: int): Seg
+    return Seg(n)
+
+def mkList(): List(int)
+    return [1, 2, 3]
+
+def name(): str
+    return "abc"
+
+def pick(): List(str)
+    return ["x", "y"]

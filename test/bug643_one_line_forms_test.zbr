@@ -1,0 +1,40 @@
+# BUG-643/644 positive control: the forms that legitimately put more than one thing on a
+# line, or split one call across lines, must still parse after the one-statement-per-line
+# and comma refusals.
+
+union Shape
+    circle: int
+    square: int
+
+def area(s: Shape): int
+    branch s
+        on Shape.circle as r  return 3 * r * r
+        on Shape.square as w
+            return w * w
+
+# `else  stmt` on one line, as an `on` arm takes one (QUICKSTART §9).
+def kind(s: Shape): str
+    var k = "?"
+    branch s
+        on Shape.circle  k = "round"
+        else             k = "other"
+    return k
+
+def add3(a: int, b: int, c: int): int
+    return a + b + c
+
+def main()
+    var n = 4
+    if n > 3: print("big") else: print("small")
+    var total = add3(
+        1,
+        2,
+        3
+    )
+    var trailing = add3(1, 2, 3,)
+    var xs = [1, 2, 3]
+    var doubled = xs.map(def(v: int): int
+        return v * 2
+    )
+    var t = if(n > 3, 5, 0)
+    print("one-line: ${total} ${trailing} ${doubled} ${t} ${area(Shape.circle(1))} ${area(Shape.square(2))} ${kind(Shape.circle(1))} ${kind(Shape.square(1))}")

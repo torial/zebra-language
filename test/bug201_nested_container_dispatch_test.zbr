@@ -1,0 +1,46 @@
+# BUG-201: a container reached through ANOTHER container's call result or loop binding must
+# dispatch and mutate in place. On a 2026-09-01 compiler (8cfdc6a) each leg failed in zig:
+#   (b1) `m.at(0).add(99)` -- "no field or member function named 'add' in 'array_list...'"
+#   (b2) `for r in m` then `r.add(5)` -- "expected type '*T', found '*const T'"
+#   (b3) `for k, v in map` then `v.add(1)` -- "no field named 'items' in struct 'hash_map...'"
+# Fixed by 408aa38 (nested containers have reference semantics, BUG-314's other half).
+
+class Holder
+    var rows: List(List(int))
+
+    cue init()
+        .rows = List(List(int))()
+
+    def grid(): List(List(int))
+        return .rows
+
+def main()
+    # b1: a method on a `.at()` call result
+    var m = List(List(int))()
+    m.add(List(int)())
+    m.at(0).add(99)
+
+    # b2: mutating a `for`-bound element
+    var n = List(List(int))()
+    n.add(List(int)())
+    n.add([3])
+    for r in n
+        r.add(5)
+    for i, r in n
+        r.add(i + 10)
+
+    # b3: mutating a map value bound by the loop
+    var mp = HashMap(str, List(int))()
+    mp.set("a", List(int)())
+    mp.set("b", [7])
+    for k, v in mp
+        v.add(1)
+
+    # the same through a method that returns the field
+    var h = Holder()
+    h.rows.add(List(int)())
+    h.grid().at(0).add(4)
+    for r in h.grid()
+        r.add(6)
+
+    print("bug201: ${m} ${n} ${mp.get("a")} ${mp.get("b")} ${h.rows}")

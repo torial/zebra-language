@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-640. Next new bug: BUG-641.**
+**Last bug number generated: BUG-644. Next new bug: BUG-645.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -592,21 +592,6 @@ look like coverage.
 (delete/quarantine). Then close the class — see `tools/registration_check.py`, which makes
 an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 
-
-### BUG-201: nested-container dispatch on call-result / mutable-loop receivers ⛔ OPEN (found probing BUG-196)
-Two distinct facets surfaced when probing BUG-196, each its own mechanism:
-- **(b1) `.add`/`.at`/`.len` on a `.at()` CALL-RESULT** — `m.at(0).add(99)` on
-  `List(List(int))` → "no member function named 'add' in ArrayList". genMemberCall's
-  `recv_t = inferExpr(m.object)` dispatch (CodeGen ~10630) *should* fire the `Type_.list_`
-  arm, but `inferExpr(m.at(0))` isn't resolving to `list_` at the codegen call site even
-  though the standalone `.at` inferExpr handler (TypeChecker ~1844 returns the element
-  type) and the outer `inferExpr(m)` both work. Likely a codegen-`infer_ctx` population
-  gap for chained call receivers. A chained-dispatch/inference fix.
-- **(b2) mutating a `for`-binding element** — `for r in m: r.add(5)` now *dispatches*
-  correctly (post-BUG-196) but hits "expected '*T', found '*const T'": Zig loop bindings
-  are `const` (`for (m.items) |r|`), so mutating the element needs the by-pointer form
-  `for (m.items) |*r|` + deref. A separate mutation-aware loop-lowering feature (detect a
-  mutating method on the loop var → emit `|*r|`). Matrix-in-place-build pattern.
 
 ### BUG-101: AstBuilder uses `std.debug.panic` instead of diagnostics for parse-tree shape violations
 - **Severity:** Low today (only the parser produces trees and it's well-tested) / Critical for VCS-merge-oracle future (operation-patches could synthesize trees)

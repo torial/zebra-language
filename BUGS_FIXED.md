@@ -43,6 +43,108 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-641: an un-annotated `var x = lib.f()` -- a qualified call to a used module's top-level def -- was untyped -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+use seglib                     # seglib.zbr: def mkList(): List(int)
+def main()
+    var xs = seglib.mkList()   # -c: "cannot infer the type of `xs`, so `.add()` cannot be resolved"
+    xs.add(4)
+```
+
+Found closing BUG-017: the `.items.len` guess that entry describes is a refusal today, and the
+receiver it refused on was this. `use seglib exposing mkList` + `mkList()` was typed, and so was
+the qualified constructor `seglib.Seg(4)`; the qualified CALL was not, so `.len`, `.add()` and
+str methods on its result were refused, as was everything downstream that dispatches on a type.
+Same on the N-1 anchor.
+
+**FIXED.** `inferExpr`'s member-call arm reads the used module's own `$fns:<mod>` facts (BUG-604)
+when the receiver is a `use`d module that is not a local or a class. Not the shared `""` table:
+two used modules declaring the same name would type one of them from the other.
+Fixture `test/bug641_qualified_fn_infer_test.zbr` (+ two helper modules, each with a `pick()` of
+a different type); every leg is refused on the pre-fix binary.
+
+### BUG-642: `x ?? y` (nil-coalescing in C#/Kotlin/Swift/JS) passed `-c` and failed inside zig -- FIXED 2026-10-27 (found the same day)
+
+QUICKSTART says there is no `??` in Zebra, and nothing enforced it: `??` lexed as two postfix `?`
+(explicit `try`), so `o ?? "none"` emitted `try (try o)` on an optional ("expected error union
+type") and the `"none"` became a statement of its own (BUG-643). Found writing a BUG-641 probe in
+exactly that spelling.
+
+**FIXED in the parser**, not the lexer: a postfix `?` immediately followed by another `?` on the
+same line is refused, naming `x orelse fallback` and `x!`. The lexer raises on its first error,
+which would have cost `multi_parse_error_test` its second recovered error (it uses `???`).
+Fixture `test/bug642_double_question_fail.zbr`.
+
+Left alone, deliberately: a single `x?` on a LOCAL that cannot fail still reaches zig. BUG-546
+refuses it on a call whose emit it decides and leaves locals out, because a wrong "cannot fail"
+would refuse a program zig accepts.
+
+### BUG-643: two statements on one line were accepted -- `var x = 5 6` bound 5 and ran `6` on its own -- FIXED 2026-10-27 (found the same day)
+
+Every simple statement ended with `.skipEol()`, which takes an end-of-line if one is there and
+does not require it, so whatever followed on the same line was read as the next statement.
+`var x = 5 6` printed 5; `return 5 6` failed inside zig; `f() f()` ran twice. Same on the N-1
+anchor.
+
+**FIXED.** `refuseSameLineStmt()`, called by the three loops that read a statement list
+(`parseBlock` and the two statement-lambda bodies): a token left on the line the last statement
+ended on is refused, unless the token just consumed was an EOL or a DEDENT (a DEDENT carries the
+NEXT line's position). The legitimate one-line forms -- `if c: a else: b`, an inline branch arm,
+`header: stmt` -- are consumed inside their own statement and never reach the check.
+Fixtures `test/bug643_same_line_statements_fail.zbr` and `test/bug643_one_line_forms_test.zbr`
+(the positive control: those forms, a multi-line call, a trailing comma and a statement-body
+lambda argument, identical output on the old and new binaries).
+
+**Measured before landing**, with BUG-642 and BUG-644: `-c` on all 3,086 tracked `.zbr` in this
+repo, zebra-ide and the GameEngine, old binary against new. No file that passed `-c` fails now.
+13 files gained one of the three refusals: 11 machine-ported GameEngine `ported_scripts/` that
+already failed (Lua left in them), and two fixtures here -- `to_bang_removed_test` still passes
+(its expectation is `'to'`), and BUG-419's arrow-lambda refusal was pre-empted by BUG-644's until
+the comma check deferred to it.
+
+**The FULL tier found two more, both in documentation** (`doc-example`): STYLE_GUIDE §8.2 taught
+`config.name ?? "anonymous"` as an ESTABLISHED idiom (now `orelse`), and QUICKSTART §9's branch
+example ends `else                 pass`. That one was never accepted: an `on` arm takes its
+statement on the same line, `else` took one only after a comma (`else, stmt`), and without the
+comma the statement was left for the enclosing block, which misparsed whatever followed (the
+next `branch` was reported as being at the top level). `else  stmt` on one line is now read the
+way `on Pattern  stmt` is; the positive-control fixture carries it and is red on the old binary.
+
+### BUG-644: call arguments needed no comma -- `add(5 6)` was `add(5, 6)` -- FIXED 2026-10-27 (found the same day)
+
+`parseCallArgs` took a comma when there was one and went on to the next argument when there was
+not. A list literal already refused the same mistake ("expected ']'"). Same on the N-1 anchor.
+
+**FIXED.** After an argument, a token on the same line that is neither `,` nor `)` is refused
+("expected `,` or `)` after an argument"). Same-line only: a statement-body lambda's `)` comes
+after an end-of-line and is left to the closing check. `x => ...` defers to BUG-419's message.
+Fixture `test/bug644_call_args_comma_fail.zbr`.
+
+### BUG-201: nested-container dispatch on call-result / mutable-loop receivers -- FIXED (found probing BUG-196; closed in the ledger 2026-10-27)
+Two distinct facets surfaced when probing BUG-196, each its own mechanism:
+- **(b1) `.add`/`.at`/`.len` on a `.at()` CALL-RESULT** — `m.at(0).add(99)` on
+  `List(List(int))` → "no member function named 'add' in ArrayList". genMemberCall's
+  `recv_t = inferExpr(m.object)` dispatch (CodeGen ~10630) *should* fire the `Type_.list_`
+  arm, but `inferExpr(m.at(0))` isn't resolving to `list_` at the codegen call site even
+  though the standalone `.at` inferExpr handler (TypeChecker ~1844 returns the element
+  type) and the outer `inferExpr(m)` both work. Likely a codegen-`infer_ctx` population
+  gap for chained call receivers. A chained-dispatch/inference fix.
+- **(b2) mutating a `for`-binding element** — `for r in m: r.add(5)` now *dispatches*
+  correctly (post-BUG-196) but hits "expected '*T', found '*const T'": Zig loop bindings
+  are `const` (`for (m.items) |r|`), so mutating the element needs the by-pointer form
+  `for (m.items) |*r|` + deref. A separate mutation-aware loop-lowering feature (detect a
+  mutating method on the loop var → emit `|*r|`). Matrix-in-place-build pattern.
+
+**FIXED by `408aa38` (2026-09, "Nested containers have reference semantics", BUG-314's other
+half), and the entry stayed open until 2026-10-27.** Found by probing it before working on it:
+both facets compile and mutate in place on the rc4 build (`c9c383c`) and on HEAD, and both
+fail exactly as written above on the 2026-09-01 build (`8cfdc6a`), as does a third shape,
+`for k, v in map` then `v.add(1)` ("no field named 'items' in struct 'hash_map...'").
+Fixture `test/bug201_nested_container_dispatch_test.zbr` (`smoke_run`) covers all three, plus
+the same through a method returning the field; it is red on `8cfdc6a`.
+
+
 ### BUG-640: `x is Mod.Class` (a module-qualified CLASS check) passes `-c` and fails inside zig -- FIXED 2026-10-27 (found the same day)
 
 ```zebra

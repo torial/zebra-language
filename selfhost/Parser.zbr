@@ -2374,6 +2374,22 @@ class Parser
 
     # -- Block and statements --------------------------------------------------
 
+    # BUG-643: a statement ends at the end of its line. Every simple statement closes with
+    # `.skipEol()`, which takes an end-of-line if there is one and does not require it, so
+    # whatever followed on the same line was read as the NEXT statement: `var x = 5 6`
+    # bound 5 and then evaluated `6` on its own, and `o ?? "none"` dropped its fallback.
+    # Called by each loop that reads a list of statements; a token left on the line the
+    # last statement ended on is refused. An EOL or DEDENT just consumed means the line
+    # did end (a DEDENT carries the NEXT line's position, so it must be excluded).
+    def refuseSameLineStmt() throws
+        if .isDedent() or .isEof() or .isEol() or .pos == 0
+            return
+        const prev = .peekAt(-1)
+        if prev.kind is TokenKind.eol or prev.kind is TokenKind.dedent or prev.kind is TokenKind.indent
+            return
+        if prev.line == .peek().line
+            raise .errorAt("`" + .peek().text + "` follows a complete statement on the same line -- one statement per line (is an operator or a comma missing before it?)")
+
     def parseBlock(): List(PNode) throws
         if not .isIndent()
             raise .errorAt("expected indent, got '" + .peek().text + "'")
@@ -2384,6 +2400,7 @@ class Parser
             if .isDedent()
                 break
             stmts.add(.parseStmt()?)
+            .refuseSameLineStmt()?
         if .isDedent()
             .advance()
         return stmts
@@ -2731,6 +2748,7 @@ class Parser
                     if .isDedent()
                         break
                     body_stmts.add(.parseStmt()?)
+                    .refuseSameLineStmt()?
                 if .isDedent()
                     .advance()
                 var lambda_node = PLambda(lam.params, lam.return_type, captures, List(PNode)(), body_stmts)
@@ -2858,10 +2876,16 @@ class Parser
                     arm.struct_pat_node = struct_pat_node
                     arms.add(arm)
                 else if .textIs("else")
+                    const else_line = .peek().line
                     .advance()
                     if .textIs(",")
                         # Inline else form: `else, stmt`
                         .advance()
+                        else_stmts.add(.parseStmt()?)
+                    else if not .isEol() and not .isDedent() and not .isEof() and .peek().line == else_line
+                        # `else  stmt` on one line, as `on Pattern  stmt` always was (QUICKSTART
+                        # §9 shows it). It used to be dropped here and left for the enclosing
+                        # block, which misparsed what followed; BUG-643 then refused it.
                         else_stmts.add(.parseStmt()?)
                     else
                         .skipEol()
@@ -3388,7 +3412,14 @@ class Parser
                     var empty_args = List(PNode)()
                     expr = PNode.expr_opt_chain(POptChain(base_list, field, false, empty_args))
             else if .textIs("?")
+                const q_tok = .peek()
                 .advance()
+                # BUG-642: `x ?? y`, the nil-coalescing operator of C#, Kotlin, Swift and
+                # JS. Zebra has none; read as two postfix `?` it reached zig as "expected
+                # error union type", and the fallback was silently a statement of its own
+                # (BUG-643). Refused here, naming the spelling that works.
+                if .textIs("?") and .peek().line == q_tok.line and .peek().col == q_tok.col + 1
+                    raise .errorAtPos(q_tok.line, q_tok.col, "there is no `??` operator in Zebra -- write `x orelse fallback` (nil or an error), or `x!` to unwrap")
                 expr = PNode.expr_try(expr)
             else if .textIs("!")
                 # x! force-unwrap / non-nil assert
@@ -3731,6 +3762,7 @@ class Parser
             if .isDedent()
                 break
             body_stmts.add(.parseStmt()?)
+            .refuseSameLineStmt()?
         if .isDedent()
             .advance()
         return PNode.expr_lambda(PLambda(params, ret_type, captures, List(PNode)(), body_stmts))
@@ -3845,6 +3877,18 @@ class Parser
                 args.add(.parseExpr()?)
             if .textIs(",")
                 .advance()
+            else if not .textIs(")")
+                # BUG-644: a missing comma read the next token as the next argument --
+                # `add(5 6)` was add(5, 6). Refused when it starts on the line the
+                # argument ended on; a statement-body lambda's closer comes after an
+                # end-of-line, and is left to the `)` below.
+                const arg_end = .peekAt(-1)
+                if not (arg_end.kind is TokenKind.eol or arg_end.kind is TokenKind.dedent) and arg_end.line == .peek().line
+                    # BUG-419's arrow lambda `x => ...` reaches here as `x` then `=`:
+                    # its own message names the Zebra form, so it wins.
+                    if .peek().text == "=" and .peekAt(1).text == ">"
+                        raise .unexpectedExprMsg()
+                    raise .errorAt("expected `,` or `)` after an argument, got '" + .peek().text + "'")
         .expectText(")")?
         return args
 

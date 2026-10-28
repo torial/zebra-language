@@ -1816,6 +1816,15 @@ smoke_run test/bug263_c_exposing_test.zbr "bug263 c: add=5 mul=42 qualified=9"
 smoke_run test/bug237_qualified_union_test.zbr "bug237: expr -5 | lit hi | is=-5 | lit=true"
 # BUG-640: `x is Mod.Class` -- the two-part form names a module, not a union.
 smoke_tc_fail test/bug640_is_module_class_test.zbr "'bug235_use_lib' is a module, not a union. For a class, expose it"
+# BUG-201: a container reached through a call result / loop binding / map value mutates in place.
+smoke_run test/bug201_nested_container_dispatch_test.zbr "bug201: [[99]] [[5, 10], [3, 5, 11]] [1] [7, 1] [[4, 6]]"
+# BUG-641: `var x = lib.f()` is typed from that module's own defs.
+smoke_run test/bug641_qualified_fn_infer_test.zbr "bug641: 4 4 3 ABC 3 5 HELLO"
+# BUG-642..644: `??`, two statements on one line, a missing comma between call arguments.
+smoke_tc_fail test/bug642_double_question_fail.zbr "operator in Zebra -- write"
+smoke_tc_fail test/bug643_same_line_statements_fail.zbr "follows a complete statement on the same line"
+smoke_tc_fail test/bug644_call_args_comma_fail.zbr "after an argument, got '6'"
+smoke_run test/bug643_one_line_forms_test.zbr "one-line: 6 6 [2, 4, 6] 5 3 4 round other"
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60

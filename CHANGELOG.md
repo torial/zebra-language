@@ -58,6 +58,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **One statement per line, and commas between call arguments (BUG-643, BUG-644).**
+  `var x = 5 6` was `var x = 5` followed by a statement `6`, and `add(5 6)` was `add(5, 6)`;
+  both are refused now, naming the missing operator or comma. A branch's `else` takes a statement
+  on the same line, as an `on` arm does (`else  pass`); it needed a comma before.
+
+- **`x ?? y` is refused, naming `orelse` (BUG-642).** It passed `-c` and failed inside zig.
+
+- **`var x = lib.f()` is typed (BUG-641).** A qualified call to a used module's function was
+  untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
+  exposed `f()`.
+
 - **`x is Mod.Class` is refused at `-c` (BUG-640).** It passed the front end and failed
   inside zig; the message names `use Mod exposing Class` + `is Class`.
 
