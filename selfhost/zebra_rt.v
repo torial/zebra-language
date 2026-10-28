@@ -1715,7 +1715,6 @@ fn zbr_panic(zr_msg string) {
 // Every local and parameter here is prefixed zf_: this file is compiled into the same module as
 // the emitted program, and a local that shares a name with one of the program's module consts
 // miscompiles silently under V 0.5.2 (an engine module has a const `tmp`; 2026-10-26).
-fn C.snprintf(buf &char, n usize, fmt &char, ...) int
 
 
 pub fn zfmt_f(zf_fmt string, zf_v []f64) string {

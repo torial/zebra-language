@@ -46,6 +46,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **The V runtime no longer declares `C.snprintf`.** `zebra_rt.v` carried
+  `fn C.snprintf(buf &char, n usize, ...)` for the old formatted-write path; the exact
+  formatter (2026-10-26) left it with no caller, and V master deprecates `usize`
+  (vlang/v fca9fad34), so every program emitted with `--target v` carried one warning
+  per file there, with no grace period before it becomes an error. Deleted; the emit's
+  output is the same under V 0.5.2 and master, and `tools/v_check.sh` is green under
+  both (20 rows each). Found by the brief-4 corpus run (14 of 14 programs identical on
+  master; the engine repo's `docs/v_cloud_briefs/`).
 - **A lambda variable can be reassigned without a type annotation (BUG-629).**
   `var h = def(x: int): int = x + k` then `h = def(x: int): int = x - k` failed inside zig;
   the variable is now a function value as if declared `var h: def(int): int`, also when
