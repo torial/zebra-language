@@ -1838,6 +1838,22 @@ smoke_run test/bug652_dep_static_strname_test.zbr "bug652: true 4 10 true 9"
 smoke_run test/bug252_inference_gaps_test.zbr "bug252: true false true 9 6 16 aGk= aGV5 hey pair 7 leaf z"
 # BUG-656: a dep class built through its module name fills defaults and honours named args.
 smoke_run test/bug656_dep_ctor_defaults_test.zbr "bug656: 1 7 1 20 3 4 5 7"
+# BUG-657: a top-level main beside a class static main is the entry (one `pub fn main`).
+smoke_run test/bug657_two_mains_test.zbr "bug657: App.main"
+# BUG-658: a dep enum / union VALUE named through its module.
+smoke_run test/bug658_qualified_enum_value_test.zbr "bug658: blue true true"
+# BUG-657: the compiler's own unit tests. Run by nothing until 2026-10-28 -- 4 of 9 failed inside
+# zig (two front-end bugs, BUG-658/659, plus stale constructor calls), the rest on stale
+# expectations; each now exits non-zero on a failure.
+smoke_run selfhost/ast_test.zbr "ast_test: all assertions passed"
+smoke_run selfhost/astbuilder_test.zbr "astbuilder_test: all assertions passed"
+smoke_run selfhost/cg_helpers_test.zbr "cg_helpers_test: all OK"
+smoke_run selfhost/codegen_test.zbr "codegen_test: all OK"
+smoke_run selfhost/lexer_test.zbr "lexer_test: all OK"
+smoke_run selfhost/parser_test.zbr "parser_test: all assertions passed"
+smoke_run selfhost/pipeline_test.zbr "pipeline_test: all OK"
+smoke_run selfhost/resolver_test.zbr "resolver_test: all assertions passed"
+smoke_run selfhost/typechecker_test.zbr "typechecker_test: all OK"
 # BUG-650 negative control: alias / enum / bare variant into their own types stay accepted.
 smoke_run test/bug650_primitive_slot_ok_test.zbr "bug650: 5 13"
 # BUG-243: files that had never been asserted by anything.
@@ -2535,6 +2551,9 @@ smoke_tc_fail test/expose_dotted_test.zbr "a dotted module path is not supported
 smoke_tc_fail test/fail_fixtures/bug654_is_nil_fail.zbr "bug654_is_nil_fail.zbr:5:24: error: \`is\` takes a type or a union variant on its right"
 # BUG-655: positions after a multi-line """ string whose text starts on its opening line.
 smoke_tc_fail test/fail_fixtures/bug655_triple_quote_lines_fail.zbr "bug655_triple_quote_lines_fail.zbr:11:18: error: type mismatch: expected int, found str"
+# BUG-659: a cue init takes the call arity rule -- too few (was zero-padded) and too many.
+smoke_tc_fail test/fail_fixtures/bug659_ctor_arity_fail.zbr "bug659_ctor_arity_fail.zbr:11:13: error: too few arguments to 'Pt' (its cue init): expected 2, found 1"
+smoke_tc_fail test/fail_fixtures/bug659_ctor_arity_fail.zbr "bug659_ctor_arity_fail.zbr:12:13: error: too many arguments to 'Pt' (its cue init): expected at most 2, found 3"
 # ...and --allow-inference-guess (one release) guesses as before, with a warning.
 smoke_run_flag test/infer_guess_hatch_test.zbr --allow-inference-guess "infer_hatch: 6"
 # ...and WITHOUT the hatch the same file is refused (this also declares it must-reject,

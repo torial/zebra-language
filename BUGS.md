@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-657. Next new bug: BUG-658.**
+**Last bug number generated: BUG-659. Next new bug: BUG-660.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,27 +43,6 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
-
----
-
-### BUG-657: the compiler's own unit tests (`selfhost/*_test.zbr`) are run by nothing -- 5 of 9 fail, 4 of them inside zig — OPEN (found 2026-10-28)
-
-`registration_check` covers `test/*.zbr` only, so these nine files sit outside every gate.
-Run on 2026-10-28 (the same result on HEAD's compiler, so none of it is new):
-
-| file | result |
-|---|---|
-| `astbuilder_test`, `cg_helpers_test` | pass |
-| `parser_test`, `resolver_test` | exit 0 but print `FAILED:` lines -- test sources in pre-`print()` / `try`-block syntax |
-| `pipeline_test` | its own assert fails (`pub const Foo` -- types emit as `_zbr_ty_Foo` since BUG-281 B). Its three stale `generateEntryPoint(m)` calls were fixed with BUG-656 |
-| `ast_test` | **zig refuses**: `struct 'Ast' has no member named 'IntBase'` |
-| `codegen_test` | **zig refuses**: `use of undeclared identifier 'Expr'` |
-| `lexer_test` | **zig refuses**: `duplicate struct member name 'main'` |
-| `typechecker_test` | **zig refuses**: `std.mem.zeroes` of a non-nullable pointer |
-
-The four zig refusals are leaks -- `-c` accepts each file -- and each is its own
-defect to reduce to a repro. Then: register the passing ones (`smoke_run`), and widen
-`registration_check` to `selfhost/*_test.zbr` so the set cannot drift out of view again.
 
 ---
 

@@ -1,0 +1,10 @@
+# BUG-658: a dependency's enum or union VALUE named through its module (`lib.Color.blue`)
+# emitted the bare type name, which the module declares as `_zbr_ty_Color` -- zig: "no member
+# named Color". `is lib.Shape.dot` (BUG-237) and the exposed spelling always worked.
+use bug658_qualified_enum_lib
+
+def main()
+    var c = bug658_qualified_enum_lib.Color.blue
+    var s = bug658_qualified_enum_lib.Shape.dot
+    var k = bug658_qualified_enum_lib.Shape.circle(5)
+    print("bug658: ${c} ${s is bug658_qualified_enum_lib.Shape.dot} ${k is bug658_qualified_enum_lib.Shape.circle}")

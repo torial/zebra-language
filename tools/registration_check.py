@@ -63,6 +63,23 @@ def registered():
             for m in re.findall(r'^smoke\w*\s+(test/\S+\.zbr)', text, re.M)}
 
 
+# BUG-657: the compiler's own unit tests live in selfhost/, outside test/, and so outside
+# this gate -- nine files nothing ran, four of them failing inside zig. They are held to the
+# stricter rule: each must be REGISTERED (they are not in the corpus sweeps, and there is
+# no baseline of debt to grandfather).
+def tracked_selfhost_tests():
+    import subprocess
+    out = subprocess.run(["git", "-C", str(REPO), "ls-files", "--", "selfhost"],
+                         capture_output=True, check=True).stdout.decode("utf-8", "replace")
+    return sorted(ln for ln in out.split("\n")
+                  if re.fullmatch(r'selfhost/[A-Za-z0-9_]+_test\.zbr', ln))
+
+
+def registered_selfhost():
+    text = SMOKE.read_text(encoding="utf-8")
+    return set(re.findall(r'^smoke\w*\s+(selfhost/\S+_test\.zbr)', text, re.M))
+
+
 def sweep_clean():
     if not SWEEP_BASE.exists():
         return set()
@@ -133,9 +150,20 @@ def main():
               f"(--update-baseline to lock it in): {', '.join(fixed[:6])}"
               + (" …" if len(fixed) > 6 else ""))
 
-    total_bad = len(new) + len(bad_ex)
+    sh_tests = tracked_selfhost_tests()
+    if not sh_tests:
+        print("REFUSING TO REPORT: no selfhost/*_test.zbr found -- the enumeration has "
+              "stopped working (nine existed on 2026-10-28).")
+        return 2
+    sh_reg = registered_selfhost()
+    sh_unreg = [t for t in sh_tests if t not in sh_reg]
+    for t in sh_unreg:
+        print(f"  UNASSERTED  {t} — a compiler unit test no smoke registration runs (BUG-657)")
+
+    total_bad = len(new) + len(bad_ex) + len(sh_unreg)
     print(f"\n[registration] {len(tests)} tracked tests, {len(unasserted)} unasserted "
-          f"({len(known)} known debt), {len(new)} NEW")
+          f"({len(known)} known debt), {len(new)} NEW; "
+          f"{len(sh_tests) - len(sh_unreg)}/{len(sh_tests)} selfhost unit tests registered")
     return 1 if total_bad else 0
 
 

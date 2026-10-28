@@ -43,6 +43,78 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-659: a `cue init` had no arity check -- a missing argument was silently zero -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+class Pt
+    cue init(x: int, y: int)
+var a = Pt(1)          # passed -c and RAN: y = 0
+var b = Pt(1, 2, 3)    # passed -c; zig "expected 2 argument(s), found 3"
+```
+
+`checkArgCount` returned early for any class name ("a constructor -- different arity
+rules"), and codegen pads a missing argument with `std.mem.zeroes`, so a missing required
+argument became a fabricated zero -- or, for a pointer parameter, a zig error about
+`std.mem.zeroes` that names nothing the user wrote (that is how `typechecker_test` failed,
+BUG-657). BUG-142's rule (Sean, 2026-07-31: too few and too many are errors, BECAUSE of the
+zero padding) now covers a class's `cue init`, unqualified and `lib.Pt(...)`; the message
+names the class, `too few arguments to 'Pt' (its cue init)`. A struct with no `cue init`
+keeps its field rules. The check applies to classes this file declares or exposes -- the
+first version also judged a FUNCTION `Widget` by an unrelated module's class `Widget`
+(test/bug502_mod_b, BUG-502's shape), and fell through into the runtime-factory refusal for
+a user class named `Random` (bug489); the corpus sweep caught both before commit. Measured
+over 3,110 files of this repo, zebra-ide and the GameEngine: the only new refusals were the
+compiler's own stale unit tests. Fixture `test/fail_fixtures/bug659_ctor_arity_fail.zbr`.
+
+### BUG-658: a dependency's enum or union VALUE named through its module failed inside zig -- FIXED 2026-10-28 (found the same day)
+
+`lib.Color.blue` emitted `lib.Color.blue`, but `lib` declares the enum as `_zbr_ty_Color`
+(BUG-281 B), so zig found no member `Color`. The qualified-type rewrite consulted only the
+names this module knows (its own and exposed types); an enum or union of the used module
+that is not exposed lives in `dep_types`. `is lib.Shape.dot` worked (BUG-237) and the
+exposed spelling always did. Found by `selfhost/ast_test.zbr`'s `Ast.IntBase.decimal`
+(BUG-657). Fixture `test/bug658_qualified_enum_value_test.zbr` (+ `_lib`).
+
+### BUG-657: the compiler's own unit tests (`selfhost/*_test.zbr`) are run by nothing -- 5 of 9 fail, 4 of them inside zig — FIXED 2026-10-28 (found the same day)
+
+`registration_check` covers `test/*.zbr` only, so these nine files sit outside every gate.
+Run on 2026-10-28 (the same result on HEAD's compiler, so none of it is new):
+
+| file | result |
+|---|---|
+| `astbuilder_test`, `cg_helpers_test` | pass |
+| `parser_test`, `resolver_test` | exit 0 but print `FAILED:` lines -- test sources in pre-`print()` / `try`-block syntax |
+| `pipeline_test` | its own assert fails (`pub const Foo` -- types emit as `_zbr_ty_Foo` since BUG-281 B). Its three stale `generateEntryPoint(m)` calls were fixed with BUG-656 |
+| `ast_test` | **zig refuses**: `struct 'Ast' has no member named 'IntBase'` |
+| `codegen_test` | **zig refuses**: `use of undeclared identifier 'Expr'` |
+| `lexer_test` | **zig refuses**: `duplicate struct member name 'main'` |
+| `typechecker_test` | **zig refuses**: `std.mem.zeroes` of a non-nullable pointer |
+
+The four zig refusals are leaks -- `-c` accepts each file -- and each is its own
+defect to reduce to a repro. Then: register the passing ones (`smoke_run`), and widen
+`registration_check` to `selfhost/*_test.zbr` so the set cannot drift out of view again.
+
+**Fixed the same day.** All nine run, pass and are `smoke_run`-registered, and
+`registration_check` now requires every `selfhost/*_test.zbr` to be registered (absolute,
+no baseline; red-checked by deleting one registration). Each of the four zig refusals was a
+different thing:
+
+| file | cause | fix |
+|---|---|---|
+| `lexer_test` | a class `static main` beside a top-level `def main()` became TWO file-scope `pub fn main` | the top-level `main` is the entry; no thunk for the class (`test/bug657_two_mains_test.zbr`) |
+| `ast_test` | `Ast.IntBase.decimal` -- a dep enum value through its module | **BUG-658** |
+| `codegen_test`, `typechecker_test` | stale constructor calls (`Generator`, `DeclStruct`, `DeclClass`, `DeclInit` gained parameters) that `-c` let through and codegen padded with `std.mem.zeroes` | **BUG-659**, then the calls brought up to date |
+
+The rest were stale expectations, each updated to the CURRENT design rather than to pasted
+output: type names are `_zbr_ty_X` (BUG-281 B), fields carry `= undefined`, the entry thunk
+is `main(_zinit: std.process.Init)` with `_allocator = _prog_alloc()` and one
+`_zbr_uncaught` path (BUG-466), an unknown name infers `unresolved` (BUG-099), `print` is a
+call and `try` blocks are gone. Two assertions were tightened rather than loosened: a field
+check `"x: i64,"` had been passing by matching inside `init(x: i64, ...)`. And four of the
+files could not fail: `parser_test`, `resolver_test` and `pipeline_test` printed `FAILED`
+and exited 0, `typechecker_test` and `lexer_test` only PRINTED their failures. All five now
+exit 1 (red-checked: a planted failure in each counter path).
+
 ### BUG-656: a dependency class built through its MODULE name took its arguments in written order -- FIXED 2026-10-28 (found the same day)
 
 ```zebra

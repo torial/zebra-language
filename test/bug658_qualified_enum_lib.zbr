@@ -1,0 +1,8 @@
+# BUG-658: helper module for bug658_qualified_enum_value_test (an enum and a union, not exposed).
+enum Color
+    red
+    blue
+
+union Shape
+    dot
+    circle: int

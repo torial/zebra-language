@@ -48,14 +48,14 @@ class PipelineTest
     def testEmptyClass() throws
         const src = "class Foo\n"
         const zig = runPipeline(src)?
-        assert zig.contains("pub const Foo"), "expected 'pub const Foo' in output"
+        assert zig.contains("pub const _zbr_ty_Foo"), "expected pub const _zbr_ty_Foo in output (BUG-281 B)"
         assert zig.contains("_type_tag"), "expected _type_tag in class output"
         print("testEmptyClass: OK")
 
     def testClassWithField() throws
         const src = "class Point\n    var x: int\n    var y: int\n"
         const zig = runPipeline(src)?
-        assert zig.contains("pub const Point"), "expected Point struct"
+        assert zig.contains("pub const _zbr_ty_Point"), "expected Point struct"
         assert zig.contains("x: i64"), "expected x: i64 field"
         assert zig.contains("y: i64"), "expected y: i64 field"
         print("testClassWithField: OK")
@@ -77,7 +77,7 @@ class PipelineTest
     def testEnumDecl() throws
         const src = "enum Color\n    red\n    green\n    blue\n"
         const zig = runPipeline(src)?
-        assert zig.contains("pub const Color"), "expected pub const Color"
+        assert zig.contains("pub const _zbr_ty_Color"), "expected pub const _zbr_ty_Color"
         assert zig.contains("red"), "expected red variant"
         assert zig.contains("blue"), "expected blue variant"
         print("testEnumDecl: OK")
@@ -91,8 +91,8 @@ class PipelineTest
             on PNode.module_ as pm
                 const module = ASTBuilder.build(pm, "<test>")?
                 var entry: str = generateEntryPoint(module, false)
-                assert "pub fn main()" in entry, "expected pub fn main()"
-                assert "_arena.allocator()" in entry, "expected allocator setup"
+                assert "pub fn main(_zinit: std.process.Init)" in entry, "expected pub fn main(_zinit)"
+                assert "_allocator = _prog_alloc()" in entry, "expected allocator setup"
                 assert "Main.main()" in entry, "expected Main.main() call"
                 assert not ("catch" in entry), "non-throws main should not have catch"
             else
@@ -107,7 +107,7 @@ class PipelineTest
                 const module = ASTBuilder.build(pm, "<test>")?
                 var entry: str = generateEntryPoint(module, false)
                 assert "App.main() catch" in entry, "expected catch for throws main"
-                assert "ZebraError" in entry, "expected ZebraError handler"
+                assert "_zbr_uncaught(_err)" in entry, "expected the one uncaught-error path (BUG-466)"
             else
                 raise "expected module"
         print("testEntryPointThrowing: OK")
@@ -136,7 +136,7 @@ class PipelineTest
 
     def testResolverError() throws
         # 'undeclaredVar' is not declared — resolver should catch it
-        const src = "class Broken\n    def bad()\n        print undeclaredVar\n"
+        const src = "class Broken\n    def bad()\n        print(undeclaredVar)\n"
         const pm_node = Parser.Parser.parse(src, "<test>")?
         var resolver = Resolver.Resolver("<test>")
         resolver.resolve(pm_node)?
@@ -158,9 +158,9 @@ class PipelineTest
         assert zig.contains("const std"), "expected preamble std import"
         assert zig.contains("_arena"), "expected arena allocator in preamble"
         # Verify declarations section
-        assert zig.contains("pub const Main"), "expected Main class declaration"
+        assert zig.contains("pub const _zbr_ty_Main"), "expected Main class declaration"
         # Verify entry point section
-        assert zig.contains("pub fn main()"), "expected entry thunk"
+        assert zig.contains("pub fn main("), "expected entry thunk"
         assert zig.contains("Main.main()"), "expected Main.main() call in entry"
         print("testFullRoundTrip: OK")
 
@@ -169,3 +169,4 @@ def main()
     t.run()?
 catch |e|
     print("FAILED: " + e.message)
+    sys.exit(1)   # BUG-657: a failed run exited 0

@@ -2060,6 +2060,13 @@ def generateEntryPoint(m: Module, library_mode: bool): str
                                     main_throws = nmth.throws_
             else
                 pass
+    # BUG-657: a top-level `def main()` is the program's entry even when a class also has a
+    # `static main` (the compiler's own *_test.zbr call `T.main()` from one). Both became a
+    # file-scope `pub fn main` and zig refused the duplicate; `-c` passed.
+    for td in m.decls
+        if td is Decl.method as tdm
+            if tdm.name == "main" and not tdm.mods.is_static
+                main_class = ""
     if main_class == ""
         # Single-file: a top-level free `def main` was emitted as `_Mod.main` (with
         # the _zinit param + runtime init injected); Zig's startup wants root.main,
@@ -14741,7 +14748,10 @@ struct Generator
                 # Guarded on the object being an import alias, so an ordinary field
                 # that happens to share a name with a type is untouched.
                 if m.object is Expr.ident as xm_alias
-                    if import_aliases.contains_(xm_alias.name) and isUserTypeName(m.member) and not isSigName(m.member)   # BUG-476
+                    # BUG-658: a dep's enum/union that is NOT exposed is in dep_types only, so
+                    # `lib.Color.blue` emitted `lib.Color` and zig found no member `Color`.
+                    var xm_dep_ty: bool = .dep_types.hasEnum(m.member) or .dep_types.hasUnion(m.member) or .dep_types.hasClass(m.member)
+                    if import_aliases.contains_(xm_alias.name) and not isLocalOrParamName(xm_alias.name) and (isUserTypeName(m.member) or xm_dep_ty) and not isSigName(m.member)   # BUG-476
                         genExpr(m.object)
                         w.emit(".")
                         w.emit(zbrTypeSymbol(m.member))

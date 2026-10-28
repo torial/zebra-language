@@ -69,6 +69,16 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **A constructor call with the wrong number of arguments is refused (BUG-659).** `Pt(1)`
+  for `cue init(x: int, y: int)` compiled and ran with `y = 0`; `Pt(1, 2, 3)` failed inside
+  zig. Both are refused at `-c`, as function calls already were.
+
+- **`lib.Color.blue` works (BUG-658).** A used module's enum or union value, named through
+  the module without exposing the type, failed inside zig.
+
+- **A top-level `def main()` beside a class `static main` (BUG-657).** Both became an entry
+  point and the build failed; the top-level one is the entry.
+
 - **`lib.Pt(...)` fills defaults and honours named arguments (BUG-656).** Constructing a
   dependency's class through its module name passed the given arguments in written order:
   an omitted default failed inside zig, and `lib.Pt(y: 20, x: 1)` built x=20, y=1.

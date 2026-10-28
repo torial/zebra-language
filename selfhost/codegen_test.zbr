@@ -15,7 +15,7 @@
 use CodeGen exposing Writer, Generator
 use CgHelpers exposing StrSet
 use TypeChecker exposing ModuleTypes
-use Ast exposing Decl, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, Span, ParamMode, TypeParam
+use Ast exposing Expr, Decl, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, Modifiers, Param, Span, ParamMode, TypeParam
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
@@ -52,7 +52,7 @@ def hashTr(k: TypeRef, v: TypeRef): TypeRef
 def makeGen(): Generator
     var w = Writer()
     var cn = StrSet()
-    return Generator(w, 0, "", false, false, false, false, nil, "", "", cn, ModuleTypes(), ModuleTypes())
+    return Generator(w, 0, "", false, false, false, false, nil, "", "", cn, ModuleTypes(), ModuleTypes(), List(Decl)())
 
 # ── Part 1: Writer ────────────────────────────────────────────────────────────
 
@@ -121,9 +121,9 @@ def testGenTypePrimitive
     var cn = StrSet()
     cn.add("MyClass")
     var w8 = Writer()
-    var g8 = Generator(w8, 0, "", false, false, false, false, nil, "", "", cn, ModuleTypes(), ModuleTypes())
+    var g8 = Generator(w8, 0, "", false, false, false, false, nil, "", "", cn, ModuleTypes(), ModuleTypes(), List(Decl)())
     g8.genType(namedTr("MyClass"))
-    assert g8.w.output() == "*MyClass", "class -> *ClassName"
+    assert g8.w.output() == "*_zbr_ty_MyClass", "class -> *_zbr_ty_ClassName (BUG-281 B)"
 
     print("3. genType primitives: OK")
 
@@ -169,7 +169,7 @@ def testGenEnum
     var g = makeGen()
     g.genEnum(n)
     var out = g.w.output()
-    assert out == "pub const Color = enum {\n    red,\n    green,\n    blue,\n};\n\n", "genEnum output: '${out}'"
+    assert out == "pub const _zbr_ty_Color = enum {\n    red,\n    green,\n    blue,\n};\n\n", "genEnum output: '${out}'"
     print("6. genEnum: OK")
 
 # ── Part 7: genUnion ──────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ def testGenUnion
     var g = makeGen()
     g.genUnion(n)
     var out = g.w.output()
-    assert out == "pub const Value = union(enum) {\n    int_: i64,\n    str_: []const u8,\n    void_,\n};\n\n", "genUnion output: '${out}'"
+    assert out == "pub const _zbr_ty_Value = union(enum) {\n    int_: i64,\n    str_: []const u8,\n    void_,\n};\n\n", "genUnion output: '${out}'"
     print("7. genUnion: OK")
 
 # ── Part 8: genStruct (fields) ────────────────────────────────────────────────
@@ -195,14 +195,15 @@ def testGenStruct
     var fld2 = DeclVar(zspan(), zmods(), "name", namedTr("str"), nil, false)
     members.add(Decl.var_(fld1))
     members.add(Decl.var_(fld2))
-    var n = DeclStruct(zspan(), zmods(), "Point", List(TypeRef)(), members)
+    var n = DeclStruct(zspan(), zmods(), "Point", List(TypeRef)(), members, List(Expr)())
 
     var g = makeGen()
     g.genStruct(n)
     var out = g.w.output()
-    assert "pub const Point = struct {" in out, "struct header"
-    assert "x: i64," in out, "field x"
-    assert "name: []const u8," in out, "field name"
+    assert "pub const _zbr_ty_Point = struct {" in out, "struct header"
+    # whole field lines: a bare "x: i64," also matches inside the generated `init(x: i64, ...)`
+    assert "    x: i64 = undefined,\n" in out, "field x"
+    assert "    name: []const u8 = undefined,\n" in out, "field name"
     assert "};\n\n" in out, "struct footer"
     print("8. genStruct: OK")
 
@@ -212,14 +213,14 @@ def testGenClass
     var members = List(Decl)()
     var fld = DeclVar(zspan(), zmods(), "value", namedTr("int"), nil, false)
     members.add(Decl.var_(fld))
-    var cls = DeclClass(zspan(), zmods(), "Counter", List(TypeParam)(), List(TypeRef)(), List(TypeRef)(), members)
+    var cls = DeclClass(zspan(), zmods(), "Counter", List(TypeParam)(), List(TypeRef)(), List(TypeRef)(), members, List(Expr)())
 
     var g = makeGen()
     g.genClass(cls)
     var out = g.w.output()
-    assert "pub const Counter = struct {" in out, "class header"
+    assert "pub const _zbr_ty_Counter = struct {" in out, "class header"
     assert "_type_tag: u64 = _ttag_Counter," in out, "_type_tag field"
-    assert "value: i64," in out, "field value"
+    assert "    value: i64 = undefined,\n" in out, "field value"
     assert "_ttag_Counter: u64 = _zbr_hash" in out, "type tag constant"
     # After genClass, Counter should be in class_names
     assert g.class_names.contains_("Counter"), "class registered"
@@ -233,7 +234,9 @@ def testGenFieldDeclSB
     var fld = DeclVar(zspan(), zmods(), "buf", namedTr("StringBuilder"), nil, false)
     ig.genFieldDecl(fld)
     var out = g.w.output()
-    assert out == "    buf: _ZbrList(u8) = .{},\n", "StringBuilder field: '${out}'"
+    # The subject is the TYPE a StringBuilder lowers to. With no owner, genFieldDecl now
+    # takes the module-var path (`pub var _zbr_mv_buf: ...`), so the line shape is not it.
+    assert ": _ZbrList(u8)" in out, "StringBuilder field: '${out}'"
     print("10. genFieldDecl StringBuilder: OK")
 
 # ── Main ──────────────────────────────────────────────────────────────────────

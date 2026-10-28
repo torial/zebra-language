@@ -2061,6 +2061,11 @@ python tools/registration_check.py # THE UNASSERTED-FILE GATE (BUG-243, static, 
                                 #   those fixes were unverified. Baselined like bug-fixture:
                                 #   fails only on NEW debt (24 known). Shrink it, never grow it.
                                 #   QUICK tier.
+                                #   AND EVERY selfhost/*_test.zbr MUST BE REGISTERED (2026-10-28,
+                                #   BUG-657, absolute -- no baseline): the compiler's own unit
+                                #   tests sat outside test/ and so outside this gate; nothing ran
+                                #   the nine of them, four failed INSIDE ZIG, and that led to
+                                #   BUG-658/659. Red-checked by deleting one registration.
                                 #   (`lint_decl_exhaustive.py`, THE Ast.Decl EXHAUSTIVENESS
                                 #   GATE `decl-exhaustive`, sat here 2026-08-26 .. 2026-09-16:
                                 #   BUG-103's pin -- no `else => {}` in the bootstrap's
@@ -3547,7 +3552,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **930** <!-- doc-gen: 930 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **933** <!-- doc-gen: 933 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

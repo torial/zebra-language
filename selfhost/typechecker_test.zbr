@@ -7,11 +7,15 @@
 use TypeChecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
+# BUG-657: FAILs are counted -- a run that only PRINTED them exited 0.
+var check_fails: int = 0
+
 def check(ok: bool, label: str)
     if ok
         print("PASS " + label)
     else
         print("FAIL " + label)
+        check_fails += 1
 
 # ── Type_ construction and equality ──────────────────────────────────────────
 # Equality at the variant level is by-shape (branch match); structural equality
@@ -223,7 +227,7 @@ def varDecl(name: str, t: TypeRef): Decl
     return Decl.var_(DeclVar(mkSpan(), emptyMods(), name, t, nil, false))
 
 def classDecl(name: str, members: List(Decl)): Decl
-    return Decl.class_(DeclClass(mkSpan(), emptyMods(), name, List(Ast.TypeParam)(), List(TypeRef)(), List(TypeRef)(), members))
+    return Decl.class_(DeclClass(mkSpan(), emptyMods(), name, List(Ast.TypeParam)(), List(TypeRef)(), List(TypeRef)(), members, List(Expr)()))
 
 def testBuildModuleTypesClass()
     var members: List(Decl) = List(Decl)()
@@ -249,7 +253,7 @@ def testBuildModuleTypesInit()
     params.add(Param(mkSpan(), ParamMode.normal, "x", namedRef("int"), nil))
     params.add(Param(mkSpan(), ParamMode.normal, "y", namedRef("str"), nil))
     var members: List(Decl) = List(Decl)()
-    members.add(Decl.init(DeclInit(mkSpan(), emptyMods(), params, nil)))
+    members.add(Decl.init(DeclInit(mkSpan(), emptyMods(), params, nil, List(Expr)(), List(Expr)())))
     var decls: List(Decl) = List(Decl)()
     decls.add(classDecl("Bar", members))
     var m: Module = Module("" + "<test>", decls)
@@ -338,9 +342,9 @@ def testInferThisField()
     var this_expr: Expr = Expr.this_(mkSpan())
     var mem: Expr = Expr.member(ExprMember(mkSpan(), this_expr, "name"))
     check(typeIsString(inferExpr(mem, ctx)), "inferExpr(this.name) → string")
-    # this.missing → unknown_
+    # this.missing → unresolved (BUG-099: an unknown member is the alarm-bell type)
     var mem2: Expr = Expr.member(ExprMember(mkSpan(), this_expr, "missing"))
-    check(typeIsUnknown(inferExpr(mem2, ctx)), "inferExpr(this.missing) → unknown_")
+    check(inferExpr(mem2, ctx) is Type_.unresolved, "inferExpr(this.missing) → unresolved")
 
 def testInferCtorCall()
     # Foo() with ModuleTypes containing Foo → Type_.named("Foo")
@@ -362,7 +366,7 @@ def testInferIdentScope()
     var e: Expr = Expr.ident(ExprIdent(mkSpan(), "x"))
     check(typeIsInt(inferExpr(e, ctx)), "inferExpr(bound ident x) → int")
     var e2: Expr = Expr.ident(ExprIdent(mkSpan(), "unbound"))
-    check(typeIsUnknown(inferExpr(e2, ctx)), "inferExpr(unbound ident) → unknown_")
+    check(inferExpr(e2, ctx) is Type_.unresolved, "inferExpr(unbound ident) → unresolved")
 
 def testInferMethodCall()
     # Bar.go() where Bar has method go returning int.
@@ -513,7 +517,8 @@ def testInferDepModuleFuncCall()
 
     # Without dep_types wired, the same call should return unknown_.
     var ctx_nodep: InferCtx = InferCtx(caller_mt, "Caller")
-    check(typeIsUnknown(inferExpr(call, ctx_nodep)), "inferExpr(helper()) without dep_types → unknown_")
+    # Since BUG-099 an unknown callee is `unresolved` (the alarm-bell type), not unknown_.
+    check(inferExpr(call, ctx_nodep) is Type_.unresolved, "inferExpr(helper()) without dep_types → unresolved")
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
@@ -540,4 +545,7 @@ def main()
     testNarrowPayloadFromOnValue()
     testInferModuleFuncCall()
     testInferDepModuleFuncCall()
-    print("typechecker_test: done")
+    if check_fails > 0
+        print("typechecker_test: " + check_fails.toString() + " FAILED")
+        sys.exit(1)
+    print("typechecker_test: all OK")

@@ -3,6 +3,13 @@
 use Token exposing TokenKind
 use Lexer
 
+# BUG-657: failures are counted -- a run that only PRINTED them exited 0.
+var lx_fails: int = 0
+
+def lxFail(msg: str)
+    print(msg)
+    lx_fails += 1
+
 class LexerTest
     static
         def testKeyword()
@@ -10,7 +17,7 @@ class LexerTest
             assert toks.len == 3, "keyword: expected 3 tokens, got " + toks.len.toString()
             print("testKeyword: OK")
         catch |e|
-            print("testKeyword FAILED: " + e.message)
+            lxFail("testKeyword FAILED: " + e.message)
 
         def testIdentifier()
             var toks = Lexer.tokenize("fooBar")
@@ -18,7 +25,7 @@ class LexerTest
             assert toks.at(0).text == "fooBar", "identifier: text mismatch"
             print("testIdentifier: OK")
         catch |e|
-            print("testIdentifier FAILED: " + e.message)
+            lxFail("testIdentifier FAILED: " + e.message)
 
         def testClass()
             var src: str = "class Foo\n    def bar\n        return 1"
@@ -28,7 +35,7 @@ class LexerTest
             assert toks.at(1).text == "Foo", "class: second should be 'Foo'"
             print("testClass: OK (" + toks.len.toString() + " tokens)")
         catch |e|
-            print("testClass FAILED: " + e.message)
+            lxFail("testClass FAILED: " + e.message)
 
         def testIndentation()
             var src: str = "a\n    b\n        c\n    d\ne"
@@ -36,7 +43,7 @@ class LexerTest
             assert toks.len >= 12, "indentation: expected >= 12 tokens, got " + toks.len.toString()
             print("testIndentation: OK (" + toks.len.toString() + " tokens)")
         catch |e|
-            print("testIndentation FAILED: " + e.message)
+            lxFail("testIndentation FAILED: " + e.message)
 
         def testLineComment()
             var src: str = "x # this is a comment\ny"
@@ -46,7 +53,7 @@ class LexerTest
             assert toks.at(2).text == "y", "comment: third should be 'y'"
             print("testLineComment: OK")
         catch |e|
-            print("testLineComment FAILED: " + e.message)
+            lxFail("testLineComment FAILED: " + e.message)
 
         def testOperators()
             var src: str = "a + b * c"
@@ -56,7 +63,7 @@ class LexerTest
             assert toks.at(3).text == "*", "operators: token 3 should be '*'"
             print("testOperators: OK")
         catch |e|
-            print("testOperators FAILED: " + e.message)
+            lxFail("testOperators FAILED: " + e.message)
 
         def testIntLiteral()
             var src: str = "42"
@@ -65,7 +72,7 @@ class LexerTest
             assert toks.at(0).text == "42", "int: text mismatch"
             print("testIntLiteral: OK")
         catch |e|
-            print("testIntLiteral FAILED: " + e.message)
+            lxFail("testIntLiteral FAILED: " + e.message)
 
         def testOpenCall()
             var src: str = "foo()"
@@ -74,7 +81,7 @@ class LexerTest
             assert toks.at(0).text == "foo", "open_call: text should be 'foo'"
             print("testOpenCall: OK")
         catch |e|
-            print("testOpenCall FAILED: " + e.message)
+            lxFail("testOpenCall FAILED: " + e.message)
 
         def testSourcePositions()
             var src: str = "x\ny"
@@ -84,7 +91,7 @@ class LexerTest
             assert toks.at(2).line == 2, "position: 'y' on line 2"
             print("testSourcePositions: OK")
         catch |e|
-            print("testSourcePositions FAILED: " + e.message)
+            lxFail("testSourcePositions FAILED: " + e.message)
 
         def testTokenKinds()
             # Verify that branch range dispatch in scanToken correctly classifies chars
@@ -95,14 +102,14 @@ class LexerTest
                 on TokenKind.id
                     print("testTokenKinds id: OK")
                 else
-                    print("testTokenKinds FAILED: expected id kind")
+                    lxFail("testTokenKinds FAILED: expected id kind")
             branch intKind
                 on TokenKind.integer_lit
                     print("testTokenKinds int: OK")
                 else
-                    print("testTokenKinds FAILED: expected integer_lit kind")
+                    lxFail("testTokenKinds FAILED: expected integer_lit kind")
         catch |e|
-            print("testTokenKinds FAILED: " + e.message)
+            lxFail("testTokenKinds FAILED: " + e.message)
 
         def testExposing()
             # Verify the `exposing` keyword is tokenized correctly
@@ -112,9 +119,9 @@ class LexerTest
                 on TokenKind.kw_exposing
                     print("testExposing: OK")
                 else
-                    print("testExposing FAILED: wrong kind for 'exposing'")
+                    lxFail("testExposing FAILED: wrong kind for 'exposing'")
         catch |e|
-            print("testExposing FAILED: " + e.message)
+            lxFail("testExposing FAILED: " + e.message)
 
         def main
             print("=== Lexer Phase 1 Tests ===")
@@ -133,3 +140,7 @@ class LexerTest
 
 def main()
     LexerTest.main()
+    if lx_fails > 0
+        print("lexer_test: " + lx_fails.toString() + " FAILED")
+        sys.exit(1)
+    print("lexer_test: all OK")

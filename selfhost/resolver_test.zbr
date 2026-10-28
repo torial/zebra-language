@@ -115,8 +115,9 @@ class ResolverTest
         print("testWhileLoop: OK")
 
     def testTryCatch() throws
-        # try/catch — catch binding 'e' should be visible in catch body
-        const src = "class C\n    def safe() throws\n        try\n            var x: int = 0\n        catch |e|\n            raise e\n"
+        # a method-level catch -- its binding 'e' should be visible in the catch body.
+        # (Was a `try` block, which Zebra no longer has.)
+        const src = "class C\n    def safe() throws\n        var x: int = 0\n    catch |e|\n        raise e\n"
         var root = Parser.Parser.parse(src, "<test>")?
         var r = Resolver.Resolver("<test>")
         r.resolve(root)?
@@ -128,3 +129,4 @@ def main()
     t.run()?
 catch |e|
     print("FAILED: " + e.message)
+    sys.exit(1)   # BUG-657: a failed run exited 0

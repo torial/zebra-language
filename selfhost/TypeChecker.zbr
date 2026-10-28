@@ -6510,6 +6510,7 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     var is_ident: bool = false
     var ccol: int = 0
     var cline: int = line  # fallback; overridden by the callee's own span below
+    var ctor_name: str = ""   # BUG-659: set when the call constructs a class through its cue init
     branch call.callee
         on Expr.ident as cid
             is_ident = true
@@ -6526,9 +6527,22 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 # reaching this is the direct call.
                 if ctx.genericParamNames(cid.name).len > 0 and not ctx.hasLocal(cid.name)
                     ctx.addErr(file, cline, ccol, "`" + cid.name + "` is a generic class: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
-                return
+                    return
+                # BUG-659: a `cue init` takes the same arity rule as any call (BUG-142).
+                # Unchecked, a missing argument was padded with std.mem.zeroes -- `Pt(1)`
+                # built y=0 -- and an extra one failed inside zig. A class or struct with no
+                # cue init has no "init" list here and keeps its field rules.
+                # Only a class this file declares or exposes: dep_types also holds classes of
+                # modules it never uses (BUG-502 -- a FUNCTION `Widget` here, a class elsewhere).
+                var own_or_exposed: bool = ctx.module_types.hasClass(cid.name) or ctx.module_types.exposedOwner(cid.name) != nil
+                if ctx.hasLocal(cid.name) or not own_or_exposed or ctx.fnParamListAny(cid.name, "init") == nil
+                    return
+                lookup_class = cid.name
+                lookup_method = "init"
+                ctor_name = cid.name
             # BUG-469: a runtime object type called like a constructor it does not have.
-            if not ctx.hasLocal(cid.name)
+            # (Not for a user class -- `ctor_name` -- which may share a runtime type's name.)
+            if not ctx.hasLocal(cid.name) and ctor_name == ""
                 var rf_hint: str = runtimeFactoryHint(cid.name)
                 if rf_hint != ""
                     ctx.addErr(file, cline, ccol, "`" + cid.name + "()` is not a constructor -- " + rf_hint)
@@ -6536,7 +6550,7 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
             # BUG-460: a generic function called without its type argument. The curried
             # form's inner call `f(int)` is never walked here (checkCallsInExpr does not
             # descend into a call's callee), so reaching this is the direct call.
-            if (ctx.module_types.hasGenericFn(cid.name) or ctx.dep_types.hasGenericFn(cid.name)) and not ctx.hasLocal(cid.name)
+            if (ctx.module_types.hasGenericFn(cid.name) or ctx.dep_types.hasGenericFn(cid.name)) and not ctx.hasLocal(cid.name) and ctor_name == ""
                 ctx.addErr(file, cline, ccol, "`" + cid.name + "` is generic: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the arguments")
                 return
         on Expr.member as mem
@@ -6548,6 +6562,17 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                     var gq: str = gq_oid.name + "." + mem.member
                     ctx.addErr(file, mem.span.line, mem.span.col, "`" + gq + "` is a generic class: pass its type argument(s) first, `" + gq + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
                     return
+                # BUG-659: `lib.Pt(...)` -- a used module's class constructed qualified.
+                if not ctx.hasLocal(gq_oid.name) and not ctx.hasClassAny(gq_oid.name) and ctx.isUsedModule(gq_oid.name) and ctx.dep_types.hasClass(mem.member)
+                    # dep_types cannot say WHICH module owns the class (BUG-502): a same-named
+                    # function anywhere makes `lib.Name(...)` ambiguous here, so leave it.
+                    if ctx.dep_types.fnParamList(mem.member, "init") == nil or ctx.fnParamListAny("", mem.member) != nil
+                        return
+                    lookup_class = mem.member
+                    lookup_method = "init"
+                    ctor_name = gq_oid.name + "." + mem.member
+                    ccol = mem.span.col
+                    cline = mem.span.line
             var gm_cls: str = ""
             if mem.object is Expr.ident as gm_oid
                 if ctx.hasClassAny(gm_oid.name) and not ctx.hasLocal(gm_oid.name)
@@ -6566,7 +6591,9 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 recv = rrt
             if recv is Type_.optional as rot
                 recv = rot
-            if recv is Type_.named as tn
+            if ctor_name != ""
+                pass   # BUG-659: a qualified constructor, set above
+            else if recv is Type_.named as tn
                 lookup_class = tn
                 lookup_method = mem.member
                 ccol = mem.span.col
@@ -6602,13 +6629,16 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # those calls are genuinely unsafe here rather than merely untidy: codegen pads the
     # missing argument with std.mem.zeroes, so the callee reads a silent zero. Turning
     # that into an error is the point of the change, not a side effect of it.
+    var callee_q: str = "'" + lookup_method + "'"
+    if ctor_name != ""
+        callee_q = "'" + ctor_name + "' (its cue init)"
     if provided < required
         if required == total
-            ctx.addErr(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected " + total.toString() + ", found " + provided.toString())
+            ctx.addErr(file, cline, ccol, "too few arguments to " + callee_q + ": expected " + total.toString() + ", found " + provided.toString())
         else
-            ctx.addErr(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected at least " + required.toString() + ", found " + provided.toString())
+            ctx.addErr(file, cline, ccol, "too few arguments to " + callee_q + ": expected at least " + required.toString() + ", found " + provided.toString())
     else if provided > total
-        ctx.addErr(file, cline, ccol, "too many arguments to '" + lookup_method + "': expected at most " + total.toString() + ", found " + provided.toString())
+        ctx.addErr(file, cline, ccol, "too many arguments to " + callee_q + ": expected at most " + total.toString() + ", found " + provided.toString())
 
 # Walk an expression and run checkArgCount on every call it contains (the call
 # itself, calls in its arguments, and calls in compound sub-expressions). This is

@@ -207,7 +207,7 @@ class ParserTest
         # Note: cannot branch on the stmt_print *payload* because that variant holds
         # ^PNode (heap pointer), and branching on a *PNode is not yet supported.
         # Verifying the stmt variant is sufficient for Phase 3 smoke-testing.
-        const src = "class C\n    def show(x: int)\n        print x.toString()\n"
+        const src = "class C\n    def show(x: int)\n        print(x.toString())\n"   # print is a call since #220
         const decls = .moduleDecls(src)?
         branch decls.at(0)
             on PNode.class_ as c
@@ -258,3 +258,4 @@ def main()
     t.run()?
 catch |e|
     print("FAILED: " + e.message)
+    sys.exit(1)   # BUG-657: a failed run exited 0
