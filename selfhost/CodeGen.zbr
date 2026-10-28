@@ -4885,49 +4885,6 @@ struct Generator
             dynlib_vars            = StrSet()
         return g
 
-    # BUG-153: true if `nm` is a module-global `var` of type Atomic(T).  A module
-    # global isn't tracked by infer_ctx or the per-method atomic_locals set, so the
-    # `.add` rewrite consults this directly to keep an Atomic's `.add` (vs List's
-    # `.append`).  Non-mutating (returns bool) — safe to call on a const receiver.
-    # BUG-264. THE SAME HOLE AS BUG-153, one guard below: `inferExpr` sees only locals and
-    # params, so a MODULE-SCOPE collection is invisible to the `Type_.named` test that would
-    # otherwise stop `.add` being rewritten as a List append. BUG-153 patched that for
-    # `Atomic`; `StrSet` is the identical case and was left open because every pre-existing
-    # module-scope collection in the compiler's own source happened to be a `List(str)` --
-    # so the wrong branch was the right answer until someone declared a `StrSet`.
-    #
-    # The receiver TYPE resolves correctly (`StrSet`); only the method LOWERING was wrong.
-    # Reading the declaration directly is what the Atomic twin does, and it is the reason
-    # this is a small fix rather than a change to inference.
-    #
-    # BOTH DECLARATION FORMS: annotated (`var s: StrSet = StrSet()`) and bare
-    # (`var s = StrSet()`, which carries no type annotation at all -- see the note at the
-    # `Detect StrSet from init expression` site). The Atomic twin handles only the
-    # annotated form; a bare `StrSet()` would have slipped straight through.
-    def isModuleGlobalStrSet(nm: str): bool
-        for gd in module_decls
-            if gd is Decl.var_ as gv
-                if gv.name == nm
-                    if gv.type_ != nil
-                        if gv.type_! is TypeRef.named as gvn
-                            if gvn.name == "StrSet"
-                                return true
-                    if gv.init_expr != nil
-                        if gv.init_expr! is Expr.call as gvc
-                            if gvc.callee is Expr.ident as gvi
-                                if gvi.name == "StrSet"
-                                    return true
-        return false
-
-    def isModuleGlobalAtomic(nm: str): bool
-        for gd in module_decls
-            if gd is Decl.var_ as gv
-                if gv.name == nm and gv.type_ != nil
-                    if gv.type_! is TypeRef.generic as gvg
-                        if gvg.name == "Atomic"
-                            return true
-        return false
-
     # ── Output helpers ────────────────────────────────────────────────────────
 
     def emitTryBlockCatch()
@@ -18965,18 +18922,19 @@ struct Generator
             var is_atomic = false
             if add_obj_name != nil
                 var add_nm = add_obj_name!
-                # BUG-264: `or isModuleGlobalStrSet` -- a module-scope var is neither a
-                # local nor a field, so both existing tests miss it.
-                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm) or .isModuleGlobalStrSet(add_nm)
+                # BUG-306: a module-scope var (BUG-264's StrSet, BUG-153's Atomic) is
+                # typed by populateModuleTypes, so inferExpr below sees it; the two
+                # declaration-reading oracles that covered it are gone.
+                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm)
                 is_class_ref = isUpperCase(add_nm)
-                # BUG-153: a module-global Atomic isn't tracked by inferExpr (which
-                # only sees locals/params), so guard the List `.add`→`.append` rewrite
-                # explicitly — an Atomic's `.add` is a real method, not a List append.
-                is_atomic = atomic_locals.contains_(add_nm) or isModuleGlobalAtomic(add_nm)
+                is_atomic = atomic_locals.contains_(add_nm)
             if .infer_ctx != nil and not is_strset and not is_class_ref and not is_atomic
                 var add_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                 if add_recv_t is Type_.named as nc
                     is_class_inst = nc.len > 0
+                # An ANNOTATED `StrSet` types as Type_.str_set, not named (typeFromName).
+                if add_recv_t is Type_.str_set
+                    is_strset = true
             if not is_strset and not is_class_ref and not is_class_inst and not is_atomic
                 var add_item_is_str = false
                 var add_item_is_ref = false

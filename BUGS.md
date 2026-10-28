@@ -54,54 +54,6 @@ unit-tested without starting a server. A limitation, not a leak.
 
 ---
 
-### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — OPEN (found 2026-08-23)
-
-**CORRECTED 2026-10-27 -- the premise below is stale.** `inferExpr` DOES see a module-scope
-declaration now: `populateModuleTypes` registers each module `var`/`const` as a field of the
-`""` sentinel class, and the ident arm reads it (`TypeChecker.zbr`, "Module-level var/const").
-An ANNOTATED module var is typed exactly (`var n: Atomic(int)` -> `Atomic(int)`), and so is one
-initialised with a literal. What is still `unknown_` is an un-annotated var initialised by a
-CALL -- `var s = StrSet()`, `var g = Bag()` -- and that is the one gap the two oracles still
-cover (`isModuleGlobalStrSet` reads both forms). Probed the same day: a module-scope user class
-with an `add` method, a `Set(T)` (bare, annotated, literal), and an `Atomic` shadowed by a local
-`List` all emit correctly, through earlier dispatch paths. So no user-visible failure is known;
-what remains is typing a constructor-call initialiser in `populateModuleTypes` so the oracles
-can go. The original entry follows.
-
-**Two bugs from one gap, and the patches sit TEN LINES APART in the same function.**
-
-`inferExpr` is documented in `selfhost/CodeGen.zbr` as seeing "only locals/params". Every
-guard that decides a method lowering by asking the receiver's TYPE therefore misses a
-module-scope variable, silently, and falls through to whatever the default branch is. In
-`genMemberCall` that default is "treat `.add` as a `List` append".
-
-| bug | type | patch |
-|---|---|---|
-| BUG-153 | a module-global `Atomic` | `isModuleGlobalAtomic` |
-| BUG-264 | a module-scope `StrSet` | `isModuleGlobalStrSet` |
-
-Both oracles do the same thing — walk `module_decls` looking for a `Decl.var_` with a
-matching name and the right `TypeRef` — and both exist only because the general question
-cannot be asked. **A third type will need a third.**
-
-**WHY IT STAYS INVISIBLE.** The wrong branch is the RIGHT ANSWER for the common case:
-every module-scope collection in the compiler's own source was a `List(str)` until someone
-declared a `StrSet`. So the guard is not merely missing a case, it is confidently correct
-until the moment it is confidently wrong, and nothing distinguishes those two states from
-inside.
-
-**THE STRUCTURAL FIX** is to let `inferExpr` resolve a module-scope declaration, at which
-point the existing `Type_.named` test in each guard starts working and both bespoke
-oracles can be deleted. That is a change to inference rather than to a lowering, which is
-why BUG-264 was fixed with the cheap precedented patch instead — recorded here so the
-third instance does not get a third one-off.
-
-**Not made a gate.** What would catch this class is the ROUND-TRIP, and only because the
-compiler's own source happens to use the constructs; there is no general instrument. See
-BUG-264 for why no `test/*.zbr` fixture can express it: `StrSet` is not a user-facing type.
-
----
-
 ### BUG-295: a module import CYCLE builds cleanly and produces a compiler that STACK-OVERFLOWS — ⚠ HALF FIXED (diagnostic landed 2026-08-18; the overflow is still unexplained)
 
 > **THE "NO DIAGNOSTIC" HALF IS CLOSED.** A cycle is now REPORTED, with its full path

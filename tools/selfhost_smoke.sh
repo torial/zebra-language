@@ -1830,6 +1830,8 @@ smoke_run test/bug646_sb_len_and_chain_test.zbr "bug646: 4 2 1 4 qrs!"
 smoke_run test/bug648_empty_list_field_default_test.zbr "bug648: 2 5 x 1 6 11 1.5"
 # BUG-649: static container fields (with/without initializer, user-class, map, across a module).
 smoke_run test/bug649_static_container_field_test.zbr "bug649: 2 ab 3 2 7 2 2"
+# BUG-306: module-scope `.add` receivers typed by inference (annotated StrSet = Type_.str_set), no oracles.
+smoke_run test/bug306_module_strset_test.zbr "bug306: 2 1 1 7 11 1 2 0"
 # BUG-642..644: `??`, two statements on one line, a missing comma between call arguments.
 smoke_tc_fail test/bug642_double_question_fail.zbr "operator in Zebra -- write"
 smoke_tc_fail test/bug643_same_line_statements_fail.zbr "follows a complete statement on the same line"

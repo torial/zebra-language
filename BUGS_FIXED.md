@@ -43,6 +43,56 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — FIXED 2026-10-27
+
+**Fixed 2026-10-27 -- and the "correction" first written that morning was wrong in both
+directions, so it is replaced rather than kept.** It said a module var initialised by a CALL
+was still untyped and an annotated one was typed exactly. Measured by deleting both oracles:
+the call form was already typed (the BUG-496 pass in `populateModuleTypes` infers untyped
+initialisers, calls included), and the ANNOTATED `StrSet` was the hole -- `typeFromName`
+maps the name to `Type_.str_set`, not `Type_.named`, and the `.add` guard tested only
+`named`. The compiler's own `var _c_with_header_uses: StrSet = StrSet()` then emitted
+`.append` and the next regeneration did not build. The guard now also accepts
+`Type_.str_set`; `isModuleGlobalStrSet` and `isModuleGlobalAtomic` are deleted (an annotated
+or bare `Atomic(int)` is `named`). The entry's other claim, that no fixture can express it,
+was also wrong: the checker special-cases the NAME, so a user `class StrSet` takes the same
+path. `test/bug306_module_strset_test.zbr` -- bare, annotated and optional StrSet, annotated
+and bare Atomic, a List, and a local List shadowing a module StrSet -- fails exactly that way
+against a compiler with the oracles removed and the str_set test absent. The original entry
+follows.
+
+**Two bugs from one gap, and the patches sit TEN LINES APART in the same function.**
+
+`inferExpr` is documented in `selfhost/CodeGen.zbr` as seeing "only locals/params". Every
+guard that decides a method lowering by asking the receiver's TYPE therefore misses a
+module-scope variable, silently, and falls through to whatever the default branch is. In
+`genMemberCall` that default is "treat `.add` as a `List` append".
+
+| bug | type | patch |
+|---|---|---|
+| BUG-153 | a module-global `Atomic` | `isModuleGlobalAtomic` |
+| BUG-264 | a module-scope `StrSet` | `isModuleGlobalStrSet` |
+
+Both oracles do the same thing — walk `module_decls` looking for a `Decl.var_` with a
+matching name and the right `TypeRef` — and both exist only because the general question
+cannot be asked. **A third type will need a third.**
+
+**WHY IT STAYS INVISIBLE.** The wrong branch is the RIGHT ANSWER for the common case:
+every module-scope collection in the compiler's own source was a `List(str)` until someone
+declared a `StrSet`. So the guard is not merely missing a case, it is confidently correct
+until the moment it is confidently wrong, and nothing distinguishes those two states from
+inside.
+
+**THE STRUCTURAL FIX** is to let `inferExpr` resolve a module-scope declaration, at which
+point the existing `Type_.named` test in each guard starts working and both bespoke
+oracles can be deleted. That is a change to inference rather than to a lowering, which is
+why BUG-264 was fixed with the cheap precedented patch instead — recorded here so the
+third instance does not get a third one-off.
+
+**Not made a gate.** What would catch this class is the ROUND-TRIP, and only because the
+compiler's own source happens to use the constructs; there is no general instrument. See
+BUG-264 for why no `test/*.zbr` fixture can express it: `StrSet` is not a user-facing type.
+
 ### BUG-649: a `static var` of a container type did not compile, or was left undefined -- FIXED 2026-10-27 (found the same day)
 
 ```zebra
