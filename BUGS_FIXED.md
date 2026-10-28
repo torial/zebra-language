@@ -43,6 +43,72 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-647: `list.at(i).append(s)` on a StringBuilder element, as a statement, emitted a raw `.append(s)` -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+var sbs = [StringBuilder()]
+sbs.at(0).append("x")     # zig: member function expected 2 argument(s), found 1
+```
+
+The statement-position chain hoist (BUG-027) moved the receiver into `var _mc_N = ...` and
+called `_mc_N.append("x")` raw. It skipped the hoist with a DENY list of container types
+(`isBuiltinTypedRecv`) that had no StringBuilder; the var-init and assignment hoists had already
+switched to an ALLOW list for exactly this reason (BUG-531: a new runtime type should default to
+dispatch, not to a raw call). The statement hoist uses that rule now (`chainRecvNeedsHoist`).
+Same on the N-1 anchor. Fixture `test/bug646_sb_len_and_chain_test.zbr`. The change moves the
+compiler's own emit; a second `rebuild.sh` pass was byte-identical.
+
+### BUG-646: `sb.len` on a StringBuilder passed the checker and failed inside zig -- FIXED 2026-10-27 (found the same day)
+
+`len` is in the StringBuilder method set and the checker types `sb.len` as an int, but codegen's
+`.len` lowering had arms for List, HashMap and Set and none for StringBuilder, so it took the str
+spelling: `.len` on the `List(u8)` underneath ("no field named 'len'"). `sb.len()` worked. An arm
+now emits `.items.len`. A local, a field and a list element; red on the N-1 anchor.
+Fixture `test/bug646_sb_len_and_chain_test.zbr`.
+
+### BUG-645: docs/SURFACE.md listed `StringBuilder.add`, which the checker refuses -- FIXED 2026-10-27 (found the same day)
+
+`stringBuilderMethodKnown` -- the predicate SURFACE.md is derived from -- still admitted `add`
+after BUG-341 decided StringBuilder has no `add` and refused it four lines later. So the
+document behind the 1.0 stability promise listed a method no program could call. `add` is out of
+the predicate, the two refusals are one (BUG-341's message and its "did you mean 'append'?"
+hint), and SURFACE.md is re-derived (`StringBuilder: -add`). Found probing BUG-306. The refusal
+is pinned by `bug341_sb_unknown_method_fail`; `test/bug645_sb_method_set_test.zbr` calls every
+method SURFACE.md now lists.
+
+### BUG-026: `instance_method_return_types` gaps for exposed-type method chains -- CLOSED 2026-10-27 (does not reproduce in the selfhost; fixture added)
+- **Severity:** Medium
+- **Status:** Open
+- **Target:** Phase 7b / post-audit
+- **Symptom:** `var b = a.someMethod()` may still produce `const b` in generated Zig if `someMethod` isn't in `instance_method_return_types`.
+- **Root cause:** `instance_method_return_types` is populated by `buildModuleInterface`. It only captures methods whose return type resolves to a `.named` symbol with a non-primitive type.
+- **Fix direction:** Populate `instance_method_return_types` more comprehensively, including methods returning `Self` or generic types.
+
+**Closed 2026-10-27.** `instance_method_return_types` was the bootstrap's table
+(`src/`, deleted 2026-09-16); the selfhost has no such table (grep: 0). The symptom was probed
+directly on the selfhost: `var b = a.m()` on an exposed type, then `b` mutated, for a class
+result, the receiver itself (`return this`), a returned `List`, and a generic `T` holding a
+struct (a copy) and a class (a reference). Every case compiles and prints the values the
+semantics predict, worked out before the run. Fixture
+`test/bug026_method_result_mutation_test.zbr` (+ `bug026_method_result_lib.zbr`) pins it.
+
+### BUG-101: AstBuilder uses `std.debug.panic` instead of diagnostics for parse-tree shape violations -- CLOSED 2026-10-27 (the panicking code was deleted with the bootstrap)
+- **Severity:** Low today (only the parser produces trees and it's well-tested) / Critical for VCS-merge-oracle future (operation-patches could synthesize trees)
+- **Status:** Open
+- **Symptom:** ~20 sites in `src/AstBuilder.zig` use `std.debug.panic` to assert parse-tree shapes (e.g., `:159, 551, 869, 896, 924, 941, 1086, 1589, 1650, 1908, 1928, 2052, 2131, 2169, 2277, 2430` — partial list). Failure mode is hard panic with terse message and no source span.
+- **Reproducer:** None today from any well-formed source (they're invariant assertions). But under a future operation-patch VCS where structural edits synthesize trees, every site is a live hazard.
+- **Root cause:** AstBuilder predates the Diagnostic infrastructure; these sites were the historical fail-fast paths.
+- **Fix sketch:** Long-horizon refactor — fold each panic into the `Diagnostic` system with a "synthesized AST violated invariant X" error class, including the offending parse-tree NT. Short-term: leave alone but document the assumption that only the parser produces trees.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-2]).
+
+**Closed 2026-10-27.** Every site this entry lists is in `src/AstBuilder.zig`, deleted with the
+bootstrap on 2026-09-16. The selfhost's `selfhost/AstBuilder.zbr` has no `panic` (grep: 0): a
+shape it does not expect `raise`s a message naming the builder (`buildExpr: unexpected PNode
+variant`) that propagates through `ASTBuilder.build(...)?` to the driver, so the failure is an
+error, not a crash. What remains of the fix sketch is a SOURCE SPAN on those ten messages, and
+nothing synthesizes trees today; that belongs to the VCS-oracle work if it is ever built, not
+to this ledger.
+
 ### BUG-641: an un-annotated `var x = lib.f()` -- a qualified call to a used module's top-level def -- was untyped -- FIXED 2026-10-27 (found the same day)
 
 ```zebra

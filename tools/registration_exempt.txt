@@ -89,3 +89,4 @@ deprecated_warning_dep  # helper module imported by deprecated_warning_test (the
 bug527_iface_mod  # support module for bug527_iface_field_assign_test (the interface + Holder in ANOTHER module); exercised through its importer
 bug641_qualified_fn_lib  # helper module imported by bug641_qualified_fn_infer_test; has no main()
 bug641_qualified_fn_lib2  # helper module imported by bug641_qualified_fn_infer_test; has no main()
+bug026_method_result_lib  # helper module imported by bug026_method_result_mutation_test; has no main()

@@ -1820,6 +1820,12 @@ smoke_tc_fail test/bug640_is_module_class_test.zbr "'bug235_use_lib' is a module
 smoke_run test/bug201_nested_container_dispatch_test.zbr "bug201: [[99]] [[5, 10], [3, 5, 11]] [1] [7, 1] [[4, 6]]"
 # BUG-641: `var x = lib.f()` is typed from that module's own defs.
 smoke_run test/bug641_qualified_fn_infer_test.zbr "bug641: 4 4 3 ABC 3 5 HELLO"
+# BUG-026: mutating the result of a cross-module method (class, Self, List, generic T).
+smoke_run test/bug026_method_result_mutation_test.zbr "bug026: 11 2 2 9 7 1 2 2"
+# BUG-645: every StringBuilder method SURFACE.md lists is callable (its refusal of `add` is bug341).
+smoke_run test/bug645_sb_method_set_test.zbr "bug645: abc 3 z 1"
+# BUG-646/647: `sb.len` (local, field, list element) and `list.at(i).append(s)` on a StringBuilder.
+smoke_run test/bug646_sb_len_and_chain_test.zbr "bug646: 4 2 1 4 qrs!"
 # BUG-642..644: `??`, two statements on one line, a missing comma between call arguments.
 smoke_tc_fail test/bug642_double_question_fail.zbr "operator in Zebra -- write"
 smoke_tc_fail test/bug643_same_line_statements_fail.zbr "follows a complete statement on the same line"

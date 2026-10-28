@@ -69,6 +69,12 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **StringBuilder: `sb.len` works, and `list.at(i).append(s)` on a StringBuilder element
+  works (BUG-646, BUG-647).** Both passed `-c` and failed inside zig.
+
+- **docs/SURFACE.md no longer lists `StringBuilder.add` (BUG-645).** It was never callable:
+  the checker refuses it and suggests `append` (BUG-341). A listing correction, not a removal.
+
 - **`x is Mod.Class` is refused at `-c` (BUG-640).** It passed the front end and failed
   inside zig; the message names `use Mod exposing Class` + `is Class`.
 

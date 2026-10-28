@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-644. Next new bug: BUG-645.**
+**Last bug number generated: BUG-647. Next new bug: BUG-648.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -55,6 +55,18 @@ unit-tested without starting a server. A limitation, not a leak.
 ---
 
 ### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — OPEN (found 2026-08-23)
+
+**CORRECTED 2026-10-27 -- the premise below is stale.** `inferExpr` DOES see a module-scope
+declaration now: `populateModuleTypes` registers each module `var`/`const` as a field of the
+`""` sentinel class, and the ident arm reads it (`TypeChecker.zbr`, "Module-level var/const").
+An ANNOTATED module var is typed exactly (`var n: Atomic(int)` -> `Atomic(int)`), and so is one
+initialised with a literal. What is still `unknown_` is an un-annotated var initialised by a
+CALL -- `var s = StrSet()`, `var g = Bag()` -- and that is the one gap the two oracles still
+cover (`isModuleGlobalStrSet` reads both forms). Probed the same day: a module-scope user class
+with an `add` method, a `Set(T)` (bare, annotated, literal), and an `Atomic` shadowed by a local
+`List` all emit correctly, through earlier dispatch paths. So no user-visible failure is known;
+what remains is typing a constructor-call initialiser in `populateModuleTypes` so the oracles
+can go. The original entry follows.
 
 **Two bugs from one gap, and the patches sit TEN LINES APART in the same function.**
 
@@ -593,17 +605,6 @@ look like coverage.
 an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 
 
-### BUG-101: AstBuilder uses `std.debug.panic` instead of diagnostics for parse-tree shape violations
-- **Severity:** Low today (only the parser produces trees and it's well-tested) / Critical for VCS-merge-oracle future (operation-patches could synthesize trees)
-- **Status:** Open
-- **Symptom:** ~20 sites in `src/AstBuilder.zig` use `std.debug.panic` to assert parse-tree shapes (e.g., `:159, 551, 869, 896, 924, 941, 1086, 1589, 1650, 1908, 1928, 2052, 2131, 2169, 2277, 2430` — partial list). Failure mode is hard panic with terse message and no source span.
-- **Reproducer:** None today from any well-formed source (they're invariant assertions). But under a future operation-patch VCS where structural edits synthesize trees, every site is a live hazard.
-- **Root cause:** AstBuilder predates the Diagnostic infrastructure; these sites were the historical fail-fast paths.
-- **Fix sketch:** Long-horizon refactor — fold each panic into the `Diagnostic` system with a "synthesized AST violated invariant X" error class, including the offending parse-tree NT. Short-term: leave alone but document the assumption that only the parser produces trees.
-- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-2]).
-
----
-
 ### BUG-014: Regex lazy match is global, not per-quantifier
 - **Severity:** Medium
 - **Status:** Open — architectural limitation
@@ -621,16 +622,6 @@ an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
 - **Status:** Open — known imprecision; deferred until ModuleInterface preserves return types
 - **Symptom:** When a local variable's TC type is `.unknown` and `.len` is accessed on it, CodeGen emits `.items.len` as a last-resort fallback. Correct for `ArrayList`-backed `List(T)` values but wrong for user-defined structs with a field named `len`.
 - **Proper fix:** Add a `.list { elem_type }` variant to `TypeChecker.Type`, store it in `ModuleInterface.methods` for list-returning methods, propagate through `inferCall` for cross-module calls.
-
----
-
-### BUG-026: `instance_method_return_types` gaps for exposed-type method chains
-- **Severity:** Medium
-- **Status:** Open
-- **Target:** Phase 7b / post-audit
-- **Symptom:** `var b = a.someMethod()` may still produce `const b` in generated Zig if `someMethod` isn't in `instance_method_return_types`.
-- **Root cause:** `instance_method_return_types` is populated by `buildModuleInterface`. It only captures methods whose return type resolves to a `.named` symbol with a non-primitive type.
-- **Fix direction:** Populate `instance_method_return_types` more comprehensively, including methods returning `Self` or generic types.
 
 ---
 

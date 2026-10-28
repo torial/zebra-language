@@ -1,0 +1,26 @@
+# Helper module for bug026_method_result_mutation_test (no main).
+
+class Counter
+    var n: int
+    cue init(n: int)
+        .n = n
+    def bump()
+        .n = .n + 1
+
+class Box
+    var items: List(int)
+    cue init()
+        .items = List(int)()
+    def counter(): Counter
+        return Counter(10)
+    def same(): Box
+        return this
+    def list(): List(int)
+        return .items
+
+class Holder(T)
+    var v: T
+    cue init(v: T)
+        .v = v
+    def get(): T
+        return .v

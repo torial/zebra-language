@@ -2270,7 +2270,7 @@ def codeEditorMethodKnown(name: str): bool
     return name == "setText" or name == "getText" or name == "setReadOnly" or name == "render" or name == "restyle" or name == "setErrorMarkers" or name == "setLanguage" or name == "getLanguage" or name == "getCursorLine" or name == "getCursorCol" or name == "setCursorPosition" or name == "sci" or name == "sciStr" or name == "hotkey" or name == "takeModified" or name == "takeCharAdded" or name == "takeMarginClick" or name == "takeKey"
 
 def stringBuilderMethodKnown(name: str): bool
-    return name == "append" or name == "appendChar" or name == "add" or name == "build" or name == "toString" or name == "clear" or name == "len"
+    return name == "append" or name == "appendChar" or name == "build" or name == "toString" or name == "clear" or name == "len"
 
 def sysProcessMethodKnown(name: str): bool
     return name == "isRunning" or name == "alive" or name == "kill" or name == "write" or name == "readAvailable" or name == "readErrAvailable" or name == "closeStdin" or name == "exitCode"
@@ -4202,29 +4202,27 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if cemn == "hotkey"
                                 return Type_.void_
                         on Type_.string_builder
-                            if not stringBuilderMethodKnown(mem.member)
-                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'StringBuilder' has no method '" + mem.member + "' (append/appendChar/add/build/toString/clear/len)")
-                                return Type_.unknown_
                             var sbmname: str = mem.member
+                            # BUG-341. The receiver is KNOWN to be a StringBuilder and its
+                            # method set is closed, yet an unknown name fell through to the
+                            # List lowering and the user read Zig's `expected type 'u8'` about
+                            # an `append` they never wrote. Refuse here, where the type is
+                            # proven. `add` gets its own suggestion: it is the List spelling.
+                            # BUG-645: this is the ONE refusal; stringBuilderMethodKnown is the
+                            # method set (docs/SURFACE.md is derived from it), so it must not
+                            # admit a name that is refused here.
+                            if not stringBuilderMethodKnown(sbmname)
+                                var sb_hint: str = ""
+                                if sbmname == "add"
+                                    sb_hint = " (did you mean 'append'?)"
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'StringBuilder' has no '" + sbmname + "'" + sb_hint + " -- methods are append, appendChar, clear, len, build, toString")
+                                return Type_.unknown_
                             if sbmname == "build" or sbmname == "toString"
                                 return Type_.string_
                             if sbmname == "len"
                                 return Type_.int_
-                            if sbmname == "append" or sbmname == "appendChar" or sbmname == "clear"
-                                return Type_.void_
-                            # BUG-341. The receiver is KNOWN to be a StringBuilder and its
-                            # method set is closed (the six names above), yet an unknown name
-                            # fell through to the List lowering and the user read Zig's
-                            # `expected type 'u8'` about an `append` they never wrote. Refuse
-                            # here, where the type is proven. `add` gets its own suggestion:
-                            # it is the List spelling, and the IDE slice wrote it first.
-                            var sb_hint: str = ""
-                            if sbmname == "add"
-                                sb_hint = " (did you mean 'append'?)"
-                            ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                       "'StringBuilder' has no '" + sbmname + "'" + sb_hint + " -- methods are append, appendChar, clear, len, build, toString")
-                            return Type_.unknown_
+                            return Type_.void_
                         on Type_.sys_process
                             if not sysProcessMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,

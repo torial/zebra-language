@@ -99,9 +99,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `elapsed` `elapsedMicros` `reset`
 
-### StringBuilder (7)
+### StringBuilder (6)
 
-`add` `append` `appendChar` `build` `clear` `len` `toString`
+`append` `appendChar` `build` `clear` `len` `toString`
 
 ### SysProcess (8)
 

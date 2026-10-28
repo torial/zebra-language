@@ -1,0 +1,13 @@
+# BUG-645: docs/SURFACE.md is derived from stringBuilderMethodKnown, which admitted `add`
+# while the checker refused it (BUG-341), so the 1.0 surface listed a method no program
+# could call. This fixture calls every StringBuilder method SURFACE.md lists; the refusal
+# of `add` is bug341_sb_unknown_method_fail.
+def main()
+    var sb = StringBuilder()
+    sb.append("ab")
+    sb.appendChar(c'c')
+    var n = sb.len
+    var first = sb.build()
+    sb.clear()
+    sb.append("z")
+    print("bug645: ${first} ${n} ${sb.toString()} ${sb.len}")

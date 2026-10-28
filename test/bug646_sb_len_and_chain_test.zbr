@@ -1,0 +1,19 @@
+# BUG-646: `sb.len` -- the property spelling List uses -- passed the checker and emitted
+# `.len` on the List(u8) underneath: a zig error. A local, a field, a list element.
+# BUG-647: `sbs.at(0).append("x")` as a statement was hoisted into a temp and emitted a
+# raw `.append("x")`; the statement hoist now uses the var-init/assignment ALLOW rule.
+class W
+    var out: StringBuilder
+    cue init()
+        .out = StringBuilder()
+
+def main()
+    var sb = StringBuilder()
+    sb.append("abcd")
+    var w = W()
+    w.out.append("xy")
+    var sbs = [StringBuilder(), StringBuilder()]
+    sbs.at(0).append("p")
+    sbs.at(1).append("qrs")
+    sbs.at(1).appendChar(c'!')
+    print("bug646: ${sb.len} ${w.out.len} ${sbs.at(0).len} ${sbs.at(1).len} ${sbs.at(1).build()}")

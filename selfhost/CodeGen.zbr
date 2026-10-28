@@ -8610,7 +8610,10 @@ struct Generator
                         # 2026-09-24: a builtin container receiver (`parent.at(0).add(x)`,
                         # now a boxed inner list) dispatches through codegen's own forms;
                         # hoisting it to `_mc_N` loses that (the BUG-337 rule, statement form).
-                        if not isBuiltinTypedRecv(mem.object)
+                        # BUG-647: the same ALLOW rule the var-init and assignment hoists use
+                        # (BUG-531), not a deny-list of containers: `sbs.at(0).append("x")` on
+                        # a StringBuilder was hoisted and emitted a raw `.append("x")`.
+                        if chainRecvNeedsHoist(mem.object)
                             hoisted = hoistCallOnTemp(mem.object, mem.member, ec.args)
                 if not hoisted
                     writeIndent()
@@ -14611,6 +14614,14 @@ struct Generator
                                 w.emit("@as(i64, @intCast(")
                                 genExpr(m.object)
                                 w.emit(".count()))")
+                                return
+                            on Type_.string_builder
+                                # BUG-646: `sb.len` (the property spelling List uses) passed
+                                # the checker and fell to the str spelling below, `.len` on
+                                # a List(u8): a zig error. The builder's bytes are `.items`.
+                                w.emit("@as(i64, @intCast(")
+                                genExpr(m.object)
+                                w.emit(".items.len))")
                                 return
                             else
                                 pass

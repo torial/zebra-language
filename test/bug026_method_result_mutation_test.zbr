@@ -1,0 +1,28 @@
+# BUG-026: `var b = a.someMethod()` on an exposed type, then b mutated. The bootstrap's
+# instance-method return table missed methods returning Self or a generic type, so b could
+# be emitted `const` and the mutation failed inside zig. A class result, the receiver
+# itself, a returned List, and a generic T (struct: a copy; class: a reference).
+use bug026_method_result_lib exposing Box, Counter, Holder
+
+struct P
+    var x: int
+    def moved(): P
+        return P(.x + 1)
+
+def main()
+    var a = Box()
+    var c = a.counter()
+    c.bump()
+    var s = a.same()
+    s.items.add(3)
+    var l = a.list()
+    l.add(4)
+    var q = P(1).moved()
+    q.x = 9
+    var h = Holder(P)(P(1))
+    var p = h.get()
+    p.x = 7
+    var hc = Holder(Counter)(Counter(1))
+    var k = hc.get()
+    k.bump()
+    print("bug026: ${c.n} ${s.items.len} ${l.len} ${q.x} ${p.x} ${h.get().x} ${k.n} ${hc.get().n}")
