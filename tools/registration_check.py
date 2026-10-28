@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pins: BUG-243 the class it closed: a tracked test/*.zbr that nothing asserts fails this gate
 """registration_check.py -- every corpus file must have its status ASSERTED somewhere.
 
 THE HOLE THIS CLOSES

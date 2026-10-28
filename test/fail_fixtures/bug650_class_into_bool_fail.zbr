@@ -1,0 +1,9 @@
+# BUG-650: a class instance into a primitive slot.
+class Pt
+    var x: int
+    cue init(a: int)
+        x = a
+
+def main()
+    var f: bool = Pt(3)
+    print(f)

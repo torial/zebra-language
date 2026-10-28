@@ -1,0 +1,11 @@
+# BUG-652 helper: a class whose static methods share names with str builtins.
+class Util
+    static
+        def isNumeric(n: int): bool
+            return n > 3
+        def trim(n: int): int
+            return n - 1
+        def upper(n: int): int
+            return n * 2
+        def contains(n: int): bool
+            return n == 7

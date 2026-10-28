@@ -685,6 +685,11 @@ class MultiCompiler
         if near != ""
             var near_stem: str = near.substring(0, near.len - 4)
             raise "`use " + u.path + "`: module not found -- module names are case-sensitive, and the file here is " + near + "; did you mean `use " + near_stem + "`?"
+        # BUG-651: `use pkg.mod` meant pkg/mod.zbr in the retired bootstrap; the selfhost
+        # never had subdirectory modules, so it looked for a file named `pkg.mod.zbr` and
+        # said so -- true, and no help to someone who wrote a directory path.
+        if u.path.contains(".")
+            raise "`use " + u.path + "`: module not found -- a dotted module path is not supported (there are no subdirectory modules); put the module beside this file, or name its directory with --module-path, and `use` it by its file name"
         # Worded "module not found" so tools/doc_example_check.py files a doc fragment
         # whose `use` target is not beside it as an ARTIFACT, not a broken example.
         raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib, lib" + dep_name + ".a/.so/.dylib, .zig) " + looked

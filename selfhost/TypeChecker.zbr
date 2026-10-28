@@ -3435,6 +3435,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # inferExpr for the outer call.
             if ctx.module_types.hasClass(nm)
                 return Type_.named(nm)
+            # BUG-652: a class this file `use ... exposing`. It was `unresolved`, so a
+            # static call on it (`Util.trim(5)`) missed codegen's user-method dispatch and
+            # took the STRING lowering of a same-named str method (`std.mem.trim(u8, Util,
+            # ...)`). exposedOwner is this file's own list, so a class of a module it does
+            # not use cannot answer here (dep_types alone would: BUG-502's shape).
+            if ctx.module_types.exposedOwner(nm) != nil and ctx.dep_types.hasClass(nm)
+                return Type_.named(nm)
             # Enum type name used as a qualifier (e.g. `Color` in `Color.red`).
             if ctx.hasEnumAny(nm)
                 return Type_.named(nm)
@@ -3452,6 +3459,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 return mvt_v
             return Type_.unresolved
         on Expr.member as m
+            # BUG-652: `mod.Class` -- the qualified spelling of the same thing.
+            if m.object is Expr.ident as qmod
+                if ctx.isUsedModule(qmod.name) and not ctx.hasLocal(qmod.name) and ctx.dep_types.hasClass(m.member)
+                    return Type_.named(m.member)
             # Phase 17d — infer the object's type recursively, then look up
             # the field through module_types + dep_types. Unwraps `^T` and
             # `T?` because field access through a pointer or nilable has the
@@ -5988,6 +5999,13 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(exp) + "? " + UNWRAP_HINT)
         return exp
     if not isPrimitive(inferred)
+        # BUG-650: an argument or return value that is an enum / union / class value.
+        var ce_np: str = namedIntoPrimitive(inferred, ctx)
+        if ce_np == ""
+            ce_np = bareUnionVariant(e, ctx)
+        if ce_np != ""
+            ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + ce_np)
+            return exp
         return inferred
     if not typesCompatible(exp, inferred)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(inferred))
@@ -7535,9 +7553,60 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + dv.name + "' is declared " + typeTag(declared) + " and cannot hold nil -- declare it `" + typeTag(declared) + "?` if it can be absent (QUICKSTART §11)")
         return
     if not isPrimitive(inferred)
+        # BUG-650: an enum member, union value or class/struct instance into a primitive
+        # slot (`var c: int = Color.red`) returned here, passed `-c`, and zig refused it
+        # ("expected type 'i64', found 'Color'"). The bootstrap refused it (BUG-105); the
+        # selfhost never did. No such value converts implicitly; a type alias is exempt
+        # (it is transparent, QUICKSTART §36).
+        var npw: str = namedIntoPrimitive(inferred, ctx)
+        if npw == ""
+            npw = bareUnionVariant(dv.init_expr!, ctx)
+        if npw != ""
+            ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + npw)
         return
     if not typesCompatible(declared, inferred)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
+
+# BUG-650: the description of a user enum / union / class / struct value that cannot go
+# into a primitive slot ("Color (an enum)"), or "" when `t` is not one (a type alias, a
+# generic instantiation, or anything inference could not name).
+def namedIntoPrimitive(t: Type_, ctx: InferCtx): str
+    if t is Type_.named as nm
+        if nm.len == 0 or ctx.isTypeAlias(nm)
+            return ""
+        if ctx.hasEnumAny(nm)
+            return nm + " (an enum value)"
+        if ctx.hasUnion(nm)
+            return nm + " (a union value)"
+        # This module's classes only: dep_types also holds classes of modules this one
+        # never `use`s (BUG-502's shape), so a FUNCTION named like one of them --
+        # test/bug502_mod_b.zbr's `def Widget(n: int): int` -- inferred as that class.
+        if ctx.module_types.hasClass(nm)
+            return nm
+    return ""
+
+# BUG-650: either of the two below.
+def primSlotNamed(t: Type_, e: Expr, ctx: InferCtx): str
+    var r: str = namedIntoPrimitive(t, ctx)
+    if r == ""
+        r = bareUnionVariant(e, ctx)
+    return r
+
+# BUG-650: a payload-less variant written bare (`Wrap.unit`, no call) is a value of the
+# union, but inferExpr does not name it (it types `Wrap.unit()` and `Wrap.item(3)`), so
+# namedIntoPrimitive cannot see it. Recognised by shape here rather than by changing what
+# inference returns for it, which codegen also reads.
+def bareUnionVariant(e: Expr, ctx: InferCtx): str
+    if e is Expr.member as bm
+        if bm.object is Expr.ident as bid
+            if not ctx.hasLocal(bid.name) and ctx.hasUnion(bid.name)
+                for vn in ctx.module_types.variantNamesForUnion(bid.name)
+                    if vn == bm.member
+                        return bid.name + " (a union value)"
+                for vn2 in ctx.dep_types.variantNamesForUnion(bid.name)
+                    if vn2 == bm.member
+                        return bid.name + " (a union value)"
+    return ""
 
 def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     # Early-exit narrowing, as walkStmts applies it (the two walks must agree on what
@@ -7929,6 +7998,9 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     else if sasn.op == AssignOp.assign and fnValueMismatch(sa_slot, sa_val_t, ctx) != ""   # BUG-630
                         ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
                                    "a function cannot go into this function-typed slot: " + fnValueMismatch(sa_slot, sa_val_t, ctx))
+                    else if sasn.op == AssignOp.assign and isPrimitive(sa_slot) and not isPrimitive(sa_val_t) and primSlotNamed(sa_val_t, sasn.value, ctx) != ""   # BUG-650
+                        ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                   "type mismatch: expected " + typeTag(sa_slot) + ", found " + primSlotNamed(sa_val_t, sasn.value, ctx))
                     else if sasn.op == AssignOp.assign and containerMismatch(sa_slot, sa_val_t, sasn.value)   # BUG-626
                         ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
                                    "type mismatch: expected " + userTypeName(sa_slot) + ", found " + userTypeName(sa_val_t))

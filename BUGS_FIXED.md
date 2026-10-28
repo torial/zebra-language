@@ -43,6 +43,133 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-652: a static method of an IMPORTED class named like a str builtin took the string lowering -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+use ulib exposing Util
+var b = Util.trim(5)            # emitted std.mem.trim(u8, Util, " \t\n\r")
+var a = ulib.Util.isNumeric(5)  # "struct 'ulib.Util' has no member named 'len'"
+```
+
+`inferExpr` named a class only when THIS module declared it, so an exposed or
+module-qualified class from a dependency was `unresolved`. Codegen's user-method dispatch keys
+on a named receiver, missed, and the call fell to the name-based str-method fallback for any
+static method called `trim`, `upper`, `isNumeric`, `contains`, `split`... The checker had typed
+the call's RESULT correctly all along (`const b: i64`), which is why it passed `-c`. An exposed
+dependency class (`exposedOwner`, this file's own list -- not `dep_types`, which holds classes of
+modules this one never uses, BUG-502's shape) and `mod.Class` with `mod` a used module now infer
+as the class. The compiler's own source is full of exposed classes and its regenerated `.zig`
+moved in no module but the two edited. Same on the N-1 anchor. Found by running the BUG-243
+`tc_*` files, which a 12-week-old note had guessed were a stale experiment: all four pass now.
+Fixture `test/bug652_dep_static_strname_test.zbr` (+ `bug652_dep_static_lib.zbr`). The one
+other change it made anywhere in the three corpora: `selfhost/parser_test.zbr` called
+`Parser.Parser.parse(...)` -- a `throws` method -- without `?`, which §28b refuses and which an
+unresolved receiver had hidden; the call now has its `?`.
+
+### BUG-651: `use pkg.mod` was refused as "no pkg.mod.zbr" -- the refusal now names the real limit -- FIXED 2026-10-27 (found the same day)
+
+The retired bootstrap mapped a dotted `use` to a subdirectory (`pkg/mod.zbr`). The selfhost
+never had subdirectory modules; since 2026-09-16 an unresolved `use` is refused, and for a
+dotted path the refusal named a file `pkg.mod.zbr` -- true, and no help to someone who wrote a
+directory path. It now says a dotted module path is not supported and names the two ways to
+reach the module. Whether Zebra SHOULD have subdirectory modules is a language decision, left
+open. Found by running `test/expose_dotted_test.zbr` (BUG-243), now a `smoke_tc_fail` pin on the
+refusal -- it flips the day the feature lands.
+
+### BUG-650: an enum, union or class value into a primitive slot passed `-c` -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+var c: int = Color.red     # zig: expected type 'i64', found 'Color'
+x = Color.red              # the same through assignment, an argument, a return
+var f: bool = Pt(3)
+```
+
+BUG-105 (May) made the bootstrap refuse `var c: int = Color.red`; the selfhost never did, and
+its two fixtures were never run (BUG-243), so nothing noticed. Every primitive-slot check
+returned early on a non-primitive value. `namedIntoPrimitive` names a user enum, union or
+this-module class/struct; a type alias is exempt (transparent, QUICKSTART §36). Var decls,
+`=` assignments and `checkExpr` (arguments, returns) refuse it, naming the type ("found Color
+(an enum value)"). A bare payload-less variant (`Wrap.unit`) is not named by inference, so it is
+recognised by shape (`bareUnionVariant`) rather than by changing what inference returns, which
+codegen also reads. A dependency's CLASS is not refused (the dep table holds unrelated modules'
+classes: test/bug502_mod_b's FUNCTION `Widget` inferred as one) -- zig still catches that case.
+Measured before committing: every error line `-c` prints over the 3,103 tracked `.zbr` of this
+repo, zebra-ide and the GameEngine (`--module-path zbra`), HEAD's compiler against this one, with
+BUG-651/652 in the same build. Three lines differ: the two BUG-105 fixtures (this refusal), the
+dotted-`use` message (BUG-651), and `selfhost/parser_test.zbr`'s missing `?` (BUG-652). The
+`bug502` false positive above was found by the first sweep and fixed before this one.
+Fixtures `test/fail_fixtures/bug650_{enum_arg,enum_return,enum_assign,class_into_bool}_fail.zbr`
+(each accepted by the N-1 anchor), the two `bug105_*` files, and the negative control
+`test/bug650_primitive_slot_ok_test.zbr` (an alias, an enum and a bare variant into their own
+types).
+
+### BUG-243: fifteen corpus files have never compiled, and no gate could say so -- CLOSED 2026-10-27
+
+**Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
+these are not one defect, they are fifteen — but they were found by one method, they share
+one cause of invisibility, and the inventory is more useful in one place than scattered.
+
+**How they hid.** `full_sweep` gates against a **baseline** (337 of 421 files). A file
+that has *never* passed is not in the baseline, so it cannot make the gate red however
+broken it is. And none of these carries a `smoke*` registration, so nothing asserts they
+should fail either. **A permanently-broken file is indistinguishable from an intentionally
+negative one**, and both look like a green board.
+
+Every one was verified by running `zebra <file>` directly — not inferred from the sweep.
+
+| file | error | class |
+|---|---|---|
+| `expose_dotted_test` | emitted Zig: `expected ';' after declaration` | **codegen emits invalid Zig** |
+| `typechecker_test` | emitted Zig: `unused function parameter` | **codegen** |
+| `tc_check_test` | emitted Zig: `expected type '*tc_infer.TcExpr'` | **codegen** |
+| `tc_infer_test` | emitted Zig: `struct 'tc_types.TcTypes' has no member` | **codegen** |
+| `zebra_ide` | emitted Zig: `use of undeclared identifier 'Lis…'` | **codegen** |
+| `progress_test` | `zebra_rt.zig:3617: expected 2 argument(s), found 1` | **BUG-241** (filed) |
+| `gui_test` | `local variable is never mutated` | the BUG-230 const/var family |
+| `csv_test` | `use of undeclared identifier 'CsvWriter'` | **BUG-242** (filed) |
+| `bug106_heterogeneous_list_test` | `expected type 'i64'` | **regression fixture that does not run** |
+| `bug108_this_outside_class_test` | `use of undeclared identifier` | **regression fixture that does not run** |
+| `crossmod_expose_test` | `type 'array_list.Aligned(…)'` | cross-module expose |
+| `generic_pair_test` | `expected type 'T', found '*T'` | generics |
+| `json_parse_typed_test` | `no field or member function named …` | stdlib/typing |
+| `raise_details_test` | `error union is ignored` | error model |
+| `tc_types_test` | `struct 'tc_types.TcTypes' has no member` | (tc_* family) |
+
+**The two rows that matter most are the regression fixtures.** `bug106_*` and `bug108_*`
+exist to prove BUG-106 and BUG-108 stay fixed. Neither has ever run. **Those two fixes are
+unverified**, and have been for as long as the fixtures have existed.
+
+**Second-most: five files fail inside EMITTED Zig**, not at the Zebra source. Those are
+codegen defects — the compiler producing invalid or ill-typed Zig — which is the class
+`compile_check` exists to catch, and it does not sweep these because they are not in its
+smoke-derived worklist.
+
+**The `tc_*` / `typechecker_test` / `zebra_ide` group** looks like an earlier
+self-hosting/IDE experiment. They may be legitimately stale rather than defects — decide
+per file, and if stale, **delete or quarantine explicitly** rather than leaving them to
+look like coverage.
+
+**Disposition:** triage each into runs-but-sweep-shape (register), broken (fix), or stale
+(delete/quarantine). Then close the class — see `tools/registration_check.py`, which makes
+an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
+
+**Closed 2026-10-27 -- every row now has a status something asserts.** The table was 12
+weeks old; `registration_check` said 11 files were still unasserted, and each was run:
+
+| file(s) | disposition |
+|---|---|
+| `progress_test`, `csv_test`, `json_parse_typed_test`, `crossmod_expose_test`, `bug106_heterogeneous_list_test`, `bug108_this_outside_class_test`, `gui_test` | already fixed and registered or baselined in the meantime |
+| `generic_pair_test`, `raise_details_test` | run correctly; registered `smoke_run` (generic_pair gained a summary line that also checks the swap's first half) |
+| `tc_types_test`, `tc_check_test`, `tc_infer_test`, `typechecker_test` | failed inside zig on **BUG-652** (a dependency class's static `isNumeric`/`trim` took the str lowering) -- a real codegen bug the "stale experiment" guess would have deleted. All four pass now and are registered |
+| `bug105_enum_member_test`, `bug105_union_variant_test` | the BUG-105 refusal never reached the selfhost -- **BUG-650**; registered `smoke_tc_fail` |
+| `expose_dotted_test` | dotted `use` has no selfhost resolution -- **BUG-651**; registered `smoke_tc_fail` on the refusal |
+| `bug099_unresolved_test` | a `check_mode_check` WITNESS (passes `-c`, fails `--check-full` by design); exempt with that reason |
+| `bug106_cast_test` | documentation only, no `main()`; exempt |
+
+`registration_baseline.txt` is empty after this. The lesson the table's own text drew
+("decide per file, and if stale, delete") would have deleted four fixtures that were
+pointing at a live bug: run the file before calling it stale.
+
 ### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — FIXED 2026-10-27
 
 **Fixed 2026-10-27 -- and the "correction" first written that morning was wrong in both

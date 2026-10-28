@@ -79,7 +79,6 @@
 100	✅ FIXED (side-effect of BUG-099, 2026-05-05)
 102	Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
 103	TC `extractFromDecls`/`extractFromMembers` silently skip unknown decla
-105	`Color.red` infers to `.unknown` instead of `.named(Color)` — FIXED 20
 107	✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
 109	✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
 110	✅ FIXED 2026-05-05 — bind error prints clean message instead of panic

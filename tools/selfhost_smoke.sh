@@ -1832,6 +1832,17 @@ smoke_run test/bug648_empty_list_field_default_test.zbr "bug648: 2 5 x 1 6 11 1.
 smoke_run test/bug649_static_container_field_test.zbr "bug649: 2 ab 3 2 7 2 2"
 # BUG-306: module-scope `.add` receivers typed by inference (annotated StrSet = Type_.str_set), no oracles.
 smoke_run test/bug306_module_strset_test.zbr "bug306: 2 1 1 7 11 1 2 0"
+# BUG-652: an imported class's static methods named like str builtins (exposed + qualified).
+smoke_run test/bug652_dep_static_strname_test.zbr "bug652: true 4 10 true 9"
+# BUG-650 negative control: alias / enum / bare variant into their own types stay accepted.
+smoke_run test/bug650_primitive_slot_ok_test.zbr "bug650: 5 13"
+# BUG-243: files that had never been asserted by anything.
+smoke_run test/generic_pair_test.zbr "generic_pair_test: 42 100 true 1 one 1"
+smoke_run test/raise_details_test.zbr "FileInfo(data.txt)"
+smoke_run test/tc_types_test.zbr "tc_types_test: all OK"
+smoke_run test/tc_check_test.zbr "tc_check_test: all OK"
+smoke_run test/tc_infer_test.zbr "tc_infer_test: all OK"
+smoke_run test/typechecker_test.zbr "typechecker_test: all OK"
 # BUG-642..644: `??`, two statements on one line, a missing comma between call arguments.
 smoke_tc_fail test/bug642_double_question_fail.zbr "operator in Zebra -- write"
 smoke_tc_fail test/bug643_same_line_statements_fail.zbr "follows a complete statement on the same line"
@@ -2507,6 +2518,15 @@ smoke_tc_fail test/fail_fixtures/infer_guess_list_fail.zbr "infer_guess_list_fai
 # BUG-017: an untyped LOCAL is not typed by a same-named field elsewhere (user class / compiler AST list).
 smoke_tc_fail test/fail_fixtures/bug017_len_field_name_fail.zbr "bug017_len_field_name_fail.zbr:10:14: error: cannot infer the type of \`vals\`, so \`.len\` cannot be resolved"
 smoke_tc_fail test/fail_fixtures/bug017_len_ast_name_fail.zbr "bug017_len_ast_name_fail.zbr:5:14: error: cannot infer the type of \`args\`, so \`.len\` cannot be resolved"
+# BUG-650: an enum / union / class value into a primitive slot, on every path.
+smoke_tc_fail test/fail_fixtures/bug650_enum_arg_fail.zbr "bug650_enum_arg_fail.zbr:11:23: error: type mismatch: expected int, got Color (an enum value)"
+smoke_tc_fail test/fail_fixtures/bug650_enum_return_fail.zbr "bug650_enum_return_fail.zbr:7:18: error: type mismatch: expected int, got Color (an enum value)"
+smoke_tc_fail test/fail_fixtures/bug650_enum_assign_fail.zbr "bug650_enum_assign_fail.zbr:8:15: error: type mismatch: expected int, found Color (an enum value)"
+smoke_tc_fail test/fail_fixtures/bug650_class_into_bool_fail.zbr "bug650_class_into_bool_fail.zbr:8:19: error: type mismatch: expected bool, found Pt"
+smoke_tc_fail test/bug105_enum_member_test.zbr "bug105_enum_member_test.zbr:19:24: error: type mismatch: expected int, found Color (an enum value)"
+smoke_tc_fail test/bug105_union_variant_test.zbr "bug105_union_variant_test.zbr:13:23: error: type mismatch: expected int, found Wrap (a union value)"
+# BUG-651: a dotted `use` names the real limit. Flips the day subdirectory modules land.
+smoke_tc_fail test/expose_dotted_test.zbr "a dotted module path is not supported (there are no subdirectory modules)"
 # ...and --allow-inference-guess (one release) guesses as before, with a warning.
 smoke_run_flag test/infer_guess_hatch_test.zbr --allow-inference-guess "infer_hatch: 6"
 # ...and WITHOUT the hatch the same file is refused (this also declares it must-reject,

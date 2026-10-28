@@ -69,6 +69,18 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **An enum, union or class value in a primitive slot is refused at `-c` (BUG-650).**
+  `var c: int = Color.red`, `x = Color.red`, `f(Color.red)` for an `int` parameter, and
+  `var f: bool = Pt(3)` passed the front end and failed inside zig. A type alias into its base
+  type is unaffected.
+
+- **A static method of an imported class named like a string method works (BUG-652).**
+  `Util.trim(5)` or `mod.Util.isNumeric(5)`, with `Util` from another module, was compiled as
+  the string method of the same name.
+
+- **`use pkg.mod` is refused with the real reason (BUG-651).** Dotted module paths are not
+  supported; the message said only that `pkg.mod.zbr` was missing.
+
 - **A `static var` of a container type works (BUG-649).** `static var seen: List(int) = []`
   stopped compiling when containers became references, and one with no initializer (the
   form QUICKSTART documents) was left undefined. Both are built at program start now.

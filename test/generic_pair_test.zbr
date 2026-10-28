@@ -23,3 +23,4 @@ def main()
     # swap: Pair(int, str) → Pair(str, int)
     var s = r.swap()
     print(s.second)     # 1
+    print("generic_pair_test: ${p.second} ${q.first} ${q.second} ${r.first} ${s.first} ${s.second}")
