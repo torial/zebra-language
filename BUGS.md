@@ -334,7 +334,15 @@ A static scan of the `use` graphs of this repo, zebra-ide and the GameEngine (10
 found no cycle outside the bug295 fixtures, so no existing program's emit moves. FULL tier
 48/48 in one invocation.
 
-**What remains open:** (0) the `--module-path` blind spot; (1) the compiler-scale stack
+**(0) FIXED 2026-10-29:** a cycle wholly inside `--module-path` deps is WARNED, once,
+and never refused even with `cycle_is_error` -- `scanDepForTypes` keeps its own stack and
+the advice is "report it upstream", per the preconditions above. Both reporters share a
+canonical cycle key, so a cycle reached twice (two `use` lines of one module, or compileDep
+and the type scan) prints once; the duplicate warning was visible in
+`bug664_cycle_static_test`. Pinned by two `cli-surface` legs, red before the fix (0
+warnings; 2 warnings).
+
+**What remains open:** (1) the compiler-scale stack
 overflow, never reproduced below compiler scale; (3) a class's deferred `static var`
 (BUG-649) in a cycle module was still assigned eagerly by its module's sweep, so a cycle
 partner's initialiser that read it read garbage -- the cross-module form of BUG-664.

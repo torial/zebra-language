@@ -61,6 +61,12 @@ class MultiCompiler
     # cannot tell them apart; this stack can, and it carries the PATH for free, since
     # the stack IS the chain.
     var in_progress: List(str)
+    # BUG-295: each cycle reported, by canonical key (see cycleKey) -- so two `use` lines
+    # of one module, or a cycle reached by both compileDep and scanDepForTypes, print once.
+    var reported_cycles: List(str)
+    # BUG-295 (0): the modules scanDepForTypes is inside of, as a stack -- the type-only
+    # scan of --module-path deps has its own path through the import graph.
+    var scan_stack: List(str)
     # BUG-295 (b): one entry per distinct import EDGE, "dep|importer". Recorded even
     # when the dep is skipped as already-visited -- the skipped imports are exactly the
     # ones that make a module SHARED, so counting only first visits would see nothing.
@@ -117,6 +123,8 @@ class MultiCompiler
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
         .in_progress = List(str)()
+        .reported_cycles = List(str)()
+        .scan_stack = List(str)()
         .import_edges = List(str)()
         .stateful_mods = List(str)()
         .cycle_is_error = false
@@ -188,6 +196,35 @@ class MultiCompiler
             i = i + 1
         return out + .moduleNameOf(p)
 
+    # A cycle's identity, whichever module it was entered from: its module names rotated
+    # to start at the smallest. `a -> b -> a` and `b -> a -> b` are one cycle.
+    def cycleKey(names: List(str)): str
+        var lo: int = 0
+        var i: int = 1
+        while i < names.len
+            if names.at(i) < names.at(lo)
+                lo = i
+            i = i + 1
+        var key: str = ""
+        var k: int = 0
+        while k < names.len
+            key = key + names.at((lo + k) % names.len) + " "
+            k = k + 1
+        return key
+
+    # True the first time a cycle is seen; it is recorded either way.
+    def firstReportOf(stack: List(str), start: int): bool
+        var names: List(str) = List(str)()
+        var i: int = start
+        while i < stack.len
+            names.add(.moduleNameOf(stack.at(i)))
+            i = i + 1
+        var key: str = .cycleKey(names)
+        if .hasListed(reported_cycles, key)
+            return false
+        reported_cycles.add(key)
+        return true
+
     def reportImportCycle(start: int, p: str)
         # BUG-295: every module on the cycle initialises its computed vars on first use.
         # All of them are still in progress here, so none has been generated yet.
@@ -195,6 +232,8 @@ class MultiCompiler
         while cm < in_progress.len
             dep_types.addModuleVar("$cyc:" + .moduleNameOf(in_progress.at(cm)))
             cm = cm + 1
+        if not .firstReportOf(in_progress, start)
+            return
         var kind: str = "warning"
         if cycle_is_error
             kind = "error"
@@ -746,6 +785,7 @@ class MultiCompiler
         if .alreadyTypeScanned(zbr_path)
             return
         type_scanned.add(zbr_path)
+        scan_stack.add(zbr_path)
 
         var src: str = File.read(zbr_path)
         const pm_node = Parser.Parser.parse(src, zbr_path)?
@@ -762,10 +802,12 @@ class MultiCompiler
                             if sub_dir != ""
                                 sub_adj = sub_dir + "/" + sub_name + ".zbr"
                             if fileExistsExact(sub_adj)
+                                .noteScanCycle(sub_adj)
                                 .scanDepForTypes(sub_adj)?
                             else if module_path != ""
                                 var sub_mp: str = module_path + "/" + sub_name + ".zbr"
                                 if fileExistsExact(sub_mp)
+                                    .noteScanCycle(sub_mp)
                                     .scanDepForTypes(sub_mp)?
                         else
                             pass
@@ -787,6 +829,37 @@ class MultiCompiler
                 noteDepCodegenFacts(dep_types, module, strip_contracts)   # BUG-581 / BUG-586
             else
                 pass
+        .popScanStack()
+
+    def popScanStack()
+        var rebuilt: List(str) = List(str)()
+        var i: int = 0
+        while i < scan_stack.len - 1
+            rebuilt.add(scan_stack.at(i))
+            i = i + 1
+        scan_stack = rebuilt
+
+    # BUG-295 (0): a cycle among the modules the type-only scan walks -- --module-path
+    # deps, which never reach compileDep, where cycles are otherwise reported. Always a
+    # WARNING, even with cycle_is_error: this is usually someone else's code, so the
+    # advice is to report it, not to restructure it. A cycle compileDep already reported
+    # (the scan re-walks an adjacent cycle's members for their types) is not repeated.
+    def noteScanCycle(sub: str)
+        var i: int = 0
+        while i < scan_stack.len
+            if scan_stack.at(i) == sub
+                if .firstReportOf(scan_stack, i)
+                    var path: str = ""
+                    var k: int = i
+                    while k < scan_stack.len
+                        path = path + .moduleNameOf(scan_stack.at(k)) + " -> "
+                        k = k + 1
+                    sys.errln("warning: import cycle in --module-path dependencies: " + path + .moduleNameOf(sub))
+                    sys.errln("  these modules are read here for their types only, not compiled; whatever")
+                    sys.errln("  builds them gets one instance of each, its computed variables set on first")
+                    sys.errln("  use. If they are not yours, the cycle is theirs to fix: report it upstream.")
+                return
+            i = i + 1
 
     # Write zebra_rt.zig into the same directory as an emitted program.  Deps and the
     # root all emit into one directory, so this is called once per module and rewrites

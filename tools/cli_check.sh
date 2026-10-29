@@ -645,6 +645,29 @@ chk "...and the note is silent under --library-mode (the host build provides the
     "$(case "$ERR" in *"module-path"*) echo 1;; *) echo 0;; esac)" \
     "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
 
+# ---- BUG-295 (0): an import cycle wholly inside --module-path dependencies was invisible --
+# those deps are read for TYPES only (scanDepForTypes), never through compileDep, which is
+# where cycles were reported. It must be WARNED about, exactly once, and never refused: the
+# code is usually someone else's (vendored), so `fix: move the names` is not advice to give.
+mkdir -p "$W/mpc"
+printf 'use cycb\ndef fa(): int\n    return 1\n' > "$W/mpc/cyca.zbr"
+printf 'use cyca\ndef fb(): int\n    return cyca.fa() + 1\n' > "$W/mpc/cycb.zbr"
+printf 'use cyca exposing fa\ndef main()\n    print(fa())\n' > "$W/mpcyc.zbr"
+run --module-path mpc -c mpcyc.zbr
+NCYC=$(printf '%s\n' "$ERR" | grep -c 'import cycle')
+chk "a cycle inside --module-path deps is WARNED, once, and the compile succeeds (BUG-295 (0))" \
+    "$([ "$RC" = 0 ] && [ "$NCYC" = 1 ] && case "$ERR" in *"warning: import cycle in --module-path dependencies: cyca -> cycb -> cyca"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC cycle-lines=$NCYC stderr=[$(echo "$ERR" | grep -m1 'cycle')]"
+# ...and an ordinary cycle reached through TWO `use` lines of the same module is reported
+# once: the dependency below names its importer twice, which printed the warning twice.
+printf 'use dupcb\ndef h(): int\n    return 3\ndef main()\n    print(dupcb.g())\n' > "$W/dupca.zbr"
+printf 'use dupca\nuse dupca exposing h\ndef g(): int\n    return h() + 4\n' > "$W/dupcb.zbr"
+run -c dupca.zbr
+NDUP=$(printf '%s\n' "$ERR" | grep -c 'warning: import cycle')
+chk "a cycle reached through two \`use\` lines of one module is reported ONCE" \
+    "$([ "$RC" = 0 ] && [ "$NDUP" = 1 ] && echo 0 || echo 1)" \
+    "exit=$RC warnings=$NDUP"
+
 # ---- BUG-547: --source-root DIR spells EMITTED source paths relative to DIR, so the same
 # source emitted from two different cwds is byte-identical. The control: without the flag the
 # two emits DIFFER (each spells the path as given), so the identity is the flag's doing.
