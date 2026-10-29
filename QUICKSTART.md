@@ -312,6 +312,17 @@ def main()
   a `zig"…"` literal use `${TypeName}` (§23) and let the compiler supply it.
 - Unlike locals, module-scope `const` is a real keyword here: use it for named
   constants, `var` for shared mutable state.
+- **Initialisation order does not matter.** A module var with a constant initialiser
+  (`var n = 0`) is set when the program loads. One whose initialiser is computed -- a
+  container (`var seen: List(int) = []`), a call, a read of another module var or a
+  `static var` -- is initialised once, on its **first use**, and in any case before
+  `main` runs. So `var a: int = b.len + 1` may come before `var b: List(int) = [1, 2]`,
+  and an initialiser may call a function that reads another computed variable. The same
+  holds for a class's computed `static var` (§5) and across modules, import cycles
+  included (§15). Initialisers that need each other's values cannot be ordered: the
+  program stops at start-up with `error: module initialisation cycle: a -> b -> a` and
+  exit code 1. Cost: reading a computed module var or static is a load and a compare
+  (~0.7 ns in `--release`), and the optimiser cannot hoist such a read out of a loop.
 
 ---
 
@@ -765,12 +776,12 @@ class Foo
 
 **Key points:**
 
-- `static var` is initialized **once**, at program start (Zig `const` or `var` at module
-  scope).  There is no per-instance copy.
+- `static var` is initialized **once**: a constant initialiser when the program loads, a
+  computed one (a container, a call, a read of another static or module var) on its
+  first use and in any case before `main` -- the module-var rule of §2.1. There is no
+  per-instance copy.
 - `static def` has no `this` / no leading-dot access — it cannot read or write instance
   fields.  If you need `this`, the method is not static.
-- `static var` with a `List` or `HashMap` default must be initialized in `cue init`
-  or a static `def` — direct default expressions are evaluated at compile time.
 - Static and instance members share the same namespace; you cannot have a static `def foo`
   and an instance `def foo` in the same class.
 - `static` members are accessed cross-module as `Module.ClassName.member` (note the two
@@ -1959,8 +1970,8 @@ initialised on its first use, wherever that comes from. So `b`'s
 `var total: int = a.count + 1` sees `a.count` set even though `b` is initialised first.
 Initialisers that need each other's values (`a.x = b.y + 1`, `b.y = a.x + 1`) cannot be
 ordered; the program stops at start-up with
-`error: module initialisation cycle: b.y -> a.x -> b.y` and exit code 1. Not covered: a
-class's computed `static var` in a cycle module. `--single-file` cannot build a cycle at all.
+`error: module initialisation cycle: b.y -> a.x -> b.y` and exit code 1. A class's
+computed `static var` follows the same rule (§2.1).
 
 **Partial files** — `Foo.zbr` is the primary; `Foo.json.zbr`, `Foo.ui.zbr`
 etc. are partials whose `class Foo` members merge into the primary.

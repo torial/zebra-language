@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-663. Next new bug: BUG-664.**
+**Last bug number generated: BUG-665. Next new bug: BUG-666.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -336,10 +336,16 @@ found no cycle outside the bug295 fixtures, so no existing program's emit moves.
 
 **What remains open:** (0) the `--module-path` blind spot; (1) the compiler-scale stack
 overflow, never reproduced below compiler scale; (3) a class's deferred `static var`
-(BUG-649) in a cycle module is still assigned eagerly by its module's sweep, so a cycle
-partner's initialiser that reads it reads garbage; (4) `--single-file` cannot build ANY
-cycle -- zig: `use of undeclared identifier '_mod_<root>'` -- on HEAD before this change
-too.
+(BUG-649) in a cycle module was still assigned eagerly by its module's sweep, so a cycle
+partner's initialiser that read it read garbage -- the cross-module form of BUG-664.
+**FIXED 2026-10-29 with BUG-664**: every computed static initialises on first use;
+`test/bug664_cycle_static_test.zbr` reads two across a cycle; (4) `--single-file` could not build ANY cycle -- zig:
+`use of undeclared identifier '_mod_<root>'`: a dependency's `use` of the root named a
+namespace struct only dependencies get. **FIXED 2026-10-29:** on a cycle the root is also
+named `_mod_<root>` (`const _mod_<root> = _Mod;`); acyclic output is unchanged. Pinned by
+`smoke_run_flag ... --single-file` on the lazy-init fixture, beside a `--no-runtime-module`
+registration for the inline shape. Not covered: a dependency that reaches the root through
+a DOTTED `use` path would name `_mod_<a_b_root>`, which still does not exist.
 
 
 ---

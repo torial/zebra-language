@@ -77,6 +77,8 @@ bug293_xmod_container_lib  # helper module imported by bug293_xmod_container_tes
 bug295_cycle_lib  # the other half of BUG-295's import cycle; exercised through bug295_cycle_test
 bug295_init_cycle_lib  # the other half of BUG-295's genuine init cycle; exercised through bug295_init_cycle_test
 bug295_lazy_init_lib  # the other half of BUG-295's lazy-init cycle; exercised through bug295_lazy_init_test
+bug664_cycle_static_lib  # the other half of BUG-664's static-across-a-cycle fixture; exercised through bug664_cycle_static_test
+bug664_same_name_lib  # the dependency half of BUG-664's same-class-name fixture; exercised through bug664_same_name_test
 bug295_diamond_lib_leaf  # helper module imported by other tests; has no main()
 bug295_diamond_lib_left  # helper module imported by other tests; has no main()
 bug295_diamond_lib_right  # helper module imported by other tests; has no main()

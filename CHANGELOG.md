@@ -69,6 +69,17 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **Computed module variables and `static var`s initialise on first use (BUG-664)**: a
+  module var or static whose initialiser read one set LATER in start-up read uninitialised
+  memory and usually segfaulted -- `var a: int = b.len + 1` before `b`, a module var
+  reading a static (directly or through a function), a static reading a later class's
+  static. Each is now initialised once, when first read, and before `main` in any case,
+  so declaration order no longer matters. A read of a computed module var or static costs
+  a load and a compare (~0.7 ns in `--release`) and can no longer be hoisted out of a loop.
+
+- **An instance method that reads only static members compiles (BUG-665)**: zig refused
+  it with "unused function parameter" (`self`).
+
 - **A module in an import cycle initialises its computed variables on first use (BUG-295)**:
   a dependency's initialiser that read its importer's computed module variable
   (`var total: int = a.count + 1`) read uninitialised memory, because the dependency is
@@ -76,7 +87,8 @@ confirmed via `tools/bootstrap_check.sh`.
   a write made before its module's own initialisation survives it. Initialisers that need
   each other's values stop the program at start-up naming the chain
   (`error: module initialisation cycle: b.y -> a.x -> b.y`). The cycle warning remains and
-  its text now states this rule.
+  its text now states this rule. `--single-file` builds a program with an import cycle;
+  it failed in zig with `use of undeclared identifier '_mod_<root>'`.
 
 - **A statement-form `zig"…"` can assign an existing local (BUG-267)**: `zig"out = 42;"`,
   `out += …`, `out.f = …` or `&out` makes the local `var`; it was emitted `const` and zig

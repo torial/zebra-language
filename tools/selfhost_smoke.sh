@@ -926,6 +926,28 @@ smoke_run test/bug295_lazy_init_test.zbr "bug295-lazy: 14 15 140 a 141 2 true"
 # Initialisers that need each other's values: no order exists, so the program stops at
 # start-up naming the chain. The pre-fix compiler printed -6148914691236517204.
 smoke_run_fail test/bug295_init_cycle_test.zbr "module initialisation cycle: bug295_init_cycle_lib.y -> bug295_init_cycle_test.x -> bug295_init_cycle_lib.y"
+# The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
+# (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
+# a struct only deps get); --no-runtime-module gives each module its own accessor state
+# and frame list, so it is a separate path through the same accessors.
+smoke_run_flag test/bug295_lazy_init_test.zbr --single-file "bug295-lazy: 14 15 140 a 141 2 true"
+smoke_run_flag test/bug295_lazy_init_test.zbr --no-runtime-module "bug295-lazy: 14 15 140 a 141 2 true"
+# BUG-664: every computed module var and static initialises on first use, not only on a
+# cycle. Each line of the first fixture segfaulted at start-up on HEAD 3ca3094: a module
+# var reading a later one, a module var reading a static (directly and through a
+# function), a static reading a later class's static. The second reads statics across an
+# import cycle through `mod.Reg.f` and an exposed `Reg.f` (BUG-295 item 3).
+smoke_run test/bug664_init_order_test.zbr "bug664: 3 13 103 2 tXY 5 5"
+smoke_run_flag test/bug664_init_order_test.zbr --no-runtime-module "bug664: 3 13 103 2 tXY 5 5"
+smoke_run test/bug664_cycle_static_test.zbr "bug664-cycle: 13 rEG! 3"
+# The program's own `Reg` and a dependency's `Reg`, a same-named static computed in one
+# and constant in the other: the accessor fact is per module. Keyed by class name alone,
+# zig refused this ("no member named '_zbr_sfref_n'"), red before the fix.
+smoke_run test/bug664_same_name_test.zbr "bug664-same: 4 1 40 3 43 2"
+# BUG-665: an instance method reading only static members left `self` undiscarded; zig
+# refused it at line 12 on HEAD 3ca3094. `mixed` is the control: it reads an instance
+# field too, so `self` is used and a discard would be "pointless discard".
+smoke_run test/bug665_static_only_method_test.zbr "bug665: 5 2 6 12"
 
 # ── BUG-274 / BUG-296: `_ = self;` and `_ = p;` vs what the walker can SEE ──────
 # exprMentionsThis defaults to FALSE and its answer drives `_ = self;`, so a variant it

@@ -1,0 +1,6 @@
+# The other half of bug664_cycle_static_test's import cycle.
+use bug664_cycle_static_test
+use bug664_cycle_static_test exposing Reg
+
+var n: int = bug664_cycle_static_test.Reg.items.len + 10
+var lab: str = Reg.label + "!"

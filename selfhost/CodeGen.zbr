@@ -1376,9 +1376,14 @@ def stmtMentionsThis(s: Stmt): bool
 # bare `threshold` there is the parameter. (`.threshold` is still `this`, which
 # bodyMentionsThis sees.) The pure helper `def expt(threshold: float, ...)` on a class
 # with a `threshold` field kept its `self` undiscarded and Zig refused the parameter.
+# Does the body read `self`? A STATIC field or method does not: a bare one is emitted
+# through its type (`_zbr_ty_Reg.n`), so counting it left `self` unused and undiscarded,
+# and zig refused the method -- "unused function parameter" (BUG-665).
 def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl), params: List(Param)): bool
     for d in members
         if d is Decl.var_ as fld
+            if fld.mods.is_static
+                continue
             var shadowed: bool = false
             for sp in params
                 if sp.name == fld.name
@@ -1390,6 +1395,8 @@ def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl), params: List(Param)
 def bodyUsesAnyMethod(stmts: List(Stmt), members: List(Decl)): bool
     for d in members
         if d is Decl.method as dm
+            if dm.mods.is_static
+                continue
             if nameUsedInStmts(dm.name, stmts)
                 return true
     return false
@@ -1489,28 +1496,64 @@ def isDeferredModuleVar(mv: DeclVar): bool
         return mv.init_expr! is Expr.call
     return false
 
-# BUG-295: a module in an import CYCLE is still one instance, initialised once -- a
-# singleton -- but no eager order initialises a cycle correctly: the dependency's
-# initialiser runs first, and one that reads its importer's computed var read garbage
-# (`var bval = zz_a.count + 1` printed -6148914691236517205). So a computed var in a
-# cycle module is initialised on FIRST USE: `_zbr_mvref_<name>()` runs its initialiser
-# if it has not run, and every reference -- this module's, `lib.x`, an exposed `x` --
-# goes through it as `_zbr_mvref_<name>().*`, reads and writes alike. An initialiser
-# that needs its own value is a genuine cycle and stops with the chain named
-# (`_zbr_init_cycle`). Constant-initialised vars need nothing: they are set statically.
-# NOT covered: deferred STATIC fields (BUG-649) of a cycle module's classes.
+# BUG-295 / BUG-664: every COMPUTED module var (`isDeferredModuleVar`) and computed static
+# (`isDeferredStaticField`) is initialised on FIRST USE. They used to be assigned in one
+# sweep -- module vars in source order, then statics -- so any initialiser that read one
+# set LATER read garbage: a module var reading a later one (`var a = b.len + 1`), a module
+# var reading a static (directly, or through a function no ordering can see), a static
+# reading a later class's static, and across an import cycle, where the dependency's
+# initialisers run first. Each is one instance, initialised once: `_zbr_mvref_<name>()`
+# (a module var) or `<Type>._zbr_sfref_<field>()` (a static) runs its initialiser if it
+# has not run, and every reference -- this module's, `lib.x`, an exposed `x`, `Reg.f`,
+# `lib.Reg.f`, a bare `f` in a method -- goes through it as `...().*`, reads and writes
+# alike. The init sweep forces the accessors, so everything is set before main and a
+# write made by an earlier initialiser survives. An initialiser that needs its own value
+# is a genuine cycle and stops naming the chain (`_zbr_init_cycle`).
+# Constant-initialised vars and statics need nothing: they are set statically.
+# Sean, 2026-10-29: "initialize at first use".
 def isLazyModuleVar(name: str): bool
     return (" " + name + " ") in _lazy_mvs
 
 # A reference to dep `stem`'s module var `name`: is it lazy there? Recorded by
-# noteDepCodegenFacts (`$mvlazy:`) for every deferred var, and by the cycle report
-# (`$cyc:`) for every module on a cycle; both must hold.
+# noteDepCodegenFacts (`$mvlazy:`) for every deferred var.
 def depModuleVarIsLazy(mt: ModuleTypes, alias: str, name: str): bool
     var stem: str = alias
     var dot: int = stem.lastIndexOf(".")
     if dot >= 0
         stem = stem.substring(dot + 1, stem.len)
-    return mt.hasModuleVar("$cyc:" + stem) and mt.hasModuleVar("$mvlazy:" + stem + "." + name)
+    return mt.hasModuleVar("$mvlazy:" + stem + "." + name)
+
+# BUG-664: is `cls.field` a lazy static of THIS module's class `cls`?
+def ownStaticIsLazy(cls: str, field: str): bool
+    return (" " + cls + "." + field + " ") in _lazy_sfs
+
+# ...of class `cls` in the dependency reached as `alias` (`use a.b.lib` -> stem `lib`).
+# Keyed by the defining module's stem, not the class name alone: a program's own `Reg`
+# and a dependency's `Reg` can both exist, with a same-named static computed in one and
+# constant in the other, and a name-only key emitted `_zbr_sfref_n()` against the struct
+# that has none (bug664_same_name_test).
+def depStaticIsLazy(mt: ModuleTypes, alias: str, cls: str, field: str): bool
+    var stem: str = alias
+    var dot: int = stem.lastIndexOf(".")
+    if dot >= 0
+        stem = stem.substring(dot + 1, stem.len)
+    return mt.hasModuleVar("$sflazy:" + stem + "." + cls + "." + field)
+
+def isOwnLazyStaticOwner(cls: str): bool
+    return (" " + cls + " ") in _lazy_own_types
+
+# The non-generic classes and structs at top level: the ones whose statics are file-
+# lifetime globals inside a file-scope struct (generic statics are per instantiation and
+# are never deferred).
+def lazyStaticOwners(decls: List(Decl)): List(Decl)
+    var out = List(Decl)()
+    for d in decls
+        if d is Decl.class_ as c
+            if c.type_params.len == 0
+                out.add(d)
+        else if d is Decl.struct_
+            out.add(d)
+    return out
 
 # BUG-649: a `static var` is a file-lifetime global inside its class's struct, so it
 # has the module var's problem (BUG-153/496) and gets the module var's answer: declared
@@ -1628,12 +1671,24 @@ def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
 # closure changes lives in a cell and `call` always takes `@This()`: nothing to record.)
 def noteDepCodegenFacts(mt: ModuleTypes, m: Module, strip_contracts: bool)
     mt.dep_struct_recv = mt.dep_struct_recv + structReceiverTable(m.decls, strip_contracts)
-    # BUG-295: which of its module vars WOULD be lazy if it is on a cycle (the `$cyc:`
-    # half is recorded by the cycle report; see depModuleVarIsLazy).
+    # BUG-295 / BUG-664: its computed module vars and statics, read through accessors.
     for nd in m.decls
         if nd is Decl.var_ as nv
             if isDeferredModuleVar(nv)
                 mt.addModuleVar("$mvlazy:" + moduleStemOf(m.file) + "." + nv.name)
+    for sd in lazyStaticOwners(m.decls)
+        var sd_name: str = ""
+        var sd_members = List(Decl)()
+        if sd is Decl.class_ as sdc
+            sd_name = sdc.name
+            sd_members = sdc.members
+        else if sd is Decl.struct_ as sds
+            sd_name = sds.name
+            sd_members = sds.members
+        for sm in sd_members
+            if sm is Decl.var_ as sv
+                if isDeferredStaticField(sv)
+                    mt.addModuleVar("$sflazy:" + moduleStemOf(m.file) + "." + sd_name + "." + sv.name)
 
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
@@ -1685,11 +1740,26 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     var w = Writer()
     _lazy_stem = moduleStemOf(file)
     _lazy_mvs = " "
-    if deps_mt.hasModuleVar("$cyc:" + _lazy_stem)
-        for lzd in m.decls
-            if lzd is Decl.var_ as lzv
-                if isDeferredModuleVar(lzv)
-                    _lazy_mvs = _lazy_mvs + lzv.name + " "
+    for lzd in m.decls
+        if lzd is Decl.var_ as lzv
+            if isDeferredModuleVar(lzv)
+                _lazy_mvs = _lazy_mvs + lzv.name + " "
+    _lazy_sfs = " "
+    _lazy_own_types = " "
+    for lzo in lazyStaticOwners(m.decls)
+        var lzo_name: str = ""
+        var lzo_members = List(Decl)()
+        if lzo is Decl.class_ as lzc
+            lzo_name = lzc.name
+            lzo_members = lzc.members
+        else if lzo is Decl.struct_ as lzs
+            lzo_name = lzs.name
+            lzo_members = lzs.members
+        _lazy_own_types = _lazy_own_types + lzo_name + " "
+        for lzm in lzo_members
+            if lzm is Decl.var_ as lzf
+                if isDeferredStaticField(lzf)
+                    _lazy_sfs = _lazy_sfs + lzo_name + "." + lzf.name + " "
     _cov_lines_s = ""
     _cov_max = 0
     var cn = StrSet()
@@ -1827,6 +1897,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     # TypeChecker.zbr); the hardcoded isUnionLikeName /
                     # isEnumLikeName lists remain: a fallback for the
                     # generate-single-file path where deps_mt is empty.
+                    # BUG-664: which module an exposed name came from (a static's accessor
+                    # is a fact about the class's own module).
+                    g.addExposedFrom(exposed_name, imp.path)
                     if deps_mt.hasModuleVar(exposed_name)
                         # BUG-158: an exposed cross-module module var — genUse skips its
                         # `const` and genIdent emits `alias._zbr_mv_name` at each use.
@@ -2032,21 +2105,16 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
             for sm in sd_members
                 if sm is Decl.var_ as sv
                     if isDeferredStaticField(sv)
-                        w.emit("    ")
+                        # BUG-664: forced through its accessor, like a module var
+                        w.emit("    _ = ")
                         g.emitTypeName(sd_name)
-                        w.emit(".")
-                        g.emitName(sv.name)
-                        w.emit(" = ")
-                        if sv.init_expr != nil
-                            g.genModuleVarInit(sv.init_expr!, sv.type_)
-                        else
-                            w.emit("_zbr_new(")
-                            g.genType(sv.type_!)
-                            w.emit(")")
-                        w.emit(";\n")
+                        w.emit("._zbr_sfref_" + sv.name + "();\n")
     w.emit("}\n")
     # BUG-295: one first-use accessor per lazy module var (see isLazyModuleVar).
-    # State 0 = not run, 1 = initialiser running, 2 = done.
+    # State 0 = not run, 1 = initialiser running, 2 = done. BUG-664: the accessor is an
+    # `inline` fast path (a load, a compare, a return) over a cold out-of-line initialiser;
+    # one plain function was ~8x slower in a --release hot loop (1772 ms vs 215 ms for
+    # 400M reads), since every read paid a call.
     for lmd in m.decls
         if lmd is Decl.var_ as lmv
             if isLazyModuleVar(lmv.name)
@@ -2056,8 +2124,12 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 if not _runtime_module and not _single_file
                     lshared = "false"
                 w.emit("var _zbr_mvst_" + lmv.name + ": u8 = 0;\n")
-                w.emit("pub fn _zbr_mvref_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
+                w.emit("pub inline fn _zbr_mvref_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
                 w.emit("    if (_zbr_mvst_" + lmv.name + " == 2) return &_zbr_mv_" + lmv.name + ";\n")
+                w.emit("    return _zbr_mvinit_" + lmv.name + "();\n")
+                w.emit("}\n")
+                w.emit("fn _zbr_mvinit_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
+                w.emit("    @branchHint(.cold);\n")
                 w.emit("    if (_zbr_mvst_" + lmv.name + " == 1) _zbr_init_cycle(" + lq + ", " + lshared + ");\n")
                 w.emit("    _zbr_mvst_" + lmv.name + " = 1;\n")
                 w.emit("    var _zbr_frame: _ZbrInitFrame = .{ .name = " + lq + ", .prev = _zbr_init_head };\n")
@@ -2867,6 +2939,8 @@ var _coverage: bool = false
 # space-fenced (" a b "), reset by generateModuleWith. Generations never interleave
 # (a module's deps finish before it is generated), so one module-global is enough.
 var _lazy_mvs: str = ""
+var _lazy_sfs: str = ""
+var _lazy_own_types: str = ""
 var _lazy_stem: str = ""
 var _cov_lines_s: str = ""
 var _cov_max: int = 0
@@ -3712,6 +3786,17 @@ def generateSingleFileCombined(m: Module, file: str, preamble_path: str, dep_bod
     sb.append("const _Mod = struct {\n")
     sb.append(decls)
     sb.append("};\n")
+    # BUG-295 (4): a dependency on an import cycle `use`s the ROOT, and genUse binds that
+    # to `_mod_<root>` like any other module -- which did not exist, so every cycle failed
+    # to build under --single-file. Name the root under that spelling too, unless a
+    # dependency already owns it. Only on a cycle, so acyclic output is unchanged.
+    var root_sf: str = sfModStructName(moduleStemOf(file))
+    var root_taken: bool = not deps_mt.hasModuleVar("$cyc:" + moduleStemOf(file))
+    for dn in dep_names
+        if sfModStructName(dn) == root_sf
+            root_taken = true
+    if not root_taken
+        sb.append("const ${root_sf} = _Mod;\n")
     # One file-scope init dispatcher: deps first, root last (a module var may reference an
     # exposed cross-module symbol, so the dep it comes from must be initialised first).
     sb.append("pub fn _initModuleVars() void {\n")
@@ -4325,6 +4410,7 @@ struct Generator
                                        # class_names too, so without this the alias in
                                        # `Parser.Parser.parse()` reads as a type reference.
     var exposed_module_vars  : HashMap(str, str)  # BUG-158: exposed cross-module module-var name → import alias
+    var exposed_from         : HashMap(str, str)  # BUG-664: any exposed name → the `use` path it came from
     # Phase 7b additions
     var mut_set              : StrSet?  # locals mutated in current block; nil → all emitted as const; set by genStmts
     # BUG-569: the OUTERMOST block's mutation set -- scanMutations recurses, so it is every
@@ -4466,6 +4552,7 @@ struct Generator
         .namespace_names       = StrSet()
         .import_aliases        = StrSet()
         .exposed_module_vars   = HashMap(str, str)()
+        .exposed_from          = HashMap(str, str)()
         # Phase 7b field initializations
         .mut_set               = nil
         .fn_mut_all            = nil
@@ -5626,7 +5713,8 @@ struct Generator
                         w.emit(")")
                 w.emit(" = undefined;\n")
                 return
-            # BUG-649: a static built at run time -- assigned in _initModuleVars().
+            # BUG-649: a static built at run time. BUG-664: initialised on first use by
+            # `_zbr_sfref_<name>()`, declared here beside it (see isLazyModuleVar).
             if n.mods.is_static and not .is_generic and isDeferredStaticField(n)
                 w.emit(": ")
                 if n.type_ != nil
@@ -5642,6 +5730,45 @@ struct Generator
                         genModuleVarInit(n.init_expr!, n.type_)
                         w.emit(")")
                 w.emit(" = undefined;\n")
+                var sq: str = "\"" + _lazy_stem + "." + owner + "." + n.name + "\""
+                var sshared: str = "true"
+                if not _runtime_module and not _single_file
+                    sshared = "false"
+                var sst: str = "_zbr_sfst_" + n.name
+                w.emit("    var " + sst + ": u8 = 0;\n")
+                # an inline fast path over a cold initialiser, as for a module var
+                w.emit("    pub inline fn _zbr_sfref_" + n.name + "() *@TypeOf(")
+                emitName(n.name)
+                w.emit(") {\n")
+                w.emit("        if (" + sst + " == 2) return &")
+                emitName(n.name)
+                w.emit(";\n")
+                w.emit("        return _zbr_sfinit_" + n.name + "();\n")
+                w.emit("    }\n")
+                w.emit("    fn _zbr_sfinit_" + n.name + "() *@TypeOf(")
+                emitName(n.name)
+                w.emit(") {\n")
+                w.emit("        @branchHint(.cold);\n")
+                w.emit("        if (" + sst + " == 1) _zbr_init_cycle(" + sq + ", " + sshared + ");\n")
+                w.emit("        " + sst + " = 1;\n")
+                w.emit("        var _zbr_frame: _ZbrInitFrame = .{ .name = " + sq + ", .prev = _zbr_init_head };\n")
+                w.emit("        _zbr_init_head = &_zbr_frame;\n")
+                w.emit("        ")
+                emitName(n.name)
+                w.emit(" = ")
+                if n.init_expr != nil
+                    genModuleVarInit(n.init_expr!, n.type_)
+                else
+                    w.emit("_zbr_new(")
+                    genType(n.type_!)
+                    w.emit(")")
+                w.emit(";\n")
+                w.emit("        _zbr_init_head = _zbr_frame.prev;\n")
+                w.emit("        " + sst + " = 2;\n")
+                w.emit("        return &")
+                emitName(n.name)
+                w.emit(";\n")
+                w.emit("    }\n")
                 return
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
             # "must be const or comptime"); annotate it the same way genLocalVar
@@ -14592,6 +14719,21 @@ struct Generator
             on Expr.ident as id
                 genIdent(id)
             on Expr.member as m
+                # BUG-664: a computed static, read or written through its accessor.
+                var sf_cls: str = ""
+                var sf_from: str = ""
+                if m.object is Expr.ident as sf_oi
+                    if not isLocalOrParamName(sf_oi.name)
+                        sf_cls = sf_oi.name
+                else if m.object is Expr.member as sf_om
+                    if sf_om.object is Expr.ident as sf_alias
+                        if import_aliases.contains_(sf_alias.name) and not isLocalOrParamName(sf_alias.name)
+                            sf_cls = sf_om.member
+                            sf_from = sf_alias.name
+                if sf_cls != "" and staticRefIsLazy(sf_from, sf_cls, m.member)
+                    genExpr(m.object)
+                    w.emit("._zbr_sfref_" + m.member + "().*")
+                    return
                 # BUG-596: a method read as a VALUE binds to its receiver. Not as a callee.
                 if not is_callee and boundMethodClass(m) != ""
                     w.emit("_zbr_bind(")
@@ -15593,6 +15735,23 @@ struct Generator
     def addExposedModuleVar(name: str, alias: str)
         .exposed_module_vars.put(name, alias)
 
+    def addExposedFrom(name: str, path: str)
+        .exposed_from.put(name, path)
+
+    # BUG-664: is `cls.field` read through a first-use accessor? `alias` is the module
+    # the class was reached through (`lib.Reg.f`), or "" for a bare `Reg.f`: this
+    # module's own class, an exposed one, or an unwrapped `use Reg`.
+    def staticRefIsLazy(alias: str, cls: str, field: str): bool
+        if alias != ""
+            return depStaticIsLazy(.dep_types, alias, cls, field)
+        if isOwnLazyStaticOwner(cls)
+            return ownStaticIsLazy(cls, field)
+        if .exposed_from.contains(cls)
+            return depStaticIsLazy(.dep_types, .exposed_from.fetch(cls), cls, field)
+        if unwrapped_imports.contains_(cls)
+            return depStaticIsLazy(.dep_types, cls, cls, field)
+        return false
+
     # Register an extension method's return type. Wrapped in a method so the
     # HashMap.put uses a bare self-field — an explicit `g.ext_method_ret.put(...)`
     # from the setup pass mis-resolves in the bootstrap and drops the `catch`
@@ -15672,6 +15831,9 @@ struct Generator
         if in_method and isFieldName(id.name)
             if isSharedField(id.name)
                 emitTypeName(owner)                         # BUG-281 B
+                if ownStaticIsLazy(owner, id.name)   # BUG-664
+                    w.emit("._zbr_sfref_" + id.name + "().*")
+                    return
             else
                 w.emit(self_name)
             w.emit(".")

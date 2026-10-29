@@ -26,6 +26,8 @@ const _ZbrMap = _zbr_rt._ZbrMap;
 const _zbr_new = _zbr_rt._zbr_new;
 const _zebra_map_keys = _zbr_rt._zebra_map_keys;
 const _zbr_print = _zbr_rt._zbr_print;
+const _ZbrInitFrame = _zbr_rt._ZbrInitFrame;
+const _zbr_init_cycle = _zbr_rt._zbr_init_cycle;
 const _zbr_list_join = _zbr_rt._zbr_list_join;
 
 const _zbr_mod_Ast = @import("Ast.zig");
@@ -13795,7 +13797,7 @@ pub var _zbr_mv__container_copy_sites: _ZbrList([]const u8) = undefined;
 // zbr:selfhost/TypeChecker.zbr:7831
 pub fn _zbr_fn_containerCopySites() _ZbrList([]const u8) {
 // zbr:selfhost/TypeChecker.zbr:7832
-    return _zbr_mv__container_copy_sites;
+    return _zbr_mvref__container_copy_sites().*;
 }
 
 // zbr:selfhost/TypeChecker.zbr:7834
@@ -13885,7 +13887,7 @@ pub fn _zbr_fn_noteContainerCopy(kind: []const u8, file: []const u8, e: _zbr_ty_
         cl = stmt_line;
     }
 // zbr:selfhost/TypeChecker.zbr:7870
-    _zbr_mv__container_copy_sites.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(kind, ": ", _zbr_rt._allocator), file, _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cc}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
+    _zbr_mvref__container_copy_sites().*.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(kind, ": ", _zbr_rt._allocator), file, _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cc}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
 }
 
 // zbr:selfhost/TypeChecker.zbr:7874
@@ -17978,5 +17980,21 @@ var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
     if (_module_vars_inited) return;
     _module_vars_inited = true;
+    _ = _zbr_mvref__container_copy_sites();
+}
+var _zbr_mvst__container_copy_sites: u8 = 0;
+pub inline fn _zbr_mvref__container_copy_sites() *@TypeOf(_zbr_mv__container_copy_sites) {
+    if (_zbr_mvst__container_copy_sites == 2) return &_zbr_mv__container_copy_sites;
+    return _zbr_mvinit__container_copy_sites();
+}
+fn _zbr_mvinit__container_copy_sites() *@TypeOf(_zbr_mv__container_copy_sites) {
+    @branchHint(.cold);
+    if (_zbr_mvst__container_copy_sites == 1) _zbr_init_cycle("TypeChecker._container_copy_sites", true);
+    _zbr_mvst__container_copy_sites = 1;
+    var _zbr_frame: _ZbrInitFrame = .{ .name = "TypeChecker._container_copy_sites", .prev = _zbr_rt._zbr_init_head };
+    _zbr_rt._zbr_init_head = &_zbr_frame;
     _zbr_mv__container_copy_sites = _zbr_new(_ZbrList([]const u8));
+    _zbr_rt._zbr_init_head = _zbr_frame.prev;
+    _zbr_mvst__container_copy_sites = 2;
+    return &_zbr_mv__container_copy_sites;
 }

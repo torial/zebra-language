@@ -1,0 +1,11 @@
+# BUG-664 / BUG-295 (3): a computed static read across an import CYCLE. The dependency's
+# initialisers run first and read the root's statics, through `mod.Reg.f` and an exposed
+# `Reg.f`; before first-use initialisation they read garbage (segfault).
+use bug664_cycle_static_lib
+
+class Reg
+    static var items: List(int) = [1, 2, 3]
+    static var label: str = "r" + "eg".upper()
+
+def main()
+    print("bug664-cycle: ${bug664_cycle_static_lib.n} ${bug664_cycle_static_lib.lab} ${Reg.items.len}")

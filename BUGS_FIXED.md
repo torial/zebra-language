@@ -6,6 +6,102 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-665: an instance method that reads only STATIC members failed inside zig -- "unused function parameter" -- FIXED 2026-10-29 (found the same day)
+
+```zebra
+class Reg
+    static var n: int = 5
+    def inst(): int
+        return n          # zig: unused function parameter (self)
+```
+
+Found writing BUG-664's probes; the N-1 anchor fails the same way, so it predates that
+work. The decision to emit `_ = self;` asks whether the body uses `this`, a field or a
+method (`bodyUsesAnyField` / `bodyUsesAnyMethod`), and both counted STATIC members --
+which are emitted through their type (`_zbr_ty_Reg.n`), never through `self`. So `self`
+was judged used, was not discarded, and was in fact unused. Both now skip statics.
+Fixture `test/bug665_static_only_method_test.zbr`: a plain static, a computed static, a
+bare static-method call, and the control `mixed`, which reads an instance field too and
+must not be discarded. Red on HEAD `3ca3094` at line 12.
+
+### BUG-664: a computed module var or `static var` that read one initialised LATER read uninitialised memory -- no cycle needed -- FIXED 2026-10-29 (found the same day)
+
+- **Severity:** High -- a segfault (or a garbage value) at start-up from a program the
+  front end accepts, in a single module, in the most ordinary shapes.
+- **Found:** 2026-10-29, scoping BUG-295 item (3).
+
+A module's computed module vars (`isDeferredModuleVar`) and computed statics
+(`isDeferredStaticField`, BUG-649) are declared `= undefined` and assigned in
+`_initModuleVars()`: module vars in SOURCE ORDER, then every static. Any initialiser that
+reads something later in that sweep reads `undefined`. Each of these segfaults
+(`0xffffffffffffffff`) on the compiler of 2026-10-29, Debug:
+
+```zebra
+# (a) a module var reading a later module var
+var a: int = b.len + 1
+var b: List(int) = [1, 2]
+
+# (b) a module var reading a static -- through a function, which no syntactic
+#     ordering can see
+class Reg
+    static var items: List(int) = [1, 2, 3]
+def count(): int
+    return Reg.items.len
+var n: int = count() + 10
+
+# (c) a static reading the static of a class declared later
+class A
+    static var xs: List(int) = [B.ys.len]
+class B
+    static var ys: List(int) = [1, 2]
+```
+
+And the direct form, `var n: int = Reg.items.len + 10` with `Reg` in the same module. The
+REVERSE direction works (`static var tag: str = "t" + base` reading a module var `base`),
+because module vars are swept first -- so neither fixed order of the two passes is right.
+
+**Why it is the same defect as BUG-295's module-state half, and wider.** BUG-295 fixed the
+cross-module form for modules on an import cycle with first-use accessors
+(`_zbr_mvref_<name>()`). The same accessor answers all of (a)-(c), but only if it applies
+to every computed module var and static in every module, which changes the emit of almost
+every program, the compiler's own included. That is a cost (a call and a branch per read
+of a computed module var or static; binary size) to be MEASURED and decided, not slipped
+in. A compile-time topological order of the sweep would cost nothing at run time and would
+fix (a) and (c) but not (b): the dependency hides inside a function body.
+
+**Control when fixing:** the three programs above, plus `zz_one_b`'s reverse direction,
+which must keep working.
+
+**FIXED 2026-10-29 -- every computed module var and static initialises on first use**
+(Sean: "initialize at first use"). BUG-295's accessor, `_zbr_mvref_<name>()`, now covers
+every `isDeferredModuleVar` in every module, not only modules on a cycle, and a computed
+static gets the same shape inside its class struct, `<Type>._zbr_sfref_<field>()`. Every
+reference goes through them -- `Reg.f`, `lib.Reg.f`, an exposed `Reg.f`, a bare `f` in a
+method -- and the init sweep forces them instead of assigning, so all are set before main
+and the order of declarations no longer matters. Fixtures:
+`test/bug664_init_order_test.zbr` (all four shapes above plus the reverse control,
+default and `--no-runtime-module`) and `test/bug664_cycle_static_test.zbr` (statics read
+across an import cycle -- BUG-295 item 3). Both segfaulted on HEAD `3ca3094`.
+
+**The cost, measured, `--release`:** an accessor is an `inline` fast path (load, compare,
+return) over a cold out-of-line initialiser. As one plain function it was ~8x slower in a
+hot loop (min 1772 ms vs 215 ms for 400M reads, hand-split; 269 ms through the compiler).
+The rest cannot be removed this way: the optimiser can no longer hoist such a read out of
+a loop, and in a loop reading only `table.len` and `Reg.items.len` it had deleted the loop
+entirely (0 ms). In a loop doing real work with them (`table.at(i % 4) +
+Reg.items.at(i % 3)`, 200M iterations), `tools/bench_ab.sh` REFUSED to report a ratio:
+4172 ms vs 4346 ms of work (+4%) against a 5892 ms noise floor on a loaded host -- not
+distinguishable there; to be re-measured on a quiet one. A user program with one computed module var grew 3 KB (839,168 ->
+842,240 B). **The DEBUG compiler grew 115.6 -> 145.3 MB (deterministic, rebuilt twice),
+and the leading hypothesis -- NOT established -- is the linker rather than code:**
+virtual section sizes are identical and only `.text`'s raw allocation moved (51.3 ->
+75.0 MB); replacing the calls to `_zbr_init_cycle` with a panic restores 115.6 exactly,
+yet each of four bisected pieces of its body costs zero on its own, which is the shape of
+a capacity threshold in Zig's self-hosted linker but does not prove one. The `--release`
+compiler's size (the one that ships) is what would settle it, and was not measured here.
+The first explanation tried -- `_zbr_exit`'s census flush -- was tested and FAILED (the
+size did not move with `std.process.exit` in its place).
+
 ### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- FIXED 2026-10-27
 - **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
   predates BUG-561.
