@@ -4234,6 +4234,18 @@ class Stream
 | `re.split(s)`                     | `[]str`        | The pieces between matches (BUG-416) |
 | `re.groups(s)`                    | `[]str?`       | The capture groups of the FIRST match, group 1 at index 0 (the whole match is not included), ONE entry per group: `nil` for a group that took no part in the match, `""` for one that matched empty. No match gives `[]`. Unwrap an element (`if g as v`) before using it as a `str` |
 
+**Which match is found.** Matching is leftmost-first, as in Python, Perl and JavaScript:
+of the matches starting at the leftmost position, the one the pattern prefers wins. Each
+quantifier decides for itself: `*`, `+`, `?` and `{m,n}` prefer more, their lazy forms
+`*?`, `+?`, `??` and `{m,n}?` prefer fewer, and `|` prefers its left side. So
+`<.*?>.*>` finds all of `"<a>b>c>"`, and `a|ab` finds `"a"` in `"ab"`. `re.match(s)` asks
+whether ANY way of matching covers all of `s` (`a|ab` matches `"ab"`). A loop iteration
+that matches nothing ends the loop (BUG-014 / BUG-662). One known difference from Python:
+when a loop whose body can match the empty string is nested inside another such loop,
+`groups()` may report a different (empty vs non-empty) last iteration for an inner group.
+The match itself agrees: 15,000 random patterns compared against Python's `re`, 0
+disagreements in `find` and `match`.
+
 ### `DateTime` — date/time
 
 **Constructors**

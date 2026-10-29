@@ -1025,9 +1025,11 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
 - **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains.
   Not manifesting (`scanMutationsInExpr` conservatively marks cross-module calls
   mutated). Defer unless a concrete failing case appears.
-- **BUG-014** — regex lazy match is global, not per-quantifier (`<.*?>STUFF.*>`
-  misbehaves). Architectural (priority-first NFA / backtracking). **Deferred
-  post-1.0 (§7);** workaround = split/restructure the pattern.
+- **BUG-014** — regex lazy match was global, not per-quantifier. **FIXED 2026-10-28**:
+  not architectural after all -- the Pike VM keeps threads in priority order and drops
+  the lower-priority ones once one matches (leftmost-first, Python's semantics). The
+  oracle written for it found BUG-662 (wrong NFAs for nested quantifiers, `(?:a|b)?`,
+  `{0,m}`, `{m,n}?`, repeated groups), fixed with it.
 - **SQLite feature defines not passed to the vendored `sqlite3.c`** — the
   compiler adds `sqlite3.c` to the zig build (`selfhost/main.zbr` ~2703) with no
   `-DSQLITE_ENABLE_*` defines, so every feature the amalgamation fences behind
@@ -1046,8 +1048,6 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
 
 # Post-1.0
 
-- **§7 — Regex per-quantifier lazy/greedy** (BUG-014). Per-node shortest/longest
-  flags; architectural. Workaround: split the pattern.
 - **§6 — REPL resident compiler.** Measured: `zig run` cold 4s / warm 119ms; every
   REPL entry is a cold compile (session file changes each entry); `-fincremental`
   doesn't help on Zig 0.16 Windows (linker state not saved). Options: Zig 0.17+

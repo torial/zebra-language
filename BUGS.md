@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-661. Next new bug: BUG-662.**
+**Last bug number generated: BUG-662. Next new bug: BUG-663.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -413,18 +413,6 @@ recommended shape, so this is a documented limit rather than a blocker.
 **Related:** BUG-260 is the same walker question in a different construct (a parameter used
 only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
 not a `zig_lit` — but it is worth checking against whatever fix lands here.
-
----
-
-### BUG-014: Regex lazy match is global, not per-quantifier
-- **Severity:** Medium
-- **Status:** Open — architectural limitation
-- **Symptom:** In a pattern mixing lazy and greedy quantifiers (e.g., `<.*?>.*>`), the global `lazy_match` flag makes ALL quantifiers lazy.
-  - Simple lazy patterns `<.*?>` work correctly.
-  - Mixed patterns `<.*?>STUFF.*>` misbehave.
-- **Root cause:** The current Thompson NFA passes a global `shortest: bool` to `matchAt`. When ANY `*?`/`+?`/`??` is parsed, `flags.lazy_match = true` is set for the whole regex.
-- **Fix (architectural):** Requires either a priority-first NFA simulation or a backtracking regex engine.
-- **Workaround:** For patterns needing mixed lazy/greedy, split into multiple regex calls or restructure the pattern.
 
 ---
 

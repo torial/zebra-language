@@ -3560,8 +3560,15 @@ pub const _RNode = struct {
 };
 pub const _RFlags = struct {
     ignore_case: bool = false, multiline: bool = false, dot_all: bool = false, unlimited: bool = false,
-    lazy_match: bool = false, // set when any *? +? ?? is parsed
 };
+// BUG-014: how a scan ends. `.first` is leftmost-first (Perl, Python, JS): threads run in
+// priority order -- a greedy split prefers the loop, a lazy one the exit, `|` its left
+// side -- and once a thread matches, every LOWER-priority thread is dropped, so each
+// quantifier's greediness is its own. `.any` drops nothing and reports the furthest end
+// any path reached: `re.match(s)` asks whether ANY path consumes all of `s` (`a|ab` must
+// match "ab", as Python's fullmatch does). There used to be one global "shortest" flag,
+// set by any lazy quantifier, which made every quantifier in the pattern lazy.
+pub const _RMode = enum { first, any };
 pub const _RFrag = struct {
     start: u32, outs: [64]u32 = @as([64]u32, @splat(0xFFFF_FFFF)), n: u8 = 0,
     pub fn one(s: u32, d: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d; f.n = 1; return f; }
@@ -3579,9 +3586,6 @@ pub const _RC = struct {
     pub fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
-    }
-    pub fn patch(c: *_RC, f: _RFrag, t: u32) void {
-        for (f.outs[0..f.n]) |i| c.nodes.items[i & 0x7FFF_FFFF].out1 = t;
     }
     pub fn patchFrag(c: *_RC, f: _RFrag, t: u32) void {
         for (f.outs[0..f.n]) |i| {
@@ -3626,7 +3630,9 @@ pub const _RC = struct {
                     c.nodes.items[open].out1 = inner.start;
                     return _RFrag.one(open, close);
                 }
-                _ = c.expect(')'); return _RFrag.one(open, open);
+                const close = try c.addNode(.{ .kind = .save, .slot = slot + 1 });
+                c.nodes.items[open].out1 = close;
+                _ = c.expect(')'); return _RFrag.one(open, close);
             },
             ')', '|' => return null,
             '[' => {
@@ -3653,39 +3659,54 @@ pub const _RC = struct {
             else => { _ = c.eat(); const idx = try c.addNode(.{ .kind = .lit, .c = ch }); return _RFrag.one(idx, idx); },
         }
     }
+    // BUG-662: the fragment combinators. An `outs` entry names a dangling exit: a node's
+    // out1, or -- with the high bit -- a split's out2; only patchFrag reads that bit.
+    pub fn concat(c: *_RC, a: ?_RFrag, b: _RFrag) _RFrag {
+        const f = a orelse return b;
+        c.patchFrag(f, b.start);
+        return .{ .start = f.start, .outs = b.outs, .n = b.n };
+    }
+    // `f?`: EVERY exit of `f` stays an exit (a `(a|b)?` used to keep only the first).
+    pub fn optional(c: *_RC, f: _RFrag, lazy: bool) error{OutOfMemory}!_RFrag {
+        const sp = try c.addNode(.{ .kind = .split,
+            .out1 = if (lazy) 0xFFFF_FFFF else f.start,
+            .out2 = if (lazy) f.start else 0xFFFF_FFFF });
+        var r = _RFrag{ .start = sp, .outs = f.outs, .n = f.n };
+        if (r.n >= r.outs.len) @panic("regex: pattern too complex");
+        r.outs[r.n] = if (lazy) sp else sp | 0x8000_0000; r.n += 1;
+        return r;
+    }
+    // `f*` (from_loop = true starts at the split) and `f+` (starts at `f`).
+    // The split is marked as a LOOP (`slot` 1 = greedy, exit on out2; 2 = lazy, exit on
+    // out1), which the closures need -- see `_rLoopExit`.
+    pub fn loop(c: *_RC, f: _RFrag, lazy: bool, from_loop: bool) error{OutOfMemory}!_RFrag {
+        const sp = try c.addNode(.{ .kind = .split, .slot = if (lazy) 2 else 1,
+            .out1 = if (lazy) 0xFFFF_FFFF else f.start,
+            .out2 = if (lazy) f.start else 0xFFFF_FFFF });
+        c.patchFrag(f, sp);
+        var r = _RFrag{ .start = if (from_loop) sp else f.start };
+        r.outs[0] = if (lazy) sp else sp | 0x8000_0000; r.n = 1;
+        return r;
+    }
+    // Matches the empty string: a save to a slot no group owns, which both closures
+    // follow without recording anything.
+    pub fn empty(c: *_RC) error{OutOfMemory}!_RFrag {
+        const idx = try c.addNode(.{ .kind = .save, .slot = 0xFF });
+        return _RFrag.one(idx, idx);
+    }
     pub fn parsePieceFixed(c: *_RC) error{OutOfMemory}!?_RFrag {
         const atom_pos = c.pos;
+        const caps0 = c.n_caps;
         const atom = try c.parseAtom() orelse return null;
         const q = c.peek() orelse return atom;
         switch (q) {
-            '*' => {
+            '*', '+', '?' => {
                 _ = c.eat(); const lazy = c.expect('?');
-                if (lazy) c.flags.lazy_match = true;
-                const sp = try c.addNode(.{ .kind = .split,
-                    .out1 = if (lazy) 0xFFFF_FFFF else atom.start,
-                    .out2 = if (lazy) atom.start  else 0xFFFF_FFFF });
-                c.patch(atom, sp);
-                var f = _RFrag{ .start = sp };
-                f.outs[0] = if (lazy) sp else sp | 0x8000_0000; f.n = 1; return f;
-            },
-            '+' => {
-                _ = c.eat(); const lazy = c.expect('?');
-                if (lazy) c.flags.lazy_match = true;
-                const sp = try c.addNode(.{ .kind = .split,
-                    .out1 = if (lazy) 0xFFFF_FFFF else atom.start,
-                    .out2 = if (lazy) atom.start  else 0xFFFF_FFFF });
-                c.patch(atom, sp);
-                var f = _RFrag{ .start = atom.start };
-                f.outs[0] = if (lazy) sp else sp | 0x8000_0000; f.n = 1; return f;
-            },
-            '?' => {
-                _ = c.eat(); const lazy = c.expect('?');
-                if (lazy) c.flags.lazy_match = true;
-                const sp = try c.addNode(.{ .kind = .split,
-                    .out1 = if (lazy) 0xFFFF_FFFF else atom.start,
-                    .out2 = if (lazy) atom.start  else 0xFFFF_FFFF });
-                return if (lazy) _RFrag.two(sp, sp, atom.outs[0])
-                       else      _RFrag.two(sp, atom.outs[0], sp | 0x8000_0000);
+                return switch (q) {
+                    '*' => try c.loop(atom, lazy, true),
+                    '+' => try c.loop(atom, lazy, false),
+                    else => try c.optional(atom, lazy),
+                };
             },
             '{' => {
                 _ = c.eat();
@@ -3697,35 +3718,31 @@ pub const _RC = struct {
                     else { m = 0; while (c.peek()) |d| { if (d < '0' or d > '9') break; m = m *% 10 +% (d - '0'); _ = c.eat(); } }
                 }
                 _ = c.expect('}');
+                const lazy = c.expect('?'); // `x{1,3}?` -- the `?` was read as a literal
                 if (!c.flags.unlimited) { if (n > 100) n = 100; if (m > 100) m = 100; }
-                if (n == 0 and m == 0 and !unbounded) return atom; // degenerate {0}
+                if (m < n) m = n;
                 const after_q = c.pos;
-                // build result: start with the already-parsed atom (counts as copy 1)
-                var result: _RFrag = atom;
-                // mandatory copies 2..n
-                var i: u32 = 1;
-                while (i < n) : (i += 1) {
-                    c.pos = atom_pos; const next = try c.parseAtom() orelse break; c.pos = after_q;
-                    c.patchFrag(result, next.start);
-                    result = .{ .start = result.start, .outs = next.outs, .n = next.n };
+                // BUG-662: x{n,m} is n copies of x, then m-n optional ones (x* when
+                // unbounded). Each copy is a fresh parse of the atom with the group
+                // counter rewound, so a capturing group keeps ONE number however many
+                // copies there are -- `(a){2}` is group 1, set by the last copy.
+                var used = false;
+                var res: ?_RFrag = null;
+                var k: u32 = 0;
+                const copies = n + (if (unbounded) @as(u32, 1) else m - n);
+                while (k < copies) : (k += 1) {
+                    var x = atom;
+                    if (used) {
+                        c.pos = atom_pos; c.n_caps = caps0;
+                        x = try c.parseAtom() orelse break;
+                        c.pos = after_q;
+                    }
+                    used = true;
+                    if (k < n) res = c.concat(res, x)
+                    else if (unbounded) res = c.concat(res, try c.loop(x, lazy, true))
+                    else res = c.concat(res, try c.optional(x, lazy));
                 }
-                // optional copies n+1..m
-                var j: u32 = 0;
-                while (j < m -| n) : (j += 1) {
-                    c.pos = atom_pos; const next = try c.parseAtom() orelse break; c.pos = after_q;
-                    const sp = try c.addNode(.{ .kind = .split, .out1 = next.start, .out2 = 0xFFFF_FFFF });
-                    c.patchFrag(result, sp);
-                    var f2 = _RFrag{ .start = result.start }; f2.outs[0] = next.outs[0]; f2.outs[1] = sp | 0x8000_0000; f2.n = 2; result = f2;
-                }
-                // unbounded: add * at end
-                if (unbounded) {
-                    c.pos = atom_pos; const last_a = try c.parseAtom() orelse { c.pos = after_q; return result; }; c.pos = after_q;
-                    const sp = try c.addNode(.{ .kind = .split, .out1 = last_a.start, .out2 = 0xFFFF_FFFF });
-                    c.patch(last_a, sp);
-                    c.patchFrag(result, sp);
-                    var f3 = _RFrag{ .start = result.start }; f3.outs[0] = sp | 0x8000_0000; f3.n = 1; return f3;
-                }
-                return result;
+                return res orelse try c.empty(); // x{0} / x{0,0}: the empty string
             },
             else => return atom,
         }
@@ -3750,9 +3767,13 @@ pub const _RC = struct {
     }
 };
 pub const Regex = struct {
-    nodes: []_RNode, start: u32, alloc: std.mem.Allocator, flags: _RFlags = .{},
+    nodes: []_RNode, start: u32, alloc: std.mem.Allocator, flags: _RFlags = .{}, n_caps: u8 = 0,
     pub fn closure(re: *const Regex, cur: *std.ArrayListUnmanaged(u32), vis: []bool, alloc: std.mem.Allocator, idx: u32, pos: usize, input: []const u8) error{OutOfMemory}!void {
-        if (idx == 0xFFFF_FFFF or idx >= re.nodes.len or vis[idx]) return;
+        if (idx == 0xFFFF_FFFF or idx >= re.nodes.len) return;
+        if (vis[idx] and re.nodes[idx].kind != .save) {
+            if (_rLoopExit(&re.nodes[idx])) |ex| try re.closure(cur, vis, alloc, ex, pos, input);
+            return;
+        }
         vis[idx] = true;
         const nd = &re.nodes[idx];
         switch (nd.kind) {
@@ -3774,33 +3795,49 @@ pub const Regex = struct {
             else => try cur.append(alloc, idx),
         }
     }
-    pub fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
+    pub fn matchAt(re: *const Regex, input: []const u8, from: usize, mode: _RMode) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
         var cur: std.ArrayListUnmanaged(u32) = .empty; var nxt: std.ArrayListUnmanaged(u32) = .empty;
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
         var last: ?usize = null;
-        for (cur.items) |si| if (re.nodes[si].kind == .match) { last = from; if (shortest) return last; break; };
         var pos = from;
-        while (pos < input.len and cur.items.len > 0) : (pos += 1) {
-            const ch = input[pos]; nxt.clearRetainingCapacity(); @memset(vis, false);
+        while (cur.items.len > 0) : (pos += 1) {
+            nxt.clearRetainingCapacity(); @memset(vis, false);
             for (cur.items) |si| {
                 const nd = &re.nodes[si];
-                const ok = switch (nd.kind) {
-                    .lit => if (re.flags.ignore_case) std.ascii.toLower(nd.c) == std.ascii.toLower(ch) else nd.c == ch,
-                    .dot => if (re.flags.dot_all) true else ch != '\n',
-                    .cls => if (re.flags.ignore_case) _rClsMatch(nd, ch) or _rClsMatch(nd, std.ascii.toLower(ch)) or _rClsMatch(nd, std.ascii.toUpper(ch)) else _rClsMatch(nd, ch),
-                    else => false,
-                };
-                if (ok) try re.closure(&nxt, vis, alloc, nd.out1, pos + 1, input);
+                if (nd.kind == .match) { last = pos; if (mode == .first) break; continue; }
+                if (pos < input.len and _rStep(re, nd, input[pos])) try re.closure(&nxt, vis, alloc, nd.out1, pos + 1, input);
             }
+            if (pos >= input.len) break;
             std.mem.swap(std.ArrayListUnmanaged(u32), &cur, &nxt);
-            for (cur.items) |si| if (re.nodes[si].kind == .match) { last = pos + 1; if (shortest) return last; break; };
         }
         return last;
     }
 };
+// BUG-662: a loop iteration that consumed nothing ENDS the loop (Python, Perl). Within
+// one closure no input is consumed, so reaching a loop's split a second time means the
+// path came round an empty iteration; it continues at the loop's exit, at the priority
+// of the path that got there, instead of being dropped. Dropping it let a LOWER-priority
+// alternative win: `(a|b??)+` on "aab" found "aab" where Python finds "aa". When the
+// split was reached twice for another reason, its exit has already been explored and
+// the second visit adds nothing. A `save` is never treated as visited: the empty
+// iteration of `(.?)+` comes back through the group's closing save before it reaches
+// the split, and every epsilon cycle passes through a split, which still is.
+pub fn _rLoopExit(nd: *const _RNode) ?u32 {
+    if (nd.kind != .split) return null;
+    return switch (nd.slot) { 1 => nd.out2, 2 => nd.out1, else => null };
+}
+// Does the consuming node `nd` accept `ch`? Shared by both simulations.
+pub fn _rStep(re: *const Regex, nd: *const _RNode, ch: u8) bool {
+    return switch (nd.kind) {
+        .lit => if (re.flags.ignore_case) std.ascii.toLower(nd.c) == std.ascii.toLower(ch) else nd.c == ch,
+        .dot => if (re.flags.dot_all) true else ch != '\n',
+        .cls => if (re.flags.ignore_case) _rClsMatch(nd, ch) or _rClsMatch(nd, std.ascii.toLower(ch)) or _rClsMatch(nd, std.ascii.toUpper(ch)) else _rClsMatch(nd, ch),
+        else => false,
+    };
+}
 pub fn _rSetBit(bits: *[32]u8, c: u8) void { bits[c >> 3] |= @as(u8, 1) << @intCast(c & 7); }
 pub fn _rGetBit(bits: *const [32]u8, c: u8) bool { return (bits[c >> 3] >> @intCast(c & 7)) & 1 != 0; }
 pub fn _rClsMatch(nd: *const _RNode, c: u8) bool { const h = _rGetBit(&nd.bits, c); return if (nd.neg) !h else h; }
@@ -3827,12 +3864,12 @@ pub fn _regex_compile(pattern: []const u8, flags_str: []const u8) Regex {
     const match_idx = c.addNode(.{ .kind = .match }) catch @panic("regex OOM");
     if (frag_opt) |frag| {
         c.patchFrag(frag, match_idx);
-        return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = frag.start, .alloc = alloc, .flags = c.flags };
+        return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = frag.start, .alloc = alloc, .flags = c.flags, .n_caps = c.n_caps };
     }
-    return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = match_idx, .alloc = alloc, .flags = c.flags };
+    return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = match_idx, .alloc = alloc, .flags = c.flags, .n_caps = c.n_caps };
 }
 pub fn _regex_match(re: Regex, input: []const u8) bool {
-    const end = re.matchAt(input, 0, false) catch return false;
+    const end = re.matchAt(input, 0, .any) catch return false;
     return end != null and end.? == input.len;
 }
 // BUG-532: `re.test(s)` -- the pattern matches somewhere in `s` (an empty match counts),
@@ -3840,14 +3877,14 @@ pub fn _regex_match(re: Regex, input: []const u8) bool {
 pub fn _regex_test(re: Regex, input: []const u8) bool {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
-        if ((re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) != null) return true;
+        if ((re.matchAt(input, i, .first) catch @panic("regex: out of memory")) != null) return true;
     }
     return false;
 }
 pub fn _regex_find(re: Regex, input: []const u8) []const u8 {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| return input[i..e];
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| return input[i..e];
     }
     return "";
 }
@@ -3856,7 +3893,7 @@ pub fn _regex_find_all(re: Regex, input: []const u8) _ZbrList([]const u8) {
     var out = _zbr_new(_ZbrList([]const u8));
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             out.append(std.heap.page_allocator, input[i..e]) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else i += 1;
@@ -3870,7 +3907,7 @@ pub fn _regex_split(re: Regex, input: []const u8) _ZbrList([]const u8) {
     var start: usize = 0;
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             if (e > i) {
                 out.append(std.heap.page_allocator, input[start..i]) catch @panic("OOM");
                 start = e;
@@ -3885,7 +3922,7 @@ pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 
     var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             out.appendSlice(std.heap.page_allocator, sub) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else {
@@ -3906,7 +3943,10 @@ pub fn _re_eclosure_s(
     state: u32, saves: [_MAX_SAVE_SLOTS]usize, pos: usize, input: []const u8,
 ) std.mem.Allocator.Error!void {
     if (state == 0xFFFF_FFFF or state >= re.nodes.len) return;
-    if (vis[state]) return;
+    if (vis[state] and re.nodes[state].kind != .save) {
+        if (_rLoopExit(&re.nodes[state])) |ex| try _re_eclosure_s(re, cur, vis, alloc, ex, saves, pos, input);
+        return;
+    }
     vis[state] = true;
     const nd = &re.nodes[state];
     switch (nd.kind) {
@@ -3946,23 +3986,19 @@ pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[
     defer alloc.free(vis);
     @memset(vis, false);
     _re_eclosure_s(re, &cur, vis, alloc, re.start, empty, from, input) catch return null;
+    // BUG-014: the same priority walk as `matchAt(.first)`, carrying each thread's saves, so
+    // the groups reported are the ones a backtracking engine (Python's) would report.
     var last: ?[_MAX_SAVE_SLOTS]usize = null;
-    for (cur.items) |t| { if (re.nodes[t.state].kind == .match) { last = t.saves; if (re.flags.lazy_match) return last; break; } }
     var pos = from;
-    while (pos < input.len and cur.items.len > 0) : (pos += 1) {
-        const ch = input[pos]; nxt.clearRetainingCapacity(); @memset(vis, false);
+    while (cur.items.len > 0) : (pos += 1) {
+        nxt.clearRetainingCapacity(); @memset(vis, false);
         for (cur.items) |t| {
             const nd = &re.nodes[t.state];
-            const ok = switch (nd.kind) {
-                .lit => if (re.flags.ignore_case) std.ascii.toLower(nd.c) == std.ascii.toLower(ch) else nd.c == ch,
-                .dot => if (re.flags.dot_all) true else ch != '\n',
-                .cls => if (re.flags.ignore_case) _rClsMatch(nd, ch) or _rClsMatch(nd, std.ascii.toLower(ch)) or _rClsMatch(nd, std.ascii.toUpper(ch)) else _rClsMatch(nd, ch),
-                else => false,
-            };
-            if (ok) _re_eclosure_s(re, &nxt, vis, alloc, nd.out1, t.saves, pos + 1, input) catch {};
+            if (nd.kind == .match) { last = t.saves; break; }
+            if (pos < input.len and _rStep(re, nd, input[pos])) _re_eclosure_s(re, &nxt, vis, alloc, nd.out1, t.saves, pos + 1, input) catch {};
         }
+        if (pos >= input.len) break;
         std.mem.swap(std.ArrayListUnmanaged(_RegThread), &cur, &nxt);
-        for (cur.items) |t| { if (re.nodes[t.state].kind == .match) { last = t.saves; if (re.flags.lazy_match) return last; break; } }
     }
     return last;
 }
@@ -3972,11 +4008,8 @@ pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList(?[]const u8) {
     // to stop at the first unset slot, so `(a)(x)?(b)` on "ab" lost `b` and `(cat)|(dog)` on
     // "dog" returned nothing. `nil`, not "": an empty string is a group that matched empty.
     const alloc = std.heap.page_allocator;
-    // Group k owns save slots 2k (open) and 2k+1 (close); count the opens.
-    var ngroups: usize = 0;
-    for (re.nodes) |nd| {
-        if (nd.kind == .save and nd.slot % 2 == 0) ngroups += 1;
-    }
+    // Group k owns save slots 2k (open) and 2k+1 (close).
+    var ngroups: usize = re.n_caps;
     if (ngroups > _MAX_SAVE_SLOTS / 2) ngroups = _MAX_SAVE_SLOTS / 2;
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {

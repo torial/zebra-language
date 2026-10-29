@@ -1344,6 +1344,7 @@ smoke_tc_fail test/fail_fixtures/cue_begin_shape_test.zbr \
     "cue_begin_shape_test.zbr:5:8: error: \`cue begin\` takes no parameters and returns nothing"
 smoke_run test/cue_using_test.zbr "cue_using: <a>x<b>y</b></a>"
 smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
+smoke_run test/bug014_regex_priority_test.zbr "bug014: <a>b>c> | <a>,<aaa> | a true | bc | y true | <a> | a aaa | true | aa | <> | <> | <x>,<yy> | X X | p/ q/r"
 smoke_run test/bug556_json_parse_arena_test.zbr "bug556: parsed into the arena, 200 items"
 smoke_run test/bug561_multiline_literals_test.zbr "bug561: 4 7 3 [3, 6, 5]"
 smoke_run test/bug564_lambda_continuation_indent_test.zbr "bug564: 9 11 101 13"

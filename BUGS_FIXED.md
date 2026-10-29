@@ -43,6 +43,66 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-662: the regex compiler built wrong NFAs for nested quantifiers, `(?:a|b)?`, `{0,m}`, `{m,n}?` and repeated groups -- FIXED 2026-10-28 (found the same day)
+
+Found by the oracle written for BUG-014 (below), and present in the engine before it:
+
+- `*` and `+` closed their loop with `patch`, which set `out1` even for a dangling exit
+  that was a split's `out2` -- so a quantifier around a group ending in a quantifier
+  rewired the INNER loop. `(?:.*|a)+c{1,3}a(?:[ac])` did not match "bcccaa".
+- `x?` kept only the first exit of `x`: `(?:a|b)?c` could not take the `b` branch (a
+  capturing group has one exit, so `(a|b)?c` happened to work).
+- `x{0,m}` made the first copy mandatory, and `x{0}` / `x{0,0}` matched one `x`.
+- `x{m,n}?` read the `?` as a literal character.
+- `(a){2}` re-parsed the group for its second copy and gave it a NEW group number, so
+  `groups()` reported two groups. Copies now rewind the group counter; the count comes
+  from the compiler (`Regex.n_caps`) rather than from counting save nodes.
+- `()` matched but never recorded its end: `groups()` said nil where Python says "".
+
+The quantifiers are now built by four combinators (`concat`, `optional`, `loop`, `empty`)
+that keep every exit. `{m,n}` is m copies then n-m optional ones (`x*` when unbounded).
+Fixture `test/bug014_regex_priority_test.zbr` carries one row per item above.
+
+### BUG-014: regex laziness was global -- one `*?` made every quantifier lazy -- FIXED 2026-10-28 (found 2026-04)
+
+`<.*?>.*>` on "<a>b>c>" found "<a>b>": parsing any `*?`/`+?`/`??` set a flag on the whole
+regex, and the matcher then stopped at the SHORTEST match. Filed as "architectural,
+post-1.0" because the engine is a Thompson NFA, not a backtracker. It is not architectural:
+a Pike VM already carries priority. Threads are kept in priority order (a greedy split
+prefers the loop, a lazy one the exit, `|` its left side), and once a thread reaches the
+match every lower-priority thread is dropped -- leftmost-first, the semantics of Python,
+Perl and JavaScript, with each quantifier's greediness its own. `re.match(s)` (whole
+input) drops nothing and asks whether any path consumes all of `s`, as Python's
+`fullmatch` does: `a|ab` finds "a" in "ab" and also matches "ab".
+
+**This changes one documented-by-nobody behaviour:** alternation used to pick the LONGEST
+alternative (`a|ab` found "ab"); it now picks the first that leads to a match. Measured
+before landing: no pattern in this repo, zebra-ide, the GameEngine or the book's 803
+examples depends on it -- see below.
+
+A loop iteration that consumed nothing ENDS the loop, as in Python: a Pike VM drops a path
+that comes back to a visited node, which let a lower-priority alternative win
+(`(a|b??)+` on "aab" found "aab", Python "aa"). Reaching a loop's split a second time in
+one closure now continues at that loop's exit, and a `save` node is never treated as
+visited (the empty iteration of `(.?)+` returns through the group's close).
+
+**The instrument.** A harness built the old and new engines from the runtime's own source
+and compared both with Python's `re` (`search` span, `fullmatch`, group spans) on random
+patterns over {a,b,c} with groups, alternation, classes, `.`, every quantifier and its lazy
+form. Five seeds of 3,000 cases each (one all-greedy, four with lazy forms): the OLD engine
+disagreed with Python on 141-328 `find` results, 26-37 `match` results and 146-186 group
+results per seed; the new one on 0 `find`, 0 `match` and 1-6 group results. Every remaining
+group difference is a loop whose body can match empty nested inside another such loop, where
+Python records one more empty iteration of the inner group; following that would mean
+revisiting splits along every path, which is exponential, and RE2 and Go's regexp differ
+from Python on the same shape. Documented in QUICKSTART's Regex section.
+
+**What changed for existing code, measured:** the book's 37 examples that use `Regex`
+print identically under the old and the new runtime (the instrument's control: the same
+setup prints 10 differing rows of this fixture). zebra-ide uses no regex; the GameEngine's
+one use translates Lua patterns, which have no `|`. Red-checked: the fixture under the old
+runtime prints `<a>b> | <a>,<a> | ab true | c | ...` -- 10 of its 14 rows wrong.
+
 ### BUG-661: a module-level `const` could be assigned to -- the front end let it through to zig -- FIXED 2026-10-28 (found the same day)
 
 ```zebra

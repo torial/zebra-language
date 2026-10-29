@@ -69,6 +69,14 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **Regex quantifiers are greedy or lazy each on their own (BUG-014), and matching is
+  leftmost-first as in Python.** One `*?` used to make every quantifier lazy, so
+  `<.*?>.*>` found `"<a>b>"` in `"<a>b>c>"`. **Behaviour change:** `|` prefers its left
+  side instead of the longest alternative -- `a|ab` finds `"a"` in `"ab"` (`re.match`
+  still accepts any way of matching the whole input). Also fixed (BUG-662): nested
+  quantifiers like `(?:.*|a)+`, `(?:a|b)?`, `x{0,m}` and `x{0}` (both required a copy),
+  `x{m,n}?` (the `?` was a literal), and `(a){2}` (reported two groups).
+
 - **Subdirectory modules.** `use pkg.mod` is the file `pkg/mod.zbr` beside the importing
   file (or on `--module-path`), and brings in the module `mod`: `mod.f()`, `mod.T`,
   `use pkg.mod exposing f`. A module's own `use` resolves beside it. Two modules whose files
