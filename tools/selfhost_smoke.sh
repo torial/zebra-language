@@ -2042,6 +2042,8 @@ smoke_run     test/bug268_branch_int_test.zbr "bug268: OK"
 # local that must still get its `_ =`, so an over-broad fix (one that stopped
 # discarding anything) fails here rather than passing.
 smoke_run     test/bug267_ziglit_local_use_test.zbr "bug267: OK"
+smoke_run     test/bug267_ziglit_write_test.zbr "bug267: 47 10 21 5"
+smoke_run     test/bug663_ziglit_block_stmt_test.zbr "bug663: 1015 4"
 
 # BUG-260 (reported from zebra-sprocket): a PARAMETER referenced only inside a `[...]`
 # bind list must not be discarded. Same walker family as BUG-267, opposite walker: the

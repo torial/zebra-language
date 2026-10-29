@@ -1547,8 +1547,8 @@ python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, inst
                                 #   good entry has a "Control when fixing" section, which
                                 #   scored 30 of 53 — a noise ratio that gets a gate
                                 #   ignored. A part-done bug is legitimate and says so with
-                                #   `<!-- bug-open-ok: reason -->` (BUG-267 has one: usage
-                                #   half fixed, mutation half open).
+                                #   `<!-- bug-open-ok: reason -->` (BUG-267 had one until
+                                #   2026-10-28: usage half fixed, mutation half open).
                                 #   Refuses to report if <150 headings parse or if a planted
                                 #   duplicate is not detected. Reconfigures stdout to UTF-8:
                                 #   printing a heading containing an em-dash or a tick
@@ -3561,7 +3561,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **936** <!-- doc-gen: 936 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **938** <!-- doc-gen: 938 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

@@ -1,0 +1,13 @@
+# BUG-663: a statement-form `zig"…"` ending in a BLOCK got a `;` appended, and zig refused
+# it ("expected statement, found ';'"). A literal ending in `}` (`.{ … }`) still needs its
+# `;` -- the last row is that control: without the `;` it would not compile.
+def main()
+    var hits: int = 0
+    var n: int = 3
+    zig"if (n > 2) { hits += 10; }"
+    zig"if (n > 5) { hits += 100; } else { hits += 1; }"
+    var p: int = 0
+    zig"while (p < 4) : (p += 1) { hits += 1; }"
+    zig"blk: { hits += 1000; break :blk; }"
+    zig"_ = .{ .a = n }"
+    print("bug663: ${hits} ${p}")

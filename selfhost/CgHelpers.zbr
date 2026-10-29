@@ -35,7 +35,7 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt, zigLitMentionsWord, isZigIdentChar
+use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt, zigLitMentionsWord, zigLitWrittenWords, isZigIdentChar
 use Ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
 # Type-driven mutation analysis (scanMutations): the InferCtx lets us ask the
 # receiver's inferred type instead of guessing from the method NAME. Value-type
@@ -1730,8 +1730,6 @@ def subscriptWritesThroughReference(obj: Expr, ic: InferCtx?): bool
 # expr-walker: exhaustive
 # expr-walker-ok: ident — a bare name is a READ; whether it is mutated is decided by the
 #   construct around it (an assignment target, a method call's receiver), never by the name.
-# expr-walker-ok: zig_lit — a raw `zig"…"` literal is opaque text; a mutation inside it is
-#   Zig's business and invisible to a structural walk (the BUG-267 shape).
 # expr-walker-ok: lambda — MEASURED, not argued (2026-10-13): marking a local the lambda body
 #   mutates as `var` does not make it work. `var c = Counter(0)` / `var f = def(): int =
 #   c.bump()` fails as "expected '*Counter', found '*const Counter'", and with `c` made `var`
@@ -1848,6 +1846,10 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
                 for oa in oc.args
                     scanMutationsInExpr(oa.value, out, ic)
             scanMutationsInExpr(oc.base, out, ic)
+        # BUG-267: a local the escape assigns (or takes `&` of) must be emitted `var`.
+        on Expr.zig_lit as zl
+            for w in zigLitWrittenWords(zl.text)
+                out.add(w)
         else
             pass
 

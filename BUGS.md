@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-662. Next new bug: BUG-663.**
+**Last bug number generated: BUG-663. Next new bug: BUG-664.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -331,90 +331,6 @@ excluded; a forced single disagreement must be kept). That converts this from
 silent coverage loss into a printed number — but it does not explain the
 underlying disagreement, and a rising transient count is the signal to come
 back to this ticket.
-
-### BUG-267: `zig"…"` literals do not participate in MUTATION analysis (usage half ✅ FIXED 2026-08-06)
-<!-- bug-open-ok: PARTIAL — the usage half is fixed and the heading says so, but the MUTATION half is still open, so this belongs in the open ledger. Move it when the write half lands. -->
-
-**Found 2026-08-05** probing a real third-party DLL. Same root class as BUG-260 (a
-parameter used only inside a query bind list), and worse-placed: `zig"…"` is the only way
-to touch a C pointer, so the escape hatch reserved for FFI is exactly the construct the
-analysis cannot see into.
-
-    var p = Py_GetVersion()                       # read ONLY inside the escape
-    zig"const _c: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_c);"
-
-    error: pointless discard of local constant   ->  _ = p;   emitted alongside the use
-    error: cannot assign to constant             ->  `out` emitted const; escape assigns it
-
-Both walks stop at the literal: a variable **read** only inside it is treated as unused,
-and one **assigned** only inside it is treated as never mutated. Working around it needs
-two unrelated dummy statements (a fake comparison to use `p`, a dead branch to make `out`
-a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
-
-**Control when fixing:** a var read only inside a `zig"…"` must NOT get a discard, and one
-assigned only inside it must be emitted `var`; a genuinely unused var must still get its
-discard, and a genuinely non-mutated one must still be `const`. Both directions.
-
-**READ HALF FIXED 2026-08-06.** `mightUseNameInExpr` now carries the `zig_lit` case its
-sibling walker has had since B3, so a local read only inside an escape is no longer
-discarded. Pinned by `test/bug267_ziglit_local_use_test.zbr`, which asserts BOTH
-directions — the escape case compiles, AND a genuinely unused local still gets its
-`_ =`, so a fix that simply stopped discarding anything fails there rather than passing.
-**What remains open is the WRITE half only** (see the last section below).
-
-**Re-scoped 2026-08-06 — the earlier scoping below was WRONG about the read half, and
-wrong in the expensive direction: it argued for new language syntax to solve a problem
-this codebase had already solved one walker over.**
-
-**The read half is an INCONSISTENCY, not a missing capability.** `zigLitMentionsWord()`
-already exists in `selfhost/CgHelpers.zbr`, and its own comment states why: *"A param
-referenced from a `zig"…"` literal is used, so it must not be discarded."* There are two
-usage walkers, and only one of them learned that lesson:
-
-| walker | `zig_lit` case | used by |
-|---|---|---|
-| `nameUsedInExpr` | scans the text | parameter discards |
-| `mightUseNameInExpr` | falls into "no user idents" -> false | **local** discards |
-
-Measured, same construct both ways:
-
-    param used only in zig"…"  ->  no discard    (correct, long-standing)
-    local used only in zig"…"  ->  `_ = q;`      -> pointless discard of local constant
-
-So the fix is to give `mightUseNameInExpr` the same `zig_lit` case the sibling walker
-already has. No new syntax; it makes locals behave like parameters, which is what a reader
-would assume already happens.
-
-**The scan does not skip Zig strings or comments**, so a name appearing only inside one
-counts as a use, the discard is suppressed, and Zig reports `unused local variable`. That
-is a real limit and it is stated here rather than hidden — but it is **already accepted for
-parameters**, has not bitten, and its failure direction is a compile error rather than a
-silent miscompile.
-
-**Two designs considered and NOT pursued, recorded so they are not re-derived:**
-
-- **`zig"…" reads a, b`** (an explicit read list). Exact rather than heuristic, and it was
-  the recommendation until `zigLitMentionsWord` turned up. Rejected because it adds
-  language surface to answer a question the compiler already answers elsewhere, and would
-  leave TWO mechanisms for "what does this escape touch" — the more likely long-term
-  hazard than the false-positive it prevents. Revisit only if the string/comment
-  false-positive is actually hit.
-- **A `zig` BLOCK form with `reads` / `writes` clauses** (mirroring `capture`). The more
-  complete design, and the only one that addresses the write half for multi-statement
-  escapes. Not pursued because **the need was never demonstrated**: every real case so far
-  is a value flowing OUT of C, which expression form already handles. Revisit when someone
-  hits a genuine multi-statement escape that must mutate an existing local.
-
-**The write half is separate and remains open.** No mutation walker scans `zig"…"` at all,
-so a local assigned only inside a statement-form escape is still emitted `const` and Zig
-rejects the assignment. Expression form (`var out = zig"…"`) avoids it entirely and is the
-recommended shape, so this is a documented limit rather than a blocker.
-
-**Related:** BUG-260 is the same walker question in a different construct (a parameter used
-only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
-not a `zig_lit` — but it is worth checking against whatever fix lands here.
-
----
 
 ### DESIGN-001: Throws auto-propagation scope — nested expression calls require `?`
 - **Not a bug** — by design

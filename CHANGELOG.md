@@ -69,6 +69,11 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **A statement-form `zig"…"` can assign an existing local (BUG-267)**: `zig"out = 42;"`,
+  `out += …`, `out.f = …` or `&out` makes the local `var`; it was emitted `const` and zig
+  refused the write. And an escape ending in a block (`zig"if (c) { … }"`) no longer gets
+  a `;` appended after it (BUG-663).
+
 - **Regex quantifiers are greedy or lazy each on their own (BUG-014), and matching is
   leftmost-first as in Python.** One `*?` used to make every quantifier lazy, so
   `<.*?>.*>` found `"<a>b>"` in `"<a>b>c>"`. **Behaviour change:** `|` prefers its left

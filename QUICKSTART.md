@@ -2818,10 +2818,12 @@ map straight onto the C ones:
   and Zebra binds it normally.  A local read only inside the escape is counted as
   used, so it needs no dummy reference.
 
-  The *statement* form (`zig"…; out = …;"`, assigning an existing local) does not
-  work: nothing tracks assignments made inside an escape, so `out` is emitted
-  `const` and Zig rejects the write.  That is BUG-267's remaining half, and the
-  expression form above avoids it.
+  The *statement* form (`zig"out = …;"`) can assign an existing local: a name the
+  escape assigns (`out = …`, `out += …`, `out.f = …`) or takes the address of
+  (`&out`) makes the local `var` (BUG-267, 2026-10-28).  Like the read side, the scan
+  is textual: it does not skip Zig strings or comments, and an index write
+  (`out[i] = …`) does not count.  A `;` is appended unless the escape already ends
+  in one or ends in a block (`if (c) { … }`, `while … { … }`, `blk: { … }`) -- BUG-663.
 - The library must sit beside the source or on `--module-path`; there is no
   system-library search path and no `-l` flag.
 - `extern` applies to `def` only — not to variables, types, or classes.

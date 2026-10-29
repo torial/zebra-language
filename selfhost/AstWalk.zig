@@ -11,6 +11,7 @@ const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
+const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _ZbrList = _zbr_rt._ZbrList;
 const _zbr_new = _zbr_rt._zbr_new;
@@ -315,951 +316,1147 @@ pub fn _zbr_fn_zigLitMentionsWord(code: []const u8, name: []const u8) bool {
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:199
+// zbr:selfhost/AstWalk.zbr:202
+pub fn _zbr_fn_zigLitWrittenWords(code: []const u8) _ZbrList([]const u8) {
+// zbr:selfhost/AstWalk.zbr:203
+    var out = _zbr_new(_ZbrList([]const u8));
+// zbr:selfhost/AstWalk.zbr:204
+    const n: i64 = @as(i64, @intCast(code.len));
+// zbr:selfhost/AstWalk.zbr:205
+    var i: i64 = 0;
+// zbr:selfhost/AstWalk.zbr:206
+    while (_zebra_lt(i, n)) {
+// zbr:selfhost/AstWalk.zbr:207
+        const ch: u8 = _zbr_at(code, i);
+// zbr:selfhost/AstWalk.zbr:208
+        if (((((ch == '&') and _zebra_lt((i + 1), n)) and _zbr_fn_isZigIdentChar(_zbr_at(code, (i + 1)))) and (!_zbr_fn_isDigitChar(_zbr_at(code, (i + 1)))))) {
+// zbr:selfhost/AstWalk.zbr:210
+            var pj: i64 = (i - 1);
+// zbr:selfhost/AstWalk.zbr:211
+            while ((_zebra_ge(pj, 0) and ((_zbr_at(code, pj) == ' ') or (_zbr_at(code, pj) == '\t')))) {
+// zbr:selfhost/AstWalk.zbr:212
+                pj = (pj - 1);
+            }
+// zbr:selfhost/AstWalk.zbr:213
+            var binary: bool = false;
+// zbr:selfhost/AstWalk.zbr:214
+            if (_zebra_ge(pj, 0)) {
+// zbr:selfhost/AstWalk.zbr:215
+                if (((_zbr_fn_isZigIdentChar(_zbr_at(code, pj)) or (_zbr_at(code, pj) == ')')) or (_zbr_at(code, pj) == ']'))) {
+// zbr:selfhost/AstWalk.zbr:216
+                    binary = true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:217
+            const ws: i64 = (i + 1);
+// zbr:selfhost/AstWalk.zbr:218
+            var we: i64 = ws;
+// zbr:selfhost/AstWalk.zbr:219
+            while ((_zebra_lt(we, n) and _zbr_fn_isZigIdentChar(_zbr_at(code, we)))) {
+// zbr:selfhost/AstWalk.zbr:220
+                we = (we + 1);
+            }
+// zbr:selfhost/AstWalk.zbr:221
+            if ((!binary)) {
+// zbr:selfhost/AstWalk.zbr:222
+                out.append(_zbr_rt._allocator, _intern(code[@intCast(ws)..@intCast(we)])) catch @panic("OOM");
+            }
+// zbr:selfhost/AstWalk.zbr:223
+            i = we;
+        } else {
+// zbr:selfhost/AstWalk.zbr:224
+            if (_zbr_fn_isZigIdentChar(ch)) {
+// zbr:selfhost/AstWalk.zbr:225
+                const start: i64 = i;
+// zbr:selfhost/AstWalk.zbr:226
+                while ((_zebra_lt(i, n) and _zbr_fn_isZigIdentChar(_zbr_at(code, i)))) {
+// zbr:selfhost/AstWalk.zbr:227
+                    i = (i + 1);
+                }
+// zbr:selfhost/AstWalk.zbr:228
+                const field: bool = (_zebra_gt(start, 0) and (_zbr_at(code, (start - 1)) == '.'));
+// zbr:selfhost/AstWalk.zbr:229
+                if (((!field) and (!_zbr_fn_isDigitChar(_zbr_at(code, start))))) {
+// zbr:selfhost/AstWalk.zbr:230
+                    var j: i64 = i;
+// zbr:selfhost/AstWalk.zbr:232
+                    while (((_zebra_lt((j + 1), n) and (_zbr_at(code, j) == '.')) and _zbr_fn_isZigIdentChar(_zbr_at(code, (j + 1))))) {
+// zbr:selfhost/AstWalk.zbr:233
+                        j = (j + 1);
+// zbr:selfhost/AstWalk.zbr:234
+                        while ((_zebra_lt(j, n) and _zbr_fn_isZigIdentChar(_zbr_at(code, j)))) {
+// zbr:selfhost/AstWalk.zbr:235
+                            j = (j + 1);
+                        }
+                    }
+// zbr:selfhost/AstWalk.zbr:236
+                    while ((_zebra_lt(j, n) and ((_zbr_at(code, j) == ' ') or (_zbr_at(code, j) == '\t')))) {
+// zbr:selfhost/AstWalk.zbr:237
+                        j = (j + 1);
+                    }
+// zbr:selfhost/AstWalk.zbr:238
+                    const os: i64 = j;
+// zbr:selfhost/AstWalk.zbr:239
+                    while ((_zebra_lt(j, n) and _zbr_fn_isAssignOpChar(_zbr_at(code, j)))) {
+// zbr:selfhost/AstWalk.zbr:240
+                        j = (j + 1);
+                    }
+// zbr:selfhost/AstWalk.zbr:241
+                    if (((_zebra_lt(j, n) and (_zbr_at(code, j) == '=')) and (_zebra_ge((j + 1), n) or (_zbr_at(code, (j + 1)) != '=')))) {
+// zbr:selfhost/AstWalk.zbr:242
+                        if (_zbr_fn_isCompoundAssignOp(code[@intCast(os)..@intCast(j)])) {
+// zbr:selfhost/AstWalk.zbr:243
+                            out.append(_zbr_rt._allocator, _intern(code[@intCast(start)..@intCast(i)])) catch @panic("OOM");
+                        }
+                    }
+                }
+            } else {
+// zbr:selfhost/AstWalk.zbr:245
+                i = (i + 1);
+            }
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:246
+    return out;
+}
+
+// zbr:selfhost/AstWalk.zbr:254
+pub fn _zbr_fn_zigStmtNeedsSemicolon(code: []const u8) bool {
+// zbr:selfhost/AstWalk.zbr:255
+    const t: []const u8 = std.mem.trim(u8, code, " \t\n\r");
+// zbr:selfhost/AstWalk.zbr:256
+    if ((@as(i64, @intCast(t.len)) == 0)) {
+// zbr:selfhost/AstWalk.zbr:257
+        return false;
+    }
+// zbr:selfhost/AstWalk.zbr:258
+    if (std.mem.endsWith(u8, t, ";")) {
+// zbr:selfhost/AstWalk.zbr:259
+        return false;
+    }
+// zbr:selfhost/AstWalk.zbr:260
+    if ((!std.mem.endsWith(u8, t, "}"))) {
+// zbr:selfhost/AstWalk.zbr:261
+        return true;
+    }
+// zbr:selfhost/AstWalk.zbr:262
+    var depth: i64 = 0;
+// zbr:selfhost/AstWalk.zbr:263
+    var i: i64 = (@as(i64, @intCast(t.len)) - 1);
+// zbr:selfhost/AstWalk.zbr:264
+    while (_zebra_ge(i, 0)) {
+// zbr:selfhost/AstWalk.zbr:265
+        if ((_zbr_at(t, i) == '}')) {
+// zbr:selfhost/AstWalk.zbr:266
+            depth = (depth + 1);
+        } else {
+// zbr:selfhost/AstWalk.zbr:267
+            if ((_zbr_at(t, i) == '{')) {
+// zbr:selfhost/AstWalk.zbr:268
+                depth = (depth - 1);
+// zbr:selfhost/AstWalk.zbr:269
+                if ((depth == 0)) {
+                    break;
+                }
+            }
+        }
+// zbr:selfhost/AstWalk.zbr:271
+        i = (i - 1);
+    }
+// zbr:selfhost/AstWalk.zbr:272
+    if (_zebra_lt(i, 0)) {
+// zbr:selfhost/AstWalk.zbr:273
+        return true;
+    }
+// zbr:selfhost/AstWalk.zbr:274
+    var j: i64 = (i - 1);
+// zbr:selfhost/AstWalk.zbr:275
+    while ((_zebra_ge(j, 0) and ((((_zbr_at(t, j) == ' ') or (_zbr_at(t, j) == '\t')) or (_zbr_at(t, j) == '\n')) or (_zbr_at(t, j) == '\r')))) {
+// zbr:selfhost/AstWalk.zbr:276
+        j = (j - 1);
+    }
+// zbr:selfhost/AstWalk.zbr:277
+    if (_zebra_lt(j, 0)) {
+// zbr:selfhost/AstWalk.zbr:278
+        return false;
+    }
+// zbr:selfhost/AstWalk.zbr:279
+    if ((((_zbr_at(t, j) == ')') or (_zbr_at(t, j) == '|')) or (_zbr_at(t, j) == ':'))) {
+// zbr:selfhost/AstWalk.zbr:280
+        return false;
+    }
+// zbr:selfhost/AstWalk.zbr:281
+    if (((_zebra_ge(j, 3) and std.mem.eql(u8, t[@intCast((j - 3))..@intCast((j + 1))], "else")) and ((j == 3) or (!_zbr_fn_isZigIdentChar(_zbr_at(t, (j - 4))))))) {
+// zbr:selfhost/AstWalk.zbr:282
+        return false;
+    }
+// zbr:selfhost/AstWalk.zbr:283
+    return true;
+}
+
+// zbr:selfhost/AstWalk.zbr:285
+pub fn _zbr_fn_isDigitChar(c: u21) bool {
+// zbr:selfhost/AstWalk.zbr:286
+    return (_zebra_ge(c, '0') and _zebra_le(c, '9'));
+}
+
+// zbr:selfhost/AstWalk.zbr:288
+pub fn _zbr_fn_isAssignOpChar(c: u21) bool {
+// zbr:selfhost/AstWalk.zbr:289
+    return ((((((((((c == '+') or (c == '-')) or (c == '*')) or (c == '/')) or (c == '%')) or (c == '&')) or (c == '|')) or (c == '^')) or (c == '<')) or (c == '>'));
+}
+
+// zbr:selfhost/AstWalk.zbr:293
+pub fn _zbr_fn_isCompoundAssignOp(op: []const u8) bool {
+// zbr:selfhost/AstWalk.zbr:294
+    return (((((((((((((((((std.mem.eql(u8, op, "") or std.mem.eql(u8, op, "+")) or std.mem.eql(u8, op, "-")) or std.mem.eql(u8, op, "*")) or std.mem.eql(u8, op, "/")) or std.mem.eql(u8, op, "%")) or std.mem.eql(u8, op, "&")) or std.mem.eql(u8, op, "|")) or std.mem.eql(u8, op, "^")) or std.mem.eql(u8, op, "<<")) or std.mem.eql(u8, op, ">>")) or std.mem.eql(u8, op, "+%")) or std.mem.eql(u8, op, "-%")) or std.mem.eql(u8, op, "*%")) or std.mem.eql(u8, op, "+|")) or std.mem.eql(u8, op, "-|")) or std.mem.eql(u8, op, "*|")) or std.mem.eql(u8, op, "<<|"));
+}
+
+// zbr:selfhost/AstWalk.zbr:301
 pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
-// zbr:selfhost/AstWalk.zbr:200
+// zbr:selfhost/AstWalk.zbr:302
     switch (_zbr_val(expr)) {
         .ident => |id| {
-// zbr:selfhost/AstWalk.zbr:202
+// zbr:selfhost/AstWalk.zbr:304
             return std.mem.eql(u8, id.name, name);
         },
         .member => |_ptr_m| {
             const m = _ptr_m.*;
-// zbr:selfhost/AstWalk.zbr:204
+// zbr:selfhost/AstWalk.zbr:306
             return _zbr_fn_mightUseNameInExpr(name, m.object.*);
         },
         .index => |_ptr_i| {
             const i = _ptr_i.*;
-// zbr:selfhost/AstWalk.zbr:206
+// zbr:selfhost/AstWalk.zbr:308
             if (_zbr_fn_mightUseNameInExpr(name, i.object.*)) {
-// zbr:selfhost/AstWalk.zbr:207
+// zbr:selfhost/AstWalk.zbr:309
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:208
+// zbr:selfhost/AstWalk.zbr:310
             return _zbr_fn_mightUseNameInExpr(name, i.index.*);
         },
         .unary => |_ptr_u| {
             const u = _ptr_u.*;
-// zbr:selfhost/AstWalk.zbr:210
+// zbr:selfhost/AstWalk.zbr:312
             return _zbr_fn_mightUseNameInExpr(name, u.operand.*);
         },
         .binary => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/AstWalk.zbr:212
+// zbr:selfhost/AstWalk.zbr:314
             if (_zbr_fn_mightUseNameInExpr(name, b.left.*)) {
-// zbr:selfhost/AstWalk.zbr:213
+// zbr:selfhost/AstWalk.zbr:315
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:214
+// zbr:selfhost/AstWalk.zbr:316
             return _zbr_fn_mightUseNameInExpr(name, b.right.*);
         },
         .call => |_ptr_c| {
             const c = _ptr_c.*;
-// zbr:selfhost/AstWalk.zbr:216
+// zbr:selfhost/AstWalk.zbr:318
             if (_zbr_fn_mightUseNameInExpr(name, c.callee)) {
-// zbr:selfhost/AstWalk.zbr:217
+// zbr:selfhost/AstWalk.zbr:319
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:218
+// zbr:selfhost/AstWalk.zbr:320
             for (c.args.items) |arg| {
-// zbr:selfhost/AstWalk.zbr:219
+// zbr:selfhost/AstWalk.zbr:321
                 if (_zbr_fn_mightUseNameInExpr(name, arg.value)) {
-// zbr:selfhost/AstWalk.zbr:220
+// zbr:selfhost/AstWalk.zbr:322
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:221
+// zbr:selfhost/AstWalk.zbr:323
             return false;
         },
         .tuple_lit => |_ptr_tl| {
             const tl = _ptr_tl.*;
-// zbr:selfhost/AstWalk.zbr:223
+// zbr:selfhost/AstWalk.zbr:325
             for (tl.elems.items) |telem| {
-// zbr:selfhost/AstWalk.zbr:224
+// zbr:selfhost/AstWalk.zbr:326
                 if (_zbr_fn_mightUseNameInExpr(name, telem)) {
-// zbr:selfhost/AstWalk.zbr:225
+// zbr:selfhost/AstWalk.zbr:327
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:226
+// zbr:selfhost/AstWalk.zbr:328
             return false;
         },
         .chained_cmp => |_ptr_cc| {
             const cc = _ptr_cc.*;
-// zbr:selfhost/AstWalk.zbr:228
+// zbr:selfhost/AstWalk.zbr:330
             for (cc.operands.items) |op| {
-// zbr:selfhost/AstWalk.zbr:229
+// zbr:selfhost/AstWalk.zbr:331
                 if (_zbr_fn_mightUseNameInExpr(name, op)) {
-// zbr:selfhost/AstWalk.zbr:230
+// zbr:selfhost/AstWalk.zbr:332
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:231
+// zbr:selfhost/AstWalk.zbr:333
             return false;
         },
         .string_interp => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:233
+// zbr:selfhost/AstWalk.zbr:335
             for (si.parts.items) |part| {
-// zbr:selfhost/AstWalk.zbr:234
+// zbr:selfhost/AstWalk.zbr:336
                 if (_zbr_val(part) == .expr_) {
                     const e_ptr = part.expr_;
                     const e = e_ptr.*;
-// zbr:selfhost/AstWalk.zbr:235
+// zbr:selfhost/AstWalk.zbr:337
                     if (_zbr_fn_mightUseNameInExpr(name, e)) {
-// zbr:selfhost/AstWalk.zbr:236
+// zbr:selfhost/AstWalk.zbr:338
                         return true;
                     }
                 }
             }
-// zbr:selfhost/AstWalk.zbr:237
+// zbr:selfhost/AstWalk.zbr:339
             return false;
         },
         .orelse_ => |_ptr_o| {
             const o = _ptr_o.*;
-// zbr:selfhost/AstWalk.zbr:239
+// zbr:selfhost/AstWalk.zbr:341
             if (_zbr_fn_mightUseNameInExpr(name, o.expr.*)) {
-// zbr:selfhost/AstWalk.zbr:240
+// zbr:selfhost/AstWalk.zbr:342
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:241
+// zbr:selfhost/AstWalk.zbr:343
             return _zbr_fn_mightUseNameInExpr(name, o.fallback.*);
         },
         .if_expr => |_ptr_ie| {
             const ie = _ptr_ie.*;
-// zbr:selfhost/AstWalk.zbr:249
+// zbr:selfhost/AstWalk.zbr:351
             if (_zbr_fn_mightUseNameInExpr(name, ie.cond.*)) {
-// zbr:selfhost/AstWalk.zbr:250
+// zbr:selfhost/AstWalk.zbr:352
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:251
+// zbr:selfhost/AstWalk.zbr:353
             if (_zbr_fn_mightUseNameInExpr(name, ie.then_expr.*)) {
-// zbr:selfhost/AstWalk.zbr:252
+// zbr:selfhost/AstWalk.zbr:354
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:253
+// zbr:selfhost/AstWalk.zbr:355
             return _zbr_fn_mightUseNameInExpr(name, ie.else_expr.*);
         },
         .try_ => |_ptr_t| {
             const t = _ptr_t.*;
-// zbr:selfhost/AstWalk.zbr:255
+// zbr:selfhost/AstWalk.zbr:357
             return _zbr_fn_mightUseNameInExpr(name, t.expr.*);
         },
         .catch_ => |_ptr_ca| {
             const ca = _ptr_ca.*;
-// zbr:selfhost/AstWalk.zbr:257
+// zbr:selfhost/AstWalk.zbr:359
             if (_zbr_fn_mightUseNameInExpr(name, ca.expr.*)) {
-// zbr:selfhost/AstWalk.zbr:258
+// zbr:selfhost/AstWalk.zbr:360
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:259
+// zbr:selfhost/AstWalk.zbr:361
             return _zbr_fn_mightUseNameInExpr(name, ca.fallback.*);
         },
         .to_non_nil => |_ptr_tn| {
             const tn = _ptr_tn.*;
-// zbr:selfhost/AstWalk.zbr:261
+// zbr:selfhost/AstWalk.zbr:363
             return _zbr_fn_mightUseNameInExpr(name, tn.expr.*);
         },
         .is_nil => |_ptr_isn| {
             const isn = _ptr_isn.*;
-// zbr:selfhost/AstWalk.zbr:263
+// zbr:selfhost/AstWalk.zbr:365
             return _zbr_fn_mightUseNameInExpr(name, isn.expr.*);
         },
         .cast => |_ptr_cst| {
             const cst = _ptr_cst.*;
-// zbr:selfhost/AstWalk.zbr:265
+// zbr:selfhost/AstWalk.zbr:367
             return _zbr_fn_mightUseNameInExpr(name, cst.expr.*);
         },
         .type_check => |_ptr_tc| {
             const tc = _ptr_tc.*;
-// zbr:selfhost/AstWalk.zbr:267
+// zbr:selfhost/AstWalk.zbr:369
             return _zbr_fn_mightUseNameInExpr(name, tc.expr.*);
         },
         .slice => |_ptr_sl| {
             const sl = _ptr_sl.*;
-// zbr:selfhost/AstWalk.zbr:269
+// zbr:selfhost/AstWalk.zbr:371
             if (_zbr_fn_mightUseNameInExpr(name, sl.object.*)) {
-// zbr:selfhost/AstWalk.zbr:270
+// zbr:selfhost/AstWalk.zbr:372
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:271
+// zbr:selfhost/AstWalk.zbr:373
             if ((sl.start != null)) {
-// zbr:selfhost/AstWalk.zbr:272
+// zbr:selfhost/AstWalk.zbr:374
                 if (_zbr_fn_mightUseNameInExpr(name, sl.start.?.*)) {
-// zbr:selfhost/AstWalk.zbr:273
+// zbr:selfhost/AstWalk.zbr:375
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:274
+// zbr:selfhost/AstWalk.zbr:376
             if ((sl.stop_ != null)) {
-// zbr:selfhost/AstWalk.zbr:275
+// zbr:selfhost/AstWalk.zbr:377
                 return _zbr_fn_mightUseNameInExpr(name, sl.stop_.?.*);
             }
-// zbr:selfhost/AstWalk.zbr:276
+// zbr:selfhost/AstWalk.zbr:378
             return false;
         },
         .opt_chain => |_ptr_oc| {
             const oc = _ptr_oc.*;
-// zbr:selfhost/AstWalk.zbr:278
+// zbr:selfhost/AstWalk.zbr:380
             if (_zbr_fn_mightUseNameInExpr(name, oc.base.*)) {
-// zbr:selfhost/AstWalk.zbr:279
+// zbr:selfhost/AstWalk.zbr:381
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:280
+// zbr:selfhost/AstWalk.zbr:382
             for (oc.args.items) |oca| {
-// zbr:selfhost/AstWalk.zbr:281
+// zbr:selfhost/AstWalk.zbr:383
                 if (_zbr_fn_mightUseNameInExpr(name, oca.value)) {
-// zbr:selfhost/AstWalk.zbr:282
+// zbr:selfhost/AstWalk.zbr:384
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:283
+// zbr:selfhost/AstWalk.zbr:385
             return false;
         },
         .except_ => |_ptr_ex| {
             const ex = _ptr_ex.*;
-// zbr:selfhost/AstWalk.zbr:285
+// zbr:selfhost/AstWalk.zbr:387
             if (_zbr_fn_mightUseNameInExpr(name, ex.base)) {
-// zbr:selfhost/AstWalk.zbr:286
+// zbr:selfhost/AstWalk.zbr:388
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:287
+// zbr:selfhost/AstWalk.zbr:389
             for (ex.fields.items) |exf| {
-// zbr:selfhost/AstWalk.zbr:288
+// zbr:selfhost/AstWalk.zbr:390
                 if (_zbr_fn_mightUseNameInExpr(name, exf.value)) {
-// zbr:selfhost/AstWalk.zbr:289
+// zbr:selfhost/AstWalk.zbr:391
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:290
+// zbr:selfhost/AstWalk.zbr:392
             return false;
         },
         .set_lit => |_ptr_sl| {
             const sl = _ptr_sl.*;
-// zbr:selfhost/AstWalk.zbr:292
+// zbr:selfhost/AstWalk.zbr:394
             for (sl.elems.items) |se| {
-// zbr:selfhost/AstWalk.zbr:293
+// zbr:selfhost/AstWalk.zbr:395
                 if (_zbr_fn_mightUseNameInExpr(name, se)) {
-// zbr:selfhost/AstWalk.zbr:294
+// zbr:selfhost/AstWalk.zbr:396
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:295
+// zbr:selfhost/AstWalk.zbr:397
             return false;
         },
         .dict_lit => |_ptr_dl| {
             const dl = _ptr_dl.*;
-// zbr:selfhost/AstWalk.zbr:297
+// zbr:selfhost/AstWalk.zbr:399
             for (dl.entries.items) |de| {
-// zbr:selfhost/AstWalk.zbr:298
+// zbr:selfhost/AstWalk.zbr:400
                 if (_zbr_fn_mightUseNameInExpr(name, de.key.*)) {
-// zbr:selfhost/AstWalk.zbr:299
+// zbr:selfhost/AstWalk.zbr:401
                     return true;
                 }
-// zbr:selfhost/AstWalk.zbr:300
+// zbr:selfhost/AstWalk.zbr:402
                 if (_zbr_fn_mightUseNameInExpr(name, de.value.*)) {
-// zbr:selfhost/AstWalk.zbr:301
+// zbr:selfhost/AstWalk.zbr:403
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:302
+// zbr:selfhost/AstWalk.zbr:404
             return false;
         },
         .int_lit => {
-// zbr:selfhost/AstWalk.zbr:304
+// zbr:selfhost/AstWalk.zbr:406
             return false;
         },
         .float_lit => {
-// zbr:selfhost/AstWalk.zbr:306
+// zbr:selfhost/AstWalk.zbr:408
             return false;
         },
         .bool_lit => {
-// zbr:selfhost/AstWalk.zbr:308
+// zbr:selfhost/AstWalk.zbr:410
             return false;
         },
         .char_lit => {
-// zbr:selfhost/AstWalk.zbr:310
+// zbr:selfhost/AstWalk.zbr:412
             return false;
         },
         .string_lit => {
-// zbr:selfhost/AstWalk.zbr:312
+// zbr:selfhost/AstWalk.zbr:414
             return false;
         },
         .nil_ => {
-// zbr:selfhost/AstWalk.zbr:314
+// zbr:selfhost/AstWalk.zbr:416
             return false;
         },
         .this_ => {
-// zbr:selfhost/AstWalk.zbr:316
+// zbr:selfhost/AstWalk.zbr:418
             return false;
         },
         .lambda => |_ptr_lam| {
             const lam = _ptr_lam.*;
-// zbr:selfhost/AstWalk.zbr:323
+// zbr:selfhost/AstWalk.zbr:425
             for (lam.captures.items) |lcap| {
-// zbr:selfhost/AstWalk.zbr:324
+// zbr:selfhost/AstWalk.zbr:426
                 if ((lcap.init_expr != null)) {
-// zbr:selfhost/AstWalk.zbr:325
+// zbr:selfhost/AstWalk.zbr:427
                     if (_zbr_fn_mightUseNameInExpr(name, lcap.init_expr.?.*)) {
-// zbr:selfhost/AstWalk.zbr:326
+// zbr:selfhost/AstWalk.zbr:428
                         return true;
                     }
                 }
             }
-// zbr:selfhost/AstWalk.zbr:327
+// zbr:selfhost/AstWalk.zbr:429
             for (lam.params.items) |lp| {
-// zbr:selfhost/AstWalk.zbr:328
+// zbr:selfhost/AstWalk.zbr:430
                 if (std.mem.eql(u8, lp.name, name)) {
-// zbr:selfhost/AstWalk.zbr:329
+// zbr:selfhost/AstWalk.zbr:431
                     return false;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:330
+// zbr:selfhost/AstWalk.zbr:432
             for (lam.captures.items) |lcap2| {
-// zbr:selfhost/AstWalk.zbr:331
+// zbr:selfhost/AstWalk.zbr:433
                 if (std.mem.eql(u8, lcap2.name, name)) {
-// zbr:selfhost/AstWalk.zbr:332
+// zbr:selfhost/AstWalk.zbr:434
                     return false;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:333
+// zbr:selfhost/AstWalk.zbr:435
             switch (_zbr_val(lam.body_)) {
                 .expr_ => |lex| {
-// zbr:selfhost/AstWalk.zbr:335
+// zbr:selfhost/AstWalk.zbr:437
                     return _zbr_fn_mightUseNameInExpr(name, lex);
                 },
                 .stmts => |lss| {
-// zbr:selfhost/AstWalk.zbr:337
+// zbr:selfhost/AstWalk.zbr:439
                     return _zbr_fn_mightUseName(name, lss);
                 },
             }
         },
         .list_lit => |_ptr_ll| {
             const ll = _ptr_ll.*;
-// zbr:selfhost/AstWalk.zbr:339
+// zbr:selfhost/AstWalk.zbr:441
             for (ll.elems.items) |lle| {
-// zbr:selfhost/AstWalk.zbr:340
+// zbr:selfhost/AstWalk.zbr:442
                 if (_zbr_fn_mightUseNameInExpr(name, lle)) {
-// zbr:selfhost/AstWalk.zbr:341
+// zbr:selfhost/AstWalk.zbr:443
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:342
+// zbr:selfhost/AstWalk.zbr:444
             return false;
         },
         .array_lit => |_ptr_al| {
             const al = _ptr_al.*;
-// zbr:selfhost/AstWalk.zbr:344
+// zbr:selfhost/AstWalk.zbr:446
             for (al.elems.items) |ale| {
-// zbr:selfhost/AstWalk.zbr:345
+// zbr:selfhost/AstWalk.zbr:447
                 if (_zbr_fn_mightUseNameInExpr(name, ale)) {
-// zbr:selfhost/AstWalk.zbr:346
+// zbr:selfhost/AstWalk.zbr:448
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:347
+// zbr:selfhost/AstWalk.zbr:449
             return false;
         },
         .old_ => |_ptr_ol| {
             const ol = _ptr_ol.*;
-// zbr:selfhost/AstWalk.zbr:349
+// zbr:selfhost/AstWalk.zbr:451
             return _zbr_fn_mightUseNameInExpr(name, ol.operand.*);
         },
         .zig_lit => |zl| {
-// zbr:selfhost/AstWalk.zbr:370
+// zbr:selfhost/AstWalk.zbr:472
             return _zbr_fn_zigLitMentionsWord(zl.text, name);
         },
         else => {
-// zbr:selfhost/AstWalk.zbr:373
+// zbr:selfhost/AstWalk.zbr:475
             return false;
         },
     }
 }
 
-// zbr:selfhost/AstWalk.zbr:379
+// zbr:selfhost/AstWalk.zbr:481
 pub fn _zbr_fn_mightUseName(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/AstWalk.zbr:380
+// zbr:selfhost/AstWalk.zbr:482
     for (stmts.items) |s| {
-// zbr:selfhost/AstWalk.zbr:381
+// zbr:selfhost/AstWalk.zbr:483
         if (_zbr_fn_mightUseNameStmt(name, s)) {
-// zbr:selfhost/AstWalk.zbr:382
+// zbr:selfhost/AstWalk.zbr:484
             return true;
         }
     }
-// zbr:selfhost/AstWalk.zbr:383
+// zbr:selfhost/AstWalk.zbr:485
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:385
+// zbr:selfhost/AstWalk.zbr:487
 pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
-// zbr:selfhost/AstWalk.zbr:386
+// zbr:selfhost/AstWalk.zbr:488
     switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
             const n = _ptr_n.*;
-// zbr:selfhost/AstWalk.zbr:388
+// zbr:selfhost/AstWalk.zbr:490
             if ((n.init_expr != null)) {
-// zbr:selfhost/AstWalk.zbr:389
+// zbr:selfhost/AstWalk.zbr:491
                 return _zbr_fn_mightUseNameInExpr(name, n.init_expr.?.*);
             }
-// zbr:selfhost/AstWalk.zbr:390
+// zbr:selfhost/AstWalk.zbr:492
             return false;
         },
         .assign => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/AstWalk.zbr:392
+// zbr:selfhost/AstWalk.zbr:494
             if (_zbr_fn_mightUseNameInExpr(name, a.target.*)) {
-// zbr:selfhost/AstWalk.zbr:393
+// zbr:selfhost/AstWalk.zbr:495
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:394
+// zbr:selfhost/AstWalk.zbr:496
             return _zbr_fn_mightUseNameInExpr(name, a.value.*);
         },
         .return_ => |_ptr_r| {
             const r = _ptr_r.*;
-// zbr:selfhost/AstWalk.zbr:396
+// zbr:selfhost/AstWalk.zbr:498
             if ((r.value != null)) {
-// zbr:selfhost/AstWalk.zbr:397
+// zbr:selfhost/AstWalk.zbr:499
                 return _zbr_fn_mightUseNameInExpr(name, r.value.?.*);
             }
-// zbr:selfhost/AstWalk.zbr:398
+// zbr:selfhost/AstWalk.zbr:500
             return false;
         },
         .expr => |_ptr_e| {
             const e = _ptr_e.*;
-// zbr:selfhost/AstWalk.zbr:400
+// zbr:selfhost/AstWalk.zbr:502
             return _zbr_fn_mightUseNameInExpr(name, e);
         },
         .print_ => |_ptr_p| {
             const p = _ptr_p.*;
-// zbr:selfhost/AstWalk.zbr:402
+// zbr:selfhost/AstWalk.zbr:504
             var pi: i64 = 0;
-// zbr:selfhost/AstWalk.zbr:403
+// zbr:selfhost/AstWalk.zbr:505
             while (_zebra_lt(pi, @as(i64, @intCast(p.args.items.len)))) {
-// zbr:selfhost/AstWalk.zbr:404
+// zbr:selfhost/AstWalk.zbr:506
                 if (_zbr_fn_mightUseNameInExpr(name, _zbr_at(p.args.items, pi))) {
-// zbr:selfhost/AstWalk.zbr:405
+// zbr:selfhost/AstWalk.zbr:507
                     return true;
                 }
-// zbr:selfhost/AstWalk.zbr:406
+// zbr:selfhost/AstWalk.zbr:508
                 pi += 1;
             }
-// zbr:selfhost/AstWalk.zbr:407
+// zbr:selfhost/AstWalk.zbr:509
             return false;
         },
         .destruct => |_ptr_d| {
             const d = _ptr_d.*;
-// zbr:selfhost/AstWalk.zbr:409
+// zbr:selfhost/AstWalk.zbr:511
             return _zbr_fn_mightUseNameInExpr(name, d.init_expr.*);
         },
         .if_ => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:411
+// zbr:selfhost/AstWalk.zbr:513
             if (_zbr_fn_mightUseNameInExpr(name, si.cond.*)) {
-// zbr:selfhost/AstWalk.zbr:412
+// zbr:selfhost/AstWalk.zbr:514
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:413
+// zbr:selfhost/AstWalk.zbr:515
             if (_zbr_fn_mightUseName(name, si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:414
+// zbr:selfhost/AstWalk.zbr:516
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:415
+// zbr:selfhost/AstWalk.zbr:517
             for (si.else_ifs.items) |ei| {
-// zbr:selfhost/AstWalk.zbr:416
+// zbr:selfhost/AstWalk.zbr:518
                 if (_zbr_fn_mightUseNameInExpr(name, ei.cond)) {
-// zbr:selfhost/AstWalk.zbr:417
+// zbr:selfhost/AstWalk.zbr:519
                     return true;
                 }
-// zbr:selfhost/AstWalk.zbr:418
+// zbr:selfhost/AstWalk.zbr:520
                 if (_zbr_fn_mightUseName(name, ei.stmts)) {
-// zbr:selfhost/AstWalk.zbr:419
+// zbr:selfhost/AstWalk.zbr:521
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:420
+// zbr:selfhost/AstWalk.zbr:522
             if (si.else_stmts) |se| {
-// zbr:selfhost/AstWalk.zbr:421
+// zbr:selfhost/AstWalk.zbr:523
                 return _zbr_fn_mightUseName(name, se);
             }
-// zbr:selfhost/AstWalk.zbr:422
+// zbr:selfhost/AstWalk.zbr:524
             return false;
         },
         .while_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/AstWalk.zbr:424
+// zbr:selfhost/AstWalk.zbr:526
             if (_zbr_fn_mightUseNameInExpr(name, w.cond.*)) {
-// zbr:selfhost/AstWalk.zbr:425
+// zbr:selfhost/AstWalk.zbr:527
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:426
+// zbr:selfhost/AstWalk.zbr:528
             return _zbr_fn_mightUseName(name, w.stmts);
         },
         .for_in => |_ptr_f| {
             const f = _ptr_f.*;
-// zbr:selfhost/AstWalk.zbr:428
+// zbr:selfhost/AstWalk.zbr:530
             if (_zbr_fn_mightUseNameInExpr(name, f.iter.*)) {
-// zbr:selfhost/AstWalk.zbr:429
+// zbr:selfhost/AstWalk.zbr:531
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:430
+// zbr:selfhost/AstWalk.zbr:532
             return _zbr_fn_mightUseName(name, f.stmts);
         },
         .for_num => |_ptr_fnum| {
             const fnum = _ptr_fnum.*;
-// zbr:selfhost/AstWalk.zbr:432
-            if (_zbr_fn_mightUseNameInExpr(name, fnum.start.*)) {
-// zbr:selfhost/AstWalk.zbr:433
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:434
-            if (_zbr_fn_mightUseNameInExpr(name, fnum.stop_.*)) {
-// zbr:selfhost/AstWalk.zbr:435
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:436
-            return _zbr_fn_mightUseName(name, fnum.stmts);
-        },
-        .branch_ => |_ptr_b| {
-            const b = _ptr_b.*;
-// zbr:selfhost/AstWalk.zbr:443
-            if (_zbr_fn_mightUseNameInExpr(name, b.expr.*)) {
-// zbr:selfhost/AstWalk.zbr:444
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:445
-            for (b.cases.items) |bc| {
-// zbr:selfhost/AstWalk.zbr:446
-                for (bc.values.items) |bcv| {
-// zbr:selfhost/AstWalk.zbr:447
-                    if (_zbr_fn_mightUseNameInExpr(name, bcv)) {
-// zbr:selfhost/AstWalk.zbr:448
-                        return true;
-                    }
-                }
-// zbr:selfhost/AstWalk.zbr:449
-                if (_zbr_fn_mightUseName(name, bc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:450
-                    return true;
-                }
-            }
-// zbr:selfhost/AstWalk.zbr:451
-            if (b.else_) |be| {
-// zbr:selfhost/AstWalk.zbr:452
-                return _zbr_fn_mightUseName(name, be);
-            }
-// zbr:selfhost/AstWalk.zbr:453
-            return false;
-        },
-        .try_catch => |_ptr_tcs| {
-            const tcs = _ptr_tcs.*;
-// zbr:selfhost/AstWalk.zbr:455
-            if (_zbr_fn_mightUseName(name, tcs.stmts)) {
-// zbr:selfhost/AstWalk.zbr:456
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:457
-            for (tcs.clauses.items) |cl| {
-// zbr:selfhost/AstWalk.zbr:458
-                if (_zbr_fn_mightUseName(name, cl.stmts)) {
-// zbr:selfhost/AstWalk.zbr:459
-                    return true;
-                }
-            }
-// zbr:selfhost/AstWalk.zbr:460
-            return false;
-        },
-        .raise_ => |_ptr_r| {
-            const r = _ptr_r.*;
-// zbr:selfhost/AstWalk.zbr:462
-            if ((r.message != null)) {
-// zbr:selfhost/AstWalk.zbr:463
-                if (_zbr_fn_mightUseNameInExpr(name, r.message.?.*)) {
-// zbr:selfhost/AstWalk.zbr:464
-                    return true;
-                }
-            }
-// zbr:selfhost/AstWalk.zbr:465
-            if ((r.details != null)) {
-// zbr:selfhost/AstWalk.zbr:466
-                return _zbr_fn_mightUseNameInExpr(name, r.details.?.*);
-            }
-// zbr:selfhost/AstWalk.zbr:467
-            return false;
-        },
-        .assert_ => |_ptr_a| {
-            const a = _ptr_a.*;
-// zbr:selfhost/AstWalk.zbr:469
-            if (_zbr_fn_mightUseNameInExpr(name, a.cond.*)) {
-// zbr:selfhost/AstWalk.zbr:470
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:471
-            if ((a.message != null)) {
-// zbr:selfhost/AstWalk.zbr:472
-                return _zbr_fn_mightUseNameInExpr(name, a.message.?.*);
-            }
-// zbr:selfhost/AstWalk.zbr:473
-            return false;
-        },
-        .with_ => |_ptr_wth| {
-            const wth = _ptr_wth.*;
-// zbr:selfhost/AstWalk.zbr:479
-            if (_zbr_fn_mightUseNameInExpr(name, wth.target.*)) {
-// zbr:selfhost/AstWalk.zbr:480
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:481
-            return _zbr_fn_mightUseName(name, wth.stmts);
-        },
-        .in_scope => |_ptr_ins| {
-            const ins = _ptr_ins.*;
-// zbr:selfhost/AstWalk.zbr:483
-            if (_zbr_fn_mightUseNameInExpr(name, ins.expr.*)) {
-// zbr:selfhost/AstWalk.zbr:484
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:485
-            return _zbr_fn_mightUseName(name, ins.stmts);
-        },
-        .allocate_ => |_ptr_alc| {
-            const alc = _ptr_alc.*;
-// zbr:selfhost/AstWalk.zbr:487
-            if (_zbr_fn_mightUseNameInExpr(name, alc.source)) {
-// zbr:selfhost/AstWalk.zbr:488
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:489
-            return _zbr_fn_mightUseName(name, alc.stmts);
-        },
-        .copy_out => |_ptr_cpo| {
-            const cpo = _ptr_cpo.*;
-// zbr:selfhost/AstWalk.zbr:491
-            if (_zbr_fn_mightUseNameInExpr(name, cpo.target)) {
-// zbr:selfhost/AstWalk.zbr:492
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:493
-            return _zbr_fn_mightUseNameInExpr(name, cpo.value);
-        },
-        .contract => |_ptr_ctr| {
-            const ctr = _ptr_ctr.*;
-// zbr:selfhost/AstWalk.zbr:495
-            for (ctr.exprs.items) |ce| {
-// zbr:selfhost/AstWalk.zbr:496
-                if (_zbr_fn_mightUseNameInExpr(name, ce)) {
-// zbr:selfhost/AstWalk.zbr:497
-                    return true;
-                }
-            }
-// zbr:selfhost/AstWalk.zbr:498
-            return false;
-        },
-        .yield_ => |_ptr_yl| {
-            const yl = _ptr_yl.*;
-// zbr:selfhost/AstWalk.zbr:500
-            return _zbr_fn_mightUseNameInExpr(name, yl.value.*);
-        },
-        .break_ => {
-// zbr:selfhost/AstWalk.zbr:502
-            return false;
-        },
-        .continue_ => {
-// zbr:selfhost/AstWalk.zbr:504
-            return false;
-        },
-        .pass_ => {
-// zbr:selfhost/AstWalk.zbr:506
-            return false;
-        },
-    }
-}
-
-// zbr:selfhost/AstWalk.zbr:512
-pub fn _zbr_fn_stmtsContainYield(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/AstWalk.zbr:513
-    for (stmts.items) |s| {
-// zbr:selfhost/AstWalk.zbr:514
-        if (_zbr_fn_stmtContainsYield(s)) {
-// zbr:selfhost/AstWalk.zbr:515
-            return true;
-        }
-    }
-// zbr:selfhost/AstWalk.zbr:516
-    return false;
-}
-
-// zbr:selfhost/AstWalk.zbr:518
-pub fn _zbr_fn_stmtContainsYield(s: _zbr_ty_Stmt) bool {
-// zbr:selfhost/AstWalk.zbr:519
-    switch (_zbr_val(s)) {
-        .yield_ => {
-// zbr:selfhost/AstWalk.zbr:521
-            return true;
-        },
-        .if_ => |_ptr_si| {
-            const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:523
-            if (_zbr_fn_stmtsContainYield(si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:524
-                return true;
-            }
-// zbr:selfhost/AstWalk.zbr:525
-            for (si.else_ifs.items) |ei| {
-// zbr:selfhost/AstWalk.zbr:526
-                if (_zbr_fn_stmtsContainYield(ei.stmts)) {
-// zbr:selfhost/AstWalk.zbr:527
-                    return true;
-                }
-            }
-// zbr:selfhost/AstWalk.zbr:528
-            if (si.else_stmts) |es| {
-// zbr:selfhost/AstWalk.zbr:529
-                return _zbr_fn_stmtsContainYield(es);
-            }
-// zbr:selfhost/AstWalk.zbr:530
-            return false;
-        },
-        .while_ => |_ptr_w| {
-            const w = _ptr_w.*;
-// zbr:selfhost/AstWalk.zbr:532
-            return _zbr_fn_stmtsContainYield(w.stmts);
-        },
-        .for_in => |_ptr_f| {
-            const f = _ptr_f.*;
 // zbr:selfhost/AstWalk.zbr:534
-            if (_zbr_fn_stmtsContainYield(f.stmts)) {
+            if (_zbr_fn_mightUseNameInExpr(name, fnum.start.*)) {
 // zbr:selfhost/AstWalk.zbr:535
                 return true;
             }
 // zbr:selfhost/AstWalk.zbr:536
-            if (f.else_) |fe| {
+            if (_zbr_fn_mightUseNameInExpr(name, fnum.stop_.*)) {
 // zbr:selfhost/AstWalk.zbr:537
-                return _zbr_fn_stmtsContainYield(fe);
-            }
-// zbr:selfhost/AstWalk.zbr:538
-            return false;
-        },
-        .for_num => |_ptr_fn_| {
-            const fn_ = _ptr_fn_.*;
-// zbr:selfhost/AstWalk.zbr:540
-            if (_zbr_fn_stmtsContainYield(fn_.stmts)) {
-// zbr:selfhost/AstWalk.zbr:541
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:542
-            if (fn_.else_) |fe| {
-// zbr:selfhost/AstWalk.zbr:543
-                return _zbr_fn_stmtsContainYield(fe);
-            }
-// zbr:selfhost/AstWalk.zbr:544
-            return false;
+// zbr:selfhost/AstWalk.zbr:538
+            return _zbr_fn_mightUseName(name, fnum.stmts);
         },
         .branch_ => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/AstWalk.zbr:548
+// zbr:selfhost/AstWalk.zbr:545
+            if (_zbr_fn_mightUseNameInExpr(name, b.expr.*)) {
+// zbr:selfhost/AstWalk.zbr:546
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:547
             for (b.cases.items) |bc| {
+// zbr:selfhost/AstWalk.zbr:548
+                for (bc.values.items) |bcv| {
 // zbr:selfhost/AstWalk.zbr:549
-                if (_zbr_fn_stmtsContainYield(bc.stmts)) {
+                    if (_zbr_fn_mightUseNameInExpr(name, bcv)) {
 // zbr:selfhost/AstWalk.zbr:550
+                        return true;
+                    }
+                }
+// zbr:selfhost/AstWalk.zbr:551
+                if (_zbr_fn_mightUseName(name, bc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:552
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:551
-            if (b.else_) |be| {
-// zbr:selfhost/AstWalk.zbr:552
-                return _zbr_fn_stmtsContainYield(be);
-            }
 // zbr:selfhost/AstWalk.zbr:553
+            if (b.else_) |be| {
+// zbr:selfhost/AstWalk.zbr:554
+                return _zbr_fn_mightUseName(name, be);
+            }
+// zbr:selfhost/AstWalk.zbr:555
             return false;
         },
         .try_catch => |_ptr_tcs| {
             const tcs = _ptr_tcs.*;
-// zbr:selfhost/AstWalk.zbr:555
-            if (_zbr_fn_stmtsContainYield(tcs.stmts)) {
-// zbr:selfhost/AstWalk.zbr:556
+// zbr:selfhost/AstWalk.zbr:557
+            if (_zbr_fn_mightUseName(name, tcs.stmts)) {
+// zbr:selfhost/AstWalk.zbr:558
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:557
-            for (tcs.clauses.items) |cc| {
-// zbr:selfhost/AstWalk.zbr:558
-                if (_zbr_fn_stmtsContainYield(cc.stmts)) {
 // zbr:selfhost/AstWalk.zbr:559
+            for (tcs.clauses.items) |cl| {
+// zbr:selfhost/AstWalk.zbr:560
+                if (_zbr_fn_mightUseName(name, cl.stmts)) {
+// zbr:selfhost/AstWalk.zbr:561
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:560
+// zbr:selfhost/AstWalk.zbr:562
+            return false;
+        },
+        .raise_ => |_ptr_r| {
+            const r = _ptr_r.*;
+// zbr:selfhost/AstWalk.zbr:564
+            if ((r.message != null)) {
+// zbr:selfhost/AstWalk.zbr:565
+                if (_zbr_fn_mightUseNameInExpr(name, r.message.?.*)) {
+// zbr:selfhost/AstWalk.zbr:566
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:567
+            if ((r.details != null)) {
+// zbr:selfhost/AstWalk.zbr:568
+                return _zbr_fn_mightUseNameInExpr(name, r.details.?.*);
+            }
+// zbr:selfhost/AstWalk.zbr:569
+            return false;
+        },
+        .assert_ => |_ptr_a| {
+            const a = _ptr_a.*;
+// zbr:selfhost/AstWalk.zbr:571
+            if (_zbr_fn_mightUseNameInExpr(name, a.cond.*)) {
+// zbr:selfhost/AstWalk.zbr:572
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:573
+            if ((a.message != null)) {
+// zbr:selfhost/AstWalk.zbr:574
+                return _zbr_fn_mightUseNameInExpr(name, a.message.?.*);
+            }
+// zbr:selfhost/AstWalk.zbr:575
             return false;
         },
         .with_ => |_ptr_wth| {
             const wth = _ptr_wth.*;
-// zbr:selfhost/AstWalk.zbr:562
-            return _zbr_fn_stmtsContainYield(wth.stmts);
+// zbr:selfhost/AstWalk.zbr:581
+            if (_zbr_fn_mightUseNameInExpr(name, wth.target.*)) {
+// zbr:selfhost/AstWalk.zbr:582
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:583
+            return _zbr_fn_mightUseName(name, wth.stmts);
         },
         .in_scope => |_ptr_ins| {
             const ins = _ptr_ins.*;
-// zbr:selfhost/AstWalk.zbr:564
-            return _zbr_fn_stmtsContainYield(ins.stmts);
+// zbr:selfhost/AstWalk.zbr:585
+            if (_zbr_fn_mightUseNameInExpr(name, ins.expr.*)) {
+// zbr:selfhost/AstWalk.zbr:586
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:587
+            return _zbr_fn_mightUseName(name, ins.stmts);
         },
         .allocate_ => |_ptr_alc| {
             const alc = _ptr_alc.*;
-// zbr:selfhost/AstWalk.zbr:566
-            return _zbr_fn_stmtsContainYield(alc.stmts);
-        },
-        else => {
-// zbr:selfhost/AstWalk.zbr:568
-            return false;
-        },
-    }
-}
-
-// zbr:selfhost/AstWalk.zbr:575
-pub fn _zbr_fn_stmtNeedsLowering(s: _zbr_ty_Stmt) bool {
-// zbr:selfhost/AstWalk.zbr:576
-    if (_zbr_fn_stmtContainsYield(s)) {
-// zbr:selfhost/AstWalk.zbr:577
-        return true;
-    }
-// zbr:selfhost/AstWalk.zbr:578
-    return _zbr_fn_stmtHasEscape(s, true);
-}
-
-// zbr:selfhost/AstWalk.zbr:580
-pub fn _zbr_fn_stmtsHaveEscape(stmts: _ZbrList(_zbr_ty_Stmt), loop_exits_count: bool) bool {
-// zbr:selfhost/AstWalk.zbr:581
-    for (stmts.items) |s| {
-// zbr:selfhost/AstWalk.zbr:582
-        if (_zbr_fn_stmtHasEscape(s, loop_exits_count)) {
-// zbr:selfhost/AstWalk.zbr:583
-            return true;
-        }
-    }
-// zbr:selfhost/AstWalk.zbr:584
-    return false;
-}
-
-// zbr:selfhost/AstWalk.zbr:586
-pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
-// zbr:selfhost/AstWalk.zbr:587
-    switch (_zbr_val(s)) {
-        .return_ => {
 // zbr:selfhost/AstWalk.zbr:589
-            return true;
-        },
-        .break_ => {
-// zbr:selfhost/AstWalk.zbr:591
-            return loop_exits_count;
-        },
-        .continue_ => {
-// zbr:selfhost/AstWalk.zbr:593
-            return loop_exits_count;
-        },
-        .if_ => |_ptr_si| {
-            const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:595
-            if (_zbr_fn_stmtsHaveEscape(si.then_stmts, loop_exits_count)) {
-// zbr:selfhost/AstWalk.zbr:596
+            if (_zbr_fn_mightUseNameInExpr(name, alc.source)) {
+// zbr:selfhost/AstWalk.zbr:590
                 return true;
             }
+// zbr:selfhost/AstWalk.zbr:591
+            return _zbr_fn_mightUseName(name, alc.stmts);
+        },
+        .copy_out => |_ptr_cpo| {
+            const cpo = _ptr_cpo.*;
+// zbr:selfhost/AstWalk.zbr:593
+            if (_zbr_fn_mightUseNameInExpr(name, cpo.target)) {
+// zbr:selfhost/AstWalk.zbr:594
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:595
+            return _zbr_fn_mightUseNameInExpr(name, cpo.value);
+        },
+        .contract => |_ptr_ctr| {
+            const ctr = _ptr_ctr.*;
 // zbr:selfhost/AstWalk.zbr:597
-            for (si.else_ifs.items) |ei| {
+            for (ctr.exprs.items) |ce| {
 // zbr:selfhost/AstWalk.zbr:598
-                if (_zbr_fn_stmtsHaveEscape(ei.stmts, loop_exits_count)) {
+                if (_zbr_fn_mightUseNameInExpr(name, ce)) {
 // zbr:selfhost/AstWalk.zbr:599
                     return true;
                 }
             }
 // zbr:selfhost/AstWalk.zbr:600
-            if (si.else_stmts) |es| {
-// zbr:selfhost/AstWalk.zbr:601
-                return _zbr_fn_stmtsHaveEscape(es, loop_exits_count);
-            }
+            return false;
+        },
+        .yield_ => |_ptr_yl| {
+            const yl = _ptr_yl.*;
 // zbr:selfhost/AstWalk.zbr:602
+            return _zbr_fn_mightUseNameInExpr(name, yl.value.*);
+        },
+        .break_ => {
+// zbr:selfhost/AstWalk.zbr:604
+            return false;
+        },
+        .continue_ => {
+// zbr:selfhost/AstWalk.zbr:606
+            return false;
+        },
+        .pass_ => {
+// zbr:selfhost/AstWalk.zbr:608
+            return false;
+        },
+    }
+}
+
+// zbr:selfhost/AstWalk.zbr:614
+pub fn _zbr_fn_stmtsContainYield(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+// zbr:selfhost/AstWalk.zbr:615
+    for (stmts.items) |s| {
+// zbr:selfhost/AstWalk.zbr:616
+        if (_zbr_fn_stmtContainsYield(s)) {
+// zbr:selfhost/AstWalk.zbr:617
+            return true;
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:618
+    return false;
+}
+
+// zbr:selfhost/AstWalk.zbr:620
+pub fn _zbr_fn_stmtContainsYield(s: _zbr_ty_Stmt) bool {
+// zbr:selfhost/AstWalk.zbr:621
+    switch (_zbr_val(s)) {
+        .yield_ => {
+// zbr:selfhost/AstWalk.zbr:623
+            return true;
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/AstWalk.zbr:625
+            if (_zbr_fn_stmtsContainYield(si.then_stmts)) {
+// zbr:selfhost/AstWalk.zbr:626
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:627
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/AstWalk.zbr:628
+                if (_zbr_fn_stmtsContainYield(ei.stmts)) {
+// zbr:selfhost/AstWalk.zbr:629
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:630
+            if (si.else_stmts) |es| {
+// zbr:selfhost/AstWalk.zbr:631
+                return _zbr_fn_stmtsContainYield(es);
+            }
+// zbr:selfhost/AstWalk.zbr:632
             return false;
         },
         .while_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/AstWalk.zbr:604
-            return _zbr_fn_stmtsHaveEscape(w.stmts, false);
+// zbr:selfhost/AstWalk.zbr:634
+            return _zbr_fn_stmtsContainYield(w.stmts);
         },
         .for_in => |_ptr_f| {
             const f = _ptr_f.*;
-// zbr:selfhost/AstWalk.zbr:606
-            if (_zbr_fn_stmtsHaveEscape(f.stmts, false)) {
-// zbr:selfhost/AstWalk.zbr:607
+// zbr:selfhost/AstWalk.zbr:636
+            if (_zbr_fn_stmtsContainYield(f.stmts)) {
+// zbr:selfhost/AstWalk.zbr:637
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:608
+// zbr:selfhost/AstWalk.zbr:638
             if (f.else_) |fe| {
-// zbr:selfhost/AstWalk.zbr:609
-                return _zbr_fn_stmtsHaveEscape(fe, loop_exits_count);
+// zbr:selfhost/AstWalk.zbr:639
+                return _zbr_fn_stmtsContainYield(fe);
             }
-// zbr:selfhost/AstWalk.zbr:610
+// zbr:selfhost/AstWalk.zbr:640
             return false;
         },
         .for_num => |_ptr_fn_| {
             const fn_ = _ptr_fn_.*;
-// zbr:selfhost/AstWalk.zbr:612
-            if (_zbr_fn_stmtsHaveEscape(fn_.stmts, false)) {
-// zbr:selfhost/AstWalk.zbr:613
+// zbr:selfhost/AstWalk.zbr:642
+            if (_zbr_fn_stmtsContainYield(fn_.stmts)) {
+// zbr:selfhost/AstWalk.zbr:643
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:614
+// zbr:selfhost/AstWalk.zbr:644
             if (fn_.else_) |fe| {
-// zbr:selfhost/AstWalk.zbr:615
+// zbr:selfhost/AstWalk.zbr:645
+                return _zbr_fn_stmtsContainYield(fe);
+            }
+// zbr:selfhost/AstWalk.zbr:646
+            return false;
+        },
+        .branch_ => |_ptr_b| {
+            const b = _ptr_b.*;
+// zbr:selfhost/AstWalk.zbr:650
+            for (b.cases.items) |bc| {
+// zbr:selfhost/AstWalk.zbr:651
+                if (_zbr_fn_stmtsContainYield(bc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:652
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:653
+            if (b.else_) |be| {
+// zbr:selfhost/AstWalk.zbr:654
+                return _zbr_fn_stmtsContainYield(be);
+            }
+// zbr:selfhost/AstWalk.zbr:655
+            return false;
+        },
+        .try_catch => |_ptr_tcs| {
+            const tcs = _ptr_tcs.*;
+// zbr:selfhost/AstWalk.zbr:657
+            if (_zbr_fn_stmtsContainYield(tcs.stmts)) {
+// zbr:selfhost/AstWalk.zbr:658
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:659
+            for (tcs.clauses.items) |cc| {
+// zbr:selfhost/AstWalk.zbr:660
+                if (_zbr_fn_stmtsContainYield(cc.stmts)) {
+// zbr:selfhost/AstWalk.zbr:661
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:662
+            return false;
+        },
+        .with_ => |_ptr_wth| {
+            const wth = _ptr_wth.*;
+// zbr:selfhost/AstWalk.zbr:664
+            return _zbr_fn_stmtsContainYield(wth.stmts);
+        },
+        .in_scope => |_ptr_ins| {
+            const ins = _ptr_ins.*;
+// zbr:selfhost/AstWalk.zbr:666
+            return _zbr_fn_stmtsContainYield(ins.stmts);
+        },
+        .allocate_ => |_ptr_alc| {
+            const alc = _ptr_alc.*;
+// zbr:selfhost/AstWalk.zbr:668
+            return _zbr_fn_stmtsContainYield(alc.stmts);
+        },
+        else => {
+// zbr:selfhost/AstWalk.zbr:670
+            return false;
+        },
+    }
+}
+
+// zbr:selfhost/AstWalk.zbr:677
+pub fn _zbr_fn_stmtNeedsLowering(s: _zbr_ty_Stmt) bool {
+// zbr:selfhost/AstWalk.zbr:678
+    if (_zbr_fn_stmtContainsYield(s)) {
+// zbr:selfhost/AstWalk.zbr:679
+        return true;
+    }
+// zbr:selfhost/AstWalk.zbr:680
+    return _zbr_fn_stmtHasEscape(s, true);
+}
+
+// zbr:selfhost/AstWalk.zbr:682
+pub fn _zbr_fn_stmtsHaveEscape(stmts: _ZbrList(_zbr_ty_Stmt), loop_exits_count: bool) bool {
+// zbr:selfhost/AstWalk.zbr:683
+    for (stmts.items) |s| {
+// zbr:selfhost/AstWalk.zbr:684
+        if (_zbr_fn_stmtHasEscape(s, loop_exits_count)) {
+// zbr:selfhost/AstWalk.zbr:685
+            return true;
+        }
+    }
+// zbr:selfhost/AstWalk.zbr:686
+    return false;
+}
+
+// zbr:selfhost/AstWalk.zbr:688
+pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
+// zbr:selfhost/AstWalk.zbr:689
+    switch (_zbr_val(s)) {
+        .return_ => {
+// zbr:selfhost/AstWalk.zbr:691
+            return true;
+        },
+        .break_ => {
+// zbr:selfhost/AstWalk.zbr:693
+            return loop_exits_count;
+        },
+        .continue_ => {
+// zbr:selfhost/AstWalk.zbr:695
+            return loop_exits_count;
+        },
+        .if_ => |_ptr_si| {
+            const si = _ptr_si.*;
+// zbr:selfhost/AstWalk.zbr:697
+            if (_zbr_fn_stmtsHaveEscape(si.then_stmts, loop_exits_count)) {
+// zbr:selfhost/AstWalk.zbr:698
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:699
+            for (si.else_ifs.items) |ei| {
+// zbr:selfhost/AstWalk.zbr:700
+                if (_zbr_fn_stmtsHaveEscape(ei.stmts, loop_exits_count)) {
+// zbr:selfhost/AstWalk.zbr:701
+                    return true;
+                }
+            }
+// zbr:selfhost/AstWalk.zbr:702
+            if (si.else_stmts) |es| {
+// zbr:selfhost/AstWalk.zbr:703
+                return _zbr_fn_stmtsHaveEscape(es, loop_exits_count);
+            }
+// zbr:selfhost/AstWalk.zbr:704
+            return false;
+        },
+        .while_ => |_ptr_w| {
+            const w = _ptr_w.*;
+// zbr:selfhost/AstWalk.zbr:706
+            return _zbr_fn_stmtsHaveEscape(w.stmts, false);
+        },
+        .for_in => |_ptr_f| {
+            const f = _ptr_f.*;
+// zbr:selfhost/AstWalk.zbr:708
+            if (_zbr_fn_stmtsHaveEscape(f.stmts, false)) {
+// zbr:selfhost/AstWalk.zbr:709
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:710
+            if (f.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:711
                 return _zbr_fn_stmtsHaveEscape(fe, loop_exits_count);
             }
-// zbr:selfhost/AstWalk.zbr:616
+// zbr:selfhost/AstWalk.zbr:712
+            return false;
+        },
+        .for_num => |_ptr_fn_| {
+            const fn_ = _ptr_fn_.*;
+// zbr:selfhost/AstWalk.zbr:714
+            if (_zbr_fn_stmtsHaveEscape(fn_.stmts, false)) {
+// zbr:selfhost/AstWalk.zbr:715
+                return true;
+            }
+// zbr:selfhost/AstWalk.zbr:716
+            if (fn_.else_) |fe| {
+// zbr:selfhost/AstWalk.zbr:717
+                return _zbr_fn_stmtsHaveEscape(fe, loop_exits_count);
+            }
+// zbr:selfhost/AstWalk.zbr:718
             return false;
         },
         else => {
-// zbr:selfhost/AstWalk.zbr:618
+// zbr:selfhost/AstWalk.zbr:720
             return false;
         },
     }
 }
 
-// zbr:selfhost/AstWalk.zbr:626
+// zbr:selfhost/AstWalk.zbr:728
 pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) _ZbrList([]const u8) {
-// zbr:selfhost/AstWalk.zbr:627
+// zbr:selfhost/AstWalk.zbr:729
     const out = _zbr_new(_ZbrList([]const u8));
-// zbr:selfhost/AstWalk.zbr:628
+// zbr:selfhost/AstWalk.zbr:730
     _zbr_fn_collectNilChecked(cond, out);
-// zbr:selfhost/AstWalk.zbr:629
+// zbr:selfhost/AstWalk.zbr:731
     return out;
 }
 
-// zbr:selfhost/AstWalk.zbr:631
+// zbr:selfhost/AstWalk.zbr:733
 pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) void {
-// zbr:selfhost/AstWalk.zbr:632
+// zbr:selfhost/AstWalk.zbr:734
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
         const b = b_ptr.*;
-// zbr:selfhost/AstWalk.zbr:633
+// zbr:selfhost/AstWalk.zbr:735
         if ((b.op == _zbr_ty_BinaryOp.and_)) {
-// zbr:selfhost/AstWalk.zbr:634
+// zbr:selfhost/AstWalk.zbr:736
             _zbr_fn_collectNilChecked(b.left.*, out);
-// zbr:selfhost/AstWalk.zbr:635
+// zbr:selfhost/AstWalk.zbr:737
             _zbr_fn_collectNilChecked(b.right.*, out);
-// zbr:selfhost/AstWalk.zbr:636
+// zbr:selfhost/AstWalk.zbr:738
             return;
         }
-// zbr:selfhost/AstWalk.zbr:637
+// zbr:selfhost/AstWalk.zbr:739
         if ((b.op == _zbr_ty_BinaryOp.ne)) {
-// zbr:selfhost/AstWalk.zbr:638
+// zbr:selfhost/AstWalk.zbr:740
             if ((_zbr_val(b.right.*) == .nil_)) {
-// zbr:selfhost/AstWalk.zbr:639
+// zbr:selfhost/AstWalk.zbr:741
                 if (_zbr_val(b.left.*) == .ident) {
                     const lid = b.left.*.ident;
-// zbr:selfhost/AstWalk.zbr:640
+// zbr:selfhost/AstWalk.zbr:742
                     out.append(_zbr_rt._allocator, _intern(lid.name)) catch @panic("OOM");
                 }
             } else {
-// zbr:selfhost/AstWalk.zbr:641
+// zbr:selfhost/AstWalk.zbr:743
                 if ((_zbr_val(b.left.*) == .nil_)) {
-// zbr:selfhost/AstWalk.zbr:642
+// zbr:selfhost/AstWalk.zbr:744
                     if (_zbr_val(b.right.*) == .ident) {
                         const rid = b.right.*.ident;
-// zbr:selfhost/AstWalk.zbr:643
+// zbr:selfhost/AstWalk.zbr:745
                         out.append(_zbr_rt._allocator, _intern(rid.name)) catch @panic("OOM");
                     }
                 }
@@ -1268,38 +1465,38 @@ pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) voi
     }
 }
 
-// zbr:selfhost/AstWalk.zbr:647
+// zbr:selfhost/AstWalk.zbr:749
 pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) void {
-// zbr:selfhost/AstWalk.zbr:648
+// zbr:selfhost/AstWalk.zbr:750
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
         const b = b_ptr.*;
-// zbr:selfhost/AstWalk.zbr:649
+// zbr:selfhost/AstWalk.zbr:751
         if ((b.op == _zbr_ty_BinaryOp.or_)) {
-// zbr:selfhost/AstWalk.zbr:650
+// zbr:selfhost/AstWalk.zbr:752
             _zbr_fn_collectNilGuarded(b.left.*, out);
-// zbr:selfhost/AstWalk.zbr:651
+// zbr:selfhost/AstWalk.zbr:753
             _zbr_fn_collectNilGuarded(b.right.*, out);
-// zbr:selfhost/AstWalk.zbr:652
+// zbr:selfhost/AstWalk.zbr:754
             return;
         }
-// zbr:selfhost/AstWalk.zbr:653
+// zbr:selfhost/AstWalk.zbr:755
         if ((b.op == _zbr_ty_BinaryOp.eq)) {
-// zbr:selfhost/AstWalk.zbr:654
+// zbr:selfhost/AstWalk.zbr:756
             if ((_zbr_val(b.right.*) == .nil_)) {
-// zbr:selfhost/AstWalk.zbr:655
+// zbr:selfhost/AstWalk.zbr:757
                 if (_zbr_val(b.left.*) == .ident) {
                     const lid = b.left.*.ident;
-// zbr:selfhost/AstWalk.zbr:656
+// zbr:selfhost/AstWalk.zbr:758
                     out.append(_zbr_rt._allocator, _intern(lid.name)) catch @panic("OOM");
                 }
             } else {
-// zbr:selfhost/AstWalk.zbr:657
+// zbr:selfhost/AstWalk.zbr:759
                 if ((_zbr_val(b.left.*) == .nil_)) {
-// zbr:selfhost/AstWalk.zbr:658
+// zbr:selfhost/AstWalk.zbr:760
                     if (_zbr_val(b.right.*) == .ident) {
                         const rid = b.right.*.ident;
-// zbr:selfhost/AstWalk.zbr:659
+// zbr:selfhost/AstWalk.zbr:761
                         out.append(_zbr_rt._allocator, _intern(rid.name)) catch @panic("OOM");
                     }
                 }
@@ -1308,209 +1505,209 @@ pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) voi
     }
 }
 
-// zbr:selfhost/AstWalk.zbr:662
+// zbr:selfhost/AstWalk.zbr:764
 pub fn _zbr_fn_stmtsAlwaysExit(ss: _ZbrList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/AstWalk.zbr:663
+// zbr:selfhost/AstWalk.zbr:765
     if ((@as(i64, @intCast(ss.items.len)) == 0)) {
-// zbr:selfhost/AstWalk.zbr:664
+// zbr:selfhost/AstWalk.zbr:766
         return false;
     }
-// zbr:selfhost/AstWalk.zbr:665
+// zbr:selfhost/AstWalk.zbr:767
     const last: _zbr_ty_Stmt = _zbr_at(ss.items, (@as(i64, @intCast(ss.items.len)) - 1));
-// zbr:selfhost/AstWalk.zbr:666
+// zbr:selfhost/AstWalk.zbr:768
     return ((((_zbr_val(last) == .return_) or (_zbr_val(last) == .raise_)) or (_zbr_val(last) == .break_)) or (_zbr_val(last) == .continue_));
 }
 
-// zbr:selfhost/AstWalk.zbr:670
+// zbr:selfhost/AstWalk.zbr:772
 pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
-// zbr:selfhost/AstWalk.zbr:671
+// zbr:selfhost/AstWalk.zbr:773
     const out = _zbr_new(_ZbrList([]const u8));
-// zbr:selfhost/AstWalk.zbr:672
+// zbr:selfhost/AstWalk.zbr:774
     if (_zbr_val(s) == .if_) {
         const si_ptr = s.if_;
         const si = si_ptr.*;
-// zbr:selfhost/AstWalk.zbr:673
+// zbr:selfhost/AstWalk.zbr:775
         if ((((@as(i64, @intCast(si.else_ifs.items.len)) == 0) and (si.else_stmts == null)) and (si.is_capture == null))) {
-// zbr:selfhost/AstWalk.zbr:674
+// zbr:selfhost/AstWalk.zbr:776
             if (_zbr_fn_stmtsAlwaysExit(si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:675
+// zbr:selfhost/AstWalk.zbr:777
                 _zbr_fn_collectNilGuarded(si.cond.*, out);
             }
         }
     }
-// zbr:selfhost/AstWalk.zbr:676
+// zbr:selfhost/AstWalk.zbr:778
     return out;
 }
 
-// zbr:selfhost/AstWalk.zbr:685
+// zbr:selfhost/AstWalk.zbr:787
 pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
-// zbr:selfhost/AstWalk.zbr:686
+// zbr:selfhost/AstWalk.zbr:788
     for (stmts.items) |st| {
-// zbr:selfhost/AstWalk.zbr:687
+// zbr:selfhost/AstWalk.zbr:789
         if (_zbr_fn_stmtRebinds(name, st)) {
-// zbr:selfhost/AstWalk.zbr:688
+// zbr:selfhost/AstWalk.zbr:790
             return true;
         }
     }
-// zbr:selfhost/AstWalk.zbr:689
+// zbr:selfhost/AstWalk.zbr:791
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:695
+// zbr:selfhost/AstWalk.zbr:797
 pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt), guard_idx: i64) bool {
-// zbr:selfhost/AstWalk.zbr:696
+// zbr:selfhost/AstWalk.zbr:798
     var k: i64 = (guard_idx + 1);
-// zbr:selfhost/AstWalk.zbr:697
+// zbr:selfhost/AstWalk.zbr:799
     while (_zebra_lt(k, @as(i64, @intCast(stmts.items.len)))) {
-// zbr:selfhost/AstWalk.zbr:698
+// zbr:selfhost/AstWalk.zbr:800
         if (_zbr_fn_stmtRebinds(name, _zbr_at(stmts.items, k))) {
-// zbr:selfhost/AstWalk.zbr:699
+// zbr:selfhost/AstWalk.zbr:801
             return true;
         }
-// zbr:selfhost/AstWalk.zbr:700
+// zbr:selfhost/AstWalk.zbr:802
         k += 1;
     }
-// zbr:selfhost/AstWalk.zbr:701
+// zbr:selfhost/AstWalk.zbr:803
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:703
+// zbr:selfhost/AstWalk.zbr:805
 pub fn _zbr_fn_stmtRebinds(name: []const u8, st: _zbr_ty_Stmt) bool {
-// zbr:selfhost/AstWalk.zbr:704
+// zbr:selfhost/AstWalk.zbr:806
     switch (_zbr_val(st)) {
         .assign => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/AstWalk.zbr:706
+// zbr:selfhost/AstWalk.zbr:808
             if (_zbr_val(a.target.*) == .ident) {
                 const aid = a.target.*.ident;
-// zbr:selfhost/AstWalk.zbr:707
+// zbr:selfhost/AstWalk.zbr:809
                 return std.mem.eql(u8, aid.name, name);
             }
         },
         .copy_out => |_ptr_co| {
             const co = _ptr_co.*;
-// zbr:selfhost/AstWalk.zbr:709
+// zbr:selfhost/AstWalk.zbr:811
             if (co.deep) {
-// zbr:selfhost/AstWalk.zbr:710
+// zbr:selfhost/AstWalk.zbr:812
                 if (_zbr_val(co.target) == .ident) {
                     const cid = co.target.ident;
-// zbr:selfhost/AstWalk.zbr:711
+// zbr:selfhost/AstWalk.zbr:813
                     return std.mem.eql(u8, cid.name, name);
                 }
             }
         },
         .var_ => |_ptr_dv| {
             const dv = _ptr_dv.*;
-// zbr:selfhost/AstWalk.zbr:713
+// zbr:selfhost/AstWalk.zbr:815
             return std.mem.eql(u8, dv.name, name);
         },
         .destruct => |_ptr_dd| {
             const dd = _ptr_dd.*;
-// zbr:selfhost/AstWalk.zbr:715
+// zbr:selfhost/AstWalk.zbr:817
             for (dd.names.items) |dn| {
-// zbr:selfhost/AstWalk.zbr:716
+// zbr:selfhost/AstWalk.zbr:818
                 if (std.mem.eql(u8, dn, name)) {
-// zbr:selfhost/AstWalk.zbr:717
+// zbr:selfhost/AstWalk.zbr:819
                     return true;
                 }
             }
         },
         .if_ => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:719
+// zbr:selfhost/AstWalk.zbr:821
             if (_zbr_fn_nameReassignedIn(name, si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:720
+// zbr:selfhost/AstWalk.zbr:822
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:721
+// zbr:selfhost/AstWalk.zbr:823
             for (si.else_ifs.items) |ei| {
-// zbr:selfhost/AstWalk.zbr:722
+// zbr:selfhost/AstWalk.zbr:824
                 if (_zbr_fn_nameReassignedIn(name, ei.stmts)) {
-// zbr:selfhost/AstWalk.zbr:723
+// zbr:selfhost/AstWalk.zbr:825
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:724
+// zbr:selfhost/AstWalk.zbr:826
             if (si.else_stmts) |se| {
-// zbr:selfhost/AstWalk.zbr:725
+// zbr:selfhost/AstWalk.zbr:827
                 return _zbr_fn_nameReassignedIn(name, se);
             }
         },
         .while_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/AstWalk.zbr:727
+// zbr:selfhost/AstWalk.zbr:829
             return _zbr_fn_nameReassignedIn(name, w.stmts);
         },
         .for_in => |_ptr_f| {
             const f = _ptr_f.*;
-// zbr:selfhost/AstWalk.zbr:729
+// zbr:selfhost/AstWalk.zbr:831
             if (_zbr_fn_nameReassignedIn(name, f.stmts)) {
-// zbr:selfhost/AstWalk.zbr:730
+// zbr:selfhost/AstWalk.zbr:832
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:731
+// zbr:selfhost/AstWalk.zbr:833
             if (f.else_) |fe| {
-// zbr:selfhost/AstWalk.zbr:732
+// zbr:selfhost/AstWalk.zbr:834
                 return _zbr_fn_nameReassignedIn(name, fe);
             }
         },
         .for_num => |_ptr_fnum| {
             const fnum = _ptr_fnum.*;
-// zbr:selfhost/AstWalk.zbr:734
+// zbr:selfhost/AstWalk.zbr:836
             return _zbr_fn_nameReassignedIn(name, fnum.stmts);
         },
         .branch_ => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/AstWalk.zbr:736
+// zbr:selfhost/AstWalk.zbr:838
             for (b.cases.items) |c| {
-// zbr:selfhost/AstWalk.zbr:737
+// zbr:selfhost/AstWalk.zbr:839
                 if (_zbr_fn_nameReassignedIn(name, c.stmts)) {
-// zbr:selfhost/AstWalk.zbr:738
+// zbr:selfhost/AstWalk.zbr:840
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:739
+// zbr:selfhost/AstWalk.zbr:841
             if (b.else_) |be| {
-// zbr:selfhost/AstWalk.zbr:740
+// zbr:selfhost/AstWalk.zbr:842
                 return _zbr_fn_nameReassignedIn(name, be);
             }
         },
         .try_catch => |_ptr_tc| {
             const tc = _ptr_tc.*;
-// zbr:selfhost/AstWalk.zbr:742
+// zbr:selfhost/AstWalk.zbr:844
             if (_zbr_fn_nameReassignedIn(name, tc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:743
+// zbr:selfhost/AstWalk.zbr:845
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:744
+// zbr:selfhost/AstWalk.zbr:846
             for (tc.clauses.items) |cc| {
-// zbr:selfhost/AstWalk.zbr:745
+// zbr:selfhost/AstWalk.zbr:847
                 if (_zbr_fn_nameReassignedIn(name, cc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:746
+// zbr:selfhost/AstWalk.zbr:848
                     return true;
                 }
             }
         },
         .with_ => |_ptr_sw| {
             const sw = _ptr_sw.*;
-// zbr:selfhost/AstWalk.zbr:748
+// zbr:selfhost/AstWalk.zbr:850
             return _zbr_fn_nameReassignedIn(name, sw.stmts);
         },
         .in_scope => |_ptr_sn| {
             const sn = _ptr_sn.*;
-// zbr:selfhost/AstWalk.zbr:750
+// zbr:selfhost/AstWalk.zbr:852
             return _zbr_fn_nameReassignedIn(name, sn.stmts);
         },
         .allocate_ => |_ptr_sa| {
             const sa = _ptr_sa.*;
-// zbr:selfhost/AstWalk.zbr:752
+// zbr:selfhost/AstWalk.zbr:854
             return _zbr_fn_nameReassignedIn(name, sa.stmts);
         },
         else => {
             // pass
         },
     }
-// zbr:selfhost/AstWalk.zbr:755
+// zbr:selfhost/AstWalk.zbr:857
     return false;
 }
 

@@ -24,7 +24,7 @@
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
 use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable
 
 
@@ -8653,9 +8653,10 @@ struct Generator
                 if not hoisted
                     writeIndent()
                     # BUG-006: zig"stmt;" already ends with ";"; skip the extra one.
+                    # BUG-663: and a statement ending in a BLOCK takes none either.
                     if e is Expr.zig_lit as zl
                         w.emit(zl.text)
-                        if not zl.text.endsWith(";")
+                        if zigStmtNeedsSemicolon(zl.text)
                             w.emit(";")
                         w.emit("\n")
                     else

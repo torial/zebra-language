@@ -43,6 +43,122 @@ Open bugs live in `BUGS.md`.
   `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
   first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
 
+### BUG-663: a statement-form `zig"…"` ending in a block got a `;` appended, and zig refused it -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+zig"if (n > 2) { hits += 10; }"     # emitted `if (n > 2) { hits += 10; };`
+```
+
+zig: `expected statement, found ';'` -- a message about code the user did not write, and
+no spelling of the escape avoided it, since the `;` was added to whatever the text ended
+with unless that was already a `;` (BUG-006). Found writing BUG-267's fixture. A `}` is
+ambiguous -- `p = .{ .x = 1 }` closes a literal and needs its `;` -- so
+`zigStmtNeedsSemicolon` (AstWalk.zbr) finds the `{` the final `}` matches and looks at what
+precedes it: `)`, `|`, `:`, `else` or nothing is a block (`if`/`while`/`for`/`switch`,
+a capture, a label, a bare block) and gets no `;`; `.`, a name or `]` is a literal and
+keeps it. Braces inside zig strings are not skipped, like the rest of the zig-literal
+scans. Fixture `test/bug663_ziglit_block_stmt_test.zbr`: an `if`, an `if`/`else`, a
+`while` with a continue expression and a labelled block, plus `_ = .{ .a = n }` as the
+control that still needs its `;`.
+
+### BUG-267: `zig"…"` literals do not participate in MUTATION analysis -- FIXED 2026-10-28 (usage half 2026-08-06)
+
+**Found 2026-08-05** probing a real third-party DLL. Same root class as BUG-260 (a
+parameter used only inside a query bind list), and worse-placed: `zig"…"` is the only way
+to touch a C pointer, so the escape hatch reserved for FFI is exactly the construct the
+analysis cannot see into.
+
+    var p = Py_GetVersion()                       # read ONLY inside the escape
+    zig"const _c: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_c);"
+
+    error: pointless discard of local constant   ->  _ = p;   emitted alongside the use
+    error: cannot assign to constant             ->  `out` emitted const; escape assigns it
+
+Both walks stop at the literal: a variable **read** only inside it is treated as unused,
+and one **assigned** only inside it is treated as never mutated. Working around it needs
+two unrelated dummy statements (a fake comparison to use `p`, a dead branch to make `out`
+a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
+
+**Control when fixing:** a var read only inside a `zig"…"` must NOT get a discard, and one
+assigned only inside it must be emitted `var`; a genuinely unused var must still get its
+discard, and a genuinely non-mutated one must still be `const`. Both directions.
+
+**READ HALF FIXED 2026-08-06.** `mightUseNameInExpr` now carries the `zig_lit` case its
+sibling walker has had since B3, so a local read only inside an escape is no longer
+discarded. Pinned by `test/bug267_ziglit_local_use_test.zbr`, which asserts BOTH
+directions — the escape case compiles, AND a genuinely unused local still gets its
+`_ =`, so a fix that simply stopped discarding anything fails there rather than passing.
+**What remains open is the WRITE half only** (see the last section below).
+
+**Re-scoped 2026-08-06 — the earlier scoping below was WRONG about the read half, and
+wrong in the expensive direction: it argued for new language syntax to solve a problem
+this codebase had already solved one walker over.**
+
+**The read half is an INCONSISTENCY, not a missing capability.** `zigLitMentionsWord()`
+already exists in `selfhost/CgHelpers.zbr`, and its own comment states why: *"A param
+referenced from a `zig"…"` literal is used, so it must not be discarded."* There are two
+usage walkers, and only one of them learned that lesson:
+
+| walker | `zig_lit` case | used by |
+|---|---|---|
+| `nameUsedInExpr` | scans the text | parameter discards |
+| `mightUseNameInExpr` | falls into "no user idents" -> false | **local** discards |
+
+Measured, same construct both ways:
+
+    param used only in zig"…"  ->  no discard    (correct, long-standing)
+    local used only in zig"…"  ->  `_ = q;`      -> pointless discard of local constant
+
+So the fix is to give `mightUseNameInExpr` the same `zig_lit` case the sibling walker
+already has. No new syntax; it makes locals behave like parameters, which is what a reader
+would assume already happens.
+
+**The scan does not skip Zig strings or comments**, so a name appearing only inside one
+counts as a use, the discard is suppressed, and Zig reports `unused local variable`. That
+is a real limit and it is stated here rather than hidden — but it is **already accepted for
+parameters**, has not bitten, and its failure direction is a compile error rather than a
+silent miscompile.
+
+**Two designs considered and NOT pursued, recorded so they are not re-derived:**
+
+- **`zig"…" reads a, b`** (an explicit read list). Exact rather than heuristic, and it was
+  the recommendation until `zigLitMentionsWord` turned up. Rejected because it adds
+  language surface to answer a question the compiler already answers elsewhere, and would
+  leave TWO mechanisms for "what does this escape touch" — the more likely long-term
+  hazard than the false-positive it prevents. Revisit only if the string/comment
+  false-positive is actually hit.
+- **A `zig` BLOCK form with `reads` / `writes` clauses** (mirroring `capture`). The more
+  complete design, and the only one that addresses the write half for multi-statement
+  escapes. Not pursued because **the need was never demonstrated**: every real case so far
+  is a value flowing OUT of C, which expression form already handles. Revisit when someone
+  hits a genuine multi-statement escape that must mutate an existing local.
+
+**The write half is separate and remains open.** No mutation walker scans `zig"…"` at all,
+so a local assigned only inside a statement-form escape is still emitted `const` and Zig
+rejects the assignment. Expression form (`var out = zig"…"`) avoids it entirely and is the
+recommended shape, so this is a documented limit rather than a blocker.
+
+**Related:** BUG-260 is the same walker question in a different construct (a parameter used
+only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
+not a `zig_lit` — but it is worth checking against whatever fix lands here.
+
+**WRITE HALF FIXED 2026-10-28.** The mutation scan (`scanMutationsInExpr`) now has a
+`zig_lit` arm: `zigLitWrittenWords` (AstWalk.zbr) lists the names the escape ASSIGNS --
+`name = …`, a compound `name += …` / `<<=` / `+%=` …, or through a field, `name.f = …` -- and
+the names whose address it takes, `&name`, and each is marked mutated, so the local is
+emitted `var`. Excluded on purpose: comparisons (`==`, `<=`, `!=`), a field of something
+else (`self.x = …` names the field), a binary `a&b`, and an index write (`name[i] = …`: a
+List or map writes through its reference, and `var` there is zig's "never mutated"). The
+same textual limit as the read half: zig strings and comments are not skipped. Neither
+proposed syntax (a `writes` clause, a `zig` block) was needed. The `zig_lit` waiver on the
+walker's `expr-walker` marker is gone, since the variant is now handled.
+
+Fixture `test/bug267_ziglit_write_test.zbr`, both directions: `out = 42`, `acc += 9` and
+`&cell` make their locals `var`; `seen`, only read and compared, stays `const` -- a fix that
+marked every mentioned local `var` would fail there with zig's "never mutated".
+Red-checked against HEAD's compiler (built in a worktree): `bug267_ziglit_write_test.zbr:8:
+error: cannot assign to constant`, the original symptom.
+
 ### BUG-662: the regex compiler built wrong NFAs for nested quantifiers, `(?:a|b)?`, `{0,m}`, `{m,n}?` and repeated groups -- FIXED 2026-10-28 (found the same day)
 
 Found by the oracle written for BUG-014 (below), and present in the engine before it:
