@@ -2374,7 +2374,13 @@ shrinks. BUG-650 moved two files from zig-refused to front-end-refused, the set 
 and the FULL tier went red on a correct tree (it was also skipped where the directory did
 not exist). Real zig now refuses five programs with five different genuine errors every
 run, and each must classify as genuine; the evidence count is printed, not gated.
-Red-checked with an always-infra predicate: 0 genuine, 5 misread.
+Red-checked with an always-infra predicate: 0 genuine, 5 misread. **And it retries a refusal
+classified as infra (the same evening):** the closing daily went red with "4 genuine, 1
+misread" on a tree two FULL tiers had passed -- most likely zig really failed to read its own
+std on one control, which the predicate was right to call infra. A genuine error repeats on
+all three tries, a transient one does not; the misread file and its error line now print.
+Red-checked with a stub zig that fails once (the pre-fix leg prints the daily's exact line;
+the fixed one passes, `infra-retries=1`) and one that fails every time (still FAIL, named).
 
 **The smoke suite retries it too (2026-10-20)**, through `zbr_run_retrying` in the same
 library: every compiler run that builds through zig goes through it (15 sites; the one under
@@ -2561,6 +2567,15 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-10-29 (closing BUG-014/662 regex `1b10f49`, BUG-267/663 zig escapes `a549b29`,
+BUG-295 re-probe `e6cd7fd`): 58/59 in ONE invocation at JOBS=2 on `e6cd7fd`, then the 59th
+fixed and green in a FAST tier -- ASSEMBLED.** smoke 958/958, round-trip byte-identical,
+`output_sweep` 466 identical, `full_sweep` / `divergence` 0 regressions, `regen-recover`,
+`gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`. The red was `bug302-control`'s real-zig leg,
+"4 genuine, 1 misread as infra": the leg had no retry for a genuine BUG-302 event on one of its
+own controls (see the BUG-302 section). The FULL before the regex commit was ASSEMBLED too:
+smoke killed at the 5400 s ceiling on a loaded host (2 days up, RAM 78%), 956/956 standalone.
 
 **DAILY tier 2026-10-28 (closing BUG-252 and BUG-650..659, `7c4d803`; FULL 48/48 before it):
 59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke **949/949**

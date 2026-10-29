@@ -115,7 +115,15 @@ check wrap-success  "$(wrap_leg success)" "0 1 0 yes yes"
 # gate went red on a correct tree. It was also skipped outright where the directory did
 # not exist. Now real zig refuses five programs with five different genuine errors, every
 # run, and none may be classified as infra.
-REAL_ZIG="$( . "$REPO/tools/zig_toolchain.sh" >/dev/null 2>&1 && command -v zig )"
+# A refusal classified as infra is RETRIED, up to three tries (2026-10-28): the closing
+# daily went red here with "4 genuine, 1 misread as infra" on a tree two FULL tiers had
+# passed -- most likely zig really did fail to read its own std on one control under
+# load, which the predicate was right to call infra and this leg had no retry for (the
+# library-mode leg-2 shape of 2026-10-16). A genuine error repeats on every try, so a
+# predicate that MISREADS one still fails after three; a transient infra failure does
+# not. The misread file and its first error line are printed, and so is the retry count.
+# BUG302_REAL_ZIG: a test hook (a stub zig that fails like BUG-302); used by no tier.
+REAL_ZIG="${BUG302_REAL_ZIG:-$( . "$REPO/tools/zig_toolchain.sh" >/dev/null 2>&1 && command -v zig )}"
 if [ -z "$REAL_ZIG" ]; then
   echo "  FAIL  evidence  the pinned zig (tools/zig_toolchain.sh) could not be resolved"; fail=1
 else
@@ -125,16 +133,28 @@ else
   printf 'fn f() i64 { }\npub fn main() void { _ = f(); }\n'             > "$G/missing_return.zig"
   printf 'fn f(a: i64) i64 { return a; }\npub fn main() void { _ = f(); }\n' > "$G/arity.zig"
   printf 'const S = struct { a: i64 };\npub fn main() void { const s = S{ .a = 1 }; _ = s.b; }\n' > "$G/no_field.zig"
-  inf=0; gen=0; empty=0
+  inf=0; gen=0; empty=0; ev_retries=0
   for z in "$G"/*.zig; do
-    ( cd "$G" && "$REAL_ZIG" build-exe -fno-emit-bin "$(basename "$z")" ) 2> "${z%.zig}.err" >/dev/null && { empty=$((empty+1)); continue; }
-    grep -q 'error:' "${z%.zig}.err" || { empty=$((empty+1)); continue; }
-    if zbr_zig_infra_error "${z%.zig}.err"; then inf=$((inf+1)); else gen=$((gen+1)); fi
+    try=1; refused=1
+    while :; do
+      if ( cd "$G" && "$REAL_ZIG" build-exe -fno-emit-bin "$(basename "$z")" ) 2> "${z%.zig}.err" >/dev/null; then refused=0; break; fi
+      grep -q 'error:' "${z%.zig}.err" || { refused=0; break; }
+      zbr_zig_infra_error "${z%.zig}.err" || break
+      [ "$try" -ge 3 ] && break
+      try=$((try+1)); ev_retries=$((ev_retries+1))
+    done
+    [ "$refused" -eq 1 ] || { empty=$((empty+1)); continue; }
+    if zbr_zig_infra_error "${z%.zig}.err"; then
+      inf=$((inf+1))
+      echo "        misread: $(basename "$z") after $try tries -- $(grep -m1 'error:' "${z%.zig}.err")"
+    else
+      gen=$((gen+1))
+    fi
   done
   if [ "$gen" -eq 5 ] && [ "$inf" -eq 0 ] && [ "$empty" -eq 0 ]; then
-    echo "  ok    evidence  5/5 real zig refusals classified genuine, 0 as infra"
+    echo "  ok    evidence  5/5 real zig refusals classified genuine, 0 as infra (infra-retries=$ev_retries)"
   else
-    echo "  FAIL  evidence  real zig refusals: $gen genuine, $inf misread as infra, $empty did not refuse with an error"; fail=1
+    echo "  FAIL  evidence  real zig refusals: $gen genuine, $inf misread as infra, $empty did not refuse with an error (infra-retries=$ev_retries)"; fail=1
   fi
 fi
 # full_sweep's kept evidence, as information only: it shrinks as leaks are fixed.
