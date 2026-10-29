@@ -131,6 +131,15 @@ process running from *this* tree, so path-scoping loses nothing — and the tool
 what it is leaving alone, because silence is what made the old behaviour look like an
 unrelated failure.
 
+**To FIND a stuck process machine-wide, `bash tools/stuck_procs.sh [--hours N]`** (report
+only, kills nothing). It flags shell/tool processes that are ORPHANED (their launcher is
+gone, e.g. a timed-out tool call's grep or compiler) or OLDER than N hours, with CPU
+share and OWNER (the claude.exe session or terminal above the shells). Windows' parent PID
+is wrong for Git Bash children (fork+exec leaves an exited intermediate as the parent), so
+parentage of an MSYS process comes from `ps -l`; the first draft trusted Windows and
+called an active grep in another session an orphan. Red-checked with a planted orphan
+`sleep`.
+
 **The round-trip's scratch is per-checkout too (BUG-521, 2026-10-03).** `/tmp/bs-zig`,
 `/tmp/bs-pre`, `/tmp/bs-A`... were one set for every checkout, so a `rebuild.sh` in the main
 tree cleared a worktree's regen mid-run, and the worktree's failure path RESTORED its
@@ -2532,7 +2541,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 119 scripts | <!-- doc-gen: 119 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 120 scripts | <!-- doc-gen: 120 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 tracked documents <!-- doc-gen: 45 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
