@@ -287,6 +287,27 @@ smaller one.
 **Found alongside, and filed separately as BUG-324:** the failed compile still leaves a
 runnable `.exe` that segfaults with no output.
 
+**RE-PROBED 2026-10-28 -- BOTH LEAKS ARE GONE; neither reproduces on `a549b29`.** Five
+probes, every one warning about the cycle and then building and printing the right answer:
+
+| cycle (zz_a -> zz_b -> zz_c -> zz_a unless noted) | printed | expected |
+|---|---|---|
+| module-level state on all three sides, read locally | 112 | 2 + 10 + 100 |
+| `zz_c` reads `zz_a.count` across the cycle | 114 | 2 + 10 + 100 + 2 |
+| `zz_c`'s INITIALISER reads `zz_a.count` | 113 | 2 + 10 + (1 + 100) |
+| two-module cycle carrying a class (`exposing Ctx, helperP`) | 11 | 5 * 2 + 1 |
+| ... the other module constructs, rebinds and returns the class | 22, 9 | 12 + 10; 9 |
+
+So the 2026-08-30 `unable to resolve comptime value` and the 2026-08-17 `expected 'Ctx',
+found '*Ctx'` were fixed in passing by later work; which commit fixed them is not
+established (none names them), and the probes here may not match the originals byte for
+byte -- those files were not kept. The third row
+is the shape the warning calls undefined, and it is defined in practice -- the root module
+initialises first -- which is worth knowing before the warning is promoted, not a reason to
+change it. **What remains open is unchanged otherwise:** (0) the `--module-path` blind spot,
+(1) the compiler-scale stack overflow, never reproduced below compiler scale, and (2) the
+warn-or-refuse decision, which is Sean's.
+
 
 ---
 
