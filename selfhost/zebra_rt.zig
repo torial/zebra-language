@@ -5782,6 +5782,39 @@ pub fn _zbr_exit(code: i64) noreturn {
     _zbr_cens_flush();
     std.process.exit(@truncate(@as(u64, @bitCast(code))));
 }
+/// BUG-295: a computed module var in an import cycle is initialised on FIRST USE, by
+/// `_zbr_mvref_<name>()` in its defining module. Each initialiser in progress is one
+/// frame here (the frame lives on the accessor's stack), so an initialiser that needs
+/// its own value -- a genuine cycle -- can name the whole chain. No fixed capacity.
+pub const _ZbrInitFrame = struct { name: []const u8, prev: ?*const _ZbrInitFrame };
+pub var _zbr_init_head: ?*const _ZbrInitFrame = null;
+fn _zbr_init_print_from(f: *const _ZbrInitFrame, name: []const u8) void {
+    if (!std.mem.eql(u8, f.name, name)) {
+        if (f.prev) |p| _zbr_init_print_from(p, name);
+    }
+    std.debug.print("{s} -> ", .{f.name});
+}
+/// `shared` is false when each module carries its own runtime copy (--no-runtime-module):
+/// then this list holds only this module's frames, and printing it would present a
+/// fragment as the whole chain (it read `lib.y -> lib.y` for an x/y cycle).
+pub fn _zbr_init_cycle(name: []const u8, shared: bool) noreturn {
+    var found = false;
+    var f = _zbr_init_head;
+    while (f) |fr| : (f = fr.prev) {
+        if (std.mem.eql(u8, fr.name, name)) found = true;
+    }
+    if (shared and found) {
+        std.debug.print("error: module initialisation cycle: ", .{});
+        _zbr_init_print_from(_zbr_init_head.?, name);
+        std.debug.print("{s}\n", .{name});
+    } else {
+        std.debug.print("error: module initialisation cycle reaching {s}\n", .{name});
+        std.debug.print("  (the chain is not available: each module of this program has its own runtime copy, --no-runtime-module)\n", .{});
+    }
+    std.debug.print("  each initialiser needs the value of the next, so none of them can run first.\n", .{});
+    std.debug.print("  fix: give one of these variables a value that does not read the others.\n", .{});
+    _zbr_exit(1);
+}
 pub fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
     const elapsed_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds - start_ns;

@@ -1,0 +1,33 @@
+# BUG-295 -- a module in an import cycle is ONE instance, initialised once, and each
+# of its computed vars is set before its first read: a cycle behaves as a singleton.
+#
+# bug295_lazy_init_lib imports this module back. As a dependency its initialisers run
+# FIRST, and each of them reads a computed var of this module that this module's own
+# initialisation has not reached yet. Before BUG-295 every one of those reads saw
+# undefined memory (-6148914691236517205). Now each var is initialised on first use.
+#
+# Every reference spelling is exercised from the lib: `mod.x`, a function of this
+# module reading `x` bare, and an exposed `x`. `counter` and `names` are WRITTEN by the
+# lib's initialiser before this module's own sweep runs, and the writes must survive
+# it: the sweep forces through the accessor rather than re-running the initialiser.
+use bug295_lazy_init_lib
+
+var seed: int = 7
+var count: int = seed * 2
+var counter: int = base() + 1
+var names: List(str) = ["a"]
+
+def base(): int
+    return 40
+
+def getCount(): int
+    return count
+
+def bump()
+    counter = counter + 100
+
+def addName(n: str)
+    names.add(n)
+
+def main()
+    print("bug295-lazy: ${count} ${bug295_lazy_init_lib.bval} ${bug295_lazy_init_lib.viaFn} ${bug295_lazy_init_lib.firstName} ${counter} ${names.len} ${bug295_lazy_init_lib.touched}")

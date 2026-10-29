@@ -302,11 +302,44 @@ So the 2026-08-30 `unable to resolve comptime value` and the 2026-08-17 `expecte
 found '*Ctx'` were fixed in passing by later work; which commit fixed them is not
 established (none names them), and the probes here may not match the originals byte for
 byte -- those files were not kept. The third row
-is the shape the warning calls undefined, and it is defined in practice -- the root module
-initialises first -- which is worth knowing before the warning is promoted, not a reason to
-change it. **What remains open is unchanged otherwise:** (0) the `--module-path` blind spot,
-(1) the compiler-scale stack overflow, never reproduced below compiler scale, and (2) the
-warn-or-refuse decision, which is Sean's.
+is the shape the warning calls undefined, and it came out right only because the read ran
+in the direction that happened to work. **That sentence originally said "defined in
+practice", and it was wrong:** the other direction -- the DEPENDENCY's initialiser reading
+the importer's computed var -- printed -6148914691236517205 (2026-10-28, `zz_b.bval =
+zz_a.count + 1`). Dependencies initialise first, so a cycle has no eager order that works.
+
+**THE MODULE-STATE HALF FIXED 2026-10-29 -- a cycle is a singleton (Sean's framing).** Each
+module stays one instance, initialised once, and every module-level variable is set before
+its first read: a computed one (`isDeferredModuleVar`) in a module on a cycle gets an
+accessor, `_zbr_mvref_<name>()`, which runs its initialiser on first use, and every
+reference -- the module's own, `mod.x`, an exposed `x`, reads and writes alike -- goes
+through it as `_zbr_mvref_<name>().*`. The module's own init sweep forces the accessors
+rather than re-assigning, so a write made by a partner's initialiser survives. An
+initialiser that needs its own value is a genuine cycle: a frame list in the runtime names
+the chain (`error: module initialisation cycle: b.y -> a.x -> b.y`, exit 1). With
+`--no-runtime-module` each module has its own frame list, so the message names only the
+variable and says the chain is unavailable. Cycle members are marked by the cycle report
+(`$cyc:` in dep_types), which runs while every member is still in progress, so no member
+is generated before it is known to be on a cycle. Modules not on a cycle emit exactly as
+before; the compiler's own source has no cycle and only the edited modules' `.zig` moved.
+Fixtures: `test/bug295_lazy_init_test.zbr` (every reference spelling, two writes that must
+survive; the pre-fix compiler panicked "integer overflow") and
+`test/bug295_init_cycle_test.zbr` (`smoke_run_fail`; the pre-fix compiler printed
+-6148914691236517204). **Warn-or-refuse is decided: warn** (Sean, 2026-10-29), and the
+warning now states the rule instead of calling module state undefined.
+Also probed (not a fixture): a three-module cycle a -> b -> c -> a whose initialisers read
+across it, plus a module OUTSIDE the cycle (imported by a and b) whose initialiser reads a
+cycle member's computed var -- `30 33 64` as expected; HEAD panicked "integer overflow".
+A static scan of the `use` graphs of this repo, zebra-ide and the GameEngine (10,662 files)
+found no cycle outside the bug295 fixtures, so no existing program's emit moves. FULL tier
+48/48 in one invocation.
+
+**What remains open:** (0) the `--module-path` blind spot; (1) the compiler-scale stack
+overflow, never reproduced below compiler scale; (3) a class's deferred `static var`
+(BUG-649) in a cycle module is still assigned eagerly by its module's sweep, so a cycle
+partner's initialiser that reads it reads garbage; (4) `--single-file` cannot build ANY
+cycle -- zig: `use of undeclared identifier '_mod_<root>'` -- on HEAD before this change
+too.
 
 
 ---

@@ -1951,6 +1951,17 @@ sibling `geo/helpers.zbr` with a plain `use helpers`. A module is known by its f
 everywhere after the `use`, so two files with the same name (`a/util.zbr`, `b/util.zbr`)
 cannot both be in one program; the second `use` is refused, naming the first.
 
+**Import cycles** — two modules may `use` each other (`a` uses `b`, `b` uses `a`). The
+compiler warns, naming the cycle, and builds it. Each module is still ONE instance shared by
+every importer, and each of its module-level variables is set before it is first read: a
+variable whose initialiser is computed (it calls something, or reads another module) is
+initialised on its first use, wherever that comes from. So `b`'s
+`var total: int = a.count + 1` sees `a.count` set even though `b` is initialised first.
+Initialisers that need each other's values (`a.x = b.y + 1`, `b.y = a.x + 1`) cannot be
+ordered; the program stops at start-up with
+`error: module initialisation cycle: b.y -> a.x -> b.y` and exit code 1. Not covered: a
+class's computed `static var` in a cycle module. `--single-file` cannot build a cycle at all.
+
 **Partial files** — `Foo.zbr` is the primary; `Foo.json.zbr`, `Foo.ui.zbr`
 etc. are partials whose `class Foo` members merge into the primary.
 

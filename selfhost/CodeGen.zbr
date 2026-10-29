@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -1489,6 +1489,29 @@ def isDeferredModuleVar(mv: DeclVar): bool
         return mv.init_expr! is Expr.call
     return false
 
+# BUG-295: a module in an import CYCLE is still one instance, initialised once -- a
+# singleton -- but no eager order initialises a cycle correctly: the dependency's
+# initialiser runs first, and one that reads its importer's computed var read garbage
+# (`var bval = zz_a.count + 1` printed -6148914691236517205). So a computed var in a
+# cycle module is initialised on FIRST USE: `_zbr_mvref_<name>()` runs its initialiser
+# if it has not run, and every reference -- this module's, `lib.x`, an exposed `x` --
+# goes through it as `_zbr_mvref_<name>().*`, reads and writes alike. An initialiser
+# that needs its own value is a genuine cycle and stops with the chain named
+# (`_zbr_init_cycle`). Constant-initialised vars need nothing: they are set statically.
+# NOT covered: deferred STATIC fields (BUG-649) of a cycle module's classes.
+def isLazyModuleVar(name: str): bool
+    return (" " + name + " ") in _lazy_mvs
+
+# A reference to dep `stem`'s module var `name`: is it lazy there? Recorded by
+# noteDepCodegenFacts (`$mvlazy:`) for every deferred var, and by the cycle report
+# (`$cyc:`) for every module on a cycle; both must hold.
+def depModuleVarIsLazy(mt: ModuleTypes, alias: str, name: str): bool
+    var stem: str = alias
+    var dot: int = stem.lastIndexOf(".")
+    if dot >= 0
+        stem = stem.substring(dot + 1, stem.len)
+    return mt.hasModuleVar("$cyc:" + stem) and mt.hasModuleVar("$mvlazy:" + stem + "." + name)
+
 # BUG-649: a `static var` is a file-lifetime global inside its class's struct, so it
 # has the module var's problem (BUG-153/496) and gets the module var's answer: declared
 # `= undefined` and assigned in _initModuleVars(). Two shapes. An initializer that is not
@@ -1605,6 +1628,12 @@ def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
 # closure changes lives in a cell and `call` always takes `@This()`: nothing to record.)
 def noteDepCodegenFacts(mt: ModuleTypes, m: Module, strip_contracts: bool)
     mt.dep_struct_recv = mt.dep_struct_recv + structReceiverTable(m.decls, strip_contracts)
+    # BUG-295: which of its module vars WOULD be lazy if it is on a cycle (the `$cyc:`
+    # half is recorded by the cycle report; see depModuleVarIsLazy).
+    for nd in m.decls
+        if nd is Decl.var_ as nv
+            if isDeferredModuleVar(nv)
+                mt.addModuleVar("$mvlazy:" + moduleStemOf(m.file) + "." + nv.name)
 
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
@@ -1654,6 +1683,13 @@ def structReceiverTable(decls: List(Decl), strip_contracts: bool): str
 
 def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str
     var w = Writer()
+    _lazy_stem = moduleStemOf(file)
+    _lazy_mvs = " "
+    if deps_mt.hasModuleVar("$cyc:" + _lazy_stem)
+        for lzd in m.decls
+            if lzd is Decl.var_ as lzv
+                if isDeferredModuleVar(lzv)
+                    _lazy_mvs = _lazy_mvs + lzv.name + " "
     _cov_lines_s = ""
     _cov_max = 0
     var cn = StrSet()
@@ -1970,7 +2006,11 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     w.emit("    _module_vars_inited = true;\n")
     for mvd in m.decls
         if mvd is Decl.var_ as mv
-            if isDeferredModuleVar(mv)
+            if isLazyModuleVar(mv.name)
+                # BUG-295: forced through the accessor -- assigning here would re-run an
+                # initialiser a cycle partner already forced, clobbering any write since.
+                w.emit("    _ = _zbr_mvref_" + mv.name + "();\n")
+            else if isDeferredModuleVar(mv)
                 w.emit("    _zbr_mv_")
                 w.emit(mv.name)
                 w.emit(" = ")
@@ -2005,6 +2045,30 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                             w.emit(")")
                         w.emit(";\n")
     w.emit("}\n")
+    # BUG-295: one first-use accessor per lazy module var (see isLazyModuleVar).
+    # State 0 = not run, 1 = initialiser running, 2 = done.
+    for lmd in m.decls
+        if lmd is Decl.var_ as lmv
+            if isLazyModuleVar(lmv.name)
+                var lq: str = "\"" + _lazy_stem + "." + lmv.name + "\""
+                # one runtime for the whole program unless every module splices its own
+                var lshared: str = "true"
+                if not _runtime_module and not _single_file
+                    lshared = "false"
+                w.emit("var _zbr_mvst_" + lmv.name + ": u8 = 0;\n")
+                w.emit("pub fn _zbr_mvref_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
+                w.emit("    if (_zbr_mvst_" + lmv.name + " == 2) return &_zbr_mv_" + lmv.name + ";\n")
+                w.emit("    if (_zbr_mvst_" + lmv.name + " == 1) _zbr_init_cycle(" + lq + ", " + lshared + ");\n")
+                w.emit("    _zbr_mvst_" + lmv.name + " = 1;\n")
+                w.emit("    var _zbr_frame: _ZbrInitFrame = .{ .name = " + lq + ", .prev = _zbr_init_head };\n")
+                w.emit("    _zbr_init_head = &_zbr_frame;\n")
+                w.emit("    _zbr_mv_" + lmv.name + " = ")
+                g.genModuleVarInit(lmv.init_expr!, lmv.type_)
+                w.emit(";\n")
+                w.emit("    _zbr_init_head = _zbr_frame.prev;\n")
+                w.emit("    _zbr_mvst_" + lmv.name + " = 2;\n")
+                w.emit("    return &_zbr_mv_" + lmv.name + ";\n")
+                w.emit("}\n")
     if _coverage
         # This module's coverage record. Order-independent at top level, so it can
         # sit after the statements that index it. `counts` is indexed by SOURCE LINE.
@@ -2799,6 +2863,11 @@ def setRuntimeModule(v: bool)
 # Space-fenced string of the CURRENT module's instrumented lines (" 12 13 "), reset per
 # module; a module-global container would need deferred init for no benefit.
 var _coverage: bool = false
+# BUG-295: this module's module vars initialised on FIRST USE (see moduleVarIsLazy),
+# space-fenced (" a b "), reset by generateModuleWith. Generations never interleave
+# (a module's deps finish before it is generated), so one module-global is enough.
+var _lazy_mvs: str = ""
+var _lazy_stem: str = ""
 var _cov_lines_s: str = ""
 var _cov_max: int = 0
 
@@ -14761,7 +14830,10 @@ struct Generator
                     # written through the module. The declaration is `_zbr_mv_count` there;
                     # the bare member made zig say "has no member named 'count'".
                     if import_aliases.contains_(xm_alias.name) and not unwrapped_imports.contains_(xm_alias.name) and not isLocalOrParamName(xm_alias.name) and .dep_types.hasModuleVar("$mv:" + xm_alias.name + "." + m.member)
-                        w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mv_" + m.member)
+                        if depModuleVarIsLazy(.dep_types, xm_alias.name, m.member)   # BUG-295
+                            w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mvref_" + m.member + "().*")
+                        else
+                            w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mv_" + m.member)
                         return
                 genExpr(m.object)
                 w.emit(".")
@@ -15611,6 +15683,9 @@ struct Generator
         # field of the same name already won returned above (fields shadow
         # module vars inside methods).
         if isModuleVarName(id.name) and not isLocalOrParamName(id.name)
+            if isLazyModuleVar(id.name)                                     # BUG-295
+                w.emit("_zbr_mvref_" + id.name + "().*")
+                return
             w.emit("_zbr_mv_")
             w.emit(id.name)
             return
@@ -15619,6 +15694,9 @@ struct Generator
         # Same shadow guard: a local/param of the same name keeps its bare name.
         if .exposed_module_vars.contains(id.name) and not isLocalOrParamName(id.name)
             w.emit(modAliasSymbol(.exposed_module_vars.fetch(id.name)))   # BUG-483
+            if depModuleVarIsLazy(.dep_types, .exposed_module_vars.fetch(id.name), id.name)   # BUG-295
+                w.emit("._zbr_mvref_" + id.name + "().*")
+                return
             w.emit("._zbr_mv_")
             w.emit(id.name)
             return

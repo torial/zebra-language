@@ -69,6 +69,15 @@ confirmed via `tools/bootstrap_check.sh`.
   untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
   exposed `f()`.
 
+- **A module in an import cycle initialises its computed variables on first use (BUG-295)**:
+  a dependency's initialiser that read its importer's computed module variable
+  (`var total: int = a.count + 1`) read uninitialised memory, because the dependency is
+  initialised first. Each such variable is now set when first read, from any module, and
+  a write made before its module's own initialisation survives it. Initialisers that need
+  each other's values stop the program at start-up naming the chain
+  (`error: module initialisation cycle: b.y -> a.x -> b.y`). The cycle warning remains and
+  its text now states this rule.
+
 - **A statement-form `zig"…"` can assign an existing local (BUG-267)**: `zig"out = 42;"`,
   `out += …`, `out.f = …` or `&out` makes the local `var`; it was emitted `const` and zig
   refused the write. And an escape ending in a block (`zig"if (c) { … }"`) no longer gets

@@ -917,6 +917,15 @@ smoke_warn test/bug295_cycle_test.zbr "import cycle: bug295_cycle_test -> bug295
 # re-entry. It must compile SILENTLY -- a detector that fires on the most ordinary
 # shape in any dependency graph gets suppressed wholesale rather than read.
 smoke_run test/bug295_diamond_test.zbr "bug295-diamond=17"
+# A cycle is a SINGLETON (Sean, 2026-10-29): each module one instance, initialised once,
+# and every computed module var set before its first read. The dep's initialisers run
+# first and read the root's computed vars -- through `mod.x`, a function of the root, and
+# an exposed name -- and WRITE two of them; the writes survive the root's own sweep. On
+# the pre-fix compiler this panicked with integer overflow (garbage arithmetic).
+smoke_run test/bug295_lazy_init_test.zbr "bug295-lazy: 14 15 140 a 141 2 true"
+# Initialisers that need each other's values: no order exists, so the program stops at
+# start-up naming the chain. The pre-fix compiler printed -6148914691236517204.
+smoke_run_fail test/bug295_init_cycle_test.zbr "module initialisation cycle: bug295_init_cycle_lib.y -> bug295_init_cycle_test.x -> bug295_init_cycle_lib.y"
 
 # ── BUG-274 / BUG-296: `_ = self;` and `_ = p;` vs what the walker can SEE ──────
 # exprMentionsThis defaults to FALSE and its answer drives `_ = self;`, so a variant it

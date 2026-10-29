@@ -69,10 +69,10 @@ class MultiCompiler
     # types has no instance to share, so it is not worth a word; this is what keeps the
     # end-of-compilation note from listing every module in a healthy dependency graph.
     var stateful_mods: List(str)
-    # Sean's call: report, do not refuse. A cycle is currently UNDEFINED rather than
-    # wrong — Zebra has no answer for module-init order across one — so the honest
-    # move is to say so where the user is already looking, and decide error-vs-warning
-    # after watching it fire on real code. Flip this one line to refuse.
+    # Sean's call: report, do not refuse (decided 2026-10-29, once a cycle had an
+    # answer for module-init order: each module stays ONE instance, a singleton, and its
+    # computed vars initialise on first use -- see CodeGen isLazyModuleVar). Flip this
+    # one line to refuse.
     var cycle_is_error: bool
     # BUG-502: what each module may NAME as a class -- its own classes and those of the
     # modules it `use`s directly. It replaced one list accumulated across the whole compile
@@ -189,14 +189,21 @@ class MultiCompiler
         return out + .moduleNameOf(p)
 
     def reportImportCycle(start: int, p: str)
+        # BUG-295: every module on the cycle initialises its computed vars on first use.
+        # All of them are still in progress here, so none has been generated yet.
+        var cm: int = start
+        while cm < in_progress.len
+            dep_types.addModuleVar("$cyc:" + .moduleNameOf(in_progress.at(cm)))
+            cm = cm + 1
         var kind: str = "warning"
         if cycle_is_error
             kind = "error"
         sys.errln(kind + ": import cycle: " + .importCyclePath(start, p))
-        sys.errln("  a module in a cycle is compiled ONCE and the first import wins, so")
-        sys.errln("  the second module sees a PARTIAL view of the first. That is well")
-        sys.errln("  defined for functions and types and UNDEFINED for module-level state:")
-        sys.errln("  no initialisation order satisfies both directions.")
+        sys.errln("  each module in a cycle is still ONE instance, shared by every importer,")
+        sys.errln("  and each of its module-level variables is set before it is first read:")
+        sys.errln("  one computed from other modules is initialised on first use. Initialisers")
+        sys.errln("  that need each other's values cannot be ordered; the program stops at")
+        sys.errln("  start-up naming them.")
         sys.errln("  fix: move the names they share into a third module that both import.")
         if cycle_is_error
             .exitWith(1, false)
