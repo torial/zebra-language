@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-666. Next new bug: BUG-667.**
+**Last bug number generated: BUG-667. Next new bug: BUG-668.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -45,6 +45,39 @@
 > measured in.
 
 ---
+
+### BUG-667: integer overflow is undefined behaviour in a `--release` build -- Debug traps it, release prints a wrong number
+
+- **Severity:** High -- gate G1 ("safety holds at run time; there is no switch to turn it
+  off"), and the failure is the quiet kind: a plausible wrong value, exit 0.
+- **Status:** OPEN. Found 2026-10-29 while comparing what the Zig and V backends promise.
+
+```zebra
+def main()
+    var n: int = sys.args().count()       # 1
+    var x: int = 9223372036854775807
+    var y: int = x + n
+    print("y=${y}")
+```
+
+Debug: `panic: integer overflow`. `zebra --release`: `y=9223372036854775807` -- neither
+the trap nor the wrapped value (`-9223372036854775808`): `--release` passes `-OReleaseFast`,
+where Zig treats `+` overflowing as undefined behaviour, so the optimiser may assume it
+never happens. Measured with `n` printed (`n=1`), so the addend is not a constant fold.
+
+The same class as BUG-313 (raw indexing unchecked under ReleaseFast), which was answered
+for indexing only; BUG-534 answered it for the `toInt8..toUint64` conversions. Arithmetic
+was never decided -- no ledger entry, design note or finding mentions it.
+
+**Options, for Sean:** (a) checked arithmetic emitted explicitly (`std.math.add` or `+%`
+with a trap), as BUG-313 did for indexing -- the release keeps the trap and pays per
+operation; (b) `--release` uses ReleaseSafe -- every Zig safety check back, at its cost;
+(c) wrapping as the defined semantics -- a language decision, and the one V makes. Whatever
+is chosen is also what a V backend must emit: V's integers wrap silently, so (a) or (c)
+there too.
+
+**Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
+an overflow leg as it gained the bounds and conversion legs.
 
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
 
