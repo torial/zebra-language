@@ -1,5 +1,5 @@
 <!-- doc-status: design -->
-<!-- Status: proof of concept (2026-10-13); the result sections carry what the run said -->
+<!-- Status: proof of concept (2026-10-13), on main since; the result sections carry what the run said; the strategy toward V as the backend is a RECOMMENDATION (2026-10-29), not a decision -->
 # A V backend for Zebra — proof of concept (`zebra --target v`)
 
 *Written 2026-10-13 on branch `v-backend-poc` (worktree `C:/Projects/zebra-vbackend`),
@@ -2360,6 +2360,130 @@ In the order they pay, each with the witness that says it is done:
    `call()->items.data[i]`; master evaluates it once); an `rl.Font{}`
    literal names the binding's misspelled fields. #30999's name clashes
    stand until V fixes them.
+
+## V as THE backend: where it stands, and a road to a release (2026-10-29)
+
+Sean asked (2026-10-29) for the feasibility of V replacing Zig, and a strategy from here
+to a release, coordinated with Fable. This is the Zebra session's recommendation, with
+Fable's alternative stated as Fable's. Nothing below is decided.
+
+### Where it stands, measured
+
+| witness | result | source |
+|---|---|---|
+| the compiler through the V route | builds; its emit byte-identical to the Zig-built compiler's; 2 refusals (its two `zig` literals) | 10-20, above |
+| the engine's Zebra roots | 92 identical, 2 refused, 1 differs (hash order) of 95 | 10-20, above |
+| the engine's HOST | ported to V (`host_v/`), headless and windowed; every V row green on V master ee6d62a | Fable, V_HOST_PORT.md, 10-27 |
+| **the test corpus** (new) | of smoke's 598-file positive set: **436 emit with nothing refused** (73 %, an UPPER bound -- not yet built or run), 156 refuse something, 6 fail to emit (FFI / native-Zig deps) | 2026-10-29 |
+| the G1 matrix (new) | see below | 2026-10-29 |
+| the release-mode compile of the compiler | V clang `-prod -prealloc` 1.1x the Zig ReleaseFast emit, time and memory | 10-20, above |
+
+**What the corpus refuses, ranked by files blocked** (phase 1, emit only): a call on a
+call's result 27; user generics (generic classes and interfaces, type arguments) ~36;
+destructure / `allocate` / copy-out / **contracts** / `yield` 17; stream, error-union and
+fn types 13; dict literals 12; untyped `.map` / `.filter` / `.reduce` / `.sort` 21; `is` on
+a class 9; then mixins, namespaces, `extend`, set literals, and members of Hash, Random,
+Path, DateTime, `toUint8`. The compiler's own source avoids all of these, which is why the
+route went through. Contracts are the one to name: `require` / `ensure` are a language
+commitment with no V spelling yet. Side finding: `--target v` ignores `--output-dir`.
+
+**The G1 matrix** -- five probes, each with a run-time operand, so nothing folds:
+
+| probe | Zig Debug | Zig `--release` | V tcc | V clang `-prod` |
+|---|---|---|---|---|
+| divide by zero | trap | trap | trap | trap |
+| index past end | trap | trap | trap | trap |
+| `300.toUint8()` | trap | trap | not mapped | not mapped |
+| nil unwrap | trap | **carries on** (`got=0`, BUG-668) | trap | trap, naming `file.zbr:5` |
+| int overflow | trap | **carries on** (UB, BUG-667) | **wraps** | **wraps** |
+
+V's release lane is SAFER than Zig's on nil (CodeGenV's `zunwrap_at`); overflow is
+unchecked in BOTH release lanes. Both gaps were filed against the Zig backend the same day.
+The comparison is V's CHECKED release with Zig's UNCHECKED one: V `-prod` keeps bounds
+checks unless `-no-bounds-checking` (Fable), while `--release` is ReleaseFast. And V's
+`+` wrapping is a defined result, but a silent one, so for overflow the choice is between
+a trap and a wrap, not a trap and undefined behaviour. **The engine SHIPS in the
+"carries on" column** (ReleaseFast, F21: Debug is a third of the frame rate). Zig's third
+mode, ReleaseSafe -- optimised with the checks kept, trapping on both probes -- has never
+been timed on the engine; Fable is measuring it (2026-10-29). If it holds 60 fps,
+BUG-667/668 are answered by BUILD MODE on the Zig side with no compiler work.
+
+**Fable's measurements, the engine's side** (2026-10-29, numbers measured unless marked):
+Boehm holds memory flat at 60 fps but stops the world every 1-2 s for 31-93 ms (one
+297 ms in 40 s); `-gc none` drifts 43 MB/s against the Zig host's 8; with a client attached
+the V server shows 35 fps to the Zig's 45-47, the remainder unexplained; V has no allocator
+hook, so the profiler's memory column reads "unmeasured"; Windows DWARF arrives only past
+the pin (#31373); master moves ~50 commits a day and a pin move costs hours; warm builds
+5-7x slower on master than 0.5.2; master's platform-width `int` breaks users' C bindings
+that spell `int *` as `&int`; 0.5.2 is still the latest release, so a release must VENDOR a
+master commit (the vc C sources and thirdparty/sqlite).
+
+### What decides it, by PRINCIPLES.md (gates first, then the axes in order)
+
+- **G1, safety.** Not a V-specific blocker: V traps what Zig's release lane drops on nil,
+  and both drop overflow. It IS a blocker for shipping either until BUG-667 and BUG-668 are
+  answered -- and Sean's answer to BUG-667 (trap or wrap) is what BOTH emitters must then
+  spell.
+- **Axis 1, predictability of cost -- the real wall.** PRINCIPLES names GC pauses among the
+  things the axes reject, and Boehm's are measured at tens of milliseconds. `-gc none`
+  never frees; `-prealloc` never frees. So V as the ONLY backend needs Zebra to emit its
+  own memory management -- reference counting for classes (memory_model.md §6.3, decided)
+  and arenas -- over `-gc none`. That work is backend-independent: it improves the Zig
+  side too, and it is the long pole either way.
+- **Axis 2, legibility.** The instruments that make cost legible (`--census`, `--coverage`,
+  `memStats`, the debugger's source maps, every Debug-built gate) are Zig-shaped today; V
+  has no allocator hook. Re-homing them is a project, not a flag.
+- **Axis 3, surface area.** `zig"..."` literals are syntax whose meaning is "Zig". Under V
+  they need a successor (a `c"..."` that lands in a generated header is feasible, per
+  Fable) or retirement -- a surface decision under the grammar freeze.
+- **Outside the axes: the toolchain a stranger installs.** Zig brings its own toolchain
+  and cross-compiles; V's optimised builds need clang, gcc or MSVC on the user's machine,
+  and its release must be a vendored master commit.
+
+### Recommendation
+
+**Ship the next release on Zig. Make "V is the default backend" a milestone with measured
+exit criteria, each with a witness, and flip when they are green -- not on a date.** In
+the order they pay:
+
+1. **Safety parity (days).** BUG-667 and BUG-668 decided and fixed on the Zig side; the
+   same semantics in CodeGenV (overflow; `toUint8` and its family mapped). Witness: the G1
+   matrix as a gate over both backends.
+2. **Corpus parity (weeks; mapping work, per the earlier estimate).** Phase 2 of the census
+   -- build, run and diff the positive set against the Zig output, on ee6d62a, tcc and
+   clang, no `-prod` in the diff rows (Fable's two conditions) -- then burn the refusal list
+   down in the order above. Witness: a V corpus ladder in the tiers; exit at the positive
+   set identical bar the documented harness skips.
+3. **Memory without pauses (the long pole; a design, not a mapping).** memory_model.md §6
+   (RC for classes, arenas) emitted by CodeGenV over `-gc none`. Witness: the engine's
+   autoplay at 60 fps with bounded memory and a frame-pause bound the budget guard checks
+   per frame, not over thirty.
+4. **A toolchain a stranger can install (about a week).** The vendored V pin, an installer
+   that brings or finds a C compiler, CI on Linux and macOS. Witness: a stranger's build
+   from a clean machine, as `libui-pin-build` does for the GUI pin.
+5. **The instruments re-homed (weeks).** The heavy gates parameterised by backend; census,
+   coverage and the debugger's map on V. Witness: the tiers green on the V backend.
+6. **The surface decided.** The successor to `zig"..."`; what becomes of `--target
+   node-addon`, the libui-ng backend, DynLib and `--library-mode` with a non-V host.
+
+Then flip the default, keep Zig as the second backend for one release, and retire it.
+
+**Fable's alternative, as Fable put it:** technically, Zig through 1.0 with V second; if
+Sean's reasons are openness and the relationship with V's maintainers rather than a
+technical bet, then "V as default with Zig kept" is the smallest honest step -- and "sole"
+is unavailable until the memory question is answered by measurement. This recommendation
+differs only in WHEN V becomes the default: after items 1-3, because a default backend
+should not regress safety or cost predictability for anyone who did not choose it.
+
+### Decisions that are Sean's
+
+1. **BUG-667's semantics**: integer overflow traps (and is paid for in release) or wraps
+   (defined, as V does). It binds both backends.
+2. **The release question**: does the next release wait for V? (Recommended: no.)
+3. **`zig"..."`'s successor**, or its retirement.
+4. **The memory model's priority**: under this plan RC/arenas (item 3) is on the critical
+   path to V, not a later refinement.
+5. **The platforms 1.0 promises**, since V's cross-compilation is not Zig's.
 
 ## If the branch ever merges to main
 
