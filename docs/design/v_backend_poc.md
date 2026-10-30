@@ -2409,9 +2409,11 @@ been timed on the engine; Fable measured it the same day, provisionally (a busy 
 1.4-1.5x a frame, but the EMITTED Zebra share only 1.4-1.7x (about a millisecond) -- the
 cost lands in the host's own Zig. A per-MODULE optimize mode does not split it (measured:
 runtime safety follows the compilation's mode); a per-FUNCTION `@setRuntimeSafety(true)`
-emitted by codegen does, so the Zebra code can trap under a ReleaseFast build for about a
-millisecond a frame (BUG-667 has the numbers and the toy). V has no such switch: `-prod`
-keeps bounds checks and nothing checks overflow. To be re-measured on a quiet machine.
+emitted by codegen does, so the Zebra code can trap under a ReleaseFast build. Re-measured
+by CPU time over identical replayed frames: whole-build ReleaseSafe 1.16-1.24x, the
+emitted Zebra's own share 1.13x -- about a tenth of a millisecond a frame on the engine
+(BUG-667 has the numbers and the toy). V has no such switch: `-prod` keeps bounds checks
+and nothing checks overflow.
 
 **Fable's measurements, the engine's side** (2026-10-29, numbers measured unless marked):
 Boehm holds memory flat at 60 fps but stops the world every 1-2 s for 31-93 ms (one
