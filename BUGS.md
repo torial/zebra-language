@@ -89,11 +89,24 @@ overflow traps only in Zig Debug.
 the ratios are a bound, not a number).** Same tree, mm autoplay 60 s under `--profile`, two
 uncontended pairs of three: whole frame 1.42-1.51x ReleaseFast (15.0 -> 21.3 ms at a fixed
 High tier); by section the EMITTED Zebra scripts 1.4-1.7x (about one millisecond a frame),
-the host's hand-written Zig far more (gui 3.4-4.2x, render 1.8-2.3x). Zig build modules take
-their own optimize mode, so a host can build the emitted modules ReleaseSafe and itself
-ReleaseFast -- option (b) applied to the Zebra code only, trap | trap on nil and overflow
-for ~1 ms a frame. Not yet built or measured that way; a clean pair wants a quiet machine
-and process CPU time over a fixed-dt replay rather than wall-clock windows.
+the host's hand-written Zig far more (gui 3.4-4.2x, render 1.8-2.3x).
+
+**A per-MODULE optimize mode does NOT split safety -- measured, and the first reading said
+otherwise.** It was proposed the same day that a host could build the emitted modules
+ReleaseSafe and itself ReleaseFast. Fable's toy (a ReleaseSafe dependency of a ReleaseFast
+root, a run-time nil and a u8 overflow behind a volatile read) says no: the dependency
+reports `builtin.mode == .ReleaseSafe` and still carries on (`x.?` on nil printed 7, the
+add wrapped to 255); with both modules ReleaseSafe it panics. The engine agreed: its build
+with the emitted modules marked ReleaseSafe had a `.text` byte-identical to plain
+ReleaseFast. Runtime safety follows the COMPILATION's mode; the module field changes only
+what `builtin.mode` reports. So the option was reverted on the engine side.
+
+**What does split it is per-FUNCTION:** codegen emitting `@setRuntimeSafety(true);` as the
+first statement of every emitted function puts the checks in the Zebra code alone under a
+ReleaseFast build -- a one-line codegen change, at about the scripts section's 1.4-1.7x
+(~1 ms a frame on the engine; to be re-measured on a quiet machine with process CPU time
+over a fixed-dt replay). That is option (a)'s cheapest form: Zig's own checks, switched on
+where Zebra's code is, rather than hand-emitted ones.
 
 **Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
 an overflow leg as it gained the bounds and conversion legs.

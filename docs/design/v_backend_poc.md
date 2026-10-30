@@ -2407,9 +2407,11 @@ a trap and a wrap, not a trap and undefined behaviour. **The engine SHIPS in the
 mode, ReleaseSafe -- optimised with the checks kept, trapping on both probes -- has never
 been timed on the engine; Fable measured it the same day, provisionally (a busy host):
 1.4-1.5x a frame, but the EMITTED Zebra share only 1.4-1.7x (about a millisecond) -- the
-cost lands in the host's own Zig. Since a Zig build module takes its own optimize mode, the
-emitted modules can be ReleaseSafe beside a ReleaseFast host, answering BUG-667/668 for
-the Zebra code by BUILD MODE (numbers in BUG-667). To be re-measured on a quiet machine.
+cost lands in the host's own Zig. A per-MODULE optimize mode does not split it (measured:
+runtime safety follows the compilation's mode); a per-FUNCTION `@setRuntimeSafety(true)`
+emitted by codegen does, so the Zebra code can trap under a ReleaseFast build for about a
+millisecond a frame (BUG-667 has the numbers and the toy). V has no such switch: `-prod`
+keeps bounds checks and nothing checks overflow. To be re-measured on a quiet machine.
 
 **Fable's measurements, the engine's side** (2026-10-29, numbers measured unless marked):
 Boehm holds memory flat at 60 fps but stops the world every 1-2 s for 31-93 ms (one
