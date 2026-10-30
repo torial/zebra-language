@@ -77,6 +77,10 @@ confirmed via `tools/bootstrap_check.sh`.
   so declaration order no longer matters. A read of a computed module var or static costs
   a load and a compare (~0.7 ns in `--release`) and can no longer be hoisted out of a loop.
 
+- **An exhaustive `branch` with an `else` compiles in a program with an import cycle
+  (BUG-666)**: closing the cycle registered already-compiled modules' unions twice, so the
+  `else` was kept and zig refused it ("unreachable else prong").
+
 - **An import cycle among `--module-path` dependencies is reported (BUG-295)**: as a
   warning, once, advising to report it upstream; it was invisible. A cycle reached through
   two `use` lines of the same module is reported once rather than twice.

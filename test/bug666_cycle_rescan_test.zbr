@@ -1,0 +1,22 @@
+# BUG-666: when an import cycle closes, the module that closes it is scanned for its
+# types, and that scan walked on into modules ALREADY compiled -- here the union module --
+# registering their unions a second time. A branch naming every variant then looked
+# partial, kept its `else`, and zig refused it ("unreachable else prong"). Found by
+# closing a cycle in the compiler's own source (TypeChecker <-> CgHelpers).
+use bug666_cycle_rescan_shape exposing Shape
+use bug666_cycle_rescan_lib
+
+def offset(): int
+    return 1
+
+def area(s: Shape): int
+    branch s
+        on Shape.circle as r
+            return r * r
+        on Shape.square as w
+            return w * w
+        else
+            return 0
+
+def main()
+    print("bug666: ${area(Shape.circle(3))} ${area(Shape.square(2))} ${bug666_cycle_rescan_lib.twice(4)}")

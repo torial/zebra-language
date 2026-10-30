@@ -1,0 +1,4 @@
+# The union module of bug666_cycle_rescan_test -- compiled before the cycle closes.
+union Shape
+    circle: int
+    square: int

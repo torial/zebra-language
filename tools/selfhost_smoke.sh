@@ -948,6 +948,10 @@ smoke_run test/bug664_same_name_test.zbr "bug664-same: 4 1 40 3 43 2"
 # refused it at line 12 on HEAD 3ca3094. `mixed` is the control: it reads an instance
 # field too, so `self` is used and a discard would be "pointless discard".
 smoke_run test/bug665_static_only_method_test.zbr "bug665: 5 2 6 12"
+# BUG-666: closing an import cycle type-scans the closing module, and that scan re-walked
+# already-compiled modules, registering their unions twice -- an exhaustive branch kept
+# its `else` and zig refused it ("unreachable else prong"), red at line 17 before the fix.
+smoke_run test/bug666_cycle_rescan_test.zbr "bug666: 9 4 9"
 
 # ── BUG-274 / BUG-296: `_ = self;` and `_ = p;` vs what the walker can SEE ──────
 # exprMentionsThis defaults to FALSE and its answer drives `_ = self;`, so a variant it

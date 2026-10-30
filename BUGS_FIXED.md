@@ -6,6 +6,26 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-666: closing an import cycle re-registered already-compiled modules' unions, so an exhaustive `branch` kept an `else` zig refused -- FIXED 2026-10-29 (found the same day)
+
+When `compileDep` re-enters a module still in progress (a cycle), it type-scans that
+module (`scanDepForTypes`, so the importer's uses of it are typed), and the scan recursed
+into the module's own adjacent `use`s -- including modules compileDep had ALREADY compiled
+and registered. Each was populated into `dep_types` again, so a union's variant list
+doubled; `branchCoversAllVariants` then compared the arms against twice the real count,
+judged an exhaustive branch partial, kept its `else`, and zig refused it ("unreachable else
+prong; all cases already handled") -- a message about code the user did not write.
+
+**Found by re-running BUG-295 (1)'s August setup**: closing the TypeChecker <-> CgHelpers
+cycle in the compiler's own source no longer built at all. The scan now skips an adjacent
+module that compileDep already visited -- its types are in `dep_types` already. Fixture
+`test/bug666_cycle_rescan_test.zbr` (root, a union module compiled first, and a lib that
+imports the root): red on `f28218a` at line 17 with the zig error, `bug666: 9 4 9` after.
+With the guard the compiler containing that cycle builds, runs, and passes the full
+round-trip. Not checked: whether other per-module registrations (class fields, ref fields)
+were also doubled and harmless -- the guard removes the second registration for all of
+them.
+
 ### BUG-665: an instance method that reads only STATIC members failed inside zig -- "unused function parameter" -- FIXED 2026-10-29 (found the same day)
 
 ```zebra

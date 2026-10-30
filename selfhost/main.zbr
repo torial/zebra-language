@@ -802,8 +802,16 @@ class MultiCompiler
                             if sub_dir != ""
                                 sub_adj = sub_dir + "/" + sub_name + ".zbr"
                             if fileExistsExact(sub_adj)
-                                .noteScanCycle(sub_adj)
-                                .scanDepForTypes(sub_adj)?
+                                # BUG-666: a module compileDep already compiled is in
+                                # dep_types; scanning it again registered its union
+                                # variants twice, so a branch covering every variant
+                                # looked partial and kept an `else` zig refuses. That
+                                # happens whenever a cycle sends the scan back through
+                                # compiled modules (the compiler's own TypeChecker <->
+                                # CgHelpers cycle failed to build exactly so).
+                                if not .alreadyVisited(sub_adj)
+                                    .noteScanCycle(sub_adj)
+                                    .scanDepForTypes(sub_adj)?
                             else if module_path != ""
                                 var sub_mp: str = module_path + "/" + sub_name + ".zbr"
                                 if fileExistsExact(sub_mp)

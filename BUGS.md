@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-665. Next new bug: BUG-666.**
+**Last bug number generated: BUG-666. Next new bug: BUG-667.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -341,6 +341,17 @@ canonical cycle key, so a cycle reached twice (two `use` lines of one module, or
 and the type scan) prints once; the duplicate warning was visible in
 `bug664_cycle_static_test`. Pinned by two `cli-surface` legs, red before the fix (0
 warnings; 2 warnings).
+
+**(1) NOT REPRODUCED 2026-10-29, on two compilers.** The August setup -- the bare
+`use CgHelpers exposing <fn>` in `TypeChecker.zbr`, zero call sites, closing the
+TypeChecker <-> CgHelpers cycle -- was re-run. On today's tree it did not overflow: it did
+not BUILD, because closing the cycle hit BUG-666 (an `else` zig refused). With BUG-666's
+one-line guard, the cycle compiler builds and runs hello-world on `f28218a` (first-use
+initialisation everywhere) AND on `249e246` (before any first-use initialisation), and on
+`f28218a` it passes the full `rebuild.sh` round-trip -- a compiler whose own source holds
+an import cycle regenerates itself byte-identically. So first-use initialisation is not
+what removed the overflow; whatever caused it in August (Zig 0.16, the bootstrap as regen
+authority) is no longer present, and nothing here says what it was.
 
 **What remains open:** (1) the compiler-scale stack
 overflow, never reproduced below compiler scale; (3) a class's deferred `static var`
