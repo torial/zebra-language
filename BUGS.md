@@ -108,6 +108,17 @@ ReleaseFast build -- a one-line codegen change, at about the scripts section's 1
 over a fixed-dt replay). That is option (a)'s cheapest form: Zig's own checks, switched on
 where Zebra's code is, rather than hand-emitted ones.
 
+**Re-measured the same evening by CPU time (Fable; the replay of one 60 s autoplay, 2,843
+identical frames, process CPU via GetProcessTimes, a sampler naming the noise).** Whole
+build ReleaseSafe against ReleaseFast: min of three full runs 1.16x and 1.19x over two
+batches (22.5 / 21.3 s against 26.1 / 25.3 s); per frame with startup removed 1.24x (6.85
+-> 8.47 ms CPU). By section, the least-contended run of each build: the EMITTED Zebra
+scripts 1.13x (0.98 -> 1.10 ms), gui 3.3x, render 1.7x, whole frame 1.10x. So the
+autoplay pairs' 1.4-1.7x for the scripts was the busy host; under identical frames the
+Zebra code's checks cost about a tenth of a millisecond a frame, and the per-function
+route is the cheap one. The noise source this time was named: a webview process took 2.4
+cores for twenty seconds mid-batch.
+
 **Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
 an overflow leg as it gained the bounds and conversion legs.
 
