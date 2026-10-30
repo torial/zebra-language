@@ -85,6 +85,16 @@ Debug, Zig `--release`, V tcc, V clang `-prod`); `300.toUint8()` traps on Zig an
 mapped by the V emitter; a nil unwrap traps in all but Zig `--release` (BUG-668); integer
 overflow traps only in Zig Debug.
 
+**ReleaseSafe measured on the engine (Fable, 2026-10-29; PROVISIONAL -- a busy host, so
+the ratios are a bound, not a number).** Same tree, mm autoplay 60 s under `--profile`, two
+uncontended pairs of three: whole frame 1.42-1.51x ReleaseFast (15.0 -> 21.3 ms at a fixed
+High tier); by section the EMITTED Zebra scripts 1.4-1.7x (about one millisecond a frame),
+the host's hand-written Zig far more (gui 3.4-4.2x, render 1.8-2.3x). Zig build modules take
+their own optimize mode, so a host can build the emitted modules ReleaseSafe and itself
+ReleaseFast -- option (b) applied to the Zebra code only, trap | trap on nil and overflow
+for ~1 ms a frame. Not yet built or measured that way; a clean pair wants a quiet machine
+and process CPU time over a fixed-dt replay rather than wall-clock windows.
+
 **Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
 an overflow leg as it gained the bounds and conversion legs.
 
