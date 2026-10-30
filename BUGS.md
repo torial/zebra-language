@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-667. Next new bug: BUG-668.**
+**Last bug number generated: BUG-668. Next new bug: BUG-669.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -63,7 +63,9 @@ def main()
 Debug: `panic: integer overflow`. `zebra --release`: `y=9223372036854775807` -- neither
 the trap nor the wrapped value (`-9223372036854775808`): `--release` passes `-OReleaseFast`,
 where Zig treats `+` overflowing as undefined behaviour, so the optimiser may assume it
-never happens. Measured with `n` printed (`n=1`), so the addend is not a constant fold.
+never happens. The emit is a plain `const y: i64 = (x + n);` -- no Zebra helper is in the
+path, so the wrong value is Zig's UB and not our runtime's. Measured with `n` printed
+(`n=1`), so the addend is not a constant fold.
 
 The same class as BUG-313 (raw indexing unchecked under ReleaseFast), which was answered
 for indexing only; BUG-534 answered it for the `toInt8..toUint64` conversions. Arithmetic
@@ -73,11 +75,43 @@ was never decided -- no ledger entry, design note or finding mentions it.
 with a trap), as BUG-313 did for indexing -- the release keeps the trap and pays per
 operation; (b) `--release` uses ReleaseSafe -- every Zig safety check back, at its cost;
 (c) wrapping as the defined semantics -- a language decision, and the one V makes. Whatever
-is chosen is also what a V backend must emit: V's integers wrap silently, so (a) or (c)
-there too.
+is chosen is also what a V backend must emit. Measured on V ee6d62a (the engine's pin),
+not assumed: the same program through `--target v` WRAPS, `got=-9223372036854775808`,
+under tcc and under clang `-prod` alike -- no trap on either. So (a) or (c) there too.
+
+The G1 matrix that found this and BUG-668 (2026-10-29; five probes, each with a
+run-time operand): divide by zero and index past the end trap in all four builds (Zig
+Debug, Zig `--release`, V tcc, V clang `-prod`); `300.toUint8()` traps on Zig and is not
+mapped by the V emitter; a nil unwrap traps in all but Zig `--release` (BUG-668); integer
+overflow traps only in Zig Debug.
 
 **Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
 an overflow leg as it gained the bounds and conversion legs.
+
+### BUG-668: a nil unwrap (`x!`) is unchecked in a `--release` build -- it reads garbage and carries on
+
+- **Severity:** High -- gate G1, the quiet kind.
+- **Status:** OPEN. Found 2026-10-29 by the G1 matrix (BUG-667's entry).
+
+```zebra
+def main()
+    var s: str? = nil
+    if sys.args().count() > 5
+        s = "x"
+    var t: str = s!
+    print("got=${t.len}")
+```
+
+Debug: `panic` at the unwrap. `zebra --release`: `got=0`, exit 0. The emit is
+`const t: []const u8 = s.?;` -- Zig checks `.?` in Debug and ReleaseSafe and not in
+ReleaseFast, which `--release` passes: BUG-313's class again, for the non-nil assertion.
+The V backend's release lane TRAPS here (`V panic: nil unwrapped at g1_nil.zbr:5`, clang
+`-prod`), because CodeGenV routes every narrowed read through `zunwrap_at` -- the shape the
+Zig side's fix can copy: an explicit check that names the place, as BUG-313 did for `.at()`.
+
+**Control when fixing:** the program above in both modes; `release-mode` gains the leg.
+
+---
 
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
 
