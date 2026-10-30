@@ -2373,8 +2373,8 @@ Fable's alternative stated as Fable's. Nothing below is decided.
 |---|---|---|
 | the compiler through the V route | builds; its emit byte-identical to the Zig-built compiler's; 2 refusals (its two `zig` literals) | 10-20, above |
 | the engine's Zebra roots | 92 identical, 2 refused, 1 differs (hash order) of 95 | 10-20, above |
-| the engine's HOST | ported to V (`host_v/`), headless and windowed; every V row green on V master ee6d62a | Fable, V_HOST_PORT.md, 10-27 |
-| **the test corpus** (new) | of smoke's 598-file positive set: **436 emit with nothing refused** (73 %, an UPPER bound -- not yet built or run), 156 refuse something, 6 fail to emit (FFI / native-Zig deps) | 2026-10-29 |
+| the engine's HOST | ported to V (`host_v/`), headless and windowed; every V row green on V master ee6d62a; the last unported pieces (quality tiers with the Auto benchmark, thumbnail, scene hot reload, gamepad) in since engine eef259a, four witness rows and four controls identical -- only the Zig host's sandbox scene stays out, by design | Fable, V_HOST_PORT.md, 10-27 / 10-30 |
+| **the test corpus** (new) | of smoke's 598-file positive set: 436 emit with nothing refused, 156 refuse something, 6 fail to emit (FFI / native-Zig deps). **Built and run, of the 436: 237 print exactly what the Zig build prints (clang lane; 235 tcc) -- 40 % of the positive set**; 152 do not build under V; 34 differ | phase 1 10-29, phase 2 10-30 (below) |
 | the G1 matrix (new) | see below | 2026-10-29 |
 | the release-mode compile of the compiler | V clang `-prod -prealloc` 1.1x the Zig ReleaseFast emit, time and memory | 10-20, above |
 
@@ -2425,6 +2425,73 @@ the pin (#31373); master moves ~50 commits a day and a pin move costs hours; war
 that spell `int *` as `&int`; 0.5.2 is still the latest release, so a release must VENDOR a
 master commit (the vc C sources and thirdparty/sqlite).
 
+**The corpus, built and run (phase 2, 2026-10-30).** Every one of the 436 files that emit
+with nothing refused, built under V ee6d62a9c8 in two lanes -- tcc (`-gc none
+-enable-globals`) and clang (llvm-mingw 23.1.3, the same plus `-cflags
+-Wno-error=incompatible-pointer-types`), debug, no `-prod` (Fable's two conditions) -- run
+with stdin closed, and its stdout and exit code diffed against the Zig build of the same
+file run then. A positive control (`examples/v_poc.zbr`) had to come out identical in both
+lanes, or the harness refused to report; it did, and it caught the harness's own parsing
+bug on the first trial. Emitter: zebra.exe at 6e8527f.
+
+| over the 436 | tcc | clang |
+|---|---|---|
+| identical | 235 | 237 |
+| differ only in digit runs (timings, addresses -- triaged, not passed) | 8 | 9 |
+| differ | 33 | 34 |
+| V refuses to build the emitted code | 156 | 152 |
+| crash (bug339: invalid memory access in a class field's ctor init; bug326: sys.exit range) | 2 | 2 |
+| no control (the Zig run itself failed or timed out) | 2 | 2 |
+
+The lanes agree on 431 of 436; the four disagreements are tcc's C front end ("too many
+arguments to function", and a `notice` it treats as fatal), not the emitted code.
+
+**What it found, three things worth more than the counts:**
+
+1. **Thirteen of the 33 "differ" rows printed NOTHING and exited 0.** A root whose entry is
+   a class `static def main` (the Zig backend's BUG-539 entry) got its method emitted and no
+   V `fn main`, so V built a program that ran nothing -- the icons_test shape of
+   2026-10-15 again, in a second form. FIXED the same night: CodeGenV emits `fn main` ->
+   `zglobals_init()` -> `<cls>_main()`. Of the thirteen, twelve are now identical; the
+   thirteenth (ctor_arg_ref_test) now reaches tcc's arity error, hidden until now by the
+   silence. `examples/v_poc9.zbr` pins it in
+   `tools/v_check.sh`; red-checked against the pre-fix compiler (no `fn main`, no output,
+   exit 0).
+2. **"Nothing refused" does not mean "builds": 152 of the 436 do not.** The largest causes
+   are runtime surface the emitter WRITES and `zebra_rt.v` does not DEFINE: stdlib
+   namespaces (Regex 5, ThreadPool 5, Build 3, Csv / Base64 / Progress 2 each; Uri, Udp,
+   Net, Crypto, Compress, Reflect, Mime 1 each), `List.contains` 5, Map members 4,
+   `char.isAlpha` 3, `str.tokenize` / `padLeft` / `isEmpty` / `codePointCount`,
+   `List.any`. Then typing the emitter gets wrong for V: a closure's copy of a captured
+   local is immutable (8), Option / Result propagation (~12), return and argument type
+   mismatches (12). The emitter's report says "the whole file is in the subset" for every
+   one of them, which is a green from an instrument that never saw red. **Proposed (Fable
+   and Opus agree): the emitter refuses a call into a runtime name `zebra_rt.v` does not
+   define, the list DERIVED from the runtime file rather than kept by hand**, so the 152
+   become refusals that name what is missing.
+3. **The V route had stopped building, unnoticed.** Since 9bc1796 (BUG-565) the parser's
+   `@[...]` arm kept its old body after the new `raise`; Zebra and the Zig backend accept
+   that, and V refuses it as unreachable code, so the V-built compiler, the selfhost dumps that
+   share the parser and the LSP leg all failed. `tools/v_check.sh` would have said so on
+   any run, and it is in no tier. FIXED: CodeGenV stops a statement list at a `return` or
+   `raise`; v_check is 20 / 20 again.
+
+**The real output differences that remain** (each one file unless counted): an optional
+printed as `Option(x)` where Zig prints `x` (3); a list or struct printed as V's own dump
+(`&ZList[f64]{`, `&Pt(3)`) where Zig prints `[2.0, 2.5]` / `Pt(3)` (5); a tuple as
+`&(3, 4)`; format specs (`+`, zero padding with a sign); float rounding (0.13 against 0.12,
+3 against 2 -- V and Zig round a tie differently; Fable notes the engine prints positions
+on a grid where exact ties occur, so a tie test on both backends is owed, with the Zig
+backend's answer as the rule); `for ... else` (-1 against 0); indexing a `str` (`e`
+against 101); struct field defaults read as zero (bug603); a char in an interpolation (char_literal_test,
+an assert, exit 1); a method value printed as
+`fn () i64`; percent-decoding; `tryDelete` on an absent path.
+
+The harness hung once: `ws_smoke_test`'s Zig control outlived its timeout as a grandchild
+holding the output pipe, and only the parent was killed. The census script now kills the
+process tree, checked with the real shape (a `zebra` run whose program outlives it: the
+old code waited the program's whole 42 s, the new one returned at its 20 s timeout).
+
 ### What decides it, by PRINCIPLES.md (gates first, then the axes in order)
 
 - **G1, safety.** Not a V-specific blocker: V traps what Zig's release lane drops on nil,
@@ -2457,10 +2524,12 @@ the order they pay:
    same semantics in CodeGenV (overflow; `toUint8` and its family mapped). Witness: the G1
    matrix as a gate over both backends.
 2. **Corpus parity (weeks; mapping work, per the earlier estimate).** Phase 2 of the census
-   -- build, run and diff the positive set against the Zig output, on ee6d62a, tcc and
-   clang, no `-prod` in the diff rows (Fable's two conditions) -- then burn the refusal list
-   down in the order above. Witness: a V corpus ladder in the tiers; exit at the positive
-   set identical bar the documented harness skips.
+   is done (above): 237 of 598 identical. First make "nothing refused" mean "builds" (the
+   emitter refuses what the runtime does not define, derived from `zebra_rt.v`), then burn
+   down the refusals in the order above and the 34 output differences. Witness: a V corpus
+   ladder in the tiers -- and `tools/v_check.sh` in one now, since it caught a broken route
+   that nothing else saw; exit at the positive set identical bar the documented harness
+   skips.
 3. **Memory without pauses (the long pole; a design, not a mapping).** memory_model.md §6
    (RC for classes, arenas) emitted by CodeGenV over `-gc none`. Witness: the engine's
    autoplay at 60 fps with bounded memory and a frame-pause bound the budget guard checks

@@ -580,6 +580,8 @@ class VGen
         # 2026-10-15): a green from a runner that never ran.
         var root_main: bool = false
         var root_tests: List(str) = List(str)()
+        var class_main: str = ""
+        var class_main_throws: bool = false
         for d in ms.at(last).decls
             branch d
                 on Decl.method as rm
@@ -587,9 +589,33 @@ class VGen
                         root_main = true
                     if rm.name.startsWith("test_")
                         root_tests.add(rm.name)
+                on Decl.class_ as rc
+                    for mem in rc.members
+                        branch mem
+                            on Decl.method as cm
+                                if cm.mods.is_static and cm.name == "main" and cm.params.count() == 0 and class_main == ""
+                                    class_main = snakeCase(rc.name) + "_main"
+                                    class_main_throws = cm.throws_
+                            else
+                                pass
                 else
                     pass
-        if not root_main and root_tests.count() > 0
+        # a root whose entry is a class `static def main` (the Zig backend's
+        # BUG-539 entry): V's own main calls it. Without this V built an exe that
+        # ran nothing and exited 0 -- 13 corpus programs printed nothing under
+        # the V census of 2026-10-30, the icons_test shape again.
+        if not root_main and class_main != ""
+            .line("// the root's entry is a class static main")
+            .line("fn main() {")
+            if .has_globals
+                .line("\tzglobals_init()")
+            if class_main_throws
+                .line("\t" + class_main + "() or { zbr_panic(err.msg()) }")
+            else
+                .line("\t" + class_main + "()")
+            .line("}")
+            .line("")
+        if not root_main and class_main == "" and root_tests.count() > 0
             .line("// no main: the test_ defs run in order (zebra test on the V target)")
             .line("fn main() {")
             if .has_globals
@@ -2124,6 +2150,13 @@ class VGen
         var i: int = 0
         for s in stmts
             .genStmt(s)
+            # a statement after a return or a raise never runs, and V refuses it
+            # ("unreachable code"): not emitted, as the Zig backend does not emit
+            # it either (the parser's `@[...]` arm kept its old body after the
+            # BUG-565 raise, and the route stopped building under V, 2026-10-30)
+            if (s is Stmt.return_ or s is Stmt.raise_) and i + 1 < stmts.count()
+                .line("// (" + (stmts.count() - i - 1).toString() + " unreachable statement(s) after it: not emitted)")
+                break
             branch s
                 on Stmt.var_ as v
                     # a local nothing after it READS (an assignment is no read to V):
