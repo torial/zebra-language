@@ -2509,8 +2509,8 @@ old code waited the program's whole 42 s, the new one returned at its 20 s timeo
 
 - **G1, safety.** Not a V-specific blocker: V traps what Zig's release lane drops on nil,
   and both drop overflow. It IS a blocker for shipping either until BUG-667 and BUG-668 are
-  answered -- and Sean's answer to BUG-667 (trap or wrap) is what BOTH emitters must then
-  spell.
+  answered -- and Sean's answer to BUG-667 (2026-10-30: TRAP, with explicit wrapping
+  operations) is what BOTH emitters must now spell.
 - **Axis 1, predictability of cost -- the real wall.** PRINCIPLES names GC pauses among the
   things the axes reject, and Boehm's are measured at tens of milliseconds. `-gc none`
   never frees; `-prealloc` never frees. So V as the ONLY backend needs Zebra to emit its
@@ -2566,18 +2566,22 @@ should not regress safety or cost predictability for anyone who did not choose i
 
 ### Decisions that are Sean's
 
-Answered 2026-10-30 (Sean), except where marked open:
+Answered 2026-10-30 (Sean):
 
-1. **BUG-667's semantics** -- OPEN. Integer overflow traps (and is paid for in release) or
-   wraps (defined, as V does). It binds both backends. Sean leans wrap and is open to trap;
-   the case each way is in BUG-667. Whichever is chosen, today's Zig `--release` (undefined
-   behaviour, neither a trap nor a wrap) is the one answer that is not on the table.
+1. **BUG-667's semantics** -- DECIDED: integer overflow TRAPS by default, in release too,
+   on both backends; wrapping is available as explicit operations for code that means it.
+   So the Zig `--release` emit owes a checked form (per-function `@setRuntimeSafety(true)`
+   is the candidate; the emitted share's checks cost ~0.1 ms/frame on the engine under
+   ReleaseSafe, and the per-function form itself is not yet timed), and CodeGenV owes
+   checked arithmetic, since V
+   wraps. Neither is built yet; the G1 matrix row stays red until both are.
 2. **The release question** -- DECIDED: the next release does NOT wait for V.
 3. **`zig"..."`'s successor** -- DECIDED: `v"..."`, the same escape with V as its
    language. How the two coexist while both backends ship (each refused by the other
    backend, by name, is the obvious rule) is not yet designed.
-4. **The memory model's priority**: under this plan RC/arenas (item 3) is on the critical
-   path to V, not a later refinement. -- OPEN.
+4. **The memory model's priority** -- DECIDED: reference counting for classes and arenas
+   are on the critical path to V, not a later refinement (Sean: "necessary to maintain an
+   approximate consistency of experience" between the backends). Not started.
 5. **The platforms 1.0 promises** -- DECIDED: Windows, macOS, Linux and Vinix (V's own
    operating system, which runs Alpine Linux packages); AMD64 and ARM64 ideally; RISC-V
    nice to have, very low priority. Today's coverage (`.github/workflows/release.yml`, the

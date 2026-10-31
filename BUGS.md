@@ -50,7 +50,10 @@
 
 - **Severity:** High -- gate G1 ("safety holds at run time; there is no switch to turn it
   off"), and the failure is the quiet kind: a plausible wrong value, exit 0.
-- **Status:** OPEN. Found 2026-10-29 while comparing what the Zig and V backends promise.
+- **Status:** OPEN; semantics DECIDED 2026-10-30 (Sean): overflow TRAPS by default, in
+  release too, on both backends, with explicit wrapping operations for code that means to
+  wrap (option (a) below). Not implemented on either backend. Found 2026-10-29 while
+  comparing what the Zig and V backends promise.
 
 ```zebra
 def main()
