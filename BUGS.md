@@ -122,6 +122,12 @@ cores for twenty seconds mid-batch.
 **Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
 an overflow leg as it gained the bounds and conversion legs.
 
+**Decision state (2026-10-30):** Sean leans WRAP and is open to TRAP; still open. Both
+backends must give the same answer, and today's Zig `--release` (undefined behaviour) is
+the one answer not on the table. Wrap on the Zig side means emitting `+%` / `-%` / `*%`
+explicitly (a plain `+` under ReleaseFast stays UB); V already wraps. Trap on the V side
+means emitting checked arithmetic, whose cost there is not measured.
+
 ### BUG-668: a nil unwrap (`x!`) is unchecked in a `--release` build -- it reads garbage and carries on
 
 - **Severity:** High -- gate G1, the quiet kind.

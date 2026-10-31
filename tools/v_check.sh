@@ -80,6 +80,22 @@ printf 'def main()\n    var x: int? = nil\n    if sys.args().count() > 100\n    
 if [ "$zrc" = 0 ] || [ "$vrc" = 0 ]; then echo "nil_at: FAILED -- a nil unwrapped must die on both backends (zig exit $zrc, v exit $vrc)"; fail=1
 elif grep -q 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt"; then echo "nil_at: ok -- V says: $(grep -m1 -o 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt") (zig exit $zrc, v exit $vrc)"
 else echo "nil_at: FAILED -- V died without naming the place:"; head -3 "$OUT/nil_at_v_err.txt" | cut -c1-160; fail=1; fi
+echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
+rows=$((rows + 1))
+# three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v
+# does not declare, a Zebra method passed through onto a V string; and a control that
+# is fully mapped and must stay clean (a refusal there is a false positive)
+printf 'def main()\n    var r = Regex.compile("a+")\n    var xs = [1, 2, 3]\n    print(xs.any(def(x) = x > 2).toString())\n    print("abc".tokenize(",").count().toString())\n' > "$OUT/rt_names.zbr"
+printf 'def main()\n    var xs = [1, 2, 3]\n    print(xs.count().toString() + " " + "banana".count("na").toString())\n' > "$OUT/rt_names_ok.zbr"
+(cd "$OUT" && "$ZEBRA" --target v rt_names.zbr > "$OUT/rt_names_emit.txt" 2>&1)
+(cd "$OUT" && "$ZEBRA" --target v rt_names_ok.zbr > "$OUT/rt_names_ok_emit.txt" 2>&1)
+missing=""
+grep -q 'Regex.compile (the V runtime has no Regex' "$OUT/rt_names_emit.txt" || missing="$missing Regex"
+grep -q '`ZList.any_` (the emitter writes it; zebra_rt.v declares no such method)' "$OUT/rt_names_emit.txt" || missing="$missing ZList.any"
+grep -q 'string.tokenize (no mapping' "$OUT/rt_names_emit.txt" || missing="$missing str.tokenize"
+if [ -n "$missing" ]; then echo "rt_names: FAILED -- not refused:$missing"; grep -E '^  |^    ' "$OUT/rt_names_emit.txt" | head -5 | cut -c1-160; fail=1
+elif ! grep -q 'nothing refused' "$OUT/rt_names_ok_emit.txt"; then echo "rt_names: FAILED -- the mapped control was refused (a false positive):"; grep -E '^    ' "$OUT/rt_names_ok_emit.txt" | head -3 | cut -c1-160; fail=1
+else echo "rt_names: ok -- the three unmapped names refused by name, the mapped control clean"; fi
 echo "── stdin polled without blocking (the debugger bridge's readStdinAvailable / stdinClosed): the same bytes and the same hang-up on both backends ──"
 rows=$((rows + 1))
 printf 'def main()\n    var got: str = ""\n    var spins = 0\n    while true\n        var a = sys.readStdinAvailable()\n        if a != ""\n            got = got + a\n        else if sys.stdinClosed()\n            break\n        else\n            spins = spins + 1\n            sys.sleep(5)\n            if spins > 400\n                print("gave up")\n                break\n    print("got [" + got + "] closed " + sys.stdinClosed().toString())\n' > "$OUT/poll_in.zbr"

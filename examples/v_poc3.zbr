@@ -77,4 +77,6 @@ def main()
     assert back == "hello there", "read back: " + back
     assert Path.stem("a/b/file.zbr") == "file" and Path.basename("a/b/file.zbr") == "file.zbr" and Path.dirname("a/b/file.zbr") == "a/b", "the path parts"
     print("file: " + back + " " + Path.stem("a/b/file.zbr"))
+    File.delete(tmp)
+    assert not File.exists(tmp), "the scratch file is gone after the delete"
     print("v_poc3: all ok")

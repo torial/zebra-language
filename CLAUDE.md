@@ -78,6 +78,7 @@ bash tools/gates.sh            # QUICK (~14 min): + smoke + round-trip. After an
 bash tools/gates.sh --full     # FULL (~40 min): + the heavy corpus witnesses
 bash tools/gates.sh --daily    # DAILY: + gramgen, leakgen, gui-scaffold(+panel), node-addon. Once a day
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
+bash tools/gates.sh --v        # THE V BACKEND alone: a focus set, OFF the ladder (needs a V install)
 ```
 
 `rebuild.sh` exists because the regen sequence has four footguns that have each
@@ -240,6 +241,25 @@ per-tier counts, computed from the registrations rather than written down.
 | (default) | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
 | `--full` | 48 <!-- doc-gen: 48 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
 | `--daily` | 59 <!-- doc-gen: 59 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+
+**`--v` IS A FOCUS SET, NOT A RUNG (2026-10-30, Sean: "a tier with a V-specific focus").**
+It runs only the gates registered `run_v` -- today one, `v-check`
+<!-- doc-gen: 1 = grep -cE '^[[:space:]]*(run|pin)_v "' tools/gates.sh --> -- and no ladder
+tier runs or counts them, because they need a V toolchain the ladder does not and answer a
+different question. `v-check` is `tools/v_check.sh` under the V the engine pins (ee6d62a;
+`V=<v.exe>` overrides): the v_poc examples and the five selfhost dumps emitted to V, built
+and run, each diffed against a FRESH Zig run; the route's modules (CodeGen, Checker, main)
+within their refusal baseline and `v -check` clean; a nil unwrap naming its place; stdin
+polled without blocking; the V-built compiler answering the LSP; a runtime name
+`zebra_rt.v` does not define refused by name, with a mapped control that must stay clean. It
+REFUSES (exit 2) when
+that V is not installed, and a Zig control that printed nothing is a failure, never a pass.
+Eleven to sixteen minutes on a loaded afternoon: twice standalone at 20 rows (V 0.5.2 and
+ee6d62a), then 964 s as the tier's first run, at 21. WHY IT EXISTS: it sat in no tier from 2026-10-20, and the V route was broken from
+9bc1796 until the corpus census happened to build it -- `v_check` would have said so on any
+run. CANNOT SEE: the corpus (the census in `docs/design/v_backend_poc.md` is not a gate),
+any `-prod` build, and every OS but Windows. Run it after a `CodeGenV.zbr` or
+`zebra_rt.v` edit.
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,

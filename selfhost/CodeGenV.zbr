@@ -20,6 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
+use TypeChecker exposing namespaceMembers
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
@@ -45,13 +46,15 @@ class VResult
     var needs_math: bool
     var has_globals: bool    # a `__global` was emitted: the run needs -enable-globals
     var uses_gui: bool       # Gui / CodeEditor named: the file needs a --gui-backend section to build
+    var unverified: int      # method calls on a receiver whose type the emitter did not know: not checked against the runtime
 
-    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false)
+    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false, unverified: int = 0)
         .source = source
         .refused = refused
         .needs_math = needs_math
         .has_globals = has_globals
         .uses_gui = uses_gui
+        .unverified = unverified
 
 # "setAnimate" -> "set_animate"; "winDist" -> "win_dist"; "x" -> "x"
 def snakeCase(name: str): str
@@ -168,6 +171,11 @@ class VGen
     var current_class: str        # "" outside a class
     var needs_math: bool
     var tmpN: int                 # the temporaries bound for mutating calls on call results
+    var rt_fns: HashMap(str, bool)       # the runtime's free functions, read from zebra_rt.v (noteRuntime)
+    var rt_types: HashMap(str, bool)     # the runtime's struct / type / enum / interface names, the same
+    var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
+    var rt_receivers: HashMap(str, bool) # the receiver types those methods hang on (a call on one is checked)
+    var rt_unverified: int               # method calls on a receiver of unknown type: unchecked, and counted
     var ref_params: HashMap(str, List(bool))   # by callee name (a function, `new_<class>`, a method): which params are references, hence `mut` (V's rule for a param mutated through a method; a method name shared across classes keeps the first)
 
     cue init()
@@ -229,9 +237,88 @@ class VGen
         .needs_math = false
         .tmpN = 0
         .ref_params = HashMap(str, List(bool))()
+        .rt_fns = HashMap(str, bool)()
+        .rt_types = HashMap(str, bool)()
+        .rt_methods = HashMap(str, bool)()
+        .rt_receivers = HashMap(str, bool)()
+        .rt_unverified = 0
 
     def refuse(what: str, span: Span)
         .refused.add(what + " (" + .current_file + ":" + span.line.toString() + ")")
+
+    # ── the runtime's names ────────────────────────────────────────────────
+    # What zebra_rt.v DEFINES, read from the runtime text itself rather than
+    # kept by hand: the emitter writes `zstr_pad_left(...)` or `l.contains(x)`
+    # on a ZList, and when the runtime has no such name the file used to be
+    # reported "nothing refused" and then failed in V (the 2026-10-30 census:
+    # 152 of 436 "clean" files did not build). A call the emitter writes into
+    # the runtime is checked against this table and refused, by name, when
+    # the runtime does not define it.
+    def noteRuntime(text: str)
+        for raw in text.split("\n")
+            var ln: str = raw
+            if ln.startsWith("pub ")
+                ln = ln.substring(4, ln.len)
+            if ln.startsWith("fn (")
+                var close: int = ln.indexOf(")")
+                if close > 4 and close + 2 < ln.len
+                    var recv: List(str) = ln.substring(4, close).split(" ")
+                    var ty: str = rtBaseType(recv.at(recv.count() - 1))
+                    var mname: str = identPrefix(ln.substring(close + 2, ln.len))
+                    if ty != "" and mname != ""
+                        .rt_methods.set(ty + "." + mname, true)
+                        .rt_receivers.set(ty, true)
+            else if ln.startsWith("fn ")
+                var fname: str = identPrefix(ln.substring(3, ln.len))
+                if fname != ""
+                    .rt_fns.set(fname, true)
+            else
+                for kw in ["struct ", "type ", "enum ", "interface "]
+                    if ln.startsWith(kw)
+                        var tname: str = identPrefix(ln.substring(kw.len, ln.len))
+                        if tname != ""
+                            .rt_types.set(tname, true)
+        # A table that parsed to almost nothing would refuse every runtime call
+        # (loud), and a check that silently stopped looking would refuse none
+        # (quiet): both are reported, the second through its controls.
+        if .rt_fns.count() < 50 or .rt_types.count() < 10 or .rt_methods.count() < 30
+            .refused.add("the runtime-name check: zebra_rt.v parsed to " + .rt_fns.count().toString() + " functions, " + .rt_types.count().toString() + " types and " + .rt_methods.count().toString() + " methods, under its floor -- no call into the runtime was checked")
+        else if .rt_fns.get("zlist_contains") == nil or .rt_methods.get("ZList.add") == nil or .rt_fns.get("zbr_control_never_defined") != nil
+            .refused.add("the runtime-name check: its controls failed (zlist_contains and ZList.add must be found, zbr_control_never_defined must not) -- no call into the runtime was checked")
+
+    # a call the emitter wrote: `zname(...)` / `zname[T](...)` into the runtime
+    # (a name the emitter itself spells, never a user's), checked by name
+    def rtFree(r: str, span: Span): str
+        if not r.startsWith("z")
+            return r
+        var name: str = identPrefix(r)
+        if name.len >= r.len or not name.contains("_")
+            return r
+        var next: str = r.substring(name.len, name.len + 1)
+        if next != "(" and next != "["
+            return r
+        if .rt_fns.get(name) == nil
+            .refuse("`" + name + "` (the emitter writes it; zebra_rt.v does not define it)", span)
+        return r
+
+    # `obj.m(...)` the emitter wrote on a receiver of the runtime's types,
+    # checked against the methods zebra_rt.v declares for that type; on a
+    # receiver of unknown type, counted rather than passed in silence
+    def rtMethod(r: str, obj: str, rtype: str, span: Span): str
+        if not r.startsWith(obj)
+            return .rtFree(r, span)
+        if not r.startsWith(obj + ".")
+            return r   # the receiver itself, indexed or sliced (`s[a..b]`): no call into the runtime
+        if rtype == ""
+            .rt_unverified = .rt_unverified + 1
+            return r
+        var base: str = rtBaseType(rtype)
+        if .rt_receivers.get(base) == nil
+            return r
+        var mname: str = identPrefix(r.substring(obj.len + 1, r.len))
+        if mname != "" and mname != "str" and .rt_methods.get(base + "." + mname) == nil
+            .refuse("`" + base + "." + mname + "` (the emitter writes it; zebra_rt.v declares no such method)", span)
+        return r
 
     def line(s: str)
         var out: str = ""
@@ -953,6 +1040,10 @@ class VGen
         g.emitted_globals = .emitted_globals
         g.aliases = .aliases
         g.narrowed = .narrowed
+        g.rt_fns = .rt_fns
+        g.rt_types = .rt_types
+        g.rt_methods = .rt_methods
+        g.rt_receivers = .rt_receivers
         return g
 
     def isFnName(vname: str): bool
@@ -2728,6 +2819,7 @@ class VGen
                 var cs: str = probe.exprStr(ni.cond)
                 for r in probe.refused
                     .refused.add(r)
+                .rt_unverified = .rt_unverified + probe.rt_unverified
                 if probe.sb.build() != ""
                     return false
                 .line("} else if " + condStr(cs) + " {")
@@ -3283,6 +3375,7 @@ class VGen
                 inner.genStmts(sts)
                 for r in inner.refused
                     .refused.add(r)
+                .rt_unverified = .rt_unverified + inner.rt_unverified
                 body = "\n" + inner.sb.build()
         .local_names = saved_locals
         return head + " {" + body + "}"
@@ -3705,6 +3798,8 @@ class VGen
             if .sigs.get("sig:" + lt) != nil
                 return .localName(name) + "(" + .argsStr(args, "sig:" + lt) + ")"   # a call through a function-typed value
         var fname: str = .freeFnName(name)
+        if startsUpper(name) and not .isFnName(fname) and not .isEnumName(name) and not .isUnionName(name) and not .isIfaceName(name) and .rt_types.get(name) == nil
+            .refused.add(name + "(...) (a type neither the program nor the V runtime declares: " + .current_file + ")")
         return fname + "(" + .argsStr(args, fname) + ")"
 
     # a type named as a constructor's argument (`List(int)`, `HashMap(str, Box)`)
@@ -3750,7 +3845,7 @@ class VGen
                 # (`Arg.parse()` beside the AST's `Arg` struct)
                 var bi: str = .staticCall(m, args, span)
                 if bi != ""
-                    return bi
+                    return .rtFree(bi, span)
             return skey2 + "(" + .argsStr(args, skey2) + ")"
         # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
         if .isUnionName(owner)
@@ -3764,14 +3859,14 @@ class VGen
             .needs_math = true
             if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"
                 return "math." + name + "(" + .argsStr(args) + ")"
-            if name == "round": return "zmath_round(" + .argsStr(args) + ")"
+            if name == "round": return .rtFree("zmath_round(" + .argsStr(args) + ")", span)
             if name == "exp" or name == "log": return "math." + name + "(" + .argsStr(args) + ")"
-            if name == "clamp": return "zmath_clamp(" + .argsStr(args) + ")"
+            if name == "clamp": return .rtFree("zmath_clamp(" + .argsStr(args) + ")", span)
             .refuse("Math." + name, span)
             return "math." + name + "(" + .argsStr(args) + ")"
         var statics: str = .staticCall(m, args, span)
         if statics != ""
-            return statics
+            return .rtFree(statics, span)
         var obj = .exprStr(m.object)
         var rtype: str = .vTypeOf(m.object)
         if (not isNameExpr(m.object) or .isNarrowedIdent(m.object)) and not .in_cond and .mutatesReceiver(rtype, name)
@@ -3861,7 +3956,7 @@ class VGen
                 return "zsort_str(mut " + obj + ")"
             if name == "remove" and args.count() == 1: return obj + ".remove_at(" + .argsStr(args) + ")"   # Zebra's List.remove(i) is by index
             if name == "reverse" and args.count() == 0: return obj + ".reversed()"
-        return .mappedCall(obj, name, args, span, rtype)
+        return .rtMethod(.mappedCall(obj, name, args, span, rtype), obj, rtype, span)
 
     # File / Path / sys as static calls onto the runtime's wrappers ("" when
     # the object is not one of them); Json is the next slice
@@ -3870,6 +3965,10 @@ class VGen
         if ns == ""
             return ""
         if not isBuiltinNs(ns)
+            # a Zebra stdlib namespace the V emitter does not map (Regex, Csv,
+            # ThreadPool's kin): refused by name, not written as a module call
+            if namespaceMembers(ns) != "" and not (.isClassName(ns) or .isStructName(ns) or .isModuleName(ns) or .isEnumName(ns) or .isUnionName(ns) or .isIfaceName(ns))
+                .refuse(ns + "." + m.member + " (the V runtime has no " + ns + " yet)", span)
             return ""   # (before the arguments are rendered: rendering binds temporaries, and a second rendering bound them twice)
         var name = m.member
         var a = .argsStr(args)
@@ -3996,6 +4095,7 @@ class VGen
         if name == "toInt" and args.count() == 0: return "i64(" + obj + ")"
         # the containers: the runtime's ZList / ZMap methods, by their names
         if name == "count" and args.count() == 0: return obj + ".count()"
+        if name == "count" and args.count() == 1 and rtype == "string": return "i64(" + obj + ".count(" + .argsStr(args) + "))"   # a substring's occurrences: V's string.count
         if name == "at" and args.count() == 1: return obj + ".at(" + .argsStr(args) + ")"
         if name == "add" and args.count() == 1: return obj + ".add(" + .argsStr(args) + ")"
         if name == "set" and args.count() == 2: return obj + ".set(" + .argsStr(args) + ")"
@@ -4056,6 +4156,8 @@ class VGen
             rt = rt.substring(1, rt.len)
         if rt != "" and .sigs.get(rt + "." + vSafe(name)) != nil
             key = rt + "." + vSafe(name)   # the receiver's own method, whatever other classes call theirs
+        if rt == "string" or rt == "u8" or rt == "i64" or rt == "f64" or rt == "bool"
+            .refuse(rt + "." + vSafe(name) + " (no mapping for `" + name + "` on a V " + rt + ": the emitter would guess V's spelling)", span)
         return obj + "." + vSafe(name) + "(" + .argsStr(args, key) + ")"
 
     def binaryStr(b: ExprBinary): str
@@ -4582,6 +4684,28 @@ def condStr(s: str): str
     return s.substring(1, s.len - 1)
 
 # the builtin namespaces a static access may name
+def startsUpper(name: str): bool
+    for ch in name.chars()
+        return ch >= 'A' and ch <= 'Z'
+    return false
+
+# the identifier a string starts with ("zstr_pad_left(x)" -> "zstr_pad_left")
+def identPrefix(s: str): str
+    var n: int = 0
+    for ch in s.chars()
+        if (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_'
+            n = n + 1
+        else
+            break
+    return s.substring(0, n)
+
+# a V type as the runtime declares methods on it: `&ZList[T]` / `?&ZMap[K, V]` -> ZList
+def rtBaseType(t: str): str
+    var s: str = t
+    while s.startsWith("&") or s.startsWith("?")
+        s = s.substring(1, s.len)
+    return identPrefix(s)
+
 def isBuiltinNs(ns: str): bool
     return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp"
 
@@ -4595,6 +4719,7 @@ def isFloatLit(e: Expr): bool
 # the entry: the V source for a module, with the refusals
 def generateV(ms: List(Module), runtime: str): VResult
     var g = VGen()
+    g.noteRuntime(runtime)
     var body = g.genModules(ms)
     var head: str = "// generated by zebra --target v (proof of concept, 2026-10-13); do not edit\n"
     # the runtime (inlined below) uses math, os and strconv: always imported
@@ -4623,4 +4748,4 @@ def generateV(ms: List(Module), runtime: str): VResult
         if ha >= 0 and hb > ha
             rt_text = rt_text.substring(0, ha) + "// (the http section is left out: the program makes no request)\n" + rt_text.substring(hb + "// == http end ==".len, rt_text.len)
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
-    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui)
+    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified)

@@ -15,7 +15,14 @@
 #   bash tools/gates.sh              # 7-20m  — QUICK, the default. After any .zbr edit
 #   bash tools/gates.sh --full       # 36-83m — before committing a codegen change
 #   bash tools/gates.sh --daily      # 37-85m — ONCE A DAY: full + the excluded set
+#   bash tools/gates.sh --v          # THE V BACKEND, alone -- a FOCUS set, not a rung
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
+#
+# --v IS NOT ON THE LADDER (2026-10-30, Sean: "a tier with a V-specific focus"). Its gates
+# need a V toolchain the ladder does not, and they answer a different question -- does the
+# V backend still emit what V builds and what prints what the Zig build prints -- so they
+# run ONLY under --v and no ladder tier counts or runs them. A ladder tier that silently
+# grew a V dependency would refuse on every machine without V, which is most of them.
 #
 # THE TIERS ARE CUMULATIVE: each runs everything below it. So a gate documented as
 # "QUICK tier" in CLAUDE.md is still run by QUICK — the lower tiers are SUBSETS, not
@@ -95,6 +102,7 @@ _level() {
         quick)  echo 3 ;;
         full)   echo 4 ;;
         daily)  echo 5 ;;
+        v)      echo 99 ;;   # off the ladder: run only by --v (see the header)
         *)      echo 99 ;;
     esac
 }
@@ -111,6 +119,7 @@ case "${1:-}" in
     --fast)   MODE="fast" ;;
     --full)   MODE="full" ;;
     --daily)  MODE="daily" ;;
+    --v)      MODE="v" ;;
     --list)
         # Print the whole leading comment block, however long it grows — a fixed
         # line range silently truncated the header (and then leaked shell code
@@ -129,12 +138,15 @@ case "${1:-}" in
             _n=$(_count_tier "$_t"); _cum=$(( _cum + _n ))
             printf '  %-8s %5d %11d\n' "$_t" "$_n" "$_cum"
         done
+        printf '  %-8s %5d %11s\n' "v" "$(_count_tier v)" "(focus set: --v alone)"
         exit 0 ;;
     "" ) ;;
-    * ) echo "gates.sh: unknown option '$1' (try --static, --fast, --full, --daily or --list)" >&2; exit 2 ;;
+    * ) echo "gates.sh: unknown option '$1' (try --static, --fast, --full, --daily, --v or --list)" >&2; exit 2 ;;
 esac
 
 MODE_LEVEL=$(_level "$MODE")
+# --v runs its own set and nothing from the ladder: level 0 puts every ladder gate above it.
+[[ "$MODE" == "v" ]] && MODE_LEVEL=0
 
 JOBS="${JOBS:-2}"
 FAILED=()
@@ -160,7 +172,12 @@ _run() {
     # BELOW-TIER GATES DO NOT RUN AND ARE NOT COUNTED. Both halves matter: the
     # expectation is derived from the same tier tags, so a filter bug that skips a gate
     # surfaces as RAN N OF M rather than as a smaller, plausible-looking green board.
-    [[ $(_level "$gate_tier") -gt $MODE_LEVEL ]] && return 0
+    # The V focus set: under --v ONLY its gates run; under a ladder tier they never do.
+    if [[ "$MODE" == "v" ]]; then
+        [[ "$gate_tier" != "v" ]] && return 0
+    else
+        [[ $(_level "$gate_tier") -gt $MODE_LEVEL ]] && return 0
+    fi
     local out rc log t0 t1
     log="$(mktemp -t gate-XXXXXX)"
     t0=$SECONDS
@@ -277,6 +294,7 @@ run_fast()   { _PIN_TICKET=""; _run fast   "$@"; }
 run_quick()  { _PIN_TICKET=""; _run quick  "$@"; }
 run_full()   { _PIN_TICKET=""; _run full   "$@"; }
 run_daily()  { _PIN_TICKET=""; _run daily  "$@"; }
+run_v()      { _PIN_TICKET=""; _run v      "$@"; }
 # pin_<tier> <label> <ticket> <expect> <cmd...> -- a gate KNOWN to be red, with a ticket.
 pin_daily()  { local l="$1" t="$2"; shift 2; _PIN_TICKET="$t"; _run daily "$l" "$@"; _PIN_TICKET=""; }
 
@@ -684,6 +702,16 @@ run_daily "libui-pin-build" "PASS" bash tools/libui_pin_build_check.sh
 # XFAIL was masking a stale match string, so retiring the pin without fixing it
 # would have turned the gate red on the expectation rather than on the code.
 run_daily "node-addon"   "node-addon tests: PASS" bash tools/node_addon_test.sh
+# -- V: the V backend's focus set (run ONLY by --v; see the header) ---------------------
+#
+# The V target's drift alarm: the v_poc examples and the five selfhost dumps emitted to V,
+# built and run, each diffed against a FRESH Zig run of the same program; the route's
+# modules within their refusal baseline and `v -check` clean; a nil unwrap naming its
+# place; stdin polled without blocking; and the V-built compiler answering the LSP. It was
+# in no tier until 2026-10-30, and that is how the V route sat broken from 9bc1796 until
+# the corpus census happened to build it. Built under the V the engine pins (ee6d62a);
+# V=<v.exe> overrides, and the gate REFUSES (exit 2) when that V is not installed.
+run_v "v-check" "v_check: ok" env V="${V:-/c/Projects/v-ee6d62a/v.exe}" bash tools/v_check.sh
 # -- Did every gate actually RUN? ---------------------------------------------
 #
 # The summary used to print "$PASSED/$PASSED PASS" -- both numbers the same, which is a
@@ -706,14 +734,20 @@ run_daily "node-addon"   "node-addon tests: PASS" bash tools/node_addon_test.sh
 # each gate with its tier at the call site replaces a structural property with a written
 # one, and the same tags feed both the filter and this count.
 _expected=0
-for _t in static fast quick full daily; do
-    [[ $(_level "$_t") -le $MODE_LEVEL ]] && _expected=$(( _expected + $(_count_tier "$_t") ))
-done
+if [[ "$MODE" == "v" ]]; then
+    _expected=$(_count_tier v)
+else
+    for _t in static fast quick full daily; do
+        [[ $(_level "$_t") -le $MODE_LEVEL ]] && _expected=$(( _expected + $(_count_tier "$_t") ))
+    done
+fi
 # VACUITY FLOOR. The derivation above is textual, so a pattern that stopped matching -- a
 # renamed wrapper, an edited quote -- would yield 0 expected, 0 actual, and a "0/0 PASS"
 # board that exits 0. Every tier includes at least the static twelve, so anything under
 # ten means the counter broke, not that the gates went away.
-if [[ "$_expected" -lt 10 ]]; then
+# The V focus set is small by design; its floor is one registered gate.
+_floor=10; [[ "$MODE" == "v" ]] && _floor=1
+if [[ "$_expected" -lt "$_floor" ]]; then
     printf '\033[31mgates: REFUSING - expected only %d gates for the %s tier\033[0m\n' \
            "$_expected" "$MODE" >&2
     printf '  The expectation is derived from this file own run_<tier> lines; a count\n' >&2
@@ -759,6 +793,8 @@ if [[ ${#FAILED[@]} -eq 0 ]]; then
                 echo "   the compiler was never round-tripped. Next: the default tier, ~14 min)" ;;
         quick)  echo "  (quick tier — the corpus was never swept; run --full before committing a codegen change)" ;;
         full)   echo "  (full tier — the three --daily gates were not run; GUI rendering is uncovered by both)" ;;
+        v)      echo "  (V focus set — the V backend ONLY. Not one Zig-ladder gate ran: this says nothing" ;
+                echo "   about the Zig backend, and nothing about the corpus beyond the v_poc examples.)" ;;
         daily)  echo "  (daily tier — GUI rendering, input, layout, resize and colours are STILL uncovered:" ;
                 echo "   only a human running the app proves those.)" ;
                 echo "  Record it in CLAUDE.md: DAILY tier $(date +%Y-%m-%d): $PASSED/$_expected PASS, $PINNED pinned." ;;

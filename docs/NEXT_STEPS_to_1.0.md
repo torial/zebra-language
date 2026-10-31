@@ -116,6 +116,16 @@ as they land, so this list stays the one place that says what is left.
    gates fail?
 6. [ ] **One or two concurrency dogfood programs** (HTTP+SQLite service, concurrent
    fetcher) to test the memory model's claims under real threads before they freeze.
+7. **The platforms 1.0 promises (DECIDED 2026-10-30, Sean):** Windows, macOS, Linux and Vinix
+   (V's operating system, which runs Alpine Linux packages); AMD64 and ARM64 ideally; RISC-V
+   nice to have, very low priority. The release (`.github/workflows/release.yml`) builds and
+   smoke-runs three today: windows-x86_64, linux-x86_64, macos-aarch64.
+   - [ ] linux-aarch64 and windows-aarch64 release legs, each smoke-run on a native runner
+     (Zig cross-compiles both; the run is the part that proves anything).
+   - [ ] macos-x86_64: analysed by `cross-sema`, never run -- a leg, or say it is not promised.
+   - [ ] Vinix: define the target first -- whether a static Linux musl binary runs there, or
+     whether the route is the V backend -- then a witness.
+   - [ ] RISC-V: very low priority; `cross-sema` could analyse riscv64-linux at no cost.
 
 ## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
 

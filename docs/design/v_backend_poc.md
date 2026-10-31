@@ -2465,10 +2465,23 @@ arguments to function", and a `notice` it treats as fatal), not the emitted code
    `List.any`. Then typing the emitter gets wrong for V: a closure's copy of a captured
    local is immutable (8), Option / Result propagation (~12), return and argument type
    mismatches (12). The emitter's report says "the whole file is in the subset" for every
-   one of them, which is a green from an instrument that never saw red. **Proposed (Fable
-   and Opus agree): the emitter refuses a call into a runtime name `zebra_rt.v` does not
-   define, the list DERIVED from the runtime file rather than kept by hand**, so the 152
-   become refusals that name what is missing.
+   one of them, which is a green from an instrument that never saw red. **DONE the same day
+   (Sean: yes): the emitter refuses a call into a runtime name `zebra_rt.v` does not
+   define, the list DERIVED from the runtime file** (`noteRuntime` reads its `fn`,
+   `struct` / `type` / `enum` / `interface` and per-receiver method declarations, with a
+   floor and two controls that turn into a refusal if the parse collapses). Three shapes are
+   refused, each at its `.zbr` line: a Zebra stdlib namespace the emitter does not map
+   (from the checker's own `namespaceMembers` table, not a hand list), a call the emitter
+   writes into the runtime that it does not define (`zname(...)`, `ZList.m(...)`), and a
+   Zebra method name passed through unmapped onto a V `string` / `u8` / `i64` / `f64` /
+   `bool`, which is a guess at V's spelling. Re-emitting the 436: **62 of the 152 that did
+   not build are now refused by name; 0 of the 284 that built are refused** (one was, on
+   the first run -- `str.count(sub)`, where the guess happened to be V's name; it is mapped
+   now). The other 90 are typing the emitter gets wrong (closures, Option / Result, type
+   mismatches), which no name table can see. A call on a receiver whose type the emitter
+   does not know cannot be checked: the report counts them (318 across the 436) instead of
+   saying "the whole file is in the subset" about them. `v_check`'s `rt_names` row pins all
+   three shapes and a mapped control that must stay clean.
 3. **The V route had stopped building, unnoticed.** Since 9bc1796 (BUG-565) the parser's
    `@[...]` arm kept its old body after the new `raise`; Zebra and the Zig backend accept
    that, and V refuses it as unreachable code, so the V-built compiler, the selfhost dumps that
@@ -2553,13 +2566,26 @@ should not regress safety or cost predictability for anyone who did not choose i
 
 ### Decisions that are Sean's
 
-1. **BUG-667's semantics**: integer overflow traps (and is paid for in release) or wraps
-   (defined, as V does). It binds both backends.
-2. **The release question**: does the next release wait for V? (Recommended: no.)
-3. **`zig"..."`'s successor**, or its retirement.
+Answered 2026-10-30 (Sean), except where marked open:
+
+1. **BUG-667's semantics** -- OPEN. Integer overflow traps (and is paid for in release) or
+   wraps (defined, as V does). It binds both backends. Sean leans wrap and is open to trap;
+   the case each way is in BUG-667. Whichever is chosen, today's Zig `--release` (undefined
+   behaviour, neither a trap nor a wrap) is the one answer that is not on the table.
+2. **The release question** -- DECIDED: the next release does NOT wait for V.
+3. **`zig"..."`'s successor** -- DECIDED: `v"..."`, the same escape with V as its
+   language. How the two coexist while both backends ship (each refused by the other
+   backend, by name, is the obvious rule) is not yet designed.
 4. **The memory model's priority**: under this plan RC/arenas (item 3) is on the critical
-   path to V, not a later refinement.
-5. **The platforms 1.0 promises**, since V's cross-compilation is not Zig's.
+   path to V, not a later refinement. -- OPEN.
+5. **The platforms 1.0 promises** -- DECIDED: Windows, macOS, Linux and Vinix (V's own
+   operating system, which runs Alpine Linux packages); AMD64 and ARM64 ideally; RISC-V
+   nice to have, very low priority. Today's coverage (`.github/workflows/release.yml`, the
+   release builds and smoke-runs three): windows-x86_64, linux-x86_64, macos-aarch64.
+   macOS x86_64 is analysed by `cross-sema` and never run; Windows and Linux on ARM64,
+   Vinix and RISC-V have no witness. The V backend's own coverage is Windows alone.
+6. **`tools/v_check.sh` in a tier** -- DECIDED: yes, in a tier with a V focus.
+7. **The emitter refuses a runtime name `zebra_rt.v` does not define** -- DECIDED: yes.
 
 ## If the branch ever merges to main
 
