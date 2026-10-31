@@ -1,0 +1,9 @@
+# BUG-669: `min % -1` is the one remainder Zig's safety does not check -- x86's idiv faults
+# on it and the program died with NO message, in Debug too. It must trap with the overflow
+# message, as `min / -1` does. The operands come from the argument count, so nothing folds.
+def main()
+    var n: int = sys.args().count()       # 1
+    var x: int = -9223372036854775807 - n # the minimum
+    print("before")
+    var y: int = x % (0 - n)
+    print("SURVIVED min%-1: ${y}")

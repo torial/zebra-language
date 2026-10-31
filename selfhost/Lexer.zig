@@ -12,6 +12,7 @@ const _zbr_at = _zbr_rt._zbr_at;
 const _zbr_set = _zbr_rt._zbr_set;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
+const _zbr_rem = _zbr_rt._zbr_rem;
 const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
@@ -26,6 +27,7 @@ const _zbr_ty_TokenKind = _zbr_mod_Token._zbr_ty_TokenKind;
 pub const CharPred = _ZbrFn(fn(u21) bool);
 // zbr:selfhost/Lexer.zbr:21
 pub fn _zbr_fn_isDigit(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:22
     switch (_zbr_val(c)) {
         '0'...'9' => {
@@ -41,6 +43,7 @@ pub fn _zbr_fn_isDigit(c: u21) bool {
 
 // zbr:selfhost/Lexer.zbr:29
 pub fn _zbr_fn_allDigitsFrom(word: []const u8, start: i64) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:30
     if (_zebra_ge(start, @as(i64, @intCast(word.len)))) {
 // zbr:selfhost/Lexer.zbr:31
@@ -64,12 +67,14 @@ pub fn _zbr_fn_allDigitsFrom(word: []const u8, start: i64) bool {
 
 // zbr:selfhost/Lexer.zbr:39
 pub fn _zbr_fn_isDigitOrUnder(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:40
     return (_zbr_fn_isDigit(c) or (c == '_'));
 }
 
 // zbr:selfhost/Lexer.zbr:42
 pub fn _zbr_fn_isHexDigit(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:43
     switch (_zbr_val(c)) {
         '0'...'9' => {
@@ -93,6 +98,7 @@ pub fn _zbr_fn_isHexDigit(c: u21) bool {
 
 // zbr:selfhost/Lexer.zbr:53
 pub fn _zbr_fn_isAlpha(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:54
     switch (_zbr_val(c)) {
         'a'...'z' => {
@@ -112,6 +118,7 @@ pub fn _zbr_fn_isAlpha(c: u21) bool {
 
 // zbr:selfhost/Lexer.zbr:62
 pub fn _zbr_fn_isIdentContinue(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:63
     return ((_zbr_fn_isAlpha(c) or _zbr_fn_isDigit(c)) or (c == '_'));
 }
@@ -146,6 +153,7 @@ pub const _zbr_ty_Lexer = struct {
     afterEnsureEol: bool = undefined,
     ensureBaseDepth: i64 = undefined,
     pub fn init() *_zbr_ty_Lexer {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_Lexer) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Lexer");
 // zbr:selfhost/Lexer.zbr:109
@@ -191,6 +199,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:129
     pub fn tokenize(source: []const u8) anyerror!_ZbrList(*_zbr_mod_Token._zbr_ty_Token) {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:130
         var lex = _zbr_ty_Lexer.init();
 // zbr:selfhost/Lexer.zbr:131
@@ -203,6 +212,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:138
     pub fn lexErr(self: *_zbr_ty_Lexer, b: u21, ln: i64, cl: i64) []const u8 {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/Lexer.zbr:139
         if ((b == '\r')) {
@@ -220,12 +230,14 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:158
     pub fn col(self: *const _zbr_ty_Lexer) i64 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:159
         return ((self.pos - self.lineStart) + 1);
     }
 
     // zbr:selfhost/Lexer.zbr:161
     pub fn peek(self: *const _zbr_ty_Lexer) u21 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:162
         if (_zebra_lt(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:163
@@ -237,6 +249,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:166
     pub fn peek1(self: *const _zbr_ty_Lexer) u21 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:167
         if (_zebra_lt((self.pos + 1), @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:168
@@ -248,6 +261,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:171
     pub fn peekAt(self: *const _zbr_ty_Lexer, offset: i64) u21 {
+        @setRuntimeSafety(true);
         if (!(_zebra_ge(offset, 0))) std.debug.panic("require failed at selfhost/Lexer.zbr:173: in 'peekAt'\n", .{});
 // zbr:selfhost/Lexer.zbr:174
         if (_zebra_lt((self.pos + offset), @as(i64, @intCast(self.src.len)))) {
@@ -260,6 +274,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:178
     pub fn advanceNewline(self: *_zbr_ty_Lexer) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:179
         self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:180
@@ -270,12 +285,14 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:183
     pub fn emit(self: *_zbr_ty_Lexer, kind: _zbr_ty_TokenKind, text: []const u8, ln: i64, cl: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:184
         self.out.append(_zbr_rt._allocator, _zbr_mod_Token._zbr_ty_Token.init(kind, text, ln, cl)) catch @panic("OOM");
     }
 
     // zbr:selfhost/Lexer.zbr:188
     pub fn scanWhile(self: *_zbr_ty_Lexer, pred: CharPred) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:189
         while ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and _zbr_invoke(&pred, .{_zbr_at(self.src, self.pos)}))) {
 // zbr:selfhost/Lexer.zbr:190
@@ -285,6 +302,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:194
     pub fn classifyLine(self: *_zbr_ty_Lexer) _zbr_ty_LineKind {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:195
         var i: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:196
@@ -370,6 +388,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:235
     pub fn processIndentation(self: *_zbr_ty_Lexer) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:236
         const ln: i64 = self.line;
 // zbr:selfhost/Lexer.zbr:237
@@ -408,7 +427,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:255
         if (_zebra_gt(spaces, 0)) {
 // zbr:selfhost/Lexer.zbr:256
-            if ((@rem(spaces, 4) != 0)) {
+            if ((_zbr_rem(spaces, 4) != 0)) {
 // zbr:selfhost/Lexer.zbr:257
                 { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:257", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(spaces + 1)}) catch @panic("OOM")), _zbr_rt._allocator), ": error: indentation is ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{spaces}) catch @panic("OOM")), _zbr_rt._allocator), " space(s); Zebra indents by multiples of 4", _zbr_rt._allocator) }; return error.ZebraError; }
             }
@@ -485,6 +504,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:292
     pub fn popLambda(self: *_zbr_ty_Lexer) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:293
         const k: i64 = (@as(i64, @intCast(self.lambdaStack.items.len)) - 1);
 // zbr:selfhost/Lexer.zbr:294
@@ -501,6 +521,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:300
     pub fn pushLambda(self: *_zbr_ty_Lexer) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:301
         self.lambdaStack.append(_zbr_rt._allocator, self.indentDepth) catch @panic("OOM");
 // zbr:selfhost/Lexer.zbr:302
@@ -513,6 +534,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:309
     pub fn checkLambdaCloser(self: *_zbr_ty_Lexer, ch: []const u8, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:310
         if ((_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and _zebra_le((self.parenDepth + self.bracketDepth), _zbr_at(self.lambdaNest.items, (@as(i64, @intCast(self.lambdaNest.items.len)) - 1))))) {
 // zbr:selfhost/Lexer.zbr:311
@@ -522,12 +544,14 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:314
     pub fn inLambdaBody(self: *_zbr_ty_Lexer) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:315
         return (_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and ((self.parenDepth + self.bracketDepth) == _zbr_at(self.lambdaNest.items, (@as(i64, @intCast(self.lambdaNest.items.len)) - 1))));
     }
 
     // zbr:selfhost/Lexer.zbr:320
     pub fn peekLineLevel(self: *_zbr_ty_Lexer) i64 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:321
         var i: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:322
@@ -558,6 +582,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:336
     pub fn scanBlockComment(self: *_zbr_ty_Lexer) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:337
         self.pos = (self.pos + 2);
 // zbr:selfhost/Lexer.zbr:338
@@ -598,6 +623,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:355
     pub fn scanAt(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:356
         const c1: u21 = self.peek1();
 // zbr:selfhost/Lexer.zbr:357
@@ -630,6 +656,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:372
     pub fn scanIdentOrKeyword(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:373
         const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:374
@@ -790,6 +817,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:465
     pub fn scanCharLiteral(self: *_zbr_ty_Lexer, q: u21, start: i64, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:466
         self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:467
@@ -829,6 +857,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:488
     pub fn scanSingleQuote(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:489
         const p1: u21 = self.peekAt(1);
 // zbr:selfhost/Lexer.zbr:490
@@ -858,6 +887,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:505
     pub fn scanSimpleString(self: *_zbr_ty_Lexer, q: u21, start: i64, kind: _zbr_ty_TokenKind, ln: i64, cl: i64, raw: bool) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:506
         self.pos = (self.pos + 1);
 // zbr:selfhost/Lexer.zbr:507
@@ -890,6 +920,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:522
     pub fn scanString(self: *_zbr_ty_Lexer, q: u21, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:523
         if ((((q == '"') and (self.peek1() == '"')) and (self.peekAt(2) == '"'))) {
 // zbr:selfhost/Lexer.zbr:524
@@ -1014,6 +1045,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:592
     pub fn scanInterpExpr(self: *_zbr_ty_Lexer) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:593
         var depth: i64 = 1;
 // zbr:selfhost/Lexer.zbr:610
@@ -1098,6 +1130,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:659
     pub fn scanDocString(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:660
         const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:661
@@ -1172,6 +1205,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:699
     pub fn scanNumericLiteral(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:700
         const start: i64 = self.pos;
 // zbr:selfhost/Lexer.zbr:702
@@ -1318,6 +1352,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:778
     pub fn scanOperator(self: *_zbr_ty_Lexer, ln: i64, cl: i64) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:779
         const c: u21 = self.peek();
 // zbr:selfhost/Lexer.zbr:780
@@ -1826,6 +1861,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:1012
     pub fn scanToken(self: *_zbr_ty_Lexer) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:1013
         const c: u8 = _zbr_at(self.src, self.pos);
 // zbr:selfhost/Lexer.zbr:1014
@@ -1871,6 +1907,7 @@ pub const _zbr_ty_Lexer = struct {
 
     // zbr:selfhost/Lexer.zbr:1036
     pub fn run(self: *_zbr_ty_Lexer) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Lexer.zbr:1037
         var atLineStart: bool = true;
 // zbr:selfhost/Lexer.zbr:1038
@@ -2045,7 +2082,7 @@ const _reflect_Lexer_name: []const u8 = "Lexer";
 const _reflect_Lexer_fields: []const []const u8 = &.{"src", "pos", "line", "lineStart", "indentDepth", "blockDepth", "parenDepth", "bracketDepth", "out", "inLambdaParams", "lambdaParamDepth", "afterLambdaParams", "lambdaStack", "lambdaHeader", "lambdaRestore", "lambdaNest", "curLineLevel", "afterEnsureEol", "ensureBaseDepth"};
 const _reflect_Lexer_field_types: []const []const u8 = &.{"str", "int", "int", "int", "int", "int", "int", "int", "List(Token.Token)", "bool", "int", "bool", "List(int)", "List(int)", "List(int)", "List(int)", "int", "bool", "int"};
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_Lexer) return _reflect_Lexer_name;
     return "unknown";
@@ -2060,6 +2097,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

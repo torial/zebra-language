@@ -53,6 +53,7 @@ pub const _zbr_ty_StrSet = struct {
     _items: _ZbrList([]const u8) = undefined,
     len: i64 = undefined,
     pub fn init() *_zbr_ty_StrSet {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_StrSet) catch @panic("OOM");
         _self._type_tag = _zbr_hash("StrSet");
 // zbr:selfhost/CgHelpers.zbr:60
@@ -64,6 +65,7 @@ pub const _zbr_ty_StrSet = struct {
 
     // zbr:selfhost/CgHelpers.zbr:63
     pub fn add(self: *_zbr_ty_StrSet, s: []const u8) void {
+        @setRuntimeSafety(true);
         if (!(_zebra_gt(@as(i64, @intCast(s.len)), 0))) std.debug.panic("require failed at selfhost/CgHelpers.zbr:65: in 'add'\n", .{});
 // zbr:selfhost/CgHelpers.zbr:66
         if ((!self.contains_(s))) {
@@ -76,6 +78,7 @@ pub const _zbr_ty_StrSet = struct {
 
     // zbr:selfhost/CgHelpers.zbr:70
     pub fn contains_(self: *const _zbr_ty_StrSet, s: []const u8) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:71
         for (self._items.items) |item| {
 // zbr:selfhost/CgHelpers.zbr:72
@@ -90,6 +93,7 @@ pub const _zbr_ty_StrSet = struct {
 
     // zbr:selfhost/CgHelpers.zbr:76
     pub fn removeStartingWith(self: *_zbr_ty_StrSet, prefix: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:77
         var new_items = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/CgHelpers.zbr:78
@@ -108,6 +112,7 @@ pub const _zbr_ty_StrSet = struct {
 
     // zbr:selfhost/CgHelpers.zbr:86
     pub fn removeOne(self: *_zbr_ty_StrSet, s: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:87
         var new_items = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/CgHelpers.zbr:88
@@ -126,6 +131,7 @@ pub const _zbr_ty_StrSet = struct {
 
     // zbr:selfhost/CgHelpers.zbr:94
     pub fn items(self: *const _zbr_ty_StrSet) _ZbrList([]const u8) {
+        @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:95
         return self._items;
     }
@@ -138,6 +144,7 @@ const _reflect_StrSet_field_types: []const []const u8 = &.{"List(str)", "int"};
 
 // zbr:selfhost/CgHelpers.zbr:99
 pub fn _zbr_fn_assignOpStr(op: _zbr_ty_AssignOp) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:100
     switch (_zbr_val(op)) {
         .assign => {
@@ -197,6 +204,7 @@ pub fn _zbr_fn_assignOpStr(op: _zbr_ty_AssignOp) []const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:129
 pub fn _zbr_fn_hexLitZig(text: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:130
     if ((!(std.mem.startsWith(u8, text, "0x") or std.mem.startsWith(u8, text, "0X")))) {
 // zbr:selfhost/CgHelpers.zbr:131
@@ -236,6 +244,7 @@ pub fn _zbr_fn_hexLitZig(text: []const u8) []const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:146
 pub fn _zbr_fn_binaryOpStr(op: _zbr_ty_BinaryOp) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:147
     switch (_zbr_val(op)) {
         .add => {
@@ -319,6 +328,7 @@ pub fn _zbr_fn_binaryOpStr(op: _zbr_ty_BinaryOp) []const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:174
 pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:175
     switch (_zbr_val(tr)) {
         .named => |n| {
@@ -412,6 +422,7 @@ pub fn _zbr_fn_typeRefStr(tr: _zbr_ty_TypeRef) []const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:237
 pub fn _zbr_fn_exprHasTry(expr: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:238
     switch (_zbr_val(expr)) {
         .try_ => {
@@ -681,6 +692,7 @@ pub fn _zbr_fn_exprHasTry(expr: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/CgHelpers.zbr:386
 pub fn _zbr_fn_bodyHasRaise(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:387
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:388
@@ -902,6 +914,7 @@ pub fn _zbr_fn_bodyHasRaise(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 
 // zbr:selfhost/CgHelpers.zbr:480
 pub fn _zbr_fn_bodyHasAssert(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:481
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:482
@@ -1007,12 +1020,14 @@ pub fn _zbr_fn_bodyHasAssert(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 
 // zbr:selfhost/CgHelpers.zbr:526
 pub fn _zbr_fn_bodyNeedsErrVar(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:527
     return _zbr_fn_bodyHasRaise(stmts);
 }
 
 // zbr:selfhost/CgHelpers.zbr:533
 pub fn _zbr_fn_nilNarrowVar(cond: _zbr_ty_Expr, for_then: bool) ?[]const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:534
     switch (_zbr_val(cond)) {
         .binary => |_ptr_b| {
@@ -1071,6 +1086,7 @@ pub fn _zbr_fn_nilNarrowVar(cond: _zbr_ty_Expr, for_then: bool) ?[]const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:582
 pub fn _zbr_fn_nameUsedInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:583
     switch (_zbr_val(expr)) {
         .ident => |id| {
@@ -1402,6 +1418,7 @@ pub fn _zbr_fn_nameUsedInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/CgHelpers.zbr:749
 pub fn _zbr_fn_nameUsedInStmts(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:750
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:751
@@ -1416,18 +1433,21 @@ pub fn _zbr_fn_nameUsedInStmts(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) 
 
 // zbr:selfhost/CgHelpers.zbr:771
 pub fn _zbr_fn_isBuiltinTypeName(name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:772
     return ((((((((((((((((((std.mem.eql(u8, name, "StringBuilder") or std.mem.eql(u8, name, "Regex")) or std.mem.eql(u8, name, "StrSet")) or std.mem.eql(u8, name, "Allocator")) or std.mem.eql(u8, name, "WsConn")) or std.mem.eql(u8, name, "TcpConn")) or std.mem.eql(u8, name, "UdpSocket")) or std.mem.eql(u8, name, "SqliteDb")) or std.mem.eql(u8, name, "SqliteRow")) or std.mem.eql(u8, name, "HttpRequest")) or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "CodeEditor")) or std.mem.eql(u8, name, "SysProcess")) or std.mem.eql(u8, name, "Timer")) or std.mem.eql(u8, name, "JsonValue")) or std.mem.eql(u8, name, "byte")) or std.mem.eql(u8, name, "usize")) or std.mem.eql(u8, name, "int128")) or std.mem.eql(u8, name, "uint128"));
 }
 
 // zbr:selfhost/CgHelpers.zbr:774
 pub fn _zbr_fn_isStdlibNs(name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:775
     return (((((((((((((((((((((((((((((((((std.mem.eql(u8, name, "Math") or std.mem.eql(u8, name, "File")) or std.mem.eql(u8, name, "sys")) or std.mem.eql(u8, name, "Arg")) or std.mem.eql(u8, name, "Json")) or std.mem.eql(u8, name, "DynLib")) or std.mem.eql(u8, name, "Http")) or std.mem.eql(u8, name, "Ws")) or std.mem.eql(u8, name, "HttpResponse")) or std.mem.eql(u8, name, "HttpRequest")) or std.mem.eql(u8, name, "Regex")) or std.mem.eql(u8, name, "DateTime")) or std.mem.eql(u8, name, "Hash")) or std.mem.eql(u8, name, "Crypto")) or std.mem.eql(u8, name, "Random")) or std.mem.eql(u8, name, "Terminal")) or std.mem.eql(u8, name, "Log")) or std.mem.eql(u8, name, "Csv")) or std.mem.eql(u8, name, "Timer")) or std.mem.eql(u8, name, "Progress")) or std.mem.eql(u8, name, "Profile")) or std.mem.eql(u8, name, "Uri")) or std.mem.eql(u8, name, "Compress")) or std.mem.eql(u8, name, "Mime")) or std.mem.eql(u8, name, "Tcp")) or std.mem.eql(u8, name, "Udp")) or std.mem.eql(u8, name, "Sqlite")) or std.mem.eql(u8, name, "Net")) or std.mem.eql(u8, name, "Gui")) or std.mem.eql(u8, name, "Shell")) or std.mem.eql(u8, name, "Dir")) or std.mem.eql(u8, name, "Path")) or std.mem.eql(u8, name, "Reflect")) or std.mem.eql(u8, name, "Build"));
 }
 
 // zbr:selfhost/CgHelpers.zbr:777
 pub fn _zbr_fn_isZigPrimitiveName(name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:778
     if (_zebra_ge(@as(i64, @intCast(name.len)), 2)) {
 // zbr:selfhost/CgHelpers.zbr:779
@@ -1512,12 +1532,14 @@ pub fn _zbr_fn_isZigPrimitiveName(name: []const u8) bool {
 
 // zbr:selfhost/CgHelpers.zbr:823
 pub fn _zbr_fn_isZigKeyword(name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:824
     return ((((((((((((((((((((((((((((((((((((((((((((((((std.mem.eql(u8, name, "fn") or std.mem.eql(u8, name, "pub")) or std.mem.eql(u8, name, "const")) or std.mem.eql(u8, name, "var")) or std.mem.eql(u8, name, "comptime")) or std.mem.eql(u8, name, "error")) or std.mem.eql(u8, name, "align")) or std.mem.eql(u8, name, "allowzero")) or std.mem.eql(u8, name, "test")) or std.mem.eql(u8, name, "asm")) or std.mem.eql(u8, name, "export")) or std.mem.eql(u8, name, "extern")) or std.mem.eql(u8, name, "inline")) or std.mem.eql(u8, name, "noalias")) or std.mem.eql(u8, name, "noinline")) or std.mem.eql(u8, name, "nosuspend")) or std.mem.eql(u8, name, "opaque")) or std.mem.eql(u8, name, "packed")) or std.mem.eql(u8, name, "linksection")) or std.mem.eql(u8, name, "callconv")) or std.mem.eql(u8, name, "threadlocal")) or std.mem.eql(u8, name, "volatile")) or std.mem.eql(u8, name, "addrspace")) or std.mem.eql(u8, name, "usingnamespace")) or std.mem.eql(u8, name, "unreachable")) or std.mem.eql(u8, name, "errdefer")) or std.mem.eql(u8, name, "suspend")) or std.mem.eql(u8, name, "resume")) or std.mem.eql(u8, name, "await")) or std.mem.eql(u8, name, "async")) or std.mem.eql(u8, name, "anyframe")) or std.mem.eql(u8, name, "anytype")) or std.mem.eql(u8, name, "switch")) or std.mem.eql(u8, name, "defer")) or std.mem.eql(u8, name, "struct")) or std.mem.eql(u8, name, "union")) or std.mem.eql(u8, name, "enum")) or std.mem.eql(u8, name, "and")) or std.mem.eql(u8, name, "break")) or std.mem.eql(u8, name, "catch")) or std.mem.eql(u8, name, "continue")) or std.mem.eql(u8, name, "else")) or std.mem.eql(u8, name, "for")) or std.mem.eql(u8, name, "if")) or std.mem.eql(u8, name, "or")) or std.mem.eql(u8, name, "orelse")) or std.mem.eql(u8, name, "return")) or std.mem.eql(u8, name, "try")) or std.mem.eql(u8, name, "while"));
 }
 
 // zbr:selfhost/CgHelpers.zbr:826
 pub fn _zbr_fn_zigSafeName(name: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:827
     if ((_zbr_fn_isZigPrimitiveName(name) or _zbr_fn_isZigKeyword(name))) {
 // zbr:selfhost/CgHelpers.zbr:828
@@ -1529,6 +1551,7 @@ pub fn _zbr_fn_zigSafeName(name: []const u8) []const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:840
 pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:841
     switch (_zbr_val(expr)) {
         .ident => |id| {
@@ -1864,6 +1887,7 @@ pub fn _zbr_fn_nameEscapesInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1010
 pub fn _zbr_fn_nameEscapes(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1011
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1012
@@ -1878,6 +1902,7 @@ pub fn _zbr_fn_nameEscapes(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool
 
 // zbr:selfhost/CgHelpers.zbr:1016
 pub fn _zbr_fn_nameEscapesStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1017
     switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
@@ -2162,6 +2187,7 @@ pub fn _zbr_fn_nameEscapesStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1139
 pub fn _zbr_fn_nameUsedInStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1140
     switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
@@ -2400,6 +2426,7 @@ pub fn _zbr_fn_nameUsedInStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1246
 pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1247
     switch (_zbr_val(expr)) {
         .ident => |id| {
@@ -2536,6 +2563,7 @@ pub fn _zbr_fn_collectAllIdents(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet) void {
 
 // zbr:selfhost/CgHelpers.zbr:1305
 pub fn _zbr_fn_seedEscapedFromReturns(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1306
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1307
@@ -2620,6 +2648,7 @@ pub fn _zbr_fn_seedEscapedFromReturns(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_
 
 // zbr:selfhost/CgHelpers.zbr:1345
 pub fn _zbr_fn_propagateEscapesOnce(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1346
     var grew: bool = false;
 // zbr:selfhost/CgHelpers.zbr:1347
@@ -2778,6 +2807,7 @@ pub fn _zbr_fn_propagateEscapesOnce(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty
 
 // zbr:selfhost/CgHelpers.zbr:1409
 pub fn _zbr_fn_analyzeEscapes(stmts: _ZbrList(_zbr_ty_Stmt)) *_zbr_ty_StrSet {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1410
     const out = _zbr_ty_StrSet.init();
 // zbr:selfhost/CgHelpers.zbr:1411
@@ -2795,6 +2825,7 @@ pub fn _zbr_fn_analyzeEscapes(stmts: _ZbrList(_zbr_ty_Stmt)) *_zbr_ty_StrSet {
 
 // zbr:selfhost/CgHelpers.zbr:1423
 pub fn _zbr_fn_isReadOnlyMethod(name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1426
     if ((((std.mem.eql(u8, name, "count") or std.mem.eql(u8, name, "len")) or std.mem.eql(u8, name, "at")) or std.mem.eql(u8, name, "get"))) {
 // zbr:selfhost/CgHelpers.zbr:1427
@@ -2981,6 +3012,7 @@ pub fn _zbr_fn_isReadOnlyMethod(name: []const u8) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1526
 pub fn _zbr_fn_isMutatingMethod(name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1528
     if ((((std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "remove")) or std.mem.eql(u8, name, "clear")) or std.mem.eql(u8, name, "reverse"))) {
 // zbr:selfhost/CgHelpers.zbr:1529
@@ -3017,6 +3049,7 @@ pub fn _zbr_fn_isMutatingMethod(name: []const u8) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1553
 pub fn _zbr_fn_isImmutableValueType(t: _zbr_ty_Type_) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1554
     switch (_zbr_val(t)) {
         .int_ => {
@@ -3068,6 +3101,7 @@ pub fn _zbr_fn_isImmutableValueType(t: _zbr_ty_Type_) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1575
 pub fn _zbr_fn_isByValueHandleType(t: _zbr_ty_Type_) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1576
     switch (_zbr_val(t)) {
         .json_value => {
@@ -3127,6 +3161,7 @@ pub fn _zbr_fn_isByValueHandleType(t: _zbr_ty_Type_) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1612
 pub fn _zbr_fn_unwrapForMutation(t: _zbr_ty_Type_) _zbr_ty_Type_ {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1613
     switch (_zbr_val(t)) {
         .optional => |_ptr_inner| {
@@ -3149,6 +3184,7 @@ pub fn _zbr_fn_unwrapForMutation(t: _zbr_ty_Type_) _zbr_ty_Type_ {
 pub var _zbr_mv__struct_recv: []const u8 = "";
 // zbr:selfhost/CgHelpers.zbr:1635
 pub fn _zbr_fn_setStructReceivers(table: []const u8) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1636
     _zbr_mv__struct_recv = table;
 }
@@ -3156,12 +3192,14 @@ pub fn _zbr_fn_setStructReceivers(table: []const u8) void {
 pub var _zbr_mv__ext_recv: []const u8 = " ";
 // zbr:selfhost/CgHelpers.zbr:1645
 pub fn _zbr_fn_setExtReceivers(table: []const u8) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1646
     _zbr_mv__ext_recv = table;
 }
 
 // zbr:selfhost/CgHelpers.zbr:1648
 pub fn _zbr_fn_extReceiverName(t: _zbr_ty_Type_) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1649
     switch (_zbr_val(t)) {
         .string_ => {
@@ -3201,6 +3239,7 @@ pub fn _zbr_fn_extReceiverName(t: _zbr_ty_Type_) []const u8 {
 
 // zbr:selfhost/CgHelpers.zbr:1667
 pub fn _zbr_fn_receiverNeedsVar(obj: _zbr_ty_Expr, method: []const u8, ic: ?*_zbr_ty_InferCtx) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1668
     if (ic) |ic_x| {
 // zbr:selfhost/CgHelpers.zbr:1669
@@ -3280,6 +3319,7 @@ pub fn _zbr_fn_receiverNeedsVar(obj: _zbr_ty_Expr, method: []const u8, ic: ?*_zb
 
 // zbr:selfhost/CgHelpers.zbr:1721
 pub fn _zbr_fn_subscriptWritesThroughReference(obj: _zbr_ty_Expr, ic: ?*_zbr_ty_InferCtx) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1722
     if (ic) |ic_v| {
 // zbr:selfhost/CgHelpers.zbr:1723
@@ -3301,6 +3341,7 @@ pub fn _zbr_fn_subscriptWritesThroughReference(obj: _zbr_ty_Expr, ic: ?*_zbr_ty_
 
 // zbr:selfhost/CgHelpers.zbr:1738
 pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1739
     switch (_zbr_val(expr)) {
         .call => |_ptr_c| {
@@ -3573,6 +3614,7 @@ pub fn _zbr_fn_scanMutationsInExpr(expr: _zbr_ty_Expr, out: *_zbr_ty_StrSet, ic:
 
 // zbr:selfhost/CgHelpers.zbr:1858
 pub fn _zbr_fn_scanMutationsInto(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_StrSet, ic: ?*_zbr_ty_InferCtx) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1859
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1860
@@ -3768,6 +3810,7 @@ pub fn _zbr_fn_scanMutationsInto(stmts: _ZbrList(_zbr_ty_Stmt), out: *_zbr_ty_St
 
 // zbr:selfhost/CgHelpers.zbr:1949
 pub fn _zbr_fn_scanMutations(stmts: _ZbrList(_zbr_ty_Stmt), ic: ?*_zbr_ty_InferCtx) *_zbr_ty_StrSet {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1950
     const out = _zbr_ty_StrSet.init();
 // zbr:selfhost/CgHelpers.zbr:1951
@@ -3778,6 +3821,7 @@ pub fn _zbr_fn_scanMutations(stmts: _ZbrList(_zbr_ty_Stmt), ic: ?*_zbr_ty_InferC
 
 // zbr:selfhost/CgHelpers.zbr:1959
 pub fn _zbr_fn_isThisReturn(e: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1960
     switch (_zbr_val(e)) {
         .this_ => {
@@ -3793,6 +3837,7 @@ pub fn _zbr_fn_isThisReturn(e: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1968
 pub fn _zbr_fn_isStructValueType(t: _zbr_ty_Type_, ic: *_zbr_ty_InferCtx) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1969
     if (_zbr_val(t) == .named) {
         const n = t.named;
@@ -3813,6 +3858,7 @@ pub fn _zbr_fn_isStructValueType(t: _zbr_ty_Type_, ic: *_zbr_ty_InferCtx) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1981
 pub fn _zbr_fn_isRvalueReceiver(e: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1982
     switch (_zbr_val(e)) {
         .binary => {
@@ -3844,6 +3890,7 @@ pub fn _zbr_fn_isRvalueReceiver(e: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/CgHelpers.zbr:1996
 pub fn _zbr_fn_methodMutatesSelf(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:1997
     for (stmts.items) |s| {
 // zbr:selfhost/CgHelpers.zbr:1998
@@ -3858,6 +3905,7 @@ pub fn _zbr_fn_methodMutatesSelf(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 
 // zbr:selfhost/CgHelpers.zbr:2002
 pub fn _zbr_fn_stmtMutatesSelf(s: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:2003
     switch (_zbr_val(s)) {
         .assign => {
@@ -4134,6 +4182,7 @@ pub fn _zbr_fn_stmtMutatesSelf(s: _zbr_ty_Stmt) bool {
 
 // zbr:selfhost/CgHelpers.zbr:2119
 pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:2120
     switch (_zbr_val(e)) {
         .call => |_ptr_c| {
@@ -4432,6 +4481,7 @@ pub fn _zbr_fn_exprHasSelfCall(e: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/CgHelpers.zbr:2249
 pub fn _zbr_fn_isContainerTypeRef(tr: _zbr_ty_TypeRef) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/CgHelpers.zbr:2250
     switch (_zbr_val(tr)) {
         .generic => |g| {
@@ -4449,7 +4499,7 @@ pub fn _zbr_fn_isContainerTypeRef(tr: _zbr_ty_TypeRef) bool {
     }
 }
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_StrSet) return _reflect_StrSet_name;
     return "unknown";
@@ -4464,6 +4514,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

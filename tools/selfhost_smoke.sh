@@ -926,6 +926,7 @@ smoke_run test/bug295_lazy_init_test.zbr "bug295-lazy: 14 15 140 a 141 2 true"
 # Initialisers that need each other's values: no order exists, so the program stops at
 # start-up naming the chain. The pre-fix compiler printed -6148914691236517204.
 smoke_run_fail test/bug295_init_cycle_test.zbr "module initialisation cycle: bug295_init_cycle_lib.y -> bug295_init_cycle_test.x -> bug295_init_cycle_lib.y"
+smoke_run_fail test/bug669_min_rem_neg1_test.zbr "integer overflow"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
 # a struct only deps get); --no-runtime-module gives each module its own accessor state

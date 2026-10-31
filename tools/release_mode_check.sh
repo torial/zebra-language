@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # release_mode_check.sh — THE ONLY GATE THAT BUILDS WITH `--release`.
 # pins: BUG-468 the stack-overflow legs -- a --release program must print "Stack overflow" in both runtime shapes.
+# pins: BUG-667 the overflow leg -- + - * neg += byte / % must trap in --release, not carry on.
+# pins: BUG-668 the nil leg -- `s!` on nil must trap in --release, not read garbage.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -230,6 +232,85 @@ else
     say FAIL "in-range conversion BROKE in --release"
     fail=$((fail + 1))
 fi
+
+# ── BUG-667 / BUG-668: overflow and a nil unwrap must TRAP in --release too ───────────────
+# ReleaseFast makes both undefined behaviour: `x + 1` past the maximum printed the maximum,
+# a nil `s!` read garbage and carried on, exit 0. Every emitted function now opens with
+# `@setRuntimeSafety(true)`, so Zig's own checks run in Zebra's code under a ReleaseFast
+# build. ONE release build (an LLVM build per probe would add minutes to the tier), run once
+# per probe: the operation is the program's argument, and every operand comes from the
+# argument count, so nothing folds at compile time. Classified on the panic TEXT and on the
+# SURVIVED line never appearing; the `ok` run is the control that valid arithmetic, a
+# byte, a division and a present optional still work.
+cat > "$_idx_dir/ov.zbr" <<'ZBR'
+def main()
+    var a = sys.args()
+    if a.count() < 2
+        print("ov ready")
+        return
+    var op: str = a.at(1)
+    var n: int = a.count() - 1
+    var big: int = 9223372036854775806 + n
+    var low: int = 0 - big - n
+    var b: byte = n.toUint8()
+    var s: str? = nil
+    if a.count() > 5
+        s = "x"
+    if op == "add"
+        print("SURVIVED add: ${big + n}")
+    else if op == "sub"
+        print("SURVIVED sub: ${low - n}")
+    else if op == "mul"
+        print("SURVIVED mul: ${big * (n + 1)}")
+    else if op == "neg"
+        print("SURVIVED neg: ${-low}")
+    else if op == "pluseq"
+        big += n
+        print("SURVIVED +=: ${big}")
+    else if op == "byte"
+        var c: byte = b - 2
+        print("SURVIVED byte sub: ${c}")
+    else if op == "div"
+        print("SURVIVED min/-1: ${low / (0 - n)}")
+    else if op == "mod"
+        print("SURVIVED min%-1: ${low % (0 - n)}")
+    else if op == "nil"
+        var t: str = s!
+        print("SURVIVED nil unwrap: ${t.len}")
+    else
+        var u: str? = "ok"
+        print("arith ok: ${big} ${low} ${b - n.toUint8()} ${big * 1} ${low / n} ${low % 7} ${u!}")
+ZBR
+_ov_out="$(cd "$_idx_dir" && timeout 900 "$ZEBRA" --keep-temp --release ov.zbr 2>&1)"
+_ov_dir="$(printf '%s\n' "$_ov_out" | kept_dir)"
+command -v cygpath >/dev/null 2>&1 && [ -n "$_ov_dir" ] && _ov_dir="$(cygpath -u "$_ov_dir")"
+_ov_exe="$_ov_dir/ov.zig.run.exe"
+if [[ ! -f "$_ov_exe" ]] || ! grep -q "ov ready" <<<"$_ov_out"; then
+    say FAIL "the overflow probe did not build in --release -- the overflow and nil legs could not run, so this gate knows NOTHING about them"
+    printf '%s\n' "$_ov_out" | tail -4 | sed 's/^/      /'
+    fail=$((fail + 1))
+else
+    _ov_fail=0
+    for _op in add sub mul neg pluseq byte div mod nil; do
+        _want="integer overflow"
+        [ "$_op" = nil ] && _want="attempt to use null value"
+        _r="$("$_ov_exe" "$_op" 2>&1)"
+        if grep -q SURVIVED <<<"$_r" || ! grep -q "$_want" <<<"$_r"; then
+            say FAIL "--release $_op did NOT trap -- it carried on: $(printf '%s' "$_r" | head -2 | tr '\n' ' ' | cut -c1-120)"
+            _ov_fail=$((_ov_fail + 1))
+        fi
+    done
+    fail=$((fail + _ov_fail))
+    [ "$_ov_fail" = 0 ] && say ok "overflow (+ - * neg += byte / %) and a nil unwrap trap in --release"
+    _r="$("$_ov_exe" ok 2>&1)"
+    if grep -qF "arith ok: 9223372036854775807 -9223372036854775808 0 9223372036854775807 -9223372036854775808 -1 ok" <<<"$_r"; then
+        say ok "in-range arithmetic, a byte, a division and a present optional still right in --release"
+    else
+        say FAIL "the in-range control is WRONG in --release: $(printf '%s' "$_r" | head -2 | tr '\n' ' ' | cut -c1-140)"
+        fail=$((fail + 1))
+    fi
+fi
+[ -n "$_ov_dir" ] && rm -rf "$_ov_dir"
 rm -rf "$_idx_dir"
 
 # ── BUG-468: a --release binary must SAY it overflowed its stack ─────────────────────────

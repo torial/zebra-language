@@ -25,6 +25,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **Integer overflow traps in every build (BUG-667), and so does a nil unwrap (BUG-668).**
+  A `--release` build used to treat both as undefined behaviour: `x + 1` past the maximum
+  printed the maximum, `s!` on nil read garbage, exit 0. Every function the compiler emits
+  now opens with `@setRuntimeSafety(true)`, so Zig's own checks run in Zebra's code under a
+  ReleaseFast build -- `zebra --release` or a host building the emitted Zig -- and nowhere
+  else. The V backend routes `int` arithmetic through checked helpers (V's operators wrap).
+  **A program that relied on a release build wrapping silently now stops with
+  `integer overflow`.** Explicit wrapping operations are planned.
+
+- **`minimum % -1` traps instead of killing the program silently (BUG-669).** It is the one
+  remainder Zig's safety does not check, and x86 faults on it with no message, in Debug too.
+
 - **A struct's method can be used as a value (BUG-596).** `var f = p.move` binds the struct
   VARIABLE `p` by reference: calls through `f` change `p`, a write to `p` is seen by `f`, and
   `f` may be returned or stored (the variable is kept alive for it). The receiver must be a

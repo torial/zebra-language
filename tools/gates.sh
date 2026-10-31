@@ -553,6 +553,11 @@ run_fast "census"        "passed"   bash tools/census_check.sh
 # per BYTE (10 MB in 18.5 s, --release too) and no gate fed a program more than a few bytes of
 # stdin. Correctness from the input bytes, plus 4 MB in under 1.5 s (3.84 s before the fix).
 run_fast "stdin-read"    "passed"   bash tools/stdin_read_check.sh
+# BUG-667 / BUG-668: every function emitted into a user module opens with
+# `@setRuntimeSafety(true)`, or a ReleaseFast build carries on through overflow and a nil
+# unwrap. Derived from the OUTPUT (the committed selfhost/*.zig plus a sample emitted now),
+# because no Debug gate can see a function that misses it -- Debug is already safe.
+run_fast "runtime-safety" " 0 unchecked of" python tools/runtime_safety_check.py --gate
 # BUG-485: a host that embeds a --library-mode program keeps its allocator across the
 # library's main(). A Zig host is the attacker; the old prologue is the negative control.
 run_fast "library-mode"  "PASS"     bash tools/library_mode_check.sh

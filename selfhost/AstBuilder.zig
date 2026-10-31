@@ -12,6 +12,7 @@ const _intern = _zbr_rt._intern;
 const _zbr_at = _zbr_rt._zbr_at;
 const _zebra_lt = _zbr_rt._zebra_lt;
 const _zebra_le = _zbr_rt._zebra_le;
+const _zbr_rem = _zbr_rt._zbr_rem;
 const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
@@ -167,12 +168,14 @@ const _zbr_ty_POptChain = _zbr_mod_Parser._zbr_ty_POptChain;
 const _zbr_ty_PIfExpr = _zbr_mod_Parser._zbr_ty_PIfExpr;
 // zbr:selfhost/AstBuilder.zbr:22
 pub fn _zbr_fn_zspan() _zbr_ty_Span {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:23
     return _zbr_ty_Span.init(0, 0, 0, 0);
 }
 
 // zbr:selfhost/AstBuilder.zbr:29
 pub fn _zbr_fn_nameSpan(line: i64, col: i64, name: []const u8) _zbr_ty_Span {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:30
     if (_zebra_le(line, 0)) {
 // zbr:selfhost/AstBuilder.zbr:31
@@ -184,6 +187,7 @@ pub fn _zbr_fn_nameSpan(line: i64, col: i64, name: []const u8) _zbr_ty_Span {
 
 // zbr:selfhost/AstBuilder.zbr:58
 pub fn _zbr_fn_spanOf(e: _zbr_ty_Expr) _zbr_ty_Span {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:59
     switch (_zbr_val(e)) {
         .int_lit => |so_int_lit| {
@@ -356,6 +360,7 @@ pub fn _zbr_fn_spanOf(e: _zbr_ty_Expr) _zbr_ty_Span {
 
 // zbr:selfhost/AstBuilder.zbr:135
 pub fn _zbr_fn_spanOfFirst(es: _ZbrList(_zbr_ty_Expr)) _zbr_ty_Span {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:136
     if ((@as(i64, @intCast(es.items.len)) == 0)) {
 // zbr:selfhost/AstBuilder.zbr:137
@@ -367,18 +372,21 @@ pub fn _zbr_fn_spanOfFirst(es: _ZbrList(_zbr_ty_Expr)) _zbr_ty_Span {
 
 // zbr:selfhost/AstBuilder.zbr:140
 pub fn _zbr_fn_zmods() _zbr_ty_Modifiers {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:141
     return _zbr_ty_Modifiers.init(false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
 }
 
 // zbr:selfhost/AstBuilder.zbr:143
 pub fn _zbr_fn_zstatic() _zbr_ty_Modifiers {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:144
     return _zbr_ty_Modifiers.init(false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false);
 }
 
 // zbr:selfhost/AstBuilder.zbr:151
 pub fn _zbr_fn_stripStringQuotes(text: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:152
     if ((@as(i64, @intCast(text.len)) == 0)) {
 // zbr:selfhost/AstBuilder.zbr:153
@@ -423,7 +431,7 @@ pub fn _zbr_fn_stripStringQuotes(text: []const u8) []const u8 {
             k = (k - 1);
         }
 // zbr:selfhost/AstBuilder.zbr:178
-        if ((@rem(bs, 2) == 0)) {
+        if ((_zbr_rem(bs, 2) == 0)) {
 // zbr:selfhost/AstBuilder.zbr:179
             body = body[@intCast(0)..@intCast((@as(i64, @intCast(body.len)) - 1))];
         }
@@ -434,6 +442,7 @@ pub fn _zbr_fn_stripStringQuotes(text: []const u8) []const u8 {
 
 // zbr:selfhost/AstBuilder.zbr:184
 pub fn _zbr_fn_stripZigQuotes(text: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:185
     if (_zebra_lt(@as(i64, @intCast(text.len)), 5)) {
 // zbr:selfhost/AstBuilder.zbr:186
@@ -480,6 +489,7 @@ pub fn _zbr_fn_stripZigQuotes(text: []const u8) []const u8 {
 
 // zbr:selfhost/AstBuilder.zbr:208
 pub fn _zbr_fn_stripRawAndEscape(text: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:209
     if (_zebra_lt(@as(i64, @intCast(text.len)), 3)) {
 // zbr:selfhost/AstBuilder.zbr:210
@@ -554,6 +564,7 @@ pub fn _zbr_fn_stripRawAndEscape(text: []const u8) []const u8 {
 
 // zbr:selfhost/AstBuilder.zbr:244
 pub fn _zbr_fn_stripCharQuotes(text: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:246
     if (_zebra_lt(@as(i64, @intCast(text.len)), 3)) {
 // zbr:selfhost/AstBuilder.zbr:247
@@ -580,6 +591,7 @@ pub fn _zbr_fn_stripCharQuotes(text: []const u8) []const u8 {
 
 // zbr:selfhost/AstBuilder.zbr:259
 pub fn _zbr_fn_getObjectIdentName(e: _zbr_ty_Expr) ?[]const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:260
     switch (_zbr_val(e)) {
         .ident => |id| {
@@ -595,6 +607,7 @@ pub fn _zbr_fn_getObjectIdentName(e: _zbr_ty_Expr) ?[]const u8 {
 
 // zbr:selfhost/AstBuilder.zbr:269
 pub fn _zbr_fn_qualifiedUnionName(e: _zbr_ty_Expr) ?[]const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:270
     if (_zbr_val(e) == .member) {
         const qm_ptr = e.member;
@@ -611,6 +624,7 @@ pub fn _zbr_fn_qualifiedUnionName(e: _zbr_ty_Expr) ?[]const u8 {
 
 // zbr:selfhost/AstBuilder.zbr:275
 pub fn _zbr_fn_isScopedAllocatorExpr(e: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:276
     if (_zbr_val(e) == .call) {
         const c_ptr = e.call;
@@ -631,12 +645,14 @@ pub fn _zbr_fn_isScopedAllocatorExpr(e: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/AstBuilder.zbr:289
 pub fn _zbr_fn_mixinFieldName(mixin_name: []const u8, field_name: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:290
     return _str_concat(_str_concat(_str_concat("_mx_", mixin_name, _zbr_rt._allocator), "__", _zbr_rt._allocator), field_name, _zbr_rt._allocator);
 }
 
 // zbr:selfhost/AstBuilder.zbr:295
 pub fn _zbr_fn_pnDeclaredNames(stmts: _ZbrList(_zbr_ty_PNode), out: _ZbrMap(bool)) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:296
     for (stmts.items) |st| {
 // zbr:selfhost/AstBuilder.zbr:297
@@ -748,6 +764,7 @@ pub const _zbr_ty_ASTBuilder = struct {
     mx_fields: _ZbrMap([]const u8) = undefined,
     mx_bare: _ZbrMap(bool) = undefined,
     pub fn init() *_zbr_ty_ASTBuilder {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_ASTBuilder) catch @panic("OOM");
         _self._type_tag = _zbr_hash("ASTBuilder");
 // zbr:selfhost/AstBuilder.zbr:348
@@ -763,6 +780,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:354
     pub fn build(pm: _zbr_ty_PModule, file: []const u8) anyerror!_zbr_ty_Module {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:355
         var ab = _zbr_ty_ASTBuilder.init();
 // zbr:selfhost/AstBuilder.zbr:356
@@ -775,6 +793,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:362
     pub fn buildTopDecls(self: *_zbr_ty_ASTBuilder, nodes: _ZbrList(_zbr_ty_PNode)) anyerror!_ZbrList(_zbr_ty_Decl) {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:363
         var decls = _zbr_new(_ZbrList(_zbr_ty_Decl));
 // zbr:selfhost/AstBuilder.zbr:364
@@ -788,6 +807,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:368
     pub fn buildTopDecl(self: *_zbr_ty_ASTBuilder, pn: _zbr_ty_PNode) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:369
         switch (_zbr_val(pn)) {
             .use_ => |_ptr_u| {
@@ -875,6 +895,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:408
     pub fn buildClass(self: *_zbr_ty_ASTBuilder, c: _zbr_ty_PClass) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:409
         var members = _zbr_new(_ZbrList(_zbr_ty_Decl));
 // zbr:selfhost/AstBuilder.zbr:410
@@ -928,6 +949,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:436
     pub fn buildInterface(self: *_zbr_ty_ASTBuilder, c: _zbr_ty_PClass) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:437
         var members = _zbr_new(_ZbrList(_zbr_ty_Decl));
 // zbr:selfhost/AstBuilder.zbr:438
@@ -955,6 +977,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:450
     pub fn buildMixin(self: *_zbr_ty_ASTBuilder, c: _zbr_ty_PClass) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:454
         self.mx_fields = _zbr_new(_ZbrMap([]const u8));
 // zbr:selfhost/AstBuilder.zbr:455
@@ -1034,6 +1057,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:485
     pub fn buildExtend(self: *_zbr_ty_ASTBuilder, ex: _zbr_ty_PExtend) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:486
         var members = _zbr_new(_ZbrList(_zbr_ty_Decl));
 // zbr:selfhost/AstBuilder.zbr:487
@@ -1049,6 +1073,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:494
     pub fn buildStruct(self: *_zbr_ty_ASTBuilder, s: _zbr_ty_PClass) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:495
         var members = _zbr_new(_ZbrList(_zbr_ty_Decl));
 // zbr:selfhost/AstBuilder.zbr:496
@@ -1086,6 +1111,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:513
     pub fn buildUnion(self: *_zbr_ty_ASTBuilder, u: _zbr_ty_PUnionDecl) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:514
         var variants = _zbr_new(_ZbrList(_zbr_ty_UnionVariant));
 // zbr:selfhost/AstBuilder.zbr:515
@@ -1106,6 +1132,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:524
     pub fn buildSig(self: *_zbr_ty_ASTBuilder, sg: _zbr_ty_PSig) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:525
         var params = _zbr_new(_ZbrList(_zbr_ty_Param));
 // zbr:selfhost/AstBuilder.zbr:526
@@ -1123,6 +1150,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:532
     pub fn buildTypeAlias(self: *_zbr_ty_ASTBuilder, ta: _zbr_ty_PTypeAlias) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:533
         var alias_params = _zbr_new(_ZbrList(_zbr_ty_Param));
 // zbr:selfhost/AstBuilder.zbr:534
@@ -1152,6 +1180,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:547
     pub fn buildMember(self: *_zbr_ty_ASTBuilder, pn: _zbr_ty_PNode) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:548
         switch (_zbr_val(pn)) {
             .field_ => |_ptr_f| {
@@ -1195,6 +1224,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:568
     pub fn buildEnum(self: *_zbr_ty_ASTBuilder, e: _zbr_ty_PEnum) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:569
         var members = _zbr_new(_ZbrList(_zbr_ty_EnumMember));
 // zbr:selfhost/AstBuilder.zbr:572
@@ -1229,6 +1259,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:588
     pub fn buildMethod(self: *_zbr_ty_ASTBuilder, m: _zbr_ty_PMethod, is_member: bool) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
         _ = is_member;
 // zbr:selfhost/AstBuilder.zbr:589
         var params = _zbr_new(_ZbrList(_zbr_ty_Param));
@@ -1321,6 +1352,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:637
     pub fn buildInit(self: *_zbr_ty_ASTBuilder, pinit: _zbr_ty_PInit) anyerror!_zbr_ty_Decl {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:638
         var params = _zbr_new(_ZbrList(_zbr_ty_Param));
 // zbr:selfhost/AstBuilder.zbr:639
@@ -1388,6 +1420,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:669
     pub fn buildStmts(self: *_zbr_ty_ASTBuilder, nodes: _ZbrList(_zbr_ty_PNode)) anyerror!_ZbrList(_zbr_ty_Stmt) {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:670
         var stmts = _zbr_new(_ZbrList(_zbr_ty_Stmt));
 // zbr:selfhost/AstBuilder.zbr:671
@@ -1401,6 +1434,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:677
     pub fn rewriteWithStmt(self: *_zbr_ty_ASTBuilder, s: _zbr_ty_Stmt, target_expr: _zbr_ty_Expr) _zbr_ty_Stmt {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:678
         switch (_zbr_val(s)) {
@@ -1459,6 +1493,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:703
     pub fn buildStmt(self: *_zbr_ty_ASTBuilder, pn: _zbr_ty_PNode) anyerror!_zbr_ty_Stmt {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:704
         switch (_zbr_val(pn)) {
             .stmt_pass => {
@@ -1814,6 +1849,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:947
     pub fn buildBranch(self: *_zbr_ty_ASTBuilder, pb: _zbr_ty_PBranch) anyerror!_zbr_ty_Stmt {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:948
         const subject_expr = (try self.buildExpr(_zbr_at(pb.subject.items, 0)));
 // zbr:selfhost/AstBuilder.zbr:949
@@ -1936,6 +1972,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1007
     pub fn tryBuildStructPat(self: *_zbr_ty_ASTBuilder, e: _zbr_ty_Expr) ?_zbr_ty_StructPat {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1008
         switch (_zbr_val(e)) {
@@ -2001,6 +2038,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1041
     pub fn isDecimalDigits(self: *_zbr_ty_ASTBuilder, s: []const u8) bool {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1042
         if ((@as(i64, @intCast(s.len)) == 0)) {
@@ -2027,6 +2065,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1052
     pub fn patternToExpr(self: *_zbr_ty_ASTBuilder, pat: []const u8) _zbr_ty_Expr {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1054
         if (std.mem.startsWith(u8, pat, "c'")) {
 // zbr:selfhost/AstBuilder.zbr:1056
@@ -2058,6 +2097,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1086
     pub fn pipeBare(self: *_zbr_ty_ASTBuilder, lhs_expr: _zbr_ty_Expr, rhs_node: _zbr_ty_PNode) anyerror!_zbr_ty_Expr {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1087
         const callee_expr = (try self.buildExpr(rhs_node));
 // zbr:selfhost/AstBuilder.zbr:1088
@@ -2070,6 +2110,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1095
     pub fn rebaseSelfMember(self: *_zbr_ty_ASTBuilder, node: _zbr_ty_PNode, lhs: _zbr_ty_PNode) ?_zbr_ty_PNode {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1096
         switch (_zbr_val(node)) {
             .expr_call => |_ptr_pc| {
@@ -2116,6 +2157,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1117
     pub fn buildExpr(self: *_zbr_ty_ASTBuilder, pn: _zbr_ty_PNode) anyerror!_zbr_ty_Expr {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1118
         switch (_zbr_val(pn)) {
             .expr_int => |_ptr_lit| {
@@ -2643,6 +2685,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1425
     pub fn buildStringLit(self: *_zbr_ty_ASTBuilder, text: []const u8, line: i64, col: i64) anyerror!_zbr_ty_Expr {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1426
         const sp = _zbr_ty_Span.init(line, col, line, col);
@@ -2657,6 +2700,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1431
     pub fn buildLambdaExpr(self: *_zbr_ty_ASTBuilder, pl: _zbr_ty_PLambda) anyerror!_zbr_ty_Expr {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1433
         var params = _zbr_new(_ZbrList(_zbr_ty_Param));
 // zbr:selfhost/AstBuilder.zbr:1434
@@ -2736,6 +2780,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1478
     pub fn compoundBinaryOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_BinaryOp {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1479
         if (std.mem.eql(u8, op, "+=")) {
@@ -2803,6 +2848,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1505
     pub fn toAssignOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_AssignOp {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1506
         if (std.mem.eql(u8, op, "=")) {
@@ -2875,6 +2921,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1534
     pub fn toBinaryOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_BinaryOp {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1535
         if (std.mem.eql(u8, op, "+")) {
@@ -2977,6 +3024,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1579
     pub fn toUnaryOp(self: *_zbr_ty_ASTBuilder, op: []const u8) anyerror!_zbr_ty_UnaryOp {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1580
         if (std.mem.eql(u8, op, "-")) {
@@ -2999,6 +3047,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1607
     pub fn splitTopLevelArgs(self: *_zbr_ty_ASTBuilder, s: []const u8) _ZbrList([]const u8) {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/AstBuilder.zbr:1608
         var out = _zbr_new(_ZbrList([]const u8));
@@ -3049,6 +3098,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1627
     pub fn parseTypeRef(self: *_zbr_ty_ASTBuilder, s: []const u8) ?_zbr_ty_TypeRef {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1628
         if ((std.mem.eql(u8, s, "") or std.mem.eql(u8, s, "void"))) {
 // zbr:selfhost/AstBuilder.zbr:1629
@@ -3291,6 +3341,7 @@ pub const _zbr_ty_ASTBuilder = struct {
 
     // zbr:selfhost/AstBuilder.zbr:1745
     pub fn parseTypeRefRequired(self: *_zbr_ty_ASTBuilder, s: []const u8) _zbr_ty_TypeRef {
+        @setRuntimeSafety(true);
 // zbr:selfhost/AstBuilder.zbr:1746
         const tr = self.parseTypeRef(s);
 // zbr:selfhost/AstBuilder.zbr:1747
@@ -3310,6 +3361,7 @@ const _reflect_ASTBuilder_field_types: []const []const u8 = &.{"int", "str", "Ha
 
 // zbr:selfhost/AstBuilder.zbr:1751
 pub fn main(_zinit: std.process.Init) void {
+    @setRuntimeSafety(true);
     _zbr_rt._io = _zinit.io;
     _zbr_rt._args = _zinit.minimal.args;
     _zbr_rt._environ = _zinit.minimal.environ;
@@ -3320,7 +3372,7 @@ pub fn main(_zinit: std.process.Init) void {
     _zbr_print("{s}\n", .{"AstBuilder.zbr: import-only module (use 'use astbuilder exposing ASTBuilder')"});
 }
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_ASTBuilder) return _reflect_ASTBuilder_name;
     return "unknown";
@@ -3335,6 +3387,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

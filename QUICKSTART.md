@@ -365,6 +365,16 @@ An int literal adapts to the other side (`u + 1` on a `uint64` is fine). `int / 
 still integer division. A compound assignment stores the result back, so `f += n` (float
 with int) is fine and `n += f` is refused -- the result would be a float.
 
+**Integer overflow TRAPS, in every build** (BUG-667, decided 2026-10-30). `+ - *`, unary
+`-`, the compound forms, `minimum / -1` and `minimum % -1` panic with `integer overflow`
+when the true result does not fit the type -- in a `--release` build too, and on the V
+backend, whose own operators wrap. A program never carries on with a wrapped or invented
+value. (A byte counts: `b - 2` on a `byte` holding 1 traps. On the V backend the check
+covers `int` so far; `--target v` reports how many integer operations it could not check.)
+Explicit wrapping operations
+for code that means to wrap -- hashes, random generators -- are planned and not yet
+spelled.
+
 ### §3.1 Operator precedence (highest → lowest)
 
 | Level | Operators | Notes |

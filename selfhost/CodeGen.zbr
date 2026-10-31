@@ -2030,7 +2030,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 reflect_classes.add(rc.name)
     if reflect_classes.len > 0
         # Emit a wrapper struct so that reflect slices work with .items.len and .items[i]
-        w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };\n")
+        w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };\n")
         w.emit("fn _reflect_lookup_name(tag: u64) []const u8 {\n")
         var ri2 = 0
         while ri2 < reflect_classes.len
@@ -2073,8 +2073,10 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     # reference in Zig.  See docs/single_file_emit_design.md §7a.1.
     if _single_file
         w.emit("pub fn _initModuleVarsImpl() void {\n")
+        w.emit("    " + safetyStmt() + "\n")
     else
         w.emit("pub fn _initModuleVars() void {\n")
+        w.emit("    " + safetyStmt() + "\n")
     w.emit("    if (_module_vars_inited) return;\n")
     w.emit("    _module_vars_inited = true;\n")
     for mvd in m.decls
@@ -2130,6 +2132,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 w.emit("}\n")
                 w.emit("fn _zbr_mvinit_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
                 w.emit("    @branchHint(.cold);\n")
+                w.emit("    " + safetyStmt() + "\n")
                 w.emit("    if (_zbr_mvst_" + lmv.name + " == 1) _zbr_init_cycle(" + lq + ", " + lshared + ");\n")
                 w.emit("    _zbr_mvst_" + lmv.name + " = 1;\n")
                 w.emit("    var _zbr_frame: _ZbrInitFrame = .{ .name = " + lq + ", .prev = _zbr_init_head };\n")
@@ -2214,8 +2217,8 @@ def generateEntryPoint(m: Module, library_mode: bool): str
                     if tm.name == "main" and not tm.mods.is_static and tm.params.len == 0
                         var tm_throws: bool = methodEmitsErrorUnion(tm)
                         if tm_throws
-                            return "pub fn main(_zinit: std.process.Init) anyerror!void {\n    return _Mod.main(_zinit);\n}\n"
-                        return "pub fn main(_zinit: std.process.Init) void {\n    _Mod.main(_zinit);\n}\n"
+                            return "pub fn main(_zinit: std.process.Init) anyerror!void {\n    " + safetyStmt() + "\n    return _Mod.main(_zinit);\n}\n"
+                        return "pub fn main(_zinit: std.process.Init) void {\n    " + safetyStmt() + "\n    _Mod.main(_zinit);\n}\n"
         return ""
     # Single-file: the entry stays at file scope but the user's main class now
     # lives inside `_Mod`, so qualify the call.
@@ -2224,6 +2227,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         mod_prefix = "_Mod."
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
+    sb.append("    " + safetyStmt() + "\n")
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
@@ -2668,6 +2672,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
 
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
+    sb.append("    " + safetyStmt() + "\n")
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
@@ -2981,6 +2986,16 @@ def censFlush(indent: str): str
 
 # A function body's save/restore of the current site. The counter keeps nested lambda
 # bodies (emitted as fns inside the enclosing fn) from shadowing an outer save.
+# BUG-667 / BUG-668: Zig's own safety checks (integer overflow, a nil `.?`, an
+# `@intCast` out of range, `unreachable`) switched on in the function it opens, so a
+# ReleaseFast build -- `zebra --release`, or a host building emitted Zebra -- traps
+# where Debug traps instead of carrying on with undefined behaviour. Per FUNCTION,
+# because a per-module optimize mode does not split safety (measured). Every
+# function emitted into a user module opens with it; tools/runtime_safety_check.py
+# derives that from the output.
+def safetyStmt(): str
+    return "@setRuntimeSafety(true);"
+
 def censSave(): str
     _cens_save_n = _cens_save_n + 1
     var nm: str = "_zbr_ss_" + _cens_save_n.toString()
@@ -4667,6 +4682,12 @@ struct Generator
             indent = indent + 1
         return g
 
+    # the safety line as the first statement of a body opened at this indent
+    def emitSafety()
+        var sg = indented()
+        sg.writeIndent()
+        w.emit(safetyStmt() + "\n")
+
     def withEnsureCtx(armed: bool, uses_result: bool): Generator
         var g = this except
             ensure_armed_active = armed
@@ -5956,6 +5977,8 @@ struct Generator
             emitTypeName(n.name)                            # BUG-281 B
             w.emit(" {\n")
             sig_ig.writeIndent()
+            w.emit(safetyStmt() + "\n")
+            sig_ig.writeIndent()
             if si_first
                 w.emit("return .{};\n")
             else
@@ -5991,6 +6014,8 @@ struct Generator
                         ig.genExpr(df_fld.init_expr!)
                         w.emit(")")
                     w.emit(" {\n")
+                    sig_ig.writeIndent()
+                    w.emit(safetyStmt() + "\n")
                     sig_ig.writeIndent()
                     w.emit("return ")
                     if df_fld.init_expr != nil
@@ -6059,6 +6084,8 @@ struct Generator
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") []const u8 {\n")
         var ig_ts = indented()
+        ig_ts.writeIndent()
+        w.emit(safetyStmt() + "\n")
         # Build format string in a StringBuilder
         var fmt_str: str = n.name + "("
         var field_count = 0
@@ -6111,6 +6138,8 @@ struct Generator
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") bool {\n")
         var ig_eq = indented()
+        ig_eq.writeIndent()
+        w.emit(safetyStmt() + "\n")
         var field_count = 0
         for decl in n.members
             if decl is Decl.var_ as fld
@@ -6151,6 +6180,8 @@ struct Generator
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") u64 {\n")
         var ig_h = indented()
+        ig_h.writeIndent()
+        w.emit(safetyStmt() + "\n")
         ig_h.writeIndent()
         w.emit("var hasher = std.hash.Wyhash.init(0);\n")
         for decl in n.members
@@ -6232,6 +6263,8 @@ struct Generator
             ig.writeIndent()
             ig.w.emit("pub fn init() *@This() {\n")
             var dig = ig.indented()
+            dig.writeIndent()
+            dig.w.emit(safetyStmt() + "\n")
             dig.writeIndent()
             dig.w.emit("const self = _allocator.create(@This()) catch @panic(\"OOM\");\n")
             dig.writeIndent()
@@ -6801,6 +6834,8 @@ struct Generator
             ig.w.emit(" {\n")
             var dig = ig.indented()
             dig.writeIndent()
+            dig.w.emit(safetyStmt() + "\n")
+            dig.writeIndent()
             dig.w.emit("const self = _allocator.create(")
             dig.emitTypeName(n.name)                        # BUG-281 B
             dig.w.emit(") catch @panic(\"OOM\");\n")
@@ -6929,6 +6964,7 @@ struct Generator
                     w.emit("() *")
                     w.emit(iface_name)
                     w.emit(" {\n")
+                    w.emit("    " + safetyStmt() + "\n")
                     w.emit("    if (_zbr_export_")
                     w.emit(sym)
                     w.emit("_iface == null) {\n")
@@ -6993,6 +7029,7 @@ struct Generator
         w.emit("(_src: []const u8) ?*")
         emitTypeName(n.name)                                # BUG-281 B: the TYPE
         w.emit(" {\n")
+        w.emit("    " + safetyStmt() + "\n")
         w.emit("    const _v = _json_parse(_src) orelse return null;\n")
         w.emit("    if (!_json_is_object(_v)) return null;\n")
         if f_names.len > 0
@@ -7230,6 +7267,8 @@ struct Generator
         sg.w.emit(" {\n")
         var wg = sg.indented()
         wg.writeIndent()
+        wg.w.emit(safetyStmt() + "\n")
+        wg.writeIndent()
         wg.w.emit("while (true) {\n")
         var swg = wg.indented()
         swg.writeIndent()
@@ -7288,6 +7327,8 @@ struct Generator
                 w.emit("anytype")
             pi = pi + 1
         w.emit(") *" + typeZigName(gen_cls) + " {\n")
+        sg.writeIndent()
+        sg.w.emit(safetyStmt() + "\n")
         sg.writeIndent()
         sg.w.emit("const _g = _allocator.create(" + typeZigName(gen_cls) + ") catch @panic(\"OOM\");\n")
         sg.writeIndent()
@@ -7567,6 +7608,7 @@ struct Generator
                         if nt.name == "str"
                             sp.add(p.name)
             w.emit(" {\n")
+            emitSafety()
             # Root entry point (Zig 0.16): inject _io/_args/_allocator init + dep propagation
             if owner == "" and m.name == "main"
                 var ei = indented()
@@ -7656,6 +7698,7 @@ struct Generator
                     else
                         w.emit("void")
                     w.emit(" {\n")
+                    emitSafety()
                 # `zebra build --list-targets`: arm before any user statement, so
                 # _build_run() prints the target list instead of invoking the compiler.
                 if _list_targets_mode
@@ -7844,6 +7887,7 @@ struct Generator
         else
             emitTypeName(owner)                             # BUG-281 B
         w.emit(" {\n")
+        emitSafety()
         var ig = indented()
         if _census
             ig.writeIndent()
@@ -8199,7 +8243,7 @@ struct Generator
                     genType(vmth.return_type!)
                 else
                     w.emit("void")
-                w.emit(" { const _zbr_s: *_T = @ptrCast(@alignCast(_zbr_ptr)); return _zbr_s.")
+                w.emit(" { " + safetyStmt() + " const _zbr_s: *_T = @ptrCast(@alignCast(_zbr_ptr)); return _zbr_s.")
                 w.emit(vmth.name)
                 w.emit("(")
                 var vpi = 0
@@ -8258,6 +8302,8 @@ struct Generator
                     w.emit("void")
                 w.emit(" {\n")
                 mig.writeIndent()
+                w.emit(safetyStmt() + "\n")
+                mig.writeIndent()
                 if mth.throws_
                     w.emit("return try self.vtable.")
                 else
@@ -8313,6 +8359,8 @@ struct Generator
                             else
                                 w.emit("void")
                             w.emit(" {\n")
+                            mig.writeIndent()
+                            w.emit(safetyStmt() + "\n")
                             mig.writeIndent()
                             if smth.throws_
                                 w.emit("return try self.vtable.__as_")
@@ -8419,6 +8467,7 @@ struct Generator
             w.emit("void")
         if mth.stmts as mstmts
             w.emit(" {\n")
+            emitSafety()
             var ig = indented()
             # Seed inference so `this`/`self` resolves to the extend target type, so
             # stdlib method chains on `this` (e.g. `this.upper().concat("!")`) dispatch
@@ -13844,6 +13893,7 @@ struct Generator
         else
             emitTypeName(owner)                             # BUG-281 B
         w.emit(") void {\n")
+        emitSafety()
         var ig0 = indented()
         # §28a: the invariant is read in the class's own scope -- `size == items.count()`
         # was a list_dispatch guess with no inference context to type `items`.
@@ -16015,7 +16065,7 @@ struct Generator
             var mnt: Type_ = mixedNumericTarget(b.left, b.right)
             if not (mnt is Type_.unknown_)
                 if b.op == BinaryOp.mod
-                    w.emit("@rem(")
+                    w.emit("_zbr_rem(")   # BUG-669
                     emitAsNum(b.left, mnt)
                     w.emit(", ")
                     emitAsNum(b.right, mnt)
@@ -16059,7 +16109,7 @@ struct Generator
             #
             # The gcd/lcm helpers below keep @mod deliberately: they run Euclid's
             # algorithm over already-positive values, where the two agree.
-            w.emit("@rem(")
+            w.emit("_zbr_rem(")   # BUG-669: min % -1 traps, not a silent fault
             genExpr(b.left)
             w.emit(", ")
             genExpr(b.right)
@@ -21748,6 +21798,7 @@ struct Generator
                         if not lg.emitLambdaStmtsRetType(ss)
                             w.emit("void")
             w.emit(" {")
+            w.emit(" " + safetyStmt())
             # BUG-514 (Fable, GameEngine): a parameter the body never reads is an unused
             # function parameter to Zig -- a hard error. A `def` gets `_ = p;` (genMethod);
             # a lambda did not, so a handler that ignores one of its sig's parameters failed

@@ -447,6 +447,18 @@ pub fn _zebra_le(a: anytype, b: anytype) bool {
     if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) <= _zbr_enum_ord(b);
     return a <= b;
 }
+// BUG-669: `%` is @rem (BUG-236), and @rem(minInt, -1) is the one remainder Zig does not
+// check: x86's idiv faults on it, so the program died with NO message, in Debug too. It
+// traps with the overflow message instead, as `minInt / -1` does (Rust panics on it in
+// every mode); any other remainder by -1 is 0, which @rem gives. Inline, so a remainder
+// of two constants still folds.
+pub inline fn _zbr_rem(a: anytype, b: anytype) @TypeOf(a, b) {
+    const T = @TypeOf(a, b);
+    if (comptime @typeInfo(T) == .int and @typeInfo(T).int.signedness == .signed) {
+        if (b == -1 and a == std.math.minInt(T)) @panic("integer overflow");
+    }
+    return @rem(a, b);
+}
 pub fn _zebra_gt(a: anytype, b: anytype) bool {
     if (comptime _zbr_is_strlike(@TypeOf(a))) return std.mem.order(u8, _zbr_as_str(a), _zbr_as_str(b)) == .gt;
     if (comptime _zbr_has_cue(@TypeOf(a), "compare")) { var ac = a; _ = &ac; return ac.compare(b) > 0; }

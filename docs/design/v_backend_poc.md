@@ -2573,8 +2573,10 @@ Answered 2026-10-30 (Sean):
    So the Zig `--release` emit owes a checked form (per-function `@setRuntimeSafety(true)`
    is the candidate; the emitted share's checks cost ~0.1 ms/frame on the engine under
    ReleaseSafe, and the per-function form itself is not yet timed), and CodeGenV owes
-   checked arithmetic, since V
-   wraps. Neither is built yet; the G1 matrix row stays red until both are.
+   checked arithmetic, since V wraps. BUILT 2026-10-31: every emitted function opens with
+   `@setRuntimeSafety(true)` (gate `runtime-safety`), CodeGenV routes `int` arithmetic
+   through `zadd`..`zmod` and counts what it cannot check, and `min % -1` traps on both
+   (BUG-669). The wrapping operations' spelling is still open.
 2. **The release question** -- DECIDED: the next release does NOT wait for V.
 3. **`zig"..."`'s successor** -- DECIDED: `v"..."`, the same escape with V as its
    language. How the two coexist while both backends ship (each refused by the other

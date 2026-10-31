@@ -47,14 +47,16 @@ class VResult
     var has_globals: bool    # a `__global` was emitted: the run needs -enable-globals
     var uses_gui: bool       # Gui / CodeEditor named: the file needs a --gui-backend section to build
     var unverified: int      # method calls on a receiver whose type the emitter did not know: not checked against the runtime
+    var unchecked_arith: int # integer arithmetic the emitter could not route through a checked helper (BUG-667): V wraps there
 
-    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false, unverified: int = 0)
+    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false, unverified: int = 0, unchecked_arith: int = 0)
         .source = source
         .refused = refused
         .needs_math = needs_math
         .has_globals = has_globals
         .uses_gui = uses_gui
         .unverified = unverified
+        .unchecked_arith = unchecked_arith
 
 # "setAnimate" -> "set_animate"; "winDist" -> "win_dist"; "x" -> "x"
 def snakeCase(name: str): str
@@ -176,6 +178,7 @@ class VGen
     var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
     var rt_receivers: HashMap(str, bool) # the receiver types those methods hang on (a call on one is checked)
     var rt_unverified: int               # method calls on a receiver of unknown type: unchecked, and counted
+    var arith_unchecked: int             # BUG-667: arithmetic on an operand of unknown or unmapped integer type: V wraps it, counted
     var ref_params: HashMap(str, List(bool))   # by callee name (a function, `new_<class>`, a method): which params are references, hence `mut` (V's rule for a param mutated through a method; a method name shared across classes keeps the first)
 
     cue init()
@@ -242,6 +245,7 @@ class VGen
         .rt_methods = HashMap(str, bool)()
         .rt_receivers = HashMap(str, bool)()
         .rt_unverified = 0
+        .arith_unchecked = 0
 
     def refuse(what: str, span: Span)
         .refused.add(what + " (" + .current_file + ":" + span.line.toString() + ")")
@@ -2349,7 +2353,12 @@ class VGen
                             var aidx: str = .exprStr(aix.index)
                             var arhs: str = .coerced(a.value, tt)
                             var aop: str = assignOpV(a.op)
-                            if aop != "="
+                            var acfn: str = checkedFnFor(compoundBase(a.op))
+                            if aop != "=" and acfn != "" and tt == "i64" and .vTypeOf(a.value) == "i64"
+                                arhs = acfn + "(" + aobj + ".at(" + aidx + "), " + arhs + ")"   # BUG-667
+                            else if aop != "="
+                                if acfn != "" and (tt == "" or tt == "u8")
+                                    .arith_unchecked = .arith_unchecked + 1
                                 arhs = aobj + ".at(" + aidx + ") " + aop.substring(0, aop.len - 1) + " " + arhs
                             .line(aobj + ".set(" + aidx + ", " + arhs + ")")
                             aix_done = true
@@ -2363,7 +2372,16 @@ class VGen
                     var rhs: str = .coerced(a.value, tt)
                     if .isRefParamName(a.value) and (tt.startsWith("&") or tt.startsWith("?&"))
                         rhs = "unsafe { " + rhs + " }"   # a reference parameter kept in a field: V's escape rule refuses it plain
-                    .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + rhs)
+                    var cfn: str = checkedFnFor(compoundBase(a.op))
+                    if cfn != "" and tt == "i64" and .vTypeOf(a.value) == "i64" and isPlainPlace(a.target)
+                        # BUG-667: `x += e` is `x = zadd(x, e)`; the place is a name or a
+                        # field path, so reading it twice reads the same thing
+                        var tgt: str = .exprStr(a.target)
+                        .line(tgt + " = " + cfn + "(" + tgt + ", " + rhs + ")")
+                    else
+                        if cfn != "" and (tt == "" or tt == "u8")
+                            .arith_unchecked = .arith_unchecked + 1
+                        .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + rhs)
             on Stmt.expr as e
                 .genExprStmt(e)
             on Stmt.if_ as i
@@ -2820,6 +2838,7 @@ class VGen
                 for r in probe.refused
                     .refused.add(r)
                 .rt_unverified = .rt_unverified + probe.rt_unverified
+                .arith_unchecked = .arith_unchecked + probe.arith_unchecked
                 if probe.sb.build() != ""
                     return false
                 .line("} else if " + condStr(cs) + " {")
@@ -3093,6 +3112,8 @@ class VGen
                 return .binaryStr(b)
             on Expr.unary as u
                 if u.op == UnaryOp.neg
+                    if .vTypeOf(u.operand) == "i64" and not isIntLit(u.operand)
+                        return "zneg(" + .exprStr(u.operand) + ")"   # BUG-667: -min traps
                     return "(-" + .exprStr(u.operand) + ")"
                 if u.op == UnaryOp.not_
                     return "(!" + .exprStr(u.operand) + ")"
@@ -3376,6 +3397,7 @@ class VGen
                 for r in inner.refused
                     .refused.add(r)
                 .rt_unverified = .rt_unverified + inner.rt_unverified
+                .arith_unchecked = .arith_unchecked + inner.arith_unchecked
                 body = "\n" + inner.sb.build()
         .local_names = saved_locals
         return head + " {" + body + "}"
@@ -4161,6 +4183,9 @@ class VGen
         return obj + "." + vSafe(name) + "(" + .argsStr(args, key) + ")"
 
     def binaryStr(b: ExprBinary): str
+        var ck: str = .checkedArith(b)
+        if ck != ""
+            return ck
         if b.op == BinaryOp.or_ or b.op == BinaryOp.and_ or b.op == BinaryOp.add
             # decided before any operand is rendered: rendering binds temporaries,
             # and the chain renders its operands itself
@@ -4230,6 +4255,24 @@ class VGen
         # checker gives up at forty nested levels, and every term is evaluated
         # there, no short-circuit)
         return "(" + l + " " + binaryOpV(b.op) + " " + r + ")"
+
+    # BUG-667: an i64 +, -, *, /, % through the runtime's checked helper; "" when the op
+    # is not arithmetic or an operand is not an i64. An integer operand of a type the
+    # emitter does not know (or a byte, which V keeps as u8 and wraps) is counted.
+    def checkedArith(b: ExprBinary): str
+        var fn_: str = checkedFnFor(b.op)
+        if fn_ == ""
+            return ""
+        var lt: str = .vTypeOf(b.left)
+        var rt: str = .vTypeOf(b.right)
+        if lt == "i64" and rt == "i64"
+            if isIntLit(b.left) and isIntLit(b.right)
+                return ""   # a constant: V folds it at compile time
+            return fn_ + "(" + .exprStr(b.left) + ", " + .exprStr(b.right) + ")"
+        if lt == "" or rt == "" or lt == "u8" or rt == "u8"
+            if lt != "f64" and rt != "f64" and lt != "string" and rt != "string"
+                .arith_unchecked = .arith_unchecked + 1
+        return ""
 
     # a nil check reads the raw name, narrowed or not (a narrowed read would unwrap)
     def rawName(e: Expr, rendered: str): str
@@ -4309,6 +4352,37 @@ class VGen
         .depth = .depth - 1
         .line("}")
         return cn
+
+# BUG-667: integer overflow TRAPS (Sean, 2026-10-30) and V's integer operators wrap, so
+# an i64 +, -, *, / and % go through the runtime's checked helpers. "" for any other op.
+def checkedFnFor(op: BinaryOp): str
+    if op == BinaryOp.add: return "zadd"
+    if op == BinaryOp.sub: return "zsub"
+    if op == BinaryOp.mul: return "zmul"
+    if op == BinaryOp.div or op == BinaryOp.int_div: return "zdiv"
+    if op == BinaryOp.mod: return "zmod"
+    return ""
+
+# the arithmetic op a compound assignment applies (BinaryOp.eq, i.e. none, otherwise)
+def compoundBase(op: AssignOp): BinaryOp
+    if op == AssignOp.plus_eq: return BinaryOp.add
+    if op == AssignOp.minus_eq: return BinaryOp.sub
+    if op == AssignOp.star_eq: return BinaryOp.mul
+    if op == AssignOp.slash_eq or op == AssignOp.slashslash_eq: return BinaryOp.div
+    if op == AssignOp.percent_eq: return BinaryOp.mod
+    return BinaryOp.eq
+
+# a place that reads the same thing twice: a name, or a field path from one
+def isPlainPlace(e: Expr): bool
+    branch e
+        on Expr.ident
+            return true
+        on Expr.this_
+            return true
+        on Expr.member as m
+            return isPlainPlace(m.object)
+        else
+            return false
 
 def binaryOpV(op: BinaryOp): str
     if op == BinaryOp.add: return "+"
@@ -4748,4 +4822,4 @@ def generateV(ms: List(Module), runtime: str): VResult
         if ha >= 0 and hb > ha
             rt_text = rt_text.substring(0, ha) + "// (the http section is left out: the program makes no request)\n" + rt_text.substring(hb + "// == http end ==".len, rt_text.len)
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
-    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified)
+    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)

@@ -99,6 +99,7 @@ pub const _zbr_ty_UnionInfo = struct {
     variants: _ZbrList([]const u8) = undefined,
     variant_lines: _ZbrList(i64) = undefined,
     pub fn init(name: []const u8, file: []const u8, line: i64) *_zbr_ty_UnionInfo {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_UnionInfo) catch @panic("OOM");
         _self._type_tag = _zbr_hash("UnionInfo");
 // zbr:selfhost/Checker.zbr:28
@@ -116,6 +117,7 @@ pub const _zbr_ty_UnionInfo = struct {
 
     // zbr:selfhost/Checker.zbr:34
     pub fn addVariant(self: *_zbr_ty_UnionInfo, v: []const u8, ln: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:35
         self.variants.append(_zbr_rt._allocator, _intern(v)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:36
@@ -124,6 +126,7 @@ pub const _zbr_ty_UnionInfo = struct {
 
     // zbr:selfhost/Checker.zbr:38
     pub fn hasVariant(self: *_zbr_ty_UnionInfo, v: []const u8) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:39
         var i: i64 = 0;
 // zbr:selfhost/Checker.zbr:40
@@ -142,6 +145,7 @@ pub const _zbr_ty_UnionInfo = struct {
 
     // zbr:selfhost/Checker.zbr:46
     pub fn lineOf(self: *_zbr_ty_UnionInfo, v: []const u8) i64 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:47
         var i: i64 = 0;
 // zbr:selfhost/Checker.zbr:48
@@ -181,6 +185,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
     current_file: []const u8 = undefined,
     current_fn_key: []const u8 = undefined,
     pub fn init() *_zbr_ty_DeadCodeChecker {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_DeadCodeChecker) catch @panic("OOM");
         _self._type_tag = _zbr_hash("DeadCodeChecker");
 // zbr:selfhost/Checker.zbr:78
@@ -216,12 +221,14 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:93
     pub fn isKnownUnion(self: *_zbr_ty_DeadCodeChecker, name: []const u8) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:94
         return self.union_infos.contains(name);
     }
 
     // zbr:selfhost/Checker.zbr:96
     pub fn recordMatch(self: *_zbr_ty_DeadCodeChecker, union_name: []const u8, variant: []const u8, file: []const u8, line: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:97
         const key: []const u8 = _str_concat(_str_concat(union_name, ":", _zbr_rt._allocator), variant, _zbr_rt._allocator);
 // zbr:selfhost/Checker.zbr:98
@@ -239,6 +246,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:104
     pub fn recordConstruction(self: *_zbr_ty_DeadCodeChecker, union_name: []const u8, variant: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:105
         const key: []const u8 = _str_concat(_str_concat(union_name, ":", _zbr_rt._allocator), variant, _zbr_rt._allocator);
 // zbr:selfhost/Checker.zbr:106
@@ -252,6 +260,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:110
     pub fn fnKey(self: *const _zbr_ty_DeadCodeChecker, file: []const u8, fn_name: []const u8) []const u8 {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/Checker.zbr:111
         return _str_concat(_str_concat(file, "::", _zbr_rt._allocator), fn_name, _zbr_rt._allocator);
@@ -259,6 +268,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:113
     pub fn registerModuleFn(self: *_zbr_ty_DeadCodeChecker, file: []const u8, fn_name: []const u8, line: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:114
         const key: []const u8 = self.fnKey(file, fn_name);
 // zbr:selfhost/Checker.zbr:115
@@ -274,6 +284,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:120
     pub fn markAsRoot(self: *_zbr_ty_DeadCodeChecker, fn_key: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:121
         if ((!self.root_set.contains(fn_key))) {
 // zbr:selfhost/Checker.zbr:122
@@ -285,6 +296,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:125
     pub fn trackFnCall(self: *_zbr_ty_DeadCodeChecker, callee_name: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:126
         const to_key: []const u8 = self.fnKey(self.current_file, callee_name);
 // zbr:selfhost/Checker.zbr:127
@@ -309,6 +321,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:138
     pub fn extractFnName(self: *_zbr_ty_DeadCodeChecker, fn_key: []const u8) []const u8 {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/Checker.zbr:139
         if ((std.mem.indexOf(u8, fn_key, "::") != null)) {
@@ -326,6 +339,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:147
     pub fn collectDecls(self: *_zbr_ty_DeadCodeChecker, module: _zbr_ty_Module) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:148
         const file: []const u8 = module.file;
 // zbr:selfhost/Checker.zbr:149
@@ -343,6 +357,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:155
     pub fn collectDecl(self: *_zbr_ty_DeadCodeChecker, decl: _zbr_ty_Decl, file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:156
         switch (_zbr_val(decl)) {
             .union_ => |_ptr_u| {
@@ -410,6 +425,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:186
     pub fn walkModule(self: *_zbr_ty_DeadCodeChecker, module: _zbr_ty_Module) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:187
         const file: []const u8 = module.file;
 // zbr:selfhost/Checker.zbr:188
@@ -427,6 +443,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:194
     pub fn walkTopDecl(self: *_zbr_ty_DeadCodeChecker, decl: _zbr_ty_Decl, file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:195
         switch (_zbr_val(decl)) {
             .class_ => |_ptr_c| {
@@ -489,6 +506,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:221
     pub fn walkMemberDecls(self: *_zbr_ty_DeadCodeChecker, members: _ZbrList(_zbr_ty_Decl), file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:222
         const saved: []const u8 = self.current_fn_key;
 // zbr:selfhost/Checker.zbr:223
@@ -536,6 +554,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:241
     pub fn walkStmts(self: *_zbr_ty_DeadCodeChecker, stmts: _ZbrList(_zbr_ty_Stmt), file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:242
         var i: i64 = 0;
 // zbr:selfhost/Checker.zbr:243
@@ -549,6 +568,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:247
     pub fn walkStmt(self: *_zbr_ty_DeadCodeChecker, stmt: _zbr_ty_Stmt, file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:248
         switch (_zbr_val(stmt)) {
             .if_ => |_ptr_si| {
@@ -772,6 +792,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:341
     pub fn walkBranchValues(self: *_zbr_ty_DeadCodeChecker, values: _ZbrList(_zbr_ty_Expr), file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:342
         var vi: i64 = 0;
 // zbr:selfhost/Checker.zbr:343
@@ -785,6 +806,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:347
     pub fn walkCapture(self: *_zbr_ty_DeadCodeChecker, cap: _zbr_ty_DeclVar, file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:350
         if ((cap.init_expr != null)) {
 // zbr:selfhost/Checker.zbr:351
@@ -794,6 +816,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:353
     pub fn walkDictEntry(self: *_zbr_ty_DeadCodeChecker, entry: _zbr_ty_DictEntry, file: []const u8) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:356
         self.walkExpr(entry.key.*, file, false);
 // zbr:selfhost/Checker.zbr:357
@@ -802,6 +825,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:359
     pub fn walkExpr(self: *_zbr_ty_DeadCodeChecker, expr: _zbr_ty_Expr, file: []const u8, in_match: bool) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:360
         switch (_zbr_val(expr)) {
             .member => |_ptr_em| {
@@ -1234,6 +1258,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:545
     pub fn computeReachability(self: *_zbr_ty_DeadCodeChecker) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:546
         var pending = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:548
@@ -1298,6 +1323,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:578
     pub fn hasIssues(self: *_zbr_ty_DeadCodeChecker) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:579
         var i: i64 = 0;
 // zbr:selfhost/Checker.zbr:580
@@ -1340,6 +1366,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 
     // zbr:selfhost/Checker.zbr:596
     pub fn report(self: *_zbr_ty_DeadCodeChecker) []const u8 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:597
         var sb = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Checker.zbr:598
@@ -1514,6 +1541,7 @@ const _reflect_DeadCodeChecker_field_types: []const []const u8 = &.{"HashMap(str
 
 // zbr:selfhost/Checker.zbr:690
 pub fn _zbr_fn_checkerDirOf(path: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:691
     if ((!(std.mem.indexOf(u8, path, "/") != null))) {
 // zbr:selfhost/Checker.zbr:692
@@ -1543,6 +1571,7 @@ pub fn _zbr_fn_checkerDirOf(path: []const u8) []const u8 {
 
 // zbr:selfhost/Checker.zbr:703
 pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: _ZbrList([]const u8), modules: _ZbrList(_zbr_ty_Module)) anyerror!void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:704
     var vi: i64 = 0;
 // zbr:selfhost/Checker.zbr:705
@@ -1616,6 +1645,7 @@ pub fn _zbr_fn_checkerLoadDeps(path: []const u8, visited: _ZbrList([]const u8), 
 
 // zbr:selfhost/Checker.zbr:738
 pub fn _zbr_fn_runCheck(root_path: []const u8) anyerror!bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Checker.zbr:739
     const visited = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/Checker.zbr:740
@@ -1656,7 +1686,7 @@ pub fn _zbr_fn_runCheck(root_path: []const u8) anyerror!bool {
     return checker.hasIssues();
 }
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_UnionInfo) return _reflect_UnionInfo_name;
     if (tag == _ttag_DeadCodeChecker) return _reflect_DeadCodeChecker_name;
@@ -1674,6 +1704,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

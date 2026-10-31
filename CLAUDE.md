@@ -237,10 +237,10 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 48 <!-- doc-gen: 48 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 59 <!-- doc-gen: 59 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 49 <!-- doc-gen: 49 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 60 <!-- doc-gen: 60 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **`--v` IS A FOCUS SET, NOT A RUNG (2026-10-30, Sean: "a tier with a V-specific focus").**
 It runs only the gates registered `run_v` -- today one, `v-check`
@@ -251,7 +251,9 @@ different question. `v-check` is `tools/v_check.sh` under the V the engine pins 
 and run, each diffed against a FRESH Zig run; the route's modules (CodeGen, Checker, main)
 within their refusal baseline and `v -check` clean; a nil unwrap naming its place; stdin
 polled without blocking; the V-built compiler answering the LSP; a runtime name
-`zebra_rt.v` does not define refused by name, with a mapped control that must stay clean. It
+`zebra_rt.v` does not define refused by name, with a mapped control that must stay clean;
+integer overflow (+ - * neg += / %) trapping on both backends with Zig's message, beside an
+in-range control diffed against the Zig run (BUG-667: V's operators wrap). It
 REFUSES (exit 2) when
 that V is not installed, and a Zig control that printed nothing is a failure, never a pass.
 Eleven to sixteen minutes on a loaded afternoon: twice standalone at 20 rows (V 0.5.2 and
@@ -942,6 +944,13 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   compiler alone: the preamble is read from disk, so an old
                                 #   binary run in this repo inherits the new handler in the
                                 #   inline shape.
+                                #   AN OVERFLOW + NIL LEG SINCE 2026-10-31 (BUG-667/668/669):
+                                #   ONE --release build of a program whose argument names the
+                                #   operation (+ - * neg += byte / % and `s!` on nil), run once
+                                #   per probe; each must print Zig's panic text and never its
+                                #   SURVIVED line, and an `ok` run must print the right values.
+                                #   On the pre-fix compiler every probe, run as its own
+                                #   program, carried on (`sub` printed a value no i64 holds).
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
 bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier, ~55s):
                                 #   the ONLY gate that passes `--turbo`, and the only one
@@ -1328,6 +1337,26 @@ bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-re
                                 #   3 4 MB in under 1.5 s, min of two -- 3.84 s on the old
                                 #   runtime (red-checked with it), 0.42 s fixed. CANNOT SEE:
                                 #   File reads, or stdin from a console rather than a pipe.
+python tools/runtime_safety_check.py --gate  # THE RELEASE-SAFETY SITE MAP, registered as
+                                #   `runtime-safety` (FAST, 2026-10-31, BUG-667/668). Every
+                                #   function emitted into a user module must open with
+                                #   `@setRuntimeSafety(true)`: `--release` builds ReleaseFast,
+                                #   where Zig drops its checks and overflow / a nil `.?` /
+                                #   `unreachable` are undefined behaviour (a wrong number, exit
+                                #   0), and a per-MODULE mode does not split safety (measured).
+                                #   NO DEBUG GATE CAN SEE A MISSED SITE -- Debug is safe either
+                                #   way -- so the map is DERIVED from the output: the committed
+                                #   selfhost/*.zig plus six corpus files emitted now, one per
+                                #   construct (extend/derive/interface/generic via trip.zbr, a
+                                #   generator, an invariant, an @export factory, lambdas,
+                                #   module vars). Reading codegen found 3 sites (the census
+                                #   prologue's); emitting found 24. Generated helpers with no
+                                #   user expression are exempt BY NAME with a reason, and a
+                                #   type-returning fn (comptime only) is skipped. Selftest on
+                                #   synthetic Zig first (a fn in a string, a fn type, an extern,
+                                #   `error{..}!T`, `@branchHint` first); REFUSES under 1500
+                                #   functions. CANNOT SEE: whether the checks fire --
+                                #   `release-mode`'s overflow leg runs that.
 bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-mode` (FAST
                                 #   tier, ~15 s, 2026-09-30, BUG-485). A `--library-mode`
                                 #   program is linked into a HOST, which installs its own
@@ -2561,7 +2590,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 120 scripts | <!-- doc-gen: 120 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 121 scripts | <!-- doc-gen: 121 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 tracked documents <!-- doc-gen: 45 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -3605,7 +3634,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **951** <!-- doc-gen: 951 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **952** <!-- doc-gen: 952 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

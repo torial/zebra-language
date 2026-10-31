@@ -27,6 +27,7 @@ const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
 const _zbr_ty_BinaryOp = _zbr_mod_Ast._zbr_ty_BinaryOp;
 // zbr:selfhost/AstWalk.zbr:64
 pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: _ZbrList(_zbr_ty_ExprOld)) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:65
     switch (_zbr_val(expr)) {
         .old_ => |_ptr_o| {
@@ -231,6 +232,7 @@ pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: _ZbrList(_zbr_ty_Exp
 
 // zbr:selfhost/AstWalk.zbr:147
 pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) _ZbrList(_zbr_ty_ExprOld) {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:148
     const out = _zbr_new(_ZbrList(_zbr_ty_ExprOld));
 // zbr:selfhost/AstWalk.zbr:149
@@ -241,6 +243,7 @@ pub fn _zbr_fn_collectOldNodes(expr: _zbr_ty_Expr) _ZbrList(_zbr_ty_ExprOld) {
 
 // zbr:selfhost/AstWalk.zbr:158
 pub fn _zbr_fn_isZigIdentChar(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:159
     if ((_zebra_ge(c, 'a') and _zebra_le(c, 'z'))) {
 // zbr:selfhost/AstWalk.zbr:160
@@ -262,6 +265,7 @@ pub fn _zbr_fn_isZigIdentChar(c: u21) bool {
 
 // zbr:selfhost/AstWalk.zbr:169
 pub fn _zbr_fn_zigLitMentionsWord(code: []const u8, name: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:170
     const m: i64 = @as(i64, @intCast(name.len));
 // zbr:selfhost/AstWalk.zbr:171
@@ -318,6 +322,7 @@ pub fn _zbr_fn_zigLitMentionsWord(code: []const u8, name: []const u8) bool {
 
 // zbr:selfhost/AstWalk.zbr:202
 pub fn _zbr_fn_zigLitWrittenWords(code: []const u8) _ZbrList([]const u8) {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:203
     var out = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/AstWalk.zbr:204
@@ -422,6 +427,7 @@ pub fn _zbr_fn_zigLitWrittenWords(code: []const u8) _ZbrList([]const u8) {
 
 // zbr:selfhost/AstWalk.zbr:254
 pub fn _zbr_fn_zigStmtNeedsSemicolon(code: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:255
     const t: []const u8 = std.mem.trim(u8, code, " \t\n\r");
 // zbr:selfhost/AstWalk.zbr:256
@@ -496,24 +502,28 @@ pub fn _zbr_fn_zigStmtNeedsSemicolon(code: []const u8) bool {
 
 // zbr:selfhost/AstWalk.zbr:285
 pub fn _zbr_fn_isDigitChar(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:286
     return (_zebra_ge(c, '0') and _zebra_le(c, '9'));
 }
 
 // zbr:selfhost/AstWalk.zbr:288
 pub fn _zbr_fn_isAssignOpChar(c: u21) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:289
     return ((((((((((c == '+') or (c == '-')) or (c == '*')) or (c == '/')) or (c == '%')) or (c == '&')) or (c == '|')) or (c == '^')) or (c == '<')) or (c == '>'));
 }
 
 // zbr:selfhost/AstWalk.zbr:293
 pub fn _zbr_fn_isCompoundAssignOp(op: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:294
     return (((((((((((((((((std.mem.eql(u8, op, "") or std.mem.eql(u8, op, "+")) or std.mem.eql(u8, op, "-")) or std.mem.eql(u8, op, "*")) or std.mem.eql(u8, op, "/")) or std.mem.eql(u8, op, "%")) or std.mem.eql(u8, op, "&")) or std.mem.eql(u8, op, "|")) or std.mem.eql(u8, op, "^")) or std.mem.eql(u8, op, "<<")) or std.mem.eql(u8, op, ">>")) or std.mem.eql(u8, op, "+%")) or std.mem.eql(u8, op, "-%")) or std.mem.eql(u8, op, "*%")) or std.mem.eql(u8, op, "+|")) or std.mem.eql(u8, op, "-|")) or std.mem.eql(u8, op, "*|")) or std.mem.eql(u8, op, "<<|"));
 }
 
 // zbr:selfhost/AstWalk.zbr:301
 pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:302
     switch (_zbr_val(expr)) {
         .ident => |id| {
@@ -875,6 +885,7 @@ pub fn _zbr_fn_mightUseNameInExpr(name: []const u8, expr: _zbr_ty_Expr) bool {
 
 // zbr:selfhost/AstWalk.zbr:481
 pub fn _zbr_fn_mightUseName(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:482
     for (stmts.items) |s| {
 // zbr:selfhost/AstWalk.zbr:483
@@ -889,6 +900,7 @@ pub fn _zbr_fn_mightUseName(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) boo
 
 // zbr:selfhost/AstWalk.zbr:487
 pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:488
     switch (_zbr_val(stmt)) {
         .var_ => |_ptr_n| {
@@ -1173,6 +1185,7 @@ pub fn _zbr_fn_mightUseNameStmt(name: []const u8, stmt: _zbr_ty_Stmt) bool {
 
 // zbr:selfhost/AstWalk.zbr:614
 pub fn _zbr_fn_stmtsContainYield(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:615
     for (stmts.items) |s| {
 // zbr:selfhost/AstWalk.zbr:616
@@ -1187,6 +1200,7 @@ pub fn _zbr_fn_stmtsContainYield(stmts: _ZbrList(_zbr_ty_Stmt)) bool {
 
 // zbr:selfhost/AstWalk.zbr:620
 pub fn _zbr_fn_stmtContainsYield(s: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:621
     switch (_zbr_val(s)) {
         .yield_ => {
@@ -1311,6 +1325,7 @@ pub fn _zbr_fn_stmtContainsYield(s: _zbr_ty_Stmt) bool {
 
 // zbr:selfhost/AstWalk.zbr:677
 pub fn _zbr_fn_stmtNeedsLowering(s: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:678
     if (_zbr_fn_stmtContainsYield(s)) {
 // zbr:selfhost/AstWalk.zbr:679
@@ -1322,6 +1337,7 @@ pub fn _zbr_fn_stmtNeedsLowering(s: _zbr_ty_Stmt) bool {
 
 // zbr:selfhost/AstWalk.zbr:682
 pub fn _zbr_fn_stmtsHaveEscape(stmts: _ZbrList(_zbr_ty_Stmt), loop_exits_count: bool) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:683
     for (stmts.items) |s| {
 // zbr:selfhost/AstWalk.zbr:684
@@ -1336,6 +1352,7 @@ pub fn _zbr_fn_stmtsHaveEscape(stmts: _ZbrList(_zbr_ty_Stmt), loop_exits_count: 
 
 // zbr:selfhost/AstWalk.zbr:688
 pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:689
     switch (_zbr_val(s)) {
         .return_ => {
@@ -1417,6 +1434,7 @@ pub fn _zbr_fn_stmtHasEscape(s: _zbr_ty_Stmt, loop_exits_count: bool) bool {
 
 // zbr:selfhost/AstWalk.zbr:728
 pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) _ZbrList([]const u8) {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:729
     const out = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/AstWalk.zbr:730
@@ -1427,6 +1445,7 @@ pub fn _zbr_fn_nilCheckedNames(cond: _zbr_ty_Expr) _ZbrList([]const u8) {
 
 // zbr:selfhost/AstWalk.zbr:733
 pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:734
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
@@ -1467,6 +1486,7 @@ pub fn _zbr_fn_collectNilChecked(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) voi
 
 // zbr:selfhost/AstWalk.zbr:749
 pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) void {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:750
     if (_zbr_val(e) == .binary) {
         const b_ptr = e.binary;
@@ -1507,6 +1527,7 @@ pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) voi
 
 // zbr:selfhost/AstWalk.zbr:764
 pub fn _zbr_fn_stmtsAlwaysExit(ss: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:765
     if ((@as(i64, @intCast(ss.items.len)) == 0)) {
 // zbr:selfhost/AstWalk.zbr:766
@@ -1520,6 +1541,7 @@ pub fn _zbr_fn_stmtsAlwaysExit(ss: _ZbrList(_zbr_ty_Stmt)) bool {
 
 // zbr:selfhost/AstWalk.zbr:772
 pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:773
     const out = _zbr_new(_ZbrList([]const u8));
 // zbr:selfhost/AstWalk.zbr:774
@@ -1541,6 +1563,7 @@ pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
 
 // zbr:selfhost/AstWalk.zbr:787
 pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:788
     for (stmts.items) |st| {
 // zbr:selfhost/AstWalk.zbr:789
@@ -1555,6 +1578,7 @@ pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt))
 
 // zbr:selfhost/AstWalk.zbr:797
 pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt), guard_idx: i64) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:798
     var k: i64 = (guard_idx + 1);
 // zbr:selfhost/AstWalk.zbr:799
@@ -1573,6 +1597,7 @@ pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: _ZbrList(_zbr_ty_Stm
 
 // zbr:selfhost/AstWalk.zbr:805
 pub fn _zbr_fn_stmtRebinds(name: []const u8, st: _zbr_ty_Stmt) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/AstWalk.zbr:806
     switch (_zbr_val(st)) {
         .assign => |_ptr_a| {
@@ -1713,6 +1738,7 @@ pub fn _zbr_fn_stmtRebinds(name: []const u8, st: _zbr_ty_Stmt) bool {
 
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

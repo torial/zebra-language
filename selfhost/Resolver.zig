@@ -37,6 +37,7 @@ const _zbr_fn_isBuiltinTypeName = _zbr_mod_CgHelpers._zbr_fn_isBuiltinTypeName;
 pub const _zbr_ty_ResolveError = struct {
     message: []const u8 = undefined,
     pub fn init(message: []const u8) _zbr_ty_ResolveError {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_ResolveError = undefined;
 // zbr:selfhost/Resolver.zbr:41
             _self.message = _intern(message);
@@ -56,6 +57,7 @@ pub const _zbr_ty_LamFrame = struct {
     this_line: i64 = undefined,
     this_col: i64 = undefined,
     pub fn init(caps: _ZbrList(_zbr_ty_PCaptureVar), is_thread: bool) *_zbr_ty_LamFrame {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_LamFrame) catch @panic("OOM");
         _self._type_tag = _zbr_hash("LamFrame");
 // zbr:selfhost/Resolver.zbr:61
@@ -104,6 +106,7 @@ pub const _zbr_ty_Resolver = struct {
     member_lines: _ZbrMap(i64) = undefined,
     top_lines: _ZbrMap(i64) = undefined,
     pub fn init(file_name: []const u8, source: []const u8) *_zbr_ty_Resolver {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_Resolver) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Resolver");
 // zbr:selfhost/Resolver.zbr:112
@@ -147,6 +150,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:133
     pub fn fmtErrAt(self: *_zbr_ty_Resolver, line: i64, col: i64, msg: []const u8) []const u8 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:134
         const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{col}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
 // zbr:selfhost/Resolver.zbr:135
@@ -175,6 +179,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:147
     pub fn sourceLine(self: *_zbr_ty_Resolver, li: i64) []const u8 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:148
         if (((@as(i64, @intCast(self.source.len)) == 0) or _zebra_lt(li, 0))) {
 // zbr:selfhost/Resolver.zbr:149
@@ -201,18 +206,21 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:159
     pub fn errorCount(self: *const _zbr_ty_Resolver) i64 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:160
         return @as(i64, @intCast(self.errors.items.len));
     }
 
     // zbr:selfhost/Resolver.zbr:162
     pub fn symbolCount(self: *const _zbr_ty_Resolver) i64 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:163
         return self.symbol_count;
     }
 
     // zbr:selfhost/Resolver.zbr:165
     pub fn firstError(self: *_zbr_ty_Resolver) []const u8 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:166
         if (_zebra_gt(@as(i64, @intCast(self.errors.items.len)), 0)) {
 // zbr:selfhost/Resolver.zbr:167
@@ -224,6 +232,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:170
     pub fn allErrorMessages(self: *_zbr_ty_Resolver) []const u8 {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:171
         var b = _zbr_new(_ZbrList(u8));
 // zbr:selfhost/Resolver.zbr:172
@@ -239,6 +248,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:179
     pub fn resolve(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:180
         (try self.bindPass1(root));
 // zbr:selfhost/Resolver.zbr:181
@@ -247,6 +257,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:185
     pub fn bindPass1(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:186
         if (_zbr_val(root) == .module_) {
             const m_ptr = root.module_;
@@ -261,6 +272,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:195
     pub fn declareTop(self: *_zbr_ty_Resolver, kind: []const u8, name: []const u8, line: i64, col: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:196
         const key: []const u8 = _str_concat(_str_concat(kind, ":", _zbr_rt._allocator), name, _zbr_rt._allocator);
 // zbr:selfhost/Resolver.zbr:197
@@ -287,6 +299,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:207
     pub fn bindTopDecl(self: *_zbr_ty_Resolver, decl: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:208
         switch (_zbr_val(decl)) {
             .class_ => |_ptr_c| {
@@ -388,6 +401,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:260
     pub fn resolvePass2(self: *_zbr_ty_Resolver, root: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:261
         if (_zbr_val(root) == .module_) {
             const m_ptr = root.module_;
@@ -402,6 +416,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:264
     pub fn resolveTopDecl(self: *_zbr_ty_Resolver, decl: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:265
         switch (_zbr_val(decl)) {
             .class_ => |_ptr_c| {
@@ -477,6 +492,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:301
     pub fn enterClass(self: *_zbr_ty_Resolver, name: []const u8, members: _ZbrList(_zbr_ty_PNode), type_params: _ZbrList([]const u8)) anyerror!void {
+        @setRuntimeSafety(true);
         _ = name;
 // zbr:selfhost/Resolver.zbr:302
         self.class_scope = _zbr_new(_ZbrMap(i64));
@@ -512,6 +528,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:325
     pub fn declareMember(self: *_zbr_ty_Resolver, name: []const u8, line: i64, col: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:326
         if (self.member_lines.contains(name)) {
 // zbr:selfhost/Resolver.zbr:327
@@ -536,6 +553,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:336
     pub fn collectMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:337
         switch (_zbr_val(member)) {
             .method_ => |_ptr_m| {
@@ -564,6 +582,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:349
     pub fn resolveMember(self: *_zbr_ty_Resolver, member: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:350
         switch (_zbr_val(member)) {
             .method_ => |_ptr_m| {
@@ -594,6 +613,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:367
     pub fn enterMethod(self: *_zbr_ty_Resolver, params: _ZbrList(_zbr_ty_PParam), stmts: _ZbrList(_zbr_ty_PNode)) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:368
         self.method_scope = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:369
@@ -621,6 +641,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:381
     pub fn declare(self: *_zbr_ty_Resolver, name: []const u8, kind: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:382
         self.method_scope.put(_intern(name), kind) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:383
@@ -637,6 +658,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:395
     pub fn declareLocal(self: *_zbr_ty_Resolver, name: []const u8, line: i64, col: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:396
         if (((_zebra_gt(@as(i64, @intCast(self.lam_stack.items.len)), 0) and !std.mem.eql(u8, name, "_")) and self.method_scope.contains(name))) {
 // zbr:selfhost/Resolver.zbr:397
@@ -648,6 +670,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:404
     pub fn noteCapture(self: *_zbr_ty_Resolver, name: []const u8, line: i64, col: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:405
         if ((((@as(i64, @intCast(self.lam_stack.items.len)) == 0) or (!self.method_scope.contains(name))) or self.foldable.contains(name))) {
 // zbr:selfhost/Resolver.zbr:406
@@ -680,6 +703,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:421
     pub fn noteThis(self: *_zbr_ty_Resolver, line: i64, col: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:422
         for (self.lam_stack.items) |fr| {
 // zbr:selfhost/Resolver.zbr:423
@@ -694,6 +718,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:429
     pub fn resolvePipeRhs(self: *_zbr_ty_Resolver, e: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:430
         if (_zbr_val(e) == .expr_member) {
             const pm_ptr = e.expr_member;
@@ -733,6 +758,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:445
     pub fn noteWrite(self: *_zbr_ty_Resolver, name: []const u8, line: i64, col: i64) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:446
         var i: i64 = (@as(i64, @intCast(self.lam_stack.items.len)) - 1);
 // zbr:selfhost/Resolver.zbr:447
@@ -756,6 +782,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:462
     pub fn finishCaptures(self: *_zbr_ty_Resolver) void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:463
         var refused = _zbr_new(_ZbrMap(i64));
 // zbr:selfhost/Resolver.zbr:464
@@ -816,6 +843,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:494
     pub fn resolveStmts(self: *_zbr_ty_Resolver, stmts: _ZbrList(_zbr_ty_PNode)) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:495
         for (stmts.items) |stmt| {
 // zbr:selfhost/Resolver.zbr:496
@@ -825,6 +853,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:504
     pub fn resolveBlock(self: *_zbr_ty_Resolver, stmts: _ZbrList(_zbr_ty_PNode)) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:505
         const saved = _zbr_copy(self.method_scope);
 // zbr:selfhost/Resolver.zbr:506
@@ -835,6 +864,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:511
     pub fn resolveStmt(self: *_zbr_ty_Resolver, stmt: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:512
         switch (_zbr_val(stmt)) {
             .stmt_var => |_ptr_v| {
@@ -1165,6 +1195,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:665
     pub fn resolveExpr(self: *_zbr_ty_Resolver, expr: _zbr_ty_PNode) anyerror!void {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:666
         switch (_zbr_val(expr)) {
             .expr_orelse => |_ptr_por| {
@@ -1547,6 +1578,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:829
     pub fn isInScope(self: *_zbr_ty_Resolver, name: []const u8) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:830
         if (self.method_scope.contains(name)) {
 // zbr:selfhost/Resolver.zbr:831
@@ -1573,6 +1605,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:840
     pub fn isBuiltin(self: *_zbr_ty_Resolver, name: []const u8) bool {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:842
         if ((((std.mem.eql(u8, name, "int") or std.mem.eql(u8, name, "str")) or std.mem.eql(u8, name, "bool")) or std.mem.eql(u8, name, "float"))) {
 // zbr:selfhost/Resolver.zbr:843
@@ -1674,6 +1707,7 @@ pub const _zbr_ty_Resolver = struct {
 
     // zbr:selfhost/Resolver.zbr:903
     pub fn isSimdName(self: *_zbr_ty_Resolver, name: []const u8) bool {
+        @setRuntimeSafety(true);
         _ = self;
 // zbr:selfhost/Resolver.zbr:905
         if ((!(std.mem.indexOf(u8, name, "x") != null))) {
@@ -1726,6 +1760,7 @@ const _reflect_Resolver_field_types: []const []const u8 = &.{"HashMap(str, int)"
 
 // zbr:selfhost/Resolver.zbr:925
 pub fn main(_zinit: std.process.Init) void {
+    @setRuntimeSafety(true);
     _zbr_rt._io = _zinit.io;
     _zbr_rt._args = _zinit.minimal.args;
     _zbr_rt._environ = _zinit.minimal.environ;
@@ -1736,7 +1771,7 @@ pub fn main(_zinit: std.process.Init) void {
     _zbr_print("{s}\n", .{"resolver: loaded (run resolver_test.zbr to exercise)"});
 }
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_LamFrame) return _reflect_LamFrame_name;
     if (tag == _ttag_Resolver) return _reflect_Resolver_name;
@@ -1754,6 +1789,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

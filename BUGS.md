@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-668. Next new bug: BUG-669.**
+**Last bug number generated: BUG-669. Next new bug: BUG-670.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,116 +43,6 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
-
----
-
-### BUG-667: integer overflow is undefined behaviour in a `--release` build -- Debug traps it, release prints a wrong number
-
-- **Severity:** High -- gate G1 ("safety holds at run time; there is no switch to turn it
-  off"), and the failure is the quiet kind: a plausible wrong value, exit 0.
-- **Status:** OPEN; semantics DECIDED 2026-10-30 (Sean): overflow TRAPS by default, in
-  release too, on both backends, with explicit wrapping operations for code that means to
-  wrap (option (a) below). Not implemented on either backend. Found 2026-10-29 while
-  comparing what the Zig and V backends promise.
-
-```zebra
-def main()
-    var n: int = sys.args().count()       # 1
-    var x: int = 9223372036854775807
-    var y: int = x + n
-    print("y=${y}")
-```
-
-Debug: `panic: integer overflow`. `zebra --release`: `y=9223372036854775807` -- neither
-the trap nor the wrapped value (`-9223372036854775808`): `--release` passes `-OReleaseFast`,
-where Zig treats `+` overflowing as undefined behaviour, so the optimiser may assume it
-never happens. The emit is a plain `const y: i64 = (x + n);` -- no Zebra helper is in the
-path, so the wrong value is Zig's UB and not our runtime's. Measured with `n` printed
-(`n=1`), so the addend is not a constant fold.
-
-The same class as BUG-313 (raw indexing unchecked under ReleaseFast), which was answered
-for indexing only; BUG-534 answered it for the `toInt8..toUint64` conversions. Arithmetic
-was never decided -- no ledger entry, design note or finding mentions it.
-
-**Options, for Sean:** (a) checked arithmetic emitted explicitly (`std.math.add` or `+%`
-with a trap), as BUG-313 did for indexing -- the release keeps the trap and pays per
-operation; (b) `--release` uses ReleaseSafe -- every Zig safety check back, at its cost;
-(c) wrapping as the defined semantics -- a language decision, and the one V makes. Whatever
-is chosen is also what a V backend must emit. Measured on V ee6d62a (the engine's pin),
-not assumed: the same program through `--target v` WRAPS, `got=-9223372036854775808`,
-under tcc and under clang `-prod` alike -- no trap on either. So (a) or (c) there too.
-
-The G1 matrix that found this and BUG-668 (2026-10-29; five probes, each with a
-run-time operand): divide by zero and index past the end trap in all four builds (Zig
-Debug, Zig `--release`, V tcc, V clang `-prod`); `300.toUint8()` traps on Zig and is not
-mapped by the V emitter; a nil unwrap traps in all but Zig `--release` (BUG-668); integer
-overflow traps only in Zig Debug.
-
-**ReleaseSafe measured on the engine (Fable, 2026-10-29; PROVISIONAL -- a busy host, so
-the ratios are a bound, not a number).** Same tree, mm autoplay 60 s under `--profile`, two
-uncontended pairs of three: whole frame 1.42-1.51x ReleaseFast (15.0 -> 21.3 ms at a fixed
-High tier); by section the EMITTED Zebra scripts 1.4-1.7x (about one millisecond a frame),
-the host's hand-written Zig far more (gui 3.4-4.2x, render 1.8-2.3x).
-
-**A per-MODULE optimize mode does NOT split safety -- measured, and the first reading said
-otherwise.** It was proposed the same day that a host could build the emitted modules
-ReleaseSafe and itself ReleaseFast. Fable's toy (a ReleaseSafe dependency of a ReleaseFast
-root, a run-time nil and a u8 overflow behind a volatile read) says no: the dependency
-reports `builtin.mode == .ReleaseSafe` and still carries on (`x.?` on nil printed 7, the
-add wrapped to 255); with both modules ReleaseSafe it panics. The engine agreed: its build
-with the emitted modules marked ReleaseSafe had a `.text` byte-identical to plain
-ReleaseFast. Runtime safety follows the COMPILATION's mode; the module field changes only
-what `builtin.mode` reports. So the option was reverted on the engine side.
-
-**What does split it is per-FUNCTION:** codegen emitting `@setRuntimeSafety(true);` as the
-first statement of every emitted function puts the checks in the Zebra code alone under a
-ReleaseFast build -- a one-line codegen change, at about the scripts section's 1.4-1.7x
-(~1 ms a frame on the engine; to be re-measured on a quiet machine with process CPU time
-over a fixed-dt replay). That is option (a)'s cheapest form: Zig's own checks, switched on
-where Zebra's code is, rather than hand-emitted ones.
-
-**Re-measured the same evening by CPU time (Fable; the replay of one 60 s autoplay, 2,843
-identical frames, process CPU via GetProcessTimes, a sampler naming the noise).** Whole
-build ReleaseSafe against ReleaseFast: min of three full runs 1.16x and 1.19x over two
-batches (22.5 / 21.3 s against 26.1 / 25.3 s); per frame with startup removed 1.24x (6.85
--> 8.47 ms CPU). By section, the least-contended run of each build: the EMITTED Zebra
-scripts 1.13x (0.98 -> 1.10 ms), gui 3.3x, render 1.7x, whole frame 1.10x. So the
-autoplay pairs' 1.4-1.7x for the scripts was the busy host; under identical frames the
-Zebra code's checks cost about a tenth of a millisecond a frame, and the per-function
-route is the cheap one. The noise source this time was named: a webview process took 2.4
-cores for twenty seconds mid-batch.
-
-**Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
-an overflow leg as it gained the bounds and conversion legs.
-
-**Decision state (2026-10-30):** Sean leans WRAP and is open to TRAP; still open. Both
-backends must give the same answer, and today's Zig `--release` (undefined behaviour) is
-the one answer not on the table. Wrap on the Zig side means emitting `+%` / `-%` / `*%`
-explicitly (a plain `+` under ReleaseFast stays UB); V already wraps. Trap on the V side
-means emitting checked arithmetic, whose cost there is not measured.
-
-### BUG-668: a nil unwrap (`x!`) is unchecked in a `--release` build -- it reads garbage and carries on
-
-- **Severity:** High -- gate G1, the quiet kind.
-- **Status:** OPEN. Found 2026-10-29 by the G1 matrix (BUG-667's entry).
-
-```zebra
-def main()
-    var s: str? = nil
-    if sys.args().count() > 5
-        s = "x"
-    var t: str = s!
-    print("got=${t.len}")
-```
-
-Debug: `panic` at the unwrap. `zebra --release`: `got=0`, exit 0. The emit is
-`const t: []const u8 = s.?;` -- Zig checks `.?` in Debug and ReleaseSafe and not in
-ReleaseFast, which `--release` passes: BUG-313's class again, for the non-nil assertion.
-The V backend's release lane TRAPS here (`V panic: nil unwrapped at g1_nil.zbr:5`, clang
-`-prod`), because CodeGenV routes every narrowed read through `zunwrap_at` -- the shape the
-Zig side's fix can copy: an explicit check that names the place, as BUG-313 did for `.at()`.
-
-**Control when fixing:** the program above in both modes; `release-mode` gains the leg.
 
 ---
 

@@ -24,6 +24,7 @@ const _zbr_ty_Lexer = @import("Lexer.zig")._zbr_ty_Lexer;
 pub var _zbr_mv_CUE_NAMES: []const u8 = "|init|toString|equals|hash|compare|iter|next|begin|end|";
 // zbr:selfhost/Parser.zbr:41
 pub fn _zbr_fn_fileExistsExact(path: []const u8) bool {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Parser.zbr:42
     if ((!(blk_fex: { std.Io.Dir.cwd().access(_zbr_rt._io, path, .{}) catch break :blk_fex false; break :blk_fex true; }))) {
 // zbr:selfhost/Parser.zbr:43
@@ -35,6 +36,7 @@ pub fn _zbr_fn_fileExistsExact(path: []const u8) bool {
 
 // zbr:selfhost/Parser.zbr:47
 pub fn _zbr_fn_caseOnlyMatch(path: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Parser.zbr:48
     var dir: []const u8 = ".";
 // zbr:selfhost/Parser.zbr:49
@@ -170,6 +172,7 @@ pub const _zbr_ty_PUnionDecl = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, variants: _ZbrList(_zbr_ty_PUnionVariant), line: i64, col: i64) _zbr_ty_PUnionDecl {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PUnionDecl = undefined;
 // zbr:selfhost/Parser.zbr:160
             _self.name = _intern(name);
@@ -190,6 +193,7 @@ pub const _zbr_ty_PUnionVariant = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, type_name: []const u8, line: i64, col: i64) _zbr_ty_PUnionVariant {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PUnionVariant = undefined;
 // zbr:selfhost/Parser.zbr:173
             _self.name = _intern(name);
@@ -210,6 +214,7 @@ pub const _zbr_ty_PTypeAlias = struct {
     base_type: []const u8 = undefined,
     constraint: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(name: []const u8, params: _ZbrList(_zbr_ty_PParam), base_type: []const u8, constraint: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PTypeAlias {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PTypeAlias = undefined;
 // zbr:selfhost/Parser.zbr:184
             _self.name = _intern(name);
@@ -231,6 +236,7 @@ pub const _zbr_ty_PSig = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, params: _ZbrList(_zbr_ty_PParam), return_type: []const u8, line: i64, col: i64) _zbr_ty_PSig {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PSig = undefined;
 // zbr:selfhost/Parser.zbr:196
             _self.name = _intern(name);
@@ -254,6 +260,7 @@ pub const _zbr_ty_PBranch = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(subject: _ZbrList(_zbr_ty_PNode), arms: _ZbrList(_zbr_ty_PBranchOn), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PBranch {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PBranch = undefined;
 // zbr:selfhost/Parser.zbr:209
             _self.subject = subject;
@@ -279,6 +286,7 @@ pub const _zbr_ty_PBranchOn = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(patterns: _ZbrList([]const u8), binding: []const u8, filter_cond: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PBranchOn {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PBranchOn = undefined;
 // zbr:selfhost/Parser.zbr:224
             _self.patterns = patterns;
@@ -302,6 +310,7 @@ pub const _zbr_ty_PBranchOn = struct {
 pub const _zbr_ty_PTupleLit = struct {
     elems: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(elems: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PTupleLit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PTupleLit = undefined;
 // zbr:selfhost/Parser.zbr:235
             _self.elems = elems;
@@ -313,6 +322,7 @@ pub const _zbr_ty_PTupleLit = struct {
 pub const _zbr_ty_PArrayLit = struct {
     elems: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(elems: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PArrayLit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PArrayLit = undefined;
 // zbr:selfhost/Parser.zbr:240
             _self.elems = elems;
@@ -325,6 +335,7 @@ pub const _zbr_ty_PDictLit = struct {
     keys: _ZbrList(_zbr_ty_PNode) = undefined,
     values: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(keys: _ZbrList(_zbr_ty_PNode), values: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PDictLit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PDictLit = undefined;
 // zbr:selfhost/Parser.zbr:247
             _self.keys = keys;
@@ -339,6 +350,7 @@ pub const _zbr_ty_PExcept = struct {
     base: _ZbrList(_zbr_ty_PNode) = undefined,
     fields: _ZbrList(_zbr_ty_PExceptField) = undefined,
     pub fn init(base: _ZbrList(_zbr_ty_PNode), fields: _ZbrList(_zbr_ty_PExceptField)) _zbr_ty_PExcept {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PExcept = undefined;
 // zbr:selfhost/Parser.zbr:254
             _self.base = base;
@@ -353,6 +365,7 @@ pub const _zbr_ty_PExceptField = struct {
     name: []const u8 = undefined,
     value: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(name: []const u8, value: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PExceptField {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PExceptField = undefined;
 // zbr:selfhost/Parser.zbr:261
             _self.name = _intern(name);
@@ -366,6 +379,7 @@ pub const _zbr_ty_PExceptField = struct {
 pub const _zbr_ty_PStringInterp = struct {
     parts: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(parts: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PStringInterp {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PStringInterp = undefined;
 // zbr:selfhost/Parser.zbr:267
             _self.parts = parts;
@@ -381,6 +395,7 @@ pub const _zbr_ty_PLambda = struct {
     body_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     body_stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(params: _ZbrList(_zbr_ty_PParam), return_type: []const u8, captures: _ZbrList(_zbr_ty_PCaptureVar), body_expr: _ZbrList(_zbr_ty_PNode), body_stmts: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PLambda {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PLambda = undefined;
 // zbr:selfhost/Parser.zbr:276
             _self.params = params;
@@ -404,6 +419,7 @@ pub const _zbr_ty_PCaptureVar = struct {
     is_const: bool = undefined,
     is_implicit: bool = undefined,
     pub fn init(name: []const u8, type_name: []const u8, init_expr: _ZbrList(_zbr_ty_PNode), is_const: bool, is_implicit: bool) _zbr_ty_PCaptureVar {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PCaptureVar = undefined;
 // zbr:selfhost/Parser.zbr:291
             _self.name = _intern(name);
@@ -424,6 +440,7 @@ pub const _zbr_ty_PUse = struct {
     path: []const u8 = undefined,
     exposed: _ZbrList([]const u8) = undefined,
     pub fn init(path: []const u8, exposed: _ZbrList([]const u8)) _zbr_ty_PUse {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PUse = undefined;
 // zbr:selfhost/Parser.zbr:301
             _self.path = _intern(path);
@@ -436,12 +453,14 @@ pub const _zbr_ty_PUse = struct {
 
 // zbr:selfhost/Parser.zbr:310
 pub fn _zbr_fn_useFilePath(path: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Parser.zbr:311
     return (std.mem.replaceOwned(u8, _zbr_rt._allocator, path, ".", "/") catch @panic("OOM"));
 }
 
 // zbr:selfhost/Parser.zbr:313
 pub fn _zbr_fn_useBindName(path: []const u8) []const u8 {
+    @setRuntimeSafety(true);
 // zbr:selfhost/Parser.zbr:314
     const dot: i64 = (if (std.mem.lastIndexOf(u8, path, ".")) |_li| @as(i64, @intCast(_li)) else @as(i64, -1));
 // zbr:selfhost/Parser.zbr:315
@@ -456,6 +475,7 @@ pub fn _zbr_fn_useBindName(path: []const u8) []const u8 {
 pub const _zbr_ty_PModule = struct {
     decls: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(decls: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PModule {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PModule = undefined;
 // zbr:selfhost/Parser.zbr:322
             _self.decls = decls;
@@ -470,6 +490,7 @@ pub const _zbr_ty_PNamespace = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, decls: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PNamespace {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PNamespace = undefined;
 // zbr:selfhost/Parser.zbr:330
             _self.name = _intern(name);
@@ -489,6 +510,7 @@ pub const _zbr_ty_PParam = struct {
     type_name: []const u8 = undefined,
     default_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(name: []const u8, type_name: []const u8, default_expr: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PParam {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PParam = undefined;
 // zbr:selfhost/Parser.zbr:340
             _self.name = _intern(name);
@@ -516,6 +538,7 @@ pub const _zbr_ty_PClass = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, type_params: _ZbrList([]const u8), ifaces: _ZbrList([]const u8), mixins: _ZbrList([]const u8), members: _ZbrList(_zbr_ty_PNode), invs: _ZbrList(_zbr_ty_PNode), is_reflectable: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool, export_sym: ?[]const u8, line: i64, col: i64) _zbr_ty_PClass {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PClass = undefined;
 // zbr:selfhost/Parser.zbr:359
             _self.name = _intern(name);
@@ -552,6 +575,7 @@ pub const _zbr_ty_PExtend = struct {
     target_name: []const u8 = undefined,
     members: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(target_name: []const u8, members: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PExtend {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PExtend = undefined;
 // zbr:selfhost/Parser.zbr:377
             _self.target_name = _intern(target_name);
@@ -571,6 +595,7 @@ pub const _zbr_ty_PEnum = struct {
     col: i64 = undefined,
     unordered: bool = undefined,
     pub fn init(name: []const u8, variants: _ZbrList([]const u8), base: []const u8, values: _ZbrList(_ZbrList(_zbr_ty_PNode)), line: i64, col: i64, unordered: bool) _zbr_ty_PEnum {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PEnum = undefined;
 // zbr:selfhost/Parser.zbr:393
             _self.name = _intern(name);
@@ -602,6 +627,7 @@ pub const _zbr_ty_PField = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, type_name: []const u8, is_const: bool, is_static: bool, is_private: bool, is_public: bool, init_expr: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PField {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PField = undefined;
 // zbr:selfhost/Parser.zbr:412
             _self.name = _intern(name);
@@ -648,6 +674,7 @@ pub const _zbr_ty_PMethod = struct {
     is_cue: bool = undefined,
     deprecated: []const u8 = undefined,
     pub fn init(name: []const u8, is_static: bool, is_private: bool, is_public: bool, throws_: bool, params: _ZbrList(_zbr_ty_PParam), return_type: []const u8, stmts: _ZbrList(_zbr_ty_PNode), is_profile: bool, is_once: bool, tags: _ZbrList([]const u8), is_export: bool, type_params: _ZbrList([]const u8), is_pure: bool, is_node_export: bool, line: i64, col: i64, is_extern: bool, is_cue: bool, deprecated: []const u8) _zbr_ty_PMethod {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PMethod = undefined;
 // zbr:selfhost/Parser.zbr:448
             _self.deprecated = _intern(deprecated);
@@ -698,6 +725,7 @@ pub const _zbr_ty_PInit = struct {
     params: _ZbrList(_zbr_ty_PParam) = undefined,
     stmts: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(params: _ZbrList(_zbr_ty_PParam), stmts: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PInit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PInit = undefined;
 // zbr:selfhost/Parser.zbr:473
             _self.params = params;
@@ -713,6 +741,7 @@ pub const _zbr_ty_PReturn = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(value: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PReturn {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PReturn = undefined;
 // zbr:selfhost/Parser.zbr:484
             _self.value = value;
@@ -733,6 +762,7 @@ pub const _zbr_ty_PIf = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(cond: _ZbrList(_zbr_ty_PNode), then_stmts: _ZbrList(_zbr_ty_PNode), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PIf {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PIf = undefined;
 // zbr:selfhost/Parser.zbr:496
             _self.cond = cond;
@@ -757,6 +787,7 @@ pub const _zbr_ty_PWhile = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(cond: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PWhile {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PWhile = undefined;
 // zbr:selfhost/Parser.zbr:509
             _self.cond = cond;
@@ -778,6 +809,7 @@ pub const _zbr_ty_PAllocate = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(source: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), is_scoped: bool, line: i64, col: i64) _zbr_ty_PAllocate {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PAllocate = undefined;
 // zbr:selfhost/Parser.zbr:521
             _self.source = source;
@@ -801,6 +833,7 @@ pub const _zbr_ty_PCopyOut = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(target: _ZbrList(_zbr_ty_PNode), value: _ZbrList(_zbr_ty_PNode), deep: bool, line: i64, col: i64) _zbr_ty_PCopyOut {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PCopyOut = undefined;
 // zbr:selfhost/Parser.zbr:534
             _self.target = target;
@@ -823,6 +856,7 @@ pub const _zbr_ty_PWith = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(target: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PWith {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PWith = undefined;
 // zbr:selfhost/Parser.zbr:546
             _self.target = target;
@@ -843,6 +877,7 @@ pub const _zbr_ty_PInScope = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(expr: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PInScope {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PInScope = undefined;
 // zbr:selfhost/Parser.zbr:558
             _self.expr = expr;
@@ -861,6 +896,7 @@ pub const _zbr_ty_POrelse = struct {
     expr: _ZbrList(_zbr_ty_PNode) = undefined,
     fallback: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(expr: _ZbrList(_zbr_ty_PNode), fallback: _ZbrList(_zbr_ty_PNode)) _zbr_ty_POrelse {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_POrelse = undefined;
 // zbr:selfhost/Parser.zbr:567
             _self.expr = expr;
@@ -876,6 +912,7 @@ pub const _zbr_ty_PCatch = struct {
     binding: []const u8 = undefined,
     fallback: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(expr: _ZbrList(_zbr_ty_PNode), binding: []const u8, fallback: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PCatch {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PCatch = undefined;
 // zbr:selfhost/Parser.zbr:575
             _self.expr = expr;
@@ -892,6 +929,7 @@ pub const _zbr_ty_PPipeline = struct {
     lhs: _ZbrList(_zbr_ty_PNode) = undefined,
     rhs: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(lhs: _ZbrList(_zbr_ty_PNode), rhs: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PPipeline {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PPipeline = undefined;
 // zbr:selfhost/Parser.zbr:583
             _self.lhs = lhs;
@@ -911,6 +949,7 @@ pub const _zbr_ty_PForIn = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(var_names: _ZbrList([]const u8), iter: _ZbrList(_zbr_ty_PNode), filter: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PForIn {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PForIn = undefined;
 // zbr:selfhost/Parser.zbr:595
             _self.var_names = var_names;
@@ -941,6 +980,7 @@ pub const _zbr_ty_PForNum = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(var_name: []const u8, start: _ZbrList(_zbr_ty_PNode), stop_: _ZbrList(_zbr_ty_PNode), step: _ZbrList(_zbr_ty_PNode), stmts: _ZbrList(_zbr_ty_PNode), else_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PForNum {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PForNum = undefined;
 // zbr:selfhost/Parser.zbr:613
             _self.var_name = _intern(var_name);
@@ -971,6 +1011,7 @@ pub const _zbr_ty_PVar = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, is_const: bool, type_name: []const u8, init_expr: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PVar {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PVar = undefined;
 // zbr:selfhost/Parser.zbr:633
             _self.name = _intern(name);
@@ -996,6 +1037,7 @@ pub const _zbr_ty_PDestruct = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(names: _ZbrList([]const u8), init_expr: _ZbrList(_zbr_ty_PNode), is_struct: bool, line: i64, col: i64) _zbr_ty_PDestruct {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PDestruct = undefined;
 // zbr:selfhost/Parser.zbr:647
             _self.names = names;
@@ -1019,6 +1061,7 @@ pub const _zbr_ty_PAssign = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(op: []const u8, target: _ZbrList(_zbr_ty_PNode), value: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PAssign {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PAssign = undefined;
 // zbr:selfhost/Parser.zbr:660
             _self.op = _intern(op);
@@ -1041,6 +1084,7 @@ pub const _zbr_ty_PAssert = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(cond: _ZbrList(_zbr_ty_PNode), message: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PAssert {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PAssert = undefined;
 // zbr:selfhost/Parser.zbr:672
             _self.cond = cond;
@@ -1060,6 +1104,7 @@ pub const _zbr_ty_PYield = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(value: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PYield {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PYield = undefined;
 // zbr:selfhost/Parser.zbr:683
             _self.value = value;
@@ -1077,6 +1122,7 @@ pub const _zbr_ty_PRaise = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(message: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PRaise {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PRaise = undefined;
 // zbr:selfhost/Parser.zbr:692
             _self.message = message;
@@ -1096,6 +1142,7 @@ pub const _zbr_ty_PTryCatch = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(body_stmts: _ZbrList(_zbr_ty_PNode), catch_binding: []const u8, catch_stmts: _ZbrList(_zbr_ty_PNode), line: i64, col: i64) _zbr_ty_PTryCatch {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PTryCatch = undefined;
 // zbr:selfhost/Parser.zbr:703
             _self.body_stmts = body_stmts;
@@ -1118,6 +1165,7 @@ pub const _zbr_ty_PMember = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(base: _ZbrList(_zbr_ty_PNode), member: []const u8, line: i64, col: i64) _zbr_ty_PMember {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PMember = undefined;
 // zbr:selfhost/Parser.zbr:715
             _self.base = base;
@@ -1136,6 +1184,7 @@ pub const _zbr_ty_PCall = struct {
     callee: _ZbrList(_zbr_ty_PNode) = undefined,
     args: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(callee: _ZbrList(_zbr_ty_PNode), args: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PCall {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PCall = undefined;
 // zbr:selfhost/Parser.zbr:724
             _self.callee = callee;
@@ -1150,6 +1199,7 @@ pub const _zbr_ty_PNamedArg = struct {
     name: []const u8 = undefined,
     value: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(name: []const u8, value: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PNamedArg {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PNamedArg = undefined;
 // zbr:selfhost/Parser.zbr:731
             _self.name = _intern(name);
@@ -1164,6 +1214,7 @@ pub const _zbr_ty_PIndex = struct {
     object: _ZbrList(_zbr_ty_PNode) = undefined,
     index: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(object: _ZbrList(_zbr_ty_PNode), index: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PIndex {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PIndex = undefined;
 // zbr:selfhost/Parser.zbr:738
             _self.object = object;
@@ -1179,6 +1230,7 @@ pub const _zbr_ty_PSlice = struct {
     start: _ZbrList(_zbr_ty_PNode) = undefined,
     stop_: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(object: _ZbrList(_zbr_ty_PNode), start: _ZbrList(_zbr_ty_PNode), stop_: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PSlice {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PSlice = undefined;
 // zbr:selfhost/Parser.zbr:746
             _self.object = object;
@@ -1196,6 +1248,7 @@ pub const _zbr_ty_PBinary = struct {
     left: _ZbrList(_zbr_ty_PNode) = undefined,
     right: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(op: []const u8, left: _ZbrList(_zbr_ty_PNode), right: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PBinary {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PBinary = undefined;
 // zbr:selfhost/Parser.zbr:755
             _self.op = _intern(op);
@@ -1212,6 +1265,7 @@ pub const _zbr_ty_PUnary = struct {
     op: []const u8 = undefined,
     operand: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(op: []const u8, operand: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PUnary {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PUnary = undefined;
 // zbr:selfhost/Parser.zbr:763
             _self.op = _intern(op);
@@ -1226,6 +1280,7 @@ pub const _zbr_ty_PChainedCmp = struct {
     ops: _ZbrList([]const u8) = undefined,
     operands: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(ops: _ZbrList([]const u8), operands: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PChainedCmp {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PChainedCmp = undefined;
 // zbr:selfhost/Parser.zbr:770
             _self.ops = ops;
@@ -1242,6 +1297,7 @@ pub const _zbr_ty_POptChain = struct {
     has_args: bool = undefined,
     args: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(base: _ZbrList(_zbr_ty_PNode), member: []const u8, has_args: bool, args: _ZbrList(_zbr_ty_PNode)) _zbr_ty_POptChain {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_POptChain = undefined;
 // zbr:selfhost/Parser.zbr:779
             _self.base = base;
@@ -1261,6 +1317,7 @@ pub const _zbr_ty_PIfExpr = struct {
     then_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     else_expr: _ZbrList(_zbr_ty_PNode) = undefined,
     pub fn init(cond: _ZbrList(_zbr_ty_PNode), then_expr: _ZbrList(_zbr_ty_PNode), else_expr: _ZbrList(_zbr_ty_PNode)) _zbr_ty_PIfExpr {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PIfExpr = undefined;
 // zbr:selfhost/Parser.zbr:789
             _self.cond = cond;
@@ -1277,6 +1334,7 @@ pub const _zbr_ty_PPos = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(line: i64, col: i64) _zbr_ty_PPos {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PPos = undefined;
 // zbr:selfhost/Parser.zbr:807
             _self.line = line;
@@ -1292,6 +1350,7 @@ pub const _zbr_ty_PLit = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(text: []const u8, line: i64, col: i64) _zbr_ty_PLit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PLit = undefined;
 // zbr:selfhost/Parser.zbr:825
             _self.text = _intern(text);
@@ -1309,6 +1368,7 @@ pub const _zbr_ty_PBoolLit = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(value: bool, line: i64, col: i64) _zbr_ty_PBoolLit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PBoolLit = undefined;
 // zbr:selfhost/Parser.zbr:835
             _self.value = value;
@@ -1326,6 +1386,7 @@ pub const _zbr_ty_PZigLit = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(text: []const u8, line: i64, col: i64) _zbr_ty_PZigLit {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PZigLit = undefined;
 // zbr:selfhost/Parser.zbr:848
             _self.text = _intern(text);
@@ -1343,6 +1404,7 @@ pub const _zbr_ty_PExprId = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(name: []const u8, line: i64, col: i64) _zbr_ty_PExprId {
+        @setRuntimeSafety(true);
         var _self: _zbr_ty_PExprId = undefined;
 // zbr:selfhost/Parser.zbr:857
             _self.name = _intern(name);
@@ -1365,6 +1427,7 @@ pub const _zbr_ty_Parser = struct {
     source: []const u8 = undefined,
     expr_depth: i64 = undefined,
     pub fn init(tokens: _ZbrList(*_zbr_mod_Token._zbr_ty_Token), file_name: []const u8, source: []const u8) *_zbr_ty_Parser {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_Parser) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Parser");
 // zbr:selfhost/Parser.zbr:873
@@ -1387,6 +1450,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:894
     pub fn peek(self: *_zbr_ty_Parser) *_zbr_mod_Token._zbr_ty_Token {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
         if (!(_zebra_gt(@as(i64, @intCast(self.tokens.items.len)), 0))) std.debug.panic("require failed at selfhost/Parser.zbr:900: in 'peek'\n", .{});
 // zbr:selfhost/Parser.zbr:901
@@ -1400,6 +1464,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:905
     pub fn peekAt(self: *_zbr_ty_Parser, offset: i64) *_zbr_mod_Token._zbr_ty_Token {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
         if (!(_zebra_gt(@as(i64, @intCast(self.tokens.items.len)), 0))) std.debug.panic("require failed at selfhost/Parser.zbr:911: in 'peekAt'\n", .{});
         if (!(_zebra_ge((self.pos + offset), 0))) std.debug.panic("require failed at selfhost/Parser.zbr:912: in 'peekAt'\n", .{});
@@ -1416,6 +1481,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:918
     pub fn advance(self: *_zbr_ty_Parser) void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
         const _old_0 = self.pos;
         var _ensure_armed: bool = false;
@@ -1433,6 +1499,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:928
     pub fn textIs(self: *_zbr_ty_Parser, s: []const u8) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:929
         return std.mem.eql(u8, self.peek().text, s);
@@ -1440,6 +1507,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:931
     pub fn sourceLine(self: *_zbr_ty_Parser, li: i64) []const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:932
         if (((@as(i64, @intCast(self.source.len)) == 0) or _zebra_lt(li, 0))) {
@@ -1467,6 +1535,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:941
     pub fn errorAt(self: *_zbr_ty_Parser, msg: []const u8) []const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:942
         const tok = self.peek();
@@ -1476,6 +1545,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:948
     pub fn errorAtPos(self: *_zbr_ty_Parser, ln: i64, cl: i64, msg: []const u8) []const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:949
         const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
@@ -1505,6 +1575,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:968
     pub fn refuseTrailingColon(self: *_zbr_ty_Parser) anyerror!void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:969
         if ((self.textIs(":") and (_zbr_val(self.peekAt(1).kind) == .eol))) {
@@ -1515,6 +1586,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:972
     pub fn unexpectedExprMsg(self: *_zbr_ty_Parser) []const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:973
         const t: []const u8 = self.peek().text;
@@ -1544,6 +1616,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:989
     pub fn unexpectedTopLevelMsg(self: *_zbr_ty_Parser) []const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:990
         const t: []const u8 = self.peek().text;
@@ -1563,6 +1636,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:997
     pub fn expectText(self: *_zbr_ty_Parser, s: []const u8) anyerror!void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:998
         if ((!self.textIs(s))) {
@@ -1575,6 +1649,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1002
     pub fn isEol(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1003
         switch (_zbr_val(self.peek().kind)) {
@@ -1591,6 +1666,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1009
     pub fn isIndent(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1010
         switch (_zbr_val(self.peek().kind)) {
@@ -1607,6 +1683,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1016
     pub fn isDedent(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1017
         switch (_zbr_val(self.peek().kind)) {
@@ -1623,6 +1700,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1023
     pub fn isEof(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1024
         switch (_zbr_val(self.peek().kind)) {
@@ -1639,6 +1717,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1032
     pub fn isRecoveryStarter(self: *_zbr_ty_Parser, kind: _zbr_mod_Token._zbr_ty_TokenKind) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1033
         switch (_zbr_val(kind)) {
@@ -1711,6 +1790,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1067
     pub fn skipToTopLevelBoundary(self: *_zbr_ty_Parser) void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1074
         if ((((!self.isEof()) and (self.peek().col == 1)) and self.isRecoveryStarter(self.peek().kind))) {
@@ -1733,6 +1813,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1082
     pub fn tryParseTopDeclInto(self: *_zbr_ty_Parser) void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1082
         {
@@ -1756,6 +1837,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1089
     pub fn isStmtKeyword(self: *_zbr_ty_Parser, text: []const u8) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1092
         const kws: []const u8 = "|print|return|pass|break|continue|raise|assert|var|const|if|while|for|branch|try|with|allocate|filter|";
@@ -1767,6 +1849,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1096
     pub fn isId(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1097
         switch (_zbr_val(self.peek().kind)) {
@@ -1783,6 +1866,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1103
     pub fn isSizedTypeName(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1104
         switch (_zbr_val(self.peek().kind)) {
@@ -1807,6 +1891,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1115
     pub fn isTypeKeyword(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1116
         switch (_zbr_val(self.peek().kind)) {
@@ -1839,6 +1924,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1130
     pub fn isOpenCall(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1131
         switch (_zbr_val(self.peek().kind)) {
@@ -1855,6 +1941,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1137
     pub fn isOpenCallAt(self: *_zbr_ty_Parser, offset: i64) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1138
         switch (_zbr_val(self.peekAt(offset).kind)) {
@@ -1871,6 +1958,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1144
     pub fn isIntLit(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1145
         switch (_zbr_val(self.peek().kind)) {
@@ -1899,6 +1987,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1163
     pub fn isFloatLit(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1164
         switch (_zbr_val(self.peek().kind)) {
@@ -1915,6 +2004,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1170
     pub fn isAtLbracket(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1171
         switch (_zbr_val(self.peek().kind)) {
@@ -1931,6 +2021,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1177
     pub fn isStringSingle(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1178
         switch (_zbr_val(self.peek().kind)) {
@@ -1947,6 +2038,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1184
     pub fn isStringDouble(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1185
         switch (_zbr_val(self.peek().kind)) {
@@ -1963,6 +2055,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1191
     pub fn isCharLit(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1192
         switch (_zbr_val(self.peek().kind)) {
@@ -1983,6 +2076,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1200
     pub fn isZigLit(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1201
         switch (_zbr_val(self.peek().kind)) {
@@ -2003,6 +2097,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1209
     pub fn isRawString(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1210
         switch (_zbr_val(self.peek().kind)) {
@@ -2023,6 +2118,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1218
     pub fn isDocString(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1219
         switch (_zbr_val(self.peek().kind)) {
@@ -2039,6 +2135,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1225
     pub fn isStringStart(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1226
         switch (_zbr_val(self.peek().kind)) {
@@ -2059,6 +2156,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1234
     pub fn isStringPart(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1235
         switch (_zbr_val(self.peek().kind)) {
@@ -2079,6 +2177,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1243
     pub fn isStringStop(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1244
         switch (_zbr_val(self.peek().kind)) {
@@ -2099,6 +2198,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1252
     pub fn isRcurlySpecial(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1253
         switch (_zbr_val(self.peek().kind)) {
@@ -2115,6 +2215,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1259
     pub fn isKwOld(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1260
         switch (_zbr_val(self.peek().kind)) {
@@ -2131,6 +2232,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1266
     pub fn isKwResult(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1267
         switch (_zbr_val(self.peek().kind)) {
@@ -2147,6 +2249,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1273
     pub fn isStringPartFormat(self: *_zbr_ty_Parser) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1274
         switch (_zbr_val(self.peek().kind)) {
@@ -2163,6 +2266,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1280
     pub fn skipEol(self: *_zbr_ty_Parser) void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1281
         while (self.isEol()) {
@@ -2173,6 +2277,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1284
     pub fn eatId(self: *_zbr_ty_Parser) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1285
         if ((!self.isId())) {
@@ -2189,6 +2294,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1291
     pub fn eatName(self: *_zbr_ty_Parser) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1292
         if (self.isId()) {
@@ -2215,6 +2321,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1306
     pub fn eatTypeName(self: *_zbr_ty_Parser) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1308
         if (self.textIs("^")) {
@@ -2516,6 +2623,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1466
     pub fn parseModule(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1467
         self.skipEol();
@@ -2548,6 +2656,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1482
     pub fn parseTopDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1485
         var pending_reflectable: bool = false;
@@ -2913,6 +3022,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1640
     pub fn parseNamespaceDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1641
         (try self.expectText("namespace"));
@@ -2964,6 +3074,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1663
     pub fn parseUseDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1664
         (try self.expectText("use"));
@@ -3002,6 +3113,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1680
     pub fn parseClassDecl(self: *_zbr_ty_Parser, is_reflectable: bool, export_sym: ?[]const u8) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1681
         (try self.expectText("class"));
@@ -3169,6 +3281,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1766
     pub fn parseEnumDecl(self: *_zbr_ty_Parser, unordered: bool) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1767
         (try self.expectText("enum"));
@@ -3247,6 +3360,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1806
     pub fn parseStructDecl(self: *_zbr_ty_Parser, is_reflectable: bool, is_derive_debug: bool, is_derive_eq: bool, is_derive_hash: bool) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1807
         (try self.expectText("struct"));
@@ -3307,6 +3421,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1836
     pub fn parseConstraintClause(self: *_zbr_ty_Parser, tp: []const u8) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1837
         (try self.expectText("where"));
@@ -3325,6 +3440,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1844
     pub fn parseInterfaceDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1845
         (try self.expectText("interface"));
@@ -3412,6 +3528,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1887
     pub fn parseMixinDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1888
         (try self.expectText("mixin"));
@@ -3459,6 +3576,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1908
     pub fn parseExtendDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1909
         (try self.expectText("extend"));
@@ -3500,6 +3618,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1926
     pub fn parseUnionDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1927
         (try self.expectText("union"));
@@ -3572,6 +3691,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1964
     pub fn eatTypeNameOpt(self: *_zbr_ty_Parser) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1965
         var tn: []const u8 = (try self.eatTypeName());
@@ -3588,6 +3708,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:1971
     pub fn parseSigDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:1972
         (try self.expectText("sig"));
@@ -3666,6 +3787,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2007
     pub fn parseTypeAliasDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2008
         (try self.expectText("type"));
@@ -3723,6 +3845,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2038
     pub fn parseMemberDecl(self: *_zbr_ty_Parser, is_static: bool) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2039
         var pending_private: bool = false;
@@ -3893,6 +4016,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2114
     pub fn parseInvariantDecl(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2115
         self.advance();
@@ -3929,6 +4053,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2130
     pub fn parseDeclField(self: *_zbr_ty_Parser, is_const: bool, is_static: bool, is_private: bool, is_public: bool) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2131
         if (is_const) {
@@ -4011,6 +4136,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2171
     pub fn parseDeclInit(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2172
         (try self.expectText("cue"));
@@ -4085,6 +4211,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2206
     pub fn parseDeprecatedArg(self: *_zbr_ty_Parser) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2207
         var msg: []const u8 = "deprecated";
@@ -4115,6 +4242,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2219
     pub fn parseMethodDecl(self: *_zbr_ty_Parser, is_static: bool, is_private: bool, is_public: bool, is_profile: bool, is_once: bool, tags: _ZbrList([]const u8), is_export: bool, is_pure: bool, is_node_export: bool, is_extern: bool, is_cue: bool, deprecated: []const u8) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2220
         const line: i64 = self.peek().line;
@@ -4388,6 +4516,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2399
     pub fn refuseSameLineStmt(self: *_zbr_ty_Parser) anyerror!void {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2400
         if ((((self.isDedent() or self.isEof()) or self.isEol()) or (self.pos == 0))) {
@@ -4410,6 +4539,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2408
     pub fn parseBlock(self: *_zbr_ty_Parser) anyerror!_ZbrList(_zbr_ty_PNode) {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2409
         if ((!self.isIndent())) {
@@ -4444,6 +4574,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2423
     pub fn parseStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2429
         if ((self.textIs("try") and ((_zbr_val(self.peekAt(1).kind) == .eol) or std.mem.eql(u8, self.peekAt(1).text, ":")))) {
@@ -4600,6 +4731,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2488
     pub fn parseReturnStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2489
         const line: i64 = self.peek().line;
@@ -4622,6 +4754,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2498
     pub fn parseIfStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2499
         const line: i64 = self.peek().line;
@@ -4717,6 +4850,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2546
     pub fn parseWhileStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2547
         const line: i64 = self.peek().line;
@@ -4796,6 +4930,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2590
     pub fn parseContractStmt(self: *_zbr_ty_Parser, kw: []const u8) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2591
         self.advance();
@@ -4831,6 +4966,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2606
     pub fn parseAllocateStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2607
         const line: i64 = self.peek().line;
@@ -4854,6 +4990,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2617
     pub fn parseWithStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2618
         const line: i64 = self.peek().line;
@@ -4877,6 +5014,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2628
     pub fn parseInStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2629
         const line: i64 = self.peek().line;
@@ -4900,6 +5038,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2643
     pub fn parseForInStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2644
         const line: i64 = self.peek().line;
@@ -5001,6 +5140,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2696
     pub fn parseDestructStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2697
         const line: i64 = self.peek().line;
@@ -5051,6 +5191,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2720
     pub fn parseVarStmt(self: *_zbr_ty_Parser, is_const: bool) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2721
         const line: i64 = self.peek().line;
@@ -5168,6 +5309,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2781
     pub fn parseAssertStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2782
         const line: i64 = self.peek().line;
@@ -5198,6 +5340,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2800
     pub fn parseYieldStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2801
         const line: i64 = self.peek().line;
@@ -5222,6 +5365,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2811
     pub fn parseRaiseStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2812
         const line: i64 = self.peek().line;
@@ -5251,6 +5395,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2824
     pub fn parseBranchStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2825
         const line: i64 = self.peek().line;
@@ -5420,6 +5565,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2917
     pub fn eatBranchPattern(self: *_zbr_ty_Parser) anyerror![]const u8 {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2919
         var sb = _zbr_new(_ZbrList(u8));
@@ -5464,6 +5610,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:2940
     pub fn parseExprOrAssignStmt(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:2941
         const line: i64 = self.peek().line;
@@ -5598,6 +5745,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3006
     pub fn parseExpr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3018
         self.expr_depth += 1;
@@ -5616,6 +5764,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3027
     pub fn pipeSpineLeadingDot(self: *_zbr_ty_Parser, node: _zbr_ty_PNode) bool {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3028
         switch (_zbr_val(node)) {
@@ -5643,6 +5792,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3038
     pub fn parsePipeline(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3039
         var left = (try self.parseOr());
@@ -5721,6 +5871,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3079
     pub fn parseOr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3080
         var left = (try self.parseAnd());
@@ -5755,6 +5906,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3095
     pub fn parseAnd(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3096
         var left = (try self.parseNot());
@@ -5781,6 +5933,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3107
     pub fn parseNot(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3108
         if (self.textIs("not")) {
@@ -5801,6 +5954,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3116
     pub fn parseComparison(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3117
         const left = (try self.parseBitOr());
@@ -6048,6 +6202,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3234
     pub fn parseBitOr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3235
         var left = (try self.parseBitXor());
@@ -6076,6 +6231,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3250
     pub fn parseBitXor(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3251
         var left = (try self.parseBitAnd());
@@ -6104,6 +6260,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3263
     pub fn parseBitAnd(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3264
         var left = (try self.parseShift());
@@ -6132,6 +6289,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3281
     pub fn parseShift(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3282
         var left = (try self.parseAddSub());
@@ -6160,6 +6318,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3294
     pub fn parseAddSub(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3295
         var left = (try self.parseMulDiv());
@@ -6188,6 +6347,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3307
     pub fn parseMulDiv(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3308
         var left = (try self.parseUnary());
@@ -6216,6 +6376,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3320
     pub fn parseUnary(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3321
         if (self.textIs("-")) {
@@ -6262,6 +6423,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3352
     pub fn parsePostfix(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3353
         var expr = (try self.parseAtom());
@@ -6564,6 +6726,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3518
     pub fn parseAtom(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3519
         if (self.textIs("true")) {
@@ -7022,6 +7185,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3744
     pub fn parseLambdaExpr(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3747
         (try self.expectText("def"));
@@ -7105,6 +7269,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3785
     pub fn parseLambdaParam(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PParam {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3786
         const name: []const u8 = (try self.eatId());
@@ -7132,6 +7297,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3797
     pub fn parseLambdaPrefix(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PLambda {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3799
         (try self.expectText("def"));
@@ -7168,6 +7334,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3814
     pub fn parseCaptureBlock(self: *_zbr_ty_Parser) anyerror!_ZbrList(_zbr_ty_PCaptureVar) {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3816
         (try self.expectText("capture"));
@@ -7245,6 +7412,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3851
     pub fn parseStringInterp(self: *_zbr_ty_Parser) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3853
         var parts = _zbr_new(_ZbrList(_zbr_ty_PNode));
@@ -7289,6 +7457,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3878
     pub fn parseCallArgs(self: *_zbr_ty_Parser) anyerror!_ZbrList(_zbr_ty_PNode) {
+        @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:3879
         var args = _zbr_new(_ZbrList(_zbr_ty_PNode));
@@ -7344,6 +7513,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3912
     pub fn parse(src: []const u8, file_name: []const u8) anyerror!_zbr_ty_PNode {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Parser.zbr:3913
         const toks = (try _zbr_ty_Parser.lexWithFile(src, file_name));
 // zbr:selfhost/Parser.zbr:3914
@@ -7354,6 +7524,7 @@ pub const _zbr_ty_Parser = struct {
 
     // zbr:selfhost/Parser.zbr:3919
     pub fn lexWithFile(src: []const u8, file_name: []const u8) anyerror!_ZbrList(*_zbr_mod_Token._zbr_ty_Token) {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Parser.zbr:3919
         {
             var _try_err: ?anyerror = null;
@@ -7371,6 +7542,7 @@ pub const _zbr_ty_Parser = struct {
     }
 
     fn _check_invariant(self: *_zbr_ty_Parser) void {
+        @setRuntimeSafety(true);
         if (!(_zebra_ge(self.pos, 0))) std.debug.panic("invariant failed at selfhost/Parser.zbr:888: in 'Parser'\n", .{});
         if (!(_zebra_le(self.pos, @as(i64, @intCast(self.tokens.items.len))))) std.debug.panic("invariant failed at selfhost/Parser.zbr:889: in 'Parser'\n", .{});
         if (!(_zebra_ge(self.expr_depth, 0))) std.debug.panic("invariant failed at selfhost/Parser.zbr:890: in 'Parser'\n", .{});
@@ -7382,7 +7554,7 @@ const _reflect_Parser_name: []const u8 = "Parser";
 const _reflect_Parser_fields: []const []const u8 = &.{"tokens", "pos", "file_name", "parse_errors", "collected_decls", "source", "expr_depth"};
 const _reflect_Parser_field_types: []const []const u8 = &.{"List(Token.Token)", "int", "str", "List(str)", "List(PNode)", "str", "int"};
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_Parser) return _reflect_Parser_name;
     return "unknown";
@@ -7397,6 +7569,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

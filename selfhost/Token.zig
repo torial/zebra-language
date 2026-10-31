@@ -181,6 +181,7 @@ pub const _zbr_ty_Token = struct {
     line: i64 = undefined,
     col: i64 = undefined,
     pub fn init(k: _zbr_ty_TokenKind, t: []const u8, ln: i64, cl: i64) *_zbr_ty_Token {
+        @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_Token) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Token");
 // zbr:selfhost/Token.zbr:181
@@ -204,6 +205,7 @@ pub const _zbr_ty_Keywords = struct {
     _type_tag: u64 = _ttag_Keywords,
     // zbr:selfhost/Token.zbr:187
     pub fn lookup(word: []const u8) ?_zbr_ty_TokenKind {
+        @setRuntimeSafety(true);
 // zbr:selfhost/Token.zbr:188
         if (std.mem.eql(u8, word, "use")) {
 // zbr:selfhost/Token.zbr:189
@@ -539,6 +541,7 @@ pub const _zbr_ty_Keywords = struct {
     }
 
     pub fn init() *_zbr_ty_Keywords {
+        @setRuntimeSafety(true);
         const self = _zbr_rt._allocator.create(_zbr_ty_Keywords) catch @panic("OOM");
         self.* = .{};
         self._type_tag = _ttag_Keywords;
@@ -551,7 +554,7 @@ const _reflect_Keywords_name: []const u8 = "Keywords";
 const _reflect_Keywords_fields: []const []const u8 = &.{};
 const _reflect_Keywords_field_types: []const []const u8 = &.{};
 
-const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };
+const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };
 fn _reflect_lookup_name(tag: u64) []const u8 {
     if (tag == _ttag_Token) return _reflect_Token_name;
     if (tag == _ttag_Keywords) return _reflect_Keywords_name;
@@ -569,6 +572,7 @@ fn _reflect_lookup_field_types(tag: u64) _ReflectStrSlice {
 }
 var _module_vars_inited: bool = false;
 pub fn _initModuleVars() void {
+    @setRuntimeSafety(true);
     if (_module_vars_inited) return;
     _module_vars_inited = true;
 }

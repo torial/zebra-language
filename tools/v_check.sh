@@ -80,6 +80,40 @@ printf 'def main()\n    var x: int? = nil\n    if sys.args().count() > 100\n    
 if [ "$zrc" = 0 ] || [ "$vrc" = 0 ]; then echo "nil_at: FAILED -- a nil unwrapped must die on both backends (zig exit $zrc, v exit $vrc)"; fail=1
 elif grep -q 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt"; then echo "nil_at: ok -- V says: $(grep -m1 -o 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt") (zig exit $zrc, v exit $vrc)"
 else echo "nil_at: FAILED -- V died without naming the place:"; head -3 "$OUT/nil_at_v_err.txt" | cut -c1-160; fail=1; fi
+echo "── integer overflow TRAPS on both backends (BUG-667, Sean 2026-10-30: trap, not wrap; V's operators wrap) ──"
+rows=$((rows + 1))
+# every operand from sys.args().count() (1), so nothing folds at compile time; each must die
+# with Zig's message on BOTH backends and never print its SURVIVED line; the in-range control
+# must print the same on both, and its emit must report no unchecked integer operation.
+ov_body() {   # <name> -> the statements after `var n`
+  case $1 in
+    add)    printf '    var x: int = 9223372036854775807\n    var y: int = x + n\n' ;;
+    sub)    printf '    var x: int = 0 - 9223372036854775807\n    var y: int = x - n - n\n' ;;
+    mul)    printf '    var x: int = 5000000000000000000\n    var y: int = x * (n + 1)\n' ;;
+    neg)    printf '    var x: int = 0 - 9223372036854775807 - n\n    var y: int = -x\n' ;;
+    pluseq) printf '    var y: int = 9223372036854775807\n    y += n\n' ;;
+    div)    printf '    var x: int = 0 - 9223372036854775807 - n\n    var y: int = x / (0 - n)\n' ;;
+    mod)    printf '    var x: int = 0 - 9223372036854775807 - n\n    var y: int = x %% (0 - n)\n' ;;
+  esac
+}
+ov_bad=""
+for p in add sub mul neg pluseq div mod; do
+  { printf 'def main()\n    var n: int = sys.args().count()\n'; ov_body $p; printf '    print("SURVIVED %s: " + y.toString())\n' $p; } > "$OUT/ov_$p.zbr"
+  (cd "$OUT" && "$ZEBRA" ov_$p.zbr > "$OUT/ov_${p}_zig_out.txt" 2> "$OUT/ov_${p}_zig_err.txt"); zrc=$?
+  (cd "$OUT" && "$ZEBRA" --target v ov_$p.zbr > "$OUT/ov_${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ov_$p.v" > "$OUT/ov_${p}_v_out.txt" 2> "$OUT/ov_${p}_v_err.txt"); vrc=$?
+  if [ "$zrc" = 0 ] || ! grep -q 'integer overflow' "$OUT/ov_${p}_zig_err.txt"; then ov_bad="$ov_bad $p(zig exit $zrc, no trap)"
+  elif [ "$vrc" = 0 ] || grep -q SURVIVED "$OUT/ov_${p}_v_out.txt" || ! grep -q 'integer overflow' "$OUT/ov_${p}_v_err.txt"; then ov_bad="$ov_bad $p(v exit $vrc: $(head -c 80 "$OUT/ov_${p}_v_out.txt" "$OUT/ov_${p}_v_err.txt" | tr '\n' ' '))"; fi
+done
+printf 'def main()\n    var n: int = sys.args().count()\n    var x: int = 9223372036854775806 + n\n    var y: int = 0 - x\n    y -= n\n    print(x.toString() + " " + y.toString() + " " + (x * n).toString() + " " + (x / (0 - n)).toString() + " " + (x %% 7).toString() + " " + (y + x).toString())\n' > "$OUT/ov_ok.zbr"
+(cd "$OUT" && "$ZEBRA" ov_ok.zbr > "$OUT/ov_ok_zig_out.txt" 2> "$OUT/ov_ok_zig_err.txt")   # stdout only: the compiler's progress goes to stderr
+(cd "$OUT" && "$ZEBRA" --target v ov_ok.zbr > "$OUT/ov_ok_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ov_ok.v" > "$OUT/ov_ok_v_out.txt" 2>&1)
+if [ -n "$ov_bad" ]; then echo "overflow: FAILED -- did not trap on both backends:$ov_bad"; fail=1
+elif [ ! -s "$OUT/ov_ok_zig_out.txt" ]; then echo "overflow: FAILED -- the in-range control printed nothing on Zig (NO CONTROL)"; fail=1
+elif ! diff -q "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" > /dev/null; then echo "overflow: FAILED -- the in-range control differs:"; diff "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" | head -4; fail=1
+elif grep -q 'not overflow-checked' "$OUT/ov_ok_emit.txt"; then echo "overflow: FAILED -- the control's emit left an integer operation unchecked: $(grep 'not overflow-checked' "$OUT/ov_ok_emit.txt")"; fail=1
+else echo "overflow: ok -- + - * neg += / % trap on both backends with Zig's message; the in-range control agrees ($(cat "$OUT/ov_ok_zig_out.txt"))"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v

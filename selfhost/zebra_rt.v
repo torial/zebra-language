@@ -526,6 +526,76 @@ pub fn zunwrap_at[T](x ?T, at string) T {
 	return x or { zbr_panic('nil unwrapped at ' + at) }
 }
 
+// BUG-667: integer overflow TRAPS on both backends (Sean, 2026-10-30), as a Zig build with
+// its safety on does; V's operators wrap. Each helper computes in u64, where wrapping is
+// defined in the C V emits (a signed overflow there is undefined, so a check written on the
+// signed result could be optimised away), and refuses a result that is not the true one.
+// The message is Zig's, so the two backends fail the same way.
+const zmin_i64 = i64(-9223372036854775807) - 1
+
+@[inline]
+pub fn zadd(a i64, b i64) i64 {
+	r := i64(u64(a) + u64(b))
+	if ((a ^ r) & (b ^ r)) < 0 {
+		zbr_panic('integer overflow')
+	}
+	return r
+}
+
+@[inline]
+pub fn zsub(a i64, b i64) i64 {
+	r := i64(u64(a) - u64(b))
+	if ((a ^ b) & (a ^ r)) < 0 {
+		zbr_panic('integer overflow')
+	}
+	return r
+}
+
+@[inline]
+pub fn zmul(a i64, b i64) i64 {
+	if a >= -2147483648 && a <= 2147483647 && b >= -2147483648 && b <= 2147483647 {
+		return a * b // both fit in 32 bits: the product fits in 64
+	}
+	if a == 0 || b == 0 {
+		return 0
+	}
+	if (a == -1 && b == zmin_i64) || (b == -1 && a == zmin_i64) {
+		zbr_panic('integer overflow')
+	}
+	r := i64(u64(a) * u64(b))
+	if r / b != a {
+		zbr_panic('integer overflow')
+	}
+	return r
+}
+
+@[inline]
+pub fn zneg(a i64) i64 {
+	if a == zmin_i64 {
+		zbr_panic('integer overflow')
+	}
+	return -a
+}
+
+// the one quotient that does not fit (V checks a zero divisor itself)
+@[inline]
+pub fn zdiv(a i64, b i64) i64 {
+	if b == -1 && a == zmin_i64 {
+		zbr_panic('integer overflow')
+	}
+	return a / b
+}
+
+// min % -1 traps, as min / -1 does (Rust panics on it in every mode); any other
+// remainder by -1 is 0, which the C `%` gives (it faults only on min)
+@[inline]
+pub fn zmod(a i64, b i64) i64 {
+	if b == -1 && a == zmin_i64 {
+		zbr_panic('integer overflow')
+	}
+	return a % b
+}
+
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
 // Zebra's DateTime: the epoch milliseconds (the Zig backend's _DateTime)
 pub struct ZDateTime {
