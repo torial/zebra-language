@@ -1,0 +1,12 @@
+# BUG-670: a FIELD read on a class `Foo?` passed `zebra -c` and failed inside zig
+# ("type '?*Foo' does not support field access").
+
+class Foo
+    var n: int = 3
+
+def find(): Foo?
+    return Foo()
+
+def main()
+    var f = find()
+    print(f.n)

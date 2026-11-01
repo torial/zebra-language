@@ -6,6 +6,69 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-670: a method call on an optional receiver passes `-c` and fails inside zig (BUG-557 covered `str?` only) -- FIXED 2026-11-01
+
+**Found 2026-11-01 by Fable** in the GameEngine (`zbra/ecs_test.zbr`, engine commit
+`0b64435`): `nw.components.get(a1).count()`, where `components` is
+`HashMap(int, List(Component))` and so `.get()` is `List(Component)?`. The front end
+accepted it; zig refused the emitted `nw.components.get(a1).items.len` with
+"type '?*array_list.Aligned(...)' does not support field access". The engine works around
+it by unwrapping with `if ... as cs`.
+
+**Reproduced on HEAD (`f4ae809`), Debug, three receiver kinds, each a different zig
+error and each `-c` rc=0:**
+
+| receiver | Zebra | zig's message |
+|---|---|---|
+| `List(T)?` from `HashMap.get` | `w.components.get(1).count()` | `type '?List(*Comp)' does not support field access` |
+| `List(int)?` local | `var x = find(); x.count()` | `type '?List(int)' does not support field access` |
+| user class `Foo?` | `var f = find(); f.get()` | `no field or member function named 'get' in '?*Foo'` |
+| `int?` from `HashMap.get` | `m.get("a").toString()` | `cannot print optional without a specifier` (std.fmt) |
+
+**Cause.** `checkCallsInExpr` (selfhost/TypeChecker.zbr, the BUG-557 block) refuses a
+method on an optional receiver only when the payload is `Type_.string_`. Every other
+payload falls through to codegen, which emits the call as though the value were present.
+
+**Expected.** One check-time refusal for any `Type_.optional` receiver, naming the value
+and the three fixes the `str?` message already offers (check it first / unwrap `x!` /
+`if ... as`), with `x?.m()` left alone (a different expression) and the `if x != nil`
+narrowed form still accepted.
+
+**Control when fixing.** Measure `-c` error counts before and after over this repo,
+zebra-ide and the GameEngine first, as for BUG-659: a method that codegen genuinely
+auto-unwraps on some optional kind would turn into a false refusal, and only a corpus
+sweep would show it. The fixture has to cover all four rows above plus the narrowed and
+`?.` forms as must-pass controls.
+
+**FIXED 2026-11-01.** `refuseOptionalReceiver` (selfhost/TypeChecker.zbr) refuses a method
+call OR a field read on any `Type_.optional` receiver, at the receiver's column, naming the
+value and three fixes: `if x != nil`, `x!`, and `if x as v` (`x orelse ""` stays the third
+for `str?`, so BUG-557's message is unchanged). The call arm and the member arm of
+`checkCallsInExpr` both call it. FIELD READS were found while fixing (`f.n` on a `Foo?`
+reached zig as "type '?*Foo' does not support field access") and are covered too.
+
+**Measured before landing, as the entry asked:** `-c` over every tracked `.zbr` in this repo,
+zebra-ide and the GameEngine (3,148 files, a frozen copy so concurrent engine commits could
+not move it), once with the pre-fix binary and once with the fix. **665 new error lines, 0
+gone, ALL in `GameEngine/ported_scripts/`** (62 machine-translated scripts, mostly the
+translator's `var script = nil` followed by `script.Parent...`). 33 of those files go from
+`-c`-clean to refused; **all 33 already failed the full build** under the pre-fix compiler
+(15 on the BUG-670 shape itself), so nothing that built stops building. Nothing in this
+repo, zebra-ide, or the engine's `zbra/` and `game/` moved.
+
+**Instrument note.** The first run of the "did zig refuse it before?" check reported 33/33
+refused -- every one a `File.read error` panic, because the copied pre-fix binary found no
+runtime beside it or in the cwd (BUG-543's resolution order). The control (a good file)
+passed only because it was run from the repo root. Re-run with the checkout as cwd: 0
+panics, 33 real zig errors.
+
+**Fixtures:** `test/fail_fixtures/bug670_opt_{list_get_method,class_method,int_tostring,
+field_read}_test.zbr` (`smoke_tc_fail`, each pinned to its column), and
+`test/bug670_opt_receiver_unwrapped_test.zbr` (`smoke_run`): the narrowed `if f != nil`
+(method and field), `if find() as g`, `f!`, `f?.get()`, `if m.get(1) as cs`, a narrowed
+`str?` -- all must still compile and print `bug670: [3,3][3][3][3][2][a]`. Red-checked: the
+four fail fixtures pass `-c` on the pre-fix binary.
+
 ### BUG-667: integer overflow is undefined behaviour in a `--release` build -- Debug traps it, release prints a wrong number -- FIXED 2026-10-31
 
 - **Severity:** High -- gate G1 ("safety holds at run time; there is no switch to turn it

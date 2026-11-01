@@ -1,0 +1,14 @@
+# BUG-670: a method on a class `Foo?` passed `zebra -c` and failed inside zig
+# ("no field or member function named 'get' in '?*Foo'").
+
+class Foo
+    var n: int = 3
+    def get(): int
+        return this.n
+
+def find(): Foo?
+    return Foo()
+
+def main()
+    var f = find()
+    print(f.get())

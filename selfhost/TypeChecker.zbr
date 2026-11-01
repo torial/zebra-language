@@ -7092,6 +7092,30 @@ def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
     ctx.setVarLocals(saved_vlocals)
     ctx.setLoopConsts(saved_loops)
 
+# A method call or field read on an OPTIONAL receiver reached zig as a type error about
+# code the user never wrote: BUG-557 (`str?` methods, "expected 'str', found '?str'"), then
+# BUG-670 for every other payload -- `List(T)?` from HashMap.get ("does not support field
+# access"), a class `Foo?` ("no member function named 'get' in '?*Foo'"), `int?`.toString().
+# Refused at the receiver. Inside `if x != nil` the checker has already narrowed x, so the
+# guarded form is not refused; `x?.m()` is a different expression (Expr.opt_chain).
+def refuseOptionalReceiver(m: ExprMember, is_call: bool, file: str, ctx: InferCtx)
+    if inferExpr(m.object, ctx) is Type_.optional as ro_opt
+        var ro_nm: str = "the value"
+        if m.object is Expr.ident as ro_id
+            ro_nm = "'" + ro_id.name + "'"
+        var ro_line: int = exprSpanLine(m.object)
+        var ro_col: int = exprSpanCol(m.object)
+        if ro_line == 0
+            ro_line = m.span.line
+            ro_col = m.span.col
+        var ro_what: str = "`." + m.member + "()` cannot be called on it"
+        if not is_call
+            ro_what = "`." + m.member + "` cannot be read from it"
+        var ro_last: str = "bind it (if x as v ...)"
+        if ro_opt is Type_.string_
+            ro_last = "give a default (x orelse \"\")"
+        ctx.addErr(file, ro_line, ro_col, ro_nm + " may be nil here, so " + ro_what + " -- check it first (if x != nil ...), unwrap it (x!), or " + ro_last)
+
 # expr-walker: exhaustive
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
 # expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
@@ -7111,17 +7135,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 # found '?str'". Refused at the receiver, as an operator on an optional is
                 # (below); inside `if x != nil` the checker has already narrowed x, so the
                 # guarded form is not refused. `x?.trim()` is a different expression.
-                if inferExpr(cm.object, ctx) is Type_.optional as cm_opt
-                    if cm_opt is Type_.string_
-                        var so_nm: str = "the value"
-                        if cm.object is Expr.ident as so_id
-                            so_nm = "'" + so_id.name + "'"
-                        var so_line: int = exprSpanLine(cm.object)
-                        var so_col: int = exprSpanCol(cm.object)
-                        if so_line == 0
-                            so_line = cm.span.line
-                            so_col = cm.span.col
-                        ctx.addErr(file, so_line, so_col, so_nm + " may be nil here, so `." + cm.member + "()` cannot be called on it -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse \"\")")
+                refuseOptionalReceiver(cm, true, file, ctx)    # BUG-557, BUG-670
                 # BUG-551: a bare `list.sort()` orders the elements with `cue compare`; on a
                 # user type without one it reached zig as "operator < not allowed".
                 if cm.member == "sort" and c.args.len == 0
@@ -7171,6 +7185,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.member as m
             checkCallsInExpr(m.object, file, line, ctx)
             checkStructBind(m, file, ctx)                   # BUG-596
+            refuseOptionalReceiver(m, false, file, ctx)     # BUG-670: `f.n` on a `Foo?`
         on Expr.index as ix
             # BUG-331: a JSON read can fail, so it is marked like any other failing call.
             if inferExpr(ix.object, ctx) is Type_.json_value

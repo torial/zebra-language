@@ -70,6 +70,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A method call or field read on an optional value is refused (BUG-670).**
+  `m.get(k).count()` on a `HashMap(K, List(T))`, `f.get()` or `f.n` on a `Foo?`, and
+  `m.get("a").toString()` on an `int?` passed `-c` and failed inside zig; only `str?` was
+  refused (BUG-557). Refused at the receiver now, naming `if x != nil`, `x!` and `if x as v`.
+
 - **One statement per line, and commas between call arguments (BUG-643, BUG-644).**
   `var x = 5 6` was `var x = 5` followed by a statement `6`, and `add(5 6)` was `add(5, 6)`;
   both are refused now, naming the missing operator or comma. A branch's `else` takes a statement

@@ -1,0 +1,11 @@
+# BUG-670: a method on the `List(T)?` that HashMap.get returns passed `zebra -c` and failed
+# inside zig ("type '?List(..)' does not support field access"). Found in the GameEngine
+# ECS (`components.get(id).count()`). Refused at the receiver, like BUG-557's `str?`.
+
+class Comp
+    var v: int = 0
+
+def main()
+    var m = HashMap(int, List(Comp))()
+    m.set(1, List(Comp)())
+    print(m.get(1).count())

@@ -46,40 +46,6 @@
 
 ---
 
-### BUG-670: a method call on an optional receiver passes `-c` and fails inside zig (BUG-557 covered `str?` only)
-
-**Found 2026-11-01 by Fable** in the GameEngine (`zbra/ecs_test.zbr`, engine commit
-`0b64435`): `nw.components.get(a1).count()`, where `components` is
-`HashMap(int, List(Component))` and so `.get()` is `List(Component)?`. The front end
-accepted it; zig refused the emitted `nw.components.get(a1).items.len` with
-"type '?*array_list.Aligned(...)' does not support field access". The engine works around
-it by unwrapping with `if ... as cs`.
-
-**Reproduced on HEAD (`f4ae809`), Debug, three receiver kinds, each a different zig
-error and each `-c` rc=0:**
-
-| receiver | Zebra | zig's message |
-|---|---|---|
-| `List(T)?` from `HashMap.get` | `w.components.get(1).count()` | `type '?List(*Comp)' does not support field access` |
-| `List(int)?` local | `var x = find(); x.count()` | `type '?List(int)' does not support field access` |
-| user class `Foo?` | `var f = find(); f.get()` | `no field or member function named 'get' in '?*Foo'` |
-| `int?` from `HashMap.get` | `m.get("a").toString()` | `cannot print optional without a specifier` (std.fmt) |
-
-**Cause.** `checkCallsInExpr` (selfhost/TypeChecker.zbr, the BUG-557 block) refuses a
-method on an optional receiver only when the payload is `Type_.string_`. Every other
-payload falls through to codegen, which emits the call as though the value were present.
-
-**Expected.** One check-time refusal for any `Type_.optional` receiver, naming the value
-and the three fixes the `str?` message already offers (check it first / unwrap `x!` /
-`if ... as`), with `x?.m()` left alone (a different expression) and the `if x != nil`
-narrowed form still accepted.
-
-**Control when fixing.** Measure `-c` error counts before and after over this repo,
-zebra-ide and the GameEngine first, as for BUG-659: a method that codegen genuinely
-auto-unwraps on some optional kind would turn into a false refusal, and only a corpus
-sweep would show it. The fixture has to cover all four rows above plus the narrowed and
-`?.` forms as must-pass controls.
-
 ### BUG-671: a front-end refusal under `--emit-zig --output-dir` still writes the full emit, so the refused program looks emitted
 
 **Found 2026-11-01 by Fable**, reported first as "`List.pop()` as a statement passes the
