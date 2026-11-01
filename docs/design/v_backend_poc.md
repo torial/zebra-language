@@ -2505,6 +2505,23 @@ holding the output pipe, and only the parent was killed. The census script now k
 process tree, checked with the real shape (a `zebra` run whose program outlives it: the
 old code waited the program's whole 42 s, the new one returned at its 20 s timeout).
 
+**Owed: `File.modtime` and `File.size` (asked by Fable, 2026-11-01).** CodeGenV maps neither,
+so both are refused by name. The engine's `game/mm/map_library.zbr` called `File.modtime`,
+which put a `not on the V backend: parts_of: File.modtime` panic into `parts_of` and failed
+the `--window` / `--duo` rows at startup; the engine was rewritten without it, so nothing
+blocks. The engine would use modtime as a cache stamp again once it exists. **Do not map
+them straight onto `os.file_last_mod_unix` / `os.file_size`:** read in the pinned V (0.5.2,
+`vlib/os/os.c.v`), both return **0** for a missing file, and `file_size` also prints to
+stderr. The Zig side answers `nil` (modtime: `int?`) and `-1` (size), so a direct mapping
+would turn "no such file" into a plausible value. Go through `os.stat(path)`, which returns
+`!Stat`: a runtime `zfile_modtime(p) ?i64` (`or { return none }`, else `mtime * 1000`) and
+`zfile_size(p) i64` (`or { return -1 }`). One difference stays, and the doc must say so
+where it is mapped: `os.Stat.mtime` is in **whole seconds**, so V gives Zig's units
+(milliseconds) without its resolution. Two writes inside one second share a stamp on V and
+not on Zig, and a cache keyed on it can miss the second write. Witness: a v_poc pair
+(present / missing file, plus a write-then-rewrite in one second) diffed against its Zig
+control, with the resolution difference declared rather than hidden.
+
 ### What decides it, by PRINCIPLES.md (gates first, then the axes in order)
 
 - **G1, safety.** Not a V-specific blocker: V traps what Zig's release lane drops on nil,
