@@ -2460,6 +2460,17 @@ only on the shared predicate, and its PASS line ends `(infra-retries=N)`. Red-ch
 fails exactly as the daily did, the fixed one passes with 1 retry), and with a persistent genuine
 error (one try, two builds, rc=1).
 
+**And `runtime-module` (2026-11-01)**: its five `zig build-exe` calls sent zig's stderr to
+`/dev/null`, so a FULL went red on "BUG-221 fixture does not compile with
+--no-runtime-module" with nothing to say why (green standalone at once; the same tier's
+`release-mode` red was BUG-302 on `std/crypto/blake2.zig`). They go through `zbx`, a
+wrapper over `zbr_run_retrying` now: an infra failure is retried, zig's output is kept beside
+the program, its first error line rides on the FAIL message, and the terminal line ends
+`(infra-retries=N)`. Red-checked with a `ZEBRA_ZIG_DIR` stub that fails once with the
+verbatim error (the pre-fix gate fails "emitted hello-world does not compile"; the fixed one
+passes it, `infra-retries=1`) and one that always fails genuinely (5 calls for 5 legs, each
+FAIL naming the error).
+
 ### The daily is CACHED where the answer cannot have changed (2026-09-26)
 
 The daily was 110 minutes and ~85% of it was zig compiling what we emit: `divergence` 38

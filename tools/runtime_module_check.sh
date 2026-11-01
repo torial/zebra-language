@@ -57,6 +57,23 @@ trap cleanup EXIT
 pass() { printf '  \033[32mok\033[0m    %s\n' "$1"; }
 fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); }
 
+source "$REPO/tools/zig_build_lib.sh"
+# zig build-exe in DIR. BUG-302 (zig failing to read ITS OWN std) is retried, three tries
+# in all, and a genuine error never is. zig's output is kept in DIR/zbx.err and its first
+# error line in $ZBX_ERR for the FAIL message. Until 2026-11-01 every call here sent zig's
+# stderr to /dev/null, and a FULL tier went red on "BUG-221 fixture does not compile with
+# --no-runtime-module" with nothing to say why; standalone it passed.
+RETRIES="$OUT/infra-retries"
+zbx() {
+    local d="$1"; shift
+    ( cd "$d" && ZBR_RUN_RETRY_FILE="$RETRIES" zbr_run_retrying zig build-exe "$@" ) > "$d/zbx.err" 2>&1
+    local rc=$?
+    ZBX_ERR=$(grep -m1 'error' "$d/zbx.err" | tr -d '\r')
+    [ -n "$ZBX_ERR" ] || ZBX_ERR="zig rc=$rc, no error line"
+    return $rc
+}
+retries() { [ -f "$RETRIES" ] && wc -l < "$RETRIES" | tr -d ' ' || echo 0; }
+
 [ -x "$ZEBRA" ] || { echo "runtime-module: $ZEBRA missing — run 'zig build'"; exit 1; }
 
 echo "runtime-module gate"
@@ -75,8 +92,8 @@ else
         # The inline shape is ~3,790 lines. Anything near that means the runtime
         # was spliced in after all and the split silently regressed.
         fail "emitted program is $lines lines — the runtime was NOT externalised"
-    elif ! ( cd "$hw" && zig build-exe hw.zig -fno-llvm -fno-lld -femit-bin=hw.exe >/dev/null 2>&1 ); then
-        fail "emitted hello-world does not compile"
+    elif ! zbx "$hw" hw.zig -fno-llvm -fno-lld -femit-bin=hw.exe; then
+        fail "emitted hello-world does not compile -- ${ZBX_ERR}"
     elif [ "$("$hw/hw.exe" 2>&1)" != "hi" ]; then
         fail "emitted hello-world does not run"
     else
@@ -93,9 +110,9 @@ if [ -f "$b/bug221_transitive_init_test.zbr" ]; then
     if ! "$ZEBRA" --emit-zig --output-dir "$b" \
             "$b/bug221_transitive_init_test.zbr" >/dev/null 2>&1; then
         fail "BUG-221 fixture did not emit"
-    elif ! ( cd "$b" && zig build-exe bug221_transitive_init_test.zig \
-                -fno-llvm -fno-lld -femit-bin=b221.exe >/dev/null 2>&1 ); then
-        fail "BUG-221 fixture does not compile"
+    elif ! zbx "$b" bug221_transitive_init_test.zig \
+                -fno-llvm -fno-lld -femit-bin=b221.exe; then
+        fail "BUG-221 fixture does not compile -- ${ZBX_ERR}"
     else
         got=$("$b/b221.exe" 2>&1)
         if [ "$got" = "missing" ]; then
@@ -158,8 +175,8 @@ elif [ -f "$off/zebra_rt.zig" ]; then
     fail "--no-runtime-module still wrote zebra_rt.zig"
 elif [ "$(wc -l < "$off/hw.zig" | tr -d ' ')" -lt 1000 ]; then
     fail "--no-runtime-module did not inline the runtime"
-elif ! ( cd "$off" && zig build-exe hw.zig -fno-llvm -fno-lld -femit-bin=off.exe >/dev/null 2>&1 ); then
-    fail "--no-runtime-module output does not compile"
+elif ! zbx "$off" hw.zig -fno-llvm -fno-lld -femit-bin=off.exe; then
+    fail "--no-runtime-module output does not compile -- ${ZBX_ERR}"
 elif [ "$("$off/off.exe" 2>&1)" != "hi" ]; then
     fail "--no-runtime-module output does not run"
 else
@@ -177,9 +194,9 @@ cp test/bug221_transitive_init_leaf.zbr test/bug221_transitive_init_mid.zbr \
 if ! "$ZEBRA" --emit-zig --output-dir "$bi" --no-runtime-module \
         "$bi/bug221_transitive_init_test.zbr" >/dev/null 2>&1; then
     fail "BUG-221 fixture did not emit with --no-runtime-module"
-elif ! ( cd "$bi" && zig build-exe bug221_transitive_init_test.zig \
-            -fno-llvm -fno-lld -femit-bin=b221i.exe >/dev/null 2>&1 ); then
-    fail "BUG-221 fixture does not compile with --no-runtime-module"
+elif ! zbx "$bi" bug221_transitive_init_test.zig \
+            -fno-llvm -fno-lld -femit-bin=b221i.exe; then
+    fail "BUG-221 fixture does not compile with --no-runtime-module -- ${ZBX_ERR}"
 else
     got=$("$bi/b221i.exe" 2>&1)
     if [ "$got" = "missing" ]; then
@@ -200,8 +217,8 @@ if ! ( cd "$mp/app" && "$ZEBRA" --emit-zig --module-path ../lib --output-dir out
     fail "BUG-536: the root did not emit with --module-path"
 elif ! ( cd "$mp/lib" && "$ZEBRA" --emit-zig --output-dir ../app/out bug539_dep_mod.zbr >/dev/null 2>&1 ); then
     fail "BUG-536: the host side (the library's own emit) failed"
-elif ! ( cd "$mp/app/out" && zig build-exe main536.zig -fno-llvm -fno-lld -femit-bin=m536.exe >/dev/null 2>&1 ); then
-    fail "BUG-536: the host-assembled program does not compile"
+elif ! zbx "$mp/app/out" main536.zig -fno-llvm -fno-lld -femit-bin=m536.exe; then
+    fail "BUG-536: the host-assembled program does not compile -- ${ZBX_ERR}"
 else
     got=$("$mp/app/out/m536.exe" 2>&1)
     if [ "$got" = "b536 1" ]; then
@@ -402,7 +419,7 @@ fi
 
 echo
 if [ "$FAIL" -gt 0 ]; then
-    printf '\033[31mruntime-module: %d check(s) FAILED\033[0m\n' "$FAIL"
+    printf '\033[31mruntime-module: %d check(s) FAILED\033[0m (infra-retries=%s)\n' "$FAIL" "$(retries)"
     exit 1
 fi
-printf '\033[32mruntime-module: all checks pass\033[0m\n'
+printf '\033[32mruntime-module: all checks pass\033[0m (infra-retries=%s)\n' "$(retries)"
