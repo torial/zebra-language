@@ -23,6 +23,9 @@
 #      unable to compile a hello-world.
 #   5. HEADROOM — heavy gates are RAM-bound; the host has been loaded enough that
 #      concurrent zig jobs got killed.
+#   6. LEAKED KERNEL TOKENS (Windows) — Git Bash leaks a kernel Token per
+#      process start until reboot; 2.29M of them (~6 GB) made smoke ~5x slow
+#      on 2026-11-02 while no process showed the memory. Warning only.
 
 set -uo pipefail
 
@@ -190,13 +193,35 @@ if [[ -n "$load" ]]; then
     fi
 fi
 
+# ── 6. leaked kernel tokens (Windows) ────────────────────────────────────────
+# Every process an older Git Bash starts leaks one kernel Token until reboot
+# (git-for-windows/git#6471; measured on MSYS 3.6.5, gone on 3.6.10 / Git
+# 2.56.0.windows.4, 2026-11-02 -- but what leaked stays until reboot); a gate run starts hundreds of thousands. 2.29M of
+# them held ~6 GB of paged pool on 2026-11-02 and smoke ran ~5x slow, with no
+# process showing the memory. A warning, never WRONG: the tree is fine, the host
+# is slow. An unreadable count says so rather than passing as zero.
+if command -v powershell.exe >/dev/null 2>&1; then
+    if kt="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$SCRIPT_DIR/kernel_tokens.ps1")" 2>&1 | tr -d '\r')" \
+        && [[ "$kt" =~ ^tokens=([0-9]+)\ pagedMB=([0-9]+)$ ]]; then
+        ntok="${BASH_REMATCH[1]}"; nmb="${BASH_REMATCH[2]}"
+        if [[ "$ntok" -ge 500000 ]]; then
+            warn "$ntok kernel tokens alive, holding ${nmb} MB of paged pool — reboot recommended"
+            printf '           older Git Bash leaks one per process start (git-for-windows/git#6471): update Git for Windows (MSYS >= 3.6.10 measured clean), then reboot\n'
+        else
+            ok "kernel tokens: $ntok (${nmb} MB paged pool)"
+        fi
+    else
+        warn "kernel token count unmeasured: ${kt:-no output from tools/kernel_tokens.ps1}"
+    fi
+fi
+
 echo
 if [[ $WRONG -gt 0 ]]; then
     printf '\033[31mdoctor: %d problem(s) that would make results untrustworthy\033[0m\n' "$WRONG"
     exit 1
 fi
 if [[ $WARN -gt 0 ]]; then
-    printf '\033[33mdoctor: %d warning(s) — safe to proceed, `--fix` to clear\033[0m\n' "$WARN"
+    printf '\033[33mdoctor: %d warning(s) — safe to proceed, `--fix` clears what it can\033[0m\n' "$WARN"
     exit 0
 fi
 printf '\033[32mdoctor: environment sane\033[0m\n'

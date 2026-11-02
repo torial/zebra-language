@@ -157,8 +157,13 @@ which has bitten us: **stale generated `.zig`** (you would be testing the OLD co
 `zig build update-selfhost` silently skips regeneration, BUG-210, and this made a real
 BUG-219 fix appear not to work), orphaned compiler processes holding a lock on
 `zig-out/bin` (→ `AccessDenied`), stale `/tmp/bs-*` scratch from a killed run causing
-unrelated failures, a compiler that cannot run a hello-world, and low RAM before a
-RAM-bound gate. It exits **1** only for states that make results *lie*; everything else
+unrelated failures, a compiler that cannot run a hello-world, low RAM before a
+RAM-bound gate, and (Windows) **leaked kernel tokens**: every process an older Git Bash
+starts leaks one kernel Token until reboot (git-for-windows/git#6471; ~0.7-1 per start on
+MSYS 3.6.5, none measured on 3.6.10 / Git 2.56.0.windows.4), and on 2026-11-02, 7 days
+up, 2.29M of them held ~6 GB of paged pool that no process showed and smoke ran ~5x slow.
+`tools/kernel_tokens.ps1` reads the count without admin; doctor warns past 500,000 and says
+"unmeasured" rather than passing when it cannot read it. Update Git for Windows, then reboot to reclaim what already leaked. It exits **1** only for states that make results *lie*; everything else
 is a warning. **`gates.sh` runs it as a preflight and refuses to report on an
 untrustworthy tree** — a green gate that measured the wrong compiler is worse than no
 gate at all.
