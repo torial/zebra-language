@@ -6,6 +6,65 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-671: a front-end refusal under `--emit-zig --output-dir` still writes the full emit, so the refused program looks emitted -- FIXED 2026-11-02
+
+**Fixed 2026-11-02 (Sean chose the contract: a refused compile leaves no `.zig`).**
+`MultiCompiler` records every file it writes under `--output-dir` (each module's emit,
+the runtime when it actually writes it, a C header's translated bindings; never a copied
+native `.zig` dep, which can be the user's own file). `exitWith(code, keep)` now carries a
+rule: a non-zero exit WITHOUT `keep` is a front-end refusal and removes those files,
+printing `note: the compile was refused, so the N file(s) it wrote to DIR were removed:
+...`; a file that will not delete is named, never silently kept. A non-zero exit WITH
+`keep` is a zig failure, and its `.zig` stays as evidence (BUG-324). The one site that
+broke the rule (N-API headers missing, an environment failure with a good emit) now
+passes `keep`. A RAISED refusal (a parse error in a later dependency) went straight to
+`main`'s catch and skipped `exitWith`; the root compile now goes through
+`compileRoot`, which routes it there, so an earlier dependency's emit is taken back too.
+
+Measured before the fix, three shapes, each rc=1 with files left behind: a throws call
+without `?` (the reported one: `r2.zig`, `zebra_rt.zig`), a parse error in the second of
+two deps (`a.zig`, `zebra_rt.zig`), a type error in the root after a dep was written
+(`a.zig`, `zebra_rt.zig`). After: all three leave the directory empty; a good compile
+keeps all three files. Gate: `cli-surface`, legs "a refusal AFTER emission..." and "a
+RAISED refusal in a later dep...", with the BUG-324 legs as the control (a zig failure
+keeps its `.zig`); the two new legs were watched red on the N-1 anchor.
+
+**Found 2026-11-01 by Fable**, reported first as "`List.pop()` as a statement passes the
+checker and fails in zig". It does not: the refusal fires. What happened is that the
+GameEngine's regen (`tools/regen_zbra.py`) runs
+
+```
+zebra.exe --emit-zig --source-root <engine> --library-mode --module-path <engine>/zbra \
+          --output-dir <tmp> <engine>/zbra/pathfinding.zbr
+```
+
+and judges success by whether a `.zig` came out. The compiler printed
+`pathfinding.zbr:132: error: throws call needs '?'` and exited **1**, and still wrote
+`pathfinding.zig` (carrying the refused `_ = try _zbr_list_pop(openSet);` under its
+`// zbr:` marker), `math.zig` and `zebra_rt.zig` into `--output-dir`. zig then failed on
+that file, so the user saw a Zig type error about code the front end had already refused.
+
+**Reproduced, Debug, on both the engine's pin (`9a332a4`) and HEAD (`96d9b62`)**: same
+rc=1, same diagnostic, same three files, with and without `--library-mode`. `-c` and
+`--check-full` refuse the same file and write nothing a caller would mistake for output.
+
+**Why it matters beyond one regen script.** An exit code is the only thing separating a
+refused emit from a good one in that directory, and a file that exists reads as an
+answer. BUG-324 settled the binary half (a failed build leaves no `.exe`) but kept the
+`.zig` on purpose, as evidence of a ZIG failure. A front-end refusal is not that case:
+the `.zig` is the compiler's output for a program it rejected.
+
+**Expected (my default; the contract is worth a second reading before changing it):** on a
+front-end refusal, `--output-dir` holds no `.zig` for the refused module, or holds it
+under a name nothing will build (e.g. `pathfinding.zig.refused`), and the note on stderr
+says which. **Check first** what reads that directory after a failure: `full_sweep` and
+`evidence_digest` keep emit evidence (`.emit.err` is the compiler's stderr, not the
+`.zig`), and BUG-516's note about unemitted deps assumes the directory's contents mean
+something.
+
+**Engine side (Fable's, not ours):** the regen should treat rc != 0 as failure whatever
+files exist. With that alone, this report would have been the right one-line diagnostic.
+
 ### BUG-670: a method call on an optional receiver passes `-c` and fails inside zig (BUG-557 covered `str?` only) -- FIXED 2026-11-01
 
 **Found 2026-11-01 by Fable** in the GameEngine (`zbra/ecs_test.zbr`, engine commit

@@ -70,6 +70,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
+- **A refused compile leaves no `.zig` in `--output-dir` (BUG-671).** A program refused
+  after emission (a throws call without `?`, a type that could not be inferred) or by a
+  parse error in a later dependency left every module it had written in the directory,
+  so a caller that looked for the `.zig` built a rejected program. The files are removed
+  and named on stderr; a zig failure still keeps its `.zig` as evidence (BUG-324).
+
 - **A method call or field read on an optional value is refused (BUG-670).**
   `m.get(k).count()` on a `HashMap(K, List(T))`, `f.get()` or `f.n` on a `Foo?`, and
   `m.get("a").toString()` on an `int?` passed `-c` and failed inside zig; only `str?` was

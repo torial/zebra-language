@@ -119,6 +119,9 @@ class MultiCompiler
     # last written to. Both are per-process caches — see writeRuntimeModule.
     var rt_text: str
     var rt_written: str
+    # BUG-671: every file this run WROTE under --output-dir (module emits, the runtime, a C
+    # header's bindings), so a front-end refusal can take them back -- see exitWith.
+    var emitted: List(str)
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
@@ -155,6 +158,7 @@ class MultiCompiler
         .node_addon = false
         .rt_text = ""
         .rt_written = ""
+        .emitted = List(str)()
         .sf_dep_bodies = List(str)()
         .sf_dep_names = List(str)()
 
@@ -336,7 +340,12 @@ class MultiCompiler
     # binary) is removed -- unless the BUILD or the PROGRAM failed (keep: its .zig is the
     # evidence) or --keep-temp asked for it. A kept directory is NAMED, because its path is
     # random per run and can no longer be guessed. With --output-dir there is no scratch.
+    # A non-zero exit WITHOUT `keep` is a FRONT-END REFUSAL (the program was rejected
+    # before zig saw it); a non-zero exit WITH `keep` is a failure whose emit is the
+    # evidence (zig refused it, BUG-324). Keep that distinction at every call site.
     def exitWith(code: int, keep: bool)
+        if code != 0 and not keep
+            .removeEmitted()
         if scratch_dir != ""
             if keep_temp
                 sys.errln("note: the scratch build is kept in " + scratch_dir)
@@ -346,6 +355,43 @@ class MultiCompiler
             else
                 removeScratchDir(scratch_dir)
         sys.exit(code)
+
+    # BUG-671: a refused compile leaves no .zig behind in --output-dir. The refusals that
+    # run after emission (a throws call without `?`, a `catch` that cannot fire, a guessed
+    # type) found every module already written, and a caller that judged success by
+    # "did a .zig come out" built the refused program and got a zig error about code the
+    # front end had already rejected. A temp-mode emit needs nothing here: its whole
+    # scratch directory goes. A file that will not delete is NAMED, never silently kept.
+    def removeEmitted()
+        if output_dir == "" or emitted.len == 0
+            return
+        var gone: List(str) = List(str)()
+        var stuck: List(str) = List(str)()
+        for ep in emitted
+            if not gone.contains(ep) and not stuck.contains(ep)
+                if File.tryDelete(ep)
+                    gone.add(ep)
+                else
+                    stuck.add(ep)
+        var names: str = ""
+        for gp in gone
+            if names != ""
+                names = names + ", "
+            names = names + Path.basename(gp)
+        if gone.len > 0
+            sys.errln("note: the compile was refused, so the " + gone.len.toString() + " file(s) it wrote to " + output_dir + " were removed: " + names)
+        for sp in stuck
+            sys.errln("note: the compile was refused, and " + sp + " (written by it) could not be removed -- do not build it")
+        emitted.clear()
+
+    # The root compile, with a RAISED refusal (a parse error in a dependency, a failed
+    # import) routed through exitWith like the reported ones, so earlier modules' emits
+    # are taken back too (BUG-671).
+    def compileRoot(zbr_path: str)
+        .compileDep(zbr_path, true)?
+    catch |e|
+        sys.errln(e.message)
+        .exitWith(1, false)
 
     def reportModulePathDeps()
         if library_mode or mp_noted.len == 0
@@ -537,6 +583,7 @@ class MultiCompiler
                 if not (singleFile() and not node_addon and not is_root)
                     var zig_path: str = .zbrToZig(zbr_path)
                     File.write(zig_path, zig_src)
+                    .emitted.add(zig_path)
                     sys.errln("wrote " + zig_path)
                     # Runtime-module: the program `@import("zebra_rt.zig")`s relative to
                     # its own directory, so the runtime has to sit beside it.  Every emit
@@ -911,6 +958,7 @@ class MultiCompiler
                 .rt_written = rt_path
                 return
         File.write(rt_path, .rt_text)
+        .emitted.add(rt_path)
         .rt_written = rt_path
 
     def zbrToZig(zbr_path: str): str
@@ -1014,6 +1062,7 @@ class MultiCompiler
                 raise "zig translate-c failed for " + parts.at(1) + ":\n" + tr.stderr
             if not (File.exists(dst) and File.read(dst) == tr.stdout)
                 File.write(dst, tr.stdout)
+                .emitted.add(dst)
             i = i + 1
 
     def moduleNameOf(zbr_path_in: str): str
@@ -5122,7 +5171,7 @@ def main()
     mc.node_addon = mode_node
     mc.keep_temp = keep_temp
     mc.scratch_stem = Path.stem(path)
-    mc.compileDep(path, true)?
+    mc.compileRoot(path)
     # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
     mc.reportSharedStatefulModules()
     mc.reportModulePathDeps()
@@ -5302,7 +5351,7 @@ def main()
             sys.errln("zebra: could not find the Node.js N-API headers.")
             sys.errln("  Fetch them once with:   npx --yes node-gyp install")
             sys.errln("  Or set ZEBRA_NODE_INCLUDE=<path-to>/include/node (and, on Windows, ZEBRA_NODE_LIB=<path-to>/node.lib)")
-            mc.exitWith(1, false)
+            mc.exitWith(1, true)   # not a refusal: the emit is good, the headers are missing
 
     # --selfhost-compile: invoke zig to compile/run the generated file
     var zig_path: str = mc.zbrToZig(path)

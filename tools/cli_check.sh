@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-671 a front-end refusal (post-emit, or raised by a later dep) leaves no .zig in --output-dir; a zig failure keeps its .zig
 # pins: BUG-653 `zebra diagnostics` (the LSP's view) knows a `use`d module's types; a real mismatch through one is still reported
 # pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
 # pins: BUG-547 --source-root makes emitted source paths machine-independent (two cwds, one output)
@@ -162,6 +163,30 @@ run --output-dir od_good hello.zbr
 chk "...and a GOOD compile still leaves its executable there (control)" \
     "$([ "$RC" = 0 ] && [ "$(ls "$W/od_good" 2>/dev/null | grep -c '\.exe$')" -ge 1 ] && echo 0 || echo 1)" \
     "exit=$RC files=[$(ls "$W/od_good" 2>/dev/null | tr '\n' ' ')]"
+chk "...a ZIG failure KEEPS its .zig as evidence, and the good compile has its .zig (control for BUG-671)" \
+    "$([ -f "$W/od_bad/zigbad.zig" ] && [ -f "$W/od_good/hello.zig" ] && echo 0 || echo 1)" \
+    "od_bad=[$(ls "$W/od_bad" 2>/dev/null | tr '\n' ' ')] od_good=[$(ls "$W/od_good" 2>/dev/null | tr '\n' ' ')]"
+
+# ---- BUG-671: a FRONT-END refusal leaves no .zig in --output-dir ---------------------
+# The refusals that run after emission (a throws call without `?`) found every module
+# already written, and a caller that judged success by "did a .zig come out" built a
+# program the front end had rejected. A raised refusal (a parse error in the SECOND dep)
+# must take back the first dep's emit too. The legs above are the control: a zig failure
+# keeps its .zig, a good compile keeps everything.
+printf 'def f() throws\n    raise "x"\ndef main()\n    f()\n' > "$W/noq.zbr"
+mkdir -p "$W/m671"
+printf 'def one(): int\n    return 1\n' > "$W/m671/a.zbr"
+printf 'def two(): int\n    return (2\n' > "$W/m671/b.zbr"
+printf 'use a\nuse b\ndef main()\n    print(a.one())\n' > "$W/m671/main.zbr"
+rm -rf "$W/od_noq" "$W/od_raised"
+run --emit-zig --output-dir od_noq noq.zbr
+chk "a refusal AFTER emission (throws call without \`?\`) leaves no .zig in --output-dir, and says so (BUG-671)" \
+    "$([ "$RC" = 1 ] && [ "$(ls "$W/od_noq" 2>/dev/null | grep -c '\.zig$')" = 0 ] && case "$ERR" in *"were removed: noq.zig"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC files=[$(ls "$W/od_noq" 2>/dev/null | tr '\n' ' ')] stderr=[$(echo "$ERR" | tail -1)]"
+run --emit-zig --output-dir od_raised m671/main.zbr
+chk "a RAISED refusal in a later dep takes back an earlier dep's .zig (BUG-671)" \
+    "$([ "$RC" = 1 ] && [ "$(ls "$W/od_raised" 2>/dev/null | grep -c '\.zig$')" = 0 ] && echo 0 || echo 1)" \
+    "exit=$RC files=[$(ls "$W/od_raised" 2>/dev/null | tr '\n' ' ')]"
 
 # ---- `zebra up` (2026-09-14): refuses, by name and OFFLINE, outside an install layout --
 # The compiler under test lives in zig-out/bin, not .../current, so `up` must refuse
