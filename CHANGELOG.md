@@ -25,6 +25,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **Wrapping and saturating arithmetic, with Zig's operators and spelling.** `a +% b`,
+  `a -% b`, `a *% b` and `-%a` wrap around the operand type; `a +| b`, `a -| b`, `a *| b`
+  and `a <<| n` clamp at its bounds; each has a compound form (`+%=` ... `<<|=`). Plain
+  `+ - *` still trap on overflow. Integers only, and both operands must have one type: the
+  type decides where the result wraps, so `byte +% int` is refused rather than joined, and a
+  literal must fit the other operand (`b +| 300` on a byte is refused -- BUG-672's half for
+  these operators). There is no saturating negation; `-|x` is refused, naming `0 -| x`. Two
+  constants compute as an `int`. SIMD integer vectors take the `+ - *` forms lane-wise. On
+  the V backend wrapping is mapped for `int` and `byte`, saturating for `int`; the rest is
+  refused by name. QUICKSTART §3; pinned by `test/boundary/wrap_sat_probe`.
+
 - **Integer overflow traps in every build (BUG-667), and so does a nil unwrap (BUG-668).**
   A `--release` build used to treat both as undefined behaviour: `x + 1` past the maximum
   printed the maximum, `s!` on nil read garbage, exit 0. Every function the compiler emits

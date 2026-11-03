@@ -1,0 +1,29 @@
+# v_poc10.zbr -- wrapping (`+% -% *%`, `-%x`) and saturating (`+| -| *|`) arithmetic on
+# the V backend (2026-11-02). V's own operators wrap, and a signed overflow in the C that V
+# emits is undefined, so wrapping is computed in u64 and cast back; saturating `int` goes
+# through the runtime's zsadd / zssub / zsmul. Runs on the Zig backend too; the outputs are
+# diffed (tools/v_check.sh).
+
+def main()
+    var big: int = 9223372036854775807
+    var lo: int = big +% 1
+    print(lo)
+    print(lo -% 1)
+    print(big *% 2)
+    print(-%lo)
+    print(big +| 1)
+    print(lo -| 1)
+    print(big *| 2)
+    print(lo *| 2)
+    print(lo *| -1)
+    print(7 +| 5)
+    print(9223372036854775807 +% 1)
+    var b: byte = 250
+    b = b +% 10
+    print(b)
+    print(b -% 5)
+    print(b *% 100)
+    var n: int = 41
+    n +%= 1
+    n *|= 2
+    print(n)

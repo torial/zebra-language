@@ -93,6 +93,22 @@ union TokenKind
     double_gt_equals
     question_equals
     bang_equals
+    # Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) arithmetic -- Zig's operators
+    # and Zig's spelling (Sean, 2026-11-02). Plain `+ - *` trap on overflow.
+    plus_percent
+    minus_percent
+    star_percent
+    plus_bar
+    minus_bar
+    star_bar
+    double_lt_bar
+    plus_percent_equals
+    minus_percent_equals
+    star_percent_equals
+    plus_bar_equals
+    minus_bar_equals
+    star_bar_equals
+    double_lt_bar_equals
     open_call
     kw_use
     kw_exposing

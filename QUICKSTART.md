@@ -371,19 +371,37 @@ when the true result does not fit the type -- in a `--release` build too, and on
 backend, whose own operators wrap. A program never carries on with a wrapped or invented
 value. (A byte counts: `b - 2` on a `byte` holding 1 traps. On the V backend the check
 covers `int` so far; `--target v` reports how many integer operations it could not check.)
-Explicit wrapping operations
-for code that means to wrap -- hashes, random generators -- are planned and not yet
-spelled.
+
+**Code that means to wrap or clamp says so with an operator** (Zig's, spelled as in Zig,
+2026-11-02). `%` wraps around the type; `|` saturates at its bounds:
+
+| wrapping | saturating | on a `byte` holding 250 |
+|---|---|---|
+| `a +% b` | `a +\| b` | `b +% 10` is `4`, `b +\| 10` is `255` |
+| `a -% b` | `a -\| b` | on a byte holding 5: `z -% 10` is `251`, `z -\| 10` is `0` |
+| `a *% b` | `a *\| b` | `b *% 2` is `244`, `b *\| 2` is `255` |
+| `-%a` | -- | `0 -% a`: the minimum negates to itself |
+| -- | `a <<\| n` | `3 <<\| 7` on a byte is `255`; a negative `n` shifts right, as for `<<` |
+
+Each has a compound form (`+%=`, `-%=`, `*%=`, `+\|=`, `-\|=`, `*\|=`, `<<\|=`). There is no
+saturating negation; write `0 -\| a`. They are **integers only**, and **both operands must
+have one type**: the type decides where the result wraps, so `byte +% int` is refused
+(convert one side) rather than joined as `+` would join it. An int literal adapts to the
+other operand when it fits there (`b +% 10`); `b +\| 300` on a byte is refused. Two
+constants are computed as an `int` (`9223372036854775807 +% 1` is the minimum). On SIMD
+vectors the `+ - *` forms work lane-wise on integer lanes. On the V backend wrapping is
+mapped for `int` and `byte` and saturating for `int`; anything else, and `<<\|`, is
+refused by name.
 
 ### §3.1 Operator precedence (highest → lowest)
 
 | Level | Operators | Notes |
 |-------|-----------|-------|
 | 1 — postfix | `x!`  `x?`  `.method()`  `[i]`  `?.` | Force-unwrap, optional-chain |
-| 2 — unary | `not`  `-x`  `~x` | Logical not; negation; bitwise complement |
-| 3 — multiplicative | `*`  `/`  `%` | |
-| 4 — additive | `+`  `-` | String concat is also `+` |
-| 5 — shift | `<<`  `>>` | `a << -b` **needs the space** — see below |
+| 2 — unary | `not`  `-x`  `-%x`  `~x` | Logical not; negation (`-%` wraps); bitwise complement |
+| 3 — multiplicative | `*`  `/`  `%`  `*%`  `*\|` | `*%` wraps, `*\|` saturates (§3) |
+| 4 — additive | `+`  `-`  `+%`  `-%`  `+\|`  `-\|` | String concat is also `+` |
+| 5 — shift | `<<`  `>>`  `<<\|` | `a << -b` **needs the space** — see below |
 | 6 — bitwise and | `&` | |
 | 7 — bitwise xor | `^` | |
 | 8 — bitwise or | `\|` | |

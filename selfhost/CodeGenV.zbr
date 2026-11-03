@@ -4183,6 +4183,8 @@ class VGen
         return obj + "." + vSafe(name) + "(" + .argsStr(args, key) + ")"
 
     def binaryStr(b: ExprBinary): str
+        if isWrapSatV(b.op)
+            return .wrapSatStr(b)
         var ck: str = .checkedArith(b)
         if ck != ""
             return ck
@@ -4255,6 +4257,46 @@ class VGen
         # checker gives up at forty nested levels, and every term is evaluated
         # there, no short-circuit)
         return "(" + l + " " + binaryOpV(b.op) + " " + r + ")"
+
+    # Wrapping (`+% -% *%`) and saturating (`+| -| *|`) arithmetic. Wrapping is computed in
+    # u64 and cast back: a signed overflow in the C that V emits is undefined, and a narrow
+    # product promotes to C `int`, so V's own operator is not the answer for every width.
+    # Saturating has i64 helpers in the runtime. Any other width, and `<<|`, is refused by
+    # name rather than guessed.
+    def wrapSatStr(b: ExprBinary): str
+        var t: str = .vTypeOf(b.left)
+        if isIntLit(b.left)
+            t = .vTypeOf(b.right)
+        if isIntLit(b.left) and isIntLit(b.right)
+            t = "i64"
+        var wop: str = ""
+        if b.op == BinaryOp.add_wrap
+            wop = "+"
+        if b.op == BinaryOp.sub_wrap
+            wop = "-"
+        if b.op == BinaryOp.mul_wrap
+            wop = "*"
+        if wop != ""
+            if t == "byte"
+                t = "u8"   # V spells Zebra's byte both ways
+            if t == "i64" or t == "u8"
+                return t + "(u64(" + .exprStr(b.left) + ") " + wop + " u64(" + .exprStr(b.right) + "))"
+            .refused.add("a wrapping operator on an operand of V type `" + t + "` (only int and byte are mapped)")
+            return "0"
+        var sfn: str = ""
+        if b.op == BinaryOp.add_sat
+            sfn = "zsadd"
+        if b.op == BinaryOp.sub_sat
+            sfn = "zssub"
+        if b.op == BinaryOp.mul_sat
+            sfn = "zsmul"
+        if sfn != "" and t == "i64"
+            return sfn + "(" + .exprStr(b.left) + ", " + .exprStr(b.right) + ")"
+        if sfn == ""
+            .refused.add("the saturating shift `<<|` (no V mapping yet)")
+        else
+            .refused.add("a saturating operator on an operand of V type `" + t + "` (only int is mapped)")
+        return "0"
 
     # BUG-667: an i64 +, -, *, /, % through the runtime's checked helper; "" when the op
     # is not arithmetic or an operand is not an i64. An integer operand of a type the
@@ -4352,6 +4394,9 @@ class VGen
         .depth = .depth - 1
         .line("}")
         return cn
+
+def isWrapSatV(op: BinaryOp): bool
+    return op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap or op == BinaryOp.add_sat or op == BinaryOp.sub_sat or op == BinaryOp.mul_sat or op == BinaryOp.shl_sat
 
 # BUG-667: integer overflow TRAPS (Sean, 2026-10-30) and V's integer operators wrap, so
 # an i64 +, -, *, / and % go through the runtime's checked helpers. "" for any other op.

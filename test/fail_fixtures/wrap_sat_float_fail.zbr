@@ -1,0 +1,10 @@
+# Wrapping and saturating arithmetic is defined on integers only: a float has no
+# wrap-around, and Zig refuses `+%` / `+|` on one. Refused in the front end, at the operand.
+def main()
+    var f: float = 1.5
+    print(f +% 2.0)
+    var g: float = 2.5
+    g +|= 1.0
+    print(g)
+    var s: str = "a"
+    print(s *% 2)

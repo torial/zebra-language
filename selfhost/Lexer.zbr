@@ -775,13 +775,55 @@ class Lexer
 
     # -- Operators and punctuation -------------------------------------------
 
+    # The token kind of a wrapping (`%`) or saturating (`|`) operator on `+ - *`.
+    def wrapSatKind(c: char, c1: char, assign: bool): TokenKind
+        if c1 == c'%'
+            if c == c'+'
+                if assign
+                    return TokenKind.plus_percent_equals()
+                return TokenKind.plus_percent()
+            if c == c'-'
+                if assign
+                    return TokenKind.minus_percent_equals()
+                return TokenKind.minus_percent()
+            if assign
+                return TokenKind.star_percent_equals()
+            return TokenKind.star_percent()
+        if c == c'+'
+            if assign
+                return TokenKind.plus_bar_equals()
+            return TokenKind.plus_bar()
+        if c == c'-'
+            if assign
+                return TokenKind.minus_bar_equals()
+            return TokenKind.minus_bar()
+        if assign
+            return TokenKind.star_bar_equals()
+        return TokenKind.star_bar()
+
     def scanOperator(ln: int, cl: int) throws
         var c  = peek()
         var c1 = peek1()
 
+        # `<<|=` (saturating shift-assign) is the only four-character operator.
+        if pos + 3 < src.len and c == c'<' and c1 == c'<' and src[pos + 2] == c'|' and src[pos + 3] == c'='
+            pos = pos + 4
+            emit(TokenKind.double_lt_bar_equals(), "<<|=", ln, cl)
+            return
+
         # Three-character compound operators
         if pos + 2 < src.len
             var c2 = src[pos + 2]
+            # Wrapping / saturating compound assignment and `<<|`: before every two-character
+            # operator, so `+%=` is not read as `+%` `=` and `<<|` is not `<<` `|`.
+            if (c == c'+' or c == c'-' or c == c'*') and (c1 == c'%' or c1 == c'|') and c2 == c'='
+                pos = pos + 3
+                emit(wrapSatKind(c, c1, true), src[pos - 3..pos], ln, cl)
+                return
+            if c == c'<' and c1 == c'<' and c2 == c'|'
+                pos = pos + 3
+                emit(TokenKind.double_lt_bar(), "<<|", ln, cl)
+                return
             if c == c'/' and c1 == c'/' and c2 == c'='
                 pos = pos + 3
                 emit(TokenKind.slashslash_equals(), "//=", ln, cl)
@@ -806,6 +848,12 @@ class Lexer
                 return
 
         # Two-character compound operators
+        # `+% -% *%` wrap, `+| -| *|` saturate. No existing operator starts with these
+        # pairs (`%` and `|` are not prefix operators), measured over ~10,700 files.
+        if (c == c'+' or c == c'-' or c == c'*') and (c1 == c'%' or c1 == c'|')
+            pos = pos + 2
+            emit(wrapSatKind(c, c1, false), src[pos - 2..pos], ln, cl)
+            return
         if c == c'+' and c1 == c'+'
             pos = pos + 2
             emit(TokenKind.plusplus(), "++", ln, cl)

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-671. Next new bug: BUG-672.**
+**Last bug number generated: BUG-672. Next new bug: BUG-673.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,29 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-672: an int literal that does not fit a narrow operand passes the front end and fails inside zig
+
+**Found 2026-11-02** while adding the wrapping and saturating operators. `var k: byte = 250`
+then `print(k + 300)`: `zebra -c` exits 0, and the build fails in zig with
+`type 'u8' cannot represent integer value '300'` -- a Zig diagnostic about code the user did
+not write. The literal adapts to the other operand's type (QUICKSTART §3), and nothing checks
+that it fits there. The same holds for `- * / %`, the comparisons and the bitwise operators.
+
+**Half fixed with the operators.** `wrapSatResultType` refuses an out-of-range literal for
+`+% -% *% +| -| *|` at the literal's position, naming the type's range (`litFitsType` in
+TypeChecker.zbr; fixture `test/fail_fixtures/wrap_sat_mixed_fail.zbr`). The plain operators
+are deliberately NOT in that commit: zig analyses lazily, so `k + 300` inside a function
+nobody calls compiles today, and the checker sees every function -- a file that builds now
+could start failing `-c`.
+
+**Control when fixing:** extend `litFitsType` to the plain arithmetic and comparison arms,
+then run the `-c` error-count sweep over this repo, zebra-ide and the GameEngine before and
+after, and land it as its own commit (the BUG-253 inference/diagnostics split). A refused
+literal must name its position and the range; a literal that fits (`k + 5`) must still pass.
+<!-- bug-open-ok: the wrap/sat half is fixed, the plain-operator half is open -->
 
 ---
 

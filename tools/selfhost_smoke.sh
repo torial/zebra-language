@@ -927,6 +927,19 @@ smoke_run test/bug295_lazy_init_test.zbr "bug295-lazy: 14 15 140 a 141 2 true"
 # start-up naming the chain. The pre-fix compiler printed -6148914691236517204.
 smoke_run_fail test/bug295_init_cycle_test.zbr "module initialisation cycle: bug295_init_cycle_lib.y -> bug295_init_cycle_test.x -> bug295_init_cycle_lib.y"
 smoke_run_fail test/bug669_min_rem_neg1_test.zbr "integer overflow"
+# Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) arithmetic, 2026-11-02. The values
+# are pinned by test/boundary/wrap_sat_probe; these pin what is around them: plain `+`
+# still traps (after the wrapping line printed 4), SIMD lanes, and the refusals --
+# integers only, one operand type, a literal that fits, no saturating negation.
+smoke_run_fail test/wrap_sat_plain_traps_test.zbr "integer overflow"
+smoke_run test/wrap_sat_simd_test.zbr "wrap_sat_simd: OK"
+smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:5:11: error: wrapping '+%' requires integer operands, got 'float'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:7:5: error: saturating '+|' requires integer operands, got 'float'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:10:11: error: wrapping '*%' requires integer operands, got 'str'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:7:11: error: cannot mix 'byte' and 'int' in wrapping '+%'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:8:16: error: 300 does not fit in 'byte' (0..255)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:10:12: error: -200 does not fit in 'int8' (-128..127)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_unary_sat_fail.zbr "wrap_sat_unary_sat_fail.zbr:5:11: error: there is no saturating negation"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
 # a struct only deps get); --no-runtime-module gives each module its own accessor state

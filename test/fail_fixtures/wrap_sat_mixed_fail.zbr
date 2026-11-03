@@ -1,0 +1,10 @@
+# The operand TYPE decides where a wrapping or saturating result wraps or clamps, so the
+# two operands must already have one type: `byte +% int` is refused (a silent join to int
+# would turn 250 +% 10 into 260). A literal adapts to the other operand only if it fits.
+def main()
+    var b: byte = 250
+    var n: int = 10
+    print(b +% n)
+    print(b +| 300)
+    var s: int8 = 1
+    print(-200 -| s)

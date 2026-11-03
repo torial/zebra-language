@@ -1,0 +1,17 @@
+# Wrapping and saturating `+ - *` on SIMD vectors work lane-wise on integer lanes -- Zig's
+# own operators on @Vector. Expected lanes written by hand before the first run, and
+# compared lane by lane through a mask (a `.sum()` of u8 lanes would itself overflow).
+def main()
+    var a: u8x4 = u8x4(250, 1, 128, 0)
+    var b: u8x4 = u8x4(10, 2, 128, 1)
+    assert (a +% b == u8x4(4, 3, 0, 1)).all()
+    assert (a +| b == u8x4(255, 3, 255, 1)).all()
+    assert (a -% b == u8x4(240, 255, 0, 255)).all()
+    assert (a -| b == u8x4(240, 0, 0, 0)).all()
+    assert (a *% b == u8x4(196, 2, 0, 0)).all()
+    assert (a *| b == u8x4(255, 2, 255, 0)).all()
+    var c: i8x4 = i8x4(127, -128, 100, -100)
+    var d: i8x4 = i8x4(1, 1, 100, 100)
+    assert (c +% d == i8x4(-128, -127, -56, 0)).all()
+    assert (c -| d == i8x4(126, -128, 0, -128)).all()
+    print("wrap_sat_simd: OK")

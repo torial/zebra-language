@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
+use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, IntBase, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -3103,6 +3103,162 @@ def bitwiseResultType(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
         return lt
     return rt
 
+# ── Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) arithmetic ─────────────────
+#
+# Zig's operators and Zig's spelling (Sean, 2026-11-02): plain `+ - *` trap on overflow,
+# `+%` wraps around the type, `+|` clamps at its bounds. INTEGERS ONLY -- a float has no
+# wrap-around and Zig refuses both on one.
+#
+# THE TYPE DECIDES THE ANSWER, so the operands must already have ONE type. BUG-445 lets
+# `byte + int` join to `int`; doing that here would move where `250 +% 10` wraps (a byte
+# gives 4, an int 260) without saying so. Mixed operands are refused, naming the fix. A
+# literal adapts to the other side, as everywhere -- but only if it FITS there: `b +% 300`
+# on a byte would otherwise reach Zig as "type 'u8' cannot represent integer value 300".
+def isWrapSatOp(op: BinaryOp): bool
+    return op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap or op == BinaryOp.add_sat or op == BinaryOp.sub_sat or op == BinaryOp.mul_sat or op == BinaryOp.shl_sat
+
+def wrapSatOpText(op: BinaryOp): str
+    if op == BinaryOp.add_wrap
+        return "+%"
+    if op == BinaryOp.sub_wrap
+        return "-%"
+    if op == BinaryOp.mul_wrap
+        return "*%"
+    if op == BinaryOp.add_sat
+        return "+|"
+    if op == BinaryOp.sub_sat
+        return "-|"
+    if op == BinaryOp.mul_sat
+        return "*|"
+    return "<<|"
+
+def wrapSatKindWord(op: BinaryOp): str
+    if op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap
+        return "wrapping"
+    return "saturating"
+
+def wrapSatVerb(op: BinaryOp): str
+    if wrapSatKindWord(op) == "wrapping"
+        return "wraps"
+    return "saturates"
+
+# The value of one hex or decimal digit, -1 for anything else.
+def litDigitValue(d: str, hex: bool): int
+    const digs: str = "0123456789abcdef"
+    var lc: str = d.lower()
+    var ix: int = digs.indexOf(lc)
+    if ix < 0 or lc.len != 1
+        return -1
+    if ix >= 10 and not hex
+        return -1
+    return ix
+
+# "" when the integer literal `e` (or its negation) fits in `t`; otherwise why not. Only
+# the sized types narrower than 64 bits are checked, and only a plain decimal or 0x
+# literal -- a suffixed one (`5_u8`) carries its own type and is left to Zig.
+def litFitsType(e: Expr, t: Type_): str
+    var neg: bool = false
+    var le: Expr = e
+    if e is Expr.unary as un
+        if un.op == UnaryOp.neg
+            neg = true
+            le = un.operand
+    var w: int = numWidth(t)
+    var k: int = numKind(t)
+    if w >= 64 or (k != 1 and k != 2)
+        return ""
+    var txt: str = ""
+    var is_hex: bool = false
+    if le is Expr.int_lit as il
+        txt = il.text
+        is_hex = il.base == IntBase.hex
+    else
+        return ""
+    var shown: str = txt
+    if is_hex
+        if not (txt.startsWith("0x") or txt.startsWith("0X"))
+            return ""
+        txt = txt.substring(2, txt.len)
+    if txt.len == 0
+        return ""
+    var v: int = 0
+    var too_big: bool = false
+    var di: int = 0
+    while di < txt.len
+        var dv: int = litDigitValue(txt.substring(di, di + 1), is_hex)
+        di = di + 1
+        if dv < 0
+            return ""                     # a suffix or separator: not checked here
+        if v > 1099511627776              # 2^40, past every bound below: stop growing
+            too_big = true
+        else if is_hex
+            v = v * 16 + dv
+        else
+            v = v * 10 + dv
+    var bits: int = w
+    if k == 1
+        bits = w - 1
+    var hi: int = 1
+    var i: int = 0
+    while i < bits
+        hi = hi * 2
+        i = i + 1
+    var lo: int = 0
+    if k == 1
+        lo = 0 - hi
+    hi = hi - 1
+    var val: int = v
+    if neg
+        val = 0 - v
+        shown = "-" + shown
+    if too_big or val < lo or val > hi
+        return shown + " does not fit in '" + numTypeName(t) + "' (" + lo.toString() + ".." + hi.toString() + ")"
+    return ""
+
+def wrapSatResultType(lt: Type_, rt: Type_, b: ExprBinary, ctx: InferCtx): Type_
+    var opname: str = wrapSatOpText(b.op)
+    var ln: int = anchorLine(b.left, b.span.line)
+    var cl: int = anchorCol(b.left, b.span.col)
+    var bad: Type_? = nil
+    if isBitwiseOperandMistake(lt)
+        bad = lt
+    else if isBitwiseOperandMistake(rt)
+        bad = rt
+    if bad as bad_t
+        ctx.addErr(ctx.file, ln, cl,
+            wrapSatKindWord(b.op) + " '" + opname + "' requires integer operands, got '" + numTypeName(bad_t) + "'")
+        return Type_.unknown_
+    var l_lit: bool = isNumLit(b.left)
+    var r_lit: bool = isNumLit(b.right)
+    # `<<|`: the result has the LEFT operand's type, as for `<<`; the amount is any integer.
+    if b.op == BinaryOp.shl_sat
+        if isIntegerType(lt)
+            return lt
+        if l_lit
+            return Type_.int_
+        return Type_.unknown_
+    if l_lit and r_lit
+        return Type_.int_                 # two constants: computed as an int (codegen types it)
+    if l_lit
+        var lf: str = litFitsType(b.left, rt)
+        if lf != ""
+            ctx.addErr(ctx.file, ln, cl, lf + ", the type of the other operand of '" + opname + "'")
+        return rt
+    if r_lit
+        var rf: str = litFitsType(b.right, lt)
+        if rf != ""
+            ctx.addErr(ctx.file, anchorLine(b.right, b.span.line), anchorCol(b.right, b.span.col),
+                rf + ", the type of the other operand of '" + opname + "'")
+        return lt
+    if isIntegerType(lt) and isIntegerType(rt) and numTypeName(lt) != numTypeName(rt)
+        ctx.addErr(ctx.file, ln, cl,
+            "cannot mix '" + numTypeName(lt) + "' and '" + numTypeName(rt) + "' in " + wrapSatKindWord(b.op) + " '" + opname
+            + "': the type decides where the result " + wrapSatVerb(b.op) + " -- convert one side first (e.g. `.toInt()`, `.toUint8()`)")
+        return lt
+    if isIntegerType(lt)
+        return lt
+    return rt
+
 # BUG-253. Operand predicates for the three unary operators, each answering only
 # "is this DEFINITELY wrong here?" -- never "is this right?". They must return false for
 # unknown_/context_dependent, because selfhost inference is weaker than the bootstrap's
@@ -4735,6 +4891,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.named(simdMaskName(simd_tn))
                 if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
                     return Type_.named(simd_tn)
+                if isWrapSatOp(b.op)
+                    # lane-wise wrapping / saturating: Zig's own operators on integer lanes
+                    if b.op == BinaryOp.shl_sat
+                        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col),
+                            "'<<|' is not mapped for SIMD vectors (" + simd_tn + ") -- shift each lane, or use the wrapping and saturating `+ - *`, which work lane-wise")
+                    else if simd_tn.startsWith("f") or simd_tn.startsWith("bool")
+                        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col),
+                            "'" + wrapSatOpText(b.op) + "' is not defined on a " + simd_tn + " vector -- wrapping and saturating `+ - *` work lane-wise on INTEGER lanes only")
+                    return Type_.named(simd_tn)
+            # Wrapping and saturating arithmetic takes the type of its operands, never a join.
+            if isWrapSatOp(b.op)
+                return wrapSatResultType(lt, rt, b, ctx)
             # BUG-445: mixed numeric arithmetic takes the wider type (numericJoin).
             if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
                 if isNumeric(lt) and isNumeric(rt)
@@ -6799,6 +6967,8 @@ def checkDeprecatedCall(c: ExprCall, ctx: InferCtx)
 # value is still fine where one belongs (passed to a `sig`, bound to a var, compared with
 # `==`), so only these operators are checked.
 def bareFnOperandOp(op: BinaryOp): bool
+    if isWrapSatOp(op)
+        return true
     return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.int_div or op == BinaryOp.mod or op == BinaryOp.pow or op == BinaryOp.bit_and or op == BinaryOp.bit_or or op == BinaryOp.bit_xor or op == BinaryOp.shl or op == BinaryOp.shr or op == BinaryOp.lt or op == BinaryOp.le or op == BinaryOp.gt or op == BinaryOp.ge
 
 def checkBareFnOperand(e: Expr, file: str, ctx: InferCtx)

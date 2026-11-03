@@ -827,6 +827,14 @@ class ASTBuilder
                 # no gain. That double mention is the cost the `/=` comment names, and it is
                 # pre-existing for `/=`, `%=`, `//=` and `**=` -- on an index target it is
                 # the difference between working and not working at all.
+                # Wrapping and saturating compound assignment desugar on EVERY target, for
+                # the reason `/=` and `%=` do: the lowering is type-dependent (a literal pair
+                # needs its type, the V backend a helper per width) and genBinary is where
+                # that is decided. Same double-evaluation cost as the four above.
+                if pa.op == "+%=" or pa.op == "-%=" or pa.op == "*%=" or pa.op == "+|=" or pa.op == "-|=" or pa.op == "*|=" or pa.op == "<<|="
+                    const bop_ws = .compoundBinaryOp(pa.op)?
+                    const folded_ws = Expr.binary(ExprBinary(Span(pa.line, pa.col, pa.line, pa.col), bop_ws, target_expr, value_expr))
+                    return Stmt.assign(StmtAssign(Span(pa.line, pa.col, pa.line, pa.col), target_expr, AssignOp.assign, folded_ws))
                 if pa.op != "="
                     if target_expr is Expr.index
                         const bop_ix = .compoundBinaryOp(pa.op)?
@@ -1500,6 +1508,20 @@ class ASTBuilder
             return BinaryOp.shl
         if op == ">>="
             return BinaryOp.shr
+        if op == "+%="
+            return BinaryOp.add_wrap
+        if op == "-%="
+            return BinaryOp.sub_wrap
+        if op == "*%="
+            return BinaryOp.mul_wrap
+        if op == "+|="
+            return BinaryOp.add_sat
+        if op == "-|="
+            return BinaryOp.sub_sat
+        if op == "*|="
+            return BinaryOp.mul_sat
+        if op == "<<|="
+            return BinaryOp.shl_sat
         raise "not a compound assignment operator: " + op
 
     def toAssignOp(op: str): AssignOp throws
@@ -1574,6 +1596,21 @@ class ASTBuilder
             return BinaryOp.shl
         if op == ">>"
             return BinaryOp.shr
+        # Wrapping (`%`) and saturating (`|`) arithmetic, Zig's operators.
+        if op == "+%"
+            return BinaryOp.add_wrap
+        if op == "-%"
+            return BinaryOp.sub_wrap
+        if op == "*%"
+            return BinaryOp.mul_wrap
+        if op == "+|"
+            return BinaryOp.add_sat
+        if op == "-|"
+            return BinaryOp.sub_sat
+        if op == "*|"
+            return BinaryOp.mul_sat
+        if op == "<<|"
+            return BinaryOp.shl_sat
         raise "toBinaryOp: unknown op: " + op
 
     def toUnaryOp(op: str): UnaryOp throws

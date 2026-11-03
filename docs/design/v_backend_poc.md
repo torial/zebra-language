@@ -2593,7 +2593,10 @@ Answered 2026-10-30 (Sean):
    checked arithmetic, since V wraps. BUILT 2026-10-31: every emitted function opens with
    `@setRuntimeSafety(true)` (gate `runtime-safety`), CodeGenV routes `int` arithmetic
    through `zadd`..`zmod` and counts what it cannot check, and `min % -1` traps on both
-   (BUG-669). The wrapping operations' spelling is still open.
+   (BUG-669). The wrapping operations are SPELLED (2026-11-02, Sean: Zig's operators):
+   `+% -% *% -%x` wrap and `+| -| *| <<|` saturate. CodeGenV computes wrapping in u64 and
+   casts back (`int`, `byte`), saturates `int` through `zsadd` / `zssub` / `zsmul`, and
+   refuses the rest by name; `examples/v_poc10.zbr` diffs the two backends.
 2. **The release question** -- DECIDED: the next release does NOT wait for V.
 3. **`zig"..."`'s successor** -- DECIDED: `v"..."`, the same escape with V as its
    language. How the two coexist while both backends ship (each refused by the other

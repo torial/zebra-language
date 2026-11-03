@@ -1003,6 +1003,15 @@ enum BinaryOp
     or_
     in_
     dotdot
+    # Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) integer arithmetic. `-%x` is
+    # built as `0 -% x` and the compound forms as `x = x op v`, so no other enum grows.
+    add_wrap
+    sub_wrap
+    mul_wrap
+    add_sat
+    sub_sat
+    mul_sat
+    shl_sat
 
 struct ExprBinary
     var span: Span

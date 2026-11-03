@@ -2974,6 +2974,10 @@ class Parser
             op = "<<="
         else if .textIs(">>=")
             op = ">>="
+        # Wrapping and saturating compound assignment. AstBuilder desugars each to
+        # `x = x op v`, the way it already desugars `/=` and `%=`.
+        else if .textIs("+%=") or .textIs("-%=") or .textIs("*%=") or .textIs("+|=") or .textIs("-|=") or .textIs("*|=") or .textIs("<<|=")
+            op = .peek().text
         if .textIs("<-") or .textIs("<<-")
             # §28d (2026-07-02): `<<-` = arena deep copy-out, `<-` = channel
             # send/recv only.  One stmt kind; `deep` records the token and
@@ -3280,7 +3284,7 @@ class Parser
     # note about that trade since §28d; this is the first construct that can hit it.
     def parseShift(): PNode throws
         var left = .parseAddSub()?
-        while .textIs("<<") or .textIs(">>")
+        while .textIs("<<") or .textIs(">>") or .textIs("<<|")
             const op = .peek().text
             .advance()
             const right = .parseAddSub()?
@@ -3293,7 +3297,8 @@ class Parser
 
     def parseAddSub(): PNode throws
         var left = .parseMulDiv()?
-        while .textIs("+") or .textIs("-")
+        # `+% -%` wrap and `+| -|` saturate (Zig's operators); same precedence as `+ -`.
+        while .textIs("+") or .textIs("-") or .textIs("+%") or .textIs("-%") or .textIs("+|") or .textIs("-|")
             const op = .peek().text
             .advance()
             const right = .parseMulDiv()?
@@ -3306,7 +3311,7 @@ class Parser
 
     def parseMulDiv(): PNode throws
         var left = .parseUnary()?
-        while .textIs("*") or .textIs("/") or .textIs("%")
+        while .textIs("*") or .textIs("/") or .textIs("%") or .textIs("*%") or .textIs("*|")
             const op = .peek().text
             .advance()
             const right = .parseUnary()?
@@ -3318,6 +3323,21 @@ class Parser
         return left
 
     def parseUnary(): PNode throws
+        if .textIs("-%")
+            # Wrapping negation, `-%x`: built as `0 -% x`, which is what it means (Zig's
+            # `-%x` is defined the same way), so it needs no operator of its own. The `0`
+            # carries the operator's position, so a diagnostic on it still says where.
+            const wn_line = .peek().line
+            const wn_col = .peek().col
+            .advance()
+            const wn_operand = .parseUnary()?
+            var wn_l = List(PNode)()
+            wn_l.add(PNode.expr_int(PLit("0", wn_line, wn_col)))
+            var wn_r = List(PNode)()
+            wn_r.add(wn_operand)
+            return PNode.expr_binary(PBinary("-%", wn_l, wn_r))
+        if .textIs("-|")
+            raise .errorAt("there is no saturating negation (Zig has none either): write `0 -| x` to saturate at the type's minimum, or `-%x` to wrap")
         if .textIs("-")
             .advance()
             const operand = .parseUnary()?

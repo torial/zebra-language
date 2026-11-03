@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -16019,7 +16019,7 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
-            if b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge or b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
+            if b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge or b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or (isWrapSatOp(b.op) and b.op != BinaryOp.shl_sat)
                 w.emit("(")
                 genExpr(b.left)
                 w.emit(" ")
@@ -16028,6 +16028,30 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
+        # Wrapping (`+% -% *%`) and saturating (`+| -| *|`) arithmetic is Zig's own
+        # operator. The checker has refused mixed operand types, so there is nothing to
+        # convert -- except two constants, which Zig would fold as comptime_int, where
+        # nothing wraps: `9223372036854775807 +% 1` must be an int's answer, so the left
+        # one is typed. `<<|` goes through the runtime: Zig wants an unsigned amount.
+        if isWrapSatOp(b.op)
+            if b.op == BinaryOp.shl_sat
+                w.emit("_zbr_shl_sat(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(")")
+                return
+            w.emit("(")
+            if isNumLit(b.left) and isNumLit(b.right)
+                w.emit("@as(i64, ")
+                genExpr(b.left)
+                w.emit(")")
+            else
+                genExpr(b.left)
+            w.emit(" " + binaryOpStr(b.op) + " ")
+            genExpr(b.right)
+            w.emit(")")
+            return
         if b.op == BinaryOp.add
             # Check if string concatenation — use _str_concat which is always safe (no try needed)
             if .isStringBoth(b.left, "bin_add_l") or .isStringBoth(b.right, "bin_add_r")

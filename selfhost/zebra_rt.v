@@ -577,6 +577,46 @@ pub fn zneg(a i64) i64 {
 	return -a
 }
 
+// Saturating `+| -| *|` on int: the result clamps at the type's bounds instead of
+// trapping. Overflow is detected exactly as the checked helpers above detect it.
+const zmax_i64 = i64(9223372036854775807)
+
+@[inline]
+pub fn zsadd(a i64, b i64) i64 {
+	r := i64(u64(a) + u64(b))
+	if ((a ^ r) & (b ^ r)) < 0 {
+		return if a < 0 { zmin_i64 } else { zmax_i64 }
+	}
+	return r
+}
+
+@[inline]
+pub fn zssub(a i64, b i64) i64 {
+	r := i64(u64(a) - u64(b))
+	if ((a ^ b) & (a ^ r)) < 0 {
+		return if a < 0 { zmin_i64 } else { zmax_i64 }
+	}
+	return r
+}
+
+pub fn zsmul(a i64, b i64) i64 {
+	if a >= -2147483648 && a <= 2147483647 && b >= -2147483648 && b <= 2147483647 {
+		return a * b // both fit in 32 bits: the product fits in 64
+	}
+	if a == 0 || b == 0 {
+		return 0
+	}
+	neg := (a < 0) != (b < 0)
+	if (a == -1 && b == zmin_i64) || (b == -1 && a == zmin_i64) {
+		return zmax_i64
+	}
+	r := i64(u64(a) * u64(b))
+	if r / b != a {
+		return if neg { zmin_i64 } else { zmax_i64 }
+	}
+	return r
+}
+
 // the one quotient that does not fit (V checks a zero divisor itself)
 @[inline]
 pub fn zdiv(a i64, b i64) i64 {

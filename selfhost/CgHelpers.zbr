@@ -163,6 +163,13 @@ def binaryOpStr(op: BinaryOp): str
         on BinaryOp.ge      return ">="
         on BinaryOp.and_    return "and"
         on BinaryOp.or_     return "or"
+        on BinaryOp.add_wrap return "+%"
+        on BinaryOp.sub_wrap return "-%"
+        on BinaryOp.mul_wrap return "*%"
+        on BinaryOp.add_sat return "+|"
+        on BinaryOp.sub_sat return "-|"
+        on BinaryOp.mul_sat return "*|"
+        on BinaryOp.shl_sat return "<<|"
         else
             # int_div, pow, dotdot, in_ -- handled specially in genBinary
             return "?"

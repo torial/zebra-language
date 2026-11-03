@@ -306,6 +306,15 @@ pub inline fn _zbr_shr(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
     const T = _zbr_shift_t(@TypeOf(a));
     return std.math.shr(T, @as(T, a), b);
 }
+// `a <<| b`, saturating shift left. Zig's `<<|` refuses a signed amount, so the amount is
+// converted here; any non-negative amount saturates (3 <<| 70 is maxInt). A negative
+// amount shifts right, as it does for `<<` (std.math.shl), where nothing can saturate.
+pub inline fn _zbr_shl_sat(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
+    const T = _zbr_shift_t(@TypeOf(a));
+    const x: T = a;
+    if (b < 0) return std.math.shl(T, x, b);
+    return x <<| @as(u64, @intCast(b));
+}
 
 // SIMD (QUICKSTART §32). Comparison operators on vectors are native Zig and yield
 // @Vector(N, bool) -- a `boolxN` in Zebra. These helpers carry the pieces that need a

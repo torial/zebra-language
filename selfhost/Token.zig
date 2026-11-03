@@ -102,6 +102,20 @@ pub const _zbr_ty_TokenKind = union(enum) {
     double_gt_equals,
     question_equals,
     bang_equals,
+    plus_percent,
+    minus_percent,
+    star_percent,
+    plus_bar,
+    minus_bar,
+    star_bar,
+    double_lt_bar,
+    plus_percent_equals,
+    minus_percent_equals,
+    star_percent_equals,
+    plus_bar_equals,
+    minus_bar_equals,
+    star_bar_equals,
+    double_lt_bar_equals,
     open_call,
     kw_use,
     kw_exposing,
@@ -184,13 +198,13 @@ pub const _zbr_ty_Token = struct {
         @setRuntimeSafety(true);
         const _self = _zbr_rt._allocator.create(_zbr_ty_Token) catch @panic("OOM");
         _self._type_tag = _zbr_hash("Token");
-// zbr:selfhost/Token.zbr:181
+// zbr:selfhost/Token.zbr:197
             _self.kind = k;
-// zbr:selfhost/Token.zbr:182
+// zbr:selfhost/Token.zbr:198
             _self.text = _intern(t);
-// zbr:selfhost/Token.zbr:183
+// zbr:selfhost/Token.zbr:199
             _self.line = ln;
-// zbr:selfhost/Token.zbr:184
+// zbr:selfhost/Token.zbr:200
             _self.col = cl;
         return _self;
     }
@@ -203,340 +217,340 @@ const _reflect_Token_field_types: []const []const u8 = &.{"TokenKind", "str", "i
 
 pub const _zbr_ty_Keywords = struct {
     _type_tag: u64 = _ttag_Keywords,
-    // zbr:selfhost/Token.zbr:187
+    // zbr:selfhost/Token.zbr:203
     pub fn lookup(word: []const u8) ?_zbr_ty_TokenKind {
         @setRuntimeSafety(true);
-// zbr:selfhost/Token.zbr:188
+// zbr:selfhost/Token.zbr:204
         if (std.mem.eql(u8, word, "use")) {
-// zbr:selfhost/Token.zbr:189
+// zbr:selfhost/Token.zbr:205
             return _zbr_ty_TokenKind{ .kw_use = {} };
         }
-// zbr:selfhost/Token.zbr:190
+// zbr:selfhost/Token.zbr:206
         if (std.mem.eql(u8, word, "exposing")) {
-// zbr:selfhost/Token.zbr:191
+// zbr:selfhost/Token.zbr:207
             return _zbr_ty_TokenKind{ .kw_exposing = {} };
         }
-// zbr:selfhost/Token.zbr:192
+// zbr:selfhost/Token.zbr:208
         if (std.mem.eql(u8, word, "namespace")) {
-// zbr:selfhost/Token.zbr:193
+// zbr:selfhost/Token.zbr:209
             return _zbr_ty_TokenKind{ .kw_namespace = {} };
         }
-// zbr:selfhost/Token.zbr:194
+// zbr:selfhost/Token.zbr:210
         if (std.mem.eql(u8, word, "class")) {
-// zbr:selfhost/Token.zbr:195
+// zbr:selfhost/Token.zbr:211
             return _zbr_ty_TokenKind{ .kw_class = {} };
         }
-// zbr:selfhost/Token.zbr:196
+// zbr:selfhost/Token.zbr:212
         if (std.mem.eql(u8, word, "interface")) {
-// zbr:selfhost/Token.zbr:197
+// zbr:selfhost/Token.zbr:213
             return _zbr_ty_TokenKind{ .kw_interface = {} };
         }
-// zbr:selfhost/Token.zbr:198
+// zbr:selfhost/Token.zbr:214
         if (std.mem.eql(u8, word, "mixin")) {
-// zbr:selfhost/Token.zbr:199
+// zbr:selfhost/Token.zbr:215
             return _zbr_ty_TokenKind{ .kw_mixin = {} };
         }
-// zbr:selfhost/Token.zbr:200
+// zbr:selfhost/Token.zbr:216
         if (std.mem.eql(u8, word, "struct")) {
-// zbr:selfhost/Token.zbr:201
+// zbr:selfhost/Token.zbr:217
             return _zbr_ty_TokenKind{ .kw_struct = {} };
         }
-// zbr:selfhost/Token.zbr:202
+// zbr:selfhost/Token.zbr:218
         if (std.mem.eql(u8, word, "enum")) {
-// zbr:selfhost/Token.zbr:203
+// zbr:selfhost/Token.zbr:219
             return _zbr_ty_TokenKind{ .kw_enum = {} };
         }
-// zbr:selfhost/Token.zbr:204
+// zbr:selfhost/Token.zbr:220
         if (std.mem.eql(u8, word, "extend")) {
-// zbr:selfhost/Token.zbr:205
+// zbr:selfhost/Token.zbr:221
             return _zbr_ty_TokenKind{ .kw_extend = {} };
         }
-// zbr:selfhost/Token.zbr:206
+// zbr:selfhost/Token.zbr:222
         if (std.mem.eql(u8, word, "def")) {
-// zbr:selfhost/Token.zbr:207
+// zbr:selfhost/Token.zbr:223
             return _zbr_ty_TokenKind{ .kw_def = {} };
         }
-// zbr:selfhost/Token.zbr:208
+// zbr:selfhost/Token.zbr:224
         if (std.mem.eql(u8, word, "sig")) {
-// zbr:selfhost/Token.zbr:209
+// zbr:selfhost/Token.zbr:225
             return _zbr_ty_TokenKind{ .kw_sig = {} };
         }
-// zbr:selfhost/Token.zbr:210
+// zbr:selfhost/Token.zbr:226
         if (std.mem.eql(u8, word, "type")) {
-// zbr:selfhost/Token.zbr:211
+// zbr:selfhost/Token.zbr:227
             return _zbr_ty_TokenKind{ .kw_type = {} };
         }
-// zbr:selfhost/Token.zbr:212
+// zbr:selfhost/Token.zbr:228
         if (std.mem.eql(u8, word, "var")) {
-// zbr:selfhost/Token.zbr:213
+// zbr:selfhost/Token.zbr:229
             return _zbr_ty_TokenKind{ .kw_var = {} };
         }
-// zbr:selfhost/Token.zbr:214
+// zbr:selfhost/Token.zbr:230
         if (std.mem.eql(u8, word, "const")) {
-// zbr:selfhost/Token.zbr:215
+// zbr:selfhost/Token.zbr:231
             return _zbr_ty_TokenKind{ .kw_const = {} };
         }
-// zbr:selfhost/Token.zbr:216
+// zbr:selfhost/Token.zbr:232
         if (std.mem.eql(u8, word, "cue")) {
-// zbr:selfhost/Token.zbr:217
+// zbr:selfhost/Token.zbr:233
             return _zbr_ty_TokenKind{ .kw_cue = {} };
         }
-// zbr:selfhost/Token.zbr:218
+// zbr:selfhost/Token.zbr:234
         if (std.mem.eql(u8, word, "test")) {
-// zbr:selfhost/Token.zbr:219
+// zbr:selfhost/Token.zbr:235
             return _zbr_ty_TokenKind{ .kw_test = {} };
         }
-// zbr:selfhost/Token.zbr:220
+// zbr:selfhost/Token.zbr:236
         if (std.mem.eql(u8, word, "implements")) {
-// zbr:selfhost/Token.zbr:221
+// zbr:selfhost/Token.zbr:237
             return _zbr_ty_TokenKind{ .kw_implements = {} };
         }
-// zbr:selfhost/Token.zbr:222
+// zbr:selfhost/Token.zbr:238
         if (std.mem.eql(u8, word, "adds")) {
-// zbr:selfhost/Token.zbr:223
+// zbr:selfhost/Token.zbr:239
             return _zbr_ty_TokenKind{ .kw_adds = {} };
         }
-// zbr:selfhost/Token.zbr:224
+// zbr:selfhost/Token.zbr:240
         if (std.mem.eql(u8, word, "is")) {
-// zbr:selfhost/Token.zbr:225
+// zbr:selfhost/Token.zbr:241
             return _zbr_ty_TokenKind{ .kw_is = {} };
         }
-// zbr:selfhost/Token.zbr:226
+// zbr:selfhost/Token.zbr:242
         if (std.mem.eql(u8, word, "as")) {
-// zbr:selfhost/Token.zbr:227
+// zbr:selfhost/Token.zbr:243
             return _zbr_ty_TokenKind{ .kw_as = {} };
         }
-// zbr:selfhost/Token.zbr:231
+// zbr:selfhost/Token.zbr:247
         if (std.mem.eql(u8, word, "static")) {
-// zbr:selfhost/Token.zbr:232
+// zbr:selfhost/Token.zbr:248
             return _zbr_ty_TokenKind{ .kw_static = {} };
         }
-// zbr:selfhost/Token.zbr:233
+// zbr:selfhost/Token.zbr:249
         if (std.mem.eql(u8, word, "invariant")) {
-// zbr:selfhost/Token.zbr:234
+// zbr:selfhost/Token.zbr:250
             return _zbr_ty_TokenKind{ .kw_invariant = {} };
         }
-// zbr:selfhost/Token.zbr:235
+// zbr:selfhost/Token.zbr:251
         if (std.mem.eql(u8, word, "where")) {
-// zbr:selfhost/Token.zbr:236
+// zbr:selfhost/Token.zbr:252
             return _zbr_ty_TokenKind{ .kw_where = {} };
         }
-// zbr:selfhost/Token.zbr:237
+// zbr:selfhost/Token.zbr:253
         if (std.mem.eql(u8, word, "export")) {
-// zbr:selfhost/Token.zbr:238
+// zbr:selfhost/Token.zbr:254
             return _zbr_ty_TokenKind{ .kw_export = {} };
         }
-// zbr:selfhost/Token.zbr:239
+// zbr:selfhost/Token.zbr:255
         if (std.mem.eql(u8, word, "extern")) {
-// zbr:selfhost/Token.zbr:240
+// zbr:selfhost/Token.zbr:256
             return _zbr_ty_TokenKind{ .kw_extern = {} };
         }
-// zbr:selfhost/Token.zbr:242
+// zbr:selfhost/Token.zbr:258
         if (std.mem.eql(u8, word, "public")) {
-// zbr:selfhost/Token.zbr:243
+// zbr:selfhost/Token.zbr:259
             return _zbr_ty_TokenKind{ .kw_public = {} };
         }
-// zbr:selfhost/Token.zbr:244
+// zbr:selfhost/Token.zbr:260
         if (std.mem.eql(u8, word, "private")) {
-// zbr:selfhost/Token.zbr:245
+// zbr:selfhost/Token.zbr:261
             return _zbr_ty_TokenKind{ .kw_private = {} };
         }
-// zbr:selfhost/Token.zbr:249
+// zbr:selfhost/Token.zbr:265
         if (std.mem.eql(u8, word, "bool")) {
-// zbr:selfhost/Token.zbr:250
+// zbr:selfhost/Token.zbr:266
             return _zbr_ty_TokenKind{ .kw_bool = {} };
         }
-// zbr:selfhost/Token.zbr:251
+// zbr:selfhost/Token.zbr:267
         if (std.mem.eql(u8, word, "char")) {
-// zbr:selfhost/Token.zbr:252
+// zbr:selfhost/Token.zbr:268
             return _zbr_ty_TokenKind{ .kw_char = {} };
         }
-// zbr:selfhost/Token.zbr:253
+// zbr:selfhost/Token.zbr:269
         if (std.mem.eql(u8, word, "int")) {
-// zbr:selfhost/Token.zbr:254
+// zbr:selfhost/Token.zbr:270
             return _zbr_ty_TokenKind{ .kw_int = {} };
         }
-// zbr:selfhost/Token.zbr:255
+// zbr:selfhost/Token.zbr:271
         if (std.mem.eql(u8, word, "uint")) {
-// zbr:selfhost/Token.zbr:256
+// zbr:selfhost/Token.zbr:272
             return _zbr_ty_TokenKind{ .kw_uint = {} };
         }
-// zbr:selfhost/Token.zbr:257
+// zbr:selfhost/Token.zbr:273
         if (std.mem.eql(u8, word, "float")) {
-// zbr:selfhost/Token.zbr:258
+// zbr:selfhost/Token.zbr:274
             return _zbr_ty_TokenKind{ .kw_float = {} };
         }
-// zbr:selfhost/Token.zbr:259
+// zbr:selfhost/Token.zbr:275
         if (std.mem.eql(u8, word, "require")) {
-// zbr:selfhost/Token.zbr:260
+// zbr:selfhost/Token.zbr:276
             return _zbr_ty_TokenKind{ .kw_require = {} };
         }
-// zbr:selfhost/Token.zbr:261
+// zbr:selfhost/Token.zbr:277
         if (std.mem.eql(u8, word, "ensure")) {
-// zbr:selfhost/Token.zbr:262
+// zbr:selfhost/Token.zbr:278
             return _zbr_ty_TokenKind{ .kw_ensure = {} };
         }
-// zbr:selfhost/Token.zbr:265
+// zbr:selfhost/Token.zbr:281
         if (std.mem.eql(u8, word, "implies")) {
-// zbr:selfhost/Token.zbr:266
+// zbr:selfhost/Token.zbr:282
             return _zbr_ty_TokenKind{ .kw_implies = {} };
         }
-// zbr:selfhost/Token.zbr:267
+// zbr:selfhost/Token.zbr:283
         if (std.mem.eql(u8, word, "assert")) {
-// zbr:selfhost/Token.zbr:268
+// zbr:selfhost/Token.zbr:284
             return _zbr_ty_TokenKind{ .kw_assert = {} };
         }
-// zbr:selfhost/Token.zbr:269
+// zbr:selfhost/Token.zbr:285
         if (std.mem.eql(u8, word, "branch")) {
-// zbr:selfhost/Token.zbr:270
+// zbr:selfhost/Token.zbr:286
             return _zbr_ty_TokenKind{ .kw_branch = {} };
         }
-// zbr:selfhost/Token.zbr:271
+// zbr:selfhost/Token.zbr:287
         if (std.mem.eql(u8, word, "on")) {
-// zbr:selfhost/Token.zbr:272
+// zbr:selfhost/Token.zbr:288
             return _zbr_ty_TokenKind{ .kw_on = {} };
         }
-// zbr:selfhost/Token.zbr:273
+// zbr:selfhost/Token.zbr:289
         if (std.mem.eql(u8, word, "if")) {
-// zbr:selfhost/Token.zbr:274
+// zbr:selfhost/Token.zbr:290
             return _zbr_ty_TokenKind{ .kw_if = {} };
         }
-// zbr:selfhost/Token.zbr:275
+// zbr:selfhost/Token.zbr:291
         if (std.mem.eql(u8, word, "else")) {
-// zbr:selfhost/Token.zbr:276
+// zbr:selfhost/Token.zbr:292
             return _zbr_ty_TokenKind{ .kw_else = {} };
         }
-// zbr:selfhost/Token.zbr:277
+// zbr:selfhost/Token.zbr:293
         if (std.mem.eql(u8, word, "while")) {
-// zbr:selfhost/Token.zbr:278
+// zbr:selfhost/Token.zbr:294
             return _zbr_ty_TokenKind{ .kw_while = {} };
         }
-// zbr:selfhost/Token.zbr:279
+// zbr:selfhost/Token.zbr:295
         if (std.mem.eql(u8, word, "for")) {
-// zbr:selfhost/Token.zbr:280
+// zbr:selfhost/Token.zbr:296
             return _zbr_ty_TokenKind{ .kw_for = {} };
         }
-// zbr:selfhost/Token.zbr:281
+// zbr:selfhost/Token.zbr:297
         if (std.mem.eql(u8, word, "break")) {
-// zbr:selfhost/Token.zbr:282
+// zbr:selfhost/Token.zbr:298
             return _zbr_ty_TokenKind{ .kw_break = {} };
         }
-// zbr:selfhost/Token.zbr:283
+// zbr:selfhost/Token.zbr:299
         if (std.mem.eql(u8, word, "continue")) {
-// zbr:selfhost/Token.zbr:284
+// zbr:selfhost/Token.zbr:300
             return _zbr_ty_TokenKind{ .kw_continue = {} };
         }
-// zbr:selfhost/Token.zbr:285
+// zbr:selfhost/Token.zbr:301
         if (std.mem.eql(u8, word, "pass")) {
-// zbr:selfhost/Token.zbr:286
+// zbr:selfhost/Token.zbr:302
             return _zbr_ty_TokenKind{ .kw_pass = {} };
         }
-// zbr:selfhost/Token.zbr:287
+// zbr:selfhost/Token.zbr:303
         if (std.mem.eql(u8, word, "print")) {
-// zbr:selfhost/Token.zbr:288
+// zbr:selfhost/Token.zbr:304
             return _zbr_ty_TokenKind{ .kw_print = {} };
         }
-// zbr:selfhost/Token.zbr:291
+// zbr:selfhost/Token.zbr:307
         if (std.mem.eql(u8, word, "return")) {
-// zbr:selfhost/Token.zbr:292
+// zbr:selfhost/Token.zbr:308
             return _zbr_ty_TokenKind{ .kw_return = {} };
         }
-// zbr:selfhost/Token.zbr:297
+// zbr:selfhost/Token.zbr:313
         if (std.mem.eql(u8, word, "this")) {
-// zbr:selfhost/Token.zbr:298
+// zbr:selfhost/Token.zbr:314
             return _zbr_ty_TokenKind{ .kw_this = {} };
         }
-// zbr:selfhost/Token.zbr:299
+// zbr:selfhost/Token.zbr:315
         if (std.mem.eql(u8, word, "to")) {
-// zbr:selfhost/Token.zbr:300
+// zbr:selfhost/Token.zbr:316
             return _zbr_ty_TokenKind{ .kw_to = {} };
         }
-// zbr:selfhost/Token.zbr:301
+// zbr:selfhost/Token.zbr:317
         if (std.mem.eql(u8, word, "and")) {
-// zbr:selfhost/Token.zbr:302
+// zbr:selfhost/Token.zbr:318
             return _zbr_ty_TokenKind{ .kw_and = {} };
         }
-// zbr:selfhost/Token.zbr:303
+// zbr:selfhost/Token.zbr:319
         if (std.mem.eql(u8, word, "or")) {
-// zbr:selfhost/Token.zbr:304
+// zbr:selfhost/Token.zbr:320
             return _zbr_ty_TokenKind{ .kw_or = {} };
         }
-// zbr:selfhost/Token.zbr:305
+// zbr:selfhost/Token.zbr:321
         if (std.mem.eql(u8, word, "not")) {
-// zbr:selfhost/Token.zbr:306
+// zbr:selfhost/Token.zbr:322
             return _zbr_ty_TokenKind{ .kw_not = {} };
         }
-// zbr:selfhost/Token.zbr:307
+// zbr:selfhost/Token.zbr:323
         if (std.mem.eql(u8, word, "in")) {
-// zbr:selfhost/Token.zbr:308
+// zbr:selfhost/Token.zbr:324
             return _zbr_ty_TokenKind{ .kw_in = {} };
         }
-// zbr:selfhost/Token.zbr:309
+// zbr:selfhost/Token.zbr:325
         if (std.mem.eql(u8, word, "using")) {
-// zbr:selfhost/Token.zbr:310
+// zbr:selfhost/Token.zbr:326
             return _zbr_ty_TokenKind{ .kw_using = {} };
         }
-// zbr:selfhost/Token.zbr:311
+// zbr:selfhost/Token.zbr:327
         if (std.mem.eql(u8, word, "orelse")) {
-// zbr:selfhost/Token.zbr:312
+// zbr:selfhost/Token.zbr:328
             return _zbr_ty_TokenKind{ .kw_orelse = {} };
         }
-// zbr:selfhost/Token.zbr:313
+// zbr:selfhost/Token.zbr:329
         if (std.mem.eql(u8, word, "catch")) {
-// zbr:selfhost/Token.zbr:314
+// zbr:selfhost/Token.zbr:330
             return _zbr_ty_TokenKind{ .kw_catch = {} };
         }
-// zbr:selfhost/Token.zbr:315
+// zbr:selfhost/Token.zbr:331
         if (std.mem.eql(u8, word, "true")) {
-// zbr:selfhost/Token.zbr:316
+// zbr:selfhost/Token.zbr:332
             return _zbr_ty_TokenKind{ .kw_true = {} };
         }
-// zbr:selfhost/Token.zbr:317
+// zbr:selfhost/Token.zbr:333
         if (std.mem.eql(u8, word, "false")) {
-// zbr:selfhost/Token.zbr:318
+// zbr:selfhost/Token.zbr:334
             return _zbr_ty_TokenKind{ .kw_false = {} };
         }
-// zbr:selfhost/Token.zbr:319
+// zbr:selfhost/Token.zbr:335
         if (std.mem.eql(u8, word, "nil")) {
-// zbr:selfhost/Token.zbr:320
+// zbr:selfhost/Token.zbr:336
             return _zbr_ty_TokenKind{ .kw_nil = {} };
         }
-// zbr:selfhost/Token.zbr:321
+// zbr:selfhost/Token.zbr:337
         if (std.mem.eql(u8, word, "raise")) {
-// zbr:selfhost/Token.zbr:322
+// zbr:selfhost/Token.zbr:338
             return _zbr_ty_TokenKind{ .kw_raise = {} };
         }
-// zbr:selfhost/Token.zbr:324
+// zbr:selfhost/Token.zbr:340
         if (std.mem.eql(u8, word, "yield")) {
-// zbr:selfhost/Token.zbr:325
+// zbr:selfhost/Token.zbr:341
             return _zbr_ty_TokenKind{ .kw_yield = {} };
         }
-// zbr:selfhost/Token.zbr:326
+// zbr:selfhost/Token.zbr:342
         if (std.mem.eql(u8, word, "throws")) {
-// zbr:selfhost/Token.zbr:327
+// zbr:selfhost/Token.zbr:343
             return _zbr_ty_TokenKind{ .kw_throws = {} };
         }
-// zbr:selfhost/Token.zbr:328
+// zbr:selfhost/Token.zbr:344
         if (std.mem.eql(u8, word, "capture")) {
-// zbr:selfhost/Token.zbr:329
+// zbr:selfhost/Token.zbr:345
             return _zbr_ty_TokenKind{ .kw_capture = {} };
         }
-// zbr:selfhost/Token.zbr:330
+// zbr:selfhost/Token.zbr:346
         if (std.mem.eql(u8, word, "with")) {
-// zbr:selfhost/Token.zbr:331
+// zbr:selfhost/Token.zbr:347
             return _zbr_ty_TokenKind{ .kw_with = {} };
         }
-// zbr:selfhost/Token.zbr:332
+// zbr:selfhost/Token.zbr:348
         if (std.mem.eql(u8, word, "except")) {
-// zbr:selfhost/Token.zbr:333
+// zbr:selfhost/Token.zbr:349
             return _zbr_ty_TokenKind{ .kw_except = {} };
         }
-// zbr:selfhost/Token.zbr:334
+// zbr:selfhost/Token.zbr:350
         if (std.mem.eql(u8, word, "union")) {
-// zbr:selfhost/Token.zbr:335
+// zbr:selfhost/Token.zbr:351
             return _zbr_ty_TokenKind{ .kw_union = {} };
         }
-// zbr:selfhost/Token.zbr:349
+// zbr:selfhost/Token.zbr:365
         return null;
     }
 
