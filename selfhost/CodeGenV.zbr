@@ -4269,6 +4269,15 @@ class VGen
             t = .vTypeOf(b.right)
         if isIntLit(b.left) and isIntLit(b.right)
             t = "i64"
+        var ls: str = .exprStr(b.left)
+        var rs: str = .exprStr(b.right)
+        if not isIntLit(b.left) and not isIntLit(b.right)
+            var rt0: str = .vTypeOf(b.right)
+            if rt0 != t and (t == "i64" or rt0 == "i64") and (t == "u8" or t == "byte" or rt0 == "u8" or rt0 == "byte")
+                # byte with int joins to int, as for `+` (the checker's numericJoin)
+                t = "i64"
+                ls = "i64(" + ls + ")"
+                rs = "i64(" + rs + ")"
         var wop: str = ""
         if b.op == BinaryOp.add_wrap
             wop = "+"
@@ -4280,7 +4289,7 @@ class VGen
             if t == "byte"
                 t = "u8"   # V spells Zebra's byte both ways
             if t == "i64" or t == "u8"
-                return t + "(u64(" + .exprStr(b.left) + ") " + wop + " u64(" + .exprStr(b.right) + "))"
+                return t + "(u64(" + ls + ") " + wop + " u64(" + rs + "))"
             .refused.add("a wrapping operator on an operand of V type `" + t + "` (only int and byte are mapped)")
             return "0"
         var sfn: str = ""
@@ -4291,7 +4300,7 @@ class VGen
         if b.op == BinaryOp.mul_sat
             sfn = "zsmul"
         if sfn != "" and t == "i64"
-            return sfn + "(" + .exprStr(b.left) + ", " + .exprStr(b.right) + ")"
+            return sfn + "(" + ls + ", " + rs + ")"
         if sfn == ""
             .refused.add("the saturating shift `<<|` (no V mapping yet)")
         else

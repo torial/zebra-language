@@ -87,3 +87,20 @@ def main()
     xs[1] -|= 5
     print(xs[0])
     print(xs[1])
+
+    # Mixed operand types join exactly as `+` joins them (Sean, 2026-11-03: "keeping it
+    # consistent with + is key"), and the result wraps or clamps at the JOINED type:
+    # byte with int is an int; int16 with byte is an int16, so 300 *% 200 wraps at 16 bits.
+    var jb: byte = 250
+    var jn: int = 10
+    print(jb +% jn)
+    print(jb +| jn)
+    print(jn -% jb)
+    var jh: int16 = 32767
+    var j1: byte = 1
+    print(jh +% j1)
+    print(jh +| j1)
+    var jm: int16 = 300
+    var j2: byte = 200
+    print(jm *% j2)
+    print(jm *| j2)

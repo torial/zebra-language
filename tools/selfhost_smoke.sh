@@ -936,9 +936,10 @@ smoke_run test/wrap_sat_simd_test.zbr "wrap_sat_simd: OK"
 smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:5:11: error: wrapping '+%' requires integer operands, got 'float'"
 smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:7:5: error: saturating '+|' requires integer operands, got 'float'"
 smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:10:11: error: wrapping '*%' requires integer operands, got 'str'"
-smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:7:11: error: cannot mix 'byte' and 'int' in wrapping '+%'"
-smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:8:16: error: 300 does not fit in 'byte' (0..255)"
-smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:10:12: error: -200 does not fit in 'int8' (-128..127)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:7:11: error: cannot mix 'uint64' and 'int' in arithmetic"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:9:16: error: 300 does not fit in 'byte' (0..255)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:11:12: error: -200 does not fit in 'int8' (-128..127)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:12:5: error: type mismatch: expected byte, found int"
 smoke_tc_fail test/fail_fixtures/wrap_sat_unary_sat_fail.zbr "wrap_sat_unary_sat_fail.zbr:5:11: error: there is no saturating negation"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named

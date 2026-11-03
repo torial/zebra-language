@@ -16029,8 +16029,8 @@ struct Generator
                 w.emit(")")
                 return
         # Wrapping (`+% -% *%`) and saturating (`+| -| *|`) arithmetic is Zig's own
-        # operator. The checker has refused mixed operand types, so there is nothing to
-        # convert -- except two constants, which Zig would fold as comptime_int, where
+        # operator. Two operand types convert to their join first, as for `+` (BUG-445).
+        # Two constants are the other special case: Zig would fold them as comptime_int, where
         # nothing wraps: `9223372036854775807 +% 1` must be an int's answer, so the left
         # one is typed. `<<|` goes through the runtime: Zig wants an unsigned amount.
         if isWrapSatOp(b.op)
@@ -16046,10 +16046,20 @@ struct Generator
                 w.emit("@as(i64, ")
                 genExpr(b.left)
                 w.emit(")")
-            else
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                genExpr(b.right)
+                w.emit(")")
+                return
+            # two integer types: both convert to their join, as for `+` (BUG-445)
+            var wst: Type_ = mixedNumericTarget(b.left, b.right)
+            if wst is Type_.unknown_
                 genExpr(b.left)
-            w.emit(" " + binaryOpStr(b.op) + " ")
-            genExpr(b.right)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                genExpr(b.right)
+            else
+                emitAsNum(b.left, wst)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                emitAsNum(b.right, wst)
             w.emit(")")
             return
         if b.op == BinaryOp.add

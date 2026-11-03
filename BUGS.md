@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-672. Next new bug: BUG-673.**
+**Last bug number generated: BUG-673. Next new bug: BUG-674.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,30 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-673: `x = x + n` with a wider operand passes the front end and fails inside zig
+
+**Found 2026-11-03** while making the wrapping and saturating operators join like `+`.
+`var h: int16 = 5`, `var n: int = 3`, then `h = h + n`: `zebra -c` exits 0 and the build
+fails with `expected type 'i16', found 'i64'` -- a Zig diagnostic, at a line only. The same
+with `var b: byte` and `b = b + n`. BUG-445 joins `h + n` to `int`, and the assignment
+checks that refuse an int stored into a narrower slot (`narrowsIntToByte`, `intNarrowHint`
+in TypeChecker.zbr) look only at an identifier, member, call or index value, never at a
+binary one. `h += n` IS refused, with the conversion to use, by the compound-assignment
+check; only the spelled-out form leaks. (`var c: byte = b + n` compiled and printed 253 in
+the same probe -- not looked into.)
+
+**Not fixed with the operators.** The wrap/sat ops were added to those two checks, so
+`b +%= n` and `b = b +% n` are refused like `b += n` (fixture
+`test/fail_fixtures/wrap_sat_mixed_fail.zbr`). Doing the same for plain `+ - * / %` turns
+programs that build today into refusals wherever the joined value happens to fit at run
+time -- or traps today -- so it needs the `-c` error-count sweep over this repo, zebra-ide and
+the GameEngine first, and its own commit.
+
+**Control when fixing:** `h = h + n` refused at its line, naming `.toInt16()`; `h = h + 1`
+(a literal adapts) and `n = n + h` (int16 widens into int) still pass.
 
 ---
 

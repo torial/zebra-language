@@ -3109,11 +3109,13 @@ def bitwiseResultType(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
 # `+%` wraps around the type, `+|` clamps at its bounds. INTEGERS ONLY -- a float has no
 # wrap-around and Zig refuses both on one.
 #
-# THE TYPE DECIDES THE ANSWER, so the operands must already have ONE type. BUG-445 lets
-# `byte + int` join to `int`; doing that here would move where `250 +% 10` wraps (a byte
-# gives 4, an int 260) without saying so. Mixed operands are refused, naming the fix. A
-# literal adapts to the other side, as everywhere -- but only if it FITS there: `b +% 300`
-# on a byte would otherwise reach Zig as "type 'u8' cannot represent integer value 300".
+# THE TYPE DECIDES THE ANSWER. Two operand types join exactly as `+` joins them (BUG-445's
+# numericJoin -- Sean, 2026-11-03: "keeping it consistent with + is key"), so `byte +% int`
+# is an int and wraps at 64 bits, `int16 +% byte` an int16. A wrap/sat result is a value
+# that must not narrow silently: `b +%= n` on a byte is refused like `b += n`
+# (narrowsIntToByte / intNarrowHint). A literal adapts to the other side, as everywhere --
+# but only if it FITS there: `b +% 300` on a byte would otherwise reach Zig as "type 'u8'
+# cannot represent integer value 300".
 def isWrapSatOp(op: BinaryOp): bool
     return op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap or op == BinaryOp.add_sat or op == BinaryOp.sub_sat or op == BinaryOp.mul_sat or op == BinaryOp.shl_sat
 
@@ -3136,11 +3138,6 @@ def wrapSatKindWord(op: BinaryOp): str
     if op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap
         return "wrapping"
     return "saturating"
-
-def wrapSatVerb(op: BinaryOp): str
-    if wrapSatKindWord(op) == "wrapping"
-        return "wraps"
-    return "saturates"
 
 # The value of one hex or decimal digit, -1 for anything else.
 def litDigitValue(d: str, hex: bool): int
@@ -3250,11 +3247,17 @@ def wrapSatResultType(lt: Type_, rt: Type_, b: ExprBinary, ctx: InferCtx): Type_
             ctx.addErr(ctx.file, anchorLine(b.right, b.span.line), anchorCol(b.right, b.span.col),
                 rf + ", the type of the other operand of '" + opname + "'")
         return lt
+    # Two integer types join exactly as `+` joins them (numericJoin), and the result wraps
+    # or clamps at the JOINED type; what `+` refuses (a 64-bit unsigned beside a signed
+    # int) is refused here in the same words.
     if isIntegerType(lt) and isIntegerType(rt) and numTypeName(lt) != numTypeName(rt)
-        ctx.addErr(ctx.file, ln, cl,
-            "cannot mix '" + numTypeName(lt) + "' and '" + numTypeName(rt) + "' in " + wrapSatKindWord(b.op) + " '" + opname
-            + "': the type decides where the result " + wrapSatVerb(b.op) + " -- convert one side first (e.g. `.toInt()`, `.toUint8()`)")
-        return lt
+        var wmsr: str = mixedSignRefusal(lt, rt)
+        if wmsr != ""
+            ctx.addErr(ctx.file, ln, cl, wmsr)
+            return lt
+        var wj: Type_ = numericJoin(lt, rt, false, false)
+        if not (wj is Type_.unknown_)
+            return wj
     if isIntegerType(lt)
         return lt
     return rt
@@ -5940,6 +5943,9 @@ def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
             return true
         on Expr.index as _
             return true
+        on Expr.binary as nb
+            # a wrapping / saturating result has the operands' joined type (wrapSatResultType)
+            return isWrapSatOp(nb.op)
         else
             return false
 
@@ -6000,6 +6006,9 @@ def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
             pass
         on Expr.index as _
             pass
+        on Expr.binary as nb
+            if not isWrapSatOp(nb.op)
+                return ""                  # a wrap/sat result is typed by its join (wrapSatResultType)
         else
             return ""
     var dw: int = numWidth(declared)

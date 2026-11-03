@@ -27,3 +27,10 @@ def main()
     n +%= 1
     n *|= 2
     print(n)
+    # a byte beside an int joins to int, as for `+`
+    var jb: byte = 250
+    var jn: int = 10
+    print(jb +% jn)
+    print(jn -% jb)
+    print(jb +| jn)
+    print(big +| jb)

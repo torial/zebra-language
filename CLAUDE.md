@@ -2597,7 +2597,7 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 40 probes / 444 assertions | <!-- doc-gen: 40 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 444 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 40 probes / 451 assertions | <!-- doc-gen: 40 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 451 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
 | **an Expr walker descends into every variant that holds exprs** (and a PNode walker into every expression-bearing parse node) | **`lint_expr_walkers`** (oracles = `Ast.zbr`'s `Expr`, `Parser.zbr`'s `PNode`) | 16 opted in; the gate prints the ratio | <!-- doc-gen: 16 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |

@@ -107,7 +107,9 @@ ZEXE="zig-out/bin/zebra.exe"
 # Linux (the cloud container) builds `zebra`, not `zebra.exe` (2026-09-08, same fix as rebuild.sh).
 [[ "$(uname -s)" == Linux ]] && ZEXE="zig-out/bin/zebra"
 if [[ -f "$ZEXE" ]] && compgen -G "selfhost/*.zig" >/dev/null; then
-    now_stamp="$(cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1)"
+    # LC_ALL=C: the glob order follows the collation, so the writer (rebuild.sh) and this
+    # reader must pin the same one or a current build reads as stale (2026-11-03).
+    now_stamp="$(LC_ALL=C; cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1)"
     if [[ -f "$STAMP" ]]; then
         if [[ "$(cat "$STAMP" 2>/dev/null)" != "$now_stamp" ]]; then
             wrong "zebra.exe was NOT built from the generated Zig now on disk:"

@@ -384,10 +384,13 @@ covers `int` so far; `--target v` reports how many integer operations it could n
 | -- | `a <<\| n` | `3 <<\| 7` on a byte is `255`; a negative `n` shifts right, as for `<<` |
 
 Each has a compound form (`+%=`, `-%=`, `*%=`, `+\|=`, `-\|=`, `*\|=`, `<<\|=`). There is no
-saturating negation; write `0 -\| a`. They are **integers only**, and **both operands must
-have one type**: the type decides where the result wraps, so `byte +% int` is refused
-(convert one side) rather than joined as `+` would join it. An int literal adapts to the
-other operand when it fits there (`b +% 10`); `b +\| 300` on a byte is refused. Two
+saturating negation; write `0 -\| a`. They are **integers only**. Two operand types
+**join exactly as they do for `+`**, and the result wraps or clamps at the joined type:
+`byte +% int` is an `int`, `int16 *% byte` an `int16` (so `300 *% 200` there is `-5536`),
+and `uint64` beside a signed int is refused as it is for `+`. The result does not narrow on
+its own, so `b +%= n` with a byte `b` and an int `n` is refused like `b += n`. An int
+literal adapts to the other operand when it fits there (`b +% 10`); `b +\| 300` on a byte is
+refused. Two
 constants are computed as an `int` (`9223372036854775807 +% 1` is the minimum). On SIMD
 vectors the `+ - *` forms work lane-wise on integer lanes. On the V backend wrapping is
 mapped for `int` and `byte` and saturating for `int`; anything else, and `<<\|`, is

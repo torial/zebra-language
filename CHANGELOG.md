@@ -28,9 +28,10 @@ confirmed via `tools/bootstrap_check.sh`.
 - **Wrapping and saturating arithmetic, with Zig's operators and spelling.** `a +% b`,
   `a -% b`, `a *% b` and `-%a` wrap around the operand type; `a +| b`, `a -| b`, `a *| b`
   and `a <<| n` clamp at its bounds; each has a compound form (`+%=` ... `<<|=`). Plain
-  `+ - *` still trap on overflow. Integers only, and both operands must have one type: the
-  type decides where the result wraps, so `byte +% int` is refused rather than joined, and a
-  literal must fit the other operand (`b +| 300` on a byte is refused -- BUG-672's half for
+  `+ - *` still trap on overflow. Integers only. Two operand types join exactly as for `+`
+  (`byte +% int` is an `int`, and wraps at 64 bits; `uint64` beside a signed int is
+  refused), and the result does not narrow on its own (`b +%= n` on a byte is refused like
+  `b += n`). A literal must fit the other operand (`b +| 300` on a byte is refused -- BUG-672's half for
   these operators). There is no saturating negation; `-|x` is refused, naming `0 -| x`. Two
   constants compute as an `int`. SIMD integer vectors take the `+ - *` forms lane-wise. On
   the V backend wrapping is mapped for `int` and `byte`, saturating for `int`; the rest is
