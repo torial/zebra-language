@@ -1327,9 +1327,39 @@ bash tools/census_check.sh      # THE ALLOCATION-CENSUS GATE, registered as `cen
                                 #   Leg 2: no flag -> no report, no file, and memStats' census
                                 #   fields read -1 (unmeasured), never 0. REFUSES under 15
                                 #   labelled lines or on zero allocations.
+                                #   THE KEPT COLUMN (2026-11-04, Fable's request): each wrapper
+                                #   keeps a pointer map, so every site also reports the bytes
+                                #   still live that it allocated or last RESIZED (a resize moves
+                                #   the whole block), plus a ranking by bytes kept; JSON v2.
+                                #   Controls: `kept=0` (an alloc/free loop through a zig"..."
+                                #   literal, the scoped block), `keptall=` (constructors and
+                                #   concats nothing frees), `kept1=` (a List grown 3 times keeps
+                                #   ONE buffer), and per-site kept bytes summing to the live total
+                                #   EXACTLY with 0 unseen frees/resizes and 0 length mismatches.
+                                #   Red-checked with six mutations of the runtime (no map insert,
+                                #   a free or a release that credits nothing, a resize that does
+                                #   not move the block, an in-place entry left stale, an in-place
+                                #   move to the wrong row): each fails. Cost, measured as process
+                                #   CPU time over 800k allocations in Debug: 1.37 -> 3.44 us per
+                                #   allocation (none: 0.39), and ~54 B of page memory per LIVE
+                                #   block (43 MB of tables for 800k never-freed strings, 5 MB).
+                                #   LEG 4 (BUG-676): the runtime's panic handler allocated through
+                                #   `_allocator`, so a census that panicked inside its own lock
+                                #   deadlocked with nothing printed, and the gate HUNG. The leg
+                                #   plants a panic on the 50th allocation in a scratch copy of the
+                                #   emitted runtime and requires the message and a non-zero exit
+                                #   under a 30 s timeout; red with the old handler ("HUNG"). It has
+                                #   teeth on Windows only (POSIX getenv never allocated). Every
+                                #   run has a timeout, and a probe panic is named in the refusal.
                                 #   CANNOT SEE: the runtime's page-allocator escape hatches
                                 #   (the report names them as uncounted), kinds in a --release
-                                #   build (printed as ?0x<address>), a host's own allocations.
+                                #   build (printed as ?0x<address>), a host's own allocations,
+                                #   the unseen-block counts under a census installed mid-run
+                                #   (the GameEngine's --census-at; nothing here does), and a
+                                #   persistent `allocate Page()/Smp()/C()` block: its wrapper is a
+                                #   stack local never released, so its pointer map outlives it and
+                                #   a block freed later through another allocator counts as unseen
+                                #   (6 uses, all in test/ and examples/; none in the GameEngine).
 bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-read` (FAST,
                                 #   ~5 s, 2026-10-23, BUG-619). sys.readLine / sys.readBytes
                                 #   took one byte per `readSliceShort`, which on an empty buffer

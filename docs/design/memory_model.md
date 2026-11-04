@@ -127,6 +127,10 @@ measured.
    saves NOTHING on this loop -- every growth happens in place on the arena's newest allocation.
    It matters where other allocations interleave with growth (the census probe shows that case).
    The census also found **BUG-619**: `readLine` read stdin a byte per read call.
+   **Kept column added 2026-11-04** (Fable): per site, the bytes still live that it allocated or
+   last resized, and a ranking by bytes kept -- the per-site answer to "what is the arena's
+   never-freed figure made of". Under `--census-at` it can separate a steady-state leak from
+   startup state, which the requested-bytes ranking cannot.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
    witnesses whatever model lands.

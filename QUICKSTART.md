@@ -3229,10 +3229,16 @@ function that allocated, and the program prints a report on stderr at exit (incl
   allocations 1369, 0.06 MB requested; 30 frees, 0.05 MB handed back; live 0.01 MB (peak 0.02 MB)
   interned strings: 301 (0.00 MB, outside the counts above)
   program arena holds 0.05 MB from the OS; 0.04 MB of it is not live (outgrown buffers and frees an arena cannot honour)
-  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)
-  21 sites; top by bytes:
-    helper.zbr:6                 _zbr_fn_build_list (via ensureTotalCapacity)    200   0.026 MB
-    main.zbr:29                  _str_concat (via concatMaybeSentinel)           200   0.001 MB
+  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers), nor the census's own tables (~0.09 MB)
+  kept (still live now, charged to the site that allocated or last resized each block): 1139 blocks, 0.01 MB
+  blocks the census never saw allocated: 0 frees, 0 resizes (expected when the census was installed after the program started -- ...)
+  frees or resizes with a length other than the one allocated: 0
+  21 sites; top by bytes requested:
+    site                         kind                                             allocs      requested           kept
+    helper.zbr:6                 _zbr_fn_build_list (via ensureTotalCapacityPrecise)   8   0.019 MB       0.007 MB
+    main.zbr:29                  _str_concat (via concatMaybeSentinel)           200       0.001 MB       0.001 MB
+  top by bytes kept (16 of 21 sites hold anything):
+    ...
 ```
 
 - **The line** is the statement running when the allocation happened. A call does not
@@ -3247,6 +3253,21 @@ function that allocated, and the program prints a report on stderr at exit (incl
   live: memory a freeing allocator would have returned.
 - Inside a scoped `allocate` block the block's allocator is counted too, and released in
   one step when the block ends.
+- **Kept** (2026-11-04) is what is still live at the report, charged to the site that
+  allocated each block -- or last RESIZED it: a resize moves the whole block, so a List that
+  grows at line 40 keeps its whole buffer there, and a site's kept can exceed what it
+  requested. A freed or outgrown buffer leaves its row; a scoped block's release credits
+  everything it held. The second ranking, by bytes kept, is what a leak or a cache looks like.
+  `allocs` counts allocations only; a resize adds bytes, not an allocation.
+- **Blocks the census never saw** are frees and resizes of memory allocated before the
+  census was installed. A program's own `--census` run reports 0; a host that installs the
+  census mid-run (the GameEngine's `--census-at`) will see many, and they are expected. A
+  length mismatch (a free claiming a different size than was allocated) should always be 0.
+- Tracking kept costs a pointer-map entry per LIVE block (about 54 bytes, page memory, shown
+  as "the census's own tables") and roughly 2 us of CPU per allocation in the Debug build a
+  census uses (measured: 0.39 us an allocation without the census, 1.37 before kept, 3.44 with
+  it, on a loop that only allocates). An arena program that never frees is the worst case: 800k
+  live strings of 5 MB needed 43 MB of tables. A program that frees keeps the map to what is live.
 
 `sys.memStats()` gains `.censusOn`, `.allocations`, `.allocBytes` and `.liveBytes`; the
 three counts are `-1` (not measured) unless the program was built with `--census`.

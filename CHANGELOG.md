@@ -23,6 +23,21 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+### Tooling
+
+- **`--census` reports what each site still KEEPS** (requested by the GameEngine). Every site
+  gains the bytes and blocks still live at the report that it allocated or last resized -- a
+  resize moves the whole block, so a List's buffer is kept where it last grew -- and the report
+  adds a second ranking, top by bytes kept. It also prints frees and resizes of blocks the census
+  never saw (expected when a host installs it mid-run, 0 otherwise), frees whose length disagrees
+  with the allocation (always 0), and the size of its own tables. `zebra-census.json` is version
+  2: per-site `keptCount` / `keptBytes`, totals `keptBytes`, `unseenFrees`, `unseenResizes`,
+  `lengthMismatches`, `censusTableBytes`. A site's allocation count no longer includes in-place
+  resizes (they add bytes only). Cost in a Debug build: ~3.4 us per allocation, up from ~1.4.
+- **A panic inside the census no longer hangs the program** (BUG-676): the runtime's panic
+  handler allocated through the program allocator, which under `--census` re-entered the
+  census's lock.
+
 ### Language
 
 - **A literal beside a sized integer must fit it, and `+ - * / %` do not narrow on their

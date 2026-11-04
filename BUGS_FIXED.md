@@ -6,6 +6,29 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-676: a panic inside the census's lock hangs the program with nothing printed -- FIXED 2026-11-04
+
+**Found and fixed 2026-11-04** while red-checking the census kept column. `_zebra_panic` (the
+runtime's panic handler) asked `_sys_getenv("ZEBRA_PANIC_TRACE")`, which on Windows allocates
+through `_allocator`. Under `--census` that is the counting wrapper, so a panic raised while
+the census held its lock -- an accounting underflow, i.e. a bug in the census itself --
+re-entered the lock and deadlocked before the message was written: 0% CPU, no output, until a
+timeout. Found because a deliberately broken census (an entry left stale after a resize) hung
+the gate for ten minutes instead of failing it.
+
+**Fix:** the handler reads the variable through the page allocator on Windows (POSIX's
+`_sys_getenv` does not allocate). Verified with the real attacker: the same mutated runtime
+hung (rc=124 under a 20 s timeout) with the old handler and printed `thread N panic: integer
+overflow`, exit 1, with the new one. `tools/census_check.sh` leg 4 is the regression test (`# pins: BUG-676`):
+it plants a panic on the 50th allocation in a scratch copy of the emitted runtime and requires
+the message and a non-zero exit under a 30 s timeout -- red with the old handler ("HUNG"),
+green with the new. It has teeth on Windows only. Every other run in the gate has a timeout too.
+
+Not covered: a panic under the lock in a program that is NOT built with `--census` cannot
+reach this (no wrapper), and no other runtime lock is taken around an allocation.
+
+---
+
 ### BUG-673: `x = x + n` with a wider operand passes the front end and fails inside zig -- FIXED 2026-11-03
 
 **Fixed 2026-11-03.** `+ - * / %` give the JOIN of their operand types (BUG-445), and the

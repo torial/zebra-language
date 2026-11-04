@@ -5456,7 +5456,14 @@ pub var _zbr_cens_on: bool = false;
 // allocation; the line and the return address pin all but a std-internal path.)
 const _zbr_cens_depth = 12;
 const _ZbrCensKey = struct { path: usize, line: u32, ra: usize };
-const _ZbrCensVal = struct { path: []const u8, frames: [_zbr_cens_depth]usize = @splat(0), count: u64 = 0, bytes: u64 = 0 };
+// `kept_*` (2026-11-04): the blocks still live at report time that this row allocated or last
+// resized. Each wrapper keeps a pointer map (address -> row, length): an allocation enters it, a
+// free takes it out and credits its row, a resize MOVES the whole block to the resizing row (so a
+// row's kept can exceed what it requested -- a List grown at line 40 keeps its whole buffer
+// there), and a scoped block's release credits everything it held. The maps live on the page
+// allocator, outside every count, and the report says so.
+const _ZbrCensVal = struct { path: []const u8, frames: [_zbr_cens_depth]usize = @splat(0), count: u64 = 0, bytes: u64 = 0, kept_count: u64 = 0, kept_bytes: u64 = 0 };
+const _ZbrCensLive = struct { key: _ZbrCensKey, len: usize };
 var _zbr_cens_map: std.AutoHashMapUnmanaged(_ZbrCensKey, _ZbrCensVal) = .empty;
 var _zbr_cens_mu: std.Io.Mutex = .init;
 pub const _ZbrCensTotals = struct {
@@ -5469,6 +5476,9 @@ pub const _ZbrCensTotals = struct {
     interned: u64 = 0, // strings the intern pool copied (they bypass `_allocator`)
     interned_bytes: u64 = 0,
     released_scopes: u64 = 0, // scoped `allocate` blocks that ended (their arena freed at once)
+    unseen_frees: u64 = 0, // frees of a block the wrapper never saw allocated (a census installed mid-run)
+    unseen_resizes: u64 = 0,
+    len_mismatch: u64 = 0, // a free or resize whose length differs from the one recorded: a bug somewhere
 };
 pub var _zbr_cens: _ZbrCensTotals = .{};
 fn _zbr_cens_lock() void {
@@ -5477,7 +5487,31 @@ fn _zbr_cens_lock() void {
 fn _zbr_cens_unlock() void {
     if (comptime !@import("builtin").single_threaded) _zbr_cens_mu.unlock(_io);
 }
-fn _zbr_cens_note(w: *_ZbrCensAlloc, len: usize, ra: usize) void {
+const _ZbrCensRowRef = struct { key: _ZbrCensKey, row: *_ZbrCensVal };
+/// The row for (site, return address), made on first use. Caller holds the lock. The pointer is
+/// valid until the next insertion into `_zbr_cens_map`.
+fn _zbr_cens_row(site: _ZbrSite, ra: usize) ?_ZbrCensRowRef {
+    const key: _ZbrCensKey = .{ .path = @intFromPtr(site.path.ptr), .line = site.line, .ra = ra };
+    const gop = _zbr_cens_map.getOrPut(std.heap.page_allocator, key) catch return null;
+    if (!gop.found_existing) {
+        gop.value_ptr.* = .{ .path = site.path };
+        const st = std.debug.captureCurrentStackTrace(.{ .first_address = ra }, &gop.value_ptr.frames);
+        if (st.return_addresses.len == 0) gop.value_ptr.frames[0] = ra; // no unwinder: the one address we have
+    }
+    return .{ .key = key, .row = gop.value_ptr };
+}
+/// Takes a block out of `w`'s pointer map and off its row's kept figures. Caller holds the lock.
+/// False when the wrapper never saw the block allocated.
+fn _zbr_cens_drop(w: *_ZbrCensAlloc, p: usize, len: usize) bool {
+    const kv = w.ptrs.fetchRemove(p) orelse return false;
+    if (kv.value.len != len) _zbr_cens.len_mismatch += 1;
+    if (_zbr_cens_map.getPtr(kv.value.key)) |row| {
+        row.kept_count -= 1;
+        row.kept_bytes -= kv.value.len; // what was added, whatever length the caller claims now
+    }
+    return true;
+}
+fn _zbr_cens_note(w: *_ZbrCensAlloc, p: [*]u8, len: usize, ra: usize) void {
     const site = _zbr_site;
     _zbr_cens_lock();
     defer _zbr_cens_unlock();
@@ -5486,16 +5520,14 @@ fn _zbr_cens_note(w: *_ZbrCensAlloc, len: usize, ra: usize) void {
     _zbr_cens.bytes += len;
     _zbr_cens.live += @intCast(len);
     if (_zbr_cens.live > _zbr_cens.peak) _zbr_cens.peak = _zbr_cens.live;
-    const gop = _zbr_cens_map.getOrPut(std.heap.page_allocator, .{ .path = @intFromPtr(site.path.ptr), .line = site.line, .ra = ra }) catch return;
-    if (!gop.found_existing) {
-        gop.value_ptr.* = .{ .path = site.path };
-        const st = std.debug.captureCurrentStackTrace(.{ .first_address = ra }, &gop.value_ptr.frames);
-        if (st.return_addresses.len == 0) gop.value_ptr.frames[0] = ra; // no unwinder: the one address we have
-    }
-    gop.value_ptr.count += 1;
-    gop.value_ptr.bytes += len;
+    const r = _zbr_cens_row(site, ra) orelse return;
+    r.row.count += 1;
+    r.row.bytes += len;
+    w.ptrs.put(std.heap.page_allocator, @intFromPtr(p), .{ .key = r.key, .len = len }) catch return;
+    r.row.kept_count += 1;
+    r.row.kept_bytes += len;
 }
-fn _zbr_cens_shrink(w: *_ZbrCensAlloc, len: usize) void {
+fn _zbr_cens_shrink(w: *_ZbrCensAlloc, p: usize, len: usize) void {
     _zbr_cens_lock();
     defer _zbr_cens_unlock();
     w.live -= @intCast(len);
@@ -5503,6 +5535,7 @@ fn _zbr_cens_shrink(w: *_ZbrCensAlloc, len: usize) void {
     _zbr_cens.frees += 1;
     _zbr_cens.freed += len;
     _zbr_cens.live -= @intCast(len);
+    if (!_zbr_cens_drop(w, p, len)) _zbr_cens.unseen_frees += 1;
 }
 pub fn _zbr_cens_intern(len: usize) void {
     if (!_zbr_cens_on) return;
@@ -5518,6 +5551,7 @@ pub const _ZbrCensAlloc = struct {
     child: std.mem.Allocator,
     live: i64 = 0,
     freed: u64 = 0, // bytes this wrapper handed back to its child
+    ptrs: std.AutoHashMapUnmanaged(usize, _ZbrCensLive) = .empty, // the live blocks it made
     pub const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
     pub fn allocator(self: *_ZbrCensAlloc) std.mem.Allocator {
         return .{ .ptr = self, .vtable = &_vt };
@@ -5525,40 +5559,84 @@ pub const _ZbrCensAlloc = struct {
     fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         const p = self.child.vtable.alloc(self.child.ptr, len, al, ra) orelse return null;
-        _zbr_cens_note(self, len, ra);
+        _zbr_cens_note(self, p, len, ra);
         return p;
     }
     fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         if (!self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra)) return false;
-        self._moved(mem.len, new_len, ra);
+        self._moved(@intFromPtr(mem.ptr), @intFromPtr(mem.ptr), mem.len, new_len, ra);
         return true;
     }
     fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         const p = self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra) orelse return null;
-        self._moved(mem.len, new_len, ra);
+        self._moved(@intFromPtr(mem.ptr), @intFromPtr(p), mem.len, new_len, ra);
         return p;
     }
     fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         self.child.vtable.free(self.child.ptr, mem, al, ra);
-        _zbr_cens_shrink(self, mem.len);
+        _zbr_cens_shrink(self, @intFromPtr(mem.ptr), mem.len);
     }
-    fn _moved(self: *_ZbrCensAlloc, old: usize, new: usize, ra: usize) void {
+    /// A resize or remap that succeeded: `oldp` (old bytes) is now `newp` (new bytes). Growth is
+    /// requested bytes, not a new allocation. The WHOLE block moves to the resizing row: the old
+    /// row's kept loses the old length, this row's gains the new one, and `bytes` above took only
+    /// the difference. A shrink in place follows the same rule with a negative difference (the
+    /// block now belongs to the line that shrank it -- `toOwnedSlice` hands a buffer to its caller).
+    fn _moved(self: *_ZbrCensAlloc, oldp: usize, newp: usize, old: usize, new: usize, ra: usize) void {
+        const site = _zbr_site;
+        _zbr_cens_lock();
+        defer _zbr_cens_unlock();
         if (new > old) {
-            _zbr_cens_note(self, new - old, ra);
-            _zbr_cens_lock();
-            _zbr_cens.allocs -= 1; // growth in place is bytes, not a new allocation
-            _zbr_cens_unlock();
+            self.live += @intCast(new - old);
+            _zbr_cens.bytes += new - old;
+            _zbr_cens.live += @intCast(new - old);
+            if (_zbr_cens.live > _zbr_cens.peak) _zbr_cens.peak = _zbr_cens.live;
         } else if (old > new) {
-            _zbr_cens_lock();
-            defer _zbr_cens_unlock();
             self.live -= @intCast(old - new);
             self.freed += old - new;
             _zbr_cens.freed += old - new;
             _zbr_cens.live -= @intCast(old - new);
         }
+        if (oldp == newp) {
+            // In place (the common case: an ArrayList growing or `toOwnedSlice` shrinking): the
+            // map entry is rewritten, not removed and re-inserted.
+            const ent = self.ptrs.getPtr(oldp) orelse return self._unseenResize(site, old, new, ra);
+            if (ent.len != old) _zbr_cens.len_mismatch += 1;
+            const was = ent.*;
+            const r = _zbr_cens_row(site, ra) orelse {
+                _ = _zbr_cens_drop(self, oldp, was.len);
+                return;
+            };
+            if (new > old) r.row.bytes += new - old;
+            if (std.meta.eql(was.key, r.key)) {
+                r.row.kept_bytes = r.row.kept_bytes - was.len + new;
+            } else {
+                if (_zbr_cens_map.getPtr(was.key)) |orow| {
+                    orow.kept_count -= 1;
+                    orow.kept_bytes -= was.len;
+                }
+                r.row.kept_count += 1;
+                r.row.kept_bytes += new;
+            }
+            ent.* = .{ .key = r.key, .len = new };
+            return;
+        }
+        if (!_zbr_cens_drop(self, oldp, old)) return self._unseenResize(site, old, new, ra);
+        const r = _zbr_cens_row(site, ra) orelse return;
+        if (new > old) r.row.bytes += new - old;
+        self.ptrs.put(std.heap.page_allocator, newp, .{ .key = r.key, .len = new }) catch return;
+        r.row.kept_count += 1;
+        r.row.kept_bytes += new;
+    }
+    /// A block from before the census was resized: its growth is counted, it is not kept.
+    fn _unseenResize(self: *_ZbrCensAlloc, site: _ZbrSite, old: usize, new: usize, ra: usize) void {
+        _ = self;
+        _zbr_cens.unseen_resizes += 1;
+        if (new <= old) return;
+        const r = _zbr_cens_row(site, ra) orelse return;
+        r.row.bytes += new - old;
     }
 };
 pub var _zbr_cens_root: _ZbrCensAlloc = .{ .child = undefined };
@@ -5574,18 +5652,25 @@ pub fn _zbr_cens_install() void {
 /// A scoped `allocate` block's wrapper, emitted as a local: `.child` is the block's own
 /// allocator; on exit the block's arena frees everything it held at once.
 pub fn _zbr_cens_release(w: *_ZbrCensAlloc) void {
-    if (w.live <= 0) return;
     _zbr_cens_lock();
     defer _zbr_cens_unlock();
+    var it = w.ptrs.iterator();
+    while (it.next()) |e| if (_zbr_cens_map.getPtr(e.value_ptr.key)) |row| {
+        row.kept_count -= 1;
+        row.kept_bytes -= e.value_ptr.len;
+    };
+    w.ptrs.deinit(std.heap.page_allocator);
+    w.ptrs = .empty;
+    if (w.live <= 0) return;
     _zbr_cens.freed += @intCast(w.live);
     _zbr_cens.live -= w.live;
     _zbr_cens.released_scopes += 1;
     w.live = 0;
 }
-const _ZbrCensRow = struct { path: []const u8, line: u32, frames: [_zbr_cens_depth]usize, count: u64, bytes: u64 };
+const _ZbrCensRow = struct { path: []const u8, line: u32, frames: [_zbr_cens_depth]usize, count: u64, bytes: u64, kept_count: u64, kept_bytes: u64 };
 const _ZbrCensSym = struct { name: ?[]const u8, in_std: bool };
 const _ZbrCensKind = struct { kind: ?[]const u8, via: ?[]const u8 };
-const _ZbrCensOut = struct { path: []const u8, line: u32, kind: ?[]const u8, via: ?[]const u8, f0: usize, count: u64, bytes: u64 };
+const _ZbrCensOut = struct { path: []const u8, line: u32, kind: ?[]const u8, via: ?[]const u8, f0: usize, count: u64, bytes: u64, kept_count: u64, kept_bytes: u64 };
 fn _zbr_cens_sym(ra: usize, cache: *std.AutoHashMapUnmanaged(usize, _ZbrCensSym), syms: *std.ArrayList(std.debug.Symbol), text: std.mem.Allocator) _ZbrCensSym {
     if (cache.get(ra)) |c| return c;
     var r: _ZbrCensSym = .{ .name = null, .in_std = false };
@@ -5640,7 +5725,9 @@ pub fn _zbr_cens_flush() void {
     const t = _zbr_cens;
     var rows: std.ArrayList(_ZbrCensRow) = .empty;
     var it = _zbr_cens_map.iterator();
-    while (it.next()) |e| rows.append(ta, .{ .path = e.value_ptr.path, .line = e.key_ptr.line, .frames = e.value_ptr.frames, .count = e.value_ptr.count, .bytes = e.value_ptr.bytes }) catch break;
+    while (it.next()) |e| rows.append(ta, .{ .path = e.value_ptr.path, .line = e.key_ptr.line, .frames = e.value_ptr.frames, .count = e.value_ptr.count, .bytes = e.value_ptr.bytes, .kept_count = e.value_ptr.kept_count, .kept_bytes = e.value_ptr.kept_bytes }) catch break;
+    // The census's own tables, approximately (slots x entry + a metadata byte); page memory.
+    const table_bytes: usize = _zbr_cens_map.capacity() * (@sizeOf(_ZbrCensKey) + @sizeOf(_ZbrCensVal) + 1) + _zbr_cens_root.ptrs.capacity() * (@sizeOf(usize) + @sizeOf(_ZbrCensLive) + 1);
     _zbr_cens_unlock();
     // Name each row's kind, then merge rows that differ only in deeper frames: the report is
     // about (line, kind, via), and three callers of the same growth path are one row to a reader.
@@ -5656,9 +5743,11 @@ pub fn _zbr_cens_flush() void {
         if (gop.found_existing) {
             outs.items[gop.value_ptr.*].count += r.count;
             outs.items[gop.value_ptr.*].bytes += r.bytes;
+            outs.items[gop.value_ptr.*].kept_count += r.kept_count;
+            outs.items[gop.value_ptr.*].kept_bytes += r.kept_bytes;
         } else {
             gop.value_ptr.* = outs.items.len;
-            outs.append(ta, .{ .path = r.path, .line = r.line, .kind = k.kind, .via = k.via, .f0 = r.frames[0], .count = r.count, .bytes = r.bytes }) catch continue;
+            outs.append(ta, .{ .path = r.path, .line = r.line, .kind = k.kind, .via = k.via, .f0 = r.frames[0], .count = r.count, .bytes = r.bytes, .kept_count = r.kept_count, .kept_bytes = r.kept_bytes }) catch continue;
             if (k.kind == null) unresolved += 1;
         }
     }
@@ -5668,6 +5757,14 @@ pub fn _zbr_cens_flush() void {
         }
     };
     std.mem.sort(_ZbrCensOut, outs.items, {}, _Cmp.gt);
+    var kept_total: u64 = 0;
+    var kept_blocks: u64 = 0;
+    var kept_sites: usize = 0;
+    for (outs.items) |r| {
+        kept_total += r.kept_bytes;
+        kept_blocks += r.kept_count;
+        if (r.kept_bytes > 0) kept_sites += 1;
+    }
     var err: std.ArrayList(u8) = .empty;
     const w = struct {
         fn p(o: *std.ArrayList(u8), a: std.mem.Allocator, comptime f: []const u8, args: anytype) void {
@@ -5690,21 +5787,39 @@ pub fn _zbr_cens_flush() void {
     } else {
         w.p(&err, ta, "  allocator: the host's (--library-mode); the arena line does not apply\n", .{});
     }
-    w.p(&err, ta, "  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)\n", .{});
-    w.p(&err, ta, "  {d} sites; top by bytes:\n", .{outs.items.len});
-    for (outs.items[0..@min(outs.items.len, 25)]) |r| {
-        const loc = std.fmt.allocPrint(ta, "{s}:{d}", .{ std.fs.path.basename(r.path), r.line }) catch continue;
-        const k: []const u8 = if (r.kind) |kk|
-            (if (r.via) |v| (std.fmt.allocPrint(ta, "{s} (via {s})", .{ kk, v }) catch kk) else kk)
-        else
-            std.fmt.allocPrint(ta, "?0x{x}", .{r.f0}) catch "?";
-        w.p(&err, ta, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes) });
-    }
+    w.p(&err, ta, "  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers), nor the census's own tables (~{d:.2} MB)\n", .{_zbr_cens_mb(table_bytes)});
+    w.p(&err, ta, "  kept (still live now, charged to the site that allocated or last resized each block): {d} blocks, {d:.2} MB\n", .{ kept_blocks, _zbr_cens_mb(kept_total) });
+    w.p(&err, ta, "  blocks the census never saw allocated: {d} frees, {d} resizes (expected when the census was installed after the program started -- an embedding host, --census-at; otherwise a block freed through an allocator that did not make it)\n", .{ t.unseen_frees, t.unseen_resizes });
+    w.p(&err, ta, "  frees or resizes with a length other than the one allocated: {d}\n", .{t.len_mismatch});
+    w.p(&err, ta, "  {d} sites; top by bytes requested:\n    {s:<28} {s:<48} {s:>10}  {s:>13}  {s:>13}\n", .{ outs.items.len, "site", "kind", "allocs", "requested", "kept" });
+    const _Row = struct {
+        fn line(o: *std.ArrayList(u8), a: std.mem.Allocator, r: _ZbrCensOut) void {
+            const loc = std.fmt.allocPrint(a, "{s}:{d}", .{ std.fs.path.basename(r.path), r.line }) catch return;
+            const k: []const u8 = if (r.kind) |kk|
+                (if (r.via) |v| (std.fmt.allocPrint(a, "{s} (via {s})", .{ kk, v }) catch kk) else kk)
+            else
+                std.fmt.allocPrint(a, "?0x{x}", .{r.f0}) catch "?";
+            const s = std.fmt.allocPrint(a, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes), _zbr_cens_mb(r.kept_bytes) }) catch return;
+            o.appendSlice(a, s) catch {};
+        }
+    };
+    for (outs.items[0..@min(outs.items.len, 25)]) |r| _Row.line(&err, ta, r);
+    // The second ranking: what is still held, which is what a leak or a cache looks like.
+    const by_kept = ta.dupe(_ZbrCensOut, outs.items) catch outs.items[0..0];
+    const _CmpK = struct {
+        fn gt(_: void, x: _ZbrCensOut, y: _ZbrCensOut) bool {
+            return if (x.kept_bytes != y.kept_bytes) x.kept_bytes > y.kept_bytes else x.kept_count > y.kept_count;
+        }
+    };
+    std.mem.sort(_ZbrCensOut, by_kept, {}, _CmpK.gt);
+    w.p(&err, ta, "  top by bytes kept ({d} of {d} sites hold anything):\n", .{ kept_sites, outs.items.len });
+    for (by_kept[0..@min(kept_sites, 15)]) |r| _Row.line(&err, ta, r);
     if (unresolved > 0) w.p(&err, ta, "  {d} of {d} sites have an UNRESOLVED kind: this binary carries no debug info for that address (a --release build has none) -- shown as ?0x<address>\n", .{ unresolved, outs.items.len });
     _zbr_stderr().writeStreamingAll(_io, err.items) catch {};
 
     var out: std.ArrayList(u8) = .empty;
-    w.p(&out, ta, "{{\"version\": 1, \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
+    w.p(&out, ta, "{{\"version\": 2, \"keptNote\": \"keptBytes is what is still live at this report and was allocated or last resized at the site; a resize moves the whole block, so it can exceed the bytes the site requested\", \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
+    w.p(&out, ta, ", \"keptBytes\": {d}, \"keptCount\": {d}, \"unseenFrees\": {d}, \"unseenResizes\": {d}, \"lengthMismatches\": {d}, \"censusTableBytes\": {d}", .{ kept_total, kept_blocks, t.unseen_frees, t.unseen_resizes, t.len_mismatch, table_bytes });
     if (_zbr_cens_root_is_arena) w.p(&out, ta, ", \"arenaCapacity\": {d}, \"arenaFreedKept\": {d}", .{ _arena.queryCapacity(), _zbr_cens_root.freed });
     w.p(&out, ta, "}}, \"sites\": [", .{});
     for (outs.items, 0..) |r, i| {
@@ -5715,7 +5830,7 @@ pub fn _zbr_cens_flush() void {
         if (r.kind) |k| _zbr_cens_json_str(&out, ta, k) else out.appendSlice(ta, "null") catch {};
         out.appendSlice(ta, ", \"via\": ") catch {};
         if (r.via) |v| _zbr_cens_json_str(&out, ta, v) else out.appendSlice(ta, "null") catch {};
-        w.p(&out, ta, ", \"count\": {d}, \"bytes\": {d}}}", .{ r.count, r.bytes });
+        w.p(&out, ta, ", \"count\": {d}, \"bytes\": {d}, \"keptCount\": {d}, \"keptBytes\": {d}}}", .{ r.count, r.bytes, r.kept_count, r.kept_bytes });
     }
     out.appendSlice(ta, "]}\n") catch {};
     const path: []const u8 = _sys_getenv("ZEBRA_CENSUS_OUT") orelse "zebra-census.json";
@@ -6556,8 +6671,15 @@ pub const std_options: std.Options = .{ .enable_segfault_handler = true };
 // std/start.zig rather than at the user's program. Windows never printed the trace;
 // Linux/macOS did (test/bug259_runtime_exit_code_test.zbr caught it), so this makes the
 // platforms agree. ZEBRA_PANIC_TRACE=1 restores the full Zig trace for compiler work.
+// The handler must not allocate through `_allocator`: under --census that is the counting
+// wrapper, and a panic raised while the census holds its lock (an accounting underflow) re-entered
+// the lock through `_sys_getenv`'s Windows allocation and hung with nothing printed (BUG-676).
 pub fn _zebra_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
-    if (_sys_getenv("ZEBRA_PANIC_TRACE") != null) std.debug.defaultPanic(msg, first_trace_addr);
+    const want_trace = if (comptime builtin.target.os.tag == .windows) blk: {
+        const environ: std.process.Environ = .{ .block = .global };
+        break :blk (environ.getAlloc(std.heap.page_allocator, "ZEBRA_PANIC_TRACE") catch null) != null;
+    } else _sys_getenv("ZEBRA_PANIC_TRACE") != null; // POSIX: no allocation
+    if (want_trace) std.debug.defaultPanic(msg, first_trace_addr);
     std.debug.print("thread {d} panic: {s}\n", .{ std.Thread.getCurrentId(), msg });
     std.process.exit(1);
 }
