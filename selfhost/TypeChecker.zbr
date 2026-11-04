@@ -3099,9 +3099,62 @@ def bitwiseResultType(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
         ctx.addErr(ctx.file, eln, ecl,
                    "bitwise '" + opname + "' requires integer operands, got '"
                    + typeTag(bad_t) + "'")
+    # BUG-672: `& | ^` coerce a literal to the other operand's type, as `+` does. A shift
+    # amount is not coerced to the operand type (its range is 0..width-1), so not here.
+    if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
+        literalOperandFitCheck(lt, rt, b, ctx)
     if isIntegerType(lt)
         return lt
     return rt
+
+# BUG-672: a literal beside a sized integer operand adapts to that operand's type (QUICKSTART
+# §3), so it must FIT there: `k + 300` on a byte otherwise reaches zig as "type 'u8' cannot
+# represent integer value '300'" (for `%`, at a line inside zebra_rt.zig). The operators
+# that coerce it: `+ - * / %` and `& | ^`. NOT the comparisons -- zig compares a byte with
+# 300 and gets the right answer (`k < 300` is true), so refusing them would refuse working
+# code. Reported at the literal.
+def literalOperandFitCheck(lt: Type_, rt: Type_, b: ExprBinary, ctx: InferCtx)
+    var l_lit: bool = isNumLit(b.left)
+    var r_lit: bool = isNumLit(b.right)
+    if l_lit == r_lit
+        return
+    var lit: Expr = b.left
+    var other: Type_ = rt
+    if r_lit
+        lit = b.right
+        other = lt
+    var why: str = litFitsType(lit, other)
+    if why != ""
+        ctx.addErr(ctx.file, anchorLine(lit, b.span.line), anchorCol(lit, b.span.col),
+                   why + ", the type of the other operand of '" + plainOpText(b.op) + "'")
+
+def plainOpText(op: BinaryOp): str
+    if op == BinaryOp.add
+        return "+"
+    if op == BinaryOp.sub
+        return "-"
+    if op == BinaryOp.mul
+        return "*"
+    if op == BinaryOp.div
+        return "/"
+    if op == BinaryOp.mod
+        return "%"
+    if op == BinaryOp.bit_and
+        return "&"
+    if op == BinaryOp.bit_or
+        return "|"
+    if op == BinaryOp.bit_xor
+        return "^"
+    return "?"
+
+# BUG-673: the arithmetic operators whose result is the JOIN of their operand types
+# (numericJoin), so `b + n` with a byte and an int is an int.
+def isJoinedArithOp(op: BinaryOp): bool
+    return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.mod
+
+# BUG-672: the compound assignments whose literal right side takes the target's type.
+def compoundCoercesLiteral(op: AssignOp): bool
+    return op == AssignOp.plus_eq or op == AssignOp.minus_eq or op == AssignOp.star_eq or op == AssignOp.slash_eq or op == AssignOp.percent_eq or op == AssignOp.ampersand_eq or op == AssignOp.vertical_bar_eq or op == AssignOp.caret_eq
 
 # ── Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) arithmetic ─────────────────
 #
@@ -4914,7 +4967,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         msr = ""                        # a literal adapts to the other side
                     if msr != ""
                         ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col), msr)
-                        return lt
+                        return Type_.unknown_       # refused: no type, so no second error at the slot (BUG-673)
+                    literalOperandFitCheck(lt, rt, b, ctx)           # BUG-672
                     var nj: Type_ = numericJoin(lt, rt, isNumLit(b.left), isNumLit(b.right))
                     if not (nj is Type_.unknown_)
                         return nj
@@ -5705,6 +5759,12 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                         var cmsr: str = mixedSignRefusal(lhs_t, crt)
                         if isNumLit(sasn.value)
                             cmsr = ""
+                            # BUG-672: `x += 300` on a byte -- the literal takes x's type
+                            if compoundCoercesLiteral(sasn.op)
+                                var cfit: str = litFitsType(sasn.value, lhs_t)
+                                if cfit != ""
+                                    ctx.addErr(ctx.file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                               cfit + ", the type of the variable it combines with")
                         if cmsr != ""
                             ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col), cmsr)
                         else if numKind(lhs_t) != 3 and numKind(crt) == 3
@@ -5923,8 +5983,8 @@ def checkLiteralHomogeneity(elems: List(Expr), kind: str, ctx: InferCtx)
 # BUG-431 (second half, 2026-09-18): an `int` VALUE flowing into a `byte` slot. Zig folds a
 # literal (`buf[k] = 2`, `var b: byte = 3 * 4`) but refuses a runtime i64 ("expected type
 # 'u8', found 'i64'") -- valid Zebra by the checker, a zig error by the compile. Refused
-# here, naming `.toByte()`. Only a NAMED value counts (an ident, member, call, index);
-# literals and arithmetic on them are left to zig, which folds them.
+# here, naming `.toByte()`. A NAMED value counts (an ident, member, call, index), and so does
+# arithmetic on one (BUG-673); literals and arithmetic on them are left to zig, which folds them.
 def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
     var is_byte: bool = false
     if declared is Type_.uint_n as dn
@@ -5944,8 +6004,10 @@ def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
         on Expr.index as _
             return true
         on Expr.binary as nb
-            # a wrapping / saturating result has the operands' joined type (wrapSatResultType)
-            return isWrapSatOp(nb.op)
+            # a wrapping / saturating result has the operands' joined type (wrapSatResultType);
+            # so does `+ - * / %` (BUG-673: `b = b + n` with n an int is an int). A constant
+            # (`3 * 4`) is folded by zig and fits, so it is left alone.
+            return isWrapSatOp(nb.op) or (isJoinedArithOp(nb.op) and not isNumLit(e))
         else
             return false
 
@@ -5991,7 +6053,7 @@ def sizedIntMethodType(name: str): Type_
 # 'i64'"). Zig coerces only when the slot holds every value of the source: same sign and
 # at least as wide, or unsigned into a strictly wider signed. Returns the hint naming the
 # conversion, "" when the flow is fine. The byte case keeps BYTE_NARROW_HINT (`.toByte()`).
-# Same shapes as narrowsIntToByte: literals and arithmetic are left to zig, which folds them.
+# Same shapes as narrowsIntToByte: literals and constant arithmetic are left to zig, which folds them.
 def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
     var dk: int = numKind(declared)
     var sk: int = numKind(inferred)
@@ -6007,8 +6069,9 @@ def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
         on Expr.index as _
             pass
         on Expr.binary as nb
-            if not isWrapSatOp(nb.op)
-                return ""                  # a wrap/sat result is typed by its join (wrapSatResultType)
+            # a wrap/sat or `+ - * / %` result is typed by its join (BUG-673); a constant is folded
+            if not (isWrapSatOp(nb.op) or (isJoinedArithOp(nb.op) and not isNumLit(e)))
+                return ""
         else
             return ""
     var dw: int = numWidth(declared)

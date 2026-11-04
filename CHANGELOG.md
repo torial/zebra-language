@@ -25,6 +25,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **A literal beside a sized integer must fit it, and `+ - * / %` do not narrow on their
+  own** (BUG-672, BUG-673). `k + 300` on a byte, for `+ - * / %`, `& | ^` and their
+  compound forms, was a Zig error about generated code (for `%`, at a line inside
+  `zebra_rt.zig`); it is refused at the literal, naming the range. `b = b + n` with a byte
+  `b` and an int `n` -- and the same value as a `var` initialiser, a `return` or an
+  argument -- was `expected type 'u8', found 'i64'` from Zig, while `b += n` was already
+  refused; all are refused now, naming `.toByte()` / `.toInt16()` / .... A comparison
+  (`k < 300`) still compiles; Zig answers it correctly. A program that built only because
+  Zig folded two never-mutated locals at compile time is now refused too.
 - **Wrapping and saturating arithmetic, with Zig's operators and spelling.** `a +% b`,
   `a -% b`, `a *% b` and `-%a` wrap around the operand type; `a +| b`, `a -| b`, `a *| b`
   and `a <<| n` clamp at its bounds; each has a compound form (`+%=` ... `<<|=`). Plain

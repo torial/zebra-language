@@ -6,6 +6,59 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-673: `x = x + n` with a wider operand passes the front end and fails inside zig -- FIXED 2026-11-03
+
+**Fixed 2026-11-03.** `+ - * / %` give the JOIN of their operand types (BUG-445), and the
+two narrowing checks that refuse an int stored into a smaller slot (`narrowsIntToByte`,
+`intNarrowHint` in TypeChecker.zbr) now count such a result as they already counted a
+named value: `h = h + n` (int16, int) is refused at its line naming `.toInt16()`, and
+`b = b + n` (byte, int) naming `.toByte()`, as `+=` already was. The same holds for a `var`
+initialiser, a `return` and an argument, which share the checks. A constant (`3 * 4`, or
+`k + 3 * 4` where the constant adapts like a literal) is left to zig, which folds it. A
+refused mixed-sign `+` (`uint64 + int`) is now typed `unknown_`, so the slot check does not
+repeat it as a second error at the same column.
+
+The "not looked into" note in the entry is answered: `var c: byte = b + n` printed 253
+because `b` and `n` were never mutated, so they emitted as `const` and zig folded the sum
+(it fails as `260` overflows, and as `expected 'u8', found 'i64'` once `b` is mutated). Such
+a program is refused now -- the price, and the same rule `+=` already applied.
+
+Measured before landing: `-c` over 3,160 files (this repo 1,280, zebra-ide 29, the
+GameEngine 1,851), before and after. No new refusal outside the new fixtures (12 lines, the
+positive control); one extra line, the `uint64 + int` cascade above, removed. Fixtures:
+`test/fail_fixtures/bug673_join_narrow_fail.zbr` (five shapes: assignment into int16 and
+byte, `var` init, argument, return), with `test/bug672_673_join_fits_test.zbr` as the
+must-pass control. Red-checked: with the pre-fix compiler the fixture passes `-c` and fails
+inside zig with `expected type 'i16', found 'i64'`. Found alongside: BUG-674 (`& | ^`).
+
+**Found 2026-11-03** while making the wrapping and saturating operators join like `+`.
+
+---
+
+### BUG-672: an int literal that does not fit a narrow operand passes the front end and fails inside zig -- FIXED 2026-11-03
+
+**Fixed 2026-11-03 (the plain-operator half; the wrap/sat half landed with the operators).**
+A literal beside a sized integer adapts to that operand's type, so it must fit there:
+`literalOperandFitCheck` (TypeChecker.zbr) runs `litFitsType` on the literal side of
+`+ - * / %` and `& | ^`, and the compound-assignment check does the same for
+`+= -= *= /= %= &= |= ^=`. `k + 300` on a byte is refused at the literal, naming the range
+(`300 does not fit in 'byte' (0..255), the type of the other operand of '+'`); `k + -1` and
+`k & 0x1FF` likewise. Before, zig reported `type 'u8' cannot represent integer value '300'`
+-- for `%`, at a line inside `zebra_rt.zig`.
+
+**The entry's claim about comparisons was wrong, and they are deliberately left out.**
+Probed: `k < 300` compiles and prints `true`, `k == 300` and `k >= 300` print `false` --
+zig compares a sized integer with an out-of-range constant correctly. Refusing them would
+refuse working code; the control fixture pins `k < 300` and `k == 300` as passing. Shifts
+are left out too: a shift amount is not coerced to the operand type.
+
+Measured with BUG-673: no new refusal over the 3,160 files. Fixture
+`test/fail_fixtures/bug672_literal_fit_fail.zbr` (seven shapes); red-checked the same way.
+
+**Found 2026-11-02** while adding the wrapping and saturating operators.
+
+---
+
 ### BUG-671: a front-end refusal under `--emit-zig --output-dir` still writes the full emit, so the refused program looks emitted -- FIXED 2026-11-02
 
 **Fixed 2026-11-02 (Sean chose the contract: a refused compile leaves no `.zig`).**

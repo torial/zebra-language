@@ -941,6 +941,22 @@ smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zb
 smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:11:12: error: -200 does not fit in 'int8' (-128..127)"
 smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:12:5: error: type mismatch: expected byte, found int"
 smoke_tc_fail test/fail_fixtures/wrap_sat_unary_sat_fail.zbr "wrap_sat_unary_sat_fail.zbr:5:11: error: there is no saturating negation"
+# BUG-672: a literal beside a sized integer must fit its type (+ - * / % & | ^ and the compound
+# forms; NOT the comparisons, which zig answers correctly). BUG-673: `+ - * / %` join their
+# operands, and the join does not narrow into a smaller slot on its own.
+smoke_run test/bug672_673_join_fits_test.zbr "bug672_673: OK"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:5:15: error: 300 does not fit in 'byte' (0..255), the type of the other operand of '+'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:6:11: error: 300 does not fit in 'byte' (0..255), the type of the other operand of '-'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:7:15: error: 300 does not fit in 'byte' (0..255), the type of the other operand of '%'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:8:15: error: 0x1FF does not fit in 'byte' (0..255), the type of the other operand of '&'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:9:14: error: -1 does not fit in 'byte' (0..255)"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:10:10: error: 300 does not fit in 'byte' (0..255), the type of the variable it combines with"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:11:13: error: 40000 does not fit in 'int16' (-32768..32767)"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:7:5: error: type mismatch: expected int16, found int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:9:5: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:10:19: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:11:13: error: type mismatch: expected byte, got int"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:14:12: error: type mismatch: expected byte, got int"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
 # a struct only deps get); --no-runtime-module gives each module its own accessor state

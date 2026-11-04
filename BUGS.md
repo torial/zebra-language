@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-673. Next new bug: BUG-674.**
+**Last bug number generated: BUG-674. Next new bug: BUG-675.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,50 +46,22 @@
 
 ---
 
-### BUG-673: `x = x + n` with a wider operand passes the front end and fails inside zig
+### BUG-674: `& | ^` on two integer types of different width are typed as the LEFT one, while zig peers them to the wider
 
-**Found 2026-11-03** while making the wrapping and saturating operators join like `+`.
-`var h: int16 = 5`, `var n: int = 3`, then `h = h + n`: `zebra -c` exits 0 and the build
-fails with `expected type 'i16', found 'i64'` -- a Zig diagnostic, at a line only. The same
-with `var b: byte` and `b = b + n`. BUG-445 joins `h + n` to `int`, and the assignment
-checks that refuse an int stored into a narrower slot (`narrowsIntToByte`, `intNarrowHint`
-in TypeChecker.zbr) look only at an identifier, member, call or index value, never at a
-binary one. `h += n` IS refused, with the conversion to use, by the compound-assignment
-check; only the spelled-out form leaks. (`var c: byte = b + n` compiled and printed 253 in
-the same probe -- not looked into.)
+**Found 2026-11-03** while fixing BUG-672/673. `var b: byte`, `var n: int`, then
+`var c: byte = b & n`: `zebra -c` exits 0 and the build fails with `expected type 'u8',
+found 'i64'`. `bitwiseResultType` (TypeChecker.zbr) returns the left operand's type
+whatever the right one is, so the checker calls `b & n` a byte; zig resolves the peer types
+to `i64`. The mirror case, `var m: int = b | n`, compiles because the slot is wide enough
+either way. Shifts are not this bug: their result IS the left operand's type in zig too.
 
-**Not fixed with the operators.** The wrap/sat ops were added to those two checks, so
-`b +%= n` and `b = b +% n` are refused like `b += n` (fixture
-`test/fail_fixtures/wrap_sat_mixed_fail.zbr`). Doing the same for plain `+ - * / %` turns
-programs that build today into refusals wherever the joined value happens to fit at run
-time -- or traps today -- so it needs the `-c` error-count sweep over this repo, zebra-ide and
-the GameEngine first, and its own commit.
+**Fix shape:** type `& | ^` by the same join `+` uses (numericJoin, with mixedSignRefusal),
+and let BUG-673's narrowing arm see them. Like BUG-673 it can refuse code that builds today
+only because zig folded two never-mutated locals, so it needs the same `-c` sweep over this
+repo, zebra-ide and the GameEngine first.
 
-**Control when fixing:** `h = h + n` refused at its line, naming `.toInt16()`; `h = h + 1`
-(a literal adapts) and `n = n + h` (int16 widens into int) still pass.
-
----
-
-### BUG-672: an int literal that does not fit a narrow operand passes the front end and fails inside zig
-
-**Found 2026-11-02** while adding the wrapping and saturating operators. `var k: byte = 250`
-then `print(k + 300)`: `zebra -c` exits 0, and the build fails in zig with
-`type 'u8' cannot represent integer value '300'` -- a Zig diagnostic about code the user did
-not write. The literal adapts to the other operand's type (QUICKSTART §3), and nothing checks
-that it fits there. The same holds for `- * / %`, the comparisons and the bitwise operators.
-
-**Half fixed with the operators.** `wrapSatResultType` refuses an out-of-range literal for
-`+% -% *% +| -| *|` at the literal's position, naming the type's range (`litFitsType` in
-TypeChecker.zbr; fixture `test/fail_fixtures/wrap_sat_mixed_fail.zbr`). The plain operators
-are deliberately NOT in that commit: zig analyses lazily, so `k + 300` inside a function
-nobody calls compiles today, and the checker sees every function -- a file that builds now
-could start failing `-c`.
-
-**Control when fixing:** extend `litFitsType` to the plain arithmetic and comparison arms,
-then run the `-c` error-count sweep over this repo, zebra-ide and the GameEngine before and
-after, and land it as its own commit (the BUG-253 inference/diagnostics split). A refused
-literal must name its position and the range; a literal that fits (`k + 5`) must still pass.
-<!-- bug-open-ok: the wrap/sat half is fixed, the plain-operator half is open -->
+**Control when fixing:** `var c: byte = b & n` refused at its line naming `.toByte()`;
+`var c: byte = b & 0x0F` (a literal adapts) and `var m: int = b | n` still pass.
 
 ---
 

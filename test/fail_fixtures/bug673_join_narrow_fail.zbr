@@ -1,0 +1,16 @@
+# BUG-673: `+ - * / %` join their operand types, so `b + n` (byte, int) is an int and does
+# not narrow back into a byte (or an int16) on its own -- the same rule as `b += n`.
+def g(b: byte): byte
+    return b
+def f(b: byte, n: int, hh: int16): byte
+    var h: int16 = hh
+    h = h + n
+    var x: byte = b
+    x = x + n
+    var c: byte = b * n
+    print(g(b - n))
+    print(c)
+    print(h)
+    return b + n
+def main()
+    print(f(5, 6, 7))

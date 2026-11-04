@@ -1,0 +1,24 @@
+# BUG-672 / BUG-673 controls: what the two refusals must NOT refuse.
+def f(k: byte, n: int, hh: int16): int
+    var h: int16 = hh
+    h = h + 1                  # a literal adapts to int16
+    var m: int = n
+    m = m + h                  # int16 widens into int
+    var b: byte = 3 * 4        # a constant: zig folds it
+    var x: byte = k
+    x = k + 3 * 4              # constant arithmetic adapts like a literal
+    x = (k + 1) * 2
+    x += 50
+    print(k + 5)
+    print(k < 300)             # zig compares a byte with 300 correctly
+    print(k == 300)
+    print(255 - k)
+    print(b)
+    print(x)
+    print(h)
+    var y: byte = (k + n).toByte()
+    print(y)
+    return m
+def main()
+    print(f(100, 7, 9))
+    print("bug672_673: OK")
