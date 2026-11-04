@@ -362,9 +362,10 @@ Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 | signed with `uint` / `uint64` / wider unsigned | **refused**: no signed type holds every value -- convert first (`u.toInt()`, which traps if it does not fit) |
 
 An int literal adapts to the other side (`u + 1` on a `uint64` is fine), and so does
-arithmetic made only of literals (`b + 3 * 4`) -- **if it fits there**: `k + 300` on a byte
-is refused, for `+ - * / %`, `& | ^` and their compound forms (`k += 300`). A comparison is
-not: `k < 300` compiles and is `true`. `int / int` is still integer division. The result
+arithmetic made only of literals (`b + 3 * 4`). **It must fit there**: `k + 300` on a byte
+is refused, for `+ - * / %`, `& | ^` and their compound forms (`k += 300`). (Only a plain
+literal is checked so far: `k + 100 * 3` or `k + 1_000` still fails inside zig -- BUG-675.)
+A comparison is not refused: `k < 300` compiles and is `true`. `int / int` is still integer division. The result
 does not narrow on its own, so `b = b + n` with a byte `b` and an int `n` is refused, as
 `b += n` is -- convert it (`(b + n).toByte()`, `.toInt16()`, ...). A compound assignment
 stores the result back, so `f += n` (float with int) is fine and `n += f` is refused -- the

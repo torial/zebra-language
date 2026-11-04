@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-674. Next new bug: BUG-675.**
+**Last bug number generated: BUG-675. Next new bug: BUG-676.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,23 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-675: a constant expression or a `1_000` literal beside a narrow operand still reaches zig
+
+**Found 2026-11-03**, the residual of BUG-672. `litFitsType` reads only a bare (or negated)
+decimal or hex `int_lit`, so with `k: byte` both `k + 100 * 3` and `k + 1_000` pass `zebra -c`
+and fail in zig with `type 'u8' cannot represent integer value '300'` / `'1000'` (probed). A
+constant expression adapts to the other operand exactly like a literal (`isNumLit`), so it
+must fit there too; a digit separator is treated as "a suffix or separator: not checked here".
+
+**Fix shape:** fold the constant (`+ - * / %` over literals, unary `-`) to a value in
+`litFitsType`, and skip `_` between digits while still leaving a type suffix (`5_u8`) alone.
+Front-end only; needs the same 3-repo `-c` sweep as BUG-672 before landing.
+
+**Control when fixing:** `k + 100 * 3` and `k + 1_000` refused at the expression naming the
+range; `k + 3 * 4`, `k + 1_0` and `5_u8 + k` still pass.
 
 ---
 

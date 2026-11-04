@@ -52,6 +52,9 @@ zig compares a sized integer with an out-of-range constant correctly. Refusing t
 refuse working code; the control fixture pins `k < 300` and `k == 300` as passing. Shifts
 are left out too: a shift amount is not coerced to the operand type.
 
+**Residual, filed as BUG-675:** only a plain literal is checked -- `k + 100 * 3` and
+`k + 1_000` still reach zig.
+
 Measured with BUG-673: no new refusal over the 3,160 files. Fixture
 `test/fail_fixtures/bug672_literal_fit_fail.zbr` (seven shapes); red-checked the same way.
 
