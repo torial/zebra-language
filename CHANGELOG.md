@@ -23,6 +23,43 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+---
+
+## Release 0.9.0-rc9 — 2026-11-05 (everything since rc8)
+
+rc9 is built with **Zig 0.17.1** (rc8 was 0.17.0). It carries **semantics changes in
+integer arithmetic**, decided 2026-10-30 and 2026-11-02:
+
+- **integer overflow traps in every build, `--release` included** (BUG-667): `--release` is
+  ReleaseFast, where Zig's overflow was undefined behaviour and printed a wrong number; a nil
+  unwrap and `min % -1` trap there too (BUG-668, BUG-669). Wrapping and saturating
+  arithmetic are explicit operators, with Zig's spelling: `+% -% *%` and `-%x`, `+| -| *|`
+  and `<<|`, each with a compound form;
+- **two integer types join the way `+` joins them**, for `+ - * / %`, `& | ^` and the
+  wrapping and saturating operators: the result is the wider type, a signed type wide
+  enough for both, or a refusal for `uint` beside a signed int (BUG-674). The result does
+  not narrow on its own -- `b = b + n` with a byte `b` and an int `n` is refused, naming
+  `.toByte()` (BUG-673) -- and a literal or constant expression beside a sized operand must
+  fit it, by value (BUG-672, BUG-675);
+- **literal suffixes**: decimal `300_i16`, `5_u8`, `7u` are new, and a suffix now types the
+  VARIABLE it initialises, for hex and floats too -- `var b = 0xFF_u8` is a byte (it was
+  emitted as an i64);
+- the sized conversions `toInt8() .. toUint64()` are CHECKED: a value that does not fit
+  stops the program (BUG-534).
+
+Also user-visible: `@[...]` is removed (`x in [a, b]` is the allocation-free membership
+test, BUG-565); a `catch` or `?` on a call that cannot fail is refused (BUG-546); regexes
+take per-quantifier greedy/lazy with leftmost-first matching (BUG-014); computed module
+variables and statics initialise on first use, so declaration order no longer matters
+(BUG-664); a float printed with a precision rounds its exact binary value, ties to even;
+`HashMap.clear()`; subdirectory modules and `zebra -c --strict` (BUG-449). New tooling:
+`zebra --census` (where the memory goes, per source line, with the bytes each site still
+keeps; `--census=host` for an embedding host's own window) and `--source-root`. The rest are
+front-end refusals of programs that failed inside Zig, each naming the line and the fix --
+run `zebra -c` over your code first.
+
 ### Tooling
 
 - **The toolchain is Zig 0.17.1** (from 0.17.0). `.zig-version`, the CI and release
