@@ -14,7 +14,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next` `cue begin` `cue end`
 
-## Command forms (45)
+## Command forms (46)
 
 - `zebra <source.zbr>`
 - `zebra repl`
@@ -45,6 +45,7 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra --target`
 - `zebra --coverage <source.zbr>`
 - `zebra --census <source.zbr>`
+- `zebra --census=host <source.zbr>`
 - `zebra --warn-non-exhaustive <source.zbr>`
 - `zebra --warnings-as-errors <source.zbr>`
 - `zebra -c --strict <source.zbr>`

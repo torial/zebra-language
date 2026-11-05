@@ -207,6 +207,16 @@ run --allow-implicit-try hello.zbr
 chk "\`--allow-implicit-try\` is refused by name, saying to add \`?\`" \
     "$([ "$RC" != 0 ] && case "$ERR" in *"--allow-implicit-try was removed"*"?"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+# BUG-677: `--census=host` is the one value; any other `--census=VALUE` passed the BUG-323
+# check (it strips `=VALUE`) and the build silently had no census at all.
+run --census=bogus hello.zbr
+chk "\`--census=bogus\` is refused by name, naming \`host\`" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"--census=bogus: the only value is"*"host"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --census=host hello.zbr
+chk "\`--census=host\` runs, and its never-installed exit says so" \
+    "$([ "$RC" = 0 ] && case "$ERR" in *"never installed"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
 run --zig-backend hello.zbr
 chk "\`--zig-backend\` is refused by name (retired with the bootstrap), nothing compiled" \
     "$([ "$RC" != 0 ] && case "$ERR" in *"unrecognized flag: --zig-backend"*) echo 0;; *) echo 1;; esac || echo 1)" \

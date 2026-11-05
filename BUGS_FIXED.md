@@ -6,6 +6,59 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-677: a second `_zbr_cens_install()` does nothing and says nothing, so a host's late census install is silently a whole-run census -- FIXED 2026-11-05
+
+**Fixed 2026-11-05** in the shape agreed with Fable (below). `zebra --census=host`
+(main.zbr: `--census=VALUE` for any other value is refused -- unknownFlag strips `=VALUE`, so
+it was accepted and the build had no census at all) sets CodeGen's `_census_host`: `censInstall` emits
+`_zbr_cens_mark_host()` instead of `_zbr_cens_install_entry()`, and `censFlush` emits no exit
+flush for a `--library-mode` build, whose `main` returns before the host's window opens. The
+runtime: `_zbr_cens_install()` on an installed census writes one note to stderr naming who
+installed first (the entry prologue, or an earlier call) and changes nothing; `_zbr_cens_flush()`
+on a census never installed in a host build says "never installed" and writes nothing.
+
+Control legs (census_check 5-7, all three in the agreed shape): a `--census=host` probe that allocates 40 times, installs from a `zig"..."` line and allocates again has no site for the line before the install and >= 7 counts for the line after (derived from the probe's `# cens:` labels); a plain `--census` program that installs again prints the note once, naming the entry prologue, with totals equal to the same program without the second call (8 vs 8); a `--census=host` program that never installs prints "never installed" and leaves no zebra-census.json. Red-checked against the pre-fix tree (9c434d8) with the new legs: those three fail and the other 70 pass -- the old compiler accepted `--census=host` and built with no census at all. cli_check gains `--census=bogus` refused by name and `--census=host` running.
+
+
+**Found 2026-11-04 by Fable**, reading the first kept-column run (cbfe879). A program
+emitted with `--census` installs the census in its own entry prologue. The GameEngine host
+calls that `main` before its loop, and its `--census-at 120` then calls
+`_zbr_cens_install()` again, which returns at `if (_zbr_cens_on) return;` with no word.
+Every "steady state" census the engine took (2026-11-01, 11-03, 11-04) was really a
+whole-run census, and the only evidence was that the unseen-free count came out small where
+a late install would make it large. Nothing withheld fails: the runtime knows the call
+changed nothing and the caller cannot tell.
+
+**Fix shape (joint, Opus + Fable in writing, 2026-11-04 evening; supersedes the note-only
+shape agreed earlier that day, which left `--census-at` with no window):**
+1. `zebra --census=host`: the emitted entry prologue does NOT install; the host calls
+   `_zbr_cens_install()` when its window should start. Plain `--census` is unchanged. The
+   intent is in the BUILD -- an environment variable read at start-up (`ZEBRA_CENSUS_DEFER`
+   was proposed) was declined as ambient state: a shell that happens to set it gets a binary
+   that does not count, and nothing at the call site says why. Fable has no case for one
+   binary choosing at run time.
+2. A redundant install says so on stderr, once, naming who installed first (the entry
+   prologue) and that counts run from then -- keeping the `void` signature, since a Zig host
+   calling it as a statement would break on a returned value.
+3. A `--census=host` build that reaches exit with no install says so on stderr ("built for a
+   host install, never installed") and writes no zebra-census.json, so no report never reads
+   as an empty one.
+A `_zbr_cens_reset()` that zeroes the counts was offered and DECLINED. The engine works around
+the silence today (`NO WINDOW` printed, and the window taken as the difference of two runs'
+JSONs, `tools/census_kept.py --baseline`); when this lands its census regen passes
+`--census=host`, the host installs at frame 0 or at `--census-at`'s frame, and `--baseline`
+stays an option rather than the method. A new CLI form: `docs/SURFACE.md` (surface-freeze),
+`cli_check`, CHANGELOG and QUICKSTART move with it.
+
+**Control when fixing:** census_check legs -- (a) a `--census=host` probe that installs from a
+`zig"..."` line after N labelled allocations must report exactly the allocations made after
+the install (derived from the probe's labels, not from the runtime); (b) a plain `--census`
+program that calls `_zbr_cens_install()` again must see the note on stderr and unchanged
+totals, and one that never calls it again must print no note; (c) a `--census=host` program
+that never installs must print the never-installed note and leave no zebra-census.json.
+
+---
+
 ### BUG-675: a constant expression or a `1_000` literal beside a narrow operand still reaches zig -- FIXED 2026-11-05
 
 **Fixed 2026-11-05.** `litFitsType` (TypeChecker.zbr) now folds the constant to a value

@@ -5641,9 +5641,34 @@ pub const _ZbrCensAlloc = struct {
 };
 pub var _zbr_cens_root: _ZbrCensAlloc = .{ .child = undefined };
 var _zbr_cens_root_is_arena: bool = false;
-/// Entry prologue: wrap the allocator in force NOW (the arena, or a library host's).
+/// BUG-677: who installed the census, so a second install can say so; and whether the
+/// program was built with --census=host, so a report with no install can say so.
+var _zbr_cens_by_entry: bool = false;
+var _zbr_cens_again_noted: bool = false;
+var _zbr_cens_host: bool = false;
+/// The entry prologue of a plain --census build.
+pub fn _zbr_cens_install_entry() void {
+    _zbr_cens_install();
+    _zbr_cens_by_entry = true;
+}
+/// The entry prologue of a --census=host build: nothing is counted until the host installs.
+pub fn _zbr_cens_mark_host() void {
+    _zbr_cens_host = true;
+}
+/// Wrap the allocator in force NOW (the arena, or a library host's). A second call changes
+/// nothing, and says so once (BUG-677: a host's late install was silently a whole-run census).
 pub fn _zbr_cens_install() void {
-    if (_zbr_cens_on) return;
+    if (_zbr_cens_on) {
+        if (!_zbr_cens_again_noted) {
+            _zbr_cens_again_noted = true;
+            const msg = if (_zbr_cens_by_entry)
+                "zebra census: _zbr_cens_install() called again -- the entry prologue installed the census (built with --census), so counts still run from start-up. Build with --census=host to open the window yourself.\n"
+            else
+                "zebra census: _zbr_cens_install() called again -- an earlier call installed the census, so counts still run from then.\n";
+            _zbr_stderr().writeStreamingAll(_io, msg) catch {};
+        }
+        return;
+    }
     _zbr_cens_on = true;
     _zbr_cens_root_is_arena = !_host_alloc_set;
     _zbr_cens_root = .{ .child = _allocator };
@@ -5716,7 +5741,11 @@ fn _zbr_cens_json_str(out: *std.ArrayList(u8), a: std.mem.Allocator, s: []const 
 /// once (a host can dump mid-run); allocates only from the page allocator, so it does not
 /// count itself.
 pub fn _zbr_cens_flush() void {
-    if (!_zbr_cens_on) return;
+    if (!_zbr_cens_on) {
+        // BUG-677: no report is not an empty report -- say which it is
+        if (_zbr_cens_host) _zbr_stderr().writeStreamingAll(_io, "zebra census: built with --census=host and never installed (_zbr_cens_install() was not called), so nothing was counted -- no report, no zebra-census.json.\n") catch {};
+        return;
+    }
     const pa = std.heap.page_allocator;
     var text_arena = std.heap.ArenaAllocator.init(pa);
     defer text_arena.deinit();

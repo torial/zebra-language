@@ -1,0 +1,15 @@
+# BUG-677 leg 5: built with --census=host, so nothing is counted until the program installs
+# the census itself (the zig"..." line, standing in for a host). Lines labelled `# cens:none`
+# allocate BEFORE the install and must have no site; `# cens:>=N` allocate after it.
+def main()
+    var i: int = 0
+    var s: str = ""
+    while i < 40
+        s = "a" + i.toString()            # cens:none
+        i = i + 1
+    zig"_zbr_cens_install();"
+    var j: int = 0
+    while j < 7
+        s = "b" + j.toString()            # cens:>=7
+        j = j + 1
+    print(s)

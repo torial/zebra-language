@@ -25,6 +25,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Tooling
 
+- **`zebra --census=host`: a census window the host opens** (BUG-677, joint with the
+  GameEngine). The entry prologue no longer installs the census in such a build; the host
+  calls `_zbr_cens_install()` at frame 0 or at its `--census-at` frame and the report counts
+  from there. A second `_zbr_cens_install()` -- which is what the engine's `--census-at`
+  did, so every "steady state" census it took was really a whole-run one -- now says so on
+  stderr, once, naming the entry prologue. A `--census=host` build that never installs says
+  so at its report and writes no zebra-census.json. `--census=VALUE` for any other value is
+  refused: it was accepted and the build silently had no census at all. Pinned by census_check
+  legs 5-7 and two cli_check legs.
 - **`--census` reports what each site still KEEPS** (requested by the GameEngine). Every site
   gains the bytes and blocks still live at the report that it allocated or last resized -- a
   resize moves the whole block, so a List's buffer is kept where it last grew -- and the report

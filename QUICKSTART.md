@@ -3298,6 +3298,16 @@ three counts are `-1` (not measured) unless the program was built with `--census
 `--no-runtime-module`, `--target node-addon` and `--target v`. A `--library-mode` host
 can call `_zbr_cens_flush()` whenever it wants a report.
 
+**A window instead of the whole run: `--census=host`** (BUG-677, 2026-11-05). The census is
+compiled in but the entry prologue does not install it: the program, or the host embedding
+a `--library-mode` build, calls `_zbr_cens_install()` when the window should open, and the
+report counts only what comes after. Such a library's `main` writes no report when it
+returns (that is before a host's window opens); the host calls `_zbr_cens_flush()`. A
+`--census=host` build that is never installed says so at its report -- "never installed",
+no `zebra-census.json` -- so no report is never mistaken for an empty one. A second
+`_zbr_cens_install()` changes nothing, and says so once, naming who installed first. Any
+other `--census=VALUE` is refused.
+
 ### Recycling churny objects: `ObjectPool(T)`
 
 For a high-churn workload (bullets, particles) where the arena would otherwise

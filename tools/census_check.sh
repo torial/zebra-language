@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # pins: BUG-676 a panic under the census lock must PRINT and exit, not hang (leg 4 plants one and runs it under a timeout)
+# pins: BUG-677 --census=host counts only after the install; a redundant install and a host build never installed each say so (legs 5-7)
 # census_check.sh — THE ALLOCATION-CENSUS GATE (`census`, FAST tier, 2026-10-23).
 #
 # `zebra --census` (docs/design/memory_model.md §3 item 6) counts every allocation under
@@ -43,6 +44,21 @@ cp tools/fixtures/census_probe.zbr tools/fixtures/census_probe_dep.zbr "$W/"
 pan=$(grep -m1 "panic:" "$W/run.err")
 [ -s "$W/zebra-census.json" ] || [ -z "$pan" ] || die "the --census probe PANICKED ($pan) -- an accounting underflow is a census bug"
 [ -s "$W/zebra-census.json" ] || { tail -8 "$W/run.out" "$W/run.err"; die "no zebra-census.json was written (the probe ends in sys.exit; is the flush on that path?)"; }
+# Legs 5-7 (BUG-677), each in its own directory so the JSON it leaves (or must NOT leave)
+# is its own. Leg 5: --census=host counts only what comes after the install.
+mkdir -p "$W/host" && cp tools/fixtures/census_host_probe.zbr "$W/host/"
+( cd "$W/host" && timeout 600 "$ZEBRA" --census=host --output-dir out census_host_probe.zbr > run.out 2> run.err ); echo $? > "$W/host/rc"
+# Leg 6: a plain --census program that installs AGAIN is told so, once, and its counts are
+# unchanged; the same program without the second call prints no note.
+mkdir -p "$W/again" "$W/once"
+printf 'def main()\n    var s: str = "x" + sys.args().len().toString()\n    zig"_zbr_cens_install();"\n    zig"_zbr_cens_install();"\n    print(s)\n' > "$W/again/again.zbr"
+printf 'def main()\n    var s: str = "x" + sys.args().len().toString()\n    print(s)\n' > "$W/once/once.zbr"
+( cd "$W/again" && timeout 600 "$ZEBRA" --census --output-dir out again.zbr > run.out 2> run.err ) || true
+( cd "$W/once" && timeout 600 "$ZEBRA" --census --output-dir out once.zbr > run.out 2> run.err ) || true
+# Leg 7: a --census=host program that never installs says so and leaves no JSON.
+mkdir -p "$W/never"
+printf 'def main()\n    var s: str = "x" + sys.args().len().toString()\n    print(s)\n' > "$W/never/never.zbr"
+( cd "$W/never" && timeout 600 "$ZEBRA" --census=host --output-dir out never.zbr > run.out 2> run.err ) || true
 # Leg 2: the same program without the flag.
 printf 'def main()\n    var s = "a" + sys.args().len().toString()\n    var m = sys.memStats()\n    print("${s} ${m.censusOn} ${m.allocations} ${m.allocBytes} ${m.liveBytes}")\n' > "$W/off.zbr"
 ( cd "$W" && mkdir -p offdir && cd offdir && timeout 600 "$ZEBRA" --output-dir "$W/out2" ../off.zbr > "$W/off.out" 2> "$W/off.err" ) || true
@@ -197,6 +213,46 @@ if prc == 124:
     bad(f"a panic inside the census lock HUNG (30 s timeout, nothing printed) -- BUG-676{note}")
 else:
     (ok if prc != 0 and "panic: census lock test" in perr else bad)(f"a panic inside the census lock prints and exits (rc={prc}, stderr {perr.strip()[:80]!r}){note}")
+# Legs 5-7 (BUG-677)
+hsrc = (w / "host" / "census_host_probe.zbr").read_text().splitlines()
+hrc = (w / "host" / "rc").read_text().strip()
+try:
+    hcen = json.loads((w / "host" / "zebra-census.json").read_text())
+except Exception as e:
+    hcen = None
+    bad(f"--census=host: the program installed the census and no readable zebra-census.json was written (rc={hrc}, {e})")
+if hcen is not None:
+    hrows = [r for r in hcen.get("sites", []) if r["file"].endswith("census_host_probe.zbr")]
+    hl = 0
+    for n, text in enumerate(hsrc, 1):
+        m = re.search(r"# cens:(\S+)", text)
+        if not m or text.lstrip().startswith("#"): continue
+        hl += 1
+        count = sum(r["count"] for r in hrows if r["line"] == n)
+        tok = m.group(1)
+        if tok == "none":
+            (ok if count == 0 else bad)(f"--census=host: line {n} allocates BEFORE the install and is not counted (got {count})")
+        else:
+            want = int(tok[2:])
+            (ok if count >= want else bad)(f"--census=host: line {n} allocates after the install and is counted (got {count}, want >= {want})")
+    if hl < 2:
+        bad(f"--census=host: the probe's labels were not found ({hl}) -- the oracle is empty")
+    herr = (w / "host" / "run.err").read_text(errors="replace")
+    (ok if "called again" not in herr and "never installed" not in herr else bad)("--census=host: one install prints neither note")
+aerr = (w / "again" / "run.err").read_text(errors="replace")
+oerr = (w / "once" / "run.err").read_text(errors="replace")
+(ok if aerr.count("_zbr_cens_install() called again") == 1 and "entry prologue installed" in aerr else bad)(f"a second install is named once, with who installed first ({aerr.count('called again')} notes)")
+(ok if "called again" not in oerr and "Allocation census" in oerr else bad)("a program that installs once prints no note, and still reports")
+try:
+    at = json.loads((w / "again" / "zebra-census.json").read_text())["totals"]
+    ot = json.loads((w / "once" / "zebra-census.json").read_text())["totals"]
+    (ok if at["allocations"] == ot["allocations"] else bad)(f"a redundant install changes no count ({at['allocations']} vs {ot['allocations']})")
+except Exception as e:
+    bad(f"legs 6: a census JSON is missing or unreadable ({e})")
+nerr = (w / "never" / "run.err").read_text(errors="replace")
+nout = (w / "never" / "run.out").read_text(errors="replace")
+(ok if "never installed" in nerr and "x1" in nout else bad)(f"--census=host with no install: the program ran and the exit says it was never installed ({nerr.strip()[-120:]!r})")
+(ok if not (w / "never" / "zebra-census.json").exists() and "Allocation census" not in nerr else bad)("--census=host with no install: no zebra-census.json and no report")
 if labelled < 15:
     print(f"census: REFUSING to report — only {labelled} labelled lines"); sys.exit(2)
 print(f"census: {passed} passed, {failed} failed ({labelled} labelled lines, {len(sites)} sites, {tot['allocations']} allocations)")

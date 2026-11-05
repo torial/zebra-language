@@ -2241,7 +2241,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
     sb.append(covPrologue("    "))    # after the arena defer: the flush allocates (see the test main)
-    sb.append(censFlush("    "))
+    sb.append(censFlush("    ", library_mode))
     if main_throws
         sb.append("    ")
         sb.append(mod_prefix)
@@ -2685,7 +2685,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # from the arena -- registered first it ran last, on a freed arena (a segfault at
     # exit that the first IDE witness found; the probe's free main had the other order).
     sb.append(covPrologue("    "))
-    sb.append(censFlush("    "))
+    sb.append(censFlush("    ", false))
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
     var ti: int = 0
@@ -2963,24 +2963,39 @@ def coverageOn(): bool
 # wraps `_allocator` and flushes the report at exit. Off: nothing is emitted, and the
 # default emit is byte-identical. The runtime half is `_ZbrCensAlloc` in the preamble.
 var _census: bool = false
+var _census_host: bool = false
 var _cens_save_n: int = 0
 
 def setCensus(v: bool)
     _census = v
+
+# BUG-677: `--census=host` -- the entry prologue does not install the census; the host
+# calls `_zbr_cens_install()` when its window should open.
+def setCensusHost(v: bool)
+    _census_host = v
 
 def censusOn(): bool
     return _census
 
 # The entry prologue's install line: right after `_allocator` is chosen, before any
 # dependency or module var initialises, so their allocations land in `<init>`.
+# With --census=host (BUG-677) it installs nothing and records that a host will, so the
+# report can say so when none did.
 def censInstall(indent: str): str
     if not _census
         return ""
-    return indent + "_zbr_cens_install();\n"
+    if _census_host
+        return indent + "_zbr_cens_mark_host();\n"
+    return indent + "_zbr_cens_install_entry();\n"
 
 # After the arena defer, so it runs FIRST (defers are LIFO) and reads a live arena.
-def censFlush(indent: str): str
+# A --census=host LIBRARY gets none: its main returns before the host's window opens, so
+# a report there would say "never installed" about a census the host installs next. The
+# host flushes (`_zbr_cens_flush()`) when it wants the report.
+def censFlush(indent: str, library: bool): str
     if not _census
+        return ""
+    if _census_host and library
         return ""
     return indent + "defer _zbr_cens_flush();\n"
 
@@ -7625,7 +7640,7 @@ struct Generator
                     ei.w.emit("_allocator = _prog_alloc();\n")
                 if _census
                     ei.writeIndent()
-                    ei.w.emit("_zbr_cens_install();\n")
+                    ei.w.emit(censInstall(""))
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
@@ -7682,9 +7697,10 @@ struct Generator
                         if cov_line != ""
                             ei.writeIndent()
                             ei.w.emit(cov_line + "\n")
-                if _census
+                var cens_flush_line: str = censFlush("", .library_mode)
+                if cens_flush_line != ""
                     ei.writeIndent()
-                    ei.w.emit("defer _zbr_cens_flush();\n")
+                    ei.w.emit(cens_flush_line)
                 # BUG-466: an error reaching the end of a throwing `main` prints its message
                 # and exits 1. Registered AFTER the arena/coverage defers so it runs FIRST
                 # (defers are LIFO) -- the message may live in the arena.
