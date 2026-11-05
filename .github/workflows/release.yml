@@ -12,8 +12,8 @@
 # FAILS the release when red (experimental: false). See also macos-native.yml (manual probe).
 #
 # Zig checksums: all three platforms are PINNED to the sha256 values published in
-# ziglang.org/download/index.json for 0.17.0 (read 2026-09-10; the Windows value is
-# the one gates-*.yml already used, which is the control that the read was right).
+# ziglang.org/download/index.json for 0.17.1 (read 2026-11-05, twice: a copy fetched earlier and a fresh one agreed;
+# the earlier copy's 0.17.0 values matched every checksum pinned here before -- the control).
 # `sha: index` is still accepted for a NEW platform until its value is seen once.
 name: release
 
@@ -50,23 +50,23 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            zig: zig-x86_64-windows-0.17.0
+            zig: zig-x86_64-windows-0.17.1
             ext: zip
-            sha: b5663f69581dcf391293fbf16c06cb80d81d806545ce618b4d0bab7f0eb8c428
+            sha: b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e
             plat: windows-x86_64
             exe: zebra.exe
             experimental: false
           - os: ubuntu-latest
-            zig: zig-x86_64-linux-0.17.0
+            zig: zig-x86_64-linux-0.17.1
             ext: tar.xz
-            sha: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+            sha: 3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a
             plat: linux-x86_64
             exe: zebra
             experimental: false
           - os: macos-latest
-            zig: zig-aarch64-macos-0.17.0
+            zig: zig-aarch64-macos-0.17.1
             ext: tar.xz
-            sha: b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+            sha: 75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d
             plat: macos-aarch64
             exe: zebra
             experimental: false   # rc2's smoke ran green on macos-latest (2026-09-12); a red leg now fails the release
@@ -76,16 +76,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Download Zig 0.17.0 (${{ matrix.zig }})
+      - name: Download Zig 0.17.1 (${{ matrix.zig }})
         shell: bash
         run: |
           set -euo pipefail
-          url="https://ziglang.org/download/0.17.0/${{ matrix.zig }}.${{ matrix.ext }}"
+          url="https://ziglang.org/download/0.17.1/${{ matrix.zig }}.${{ matrix.ext }}"
           curl -fsSL "$url" -o "zig.${{ matrix.ext }}"
           want="${{ matrix.sha }}"
           if [ "$want" = "index" ]; then
             key=$(echo "${{ matrix.zig }}" | sed -e 's/^zig-//' -e 's/-0\.16\.0$//')
-            want=$(curl -fsSL https://ziglang.org/download/index.json | python3 -c "import json,sys; print(json.load(sys.stdin)['0.17.0']['$key']['shasum'])")
+            want=$(curl -fsSL https://ziglang.org/download/index.json | python3 -c "import json,sys; print(json.load(sys.stdin)['0.17.1']['$key']['shasum'])")
           fi
           got=$(sha256sum "zig.${{ matrix.ext }}" | cut -d" " -f1)
           [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }

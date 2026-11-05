@@ -19,6 +19,13 @@ on a census never installed in a host build says "never installed" and writes no
 
 Control legs (census_check 5-7, all three in the agreed shape): a `--census=host` probe that allocates 40 times, installs from a `zig"..."` line and allocates again has no site for the line before the install and >= 7 counts for the line after (derived from the probe's `# cens:` labels); a plain `--census` program that installs again prints the note once, naming the entry prologue, with totals equal to the same program without the second call (8 vs 8); a `--census=host` program that never installs prints "never installed" and leaves no zebra-census.json. Red-checked against the pre-fix tree (9c434d8) with the new legs: those three fail and the other 70 pass -- the old compiler accepted `--census=host` and built with no census at all. cli_check gains `--census=bogus` refused by name and `--census=host` running.
 
+**The engine side, 2026-11-05 (Fable, on fc8241e):** all three legs held in the GameEngine. A
+`--census=host` window (`--census-at 120 --exit-at 420`) read beside the previous night's
+two-run subtraction of the same tree: 51,748 vs 50,277 allocations, 1.74 vs 1.72 MB live,
+kept 1.79 vs 1.72 MB, the same top fourteen sites in the same order, 12 unseen frees (the
+blocks from before the window, expected) vs 0, and a census table of 2.73 MB against 41.66.
+The two instruments agree, so `--census-at` is the reading and `--baseline` its control.
+
 
 **Found 2026-11-04 by Fable**, reading the first kept-column run (cbfe879). A program
 emitted with `--census` installs the census in its own entry prologue. The GameEngine host

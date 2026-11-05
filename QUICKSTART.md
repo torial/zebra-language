@@ -43,16 +43,16 @@ call C libraries via `zig"..."` escape hatches (§23).
 
 ### Installation
 
-**Requirements:** Zig **0.17.0** -- the version releases are built and tested with (a
+**Requirements:** Zig **0.17.1** -- the version releases are built and tested with (a
 release archive bundles it, so this matters only when building from source). The
 recommended way to install Zig on Windows or Linux is
 [zvm](https://github.com/tristanisham/zvm) (Zig Version Manager):
 
 ```bash
 # Install zvm (follow instructions at https://github.com/tristanisham/zvm)
-# Then install Zig 0.17.0:
-zvm install 0.17.0
-zvm use 0.17.0
+# Then install Zig 0.17.1:
+zvm install 0.17.1
+zvm use 0.17.1
 ```
 
 **Clone and build:**

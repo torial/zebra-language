@@ -25,6 +25,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Tooling
 
+- **The toolchain is Zig 0.17.1** (from 0.17.0). `.zig-version`, the CI and release
+  downloads and their sha256 pins (read from ziglang.org's index twice, and agreeing) move
+  together. No source change was needed: the FULL tier passed 49/49 in one invocation on a
+  cold cache, with `output_sweep` reporting all 466 programs' output identical.
 - **`zebra --census=host`: a census window the host opens** (BUG-677, joint with the
   GameEngine). The entry prologue no longer installs the census in such a build; the host
   calls `_zbr_cens_install()` at frame 0 or at its `--census-at` frame and the report counts

@@ -56,7 +56,7 @@ versions. Building from source is below; how a release is cut is in
 
 ## Requirements
 
-- **Zig 0.17.0**, the version in `.zig-version`, which the repo's tools pin and refuse to
+- **Zig 0.17.1**, the version in `.zig-version`, which the repo's tools pin and refuse to
   run without (`tools/zig_toolchain.sh`). The source still builds with 0.16 during the
   migration (`docs/design/zig017_migration.md`). Zig is also a
   RUNTIME dependency: every program is emitted as Zig and built with `zig build-exe`,
