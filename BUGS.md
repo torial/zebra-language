@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-677. Next new bug: BUG-678.**
+**Last bug number generated: BUG-678. Next new bug: BUG-679.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,24 @@
 
 ---
 
+### BUG-678: `%` over two constants has no type, so `n + 100 % 7` is refused as "cannot infer"
+
+**Found 2026-11-04** while probing BUG-675. With `n: int`, `var e: int = n + 100 % 7` is
+refused at `-c` with "cannot infer the type of this expression, an operand of `+`", and
+so is `k + (100 % 7)` on a byte. `n - 100 % 7` and `n * (9 % 4)` pass. Cause: inferExpr's
+binary branch has arms for `+ - * /` and none for `%`, so two literals (numericJoin
+returns unknown for a constant pair) fall to `else -> unknown_`; codegen's `+` operand
+guard (the §28a refusal) then refuses, while `-` and `*` have no such guard. Predates
+BUG-674 (the pre-674 compiler refuses the same lines). `var c: int = 100 % 7` is fine.
+
+**Fix shape:** an `on BinaryOp.mod` arm beside `div` (arithOperandCheck with "%", then the
+numeric operand's type). Lands with BUG-675, which reads the same constant expressions.
+
+**Control when fixing:** `n + 100 % 7` prints 1002 for n = 1000; `"x" % 5` is refused in
+the front end, as `"x" / 5` is.
+
+---
+
 ### BUG-677: a second `_zbr_cens_install()` does nothing and says nothing, so a host's late census install is silently a whole-run census
 
 **Found 2026-11-04 by Fable**, reading the first kept-column run (cbfe879). A program
@@ -80,11 +98,13 @@ constant expression adapts to the other operand exactly like a literal (`isNumLi
 must fit there too; a digit separator is treated as "a suffix or separator: not checked here".
 
 **Fix shape:** fold the constant (`+ - * / %` over literals, unary `-`) to a value in
-`litFitsType`, and skip `_` between digits while still leaving a type suffix (`5_u8`) alone.
+`litFitsType`, and skip `_` between digits while still leaving a type suffix (`0xFF_32`) alone.
 Front-end only; needs the same 3-repo `-c` sweep as BUG-672 before landing.
 
 **Control when fixing:** `k + 100 * 3` and `k + 1_000` refused at the expression naming the
-range; `k + 3 * 4`, `k + 1_0` and `5_u8 + k` still pass.
+range; `k + 3 * 4`, `k + 1_0` and `k + 0x1FF_32` still pass. (The entry first named `5_u8`, which is not
+writable: decimal `_i`/`_u` suffixes lex as `integer_lit_explicit` and no parser rule accepts that token.
+A suffixed hex literal carries its own type, and 511 beside a byte shows the fold leaves it alone.)
 
 ---
 
