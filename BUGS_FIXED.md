@@ -6,6 +6,66 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-675: a constant expression or a `1_000` literal beside a narrow operand still reaches zig -- FIXED 2026-11-05
+
+**Fixed 2026-11-05.** `litFitsType` (TypeChecker.zbr) now folds the constant to a value
+before checking it: `constIntValue` evaluates `+ - * / %`, `& | ^` and unary `-` over
+literals (exactly the shapes `isNumLit` lets adapt), and `constLitValue` reads a literal with
+its digit separators. It gives up -- checks nothing, leaving zig to see the expression --
+whenever the value is not certain: a float, a suffix, `~`, a divide or remainder with a
+negative operand or a zero divisor, a product past 2^40. A literal past 2^40 is certainly
+too wide for every narrow type and is refused; inside an expression it gives up instead, since
+it may cancel. The diagnostic names the value: "300 (the value of this constant expression)
+does not fit in 'byte' (0..255), the type of the other operand of '+'".
+
+Measured before landing: `-c` over 3,179 files (this repo 1,285, zebra-ide 29, the GameEngine 1,865), before and after: 5,500 error lines before, 5,504 after, none removed. The four new lines are in one machine-ported GameEngine script (`ported_scripts/1055_Script_Script.zbr`) that already had 14 errors, so no file changed verdict: `int + str` concatenations that became visible because `secondsBetween % 60` now has a type (BUG-678). Fixtures: `test/bug675_const_expr_fit_test.zbr` (nine shapes that fit
+and must keep compiling, values printed, including an intermediate past 255 and a
+cancelling pair past 2^40) and `test/fail_fixtures/bug675_const_expr_fit_fail.zbr` (five
+refusals: `*`, a separator, `+|`, a negative difference, a compound `+=`). Red-checked with
+the pre-fix compiler: the fail fixture passes `-c` (0 errors) and the test fixture is refused
+at its BUG-678 line.
+
+
+**Found 2026-11-03**, the residual of BUG-672. `litFitsType` reads only a bare (or negated)
+decimal or hex `int_lit`, so with `k: byte` both `k + 100 * 3` and `k + 1_000` pass `zebra -c`
+and fail in zig with `type 'u8' cannot represent integer value '300'` / `'1000'` (probed). A
+constant expression adapts to the other operand exactly like a literal (`isNumLit`), so it
+must fit there too; a digit separator is treated as "a suffix or separator: not checked here".
+
+**Fix shape:** fold the constant (`+ - * / %` over literals, unary `-`) to a value in
+`litFitsType`, and skip `_` between digits while still leaving a type suffix (`0xFF_32`) alone.
+Front-end only; needs the same 3-repo `-c` sweep as BUG-672 before landing.
+
+**Control when fixing:** `k + 100 * 3` and `k + 1_000` refused at the expression naming the
+range; `k + 3 * 4`, `k + 1_0` and `k + 0x1FF_32` still pass. (The entry first named `5_u8`, which is not
+writable: decimal `_i`/`_u` suffixes lex as `integer_lit_explicit` and no parser rule accepts that token.
+A suffixed hex literal carries its own type, and 511 beside a byte shows the fold leaves it alone.)
+
+---
+
+### BUG-678: `%` over two constants has no type, so `n + 100 % 7` is refused as "cannot infer" -- FIXED 2026-11-05
+
+**Fixed 2026-11-05** with BUG-675: an `on BinaryOp.mod` arm beside `div` in inferExpr's
+binary branch (arithOperandCheck with "%", then the numeric operand's type). `n + 100 % 7`
+compiles and prints 1002 for n = 1000 (bug675_const_expr_fit_test, line 13).
+
+
+**Found 2026-11-04** while probing BUG-675. With `n: int`, `var e: int = n + 100 % 7` is
+refused at `-c` with "cannot infer the type of this expression, an operand of `+`", and
+so is `k + (100 % 7)` on a byte. `n - 100 % 7` and `n * (9 % 4)` pass. Cause: inferExpr's
+binary branch has arms for `+ - * /` and none for `%`, so two literals (numericJoin
+returns unknown for a constant pair) fall to `else -> unknown_`; codegen's `+` operand
+guard (the §28a refusal) then refuses, while `-` and `*` have no such guard. Predates
+BUG-674 (the pre-674 compiler refuses the same lines). `var c: int = 100 % 7` is fine.
+
+**Fix shape:** an `on BinaryOp.mod` arm beside `div` (arithOperandCheck with "%", then the
+numeric operand's type). Lands with BUG-675, which reads the same constant expressions.
+
+**Control when fixing:** `n + 100 % 7` prints 1002 for n = 1000; `"x" % 5` is refused in
+the front end, as `"x" / 5` is.
+
+---
+
 ### BUG-674: `& | ^` on two integer types of different width are typed as the LEFT one, while zig peers them to the wider -- FIXED 2026-11-04
 
 **Fixed 2026-11-04.** `& | ^` now join their operand types exactly as `+` does

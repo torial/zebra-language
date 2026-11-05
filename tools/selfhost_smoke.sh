@@ -963,6 +963,15 @@ smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_jo
 smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:5:19: error: type mismatch: expected byte, found int"
 smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:6:11: error: cannot mix 'uint' and 'int' in arithmetic"
 smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:7:19: error: type mismatch: expected byte, found int"
+# BUG-675: a constant expression (or a `1_000`) beside a narrow operand must fit it, by VALUE;
+# BUG-678: `n + 100 % 7` has a type. The test half must keep compiling and print these values.
+smoke_run test/bug675_const_expr_fit_test.zbr "bug675: OK"
+smoke_run test/bug675_const_expr_fit_test.zbr "1758"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:3:22: error: 300 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:4:22: error: 1_000 does not fit in 'byte' (0..255), the type of the other operand of '+'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:5:23: error: 400 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+|'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:6:23: error: -1 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '-'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:8:10: error: 256 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the variable it combines with"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
 # a struct only deps get); --no-runtime-module gives each module its own accessor state

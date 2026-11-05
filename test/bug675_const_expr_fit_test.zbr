@@ -1,0 +1,23 @@
+# BUG-675: a constant expression beside a sized operand adapts to it like a literal, so
+# the front end checks its VALUE fits -- these all fit, and must keep compiling.
+# BUG-678: `%` over two constants has a type, so `n + 100 % 7` is not "cannot infer".
+def f(k: byte, n: int): int
+    var a: byte = k + 3 * 4                     # 12
+    var b: byte = k + 1_0                       # a separator: 10
+    var c: byte = k + (300 - 200)               # an intermediate past 255, value 100
+    var d: int = k + 0x1FF_32                   # a suffix types the literal: int32, not checked
+    var e: byte = k & (0x1FF & 0xFF)            # 255
+    var g: byte = k + 100 / 7                   # 14
+    var h: byte = k + 1_000 / 10                # 100
+    var i: byte = k + (10_000_000_000_000 - 9_999_999_999_999)   # past 2^40, cancels: 1
+    var m: int = n + 100 % 7                    # BUG-678: 2
+    print(a)
+    print(c)
+    print(d)
+    print(i)
+    print(m)
+    return a + b + c + d + e + g + h + i + m
+
+def main()
+    print(f(1, 1000))
+    print("bug675: OK")

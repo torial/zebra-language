@@ -3222,48 +3222,133 @@ def litDigitValue(d: str, hex: bool): int
         return -1
     return ix
 
-# "" when the integer literal `e` (or its negation) fits in `t`; otherwise why not. Only
-# the sized types narrower than 64 bits are checked, and only a plain decimal or 0x
-# literal -- a suffixed one (`5_u8`) carries its own type and is left to Zig.
-def litFitsType(e: Expr, t: Type_): str
-    var neg: bool = false
-    var le: Expr = e
+# BUG-675: the value of a constant integer expression -- the shapes isNumLit lets adapt to
+# the other operand (`100 * 3`, `1_000`, `-(2 + 3)`, `0xF0 | 0x0F`). `ok` is false whenever
+# the value is not certain: a float, a suffix (`5_u8` carries its own type), `~`, a divide
+# or remainder with a negative operand or a zero divisor, a magnitude past 2^40. The caller
+# then checks nothing -- zig still sees the expression, so giving up can only miss, never
+# refuse. `huge` marks a LITERAL (or a negated one) past 2^40: certainly too wide for every
+# type checked here. Inside an expression a huge operand gives up instead, since it may
+# cancel (`10_000_000_000_000 - 9_999_999_999_999`).
+struct ConstVal
+    var ok: bool
+    var huge: bool
+    var val: int
+
+    cue init(ok: bool, huge: bool, val: int)
+        .ok = ok
+        .huge = huge
+        .val = val
+
+def constLitValue(e: Expr): ConstVal
+    var txt: str = ""
+    var is_hex: bool = false
+    if e is Expr.int_lit as il
+        txt = il.text
+        is_hex = il.base == IntBase.hex
+    else
+        return ConstVal(false, false, 0)
+    if is_hex
+        if not (txt.startsWith("0x") or txt.startsWith("0X"))
+            return ConstVal(false, false, 0)
+        txt = txt.substring(2, txt.len)
+    if txt.len == 0
+        return ConstVal(false, false, 0)
+    var v: int = 0
+    var huge: bool = false
+    var di: int = 0
+    while di < txt.len
+        var d: str = txt.substring(di, di + 1)
+        var dv: int = litDigitValue(d, is_hex)
+        # a decimal separator only BETWEEN two digits; `5_u8` reaches the `u` and gives up
+        var sep: bool = d == "_" and not is_hex and di > 0 and di + 1 < txt.len
+        if sep
+            sep = litDigitValue(txt.substring(di - 1, di), false) >= 0 and litDigitValue(txt.substring(di + 1, di + 2), false) >= 0
+        di = di + 1
+        if not sep
+            if dv < 0
+                return ConstVal(false, false, 0)  # a suffix: carries its own type, left to zig
+            if v > 1099511627776                  # 2^40, past every bound checked: stop growing
+                huge = true
+            else if is_hex
+                v = v * 16 + dv
+            else
+                v = v * 10 + dv
+    if huge or v > 1099511627776
+        return ConstVal(false, true, 0)
+    return ConstVal(true, false, v)
+
+def constIntValue(e: Expr): ConstVal
+    const lim: int = 1099511627776            # 2^40
+    if e is Expr.int_lit
+        return constLitValue(e)
     if e is Expr.unary as un
         if un.op == UnaryOp.neg
-            neg = true
-            le = un.operand
+            var o: ConstVal = constIntValue(un.operand)
+            if o.ok
+                return ConstVal(true, false, 0 - o.val)
+            return ConstVal(false, o.huge, 0)
+        return ConstVal(false, false, 0)
+    if e is Expr.binary as b
+        var l: ConstVal = constIntValue(b.left)
+        var r: ConstVal = constIntValue(b.right)
+        if not l.ok or not r.ok
+            return ConstVal(false, false, 0)
+        var v: int = 0
+        if b.op == BinaryOp.add
+            v = l.val + r.val
+        else if b.op == BinaryOp.sub
+            v = l.val - r.val
+        else if b.op == BinaryOp.mul
+            var la: int = l.val
+            if la < 0
+                la = 0 - la
+            var ra: int = r.val
+            if ra < 0
+                ra = 0 - ra
+            if ra != 0 and la > lim / ra
+                return ConstVal(false, false, 0)
+            v = l.val * r.val
+        else if b.op == BinaryOp.div or b.op == BinaryOp.mod
+            if l.val < 0 or r.val <= 0
+                return ConstVal(false, false, 0)  # zig's own rules for these; not modelled
+            if b.op == BinaryOp.div
+                v = l.val / r.val
+            else
+                v = l.val % r.val
+        else if b.op == BinaryOp.bit_and
+            v = l.val & r.val
+        else if b.op == BinaryOp.bit_or
+            v = l.val | r.val
+        else if b.op == BinaryOp.bit_xor
+            v = l.val ^ r.val
+        else
+            return ConstVal(false, false, 0)
+        if v > lim or v < 0 - lim
+            return ConstVal(false, false, 0)
+        return ConstVal(true, false, v)
+    return ConstVal(false, false, 0)
+
+# "" when the constant `e` (a literal, a negated one, or a constant expression over them --
+# BUG-675) fits in `t`; otherwise why not, naming the value. Only the sized types narrower
+# than 64 bits are checked; a suffixed literal (`5_u8`) carries its own type and is left to Zig.
+def litFitsType(e: Expr, t: Type_): str
     var w: int = numWidth(t)
     var k: int = numKind(t)
     if w >= 64 or (k != 1 and k != 2)
         return ""
-    var txt: str = ""
-    var is_hex: bool = false
-    if le is Expr.int_lit as il
-        txt = il.text
-        is_hex = il.base == IntBase.hex
-    else
+    var cv: ConstVal = constIntValue(e)
+    if not cv.ok and not cv.huge
         return ""
-    var shown: str = txt
-    if is_hex
-        if not (txt.startsWith("0x") or txt.startsWith("0X"))
-            return ""
-        txt = txt.substring(2, txt.len)
-    if txt.len == 0
-        return ""
-    var v: int = 0
-    var too_big: bool = false
-    var di: int = 0
-    while di < txt.len
-        var dv: int = litDigitValue(txt.substring(di, di + 1), is_hex)
-        di = di + 1
-        if dv < 0
-            return ""                     # a suffix or separator: not checked here
-        if v > 1099511627776              # 2^40, past every bound below: stop growing
-            too_big = true
-        else if is_hex
-            v = v * 16 + dv
-        else
-            v = v * 10 + dv
+    var shown: str = ""
+    if e is Expr.int_lit as il
+        shown = il.text
+    else if e is Expr.unary as un
+        var ue: Expr = un.operand
+        if ue is Expr.int_lit as nl
+            shown = "-" + nl.text
+    if shown == ""
+        shown = cv.val.toString() + " (the value of this constant expression)"
     var bits: int = w
     if k == 1
         bits = w - 1
@@ -3276,11 +3361,7 @@ def litFitsType(e: Expr, t: Type_): str
     if k == 1
         lo = 0 - hi
     hi = hi - 1
-    var val: int = v
-    if neg
-        val = 0 - v
-        shown = "-" + shown
-    if too_big or val < lo or val > hi
+    if cv.huge or cv.val < lo or cv.val > hi
         return shown + " does not fit in '" + numTypeName(t) + "' (" + lo.toString() + ".." + hi.toString() + ")"
     return ""
 
@@ -5061,6 +5142,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return rt
                 on BinaryOp.div
                     arithOperandCheck(lt, rt, b, "/", ctx)
+                    if isNumeric(lt)
+                        return lt
+                    return rt
+                # BUG-678: `%` had no arm, so two constants (`100 % 7`) fell to unknown_ and
+                # `n + 100 % 7` was refused as "cannot infer".
+                on BinaryOp.mod
+                    arithOperandCheck(lt, rt, b, "%", ctx)
                     if isNumeric(lt)
                         return lt
                     return rt

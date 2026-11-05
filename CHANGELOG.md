@@ -40,6 +40,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **A constant expression beside a sized integer must fit it too** (BUG-675), and `%` over
+  two constants has a type (BUG-678). `k + 100 * 3` and `k + 1_000` on a byte passed the
+  front end and failed inside Zig ("type 'u8' cannot represent integer value '300'"); they
+  are refused at the constant, naming its value and the range. The value is what counts:
+  `k + (300 - 200)` is 100 and compiles. `n + 100 % 7` was refused as "cannot infer the type";
+  it is an `int`. No file in this repo, zebra-ide or the GameEngine changed verdict.
 - **A literal beside a sized integer must fit it, and `+ - * / %` do not narrow on their
   own** (BUG-672, BUG-673). `k + 300` on a byte, for `+ - * / %`, `& | ^` and their
   compound forms, was a Zig error about generated code (for `%`, at a line inside
