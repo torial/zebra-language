@@ -1,0 +1,7 @@
+# @boundary rejects '5_i7' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits
+#
+# A width Zebra has no type for is refused by name, never passed through to Zig (which
+# would accept `i7`). Written before the feature was built (2026-11-05).
+def main()
+    var x = 5_i7
+    print(x)

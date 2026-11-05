@@ -40,6 +40,22 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Language
 
+- **Decimal literal suffixes, and every suffix now types its variable.** `300_i16`, `300i16`,
+  `5_u8`, `7u`, `1_000_u32` are literals of the type they name (`_i` / `_u` alone are `int` /
+  `uint`; widths 8, 16, 32, 64, 128); they lexed before and no parser rule accepted them.
+  A suffix is now real for hex and float literals too: `var b = 0xFF_u8` is a byte and
+  `var f = 1.5_f32` a `float32` -- they were typed `int` / `float` by the checker and emitted
+  `var b: i64 = @as(u8, 0xFF)`, so the variable silently lost the type its literal had.
+  A suffixed literal joins like a variable of its type instead of adapting (`b + 5_i8` is an
+  `int16`), must fit its type (`300_u8`, `128_i8`, `-5_u8`, `99999999999999999999_i64` are
+  refused at the literal; `-128_i8` is emitted `@as(i8, -128)` and fits), and a width with no
+  type (`5_i7`, `5_uint8`, `1.5_f16`, `0xFF_7`) is refused by name -- `0xFF_7` used to emit
+  `@as(i7, 0xFF)`. A constant expression over a suffixed literal must fit its type too
+  (`200_u8 + 100_u8` was "overflow of integer type 'u8'" from inside Zig), and a digit
+  separator must sit between two digits (`5_` and `1.5_` were Zig errors). Decimal `300_16`
+  is still 30016 -- a separator -- while hex `0xFF_32` is a 32-bit 255. The V route refuses a
+  suffixed literal by name. QUICKSTART §3.1b2; pinned by `test/boundary/int_suffix_*`.
+  Measured over 3,179 files (this repo, zebra-ide, the GameEngine): no file changed verdict.
 - **A constant expression beside a sized integer must fit it too** (BUG-675), and `%` over
   two constants has a type (BUG-678). `k + 100 * 3` and `k + 1_000` on a byte passed the
   front end and failed inside Zig ("type 'u8' cannot represent integer value '300'"); they

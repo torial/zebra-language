@@ -1167,6 +1167,15 @@ class Parser
             else
                 return false
 
+    # A decimal integer with a type suffix (`300_i16`, `7u`). Not in isIntLit: that one
+    # also reads a tuple index (`t.0`), where a suffix would become a field name.
+    def isIntLitExplicit(): bool
+        branch .peek().kind
+            on TokenKind.integer_lit_explicit
+                return true
+            else
+                return false
+
     def isAtLbracket(): bool
         branch .peek().kind
             on TokenKind.at_lbracket
@@ -3561,7 +3570,7 @@ class Parser
             const res_col = .peek().col
             .advance()
             return PNode.expr_result(PPos(res_line, res_col))
-        else if .isIntLit()
+        else if .isIntLit() or .isIntLitExplicit()
             const text = .peek().text
             const int_line = .peek().line
             const int_col = .peek().col

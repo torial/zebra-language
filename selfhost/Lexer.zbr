@@ -751,12 +751,13 @@ class Lexer
             emit(TokenKind.number_lit(), src[start..pos], ln, cl)
             return
 
+        # A suffix runs to the end of the word, so `5_uint8` or `1.5_f16` is ONE token the
+        # checker refuses by name -- not `5_u` followed by an identifier `int8`.
         if (sc == c'_' and sc1 == c'f') or sc == c'f'
             if sc == c'_'
                 pos = pos + 1
             pos = pos + 1
-            if (peek() == c'3' and peekAt(1) == c'2') or (peek() == c'6' and peekAt(1) == c'4')
-                pos = pos + 2
+            scanWhile(isIdentContinue)
             emit(TokenKind.float_lit(), src[start..pos], ln, cl)
             return
 
@@ -764,7 +765,7 @@ class Lexer
             if sc == c'_'
                 pos = pos + 1
             pos = pos + 1
-            scanWhile(isDigit)
+            scanWhile(isIdentContinue)
             emit(TokenKind.integer_lit_explicit(), src[start..pos], ln, cl)
             return
 

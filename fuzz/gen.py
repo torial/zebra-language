@@ -72,6 +72,27 @@ class Gen:
             return "'" + self.pick('abcdefg') + "'"
         raise ValueError(ty)
 
+    def suffixed_int(self):
+        # An int-typed expression built on suffixed literals (2026-11-05): a sized literal
+        # converted back, or a constant expression Zig computes at compile time in the
+        # suffix's type -- where the operands are large enough, it overflows, and the front
+        # end must refuse it rather than leave it to zig. Joined with a plain int it is an int.
+        sfx = self.pick(('i8', 'i16', 'i32', 'u8', 'u16', 'u32', 'i64'))
+        if self.maybe(0.5):
+            return f'({self.rng.randint(0, 20)}_{sfx}).toInt()'
+        # Only expressions whose value FITS the type: one that does not is refused by the
+        # front end (int_suffix_const_fail pins that), and a refused program is lost to the
+        # leak sample -- so a reject here is an OVER-refusal, which leakgen reports.
+        lo, hi = {'i8': (-128, 127), 'u8': (0, 255), 'i16': (-32768, 32767),
+                  'u16': (0, 65535)}.get(sfx, (0, 1000))
+        a = self.rng.randint(0, hi)
+        b = self.rng.randint(0, hi)
+        op = self.pick(('+', '-', '*', '|', '&'))
+        v = {'+': a + b, '-': a - b, '*': a * b, '|': a | b, '&': a & b}[op]
+        if not (lo <= v <= hi):
+            return f'({a}_{sfx}).toInt()'
+        return f'({a}_{sfx} {op} {b}_{sfx}).toInt()'
+
     def vars_of(self, env, ty):
         return [k for k, v in env.items() if v == ty]
 
@@ -109,6 +130,8 @@ class Gen:
             vs = self.vars_of(env, ty)
             if vs and self.maybe(0.6):
                 return self.pick(vs)
+            if ty == 'int' and self.caps.get('suffixes') and self.maybe(0.15):
+                return self.suffixed_int()
             return self.lit(ty)
         # `optvar orelse default` — unwrap a T? into a T
         optcands = self.vars_of(env, ty + '?')
@@ -844,6 +867,8 @@ DEFAULT_CAPS = {
     'lambdas': True,     # capturing closures: expression + statement lambdas reading the env,
                          # writing a shared `var`, handed to map/filter/any/all/reduce (BUG-569),
                          # and a lambda local REASSIGNED with another lambda (BUG-629)
+    'suffixes': True,    # suffixed integer literals (`5_u8`, `200_u8 + 100_u8`) as int-typed
+                         # expressions, converted back with .toInt() (2026-11-05)
     'leakclass': True,   # the hand-found "Zebra accepts, Zig rejects" shapes, kept as regression
                          # coverage now they are fixed: BUG-336 split().at/len, BUG-337 getList
                          # as a List, BUG-338 List(JsonValue)(), BUG-339 ctor field initialiser

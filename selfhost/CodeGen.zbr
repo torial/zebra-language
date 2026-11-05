@@ -23,9 +23,9 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
-use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -5803,18 +5803,18 @@ struct Generator
                 if n.init_expr != nil
                     branch n.init_expr!
                         on Expr.int_lit
-                            w.emit(": i64")
+                            w.emit(": " + numLitZig(n.init_expr!))
                         on Expr.float_lit
-                            w.emit(": f64")
+                            w.emit(": " + numLitZig(n.init_expr!))
                         on Expr.string_lit
                             w.emit(": []const u8")
                         on Expr.unary as un
                             if un.op == UnaryOp.neg
                                 branch un.operand
                                     on Expr.int_lit
-                                        w.emit(": i64")
+                                        w.emit(": " + numLitZig(n.init_expr!))
                                     on Expr.float_lit
-                                        w.emit(": f64")
+                                        w.emit(": " + numLitZig(n.init_expr!))
                                     else
                                         pass
                         else
@@ -9541,9 +9541,9 @@ struct Generator
             # to avoid comptime_int/comptime_float or *const [N:0]u8 issues in Zig.
             branch n.init_expr!
                 on Expr.int_lit
-                    w.emit(": i64")
+                    w.emit(": " + numLitZig(n.init_expr!))
                 on Expr.float_lit
-                    w.emit(": f64")
+                    w.emit(": " + numLitZig(n.init_expr!))
                 on Expr.string_lit
                     w.emit(": []const u8")
                 on Expr.unary as un
@@ -9557,9 +9557,9 @@ struct Generator
                     if un.op == UnaryOp.neg
                         branch un.operand
                             on Expr.int_lit
-                                w.emit(": i64")
+                                w.emit(": " + numLitZig(n.init_expr!))
                             on Expr.float_lit
-                                w.emit(": f64")
+                                w.emit(": " + numLitZig(n.init_expr!))
                             else
                                 pass
                 else
@@ -14177,10 +14177,12 @@ struct Generator
         branch e
             on Expr.string_lit as _
                 return "str"
-            on Expr.int_lit as _
-                return "int"
-            on Expr.float_lit as _
-                return "float"
+            on Expr.int_lit as ak_il
+                if intLitSuffix(ak_il.text) == ""
+                    return "int"                   # a suffixed one is its suffix's type, below
+            on Expr.float_lit as ak_fl
+                if floatLitSuffix(ak_fl.text) == ""
+                    return "float"
             on Expr.bool_lit as _
                 return "bool"
             else
@@ -14677,18 +14679,13 @@ struct Generator
             i += 1
 
     def genFloatLit(text: str)
-        # Strip _f32/_f64/f32/f64 suffix; emit @as(fNN, value). Zig has no suffixed float literals.
-        # Use replace("suffix","") to extract the bare value — avoids str.len (uint) arithmetic.
-        if text.endsWith("_f32")
-            w.emit("@as(f32, " + text.replace("_f32", "") + ")")
-        else if text.endsWith("_f64")
-            w.emit("@as(f64, " + text.replace("_f64", "") + ")")
-        else if text.endsWith("f32")
-            w.emit("@as(f32, " + text.replace("f32", "") + ")")
-        else if text.endsWith("f64")
-            w.emit("@as(f64, " + text.replace("f64", "") + ")")
-        else
+        # `1.5_f32` -> @as(f32, 1.5): Zig has no suffixed float literals. The suffix is read
+        # by TypeChecker's floatLitSuffix, the reader that also types the literal.
+        var fx: str = floatLitSuffix(text)
+        if fx == "" or fx == "?"
             w.emit(text)
+        else
+            w.emit("@as(" + suffixZigType(fx) + ", " + floatLitDigits(text) + ")")
 
     # ── genExpr ───────────────────────────────────────────────────────────────
 
@@ -14719,7 +14716,7 @@ struct Generator
         w.callee_next = false
         branch e
             on Expr.int_lit as il
-                w.emit(hexLitZig(il.text))
+                w.emit(intLitZig(il.text))
             on Expr.float_lit as fl
                 genFloatLit(fl.text)
             on Expr.bool_lit as bl
@@ -16610,6 +16607,14 @@ struct Generator
 
     def genUnary(u: ExprUnary)
         if u.op == UnaryOp.neg
+            # `-128_i8`: the sign goes INSIDE the cast. `-@as(i8, 128)` is a Zig error --
+            # 128 is not an i8 -- while int8's minimum is a value the user may write.
+            var neg_opd: Expr = u.operand
+            if neg_opd is Expr.int_lit as neg_il
+                var nsx: str = intLitSuffix(neg_il.text)
+                if nsx != "" and nsx != "?"
+                    w.emit("@as(" + suffixZigType(nsx) + ", -" + intLitDigits(neg_il.text) + ")")
+                    return
             w.emit("(-")
             genExpr(u.operand)
             w.emit(")")

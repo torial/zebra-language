@@ -972,6 +972,29 @@ smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_ex
 smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:5:23: error: 400 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+|'"
 smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:6:23: error: -1 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '-'"
 smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:8:10: error: 256 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the variable it combines with"
+# Literal suffixes (2026-11-05): a suffix types the literal AND the variable; the literal must
+# fit its type; a width with no type is refused by name; a constant expression over a suffixed
+# literal must fit its type (Zig computes it at compile time). test/boundary/int_suffix_* pin
+# the language-level rule; these pin the bounds and every refusal's position.
+smoke_run test/int_suffix_bounds_test.zbr "int_suffix_bounds: OK"
+smoke_run test/int_suffix_bounds_test.zbr "18446744073709551615"
+smoke_run test/int_suffix_bounds_test.zbr "-9223372036854775808"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:3:13: error: 300_u8 does not fit in 'byte' (0..255), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:4:13: error: 128_i8 does not fit in 'int8' (-128..127), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:5:14: error: -5_u8 does not fit in 'byte' (0..255), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:6:13: error: '5_i7' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:7:13: error: '5_uint8' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:8:13: error: '1.5_f16' has no type: a float suffix is _f32 or _f64"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:9:14: error: -1_u does not fit in 'uint' (0..18446744073709551615), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:10:13: error: '0xFF_7' has no type: a hex suffix is _u alone or with 8, 16, 32, 64 or 128 bits, or a bare size for the signed type"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:3:11: error: 256 (the value of this constant expression) does not fit in 'byte' (0..255), the type of its operands"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:4:12: error: -9223372036854775809_i64 does not fit in 'int64' (-9223372036854775808..9223372036854775807), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:5:11: error: 0x10000000000000000_u does not fit in 'uint' (0..18446744073709551615), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:6:11: error: '1.5_': a digit separator"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:7:11: error: 200 (the value of this constant expression) does not fit in 'int8' (-128..127), the type of its operands"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:8:12: error: 200 (the value of this constant expression) does not fit in 'int8' (-128..127), the type of its operands"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:9:11: error: '5_': a digit separator"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:10:11: error: 99999999999999999999_i64 does not fit in 'int64'"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
 # a struct only deps get); --no-runtime-module gives each module its own accessor state

@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, IntBase, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
+use Ast exposing Span, ExprIntLit, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, IntBase, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -1374,23 +1374,10 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 if mv.type_ != nil
                     module_fns.setField(mv.name, typeFromRef(mv.type_!))
                 else if mv.init_expr != nil
-                    var mv_t: Type_ = Type_.unknown_
+                    var mv_t: Type_ = numLitType(mv.init_expr!)
                     branch mv.init_expr!
-                        on Expr.int_lit
-                            mv_t = Type_.int_
-                        on Expr.float_lit
-                            mv_t = Type_.float_
                         on Expr.string_lit
                             mv_t = Type_.string_
-                        on Expr.unary as mv_un
-                            if mv_un.op == UnaryOp.neg
-                                branch mv_un.operand
-                                    on Expr.int_lit
-                                        mv_t = Type_.int_
-                                    on Expr.float_lit
-                                        mv_t = Type_.float_
-                                    else
-                                        pass
                         else
                             pass
                     module_fns.setField(mv.name, mv_t)
@@ -2814,8 +2801,12 @@ def fmtSpecIgnored(spec: str): str
 # (`(1 + 2)`, `1 + 2.0`). Zig folds these at comptime, so they adapt to the other
 # operand's type exactly like a bare literal and must never be converted.
 def isNumLit(e: Expr): bool
-    if e is Expr.int_lit or e is Expr.float_lit
-        return true
+    # A SUFFIXED literal (`5_u8`, `1.5_f32`) carries its own type: it joins like a variable
+    # of that type and does not adapt to the other operand.
+    if e is Expr.int_lit as nl_i
+        return intLitSuffix(nl_i.text) == ""
+    if e is Expr.float_lit as nl_f
+        return floatLitSuffix(nl_f.text) == ""
     if e is Expr.unary as u
         return isNumLit(u.operand)
     if e is Expr.binary as b
@@ -3224,8 +3215,9 @@ def litDigitValue(d: str, hex: bool): int
 
 # BUG-675: the value of a constant integer expression -- the shapes isNumLit lets adapt to
 # the other operand (`100 * 3`, `1_000`, `-(2 + 3)`, `0xF0 | 0x0F`). `ok` is false whenever
-# the value is not certain: a float, a suffix (`5_u8` carries its own type), `~`, a divide
-# or remainder with a negative operand or a zero divisor, a magnitude past 2^40. The caller
+# the value is not certain: a float, a suffix naming no type (`5_i7`), `~`, a divide or
+# remainder with a negative operand or a zero divisor, a magnitude past 2^40. (A suffixed
+# literal has the value of its digits; it still never ADAPTS -- see isNumLit.) The caller
 # then checks nothing -- zig still sees the expression, so giving up can only miss, never
 # refuse. `huge` marks a LITERAL (or a negated one) past 2^40: certainly too wide for every
 # type checked here. Inside an expression a huge operand gives up instead, since it may
@@ -3241,13 +3233,14 @@ struct ConstVal
         .val = val
 
 def constLitValue(e: Expr): ConstVal
-    var txt: str = ""
-    var is_hex: bool = false
     if e is Expr.int_lit as il
-        txt = il.text
-        is_hex = il.base == IntBase.hex
-    else
-        return ConstVal(false, false, 0)
+        if intLitSuffix(il.text) == "?"
+            return ConstVal(false, false, 0)
+        return constTextValue(intLitDigits(il.text), il.base == IntBase.hex)
+    return ConstVal(false, false, 0)
+
+def constTextValue(txt0: str, is_hex: bool): ConstVal
+    var txt: str = txt0
     if is_hex
         if not (txt.startsWith("0x") or txt.startsWith("0X"))
             return ConstVal(false, false, 0)
@@ -3279,7 +3272,6 @@ def constLitValue(e: Expr): ConstVal
     return ConstVal(true, false, v)
 
 def constIntValue(e: Expr): ConstVal
-    const lim: int = 1099511627776            # 2^40
     if e is Expr.int_lit
         return constLitValue(e)
     if e is Expr.unary as un
@@ -3290,44 +3282,370 @@ def constIntValue(e: Expr): ConstVal
             return ConstVal(false, o.huge, 0)
         return ConstVal(false, false, 0)
     if e is Expr.binary as b
-        var l: ConstVal = constIntValue(b.left)
-        var r: ConstVal = constIntValue(b.right)
-        if not l.ok or not r.ok
-            return ConstVal(false, false, 0)
-        var v: int = 0
-        if b.op == BinaryOp.add
-            v = l.val + r.val
-        else if b.op == BinaryOp.sub
-            v = l.val - r.val
-        else if b.op == BinaryOp.mul
-            var la: int = l.val
-            if la < 0
-                la = 0 - la
-            var ra: int = r.val
-            if ra < 0
-                ra = 0 - ra
-            if ra != 0 and la > lim / ra
-                return ConstVal(false, false, 0)
-            v = l.val * r.val
-        else if b.op == BinaryOp.div or b.op == BinaryOp.mod
-            if l.val < 0 or r.val <= 0
-                return ConstVal(false, false, 0)  # zig's own rules for these; not modelled
-            if b.op == BinaryOp.div
-                v = l.val / r.val
-            else
-                v = l.val % r.val
-        else if b.op == BinaryOp.bit_and
-            v = l.val & r.val
-        else if b.op == BinaryOp.bit_or
-            v = l.val | r.val
-        else if b.op == BinaryOp.bit_xor
-            v = l.val ^ r.val
-        else
-            return ConstVal(false, false, 0)
-        if v > lim or v < 0 - lim
-            return ConstVal(false, false, 0)
-        return ConstVal(true, false, v)
+        return constBinValue(b)
     return ConstVal(false, false, 0)
+
+def constBinValue(b: ExprBinary): ConstVal
+    const lim: int = 1099511627776            # 2^40
+    var l: ConstVal = constIntValue(b.left)
+    var r: ConstVal = constIntValue(b.right)
+    if not l.ok or not r.ok
+        return ConstVal(false, false, 0)
+    var v: int = 0
+    if b.op == BinaryOp.add
+        v = l.val + r.val
+    else if b.op == BinaryOp.sub
+        v = l.val - r.val
+    else if b.op == BinaryOp.mul
+        var la: int = l.val
+        if la < 0
+            la = 0 - la
+        var ra: int = r.val
+        if ra < 0
+            ra = 0 - ra
+        if ra != 0 and la > lim / ra
+            return ConstVal(false, false, 0)
+        v = l.val * r.val
+    else if b.op == BinaryOp.div or b.op == BinaryOp.mod
+        if l.val < 0 or r.val <= 0
+            return ConstVal(false, false, 0)  # zig's own rules for these; not modelled
+        if b.op == BinaryOp.div
+            v = l.val / r.val
+        else
+            v = l.val % r.val
+    else if b.op == BinaryOp.bit_and
+        v = l.val & r.val
+    else if b.op == BinaryOp.bit_or
+        v = l.val | r.val
+    else if b.op == BinaryOp.bit_xor
+        v = l.val ^ r.val
+    else
+        return ConstVal(false, false, 0)
+    if v > lim or v < 0 - lim
+        return ConstVal(false, false, 0)
+    return ConstVal(true, false, v)
+
+# ── Literal suffixes ─────────────────────────────────────────────────────────
+# ONE reader of a numeric literal's suffix, shared by the checker and both code
+# generators: two copies are how the checker's type and the emitted cast came to
+# disagree (`var b = 0xFF_u8` was typed an int and emitted `var b: i64 = @as(u8, 0xFF)`).
+#
+#   decimal  `_i` / `_u` alone (int, uint) or with 8, 16, 32, 64, 128 bits, the `_`
+#            optional: `300_i16`, `300i16`, `7u`, `1_000_u32`. A bare `_16` is a digit
+#            separator (`300_16` is 30016) and never reaches here.
+#   hex      `_u` / `_u8` ..., and a bare size is the signed type: `0xFF_32` is an int32.
+#
+# The Zebra type the suffix names ("int16", "uint", ...), "" when the literal has none,
+# "?" when it names none (`5_i7`, `5_uint8`, `1.5u`) -- refused by the checker, by name.
+def intLitSuffix(text: str): str
+    var sfx: str = ""
+    if text.startsWith("0x") or text.startsWith("0X")
+        var us: int = text.indexOf("_")
+        if us < 0
+            return ""
+        sfx = text.substring(us + 1, text.len)
+        if sfx.len == 0
+            return ""
+        if not sfx.startsWith("u")
+            sfx = "i" + sfx
+    else
+        var at: int = text.indexOf("i")
+        var au: int = text.indexOf("u")
+        if at < 0 or (au >= 0 and au < at)
+            at = au
+        if at < 0
+            return ""
+        var di: int = 0
+        while di < at
+            var dc: str = text.substring(di, di + 1)
+            if dc != "_" and litDigitValue(dc, false) < 0
+                return "?"                    # `1.5u`, `1e3i32`: not an integer
+            di = di + 1
+        sfx = text.substring(at, text.len)
+    var word: str = "int"
+    if sfx.startsWith("u")
+        word = "uint"
+    var bits: str = sfx.substring(1, sfx.len)
+    if bits == ""
+        return word
+    if bits == "8" or bits == "16" or bits == "32" or bits == "64" or bits == "128"
+        return word + bits
+    return "?"
+
+# The literal's digits without its suffix, as Zig reads them (`1_000_u32` -> `1_000`).
+def intLitDigits(text: str): str
+    if text.startsWith("0x") or text.startsWith("0X")
+        var us: int = text.indexOf("_")
+        if us < 0
+            return text
+        return text.substring(0, us)
+    var at: int = text.indexOf("i")
+    var au: int = text.indexOf("u")
+    if at < 0 or (au >= 0 and au < at)
+        at = au
+    if at < 0
+        return text
+    var d: str = text.substring(0, at)
+    if d.endsWith("_")
+        d = d.substring(0, d.len - 1)
+    return d
+
+# The float suffix as a Zebra type: "float32", "float" (`_f64`), "" for none, "?" for a
+# suffix that names no float type (`1.5f`, `1.5_f16`).
+def floatLitSuffix(text: str): str
+    var fi: int = text.indexOf("f")
+    if fi < 0
+        return ""
+    var sfx: str = text.substring(fi, text.len)
+    if sfx == "f32"
+        return "float32"
+    if sfx == "f64"
+        return "float"
+    return "?"
+
+# The digits of a float literal without its suffix (`1.5_f32` -> `1.5`).
+def floatLitDigits(text: str): str
+    var fi: int = text.indexOf("f")
+    if fi < 0
+        return text
+    var d: str = text.substring(0, fi)
+    if d.endsWith("_")
+        d = d.substring(0, d.len - 1)
+    return d
+
+# The Zig spelling of a Zebra integer type a suffix names ("int16" -> "i16", "uint" -> "u64").
+def suffixZigType(zname: str): str
+    if zname == "int"
+        return "i64"
+    if zname == "uint"
+        return "u64"
+    if zname == "float"
+        return "f64"
+    if zname == "float32"
+        return "f32"
+    if zname.startsWith("uint")
+        return "u" + zname.substring(4, zname.len)
+    return "i" + zname.substring(3, zname.len)
+
+# "" when a suffixed integer literal (negated when `neg`) fits the type its suffix gives
+# it; otherwise why not. Zig refuses `@as(u8, 300)` -- with a message about code the user
+# never wrote -- so the front end refuses it first, at the literal. The sign belongs to the
+# literal (`-128_i8` fits, emitted `@as(i8, -128)`). A 64-bit or wider value is not
+# bounded here past 2^40 (it may not fit an int to compute); only its sign is checked.
+def suffixLitFit(text: str, neg: bool, t: Type_): str
+    var w: int = numWidth(t)
+    var k: int = numKind(t)
+    var shown: str = text
+    if neg
+        shown = "-" + text
+    var hex: bool = text.startsWith("0x") or text.startsWith("0X")
+    var cv: ConstVal = constTextValue(intLitDigits(text), hex)
+    var why: str = shown + " does not fit in '" + numTypeName(t) + "' ("
+    var tail: str = "), the type its suffix gives it"
+    if w >= 64
+        var top: str = "18446744073709551615"
+        var bot: str = "0"
+        var mx: str = "18446744073709551615"
+        var mxh: str = "ffffffffffffffff"
+        if w > 64
+            top = "340282366920938463463374607431768211455"
+            mx = top
+            mxh = "ffffffffffffffffffffffffffffffff"
+        if k == 1
+            top = "9223372036854775807"
+            bot = "-9223372036854775808"
+            mx = top
+            mxh = "7fffffffffffffff"
+            if neg
+                mx = "9223372036854775808"
+                mxh = "8000000000000000"
+            if w > 64
+                top = "170141183460469231731687303715884105727"
+                bot = "-170141183460469231731687303715884105728"
+                mx = top
+                mxh = "7fffffffffffffffffffffffffffffff"
+                if neg
+                    mx = "170141183460469231731687303715884105728"
+                    mxh = "80000000000000000000000000000000"
+        var dg: str = intLitDigits(text)
+        var within: bool = false
+        if hex
+            within = digitsWithin(dg.substring(2, dg.len), mxh)
+        else
+            within = digitsWithin(dg, mx)
+        if (k == 2 and neg and (cv.huge or (cv.ok and cv.val > 0))) or not within
+            return why + bot + ".." + top + tail
+        return ""
+    if not cv.ok and not cv.huge
+        return ""
+    var bits: int = w
+    if k == 1
+        bits = w - 1
+    var hi: int = 1
+    var i: int = 0
+    while i < bits
+        hi = hi * 2
+        i = i + 1
+    var lo: int = 0
+    if k == 1
+        lo = 0 - hi
+    hi = hi - 1
+    var val: int = cv.val
+    if neg
+        val = 0 - val
+    if cv.huge or val < lo or val > hi
+        return why + lo.toString() + ".." + hi.toString() + tail
+    return ""
+
+# The type of a numeric literal (its suffix's, or int / float) and of a negated one;
+# unknown_ for anything else. For the places that type a declaration from its literal
+# initialiser without a context to report in -- inferExpr reports a bad suffix.
+def numLitType(e: Expr): Type_
+    var le: Expr = e
+    if e is Expr.unary as nu
+        if nu.op != UnaryOp.neg
+            return Type_.unknown_
+        le = nu.operand
+    if le is Expr.int_lit as ni
+        var isx: str = intLitSuffix(ni.text)
+        if isx == ""
+            return Type_.int_
+        if isx == "?"
+            return Type_.unknown_
+        return typeFromName(isx)
+    if le is Expr.float_lit as nf
+        var fsx: str = floatLitSuffix(nf.text)
+        if fsx == ""
+            return Type_.float_
+        if fsx == "?"
+            return Type_.unknown_
+        return typeFromName(fsx)
+    return Type_.unknown_
+
+# The type of an integer literal, negated when `neg`, refusing a suffix that names no
+# type and a value that does not fit the type its suffix names.
+def suffixedIntType(il: ExprIntLit, neg: bool, ctx: InferCtx): Type_
+    var sx: str = intLitSuffix(il.text)
+    if sx != "?"
+        var sepw: str = separatorWhy(il.text, intLitDigits(il.text), il.base == IntBase.hex)
+        if sepw != ""
+            ctx.addErr(ctx.file, il.span.line, il.span.col, sepw)
+            return Type_.unknown_
+    if sx == ""
+        return Type_.int_
+    if sx == "?"
+        ctx.addErr(ctx.file, il.span.line, il.span.col, suffixUnknownMsg(il.text))
+        return Type_.unknown_
+    var st: Type_ = typeFromName(sx)
+    var why: str = suffixLitFit(il.text, neg, st)
+    if why != ""
+        ctx.addErr(ctx.file, il.span.line, il.span.col, why)
+    return st
+
+# The Zig type a declaration takes from a numeric literal initialiser (or a negated one):
+# i64 / f64, or the suffix's type. `var x = 5_u8` was emitted `var x: i64 = @as(u8, 5)`,
+# so the variable silently became an i64. "" when `e` is not a numeric literal.
+def numLitZig(e: Expr): str
+    var le: Expr = e
+    if e is Expr.unary as nu
+        le = nu.operand
+    if le is Expr.int_lit as ni
+        var isx: str = intLitSuffix(ni.text)
+        if isx == "" or isx == "?"
+            return "i64"
+        return suffixZigType(isx)
+    if le is Expr.float_lit as nf
+        var fsx: str = floatLitSuffix(nf.text)
+        if fsx == "" or fsx == "?"
+            return "f64"
+        return suffixZigType(fsx)
+    return ""
+
+# "" when `val` fits the narrow integer type `t` (or `t` is 64 bits or wider, or not an
+# integer); otherwise the type and its range, "'byte' (0..255)".
+def narrowRangeWhy(val: int, t: Type_): str
+    var w: int = numWidth(t)
+    var k: int = numKind(t)
+    if w >= 64 or (k != 1 and k != 2)
+        return ""
+    var bits: int = w
+    if k == 1
+        bits = w - 1
+    var hi: int = 1
+    var i: int = 0
+    while i < bits
+        hi = hi * 2
+        i = i + 1
+    var lo: int = 0
+    if k == 1
+        lo = 0 - hi
+    hi = hi - 1
+    if val < lo or val > hi
+        return "'" + numTypeName(t) + "' (" + lo.toString() + ".." + hi.toString() + ")"
+    return ""
+
+def exprHasSuffixedLit(e: Expr): bool
+    if e is Expr.int_lit as hl
+        return intLitSuffix(hl.text) != ""
+    if e is Expr.unary as hu
+        return exprHasSuffixedLit(hu.operand)
+    if e is Expr.binary as hb
+        return exprHasSuffixedLit(hb.left) or exprHasSuffixedLit(hb.right)
+    return false
+
+# A constant expression over a SUFFIXED literal is computed by Zig at compile time, in its
+# type: `200_u8 + 100_u8` was "overflow of integer type 'u8' with value '300'" from inside
+# zig. Refused here, by value, at the expression. Over plain literals Zig computes in
+# comptime_int, unbounded, so only an expression holding a suffix is checked; each binary
+# node is checked as it is typed, so an intermediate that overflows is caught too.
+def suffixedConstFitCheck(b: ExprBinary, t: Type_, ctx: InferCtx)
+    if not exprHasSuffixedLit(b.left) and not exprHasSuffixedLit(b.right)
+        return
+    var cv: ConstVal = constBinValue(b)
+    if not cv.ok
+        return
+    var why: str = narrowRangeWhy(cv.val, t)
+    if why != ""
+        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col),
+                   cv.val.toString() + " (the value of this constant expression) does not fit in " + why + ", the type of its operands -- Zig computes it at compile time")
+
+# A digit separator must sit between two digits: `5_`, `1__000` and `1.5_` are Zig errors
+# about code the user never wrote. "" when the digits are fine.
+def separatorWhy(text: str, digits: str, hex: bool): str
+    var d: str = digits
+    if hex
+        d = digits.substring(2, digits.len)
+    var i: int = 0
+    while i < d.len
+        if d.substring(i, i + 1) == "_"
+            var okl: bool = i > 0 and litDigitValue(d.substring(i - 1, i), hex) >= 0
+            var okr: bool = i + 1 < d.len and litDigitValue(d.substring(i + 1, i + 2), hex) >= 0
+            if not okl or not okr
+                return "'" + text + "': a digit separator `_` must sit between two digits"
+        i = i + 1
+    return ""
+
+# Whether the digits `d` (separators allowed) are at most `max`, compared as numbers in
+# the same base without computing them -- for the 64- and 128-bit bounds an int cannot hold.
+def digitsWithin(d0: str, max: str): bool
+    var d: str = d0.replace("_", "").lower()
+    while d.len > 1 and d.startsWith("0")
+        d = d.substring(1, d.len)
+    if d.len != max.len
+        return d.len < max.len
+    var i: int = 0
+    while i < d.len
+        var dc: str = d.substring(i, i + 1)
+        var mc: str = max.substring(i, i + 1)
+        if dc != mc
+            return litDigitValue(dc, true) < litDigitValue(mc, true)
+        i = i + 1
+    return true
+
+def suffixUnknownMsg(text: str): str
+    if text.startsWith("0x") or text.startsWith("0X")
+        return "'" + text + "' has no type: a hex suffix is _u alone or with 8, 16, 32, 64 or 128 bits, or a bare size for the signed type (`0xFF_u8`, `0xFF_32`)"
+    return "'" + text + "' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits (`300_i16`, `5_u8`, `7u`)"
 
 # "" when the constant `e` (a literal, a negated one, or a constant expression over them --
 # BUG-675) fits in `t`; otherwise why not, naming the value. Only the sized types narrower
@@ -3699,10 +4017,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         on Expr.zig_lit as zl
             checkZigLitTypeRefs(zl, ctx)
             return Type_.unresolved
-        on Expr.int_lit as _
-            return Type_.int_
-        on Expr.float_lit as _
-            return Type_.float_
+        on Expr.int_lit as il_sx
+            return suffixedIntType(il_sx, false, ctx)
+        on Expr.float_lit as fl_sx
+            var fsx: str = floatLitSuffix(fl_sx.text)
+            var fsepw: str = separatorWhy(fl_sx.text, floatLitDigits(fl_sx.text).replace(".", "0").replace("e", "0").replace("E", "0").replace("+", "0").replace("-", "0"), false)
+            if fsepw != ""
+                ctx.addErr(ctx.file, fl_sx.span.line, fl_sx.span.col, fsepw)
+                return Type_.unknown_
+            if fsx == ""
+                return Type_.float_
+            if fsx == "?"
+                ctx.addErr(ctx.file, fl_sx.span.line, fl_sx.span.col,
+                           "'" + fl_sx.text + "' has no type: a float suffix is _f32 or _f64 (`1.5_f32`)")
+                return Type_.unknown_
+            return typeFromName(fsx)
         on Expr.bool_lit as _
             return Type_.bool_
         on Expr.char_lit as _
@@ -5071,6 +5400,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     literalOperandFitCheck(lt, rt, b, ctx)           # BUG-672
                     var nj: Type_ = numericJoin(lt, rt, isNumLit(b.left), isNumLit(b.right))
                     if not (nj is Type_.unknown_)
+                        suffixedConstFitCheck(b, nj, ctx)
                         return nj
             branch b.op
                 on BinaryOp.add
@@ -5222,6 +5552,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         #   not_     always bool_
         #   bit_not  operand type, preserved
         on Expr.unary as eun
+            var un_opd: Expr = eun.operand
+            if eun.op == UnaryOp.neg
+                if un_opd is Expr.int_lit as un_il
+                    if intLitSuffix(un_il.text) != ""
+                        return suffixedIntType(un_il, true, ctx)
             var un_t: Type_ = inferExpr(eun.operand, ctx)
             var un_ln: int = exprSpanLine(eun.operand)
             var un_cl: int = exprSpanCol(eun.operand)

@@ -20,7 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
-use TypeChecker exposing namespaceMembers
+use TypeChecker exposing namespaceMembers, intLitSuffix, floatLitSuffix
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
@@ -3058,8 +3058,12 @@ class VGen
     def exprStr(e: Expr): str
         branch e
             on Expr.int_lit as il
+                if intLitSuffix(il.text) != ""
+                    .refuse("a suffixed literal `" + il.text + "` (the V route maps no literal suffix)", il.span)
                 return il.text
             on Expr.float_lit as fl
+                if floatLitSuffix(fl.text) != ""
+                    .refuse("a suffixed literal `" + fl.text + "` (the V route maps no literal suffix)", fl.span)
                 return fl.text
             on Expr.bool_lit as bl
                 if bl.value

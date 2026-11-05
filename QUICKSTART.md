@@ -347,8 +347,8 @@ def main()
 
 Optionals: `T?` → `?T` in Zig.  `nil` → `null`.
 
-Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
-`@as(fNN, val)` directly.
+Float suffix literals: `1.5_f32` is a `float32`, `2.5_f64` a `float` (`0.5f32` and `3.0f64`
+without the `_`); integer suffixes are `300_i16`, `5_u8`, `7u` -- §3.1b2.
 
 **Mixed numeric arithmetic takes the wider type** (`+ - * / %`, `& | ^` on integers, and comparisons):
 
@@ -432,12 +432,27 @@ def main()
     print(golden)                            # 11400714819323198485
 ```
 
-Suffixes set the literal's type: `_u` is `uint`, `_u32` is `uint32`, and a bare size
-(`_8 _16 _32 _64`) is the signed form. `0xFF_32` is 255 as a 32-bit int.
+### §3.1b2 Literal suffixes
 
-> **The suffix types the LITERAL, not the variable.** `var b = 0xFF_u` still infers `b` as
-> `int`, which is fine until the value exceeds i64 — so for large constants, annotate the
-> variable (`var golden: uint = …`) rather than relying on `_u`.
+A suffix gives a literal its type, and the type is real: `var b = 5_u8` is a byte, so
+`b +% 255_u8` wraps at 255 and `b` can be passed where a byte is expected.
+
+| literal | type | note |
+|---|---|---|
+| `300_i16`, `300i16` | `int16` | decimal: `_i` / `_u` with 8, 16, 32, 64 or 128 bits; the `_` is optional |
+| `7u`, `7_u`, `7_i` | `uint`, `uint`, `int` | no width: the 64-bit type |
+| `1_000_u32` | `uint32` | separators before a suffix are fine |
+| `0xFF_u8`, `0xFF_u` | `byte`, `uint` | hex: `_u` as for decimal |
+| `0xFF_32` | `int32` | hex: a bare size is the SIGNED type |
+| `300_16` | `int`, value 30016 | decimal: a bare `_16` is a digit separator, not a size |
+| `1.5_f32`, `0.5f32`, `2.5_f64` | `float32`, `float32`, `float` | floats |
+
+The literal must fit its type -- `300_u8`, `128_i8` and `-5_u8` are refused at the literal,
+naming the range; `-128_i8` is int8's minimum and is fine (the sign belongs to the literal).
+A width with no Zebra type (`5_i7`, `5_uint8`, `1.5_f16`) is refused by name. A suffixed
+literal does NOT adapt to the other operand the way a plain one does (`b + 3` is a byte for a
+byte `b`): it joins like a variable of its type, so `b + 5_i8` is an `int16`, as `byte`
+with `int8` always is.
 
 ### §3.1b′ Float literals
 

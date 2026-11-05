@@ -1,0 +1,10 @@
+# Literal suffixes (2026-11-05): what Zig would refuse inside generated code, refused here.
+def main()
+    print(250_u8 + 6)
+    print(-9223372036854775809_i64)
+    print(0x10000000000000000_u)
+    print(1.5_)
+    print(100_i8 * 2_i8)
+    print((100_i8 + 100_i8) - 100_i8)
+    print(5_)
+    print(99999999999999999999_i64)

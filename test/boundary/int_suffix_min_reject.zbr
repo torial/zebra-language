@@ -1,0 +1,7 @@
+# @boundary rejects 128_i8 does not fit in 'int8' (-128..127), the type its suffix gives it
+#
+# The sign belongs to the literal: `-128_i8` is int8's minimum and fits (int_suffix_probe
+# prints it), while `128_i8` alone does not. Written before the feature was built.
+def main()
+    var e = 128_i8
+    print(e)
