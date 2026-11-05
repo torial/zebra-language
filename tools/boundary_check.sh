@@ -179,7 +179,7 @@ for zbr in $(bash "$SCRIPT_DIR/corpus_ls.sh" --abs "test/boundary"); do
             red "$base (expected the compiler to REJECT this, but it built and ran)"
             continue
         fi
-        if grep -qF "$arg" "$OUT/both.txt"; then
+        if grep -qF -- "$arg" "$OUT/both.txt"; then
             green "$base (rejected: $arg)"
         else
             red "$base (rejected, but not with the intended diagnostic: $arg)"
@@ -191,7 +191,7 @@ for zbr in $(bash "$SCRIPT_DIR/corpus_ls.sh" --abs "test/boundary"); do
             red "$base (expected a runtime failure, but it exited 0)"
             continue
         fi
-        if grep -qF "$arg" "$OUT/both.txt"; then
+        if grep -qF -- "$arg" "$OUT/both.txt"; then
             green "$base (panicked: $arg)"
         else
             red "$base (failed, but not with the intended message: $arg)"
@@ -206,7 +206,7 @@ for zbr in $(bash "$SCRIPT_DIR/corpus_ls.sh" --abs "test/boundary"); do
             sed 's/^/        /' "$OUT/both.txt" | head -20 >&2
             continue
         fi
-        if grep -qF "$arg" "$OUT/both.txt"; then
+        if grep -qF -- "$arg" "$OUT/both.txt"; then
             green "$base (warned: $arg)"
         else
             red "$base (compiled, but the intended warning is MISSING: $arg)"
