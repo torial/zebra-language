@@ -2211,7 +2211,7 @@ pub fn _zbr_fn_emitUsage(to_stdout: bool) void {
 // zbr:selfhost/main.zbr:1290
     _zbr_fn_usageLine("  zebra --allow-inference-guess <f.zbr>    one-release migration aid: guess a type that cannot be inferred (warns) instead of refusing", to_stdout);
 // zbr:selfhost/main.zbr:1291
-    _zbr_fn_usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout);
+    _zbr_fn_usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: libui_ng (tui is unavailable on Zig 0.17)", to_stdout);
 // zbr:selfhost/main.zbr:1292
     _zbr_fn_usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build and print its directory (kept and printed anyway on failure)", to_stdout);
 // zbr:selfhost/main.zbr:1293
