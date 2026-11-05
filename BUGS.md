@@ -75,17 +75,33 @@ whole-run census, and the only evidence was that the unseen-free count came out 
 a late install would make it large. Nothing withheld fails: the runtime knows the call
 changed nothing and the caller cannot tell.
 
-**Fix shape:** a redundant install says so on stderr, once, naming who installed first
-(the entry prologue) and that counts run from then -- keeping the `void` signature, since
-a Zig host calling it as a statement would break on a returned value (Fable confirmed
-this shape, 2026-11-04). A `_zbr_cens_reset()` that zeroes the counts so a late window is
-real was offered and DECLINED: the engine's two-run subtraction is the instrument, and it
-needs nothing from the runtime. The engine works around the silence today (`NO WINDOW` printed, and the window taken as the
-difference of two runs' JSONs, `tools/census_kept.py --baseline`).
+**Fix shape (joint, Opus + Fable in writing, 2026-11-04 evening; supersedes the note-only
+shape agreed earlier that day, which left `--census-at` with no window):**
+1. `zebra --census=host`: the emitted entry prologue does NOT install; the host calls
+   `_zbr_cens_install()` when its window should start. Plain `--census` is unchanged. The
+   intent is in the BUILD -- an environment variable read at start-up (`ZEBRA_CENSUS_DEFER`
+   was proposed) was declined as ambient state: a shell that happens to set it gets a binary
+   that does not count, and nothing at the call site says why. Fable has no case for one
+   binary choosing at run time.
+2. A redundant install says so on stderr, once, naming who installed first (the entry
+   prologue) and that counts run from then -- keeping the `void` signature, since a Zig host
+   calling it as a statement would break on a returned value.
+3. A `--census=host` build that reaches exit with no install says so on stderr ("built for a
+   host install, never installed") and writes no zebra-census.json, so no report never reads
+   as an empty one.
+A `_zbr_cens_reset()` that zeroes the counts was offered and DECLINED. The engine works around
+the silence today (`NO WINDOW` printed, and the window taken as the difference of two runs'
+JSONs, `tools/census_kept.py --baseline`); when this lands its census regen passes
+`--census=host`, the host installs at frame 0 or at `--census-at`'s frame, and `--baseline`
+stays an option rather than the method. A new CLI form: `docs/SURFACE.md` (surface-freeze),
+`cli_check`, CHANGELOG and QUICKSTART move with it.
 
-**Control when fixing:** a census_check leg that calls `_zbr_cens_install()` from a
-`zig"..."` line after the prologue must see the note on stderr and unchanged totals; a
-program that never calls it again must print no such note.
+**Control when fixing:** census_check legs -- (a) a `--census=host` probe that installs from a
+`zig"..."` line after N labelled allocations must report exactly the allocations made after
+the install (derived from the probe's labels, not from the runtime); (b) a plain `--census`
+program that calls `_zbr_cens_install()` again must see the note on stderr and unchanged
+totals, and one that never calls it again must print no note; (c) a `--census=host` program
+that never installs must print the never-installed note and leave no zebra-census.json.
 
 ---
 
