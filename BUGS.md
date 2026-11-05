@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-676. Next new bug: BUG-677.**
+**Last bug number generated: BUG-677. Next new bug: BUG-678.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,31 @@
 
 ---
 
+### BUG-677: a second `_zbr_cens_install()` does nothing and says nothing, so a host's late census install is silently a whole-run census
+
+**Found 2026-11-04 by Fable**, reading the first kept-column run (cbfe879). A program
+emitted with `--census` installs the census in its own entry prologue. The GameEngine host
+calls that `main` before its loop, and its `--census-at 120` then calls
+`_zbr_cens_install()` again, which returns at `if (_zbr_cens_on) return;` with no word.
+Every "steady state" census the engine took (2026-11-01, 11-03, 11-04) was really a
+whole-run census, and the only evidence was that the unseen-free count came out small where
+a late install would make it large. Nothing withheld fails: the runtime knows the call
+changed nothing and the caller cannot tell.
+
+**Fix shape:** a redundant install says so on stderr, once, naming who installed first
+(the entry prologue) and that counts run from then -- keeping the `void` signature, since
+a Zig host calling it as a statement would break on a returned value (Fable confirmed
+this shape, 2026-11-04). A `_zbr_cens_reset()` that zeroes the counts so a late window is
+real was offered and DECLINED: the engine's two-run subtraction is the instrument, and it
+needs nothing from the runtime. The engine works around the silence today (`NO WINDOW` printed, and the window taken as the
+difference of two runs' JSONs, `tools/census_kept.py --baseline`).
+
+**Control when fixing:** a census_check leg that calls `_zbr_cens_install()` from a
+`zig"..."` line after the prologue must see the note on stderr and unchanged totals; a
+program that never calls it again must print no such note.
+
+---
+
 ### BUG-675: a constant expression or a `1_000` literal beside a narrow operand still reaches zig
 
 **Found 2026-11-03**, the residual of BUG-672. `litFitsType` reads only a bare (or negated)
@@ -60,25 +85,6 @@ Front-end only; needs the same 3-repo `-c` sweep as BUG-672 before landing.
 
 **Control when fixing:** `k + 100 * 3` and `k + 1_000` refused at the expression naming the
 range; `k + 3 * 4`, `k + 1_0` and `5_u8 + k` still pass.
-
----
-
-### BUG-674: `& | ^` on two integer types of different width are typed as the LEFT one, while zig peers them to the wider
-
-**Found 2026-11-03** while fixing BUG-672/673. `var b: byte`, `var n: int`, then
-`var c: byte = b & n`: `zebra -c` exits 0 and the build fails with `expected type 'u8',
-found 'i64'`. `bitwiseResultType` (TypeChecker.zbr) returns the left operand's type
-whatever the right one is, so the checker calls `b & n` a byte; zig resolves the peer types
-to `i64`. The mirror case, `var m: int = b | n`, compiles because the slot is wide enough
-either way. Shifts are not this bug: their result IS the left operand's type in zig too.
-
-**Fix shape:** type `& | ^` by the same join `+` uses (numericJoin, with mixedSignRefusal),
-and let BUG-673's narrowing arm see them. Like BUG-673 it can refuse code that builds today
-only because zig folded two never-mutated locals, so it needs the same `-c` sweep over this
-repo, zebra-ide and the GameEngine first.
-
-**Control when fixing:** `var c: byte = b & n` refused at its line naming `.toByte()`;
-`var c: byte = b & 0x0F` (a literal adapts) and `var m: int = b | n` still pass.
 
 ---
 

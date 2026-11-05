@@ -16095,6 +16095,16 @@ struct Generator
         # BUG-445: operands of two different numeric types -- float with int, float32
         # with float, signed with a narrower unsigned -- are converted to the joined type
         # (numericJoin) before the operator. `/` is handled below with the same target.
+        # `& | ^` too (BUG-674): zig refuses `u8 & i8` outright and peers `u8 & i64` to i64.
+        if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
+            var bnt: Type_ = mixedNumericTarget(b.left, b.right)
+            if not (bnt is Type_.unknown_)
+                w.emit("(")
+                emitAsNum(b.left, bnt)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                emitAsNum(b.right, bnt)
+                w.emit(")")
+                return
         if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.mod or b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
             var mnt: Type_ = mixedNumericTarget(b.left, b.right)
             if not (mnt is Type_.unknown_)

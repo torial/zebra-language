@@ -6,6 +6,47 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-674: `& | ^` on two integer types of different width are typed as the LEFT one, while zig peers them to the wider -- FIXED 2026-11-04
+
+**Fixed 2026-11-04.** `& | ^` now join their operand types exactly as `+` does
+(`bitwiseResultType`, TypeChecker.zbr: `numericJoin`, with `mixedSignRefusal` refusing a
+`uint` beside an `int` in the same words), and BUG-673's narrowing arm counts them
+(`isJoinedArithOp`). So `var c: byte = b & n` is refused at its line naming `.toByte()`,
+`var x = b ^ n` is an int, and `byte & int8` is an `int16`. Codegen converts both operands
+to the join (`mixedNumericTarget` / `emitAsNum` in `genBinary`, as for `+`): zig refuses
+`u8 & i8` outright, so the checker's type alone would have been a lie. A literal on either
+side adapts to the other operand, and `isNumLit` now counts `& | ^` over constants
+(`b & (0xF0 | 0x0F)` stays a byte). NOT shifts: `1 << 3` lowers to the runtime's
+`_zbr_shl`, an i64 at run time, so `var d: byte = b & (1 << 3)` is refused naming
+`.toByte()` -- it passed `-c` and failed inside zig before.
+
+Measured before landing: `-c` over 3,177 files (this repo 1,283, zebra-ide 29, the
+GameEngine 1,865), before and after: 5,496 error lines each, no line in either direction.
+Positive control for the sweep pipeline: the same per-file command over the fail fixture
+gives 0 lines before and 4 after. Fixtures: `test/bug674_bitwise_join_test.zbr` (every value
+printed beside arithmetic only the joined type can hold: `x + 1000`, `y - 300`) and
+`test/fail_fixtures/bug674_bitwise_join_fail.zbr` (byte slots, a `uint ^ int`, a shift).
+Red-checked with the pre-fix compiler: the positive fixture fails with "1000 does not fit in
+'byte'" (`b ^ n` typed a byte) and the fail fixture passes `-c`.
+
+
+**Found 2026-11-03** while fixing BUG-672/673. `var b: byte`, `var n: int`, then
+`var c: byte = b & n`: `zebra -c` exits 0 and the build fails with `expected type 'u8',
+found 'i64'`. `bitwiseResultType` (TypeChecker.zbr) returns the left operand's type
+whatever the right one is, so the checker calls `b & n` a byte; zig resolves the peer types
+to `i64`. The mirror case, `var m: int = b | n`, compiles because the slot is wide enough
+either way. Shifts are not this bug: their result IS the left operand's type in zig too.
+
+**Fix shape:** type `& | ^` by the same join `+` uses (numericJoin, with mixedSignRefusal),
+and let BUG-673's narrowing arm see them. Like BUG-673 it can refuse code that builds today
+only because zig folded two never-mutated locals, so it needs the same `-c` sweep over this
+repo, zebra-ide and the GameEngine first.
+
+**Control when fixing:** `var c: byte = b & n` refused at its line naming `.toByte()`;
+`var c: byte = b & 0x0F` (a literal adapts) and `var m: int = b | n` still pass.
+
+---
+
 ### BUG-676: a panic inside the census's lock hangs the program with nothing printed -- FIXED 2026-11-04
 
 **Found and fixed 2026-11-04** while red-checking the census kept column. `_zebra_panic` (the

@@ -49,6 +49,14 @@ confirmed via `tools/bootstrap_check.sh`.
   refused; all are refused now, naming `.toByte()` / `.toInt16()` / .... A comparison
   (`k < 300`) still compiles; Zig answers it correctly. A program that built only because
   Zig folded two never-mutated locals at compile time is now refused too.
+- **`& | ^` on two different integer types join them as `+` does** (BUG-674). `b & n` with a
+  byte and an int is an int (it was typed a byte, and `var c: byte = b & n` failed inside Zig
+  with `expected type 'u8', found 'i64'`); `byte & int8` is an `int16`, both operands
+  converted (Zig refused it outright); `uint ^ int` is refused, naming the conversion. A
+  literal still adapts (`b & 0x0F` is a byte), as does `& | ^` over constants. A constant
+  shift does not: `b & (1 << 3)` is an int, so storing it into a byte now asks for
+  `.toByte()` where it used to fail inside Zig. No file in this repo, zebra-ide or the
+  GameEngine changed verdict.
 - **Wrapping and saturating arithmetic, with Zig's operators and spelling.** `a +% b`,
   `a -% b`, `a *% b` and `-%a` wrap around the operand type; `a +| b`, `a -| b`, `a *| b`
   and `a <<| n` clamp at its bounds; each has a compound form (`+%=` ... `<<|=`). Plain

@@ -350,7 +350,7 @@ Optionals: `T?` → `?T` in Zig.  `nil` → `null`.
 Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 `@as(fNN, val)` directly.
 
-**Mixed numeric arithmetic takes the wider type** (`+ - * / %` and comparisons):
+**Mixed numeric arithmetic takes the wider type** (`+ - * / %`, `& | ^` on integers, and comparisons):
 
 | operands | result |
 |---|---|
@@ -483,6 +483,14 @@ does: arithmetic on `int`, logical on `uint`.
 
 `&` `|` `^` `~` `<<` `>>` operate on any integer type. **The result keeps the operand's type**, which
 is the rule worth remembering — it is why Zebra needs no separate unsigned-shift operator.
+
+When `&` `|` `^` combine two DIFFERENT integer types, they join exactly as `+` does (the
+*Mixed numeric arithmetic* table in §3): the
+wider type wins, a narrow unsigned beside a signed type goes to a signed type that holds both
+(`byte & int8` is an `int16`), and a `uint` beside an `int` is refused. So `b & n` with a byte
+and an int is an int, and does not narrow back into a byte on its own (`(b & n).toByte()`). A
+literal adapts to the other operand, so `b & 0x0F` stays a byte. A shift's result is always its
+LEFT operand's type.
 
 ```zebra
 def main()

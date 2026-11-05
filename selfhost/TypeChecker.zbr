@@ -2821,6 +2821,10 @@ def isNumLit(e: Expr): bool
     if e is Expr.binary as b
         if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
             return isNumLit(b.left) and isNumLit(b.right)
+        # BUG-674: `& | ^` over constants fold too (`b & (0xF0 | 0x0F)` adapts like a
+        # literal). NOT shifts: `1 << 3` lowers to the runtime's `_zbr_shl`, an i64 at run time.
+        if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
+            return isNumLit(b.left) and isNumLit(b.right)
     return false
 
 # BUG-218 support: binary expressions are built with a ZERO span — AstBuilder uses
@@ -3103,6 +3107,20 @@ def bitwiseResultType(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
     # amount is not coerced to the operand type (its range is 0..width-1), so not here.
     if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
         literalOperandFitCheck(lt, rt, b, ctx)
+        # BUG-674: two integer types of different width or sign join exactly as `+` joins
+        # them (numericJoin), and codegen converts both operands to the join, as for `+`.
+        # The left type alone made `var c: byte = b & n` pass -c and fail in zig, which
+        # peers u8 with i64 to i64 (and refuses u8 with i8 outright).
+        if isIntegerType(lt) and isIntegerType(rt) and not isNumLit(b.left) and not isNumLit(b.right) and numTypeName(lt) != numTypeName(rt)
+            var bmsr: str = mixedSignRefusal(lt, rt)
+            if bmsr != ""
+                ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col), bmsr)
+                return Type_.unknown_       # refused: no type, so no second error at the slot
+            var bj: Type_ = numericJoin(lt, rt, false, false)
+            if not (bj is Type_.unknown_)
+                return bj
+        if isNumLit(b.left) and isIntegerType(rt)
+            return rt                       # a literal adapts to the other operand, as for `+`
     if isIntegerType(lt)
         return lt
     return rt
@@ -3147,10 +3165,11 @@ def plainOpText(op: BinaryOp): str
         return "^"
     return "?"
 
-# BUG-673: the arithmetic operators whose result is the JOIN of their operand types
-# (numericJoin), so `b + n` with a byte and an int is an int.
+# BUG-673: the operators whose result is the JOIN of their operand types (numericJoin),
+# so `b + n` with a byte and an int is an int -- and `b & n` too (BUG-674). Shifts are not:
+# their result is the left operand's type.
 def isJoinedArithOp(op: BinaryOp): bool
-    return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.mod
+    return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.mod or op == BinaryOp.bit_and or op == BinaryOp.bit_or or op == BinaryOp.bit_xor
 
 # BUG-672: the compound assignments whose literal right side takes the target's type.
 def compoundCoercesLiteral(op: AssignOp): bool
@@ -5071,7 +5090,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.bool_
                 on BinaryOp.in_
                     return Type_.bool_
-                # Bitwise PRESERVES the operand type -- the rule the bootstrap has had at
+                # Bitwise PRESERVES the operand type when both operands share it (two
+                # different integer types join as `+` does, BUG-674) -- the rule the bootstrap had at
                 # src/TypeChecker.zig:4306 all along. That is what makes `>>` follow the
                 # type (arithmetic on int, logical on uint) instead of needing a `>>>`
                 # operator the way Java does, and it is why an unsigned hash stays unsigned.

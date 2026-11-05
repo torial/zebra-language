@@ -1,0 +1,25 @@
+# BUG-674: `& | ^` on two integer types join exactly as `+` does (numericJoin), and both
+# operands convert to the join. Each result below is printed beside arithmetic that only
+# the JOINED type can hold, so a result typed as the left operand would trap or misprint.
+def f(b: byte, n: int, s: int8): int
+    var m: int = b | n          # 200 | 5 = 205
+    var x = b ^ n               # an int, not a byte: x + 1000 must not overflow
+    var y = b & s               # byte with int8 joins to int16: 200 & -9 = 192
+    var c: byte = b & 0x0F      # a literal adapts to the byte
+    var d: int = b & (1 << 3)   # a shift is a runtime int: byte & int joins to int
+    var k: byte = b & (0xF0 | 0x0F)   # bitwise over constants adapts like a literal
+    var e: byte = 0xF0 & b      # a literal on the left, too
+    var g: byte = b & b         # one type: no join
+    print(m)
+    print(x + 1000)
+    print(y)
+    print(y - 300)
+    print(c)
+    print(d)
+    print(e)
+    print(g)
+    print(k)
+    return m
+def main()
+    print(f(200, 5, -9))
+    print("bug674: OK")

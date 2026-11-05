@@ -957,6 +957,12 @@ smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow
 smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:10:19: error: type mismatch: expected byte, found int"
 smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:11:13: error: type mismatch: expected byte, got int"
 smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:14:12: error: type mismatch: expected byte, got int"
+smoke_run test/bug674_bitwise_join_test.zbr "bug674: OK"
+smoke_run test/bug674_bitwise_join_test.zbr "-108"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:4:19: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:5:19: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:6:11: error: cannot mix 'uint' and 'int' in arithmetic"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:7:19: error: type mismatch: expected byte, found int"
 # The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
 # (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
 # a struct only deps get); --no-runtime-module gives each module its own accessor state
