@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-678. Next new bug: BUG-679.**
+**Last bug number generated: BUG-680. Next new bug: BUG-681.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,24 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-680: a field or method a runtime object type does not have passes `-c` and fails inside zig
+
+**Found 2026-11-05** validating the book against rc9: `DateTime.now().epochMs` (the book's
+09_multiple_mixins; the accessor is `.toEpoch()`) passes `zebra -c` and fails in zig with
+`no field named 'epochMs' in struct 'zebra_rt._DateTime'`, at the user's line. The front end
+checks the members of the runtime types that have a `Type_` variant (BUG-369's recipe, 16
+types) and not the rest -- DateTime, File handles, HttpResponse, the GUI widget structs --
+which docs/SURFACE.md already lists under CANNOT SEE. Predates rc8; not a regression.
+
+**Fix shape:** the BUG-369 recipe per type -- a `Type_` variant (or a named-type table) and a
+`*MethodKnown` predicate derived from the type's dispatch arms, refusing an unknown member by
+name in the front end.
+
+**Control when fixing:** `DateTime.now().epochMs` refused at -c naming `toEpoch()`;
+`DateTime.now().toEpoch()` and the computed fields (`dt.year` ...) still compile.
 
 ---
 

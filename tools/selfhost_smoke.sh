@@ -967,6 +967,9 @@ smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_jo
 # BUG-678: `n + 100 % 7` has a type. The test half must keep compiling and print these values.
 smoke_run test/bug675_const_expr_fit_test.zbr "bug675: OK"
 smoke_run test/bug675_const_expr_fit_test.zbr "1758"
+# BUG-679: a class's own cue init wins over a mixin's (red on 26d7838, the rc9 release commit)
+smoke_run test/bug679_mixin_cue_init_test.zbr "bug679: OK"
+smoke_run test/bug679_mixin_cue_init_test.zbr "Hello body 0"
 smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:3:22: error: 300 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+'"
 smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:4:22: error: 1_000 does not fit in 'byte' (0..255), the type of the other operand of '+'"
 smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:5:23: error: 400 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+|'"

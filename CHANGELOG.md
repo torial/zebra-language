@@ -186,6 +186,11 @@ run `zebra -c` over your code first.
 
 ### Fixes
 
+- **A class's own `cue init` is no longer replaced by a mixin's** (BUG-679). A class that
+  `adds` a mixin declaring `cue init()` had its constructor call refused as "too many
+  arguments ... expected at most 0" -- a regression since BUG-659 made constructors take the
+  call arity rule; rc8 compiled such programs. Found by validating the book before tagging.
+
 - **A refused compile leaves no `.zig` in `--output-dir` (BUG-671).** A program refused
   after emission (a throws call without `?`, a type that could not be inferred) or by a
   parse error in a later dependency left every module it had written in the directory,

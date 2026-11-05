@@ -1,0 +1,24 @@
+# BUG-679: a class's own `cue init` wins over the one a mixin it `adds` declares. The
+# mixin's members are merged after the class's, and its `cue init()` replaced the class's
+# parameter list, so BUG-659's arity check refused `Post("Hello", "body")` as "expected at
+# most 0" (the book's 09_multiple_mixins, which rc7 and rc8 compiled).
+mixin Tagged
+    var tags: List(str)
+
+    cue init()
+        this.tags = List(str)()
+
+class Post adds Tagged
+    var title: str = ""
+    var body: str = ""
+    var tags: List(str)
+
+    cue init(t: str, b: str)
+        this.title = t
+        this.body = b
+        this.tags = List(str)()
+
+def main()
+    var p = Post("Hello", "body")
+    print("${p.title} ${p.body} ${p.tags.count()}")
+    print("bug679: OK")

@@ -6,6 +6,26 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-679: a mixin's `cue init` replaced the class's own, so the class's constructor call was refused -- FIXED 2026-11-05
+
+**Found and fixed 2026-11-05**, by validating the book against the rc9 release commit
+(26d7838) before tagging it: the book's `09_multiple_mixins` -- `class BlogPost adds
+Timestamped, Tagged` with its own `cue init(t: str, b: str)` and a mixin `Tagged` declaring
+`cue init()` -- was refused at -c, "too many arguments to 'BlogPost' (its cue init): expected
+at most 0, found 2". rc7 and rc8 compiled it, and ran the class's own init.
+
+**Cause:** `addClassMembers` (TypeChecker.zbr) kept the FIRST cue init's parameter COUNT
+but overwrote the parameter LIST on every `Decl.init`, and a mixin's members are merged in
+after the class's own (pass 2). The list sat unused until BUG-659 (7c4d803, 2026-10-28) made
+the constructor take the call arity rule from it -- that is when the regression appeared.
+**Fix:** the list and body are first-wins too, so the class's own cue init stands.
+
+`test/bug679_mixin_cue_init_test.zbr` (smoke_run): red on 26d7838 with the book's message,
+green fixed; prints `Hello body 0`. Which init runs is unchanged -- the class's, as on rc7
+(the same program prints identically under rc7's binary).
+
+---
+
 ### BUG-677: a second `_zbr_cens_install()` does nothing and says nothing, so a host's late census install is silently a whole-run census -- FIXED 2026-11-05
 
 **Fixed 2026-11-05** in the shape agreed with Fable (below). `zebra --census=host`

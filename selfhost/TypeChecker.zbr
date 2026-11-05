@@ -1126,9 +1126,14 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                             ct.addCtorParam(typeFromRef(p.type_!))
                         else
                             ct.addCtorParam(Type_.unknown_)
-                ct.setFnParamList("init", ini.params)
-                if ini.stmts as ini_body
-                    ct.setFnBody("init", ini_body)
+                # BUG-679: first wins for the param list and body too. A mixin's members
+                # are merged in AFTER the class's own (pass 2), so a mixin `cue init()`
+                # replaced the class's `cue init(t, b)` here, and BUG-659's arity check
+                # then refused `BlogPost("Hello", "body")` as "expected at most 0".
+                if ct.fnParamList("init") == nil
+                    ct.setFnParamList("init", ini.params)
+                    if ini.stmts as ini_body
+                        ct.setFnBody("init", ini_body)
             else
                 pass
 
