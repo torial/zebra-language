@@ -2679,6 +2679,20 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-11-05 (the rc9 release, tagged `v0.9.0-rc9_zig0.17` on `dc39c0c`): 59/60 in
+ONE invocation at JOBS=2, then `output_sweep` green standalone -- ASSEMBLED.** smoke 1031/1031,
+round-trip byte-identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `release-mode`, `gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`;
+re-run alone, `output_sweep` 466 identical (342 cache hits left by the killed run). The red was
+`output_sweep` KILLED at its 5400 s ceiling: the version bump moves every emitted runtime, so all
+three sweeps ran cold, on a host with 510k leaked kernel tokens and another session's jest suite
+at ~2.7 cores -- `full_sweep` took 4848 s against 813 s cold that morning. **The method note: validate
+the BOOK against a release commit before tagging it.** The first rc9 commit (26d7838) carried a
+regression no gate saw -- BUG-679, a mixin's `cue init` replacing the class's, from BUG-659 --
+and the book's 803 examples found it in one run; the tag moved to the fixed tree. And a 10-minute
+foreground wait that the harness moves to the background keeps looping: twenty such waiters were
+polling at once before `stuck_procs.sh` showed them. Bound every wait loop inside the tool limit.
+
 **DAILY tier 2026-10-29 (closing BUG-014/662 regex `1b10f49`, BUG-267/663 zig escapes `a549b29`,
 BUG-295 re-probe `e6cd7fd`): 58/59 in ONE invocation at JOBS=2 on `e6cd7fd`, then the 59th
 fixed and green in a FAST tier -- ASSEMBLED.** smoke 958/958, round-trip byte-identical,
