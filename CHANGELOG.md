@@ -29,6 +29,9 @@ confirmed via `tools/bootstrap_check.sh`.
   refused inside `allocate`, counted by `--census` (`sweepPending`, `sweepFreed`, `sweeps`,
   `sweepDuplicates` in the JSON totals). A missed alias is a use-after-free -- see QUICKSTART.
   Joint design with the GameEngine session (its F64 server soak: 69 such sites, none freed).
+  On `--target v` the calls map to no-ops (V's runtime is collected).
+- **BUG-681 (V backend):** a walk over a module list or a field switched to the new list when
+  the loop body reassigned it; the for header is now bound once, as on Zig.
 
 ---
 

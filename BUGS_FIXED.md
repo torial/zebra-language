@@ -6,6 +6,16 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-681: on the V backend, a walk over a module list or a field switched to the new list when the body reassigned it -- FIXED 2026-11-07
+
+**Found and fixed 2026-11-07** while mapping the free-at-sweep calls for the GameEngine's V
+rows: `for x in _xs` whose body calls a release that rebuilds `_xs` printed 40 on V and 45
+on Zig. **Cause:** CodeGenV emitted `for x in u_xs.items`, and V's C re-reads a global's (or
+`self.f`'s) `.items` on every iteration, so the walk continued over the NEW list; Zig
+evaluates the for header once. **Fix:** genForIn binds the iterable to a temporary unless
+it is a plain local. Pinned by `tools/v_check.sh`'s `sweep_v` row (module var and field,
+diffed against a fresh Zig run); red on the pre-fix emitter (40).
+
 ### BUG-679: a mixin's `cue init` replaced the class's own, so the class's constructor call was refused -- FIXED 2026-11-05
 
 **Found and fixed 2026-11-05**, by validating the book against the rc9 release commit

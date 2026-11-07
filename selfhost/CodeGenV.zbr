@@ -95,6 +95,25 @@ def lowerOf(ch: char): str
     return ch.toString()
 
 # V's reserved words a Zebra name may collide with
+# `_zbr_free_at_sweep(<ident>)` -> the ident, else "". A prefix match on the call, so a
+# renamed local does not reopen the refusal; anything but a plain identifier argument is
+# not this shape and falls through to the zig-literal refusal.
+def freeAtSweepArg(t: str): str
+    var pre: str = "_zbr_free_at_sweep("
+    if not t.startsWith(pre) or not t.endsWith(")")
+        return ""
+    var id: str = t[pre.len .. t.len - 1].trim()
+    if id == ""
+        return ""
+    var i: int = 0
+    while i < id.len
+        var c: char = id[i]
+        var ok: bool = (c >= c'a' and c <= c'z') or (c >= c'A' and c <= c'Z') or c == c'_' or (i > 0 and c >= c'0' and c <= c'9')
+        if not ok
+            return ""
+        i = i + 1
+    return id
+
 def vSafe(name: str): str
     var s = snakeCase(name)
     if s.startsWith("_")
@@ -2202,6 +2221,14 @@ class VGen
                 return true
         return false
 
+    # a plain identifier naming a local of this function (not a module var, not a field)
+    def isLocalIdent(e: Expr): bool
+        branch e
+            on Expr.ident as id
+                return .isLocalName(id.name)
+            else
+                return false
+
     def isLocalName(name: str): bool
         for n in .local_names
             if n == name
@@ -2466,6 +2493,17 @@ class VGen
     # temporary first (V: "cannot pass expression as mut"): `rows.at(0).add(7)`
     def genExprStmt(e: Expr)
         branch e
+            on Expr.zig_lit as zl
+                # free-at-sweep (2026-11-07, the GameEngine's release paths): V's runtime is
+                # collected, so there is nothing to free at a frame boundary. The queued local
+                # is acknowledged (it is otherwise unread on this backend: V's unused variable).
+                var fas: str = freeAtSweepArg(zl.text)
+                if fas != ""
+                    .line("_ = " + .localName(fas) + " // _zbr_free_at_sweep: V's collector frees it")
+                    return
+                if zl.text == "_zbr_sweep()"
+                    .line("// _zbr_sweep(): nothing queued under V's collector")
+                    return
             on Expr.call as c
                 branch c.callee
                     on Expr.member as m
@@ -3022,9 +3060,14 @@ class VGen
         if .vTypeOf(fi.iter) == "json2.Any"
             iter_s = "zjson_list(" + iter_s + ")"   # a Json array iterated
             .local_types.set(fi.vars.at(0), "json2.Any")
-        if not isNameExpr(fi.iter)
+        if not .isLocalIdent(fi.iter)
             # an expression iterated (a call, an unwrap, an orelse): bound first --
-            # V's C for `(expr or { ... }).items` in a for header did not compile
+            # V's C for `(expr or { ... }).items` in a for header did not compile.
+            # A MODULE VAR or a FIELD is bound too (BUG-681, 2026-11-07): V's C re-reads a
+            # global's (or `self.f`'s) `.items` on every iteration, so a body that reassigned
+            # the list (a release
+            # path rebuilding it) switched the walk to the NEW list mid-way -- 40 where Zig,
+            # which evaluates the header once, printed 45.
             .tmpN = .tmpN + 1
             var zi = "zit" + .tmpN.toString()
             .line(zi + " := " + iter_s)
@@ -3219,6 +3262,8 @@ class VGen
                     return "zsys_arch()"
                 if zl.text == "@as(i64, @intCast(std.os.windows.GetCurrentProcessId()))"
                     return "i64(os.getpid())"
+                if zl.text == "_zbr_sweep_pending()" or zl.text == "@as(i64, @intCast(_zbr_sweep_pending()))"
+                    return "i64(0)"   # free-at-sweep: nothing is ever queued under V's collector
                 .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
                 return "0"
             on Expr.opt_chain as oc

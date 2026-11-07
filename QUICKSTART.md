@@ -3337,6 +3337,9 @@ containers. `_zbr_sweep_pending()` counts what is queued, and a `--census` repor
 pending / freed / sweeps. Deliberately not a language method: the `zig"..."` call sites are a
 grep-able list of where a program relies on this contract. Under counted containers (the
 memory model's direction) the same call becomes a check that nothing else held the container.
+On `--target v` the three calls (`_zbr_free_at_sweep(<local>)`, `_zbr_sweep()`, and
+`_zbr_sweep_pending()` bare or as `@as(i64, @intCast(...))`) map to no-ops and `0`: V's
+runtime is collected.
 
 ### Recycling churny objects: `ObjectPool(T)`
 

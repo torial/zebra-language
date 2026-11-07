@@ -1,4 +1,5 @@
 #!/bin/bash
+# pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -131,6 +132,22 @@ grep -q 'string.tokenize (no mapping' "$OUT/rt_names_emit.txt" || missing="$miss
 if [ -n "$missing" ]; then echo "rt_names: FAILED -- not refused:$missing"; grep -E '^  |^    ' "$OUT/rt_names_emit.txt" | head -5 | cut -c1-160; fail=1
 elif ! grep -q 'nothing refused' "$OUT/rt_names_ok_emit.txt"; then echo "rt_names: FAILED -- the mapped control was refused (a false positive):"; grep -E '^    ' "$OUT/rt_names_ok_emit.txt" | head -3 | cut -c1-160; fail=1
 else echo "rt_names: ok -- the three unmapped names refused by name, the mapped control clean"; fi
+echo "── free-at-sweep on V (the GameEngine's release paths): the three runtime calls mapped, a list rebuilt mid-walk walked to the end (BUG-681), an unknown zig literal still refused ──"
+rows=$((rows + 1))
+# The walk reassigns the MODULE list it is walking (release(5) at x == 2): Zig evaluates the
+# for header once and sums the old list (45); V's C re-read the global's .items every
+# iteration and summed the new one (40) until the header was bound to a temporary.
+printf 'var _xs = List(int)()\n\ndef release(k: int)\n    var keep = List(int)()\n    for x in _xs\n        if x != k\n            keep.add(x)\n    var old = _xs\n    zig"_zbr_free_at_sweep(old)"\n    _xs = keep\n\nclass Holder\n    var ys: List(int) = List(int)()\n    def fill()\n        var i = 0\n        while i < 6\n            .ys.add(i)\n            i = i + 1\n    def walk(): int\n        var t = 0\n        for y in .ys\n            if y == 1\n                .ys = List(int)()\n            t = t + y\n        return t\n\ndef main()\n    var i = 0\n    while i < 10\n        _xs.add(i)\n        i = i + 1\n    var s = 0\n    for x in _xs\n        if x == 2\n            release(5)\n        s = s + x\n    zig"_zbr_sweep()"\n    var n: int = zig"@as(i64, @intCast(_zbr_sweep_pending()))"\n    var h = Holder()\n    h.fill()\n    print(s.toString() + " " + _xs.count().toString() + " " + n.toString() + " " + h.walk().toString())\n' > "$OUT/sweep_v.zbr"
+printf 'def main()\n    zig"_zbr_not_a_runtime_call()"\n' > "$OUT/sweep_v_bad.zbr"
+(cd "$OUT" && "$ZEBRA" sweep_v.zbr > "$OUT/sweep_v_zig_out.txt" 2> "$OUT/sweep_v_zig_err.txt")
+(cd "$OUT" && "$ZEBRA" --target v sweep_v.zbr > "$OUT/sweep_v_emit.txt" 2>&1)
+(cd "$OUT" && "$ZEBRA" --target v sweep_v_bad.zbr > "$OUT/sweep_v_bad_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/sweep_v.v" > "$OUT/sweep_v_v_out.txt" 2>&1)
+if ! grep -qx '45 9 0 15' "$OUT/sweep_v_zig_out.txt"; then echo "sweep_v: NO CONTROL -- the Zig run did not print '45 9 0 15': $(head -c 120 "$OUT/sweep_v_zig_out.txt" "$OUT/sweep_v_zig_err.txt" | tr '\n' ' ')"; fail=1
+elif grep -qE '^    ' "$OUT/sweep_v_emit.txt"; then echo "sweep_v: FAILED -- the V emit refused something:"; grep -E '^    ' "$OUT/sweep_v_emit.txt" | head -3 | cut -c1-160; fail=1
+elif ! diff -q "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" > /dev/null; then echo "sweep_v: DIFFERS (V vs Zig):"; diff "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" | head -4 | cut -c1-160; fail=1
+elif ! grep -q 'a zig literal (Zig-backend code; no V for it)' "$OUT/sweep_v_bad_emit.txt"; then echo "sweep_v: FAILED -- an unknown zig literal was not refused (the mapping is too wide)"; fail=1
+else echo "sweep_v: ok -- the free-at-sweep calls map, a rebuilt module list and field are walked to the end on both backends ($(cat "$OUT/sweep_v_zig_out.txt")), an unknown zig literal is still refused"; fi
 echo "── stdin polled without blocking (the debugger bridge's readStdinAvailable / stdinClosed): the same bytes and the same hang-up on both backends ──"
 rows=$((rows + 1))
 printf 'def main()\n    var got: str = ""\n    var spins = 0\n    while true\n        var a = sys.readStdinAvailable()\n        if a != ""\n            got = got + a\n        else if sys.stdinClosed()\n            break\n        else\n            spins = spins + 1\n            sys.sleep(5)\n            if spins > 400\n                print("gave up")\n                break\n    print("got [" + got + "] closed " + sys.stdinClosed().toString())\n' > "$OUT/poll_in.zbr"

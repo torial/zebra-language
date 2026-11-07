@@ -258,7 +258,9 @@ within their refusal baseline and `v -check` clean; a nil unwrap naming its plac
 polled without blocking; the V-built compiler answering the LSP; a runtime name
 `zebra_rt.v` does not define refused by name, with a mapped control that must stay clean;
 integer overflow (+ - * neg += / %) trapping on both backends with Zig's message, beside an
-in-range control diffed against the Zig run (BUG-667: V's operators wrap). It
+in-range control diffed against the Zig run (BUG-667: V's operators wrap); the free-at-sweep
+calls mapped and a module list / field rebuilt mid-walk walked to the end (BUG-681: V's C
+re-read a global's `.items` each iteration). It
 REFUSES (exit 2) when
 that V is not installed, and a Zig control that printed nothing is a failure, never a pass.
 Eleven to sixteen minutes on a loaded afternoon: twice standalone at 20 rows (V 0.5.2 and
