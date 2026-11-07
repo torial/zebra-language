@@ -1036,3 +1036,26 @@ exactly that. The shortest-round-trip rule stays for non-whole values (`0.1`, `2
 If adopted: one `_zbr_show` arm plus routing `printFmtSpec`'s two float arms through it
 (the patch used here, ~12 lines), the 7 baselines re-recorded, and a boundary probe
 written from the intent before the change lands.
+
+### Per-function `@setRuntimeSafety(true)` under `--release` -- cost MEASURED on the GameEngine (Fable, 2026-11-07)
+
+rc9 opens every emitted function with `@setRuntimeSafety(true)` (BUG-667/668: ReleaseFast
+otherwise turns overflow and a nil unwrap into undefined behaviour). The engine's rc9 regen added
+4,020 of them. Fable's A/B, one 60 s autoplay recording (3,550 frames) replayed under the old
+emission's ReleaseFast build and the new one's, `cputime.py`, shadows off so the CPU side stands
+alone, three interleaved pairs:
+
+- process CPU new/old **1.062, 1.118, 1.033** (min 1.04, median 1.10);
+- the **scripts** section (the emitted game code running its own loops) **0.97-0.99x**: no cost seen;
+- the cost sits in the HOST's **render 1.13-1.19x** and **gui 1.08-1.24x**, which call emitted
+  accessors (World.get, the GuiCmd sink) a thousand times a frame from Zig. ~0.3 ms a frame,
+  ~2% of the 60 fps budget; with shadows on the frame is GPU-bound and it disappears.
+
+**Decision (Opus + Fable, joint): no opt-out.** 4-10% CPU on a GPU-bound frame buys a trap in
+place of a wrong number. If one is ever needed, it belongs per-function or per-module on hot
+accessors a host calls, not as a global `--turbo` switch.
+
+**Method trap worth keeping:** on that machine's Intel GPU every OTHER process launch is slow
+whichever build it is, so an interleaved A/B that always starts with the same side read the depth
+pass 8.3 vs 3.1-4.2 ms and CPU 1.03-1.31x; reversed, 0.78-0.84x. Alternate which side goes first.
+Raw logs: GameEngine/.zig-cache/safety_ab, safety_ab2, safety_ab3.
