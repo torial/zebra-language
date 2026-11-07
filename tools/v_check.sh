@@ -47,6 +47,8 @@ compare() {
   (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$vfile" > "$OUT/${name}_v_out.txt" 2> "$OUT/${name}_v_err.txt"); local vrc=$?
   if [ ! -s "$ctl" ]; then echo "$name: NO CONTROL (the Zig run exited $zrc and printed nothing; nothing compared)"; grep -m2 "error" "$OUT/${name}_zig_err.txt" | cut -c1-160; fail=1; return; fi
   if [ "$vrc" != 0 ]; then echo "$name: V FAILED (exit $vrc)"; grep -E "error|panic" "$OUT/${name}_v_err.txt" | head -3 | cut -c1-160; fail=1; return; fi
+  # a program const named like a runtime local: V 0.5.2 warns and may miscompile silently (v_backend_poc.md item 22); the lane refuses it
+  if grep -q "duplicate of a const name" "$OUT/${name}_v_err.txt"; then echo "$name: CONST SHADOW (a runtime local shares a name with the program's const; item 22)"; grep "duplicate of a const name" "$OUT/${name}_v_err.txt" | head -3 | cut -c1-160; fail=1; return; fi
   if diff -q "$OUT/${name}_v_out.txt" "$ctl" > /dev/null; then echo "$name: IDENTICAL ($(wc -l < "$ctl") lines)"; else echo "$name: DIFFERS"; diff "$OUT/${name}_v_out.txt" "$ctl" | head -6 | cut -c1-160; fail=1; fi
 }
 echo "── the examples ──"

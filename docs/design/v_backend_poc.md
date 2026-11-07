@@ -1648,6 +1648,36 @@ stream-typed fields and one tuple literal, each a stub that panics if
 reached) and nothing in the test reaches them. The V compile of the
 health test is 9,000 lines of V and about two seconds with tcc.
 
+22. **No bare local names in `selfhost/zebra_rt.v`** (2026-10-26). The
+    runtime is compiled into every program's module, so a local or a
+    parameter there shares one namespace with every program's consts. V
+    0.5.2 silently lowers `&tmp[0]` against `_const_main__tmp` when they
+    collide (the engine's scene_loader and hotreload rows failed in the C
+    compiler after d67ee8d, whose `zfmt_val` had a local `tmp`; a witness
+    declared a const of that name); the emitter's rename (13) does not
+    reach hand-written runtime code. Every runtime local and parameter
+    carries a prefix (`zf_` in the zfmt functions; cb86c82). The positive
+    control is `examples/v_poc9_fmt.zbr`: it declares module consts named
+    after the formatter's former locals (`tmp`, `buf`, `len`, `pos`, `out`)
+    and prints them, so a bare name returning to the runtime fails the
+    example lane in the C stage, as d67ee8d's did when the control was run
+    against it. The lane also refuses V's "duplicate of a const name"
+    warning outright (`CONST SHADOW`), so any program const meeting any
+    runtime local is a red, not a warning in a log. The rest of the file
+    followed the same day: `tools/prefix_rt_locals.py` prefixes every local
+    and parameter of every top-level fn with `zr_` (418 names in 181 of the
+    200 functions), renaming whole words except after a single `.` (a field
+    or method; after a range's `..` it is a local), before a `:` that is not
+    `:=` (a struct literal's field), inside a string's plain text (but inside
+    its `${...}`) and inside a char literal; it refuses to write if its own
+    re-scan still finds a bare name, and `--control` proves each case on a
+    scratch fn. Two bugs the lane caught in its first cuts, each now a
+    control case: a char literal's `b` renamed (the literal was skipped but
+    never cut out of the code segment) and `i` after `..` left bare (the
+    dot rule). The control consts are the broad set now: the formatter's
+    four and the file's fifteen most common former names (`buf`, `pos`,
+    `m`, `out`, `x`, `c`, `r`, `n`, `p`, `old`, `i`, `s`, `k`, `b`, `l`).
+
 ## Main merged, the workarounds out (2026-10-13)
 
 The Zebra session fixed BUG-559 and BUG-560 on main (3133ec1; the cause
@@ -2612,6 +2642,103 @@ Answered 2026-10-30 (Sean):
    Vinix and RISC-V have no witness. The V backend's own coverage is Windows alone.
 6. **`tools/v_check.sh` in a tier** -- DECIDED: yes, in a tier with a V focus.
 7. **The emitter refuses a runtime name `zebra_rt.v` does not define** -- DECIDED: yes.
+
+6. **`zebra_rt.v` prefixed throughout** -- DONE the same day (2026-10-26,
+   the commit after 2519e52): `tools/prefix_rt_locals.py` put `zr_` on
+   every local and parameter (418 names), the lane's 20 rows identical
+   and its CONST SHADOW refusal silent against nineteen control consts
+   named like the former locals; item 22 has the account.
+
+## Float interpolation as one formatted write (2026-10-23)
+
+The memory-model note's fix (1) (`docs/design/memory_model.md` §6a): the
+engine's GUI flush builds one interpolated string per command, ten floats
+each and two hundred a frame, and V lowers `'${x:.1f}|${y:.1f}|...'` to
+`str_intp`, which makes a heap string per formatted value — about eleven
+allocations a command against the Zig emission's one `allocPrint`, 30 MB a
+window of the V host's gui section (46 MB) in the plain run.
+
+**What the emitter does now** (`CodeGenV.vInterp`): an interpolation whose
+holes are all floats (`vTypeOf` f64) with an explicit one-digit precision
+(`.Nf`, N 0..9), one to twelve of them and no other format part, is emitted as
+`zfmt_f('<format>', [f64(e1), ...])` — the literal parts with `%` doubled,
+each hole its `%.Nf` — and the runtime (`selfhost/zebra_rt.v`) formats it hole
+by hole into a 1024-byte stack buffer and copies once (a longer result is
+formatted again into a heap buffer of its size). A mixed interpolation (an int
+or a string hole, a bare `${x}`, more than twelve holes) keeps V's
+interpolation, but each fixed-precision float hole in it goes through
+`zfmt_one(x, N)` — one allocation per hole as before, but the same digits.
+
+**The spelling is the Zig backend's, not the C library's and not V's.** The
+first cut was one `C.snprintf` of the whole format, and the witness found two
+rows where it disagreed with the Zig control: a decimal tie whose binary value
+lies below it (2.675 is 2.67499…: Zig's `{d:.2}` says 2.68, C's `%.2f` 2.67)
+and the C runtime's spelling of inf (msvcrt under tcc: `1.$`). And V's own
+`${x:.2f}` turned out to be a *third* spelling — 2.67 for the tie, `+inf`,
+`-+inf`, `nan` for -nan, and `10` for 1e16 at `.0f` on 0.5.2 (right on master
+4103200) — so the example lane had been agreeing with Zig only because no
+example carried a tie or a special. The runtime's rule (`zfmt_val`): nan,
+-nan, inf and -inf by hand; otherwise format at N+1 places, and when the last
+digit is 5 and that decimal parses back to x (V's own `f64()` over a `tos`
+view of the buffer — `C.strtod` declared beside V's builtin declaration
+returned garbage under tcc), it is the shortest digits' tie, and the N-place
+prefix is rounded up by hand with its carries, the sign kept; else `%.Nf` is
+Zig's answer too. Exact while ulp(x) < 10^-(N+1), i.e. |x| < 2^52 / 10^(N+1)
+(`zfmt_bounds`); beyond that the C library's exact digits, where Zig pads the
+shortest digits with zeros (a 2^62 at `.1f` differs; a GUI never gets there).
+
+**The rule changed on 2026-10-26, and the V side owns its formatter.** Sean
+decided, on Opus's and my joint recommendation, that a float at a precision
+rounds the exact binary value with ties to even -- Python's digits (2.675 ->
+2.67, 0.125 -> 0.12, 2.5 -> 2, 1.45 -> 1.4) -- and main's 8f8bd14 made the
+Zig backend do it (`_zbr_ffmt`, verified against Python over 3,000 outputs).
+The tie rule above, which matched the old spelling, was replaced by
+`zfmt_fixed`: the double taken apart (x = m * 2^e), the integer part as a
+40-limb base-2^32 integer (m << e, up to 2^1024), the fraction's digits one
+at a time by multiplying the low -e bits by ten, rounded at N places half to
+even with the whole remainder known. No C runtime takes part and no
+magnitude bound remains: Opus showed that legacy msvcrt (what tcc links on
+Windows) prints only 17 exact significant digits, so a test that read the
+expansion through `%.Nf` called 1.05, 1.45, 1.55, 1.95, 10.15, 10.35, 10.65
+and 10.85 exact ties, and msvcrt's own rounding of 1.45 at .1f is 1.5 where
+Python's is 1.4. `tools/float_oracle.py` holds the runtime against Python's
+format() over 2,485 rows (355 values x seven precisions: every exact-half
+parity, those eight near-ties, 1e300 and 5e-324, the smallest normal and
+the largest double, -0.0, 2^53 and its neighbours, 300 seeded random
+values of five kinds): 0 rows differ; against the old rule 306 did, and
+`--control` flips one expectation and must see it. The witness carries the
+Zig fixture's own rows (1.45 at .1f, 9.996 at .2f) and the halves at every
+parity, pinned against a fresh Zig control from the merged compiler.
+
+**The witness** is `examples/v_poc9_fmt.zbr` through `tools/v_check.sh`'s
+example lane (byte-for-byte against a fresh Zig control): the ties (0.125,
+2.675, 0.5/1.5/2.5 at `.0f`), the near-ties that round up from their shortest
+digits (1.005, 0.045, 9.995 with its carry to 10.00, -9.995 through the sign,
+0.995 through the point), signed zero and a negative rounding to it, nan and
+both infinities, 1e20 and 1e16, a `%` in the literal, twelve holes and
+thirteen, a 608-byte result, and the mixed rows beside. It was seen red twice
+(the tie row, the special row) before it was green.
+
+**What it bought** (the V window host under `VGC=boehm --profile`, the
+autoplay's first 30 s): the gui-flush line 4.5–10.6 MB a window against 30
+before, the gui section 11–29 MB against 46; the window row's milestones
+unchanged. The residue is one `tos_clone` and the `[f64(...)]` array literal
+per command (V heap-allocates an array literal), and the V draw's own
+parsing copies (`split` / `substr`), which are the port's, not the backend's.
+
+**Open, found by the control on 2026-10-26:** a *bare* float hole (`${x}`
+with no spec) keeps V's spelling, and it differs from the Zig backend's at
+large magnitude: V prints `1e+20` where Zig prints
+`100000000000000000000.0`. Small values agree (`10.3`), which is why the
+witness's `slow` row never saw it; the control's `big` const shadowed the
+example's own local and printed it bare. Routing the bare hole through a
+runtime function that spells as Zig's `{d}` does is the next step of this
+section, not yet taken.
+
+**V's refusals on the way**, for the next hand on the runtime file: a mutable
+array element's address (`&big[0]`) and a fixed array's address (`&tmp[0]`)
+both want `unsafe`; `fn C.strtod` redeclared beside the builtin's returned a
+wrong value with no diagnostic — use V's `string.f64()` instead.
 
 ## If the branch ever merges to main
 
