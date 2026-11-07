@@ -1911,49 +1911,6 @@ fn zfmt_lit(zf_t &u8, zf_s string) int {
 	return zf_s.len
 }
 
-// the digits t[0..n0) rounded up by one in the last place, the sign kept, a carry out of the
-// first digit prepending a 1; a trailing '.' (precision 0) dropped first; returns the new length
-fn zfmt_round_up(zf_t &u8, zf_n0 int) int {
-	mut zf_n := zf_n0
-	if zf_n > 0 && unsafe { zf_t[zf_n - 1] } == `.` {
-		zf_n--
-	}
-	mut zf_k := zf_n - 1
-	for zf_k >= 0 {
-		zf_c := unsafe { zf_t[zf_k] }
-		if zf_c == `.` {
-			zf_k--
-			continue
-		}
-		if zf_c == `-` {
-			break
-		}
-		if zf_c == `9` {
-			unsafe {
-				zf_t[zf_k] = `0`
-			}
-			zf_k--
-			continue
-		}
-		unsafe {
-			zf_t[zf_k] = zf_c + 1
-		}
-		return zf_n
-	}
-	zf_at := zf_k + 1
-	mut zf_j := zf_n
-	for zf_j > zf_at {
-		unsafe {
-			zf_t[zf_j] = zf_t[zf_j - 1]
-		}
-		zf_j--
-	}
-	unsafe {
-		zf_t[zf_at] = `1`
-	}
-	return zf_n + 1
-}
-
 // one value at a precision into out at pos, in Zig's spelling (see above); returns the new pos
 fn zfmt_val(zf_out &u8, zf_cap int, zf_pos int, zf_x f64, zf_prec int) int {
 	mut zf_tmp := [400]u8{}
