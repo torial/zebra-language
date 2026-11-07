@@ -101,6 +101,20 @@ measured.
    literals only. Under counting the rule disappears (the field holds a count). Engine witness:
    the plain run's intern-pool count flat over 60 s. This is the live leak in every Roblox port.
    **(a) DONE 2026-10-22:** 50,000 field stores 202 MB -> 5.2 MB; (b) remains.
+   **(b) does not bound anything on its own (Opus, 2026-11-07, answering Fable's F64 server
+   soak: 2,987 to 11,274 interned strings an hour).** On the arena path a copy-at-store frees
+   nothing unless the OLD field value is freed on overwrite, and that needs to know no local,
+   capture or other field still holds it: ownership information the runtime does not have.
+   Sweeping the pool needs the same knowledge (tracing or counting). A blanket bypass for
+   non-literal strings would dangle an `allocate`-block string or a borrowed slice, and would
+   cost MORE for repeated values ("62"), which today share one interned copy. So the bound
+   comes from counted strings (§6), not from a change to `_intern`. Unmeasured: the stored
+   string's own allocation (a `_str_concat` or toString result in `_allocator`) is also never
+   freed, so the pool may not be the whole string leak; Fable's census can size it.
+   The container half of the same gap (a module list rebuilt in a `release` path, the old
+   list never freed) got a proposed stopgap the same day: `freeAtSweep` / `sweep`, shallow,
+   allocator recorded at the call, refused inside `allocate`, deduped, and a count CHECK under
+   the counted model. A missed alias is a use-after-free, so it is opt-in per site.
 3. **Free outgrown container buffers** (Fable). The old buffer on growth is pure waste under
    any model; route container storage through an allocator that frees.
 4. **One allocator interface, no page-allocator escapes** (Fable). Each of the 76 hatches turns
