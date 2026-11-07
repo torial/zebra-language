@@ -1037,25 +1037,36 @@ If adopted: one `_zbr_show` arm plus routing `printFmtSpec`'s two float arms thr
 (the patch used here, ~12 lines), the 7 baselines re-recorded, and a boundary probe
 written from the intent before the change lands.
 
-### Per-function `@setRuntimeSafety(true)` under `--release` -- cost MEASURED on the GameEngine (Fable, 2026-11-07)
+### Per-function `@setRuntimeSafety(true)` under `--release` -- cost BOUNDED on the GameEngine (Fable, 2026-11-07)
 
 rc9 opens every emitted function with `@setRuntimeSafety(true)` (BUG-667/668: ReleaseFast
 otherwise turns overflow and a nil unwrap into undefined behaviour). The engine's rc9 regen added
-4,020 of them. Fable's A/B, one 60 s autoplay recording (3,550 frames) replayed under the old
-emission's ReleaseFast build and the new one's, `cputime.py`, shadows off so the CPU side stands
-alone, three interleaved pairs:
+4,020 of them. Measured by replaying one 60 s autoplay recording (3,550 frames) under the old
+emission's ReleaseFast build and the new one's, `cputime.py`.
 
-- process CPU new/old **1.062, 1.118, 1.033** (min 1.04, median 1.10);
-- the **scripts** section (the emitted game code running its own loops) **0.97-0.99x**: no cost seen;
-- the cost sits in the HOST's **render 1.13-1.19x** and **gui 1.08-1.24x**, which call emitted
-  accessors (World.get, the GuiCmd sink) a thousand times a frame from Zig. ~0.3 ms a frame,
-  ~2% of the 60 fps budget; with shadows on the frame is GPU-bound and it disappears.
+**The reading that stands** (Fable's `tools/bench_ab.py` in the engine repo: pairs run A B A B
+then B A B A, the build effect reported beside the ORDER effect, refusing when the order's is
+larger; its controls: identical commands 1.004 accepted, a planted first-launch stall order 0.43
+vs build 1.01 refused):
 
-**Decision (Opus + Fable, joint): no opt-out.** 4-10% CPU on a GPU-bound frame buys a trap in
-place of a wrong number. If one is ever needed, it belongs per-function or per-module on hot
-accessors a host calls, not as a global `--turbo` switch.
+- whole process, shadows off: build new/old **1.020** (minima 1.023), launch-order effect
+  **1.085** (the second run slower in 4 of 4 pairs) -- REFUSED as a verdict. So the cost is **at
+  most ~2% of process CPU, not separable from an 8% launch-order effect** at this resolution;
+- shadows on: build 0.982, order 0.918 (the FIRST launch slow: the GPU) -- refused likewise;
+- the **scripts** section (the emitted game code running its own loops) **0.97-0.99x**: no cost.
 
-**Method trap worth keeping:** on that machine's Intel GPU every OTHER process launch is slow
-whichever build it is, so an interleaved A/B that always starts with the same side read the depth
-pass 8.3 vs 3.1-4.2 ms and CPU 1.03-1.31x; reversed, 0.78-0.84x. Alternate which side goes first.
-Raw logs: GameEngine/.zig-cache/safety_ab, safety_ab2, safety_ab3.
+**CORRECTED 2026-11-07, three hours after it was first recorded here (30361c8):** this entry
+said process CPU **1.04-1.10x** and put the cost in the host's render (1.13-1.19x) and gui
+(1.08-1.24x) accessor calls. That batch had the new build SECOND in every pair, so it carried
+the launch-order effect; the attribution is withdrawn as not separable. The instrument that
+caught it is the one the first reading's trap prompted Fable to build.
+
+**Decision (Opus + Fable, joint): no opt-out** -- all the more at <= 2%. If one is ever needed,
+it belongs per-function or per-module on hot code a host calls, not as a global `--turbo` switch.
+
+**Method trap worth keeping: launch order has an effect of either sign on that machine.** With
+the GPU pass in the frame the FIRST launch is slow (depth pass 8.3 vs 3.1-4.2 ms; CPU read
+1.03-1.31x one way, 0.78-0.84x reversed); without it the SECOND run is slow (CPU, 4 of 4 pairs).
+So "interleave" falls one step short in either direction: run both orders (A B and B A) and
+report the order effect beside the build effect. Raw logs: GameEngine/.zig-cache/safety_ab,
+safety_ab2, safety_ab3.
