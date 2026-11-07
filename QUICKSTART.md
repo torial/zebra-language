@@ -3308,6 +3308,36 @@ no `zebra-census.json` -- so no report is never mistaken for an empty one. A sec
 `_zbr_cens_install()` changes nothing, and says so once, naming who installed first. Any
 other `--census=VALUE` is refused.
 
+**Freeing a replaced container at a frame boundary: `_zbr_free_at_sweep` / `_zbr_sweep`**
+(runtime functions, 2026-11-07, for the GameEngine). A module list rebuilt in a `release`
+path -- build `keep`, then `_doors = keep` -- leaves the old list unfreed, and it cannot be
+freed on the spot because the loop that caused the release may still be walking it. Queue it,
+and let the host free the queue where no walk can be in progress:
+
+```zebra
+def release(obj: Door)
+    var keep = List(Door)()
+    for d in _doors
+        if d != obj
+            keep.add(d)
+    var old = _doors
+    zig"_zbr_free_at_sweep(old)"      # pass a LOCAL: a module var's emitted name is not its Zebra name
+    _doors = keep
+```
+
+The host (or the program) calls `_zbr_sweep()` at the frame boundary -- `zig"_zbr_sweep()"`
+from Zebra, `rt._zbr_sweep()` from a Zig host. Shallow: the container's header and storage
+are freed, never its elements. **It is a promise nothing checks:** containers are
+references, so if anything else still holds the old list -- another variable or field, a
+closure that captured it, a caller it was returned to -- that holder reads freed memory after
+the sweep. The sweep covers exactly one alias, a walk that ends before the frame boundary.
+Queuing the same container twice frees it once; queuing inside an `allocate` block is refused
+by name (the block's arena would free it too); a queue never swept just keeps its
+containers. `_zbr_sweep_pending()` counts what is queued, and a `--census` report prints
+pending / freed / sweeps. Deliberately not a language method: the `zig"..."` call sites are a
+grep-able list of where a program relies on this contract. Under counted containers (the
+memory model's direction) the same call becomes a check that nothing else held the container.
+
 ### Recycling churny objects: `ObjectPool(T)`
 
 For a high-churn workload (bullets, particles) where the arena would otherwise

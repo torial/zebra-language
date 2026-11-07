@@ -121,8 +121,104 @@ fi
 if ! grep -q "leaked: false" free_yes.log; then
     echo "library-mode: FAIL -- _zbr_free left a leak (representation: see below)"; tail -8 free_yes.log; exit 1
 fi
+# --- leg 3: free-at-sweep (2026-11-07, joint with Fable, the GameEngine's F64 lists) ---------
+# A module list rebuilt in a `release` path is queued with `_zbr_free_at_sweep` and freed by
+# the host's `_zbr_sweep()` at a frame boundary. THE REAL ATTACKER is the shape it exists for:
+# a release fired from INSIDE a walk of the list it replaces. The walk must finish over the old
+# list (sum 0..19 = 190) -- freeing at once makes it read freed memory (red-checked: integer
+# overflow on garbage). Then: the host's DebugAllocator sees no leak after the sweep; with no
+# sweep it sees one (the control); the same list queued twice is freed once (red-checked with
+# the dedupe removed: a segfault in the sweep's second free); a queueing inside `allocate` is
+# refused by name.
+cat > libsw.zbr <<'ZEOF'
+var _xs = List(int)()
+
+def fill()
+    var i = 0
+    while i < 20
+        _xs.add(i)
+        i = i + 1
+
+def release(k: int)
+    var keep = List(int)()
+    for x in _xs
+        if x != k
+            keep.add(x)
+    var old = _xs
+    zig"_zbr_free_at_sweep(old)"
+    _xs = keep
+
+def walkRelease(): int
+    var sum = 0
+    for x in _xs
+        if x == 2
+            release(5)
+        sum = sum + x
+    return sum
+
+def requeue()
+    var old = _xs
+    zig"_zbr_free_at_sweep(old)"
+    zig"_zbr_free_at_sweep(old)"
+    _xs = List(int)()
+
+def inScope()
+    allocate Arena()
+        var t = List(int)()
+        t.add(1)
+        zig"_zbr_free_at_sweep(t)"
+
+def current(): List(int)
+    return _xs
+
+def main()
+    print("lib main ran")
+ZEOF
+if ! "$ZEXE" --library-mode --emit-zig --output-dir outs libsw.zbr >emits.log 2>&1; then
+    echo "library-mode: REFUSING -- the compiler would not emit the free-at-sweep library"; cat emits.log; exit 2
+fi
+write_sweep_host() {   # $1 = sweep | nosweep | dup | scope
+    cat > outs/host.zig <<EOF
+const std = @import("std");
+const rt = @import("zebra_rt.zig");
+const lib = @import("libsw.zig");
+pub fn main(init: std.process.Init) !void {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    rt._initAllocator(gpa.allocator());
+    lib.main(init);
+    lib._zbr_fn_fill();
+    const m = "$1";
+    if (comptime std.mem.eql(u8, m, "scope")) { lib._zbr_fn_inScope(); return; }
+    const s = lib._zbr_fn_walkRelease();
+    lib._zbr_fn_release(7);
+    if (comptime std.mem.eql(u8, m, "dup")) lib._zbr_fn_requeue();
+    std.debug.print("walk sum: {} pending: {}\n", .{ s, rt._zbr_sweep_pending() });
+    if (comptime !std.mem.eql(u8, m, "nosweep")) rt._zbr_sweep();
+    const xs = lib._zbr_fn_current();
+    std.debug.print("items: {} dupes: {} after-sweep pending: {}\n", .{ xs.items.len, rt._zbr_sweep_dupes, rt._zbr_sweep_pending() });
+    rt._zbr_free(xs);
+    std.debug.print("leaked: {}\n", .{gpa.deinit() == .leak});
+}
+EOF
+}
+for m in nosweep sweep dup scope; do write_sweep_host $m; run_zig_host outs sweep_$m.log; done
+if ! grep -q "leaked: true" sweep_nosweep.log; then
+    echo "library-mode: REFUSING -- with no sweep the DebugAllocator reported no leak, so leg 3 cannot see one"; tail -5 sweep_nosweep.log; exit 2
+fi
+if ! grep -q "walk sum: 190 pending: 2" sweep_sweep.log || ! grep -q "items: 18 dupes: 0 after-sweep pending: 0" sweep_sweep.log; then
+    echo "library-mode: FAIL -- free-at-sweep: the walk did not finish over the old list, or the queue was wrong"; tail -8 sweep_sweep.log; exit 1
+fi
+if ! grep -q "leaked: false" sweep_sweep.log; then
+    echo "library-mode: FAIL -- free-at-sweep left a leak after the sweep"; tail -8 sweep_sweep.log; exit 1
+fi
+if ! grep -q "items: 0 dupes: 1 after-sweep pending: 0" sweep_dup.log || ! grep -q "leaked: false" sweep_dup.log; then
+    echo "library-mode: FAIL -- a container queued twice was not freed exactly once"; tail -8 sweep_dup.log; exit 1
+fi
+if ! grep -q "_zbr_free_at_sweep inside an .allocate. block" sweep_scope.log; then
+    echo "library-mode: FAIL -- a queueing inside an allocate block was not refused by name"; tail -5 sweep_scope.log; exit 1
+fi
 if grep -q "host allocator kept: true" run1.log; then
-    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); infra-retries=$INFRA_RETRIES"
+    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); free-at-sweep survives a mid-walk release, frees once, leaks nothing (control: no sweep leaks), refuses inside allocate; infra-retries=$INFRA_RETRIES"
     exit 0
 fi
 echo "library-mode: FAIL -- the library's main replaced the host's allocator (BUG-485)"; tail -3 run1.log

@@ -110,11 +110,24 @@ measured.
    cost MORE for repeated values ("62"), which today share one interned copy. So the bound
    comes from counted strings (§6), not from a change to `_intern`. Unmeasured: the stored
    string's own allocation (a `_str_concat` or toString result in `_allocator`) is also never
-   freed, so the pool may not be the whole string leak; Fable's census can size it.
+   freed, so the pool may not be the whole string leak. **Sized the same day (Fable, a
+   whole-run `--census` of the autoplay, 2026-11-04, read as a ratio):** intern pool 1,685
+   strings / 27,463 B; the 114 `_str_concat` sites 1,344 strings / 24,297 B kept, kept ==
+   count at every site; 35 toString-shaped sites 667 / 1,698 B. So the pool's copy roughly
+   DOUBLES dynamic text (an upper bound: the census names the allocating site, not which
+   results reached a field). On a server the "62" case is the common one, and there the one
+   interned copy per distinct value is the cheap half; the uninterned result that produced it
+   is the expensive half.
    The container half of the same gap (a module list rebuilt in a `release` path, the old
-   list never freed) got a proposed stopgap the same day: `freeAtSweep` / `sweep`, shallow,
-   allocator recorded at the call, refused inside `allocate`, deduped, and a count CHECK under
-   the counted model. A missed alias is a use-after-free, so it is opt-in per site.
+   list never freed) got a stopgap the same day, joint with Fable: runtime-only
+   `_zbr_free_at_sweep` / `_zbr_sweep` (QUICKSTART §28; no language surface, so the
+   `zig"..."` call sites are a grep-able list of where the contract is relied on). Shallow,
+   allocator recorded at the call, refused inside `allocate`, deduped, counted by the census;
+   under the counted model it becomes a CHECK that the count reached zero by the sweep. A
+   missed alias is a use-after-free, so it is opt-in per site. Fable's alias survey of the
+   engine's 69 sites: 66 rebuild-and-reassign, every other use a walk / count / at / add inside
+   one call; one seam (`health.healthList()` returns the registry list itself, callers walk it
+   at once today).
 3. **Free outgrown container buffers** (Fable). The old buffer on growth is pure waste under
    any model; route container storage through an allocator that frees.
 4. **One allocator interface, no page-allocator escapes** (Fable). Each of the 76 hatches turns

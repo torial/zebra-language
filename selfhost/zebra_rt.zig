@@ -840,6 +840,88 @@ fn _zbr_deinit_container(p: anytype) void {
     // ArrayList is unmanaged (deinit takes the allocator); the maps are managed.
     if (comptime @hasField(H, "items")) p.deinit(_allocator) else p.deinit();
 }
+/// FREE-AT-SWEEP (2026-11-07, joint with Fable for the GameEngine's F64 server soak): queue a
+/// container to be freed at the next `_zbr_sweep()`, which the host calls at a frame boundary.
+/// For the rebuild-and-reassign shape -- `var keep = List(T)() ... ; _doors = keep` in a
+/// `release` path -- where the old list cannot be freed at once because the loop that caused
+/// the release may still be walking it, and is otherwise never freed.
+///
+/// IT IS A PROMISE NOBODY CHECKS. Containers are references (BUG-501 1d), so a missed alias --
+/// another variable or field holding the old list, a closure that captured it, a caller it was
+/// returned to -- is a USE-AFTER-FREE after the sweep, not a leak, and nothing detects it today.
+/// The sweep covers exactly one alias: a walk that ends before the frame boundary. Call it only
+/// where the caller has established that nothing else holds the container.
+///
+/// Shallow, like `_zbr_free`: header and storage, never the elements. Freed with the allocator
+/// current at THIS call (the program's or the host's). Refused inside an `allocate` block: its
+/// arena frees the container when the block ends and the sweep would free it again. Queuing
+/// the same container twice is ignored (counted), never a double free. A queue never swept
+/// simply holds its containers -- the leak it replaces -- and the census says how many.
+/// Under the counted representation (docs/design/memory_model.md §6) this becomes a CHECK that
+/// the count reached zero by the sweep. From Zebra: `zig"_zbr_free_at_sweep(${xs})"`.
+const _ZbrSweepEntry = struct { ptr: *anyopaque, alloc: std.mem.Allocator, free_fn: *const fn (*anyopaque, std.mem.Allocator) void };
+pub var _zbr_sweep_q: std.ArrayList(_ZbrSweepEntry) = .empty;
+pub var _zbr_sweep_mu: std.Io.Mutex = .init;
+pub var _zbr_sweep_freed: u64 = 0; // containers freed by sweeps, all time
+pub var _zbr_sweep_runs: u64 = 0; // sweeps that ran
+pub var _zbr_sweep_dupes: u64 = 0; // queueings ignored because the container was already queued
+fn _zbr_sweep_lock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_sweep_mu.lockUncancelable(_io);
+}
+fn _zbr_sweep_unlock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_sweep_mu.unlock(_io);
+}
+/// True inside a scoped `allocate` block: `_allocator` is then neither the program allocator,
+/// the host's, nor the census's root wrapper around one of them.
+pub fn _zbr_in_allocate_scope() bool {
+    const p = _allocator.ptr;
+    if (p == _prog_alloc().ptr) return false;
+    if (_host_alloc_set and p == _host_alloc.ptr) return false;
+    if (p == @as(*anyopaque, @ptrCast(&_zbr_cens_root))) return false;
+    return true;
+}
+pub fn _zbr_free_at_sweep(c: anytype) void {
+    const C = @TypeOf(c);
+    if (comptime @typeInfo(C) != .pointer or !_zbr_ref_containers)
+        @compileError("_zbr_free_at_sweep takes a Zebra List, HashMap or Set (a container reference), got " ++ @typeName(C));
+    if (_zbr_in_allocate_scope())
+        @panic("_zbr_free_at_sweep inside an `allocate` block: the block's arena frees this container when the block ends, and the sweep would free it again -- queue it outside the block");
+    const F = struct {
+        fn free(p: *anyopaque, a: std.mem.Allocator) void {
+            const cp: C = @ptrCast(@alignCast(p));
+            const H = @TypeOf(cp.*);
+            // ArrayList is unmanaged (deinit takes the allocator); the maps carry their own.
+            if (comptime @hasField(H, "items")) cp.deinit(a) else cp.deinit();
+            a.destroy(cp);
+        }
+    };
+    const ptr: *anyopaque = @ptrCast(@constCast(c));
+    _zbr_sweep_lock();
+    defer _zbr_sweep_unlock();
+    for (_zbr_sweep_q.items) |e| if (e.ptr == ptr) {
+        _zbr_sweep_dupes += 1;
+        return;
+    };
+    // The queue's own buffer lives in the program arena: it is cleared, never shrunk, so it
+    // costs its high-water mark once.
+    _zbr_sweep_q.append(_prog_alloc(), .{ .ptr = ptr, .alloc = _allocator, .free_fn = &F.free }) catch @panic("OOM");
+}
+/// Free every container queued by `_zbr_free_at_sweep`. Call it where no walk of a queued
+/// container can still be in progress -- a frame boundary.
+pub fn _zbr_sweep() void {
+    _zbr_sweep_lock();
+    defer _zbr_sweep_unlock();
+    for (_zbr_sweep_q.items) |e| e.free_fn(e.ptr, e.alloc);
+    _zbr_sweep_freed += _zbr_sweep_q.items.len;
+    _zbr_sweep_runs += 1;
+    _zbr_sweep_q.clearRetainingCapacity();
+}
+/// Containers queued and not yet swept.
+pub fn _zbr_sweep_pending() usize {
+    _zbr_sweep_lock();
+    defer _zbr_sweep_unlock();
+    return _zbr_sweep_q.items.len;
+}
 /// `xs.copy()` -- a SHALLOW copy (BUG-501 §6 decision 2, Sean 2026-09-30): a new container
 /// holding the same elements; a nested container is SHARED, not cloned (`<<-` is the deep
 /// copy). A cloned value today, a new heap header under references. The receiver may arrive
@@ -5805,6 +5887,7 @@ pub fn _zbr_cens_flush() void {
     w.p(&err, ta, "  allocations {d}, {d:.2} MB requested; {d} frees, {d:.2} MB handed back; {d:.2} MB never freed (peak {d:.2} MB)\n", .{ t.allocs, _zbr_cens_mb(t.bytes), t.frees, _zbr_cens_mb(t.freed), _zbr_cens_mb(t.live), _zbr_cens_mb(t.peak) });
     w.p(&err, ta, "  interned strings: {d} ({d:.2} MB, outside the counts above)\n", .{ t.interned, _zbr_cens_mb(t.interned_bytes) });
     if (t.released_scopes > 0) w.p(&err, ta, "  scoped allocate blocks ended: {d} (their arenas returned what they held)\n", .{t.released_scopes});
+    w.p(&err, ta, "  free-at-sweep: {d} containers queued and not yet swept, {d} freed by {d} sweeps, {d} duplicate queueings ignored\n", .{ _zbr_sweep_q.items.len, _zbr_sweep_freed, _zbr_sweep_runs, _zbr_sweep_dupes });
     if (_zbr_cens_root_is_arena) {
         // What the arena holds = what was never freed + what was freed and KEPT (an arena
         // returns only its newest allocation: outgrown List/map/builder buffers land here) +
@@ -5849,6 +5932,7 @@ pub fn _zbr_cens_flush() void {
     var out: std.ArrayList(u8) = .empty;
     w.p(&out, ta, "{{\"version\": 2, \"keptNote\": \"keptBytes is what is still live at this report and was allocated or last resized at the site; a resize moves the whole block, so it can exceed the bytes the site requested\", \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
     w.p(&out, ta, ", \"keptBytes\": {d}, \"keptCount\": {d}, \"unseenFrees\": {d}, \"unseenResizes\": {d}, \"lengthMismatches\": {d}, \"censusTableBytes\": {d}", .{ kept_total, kept_blocks, t.unseen_frees, t.unseen_resizes, t.len_mismatch, table_bytes });
+    w.p(&out, ta, ", \"sweepPending\": {d}, \"sweepFreed\": {d}, \"sweeps\": {d}, \"sweepDuplicates\": {d}", .{ _zbr_sweep_q.items.len, _zbr_sweep_freed, _zbr_sweep_runs, _zbr_sweep_dupes });
     if (_zbr_cens_root_is_arena) w.p(&out, ta, ", \"arenaCapacity\": {d}, \"arenaFreedKept\": {d}", .{ _arena.queryCapacity(), _zbr_cens_root.freed });
     w.p(&out, ta, "}}, \"sites\": [", .{});
     for (outs.items, 0..) |r, i| {

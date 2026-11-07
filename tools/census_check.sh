@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # pins: BUG-676 a panic under the census lock must PRINT and exit, not hang (leg 4 plants one and runs it under a timeout)
 # pins: BUG-677 --census=host counts only after the install; a redundant install and a host build never installed each say so (legs 5-7)
+# Leg 8 (2026-11-07): free-at-sweep's pending / freed / sweep counts in the report and the JSON
 # census_check.sh — THE ALLOCATION-CENSUS GATE (`census`, FAST tier, 2026-10-23).
 #
 # `zebra --census` (docs/design/memory_model.md §3 item 6) counts every allocation under
@@ -59,6 +60,34 @@ printf 'def main()\n    var s: str = "x" + sys.args().len().toString()\n    prin
 mkdir -p "$W/never"
 printf 'def main()\n    var s: str = "x" + sys.args().len().toString()\n    print(s)\n' > "$W/never/never.zbr"
 ( cd "$W/never" && timeout 600 "$ZEBRA" --census=host --output-dir out never.zbr > run.out 2> run.err ) || true
+# Leg 8 (2026-11-07): the free-at-sweep counts. Two lists queued and swept, a third queued and
+# never swept: the report and the JSON must say 1 pending, 2 freed, 1 sweep -- the engine's
+# witness reads "queued, never swept" from here, so a count that sticks at zero would pass it.
+mkdir -p "$W/sweep"
+cat > "$W/sweep/sweep.zbr" <<'ZEOF'
+var _xs = List(int)()
+
+def release(k: int)
+    var keep = List(int)()
+    for x in _xs
+        if x != k
+            keep.add(x)
+    var old = _xs
+    zig"_zbr_free_at_sweep(old)"
+    _xs = keep
+
+def main()
+    var i = 0
+    while i < 10
+        _xs.add(i)
+        i = i + 1
+    release(1)
+    release(2)
+    zig"_zbr_sweep()"
+    release(3)
+    print(_xs.count())
+ZEOF
+( cd "$W/sweep" && timeout 600 "$ZEBRA" --census --output-dir out sweep.zbr > run.out 2> run.err ) || true
 # Leg 2: the same program without the flag.
 printf 'def main()\n    var s = "a" + sys.args().len().toString()\n    var m = sys.memStats()\n    print("${s} ${m.censusOn} ${m.allocations} ${m.allocBytes} ${m.liveBytes}")\n' > "$W/off.zbr"
 ( cd "$W" && mkdir -p offdir && cd offdir && timeout 600 "$ZEBRA" --output-dir "$W/out2" ../off.zbr > "$W/off.out" 2> "$W/off.err" ) || true
@@ -253,6 +282,16 @@ nerr = (w / "never" / "run.err").read_text(errors="replace")
 nout = (w / "never" / "run.out").read_text(errors="replace")
 (ok if "never installed" in nerr and "x1" in nout else bad)(f"--census=host with no install: the program ran and the exit says it was never installed ({nerr.strip()[-120:]!r})")
 (ok if not (w / "never" / "zebra-census.json").exists() and "Allocation census" not in nerr else bad)("--census=host with no install: no zebra-census.json and no report")
+# Leg 8 (free-at-sweep)
+serr = (w / "sweep" / "run.err").read_text(errors="replace")
+sout = (w / "sweep" / "run.out").read_text(errors="replace")
+(ok if "7" in sout.split() else bad)(f"free-at-sweep: the program ran and printed 7 ({sout.strip()[:40]!r})")
+(ok if "free-at-sweep: 1 containers queued and not yet swept, 2 freed by 1 sweeps, 0 duplicate" in serr else bad)("free-at-sweep: the report says 1 pending, 2 freed, 1 sweep")
+try:
+    st = json.loads((w / "sweep" / "zebra-census.json").read_text())["totals"]
+    (ok if (st.get("sweepPending"), st.get("sweepFreed"), st.get("sweeps"), st.get("sweepDuplicates")) == (1, 2, 1, 0) else bad)(f"free-at-sweep: the JSON totals say 1 pending, 2 freed, 1 sweep, 0 duplicates ({st.get('sweepPending')}, {st.get('sweepFreed')}, {st.get('sweeps')}, {st.get('sweepDuplicates')})")
+except Exception as e:
+    bad(f"leg 8: no readable zebra-census.json ({e})")
 if labelled < 15:
     print(f"census: REFUSING to report — only {labelled} labelled lines"); sys.exit(2)
 print(f"census: {passed} passed, {failed} failed ({labelled} labelled lines, {len(sites)} sites, {tot['allocations']} allocations)")

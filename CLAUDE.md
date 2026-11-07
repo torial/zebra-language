@@ -1358,6 +1358,11 @@ bash tools/census_check.sh      # THE ALLOCATION-CENSUS GATE, registered as `cen
                                 #   a host build never installed says "never installed" and
                                 #   writes no JSON. Red on the pre-fix tree, which accepted
                                 #   `--census=host` and built with no census at all.
+                                #   LEG 8 (2026-11-07): free-at-sweep's counts -- two lists
+                                #   queued and swept, a third queued and never swept -- must read
+                                #   1 pending / 2 freed / 1 sweep in the report and the JSON (the
+                                #   engine's witness reads "queued, never swept" there). Red-checked
+                                #   with the freed counter stuck at zero.
                                 #   CANNOT SEE: the runtime's page-allocator escape hatches
                                 #   (the report names them as uncounted), kinds in a --release
                                 #   build (printed as ?0x<address>), a host's own allocations,
@@ -1418,7 +1423,17 @@ bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-m
                                 #   Run in BOTH representations before the switch landed; under
                                 #   references the real attacker -- `.deinit` alone, what the
                                 #   GameEngine host did -- leaks the 24-byte header and is reported.
-                                #   CANNOT SEE: frees the host performs on paths it does not test.
+                                #   LEG 3 (2026-11-07, free-at-sweep): a release fired from INSIDE a
+                                #   walk of the list it replaces queues the old list with
+                                #   `_zbr_free_at_sweep`; the walk must finish over it (sum 190) and
+                                #   the host's `_zbr_sweep()` must leave no leak; no sweep must leak
+                                #   (the control); one list queued twice is freed once; a queueing
+                                #   inside `allocate` is refused by name. Red-checked with the two
+                                #   real attackers: freeing at once (the walk read garbage, integer
+                                #   overflow) and the dedupe removed (a segfault in the second free).
+                                #   CANNOT SEE: frees the host performs on paths it does not test, or
+                                #   an alias of a queued container that outlives the sweep (a UAF
+                                #   by contract; nothing detects it).
 python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-smoke`
                                 #   (FAST tier, ~2s). Drives `zebra lsp` through a real
                                 #   JSON-RPC conversation over stdio -- Content-Length

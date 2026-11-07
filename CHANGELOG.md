@@ -23,7 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
-(nothing yet)
+- **`_zbr_free_at_sweep(c)` / `_zbr_sweep()`** (runtime functions, not language surface;
+  QUICKSTART §28): queue a List, HashMap or Set replaced in a rebuild-and-reassign `release`
+  path, and free the queue at a frame boundary the host chooses. Shallow, deduplicated,
+  refused inside `allocate`, counted by `--census` (`sweepPending`, `sweepFreed`, `sweeps`,
+  `sweepDuplicates` in the JSON totals). A missed alias is a use-after-free -- see QUICKSTART.
+  Joint design with the GameEngine session (its F64 server soak: 69 such sites, none freed).
 
 ---
 
