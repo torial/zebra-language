@@ -534,47 +534,47 @@ pub fn zunwrap_at[T](zr_x ?T, zr_at string) T {
 const zmin_i64 = i64(-9223372036854775807) - 1
 
 @[inline]
-pub fn zadd(a i64, b i64) i64 {
-	r := i64(u64(a) + u64(b))
-	if ((a ^ r) & (b ^ r)) < 0 {
+pub fn zadd(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) + u64(zr_b))
+	if ((zr_a ^ zr_r) & (zr_b ^ zr_r)) < 0 {
 		zbr_panic('integer overflow')
 	}
-	return r
+	return zr_r
 }
 
 @[inline]
-pub fn zsub(a i64, b i64) i64 {
-	r := i64(u64(a) - u64(b))
-	if ((a ^ b) & (a ^ r)) < 0 {
+pub fn zsub(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) - u64(zr_b))
+	if ((zr_a ^ zr_b) & (zr_a ^ zr_r)) < 0 {
 		zbr_panic('integer overflow')
 	}
-	return r
+	return zr_r
 }
 
 @[inline]
-pub fn zmul(a i64, b i64) i64 {
-	if a >= -2147483648 && a <= 2147483647 && b >= -2147483648 && b <= 2147483647 {
-		return a * b // both fit in 32 bits: the product fits in 64
+pub fn zmul(zr_a i64, zr_b i64) i64 {
+	if zr_a >= -2147483648 && zr_a <= 2147483647 && zr_b >= -2147483648 && zr_b <= 2147483647 {
+		return zr_a * zr_b // both fit in 32 bits: the product fits in 64
 	}
-	if a == 0 || b == 0 {
+	if zr_a == 0 || zr_b == 0 {
 		return 0
 	}
-	if (a == -1 && b == zmin_i64) || (b == -1 && a == zmin_i64) {
+	if (zr_a == -1 && zr_b == zmin_i64) || (zr_b == -1 && zr_a == zmin_i64) {
 		zbr_panic('integer overflow')
 	}
-	r := i64(u64(a) * u64(b))
-	if r / b != a {
+	zr_r := i64(u64(zr_a) * u64(zr_b))
+	if zr_r / zr_b != zr_a {
 		zbr_panic('integer overflow')
 	}
-	return r
+	return zr_r
 }
 
 @[inline]
-pub fn zneg(a i64) i64 {
-	if a == zmin_i64 {
+pub fn zneg(zr_a i64) i64 {
+	if zr_a == zmin_i64 {
 		zbr_panic('integer overflow')
 	}
-	return -a
+	return -zr_a
 }
 
 // Saturating `+| -| *|` on int: the result clamps at the type's bounds instead of
@@ -582,58 +582,58 @@ pub fn zneg(a i64) i64 {
 const zmax_i64 = i64(9223372036854775807)
 
 @[inline]
-pub fn zsadd(a i64, b i64) i64 {
-	r := i64(u64(a) + u64(b))
-	if ((a ^ r) & (b ^ r)) < 0 {
-		return if a < 0 { zmin_i64 } else { zmax_i64 }
+pub fn zsadd(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) + u64(zr_b))
+	if ((zr_a ^ zr_r) & (zr_b ^ zr_r)) < 0 {
+		return if zr_a < 0 { zmin_i64 } else { zmax_i64 }
 	}
-	return r
+	return zr_r
 }
 
 @[inline]
-pub fn zssub(a i64, b i64) i64 {
-	r := i64(u64(a) - u64(b))
-	if ((a ^ b) & (a ^ r)) < 0 {
-		return if a < 0 { zmin_i64 } else { zmax_i64 }
+pub fn zssub(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) - u64(zr_b))
+	if ((zr_a ^ zr_b) & (zr_a ^ zr_r)) < 0 {
+		return if zr_a < 0 { zmin_i64 } else { zmax_i64 }
 	}
-	return r
+	return zr_r
 }
 
-pub fn zsmul(a i64, b i64) i64 {
-	if a >= -2147483648 && a <= 2147483647 && b >= -2147483648 && b <= 2147483647 {
-		return a * b // both fit in 32 bits: the product fits in 64
+pub fn zsmul(zr_a i64, zr_b i64) i64 {
+	if zr_a >= -2147483648 && zr_a <= 2147483647 && zr_b >= -2147483648 && zr_b <= 2147483647 {
+		return zr_a * zr_b // both fit in 32 bits: the product fits in 64
 	}
-	if a == 0 || b == 0 {
+	if zr_a == 0 || zr_b == 0 {
 		return 0
 	}
-	neg := (a < 0) != (b < 0)
-	if (a == -1 && b == zmin_i64) || (b == -1 && a == zmin_i64) {
+	zr_neg := (zr_a < 0) != (zr_b < 0)
+	if (zr_a == -1 && zr_b == zmin_i64) || (zr_b == -1 && zr_a == zmin_i64) {
 		return zmax_i64
 	}
-	r := i64(u64(a) * u64(b))
-	if r / b != a {
-		return if neg { zmin_i64 } else { zmax_i64 }
+	zr_r := i64(u64(zr_a) * u64(zr_b))
+	if zr_r / zr_b != zr_a {
+		return if zr_neg { zmin_i64 } else { zmax_i64 }
 	}
-	return r
+	return zr_r
 }
 
 // the one quotient that does not fit (V checks a zero divisor itself)
 @[inline]
-pub fn zdiv(a i64, b i64) i64 {
-	if b == -1 && a == zmin_i64 {
+pub fn zdiv(zr_a i64, zr_b i64) i64 {
+	if zr_b == -1 && zr_a == zmin_i64 {
 		zbr_panic('integer overflow')
 	}
-	return a / b
+	return zr_a / zr_b
 }
 
 // min % -1 traps, as min / -1 does (Rust panics on it in every mode); any other
 // remainder by -1 is 0, which the C `%` gives (it faults only on min)
 @[inline]
-pub fn zmod(a i64, b i64) i64 {
-	if b == -1 && a == zmin_i64 {
+pub fn zmod(zr_a i64, zr_b i64) i64 {
+	if zr_b == -1 && zr_a == zmin_i64 {
 		zbr_panic('integer overflow')
 	}
-	return a % b
+	return zr_a % zr_b
 }
 
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)

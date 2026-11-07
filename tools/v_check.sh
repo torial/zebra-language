@@ -111,7 +111,7 @@ done
 printf 'def main()\n    var n: int = sys.args().count()\n    var x: int = 9223372036854775806 + n\n    var y: int = 0 - x\n    y -= n\n    print(x.toString() + " " + y.toString() + " " + (x * n).toString() + " " + (x / (0 - n)).toString() + " " + (x %% 7).toString() + " " + (y + x).toString())\n' > "$OUT/ov_ok.zbr"
 (cd "$OUT" && "$ZEBRA" ov_ok.zbr > "$OUT/ov_ok_zig_out.txt" 2> "$OUT/ov_ok_zig_err.txt")   # stdout only: the compiler's progress goes to stderr
 (cd "$OUT" && "$ZEBRA" --target v ov_ok.zbr > "$OUT/ov_ok_emit.txt" 2>&1)
-(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ov_ok.v" > "$OUT/ov_ok_v_out.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ov_ok.v" > "$OUT/ov_ok_v_out.txt" 2> "$OUT/ov_ok_v_err.txt")   # stdout only: V prints notices on stderr
 if [ -n "$ov_bad" ]; then echo "overflow: FAILED -- did not trap on both backends:$ov_bad"; fail=1
 elif [ ! -s "$OUT/ov_ok_zig_out.txt" ]; then echo "overflow: FAILED -- the in-range control printed nothing on Zig (NO CONTROL)"; fail=1
 elif ! diff -q "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" > /dev/null; then echo "overflow: FAILED -- the in-range control differs:"; diff "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" | head -4; fail=1
@@ -144,7 +144,7 @@ printf 'def main()\n    zig"_zbr_not_a_runtime_call()"\n' > "$OUT/sweep_v_bad.zb
 (cd "$OUT" && "$ZEBRA" sweep_v.zbr > "$OUT/sweep_v_zig_out.txt" 2> "$OUT/sweep_v_zig_err.txt")
 (cd "$OUT" && "$ZEBRA" --target v sweep_v.zbr > "$OUT/sweep_v_emit.txt" 2>&1)
 (cd "$OUT" && "$ZEBRA" --target v sweep_v_bad.zbr > "$OUT/sweep_v_bad_emit.txt" 2>&1)
-(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/sweep_v.v" > "$OUT/sweep_v_v_out.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/sweep_v.v" > "$OUT/sweep_v_v_out.txt" 2> "$OUT/sweep_v_v_err.txt")   # stdout only: V prints notices on stderr
 if ! grep -qx '45 9 0 15' "$OUT/sweep_v_zig_out.txt"; then echo "sweep_v: NO CONTROL -- the Zig run did not print '45 9 0 15': $(head -c 120 "$OUT/sweep_v_zig_out.txt" "$OUT/sweep_v_zig_err.txt" | tr '\n' ' ')"; fail=1
 elif grep -qE '^    ' "$OUT/sweep_v_emit.txt"; then echo "sweep_v: FAILED -- the V emit refused something:"; grep -E '^    ' "$OUT/sweep_v_emit.txt" | head -3 | cut -c1-160; fail=1
 elif ! diff -q "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" > /dev/null; then echo "sweep_v: DIFFERS (V vs Zig):"; diff "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" | head -4 | cut -c1-160; fail=1
