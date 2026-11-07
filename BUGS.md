@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-681. Next new bug: BUG-682.**
+**Last bug number generated: BUG-682. Next new bug: BUG-683.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,39 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-682: `ws.close()` under a reader blocked in `ws.recv()` on another thread ends the process with no message (Windows)
+
+**Reported 2026-11-07 by Fable** (GameEngine F65, `game/net_departure_test.zig`, 1c93942).
+`_ws_close` sends the close frame and then calls `closeStream()`. If another thread of the
+same program is blocked in `_ws_recv` on that connection, Windows cancels the pending read,
+and Zig std's `netReadWindows` maps `.CANCELLED => unreachable`. The process exits with code
+3 and prints nothing. The engine's witness hit it 3 of 3 times with forty graceful hang-ups;
+its client now sends the close frame and lets the peer close the socket.
+
+This is NOT REPRODUCED in this repo yet. No gate runs a WebSocket reader and a closer on two
+threads. The `unreachable` is inside std rather than in Zebra code. What is Zebra's is that
+`ws.close()` is documented as "send close frame and shut down the connection" with no
+threading caveat. A user program that follows the documentation and closes from a second
+thread dies silently.
+
+**Fix shape (to decide):** (a) `_ws_close` sends the frame and shuts down only the WRITE half
+(`shutdown(.send)`), leaving the reader to see the peer's close and return nil; the stream
+is released when the last user is done; or (b) keep it as it is and document that
+`close()` must not race a `recv()`. (a) is the one a user can't get wrong. Check what 0.17's
+std offers for a half-close on Windows before choosing.
+
+**Control when fixing:** a Zebra program with a reader thread blocked in `ws.recv()` and the
+main thread calling `ws.close()` against a local `Ws.serve` peer. Today: exit 3, no output.
+After the fix: `recv()` returns nil, the program prints a sentinel after the join and exits 0.
+Run 20+ times, because the engine saw the departure race only 1 of 3.
+
+**Related, documentation only (done 2026-11-07):** `Ws.serve` destroys the `WsConn` when the
+handler returns. A host that sends on it from another thread must make sure no send is in
+flight at that moment. In the engine, a failed write inside a freed `_WsConn` segfaulted at
+offset 0xe8. QUICKSTART's `Ws` notes now say so.
 
 ---
 

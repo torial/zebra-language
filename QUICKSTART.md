@@ -4550,6 +4550,13 @@ Ws.serve(8765, def(ws: WsConn)
 - `wss://` (TLS) is supported for `Ws.connect`; `Ws.serve` uses plain TCP (put a reverse proxy for TLS serving).
 - Client→server frames are automatically masked (RFC 6455 §5.3).
 - Pings from the server are answered automatically with pong.
+- `Ws.serve` frees the `WsConn` when the handler returns. If another thread sends on that
+  connection, make sure no send is in flight when the handler returns. For example, put the
+  client's "alive" flag and every `send` under one mutex, and clear the flag under it before
+  returning. Otherwise a failed write lands in freed memory.
+- Do not `close()` a connection while another thread is blocked in its `recv()`. On Windows
+  this ends the process with no message (BUG-682). Close from the thread that reads, after
+  `recv()` has returned.
 
 ### Networking — `Tcp`, `Udp`, `Net`
 
