@@ -228,6 +228,11 @@ run `zebra -c` over your code first.
 
 ### Fixes
 
+- **The bundled SQLite includes FTS5 and RTREE** (BUG-686). The compiler built
+  `sqlite3.c` with no feature defines, so full-text search (`USING fts5`) and spatial
+  indexes (`USING rtree`) failed at run time with "no such module". Both are enabled now,
+  scoped to sqlite3.c; JSON functions were already built in.
+
 - **A class's own `cue init` is no longer replaced by a mixin's** (BUG-679). A class that
   `adds` a mixin declaring `cue init()` had its constructor call refused as "too many
   arguments ... expected at most 0" -- a regression since BUG-659 made constructors take the

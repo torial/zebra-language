@@ -5603,6 +5603,10 @@ Zebra ships with a bundled SQLite amalgamation (`sqlite3.c`). The compiler injec
 
 **Setup**: the `vendor/sqlite/sqlite3.c` file must be present alongside the compiler binary (`{exe_dir}/vendor/sqlite/sqlite3.c`).
 
+**Modules compiled in**: FTS5 full-text search (`CREATE VIRTUAL TABLE t USING fts5(...)`, `WHERE t MATCH '...'`),
+the R*Tree spatial index (`USING rtree(...)`), and the JSON functions (`json_extract` and the rest), on top of the
+SQLite defaults. A program cannot add others yet.
+
 ### Opening a database
 
 ```zebra

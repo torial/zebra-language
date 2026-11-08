@@ -1320,6 +1320,8 @@ smoke_run test/http_serve_test.zbr "http_serve_test OK"
 
 # SQLite — open/exec/query/close + transactions on :memory: database.
 smoke_run test/sqlite_test.zbr "sqlite_test OK"
+# BUG-686: FTS5 and RTREE are compiled into the bundled sqlite3.c (JSON is the control).
+smoke_run test/bug686_sqlite_features_test.zbr "bug686: fts5 rtree json OK"
 
 # GUI widgets: progressBar(label,f64) + combobox(label,List(str),int) + spinbox(label,int,int,int).
 smoke examples/widget_smoke.zbr

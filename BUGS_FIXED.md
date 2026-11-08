@@ -6,6 +6,31 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-686: the bundled SQLite was built with no feature defines, so FTS5 and RTREE were silently missing -- FIXED 2026-11-07
+
+- **Found by:** the Graze docs browser (zebra-sprocket). Its full-text search returned
+  "no such module: fts5" in the app, while sqlite's own `testfixture` found 17 hits for the
+  same query -- so the missing piece was the build flag, not the query. Filed in
+  NEXT_STEPS_to_1.0 for Opus 2026-08-09 and given a number on 2026-11-07. Until then
+  sprocket worked around it by prepending `#define SQLITE_ENABLE_FTS5 1` to its copy of
+  `sqlite3.c`.
+- **Cause:** when a program uses `Sqlite`, `selfhost/main.zbr` adds
+  `{exe_dir}/vendor/sqlite/sqlite3.c` to the `zig build-exe` line with no `-D` flags. The
+  amalgamation fences its optional modules behind `#ifdef SQLITE_ENABLE_*`, so they were
+  compiled out, and a program only found out at run time.
+- **Fix:** the file is passed as
+  `-cflags -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE -- sqlite3.c`. The defines reach
+  sqlite3.c and no other C source of the program. JSON needs no flag: it is built in by
+  default since 3.38. A program cannot yet choose its own set (the `sqlite_features` knob
+  the report suggested); that waits for a program that needs a module outside these two.
+- **Fixture:** `test/bug686_sqlite_features_test.zbr`. It creates an FTS5 table and runs a
+  MATCH query, then an RTREE table and a bounding-box query, with a `json_extract` call as
+  the control. On the pre-fix compiler the JSON control passed and the FTS5 statements
+  failed with "no such table: docs" (the CREATE having failed), and the MATCH assertion
+  fired.
+
+---
+
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep -- CLOSED 2026-11-07, NOT REPRODUCED (cause never established; the mitigation stays)
 
 **Found 2026-08-15** during an `output_sweep --update-baseline`. `log_test` and

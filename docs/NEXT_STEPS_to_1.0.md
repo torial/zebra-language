@@ -1042,7 +1042,9 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
   the lower-priority ones once one matches (leftmost-first, Python's semantics). The
   oracle written for it found BUG-662 (wrong NFAs for nested quantifiers, `(?:a|b)?`,
   `{0,m}`, `{m,n}?`, repeated groups), fixed with it.
-- **SQLite feature defines not passed to the vendored `sqlite3.c`** — the
+- **SQLite feature defines not passed to the vendored `sqlite3.c`** — FIXED 2026-11-07
+  as BUG-686 (FTS5 + RTREE, scoped with `-cflags`; JSON is a default). The knob for a
+  program's own set is NOT built. Original report: the
   compiler adds `sqlite3.c` to the zig build (`selfhost/main.zbr` ~2703) with no
   `-DSQLITE_ENABLE_*` defines, so every feature the amalgamation fences behind
   `#ifdef` (FTS5, RTREE, JSON1 config, etc.) silently compiles out. Surfaced via

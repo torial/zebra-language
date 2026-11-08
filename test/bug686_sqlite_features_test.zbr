@@ -1,0 +1,35 @@
+# BUG-686: the compiler built the bundled sqlite3.c with no feature defines, so every
+# module the amalgamation fences behind #ifdef SQLITE_ENABLE_* compiled out. A program
+# using FTS5 got "no such module: fts5" at run time; RTREE likewise. JSON is built in by
+# default since SQLite 3.38 and is checked here as the control that SQL itself works.
+
+def main()
+    var db: SqliteDb? = Sqlite.open(":memory:")
+    assert db != nil, "an in-memory database opens"
+    var d: SqliteDb = db!
+
+    # control: a JSON function, compiled in without any define
+    var j = d.query("SELECT json_extract('{\"a\": 41}', '$.a') + 1 AS v")
+    assert j.count() == 1, "json query returned a row"
+    assert j.at(0).asInt("v") == 42, "json_extract works"
+
+    # FTS5: a full-text table and a MATCH query
+    d.exec("CREATE VIRTUAL TABLE docs USING fts5(title, body)")
+    d.exec("INSERT INTO docs VALUES (?, ?)", ["zebra", "a striped horse of the plains"])
+    d.exec("INSERT INTO docs VALUES (?, ?)", ["zig", "a systems language"])
+    d.exec("INSERT INTO docs VALUES (?, ?)", ["cobra", "a language and a snake"])
+    var hits = d.query("SELECT title FROM docs WHERE docs MATCH 'language' ORDER BY title")
+    assert hits.count() == 2, "fts5 MATCH found both rows mentioning 'language'; got " + hits.count().toString()
+    assert hits.at(0).asStr("title") == "cobra", "first hit"
+    assert hits.at(1).asStr("title") == "zig", "second hit"
+
+    # RTREE: a spatial index and a bounding-box query
+    d.exec("CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY)")
+    d.exec("INSERT INTO boxes VALUES (1, 0.0, 10.0, 0.0, 10.0)")
+    d.exec("INSERT INTO boxes VALUES (2, 20.0, 30.0, 20.0, 30.0)")
+    var inside = d.query("SELECT id FROM boxes WHERE minX >= 15.0 AND maxX <= 35.0")
+    assert inside.count() == 1, "rtree query found one box; got " + inside.count().toString()
+    assert inside.at(0).asInt("id") == 2, "the box in range"
+
+    d.close()
+    print("bug686: fts5 rtree json OK")

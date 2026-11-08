@@ -5578,6 +5578,14 @@ def main()
             exe_dir = "."
         var sqlite_c: str = exe_dir + "/vendor/sqlite/sqlite3.c"
         if File.exists(sqlite_c)
+            # BUG-686: the amalgamation fences optional modules behind
+            # SQLITE_ENABLE_*, so without these FTS5 and RTREE compile out and a
+            # program gets "no such module" at run time. JSON is built in by default
+            # (3.38+). `-cflags ... --` scopes the defines to sqlite3.c alone.
+            argv2.add("-cflags")
+            argv2.add("-DSQLITE_ENABLE_FTS5")
+            argv2.add("-DSQLITE_ENABLE_RTREE")
+            argv2.add("--")
             argv2.add(sqlite_c)
     # CPU target: pass -mcpu=VALUE when --cpu was specified
     if cpu_flag != ""
