@@ -80,14 +80,14 @@ as they land, so this list stays the one place that says what is left.
      interface-typed field, is typed by the enclosing class's same-named field; zig refuses.
    - [x] BUG-519 (FIXED 2026-10-16) -- another module's struct built by named arguments ignores its defaults
      (refused "expected 2 argument(s)"). With it BUG-591: an omitted no-default field read undefined memory.
-   - [ ] BUG-237 -- a union used without `exposing` mis-emits `^T` payloads (zig refuses).
-   - [ ] The "fails inside zig" class: BUG-546, 531, 534.
-   - [ ] The cue leaks the book audit found (2026-10-10), each `-c` rc=0 then a zig error:
+   - [x] BUG-237 (FIXED 2026-10-27) -- a union used without `exposing` mis-emits `^T` payloads (zig refuses).
+   - [x] The "fails inside zig" class: BUG-546, 531 (FIXED 2026-10-25), 534 (FIXED 2026-10-26).
+   - [x] (all FIXED 2026-10-21) The cue leaks the book audit found (2026-10-10), each `-c` rc=0 then a zig error:
      BUG-550 (`cue equals` parameter unchecked), 551 (`<` / struct `==` without the cue),
      552 (`for` over a `def next` type), 553 (struct literal as `==` receiver), 554 (yielding
      `for` over `split()`), 555 (`v[0]` on a class).
-   - [ ] BUG-557 (rc7 book pass): a method call on a `str?` leaks to zig.
-   - [ ] BUG-558 -- DECISION (Sean): `text -> .len` compiles; the reference and the book say
+   - [x] BUG-557 (FIXED 2026-10-21; rc7 book pass): a method call on a `str?` leaks to zig.
+   - [x] BUG-558 (FIXED 2026-10-21, refused) -- DECISION (Sean): `text -> .len` compiles; the reference and the book say
      a pipeline's right side must be a call. Refuse it, or make it the rule?
    - [x] BUG-550 (FIXED 2026-10-11) and the audit's two questions, DECIDED by Sean and
      landed the same day: `cue compare` needs `cue equals`; `begin`/`end` are cues (`def`
@@ -106,7 +106,8 @@ as they land, so this list stays the one place that says what is left.
    - [x] `cue deinit` -- NOT in 1.0 (2026-10-10; stability_policy.md §6).
    - [ ] Arena scopes under threads: ship with "`allocate` is single-threaded" stated in
      the memory model; §28j step b stays post-1.0.
-   - [ ] BUG-106 and BUG-252 -- each needs a decision, not code.
+   - [x] BUG-106 and BUG-252 -- each needs a decision, not code. (Both CLOSED: BUG-106's
+     entry left the ledger 2026-10-25, BUG-252 closed 2026-10-28.)
    - [ ] Mark the transform interface and automatic arena scoping post-1.0 explicitly.
 4. **The freeze (§15).** [ ] CHANGELOG reconciliation (milestone vs release numbering);
    [ ] re-read stability_policy.md §6 against the tree; [ ] declare `surface-freeze` the
@@ -1031,9 +1032,10 @@ fail at the parser (BUG-172 follow-on). See `fuzz/README.md` + `FINDINGS.md`.
   switch.** (Was:) selfhost-emitted
   dep modules get a simple `_initIo` (local `_io` only); would silently use undefined
   `_io` if a transitive dep gains file I/O.
-- **BUG-180** — bootstrap ctor-default fill (see Compiler hardening). Bootstrap-only.
-- **BUG-026** — `instance_method_return_types` gaps for exposed-type method chains.
-  Not manifesting (`scanMutationsInExpr` conservatively marks cross-module calls
+- **BUG-180** — bootstrap ctor-default fill. Bootstrap-only, so MOOT since the bootstrap
+  was deleted (2026-09-16); the selfhost was always correct.
+- **BUG-026** — CLOSED 2026-10-27 (does not reproduce in the selfhost; fixture added).
+  Was: `instance_method_return_types` gaps for exposed-type method chains. Not manifesting (`scanMutationsInExpr` conservatively marks cross-module calls
   mutated). Defer unless a concrete failing case appears.
 - **BUG-014** — regex lazy match was global, not per-quantifier. **FIXED 2026-10-28**:
   not architectural after all -- the Pike VM keeps threads in priority order and drops
