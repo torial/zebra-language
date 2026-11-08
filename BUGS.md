@@ -101,6 +101,28 @@ name in the front end.
 **Control when fixing:** `DateTime.now().epochMs` refused at -c naming `toEpoch()`;
 `DateTime.now().toEpoch()` and the computed fields (`dt.year` ...) still compile.
 
+**Found probing it, 2026-11-07 -- DateTime cannot be NAMED as a type at all.** `var t:
+DateTime = DateTime.now()`, a `DateTime` parameter, and a class field `var when: DateTime`
+are each refused at -c, "unknown type 'DateTime'". The runtime's type is `_DateTime`, which
+the runtime-public-name check does not match, and `isBuiltinObjectTypeName` does not list
+it. Codegen has no mapping for the name either, so even an accepted annotation would fail in
+zig. Nothing in this repo, the book, zebra-ide or the GameEngine annotates one; every use
+is an unannotated local. This is BUG-345's shape (Timer could not be a field) for DateTime.
+Separately, codegen recognises a DateTime by NAME (`isDateTimeExpr`: locals initialised
+from `DateTime.*` or an `add*` call), not by type, so `c.when.year` on a field would emit
+`.year` on the raw struct even once the annotation is accepted.
+
+**Plan (daytime):** (1) give DateTime a checker type, either a `Type_` variant as BUG-345
+did for Timer or `Type_.named("DateTime")` guarded by `not ctx.hasClassAny("DateTime")` as
+CsvTable does. Choose by counting the exhaustive `branch` sites a new variant touches.
+(2) Type the constructors and the `add*`/`inZone` results as it, the seven fields int, and
+the methods per QUICKSTART's table. Also allow the raw `epoch_ms` (QUICKSTART's inZone notes
+name it). (3) Refuse any other member by name. (4) Accept `DateTime` as a type name and map
+it to `_DateTime` in codegen. (5) Make `isDateTimeExpr` consult the type, so fields and
+parameters dispatch. A fixture covering a field, a parameter, a return, and a refused
+member. Then the same for CsvTable / HttpResponse / File, one at a time. Related: BUG-683
+(two DateTime emit leaks found on the same probe, fixed on the bug682 branch).
+
 ---
 
 ### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep — cause unknown
