@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-683. Next new bug: BUG-684.**
+**Last bug number generated: BUG-684. Next new bug: BUG-685.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,27 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-684: a `Ws.serve` server prints Zig "unexpected NTSTATUS" traces when clients drop
+
+**Reported 2026-11-07 by Fable** while confirming BUG-682's fix with the GameEngine's
+`net_departure_test`: 550 to 655 traces per run, every one CONNECTION_RESET,
+CONNECTION_ABORTED or LOCAL_DISCONNECT, on the server's reads at client departures. These are
+std's Debug-mode prints for an NTSTATUS it does not map, and they appear before the runtime's
+`catch` turns the failed read into nil. The program is correct and carries on, so this is not
+a failure. But a user sees pages of Zig traces about runtime code they never wrote, which is
+BUG-542's shape (that one fixed the WRITE of a second close frame; this is the READ). It
+predates BUG-682 and is unchanged by it.
+
+**Fix shape (to decide):** the trace is printed inside std (`windows.unexpectedStatus`), so
+the runtime cannot catch its way out. Options: read through a path that maps these statuses
+(check what 0.17 offers), or accept it as Debug-only noise and document it. Measure what a
+`--release` build prints first.
+
+**Control when fixing:** a `Ws.serve` program whose client exits without closing (a
+reset): today it prints the traces; after the fix nothing, and `recv()` returns nil.
 
 ---
 
