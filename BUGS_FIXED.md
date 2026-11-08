@@ -6,6 +6,23 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-683: `DateTime.fromEpoch(ms)` as a receiver or argument, and `not dt.before(x)`, passed `-c` and failed inside zig -- FIXED 2026-11-07
+
+**Found 2026-11-07** probing BUG-680 with `dt.after(DateTime.fromEpoch(0))`: `-c` exit 0,
+then zig "expected ',' after argument" at the user's line. Two emit defects in the DateTime
+paths of CodeGen. (1) `DateTime.fromEpoch(ms)` emitted a bare `_DateTime{ .epoch_ms = ms }`,
+and Zig allows no `.field` suffix on a struct literal; every DateTime use reads `.epoch_ms`
+off its receiver or argument, so `DateTime.fromEpoch(0).year`, `.toEpoch()`, `.weekday`, and
+any comparison taking one failed. (2) `before`/`after`/`equals` emitted
+`a.epoch_ms < b.epoch_ms` unparenthesised, so `not dt.before(x)` became
+`!dt.epoch_ms < ...` ("expected type 'bool', found 'i64'"). **Fix:** both emits are
+parenthesised. Fixture `test/bug683_datetime_literal_receiver_test.zbr` (8 asserts, values
+derived by hand from the epoch): red on the pre-fix compiler at its first comparison; the
+expected values were checked on the emitted Zig with both fixes applied by hand (all pass,
+and a planted wrong year panics naming it) before the compiler was rebuilt.
+
+---
+
 ### BUG-682: `ws.close()` under a reader in `ws.recv()` on another thread closed the socket under the read -- FIXED 2026-11-07
 
 **Reported 2026-11-07 by Fable** (GameEngine F65, `game/net_departure_test.zig`, 1c93942):

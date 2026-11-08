@@ -17742,6 +17742,9 @@ struct Generator
                 w.emit(")")
                 return
             if mname == "before" or mname == "after" or mname == "equals"
+                # BUG-683: parenthesised whole -- `not dt.before(x)` emitted
+                # `!dt.epoch_ms < x.epoch_ms`, where `!` binds to the integer.
+                w.emit("(")
                 genExpr(m.object)
                 w.emit(".epoch_ms ")
                 if mname == "before"
@@ -17754,7 +17757,7 @@ struct Generator
                     genExpr(args.at(0).value)
                 else
                     w.emit("_dt_now()")
-                w.emit(".epoch_ms")
+                w.emit(".epoch_ms)")
                 return
             if mname == "daysBetween" or mname == "secondsBetween"
                 if mname == "daysBetween"
@@ -22829,12 +22832,14 @@ struct Generator
             w.emit("_dt_now()")
             return
         if mname == "fromEpoch"
-            w.emit("_DateTime{ .epoch_ms = ")
+            # BUG-683: parenthesised, because Zig allows no `.field` suffix on a bare struct
+            # literal, and every DateTime use reads `.epoch_ms` off its receiver/argument.
+            w.emit("(_DateTime{ .epoch_ms = ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
-            w.emit(" }")
+            w.emit(" })")
             return
         if mname == "of"
             w.emit("_dt_from_gregorian(")

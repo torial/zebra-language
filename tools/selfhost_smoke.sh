@@ -852,6 +852,9 @@ smoke_tc_fail test/fail_fixtures/generic_iface_twice_test.zbr \
     "implements 'Conv' twice with different type arguments"
 smoke_run test/generic_class_default_init_test.zbr "gen-init: OK"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
+# BUG-683: DateTime.fromEpoch(...) as a receiver/argument and `not dt.before(x)` reached zig as
+# invalid code; 8 hand-derived asserts, the sentinel prints only if all hold.
+smoke_run test/bug683_datetime_literal_receiver_test.zbr "bug683: ok"
 
 # SIMD §32, the 1.0 slice (2026-09-18): comparison masks (boolxN), select/any/all/count,
 # lane-wise min/max, casts, a splat that narrows an `int` into u8 lanes (BUG-431's

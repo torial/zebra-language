@@ -1,0 +1,21 @@
+# BUG-683: `DateTime.fromEpoch(ms)` emitted a bare struct literal, `_DateTime{ .epoch_ms = ms }`,
+# and Zig does not allow a `.field` suffix on one. So any use that reads its epoch -- as the
+# argument of before/after/equals, or as the receiver of a field or method -- passed `-c`
+# and failed inside zig ("expected ',' after argument"), at the user's line. Found 2026-11-07
+# probing BUG-680 with `dt.after(DateTime.fromEpoch(0))`. The literal is parenthesised now.
+#
+# Every expected value below is derived by hand from the epoch, not recorded from a run:
+# 0 ms is 1970-01-01 00:00:00 UTC, a Thursday (ISO weekday 4). The smoke registration
+# expects the last line, which prints only if every assert held.
+
+def main()
+    var dt = DateTime.of(2024, 3, 15, 14, 30, 45)
+    assert dt.after(DateTime.fromEpoch(0))
+    assert not dt.before(DateTime.fromEpoch(0))
+    assert DateTime.fromEpoch(0).equals(DateTime.fromEpoch(0))
+    assert DateTime.fromEpoch(0).year == 1970
+    assert DateTime.fromEpoch(0).weekday == 4
+    assert DateTime.fromEpoch(5000).toEpoch() == 5000
+    assert DateTime.fromEpoch(5000).timestamp() == 5
+    assert DateTime.fromEpoch(0).addDays(1).day == 2
+    print("bug683: ok")

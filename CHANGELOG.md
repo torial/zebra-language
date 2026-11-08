@@ -46,6 +46,9 @@ confirmed via `tools/bootstrap_check.sh`.
   trace, or a panic / silent exit 3 from std's `unreachable` on the cancelled read. The
   handle is now closed only when no read can touch it; the reader returns nil once the peer
   answers the close. Reported by the GameEngine session (F65).
+- **BUG-683:** `DateTime.fromEpoch(ms)` used as a receiver or argument
+  (`DateTime.fromEpoch(0).year`, `dt.after(DateTime.fromEpoch(0))`) and `not dt.before(x)`
+  passed `-c` and failed inside zig. Both emits are parenthesised now.
 
 ---
 
