@@ -2827,16 +2827,79 @@ pub const _WsConn = struct {
         tls:   *_WsTlsState,
     },
     server_side: bool,
-    closed: bool,
+    // `close()` was called. Atomic since BUG-682: a connection may be closed from one
+    // thread while another is in `recv()`.
+    closed: std.atomic.Value(bool) = .init(false),
     // BUG-542: a close frame goes out at most once, and never after a read has shown the
     // peer gone. Without it a peer's close was answered by `_ws_recv` AND again by the
     // handler's `ws.close()` (or Ws.serve's fallback); the second write met a socket the
     // peer had already dropped, and on Windows std printed an "unexpected NTSTATUS" trace
     // (LOCAL_DISCONNECT / CONNECTION_ABORTED are unmapped) before our `catch {}` ran.
     // `closed` still means "the stream was closed" -- the two are different events.
-    close_sent: bool = false,
+    close_sent: std.atomic.Value(bool) = .init(false),
+    // BUG-682: the socket HANDLE is closed only when no read can touch it. `close()` used
+    // to close it under a reader blocked in `recv()` on another thread; on Windows the
+    // reader then read a closed handle (an "unexpected NTSTATUS INVALID_HANDLE" trace) or
+    // had its pending read cancelled, which std maps to `unreachable` (exit 3, silent:
+    // Fable, GameEngine F65). Now `close()` sends the close frame and shuts down only the
+    // SEND side; the reader sees the peer's answering close and returns nil; whoever
+    // leaves last closes the handle. One word holds the reader count and two flags so
+    // admitting a reader and closing the handle are mutually exclusive (a CAS each).
+    ws_state: std.atomic.Value(u32) = .init(0),
+    send_shut: std.atomic.Value(bool) = .init(false),
+
+    const _WS_CLOSING: u32 = 1;
+    const _WS_RELEASED: u32 = 2;
+    const _WS_READER: u32 = 4;
+
+    fn enterRead(self: *_WsConn) bool {
+        var st = self.ws_state.load(.seq_cst);
+        while (true) {
+            if (st & _WS_RELEASED != 0) return false;
+            st = self.ws_state.cmpxchgWeak(st, st + _WS_READER, .seq_cst, .seq_cst) orelse return true;
+        }
+    }
+
+    fn exitRead(self: *_WsConn) void {
+        _ = self.ws_state.fetchSub(_WS_READER, .seq_cst);
+        self.tryRelease();
+    }
+
+    // Close the handle iff close was requested, no reader is in flight, and nobody has.
+    fn tryRelease(self: *_WsConn) void {
+        var st = self.ws_state.load(.seq_cst);
+        while (true) {
+            if (st & _WS_RELEASED != 0 or st & _WS_CLOSING == 0 or st >= _WS_READER) return;
+            st = self.ws_state.cmpxchgWeak(st, st | _WS_RELEASED, .seq_cst, .seq_cst) orelse {
+                self.closeStream();
+                return;
+            };
+        }
+    }
+
+    fn requestRelease(self: *_WsConn) void {
+        _ = self.ws_state.fetchOr(_WS_CLOSING, .seq_cst);
+        self.tryRelease();
+    }
+
+    // Ws.serve, after the handler returned: the connection is about to be freed, so the
+    // handle is closed now whatever is in flight (a host reading or sending on it from
+    // another thread past that point is the host's bug -- QUICKSTART's Ws notes).
+    fn forceRelease(self: *_WsConn) void {
+        const st = self.ws_state.fetchOr(_WS_CLOSING | _WS_RELEASED, .seq_cst);
+        if (st & _WS_RELEASED == 0) self.closeStream();
+    }
+
+    fn shutdownSend(self: *_WsConn) void {
+        switch (self.impl) {
+            .plain => |p| p.stream.shutdown(_io, .send) catch {},
+            .tls   => |t| t.stream.shutdown(_io, .send) catch {},
+        }
+    }
 
     pub fn readExact(self: *_WsConn, buf: []u8) !void {
+        if (!self.enterRead()) return error.ConnectionResetByPeer;
+        defer self.exitRead();
         switch (self.impl) {
             .plain => |*p| {
                 var remaining = buf;
@@ -2854,6 +2917,7 @@ pub const _WsConn = struct {
     }
 
     pub fn writeAll(self: *_WsConn, buf: []const u8) !void {
+        if (self.send_shut.load(.seq_cst)) return error.BrokenPipe;
         switch (self.impl) {
             .plain => |*p| {
                 p.wr.interface.writeAll(buf) catch return error.BrokenPipe;
@@ -2912,9 +2976,8 @@ pub fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []cons
     );
 }
 
-pub fn _ws_send_close_frame(conn: *_WsConn) void {
-    if (conn.close_sent) return;
-    conn.close_sent = true;
+pub fn _ws_send_close_frame(conn: *_WsConn) bool {
+    if (conn.close_sent.swap(true, .seq_cst)) return false;
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
@@ -2926,6 +2989,7 @@ pub fn _ws_send_close_frame(conn: *_WsConn) void {
         const frame = [4]u8{ 0x88, 0x02, close_code[0], close_code[1] };
         conn.writeAll(&frame) catch {};
     }
+    return true;
 }
 
 pub fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
@@ -2976,13 +3040,11 @@ pub fn _ws_connect(url: []const u8) ?*_WsConn {
     if (is_tls) {
         const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(_io); _pa.destroy(conn); return null; };
         _ws_tls_init(ts, stream, host) catch { stream.close(_io); _pa.destroy(ts); _pa.destroy(conn); return null; };
-        conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
+        conn.* = .{ .impl = .{ .tls = ts }, .server_side = false };
     } else {
         // Initialize _WsPlain at its final heap address before setting up reader/writer,
         // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
-        conn.server_side = false;
-        conn.closed = false;
-        conn.close_sent = false;
+        conn.* = .{ .impl = undefined, .server_side = false };
         conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
         conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
         conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
@@ -3067,35 +3129,35 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
-        conn.readExact(&hdr2) catch { conn.close_sent = true; return null; };
+        conn.readExact(&hdr2) catch { conn.close_sent.store(true, .seq_cst); return null; };
         const fin     = (hdr2[0] & 0x80) != 0;
         const opcode  = hdr2[0] & 0x0f;
         const has_mask = (hdr2[1] & 0x80) != 0;
         var plen: u64 = hdr2[1] & 0x7f;
         if (plen == 126) {
             var ext2: [2]u8 = undefined;
-            conn.readExact(&ext2) catch { conn.close_sent = true; return null; };
+            conn.readExact(&ext2) catch { conn.close_sent.store(true, .seq_cst); return null; };
             plen = (@as(u64, ext2[0]) << 8) | ext2[1];
         } else if (plen == 127) {
             var ext8: [8]u8 = undefined;
-            conn.readExact(&ext8) catch { conn.close_sent = true; return null; };
+            conn.readExact(&ext8) catch { conn.close_sent.store(true, .seq_cst); return null; };
             plen = 0;
             for (ext8) |b| plen = (plen << 8) | b;
         }
         var mk: [4]u8 = .{ 0, 0, 0, 0 };
-        if (has_mask) conn.readExact(&mk) catch { conn.close_sent = true; return null; };
+        if (has_mask) conn.readExact(&mk) catch { conn.close_sent.store(true, .seq_cst); return null; };
         // Read payload (cap at 64 MiB)
         const safe: usize = @intCast(@min(plen, 64 * 1024 * 1024));
         const payload = alloc.alloc(u8, safe) catch return null;
         defer alloc.free(payload);
-        conn.readExact(payload) catch { conn.close_sent = true; return null; };
+        conn.readExact(payload) catch { conn.close_sent.store(true, .seq_cst); return null; };
         if (has_mask) { for (payload, 0..) |*b, i| { b.* = b.* ^ mk[i % 4]; } }
         switch (opcode) {
             0, 1, 2 => {
                 msg.appendSlice(alloc, payload) catch return null;
                 if (fin) return msg.toOwnedSlice(alloc) catch null;
             },
-            8  => { _ws_send_close_frame(conn); return null; },
+            8  => { _ = _ws_send_close_frame(conn); return null; },
             9  => _ws_send_pong(conn, payload),
             0xa => {}, // pong — ignore
             else => return null,
@@ -3104,11 +3166,16 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
 }
 
 pub fn _ws_close(conn: *_WsConn) void {
-    if (!conn.closed) {
-        conn.closed = true;
-        _ws_send_close_frame(conn);
-        conn.closeStream();
-    }
+    if (conn.closed.swap(true, .seq_cst)) return;
+    // The OS-level shutdown (a FIN to the peer) only when a reader is in flight -- the case
+    // it exists for -- and only when THIS close started the closing handshake. Otherwise
+    // the handle is closed below exactly as before BUG-682: a shutdown on a socket the peer
+    // already dropped makes Windows report CONNECTION_RESET, which std prints as an
+    // "unexpected NTSTATUS" trace (BUG-542's shape; ws_echo_test showed it 4 of 15 runs).
+    const started = _ws_send_close_frame(conn);
+    conn.send_shut.store(true, .seq_cst);
+    if (started and conn.ws_state.load(.seq_cst) >= _WsConn._WS_READER) conn.shutdownSend();
+    conn.requestRelease();
     // WsConn struct itself not freed here — OK for arena-allocator model
 }
 
@@ -3173,19 +3240,14 @@ pub fn _ws_serve(port: u16, handler: anytype) void {
             // Create WsConn and call handler
             const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.close(_io); return; };
             defer _pa.destroy(ws);
-            ws.server_side = true;
-            ws.closed = false;
-            ws.close_sent = false;
+            ws.* = .{ .impl = undefined, .server_side = true };
             ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
             ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
             ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
             _ws_invoke(ctx.handler_fn, ws);
             // Close if handler didn't (or errored out)
-            if (!ws.closed) {
-                ws.closed = true;
-                _ws_send_close_frame(ws);
-                ws.closeStream();
-            }
+            _ws_close(ws);
+            ws.forceRelease();
         }
     };
     const _pa = std.heap.page_allocator;

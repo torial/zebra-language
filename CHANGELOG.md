@@ -41,6 +41,11 @@ confirmed via `tools/bootstrap_check.sh`.
   On `--target v` the calls map to no-ops (V's runtime is collected).
 - **BUG-681 (V backend):** a walk over a module list or a field switched to the new list when
   the loop body reassigned it; the for header is now bound once, as on Zig.
+- **BUG-682 (runtime):** `ws.close()` from one thread while another was in `ws.recv()` on
+  the same connection closed the socket under the read: on Windows an "unexpected NTSTATUS"
+  trace, or a panic / silent exit 3 from std's `unreachable` on the cancelled read. The
+  handle is now closed only when no read can touch it; the reader returns nil once the peer
+  answers the close. Reported by the GameEngine session (F65).
 
 ---
 

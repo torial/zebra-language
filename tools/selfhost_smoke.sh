@@ -1904,6 +1904,10 @@ smoke_run_bounded test/bug611_ws_accept_test.zbr "bug611_ws_accept: OK" 90
 # ws.close() must not write a second one into the dropped socket (on Windows std printed an
 # "unexpected NTSTATUS" trace for it). The expected line proves the close path ran.
 smoke_run_bounded test/bug542_ws_close_once_test.zbr "bug542: host saw 2 messages, then the close" 90 "NTSTATUS"
+# BUG-682: ws.close() on one thread while another is in ws.recv() on the same connection must
+# not close the socket under the read (old runtime: an NTSTATUS trace 11 of 12 runs, a panic
+# on the cancelled read 1 of 12 -- the panic loses the sentinel, the trace hits the forbid).
+smoke_run_bounded test/bug682_ws_close_under_recv_test.zbr "bug682: reader ended cleanly after the close" 90 "NTSTATUS"
 # BUG-636: the argv family of sys is checked in the front end -- a str command, a List(int),
 # a missing argument and a non-str cwd were each accepted by -c and failed inside zig, in
 # runtime code. The ok fixture runs every legitimate argv shape (bounded: it spawns itself).

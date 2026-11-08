@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-682: `ws.close()` under a reader in `ws.recv()` on another thread closed the socket under the read -- FIXED 2026-11-07
+
+**Reported 2026-11-07 by Fable** (GameEngine F65, `game/net_departure_test.zig`, 1c93942):
+`_ws_close` sent the close frame and closed the socket while another thread of the same
+program was in `_ws_recv` on it. On Windows the reader then either read a closed handle
+(std prints an "unexpected NTSTATUS INVALID_HANDLE" trace) or had its pending read
+cancelled, which std maps to `.CANCELLED => unreachable`: a panic in Debug, and in the
+engine's build exit 3 with nothing printed (3 of 3 runs there). Measured in Zebra with
+`test/bug682_ws_close_under_recv_test.zbr` on the old runtime: 11 of 12 runs printed the
+trace and 1 of 12 died "reached unreachable code".
+
+**Fix (runtime, `_WsConn`):** the socket handle is closed only when no read can touch it.
+One atomic word holds the reader count and two flags (close requested, handle released),
+so admitting a reader (every `readExact`) and closing the handle are mutually exclusive.
+`close()` sends the close frame, refuses every later write (a pong, a `send` after close),
+shuts down the OS send side only when a reader is in flight, and closes the handle at once
+if none is -- the single-threaded path is unchanged. A reader in flight sees the peer's
+answering close, returns nil, and closes the handle as it leaves. The close frame is
+decided by an atomic swap, so a reader answering the peer and a closer cannot both send
+one. `Ws.serve` closes the handle after the handler returns whatever is in flight (the
+connection is freed there; QUICKSTART's Ws notes say a host must not use it past that).
+
+**Measured, not argued:** the first cut shut down the send side on every close; `ws_echo_test`
+then printed a CONNECTION_RESET trace in 4 of 15 runs (0 of 10 on the old runtime) -- a
+shutdown on a socket the peer had already closed. The shutdown is now conditional on an
+in-flight reader. Final: the four WebSocket fixtures 12 of 12 clean each on the new runtime;
+on the old one, bug682 red as above and the other three clean.
+
+**Known limit:** a reader waiting for a peer that never answers the close frame waits for
+it; before the fix the close killed it instead. TLS connections take the same path
+(`shutdown` on the TCP stream; `end()` and the free stay in the final release), but no
+fixture runs a TLS reader and closer on two threads.
+
+---
+
 ### BUG-681: on the V backend, a walk over a module list or a field switched to the new list when the body reassigned it -- FIXED 2026-11-07
 
 **Found and fixed 2026-11-07** while mapping the free-at-sweep calls for the GameEngine's V

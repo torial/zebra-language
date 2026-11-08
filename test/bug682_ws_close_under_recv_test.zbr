@@ -1,0 +1,61 @@
+# BUG-682: `ws.close()` from one thread while another is blocked in `ws.recv()` on the
+# same connection must end the reader cleanly (recv returns nil), not the process.
+#
+# Before the fix `_ws_close` closed the socket under the read. On Windows the reader then
+# read a closed handle (std printed an "unexpected NTSTATUS INVALID_HANDLE" trace: 11 of 12
+# runs of this file) or had its pending read cancelled, which std maps to `unreachable`
+# ("reached unreachable code": 1 of 12 here; exit 3 with nothing printed, 3 of 3, in the
+# GameEngine's build -- Fable, F65). The server keeps sending so a read is in progress.
+# After the fix the handle is closed only when no read can touch it: the close frame
+# reaches the server, the server answers it, and the reader sees that answer as nil.
+#
+# The smoke registration asserts the sentinel below, printed only after the reader thread
+# reported back (a panic under the read never prints it), and forbids "NTSTATUS".
+# Bounded like bug542: server on a `sys.go` thread, connect retried with a ceiling, the
+# reader's report awaited through a channel with a timeout.
+
+var reader_done: Chan(int) = Chan(int)(1)
+
+def host(ws: WsConn)
+    var i: int = 0
+    while i < 400
+        ws.send("tick ${i}")
+        sys.sleep(1)
+        i = i + 1
+    var m = ws.recv()
+    while m != nil
+        m = ws.recv()
+    ws.close()
+
+def main()
+    sys.go(def()
+        Ws.serve(19917, host)
+    )
+    var conn: WsConn? = nil
+    var attempts: int = 0
+    while attempts < 40 and conn == nil
+        conn = Ws.connect("ws://127.0.0.1:19917/")
+        if conn == nil
+            sys.sleep(50)
+        attempts = attempts + 1
+    if conn as ws
+        sys.go(def()
+            capture
+                var ws: WsConn = ws
+            var n: int = 0
+            var m = ws.recv()
+            while m != nil
+                n = n + 1
+                m = ws.recv()
+            reader_done.send(n)
+        )
+        # let the reader get into the stream of frames, then close under it
+        sys.sleep(50)
+        ws.close()
+        var got: int? = reader_done.recvTimeout(20.0)
+        if got as n
+            print("bug682: reader ended cleanly after the close")
+        else
+            print("bug682: reader never finished")
+    else
+        print("bug682: could not connect")

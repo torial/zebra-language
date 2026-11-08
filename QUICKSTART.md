@@ -4554,9 +4554,9 @@ Ws.serve(8765, def(ws: WsConn)
   connection, make sure no send is in flight when the handler returns. For example, put the
   client's "alive" flag and every `send` under one mutex, and clear the flag under it before
   returning. Otherwise a failed write lands in freed memory.
-- Do not `close()` a connection while another thread is blocked in its `recv()`. On Windows
-  this ends the process with no message (BUG-682). Close from the thread that reads, after
-  `recv()` has returned.
+- `close()` may be called while another thread is in `recv()` on the same connection: the
+  close frame goes out, and the reader returns nil once the peer answers it (BUG-682). A
+  peer that never answers keeps that reader waiting.
 
 ### Networking — `Tcp`, `Udp`, `Net`
 
