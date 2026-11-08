@@ -23944,7 +23944,7 @@ pub const _zbr_ty_Generator = struct {
                 const m_ptr = c.callee.member;
                 const m = m_ptr.*;
 // zbr:selfhost/CodeGen.zbr:12778
-                if (std.mem.eql(u8, m.member, "query")) {
+                if ((std.mem.eql(u8, m.member, "query") or std.mem.eql(u8, m.member, "querySegments"))) {
 // zbr:selfhost/CodeGen.zbr:12779
                     if ((self.infer_ctx != null)) {
 // zbr:selfhost/CodeGen.zbr:12780
@@ -33672,13 +33672,13 @@ pub const _zbr_ty_Generator = struct {
                         return;
                     }
 // zbr:selfhost/CodeGen.zbr:18083
-                    if (std.mem.eql(u8, mname, "query")) {
+                    if ((std.mem.eql(u8, mname, "query") or std.mem.eql(u8, mname, "querySegments"))) {
 // zbr:selfhost/CodeGen.zbr:18084
                         if (_zebra_ge(@as(i64, @intCast(args.items.len)), 2)) {
 // zbr:selfhost/CodeGen.zbr:18085
                             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:18086
-                            self.w.emit(".query_p_(");
+                            self.w.emit(_str_concat(_str_concat(".", mname, _zbr_rt._allocator), "_p_(", _zbr_rt._allocator));
 // zbr:selfhost/CodeGen.zbr:18087
                             self.genExpr(_zbr_at(args.items, 0).value);
 // zbr:selfhost/CodeGen.zbr:18088
@@ -33691,7 +33691,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:18092
                             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:18093
-                            self.w.emit(".query_(");
+                            self.w.emit(_str_concat(_str_concat(".", mname, _zbr_rt._allocator), "_(", _zbr_rt._allocator));
 // zbr:selfhost/CodeGen.zbr:18094
                             if (_zebra_gt(@as(i64, @intCast(args.items.len)), 0)) {
 // zbr:selfhost/CodeGen.zbr:18095

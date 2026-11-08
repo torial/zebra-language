@@ -1,0 +1,36 @@
+# querySegments (2026-11-08, from zebra-sprocket): stored-procedure result sets.
+# The SQLite beside the compiler is vanilla -- no stored procedures -- so here the
+# call must REFUSE by name and return no rows, never rows that look like an answer
+# (a plain SELECT would otherwise come back with `_segment` 0 read from a fallback).
+# The positive path needs the sprocket fork's sqlite3.c and is witnessed by
+# zebra-sprocket's check_atlas / gen_check / probe_transport, not here.
+#
+# Expected (stderr carries the refusal, three times, naming the fix):
+#   query control: 1 row, x=7
+#   querySegments: 0 rows
+#   querySegments with params: 0 rows
+#   iterated: 0
+#   segments: OK
+def main()
+    var db: SqliteDb? = Sqlite.open(":memory:")
+    var d: SqliteDb = db!
+    d.exec("CREATE TABLE t (x INTEGER)")
+    d.exec("INSERT INTO t VALUES (7)")
+
+    # Control: the same database answers an ordinary query.
+    var plain = d.query("SELECT x FROM t")
+    print("query control: " + plain.count().toString() + " row, x=" + plain.at(0).asInt("x").toString())
+
+    var segs = d.querySegments("SELECT x FROM t")
+    print("querySegments: " + segs.count().toString() + " rows")
+    var segp = d.querySegments("CALL p(?) RETURNING x", [1])
+    print("querySegments with params: " + segp.count().toString() + " rows")
+
+    # The result is typed like query()'s: iterable, rows with as* accessors.
+    var n = 0
+    for row in d.querySegments("SELECT x FROM t")
+        n = n + row.asInt("_segment") + 1
+    print("iterated: " + n.toString())
+    if plain.count() == 1 and segs.count() == 0 and segp.count() == 0 and n == 0
+        print("segments: OK")
+    d.close()

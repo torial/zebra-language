@@ -4367,6 +4367,32 @@ pub const _SqliteRow = struct {
     pub fn bool_(self: _SqliteRow, name: []const u8) bool { return self.int_(name) != 0; }
 };
 
+// ── querySegments: stored-procedure result sets (2026-11-08, from zebra-sprocket) ──
+// The SQLite beside the compiler is vanilla, which has no stored procedures; the
+// sprocket fork adds them, and two C functions the segment walk needs. They are
+// declared here as WEAK DEFINITIONS: when the fork's sqlite3.c is linked its strong
+// definitions win, and when it is not these fallbacks satisfy the link. `linked()`
+// asks which one the linker kept, by address, so a program never runs the walk on a
+// fallback value -- querySegments refuses by name instead. (A weak REFERENCE,
+// `@extern(.weak)`, was tried first: on Windows it reads non-null when absent and
+// the call segfaults.) The exports sit in this struct so only a program that calls
+// querySegments carries them. CANNOT DETECT: the fork linked from a prebuilt
+// archive -- the fallback satisfies the reference first, so it reports "absent".
+const _SqliteProcs = struct {
+    fn absentSegment(stmt: *_sqlite3_stmt) callconv(.c) c_int { _ = stmt; return -1; }
+    fn absentNext(stmt: *_sqlite3_stmt) callconv(.c) c_int { _ = stmt; return 1; } // SQLITE_ERROR
+    comptime {
+        @export(&absentSegment, .{ .name = "sqlite3_proc_current_segment", .linkage = .weak, .visibility = .hidden });
+        @export(&absentNext, .{ .name = "sqlite3_proc_next_resultset", .linkage = .weak, .visibility = .hidden });
+    }
+    extern fn sqlite3_proc_current_segment(stmt: *_sqlite3_stmt) c_int;
+    extern fn sqlite3_proc_next_resultset(stmt: *_sqlite3_stmt) c_int;
+    fn linked() bool {
+        return @intFromPtr(&sqlite3_proc_current_segment) != @intFromPtr(&absentSegment) and
+            @intFromPtr(&sqlite3_proc_next_resultset) != @intFromPtr(&absentNext);
+    }
+};
+
 pub const _SqliteDbInner = struct {
     db: *_sqlite3,
 
@@ -4436,6 +4462,144 @@ pub const _SqliteDbInner = struct {
     pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
     pub fn query_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetch(sql, &.{}); }
     pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetch(sql, params); }
+    // ── querySegments: one row per result-set row of a stored procedure, each with a
+    // leading "_segment" column (0 = the parent rows, k = the k-th nested table). Two
+    // transports: the engine's own merge, "CALL p(...) WITH INTERLEAVED", renamed per
+    // segment from PRAGMA proc_info (DISJOINT layout: segment k's payload starts at
+    // 2 + the arities before it); and, when the engine refuses that (different-key
+    // siblings, several result sets), the walk over sqlite3_proc_next_resultset. Rows
+    // arrive interleaved (parent, then its children) from the first and
+    // segment-major from the second; parent rows carry fold columns only from the walk.
+    fn _colVal(stmt: *_sqlite3_stmt, ci: c_int) _SqliteVal {
+        return switch (sqlite3_column_type(stmt, ci)) {
+            _SQLITE_INTEGER => .{ .int   = sqlite3_column_int64(stmt, ci) },
+            _SQLITE_FLOAT   => .{ .float = sqlite3_column_double(stmt, ci) },
+            _SQLITE_TEXT    => blk: {
+                const raw = sqlite3_column_text(stmt, ci) orelse break :blk .null_;
+                const t = std.mem.sliceTo(raw, 0);
+                break :blk .{ .text = _allocator.dupe(u8, t) catch t };
+            },
+            else => .null_,
+        };
+    }
+    fn _segInterSql(sql: []const u8) ?[:0]const u8 {
+        // "CALL name(args) [RETURNING ...]" -> "CALL name(args) WITH INTERLEAVED"
+        var cut: usize = sql.len;
+        var i: usize = 0;
+        while (i + 11 <= sql.len) : (i += 1) {
+            if (std.ascii.eqlIgnoreCase(sql[i .. i + 11], " returning ")) { cut = i; break; }
+        }
+        return std.fmt.allocPrintSentinel(_allocator, "{s} WITH INTERLEAVED", .{sql[0..cut]}, 0) catch null;
+    }
+    fn _segProcName(sql: []const u8) ?[]const u8 {
+        var i: usize = 0;
+        while (i < sql.len and sql[i] == ' ') i += 1;
+        if (i + 5 > sql.len or !std.ascii.eqlIgnoreCase(sql[i .. i + 5], "call ")) return null;
+        i += 5;
+        while (i < sql.len and sql[i] == ' ') i += 1;
+        const start = i;
+        while (i < sql.len and (std.ascii.isAlphanumeric(sql[i]) or sql[i] == '_')) i += 1;
+        if (i == start) return null;
+        return sql[start..i];
+    }
+    // Per-segment column names: index 0 = the parent's VALUE columns (an empty
+    // decltype marks a nested column, which the interleaved payload does not carry),
+    // index k = child k's columns.
+    fn _segNames(self: *_SqliteDbInner, proc: []const u8) ?[]const []const []const u8 {
+        const psql = std.fmt.allocPrintSentinel(_allocator, "PRAGMA proc_info({s})", .{proc}, 0) catch return null;
+        defer _allocator.free(psql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, psql, -1, &stmt, null) != _SQLITE_OK) return null;
+        defer _ = sqlite3_finalize(stmt);
+        var segs = std.ArrayList(std.ArrayList([]const u8)).empty;
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            const set = sqlite3_column_int64(stmt, 0);
+            if (set < 1) continue;               // set 0 is the parameters
+            const idx: usize = @intCast(set - 1);
+            while (segs.items.len <= idx) segs.append(_allocator, std.ArrayList([]const u8).empty) catch return null;
+            const raw = sqlite3_column_text(stmt, 2) orelse continue;
+            const decl = sqlite3_column_text(stmt, 3);
+            if (idx == 0 and (decl == null or decl.?[0] == 0)) continue;
+            const nm = _allocator.dupe(u8, std.mem.sliceTo(raw, 0)) catch return null;
+            segs.items[idx].append(_allocator, nm) catch return null;
+        }
+        if (segs.items.len == 0) return null;
+        const out = _allocator.alloc([]const []const u8, segs.items.len) catch return null;
+        for (segs.items, 0..) |seg, k| out[k] = seg.items;
+        return out;
+    }
+    fn _segInterleaved(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) ?_ZbrList(_SqliteRow) {
+        const proc = _segProcName(sql) orelse return null;
+        const names = self._segNames(proc) orelse return null;
+        const isql = _segInterSql(sql) orelse return null;
+        defer _allocator.free(isql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, isql, -1, &stmt, null) != _SQLITE_OK) return null;
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        const bases = _allocator.alloc(usize, names.len) catch return null;
+        var acc: usize = 2;
+        for (names, 0..) |segn, k| { bases[k] = acc; acc += segn.len; }
+        var rows = _zbr_new(_ZbrList(_SqliteRow));
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            const seg64 = sqlite3_column_int64(stmt, 0);
+            if (seg64 < 0 or seg64 >= names.len) return null;   // shape drift: the walk serves it
+            const seg: usize = @intCast(seg64);
+            var rnames = std.ArrayList([]const u8).empty;
+            var vals = std.ArrayList(_SqliteVal).empty;
+            rnames.append(_allocator, "_segment") catch return null;
+            vals.append(_allocator, .{ .int = seg64 }) catch return null;
+            for (names[seg], 0..) |nm, j| {
+                rnames.append(_allocator, nm) catch return null;
+                vals.append(_allocator, _colVal(stmt, @intCast(bases[seg] + j))) catch return null;
+            }
+            rows.append(_allocator, .{ .names = rnames.items, .vals = vals.items }) catch return null;
+        }
+        return rows;
+    }
+    fn _segWalk(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
+        var rows = _zbr_new(_ZbrList(_SqliteRow));
+        const csql = _allocator.dupeSentinel(u8, sql, 0) catch return rows;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite querySegments error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return rows;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        while (true) {
+            const ncols = sqlite3_column_count(stmt);   // re-read: each segment has its own shape
+            while (sqlite3_step(stmt) == _SQLITE_ROW) {
+                const seg = _SqliteProcs.sqlite3_proc_current_segment(stmt);
+                var names = std.ArrayList([]const u8).empty;
+                var vals = std.ArrayList(_SqliteVal).empty;
+                names.append(_allocator, "_segment") catch {};
+                vals.append(_allocator, .{ .int = @as(i64, seg) }) catch {};
+                var ci: c_int = 0;
+                while (ci < ncols) : (ci += 1) {
+                    const col_name = std.mem.sliceTo(sqlite3_column_name(stmt, ci), 0);
+                    names.append(_allocator, _allocator.dupe(u8, col_name) catch col_name) catch {};
+                    vals.append(_allocator, _colVal(stmt, ci)) catch {};
+                }
+                rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
+            }
+            if (_SqliteProcs.sqlite3_proc_next_resultset(stmt) != _SQLITE_OK) break;
+        }
+        return rows;
+    }
+    pub fn _fetchSegments(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
+        if (!_SqliteProcs.linked()) {
+            std.debug.print("SQLite querySegments error: this SQLite has no stored procedures -- " ++
+                "querySegments needs one built with them (zebra-sprocket's sqlite3.c beside the compiler, " ++
+                "in vendor/sqlite/); use query() for an ordinary statement\n", .{});
+            return _zbr_new(_ZbrList(_SqliteRow));
+        }
+        if (self._segInterleaved(sql, params)) |r| return r;
+        return self._segWalk(sql, params);
+    }
+    pub fn querySegments_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetchSegments(sql, &.{}); }
+    pub fn querySegments_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetchSegments(sql, params); }
     pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
     pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
     pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }

@@ -2394,7 +2394,7 @@ def udpSocketMethodKnown(name: str): bool
     return name == "send" or name == "recv" or name == "close"
 
 def sqliteDbMethodKnown(name: str): bool
-    return name == "exec" or name == "query" or name == "begin" or name == "commit" or name == "rollback" or name == "close"
+    return name == "exec" or name == "query" or name == "querySegments" or name == "begin" or name == "commit" or name == "rollback" or name == "close"
 
 def sqliteRowMethodKnown(name: str): bool
     return name == "asInt" or name == "asStr" or name == "asFloat" or name == "asBool"
@@ -5156,10 +5156,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         on Type_.sqlite_db
                             if not sqliteDbMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/begin/commit/rollback/close)")
+                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/querySegments/begin/commit/rollback/close)")
                                 return Type_.unknown_
                             var sqmname: str = mem.member
-                            if sqmname == "query"
+                            if sqmname == "query" or sqmname == "querySegments"
                                 return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
                             return Type_.void_  # exec, begin, commit, rollback, close
                         on Type_.sqlite_row
@@ -5993,7 +5993,7 @@ def isStrListCallExpr(e: Expr): bool
 def isSqliteQueryCallExpr(e: Expr, ctx: InferCtx): bool
     if e is Expr.call as cal
         if cal.callee is Expr.member as mem
-            if mem.member == "query"
+            if mem.member == "query" or mem.member == "querySegments"
                 if mem.object is Expr.ident as id
                     var ot: Type_ = ctx.localType(id.name)
                     if ot is Type_.sqlite_db

@@ -5659,6 +5659,29 @@ d.exec("INSERT INTO users VALUES (?, ?)", [3, "carol"])
 d.commit()      # or d.rollback() to discard
 ```
 
+### Stored procedures: `querySegments`
+
+```zebra
+var rows = d.querySegments("CALL atlas()")          # or (sql, [params])
+for row in rows
+    if row.asInt("_segment") == 0
+        print(row.asStr("title"))                     # a parent row
+```
+
+For a SQLite built with stored procedures -- zebra-sprocket's fork, whose `sqlite3.c`
+replaces the one in `vendor/sqlite/` beside the compiler. A procedure that returns
+nested tables comes back as one flat list: every row carries a leading `_segment`
+column, 0 for the parent rows and k for the k-th nested table, and the rest of its
+columns by name. The result is typed like `query()`'s.
+
+On the vanilla SQLite that ships with Zebra, `querySegments` prints
+`this SQLite has no stored procedures` on stderr and returns no rows -- for any
+statement, including a plain `SELECT`, so its rows are never mistaken for an answer.
+Use `query()` there. The fork must be linked from its `.c` source: a prebuilt archive
+is reported as absent. It also needs Zig 0.17 (the version the compiler pins): under
+Zig 0.16 the runtime always binds its own fallback, so `querySegments` refuses even
+with the fork linked.
+
 ### Closing
 
 ```zebra

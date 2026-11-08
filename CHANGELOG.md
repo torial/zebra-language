@@ -23,6 +23,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`SqliteDb.querySegments(sql)` / `querySegments(sql, params)`**: a stored procedure's
+  nested result sets as one row list with a leading `_segment` column. Moved from
+  zebra-sprocket, whose v4 runtime patch added `query_segments` -- a method the checker
+  has refused since runtime types gained member checks (2026-09-15). It needs a SQLite
+  built with stored procedures (the sprocket fork); the vanilla SQLite beside the
+  compiler has none, and there the call refuses by name and returns no rows. The fork's
+  two C functions are declared as weak definitions the fork's own replace at link time,
+  and the runtime asks which ones the linker kept. Only the vanilla refusal is tested in
+  this repo (`test/sqlite_query_segments_test.zbr`); the positive path is witnessed by
+  zebra-sprocket's checks. Needs Zig 0.17 (under 0.16 the fallback is always bound, so
+  it refuses even against the fork). Not on the V backend.
+
 - **The V runtime no longer declares `C.snprintf`.** `zebra_rt.v` carried
   `fn C.snprintf(buf &char, n usize, ...)` for the old formatted-write path; the exact
   formatter (2026-10-26) left it with no caller, and V master deprecates `usize`

@@ -12775,7 +12775,7 @@ struct Generator
     def isSqliteQueryIter(e: Expr): bool
         if e is Expr.call as c
             if c.callee is Expr.member as m
-                if m.member == "query"
+                if m.member == "query" or m.member == "querySegments"
                     if .infer_ctx != nil
                         var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                         if recv_t is Type_.sqlite_db
@@ -18080,17 +18080,17 @@ struct Generator
                                 w.emit("\"\"")
                             w.emit(")")
                         return
-                    if mname == "query"
+                    if mname == "query" or mname == "querySegments"
                         if args.len >= 2
                             genExpr(m.object)
-                            w.emit(".query_p_(")
+                            w.emit("." + mname + "_p_(")
                             genExpr(args.at(0).value)
                             w.emit(", ")
                             genSqliteParams(args.at(1).value)
                             w.emit(")")
                         else
                             genExpr(m.object)
-                            w.emit(".query_(")
+                            w.emit("." + mname + "_(")
                             if args.len > 0
                                 genExpr(args.at(0).value)
                             else

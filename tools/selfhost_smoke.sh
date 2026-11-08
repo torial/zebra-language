@@ -1938,6 +1938,12 @@ smoke_run_bounded test/bug687_server_thread_handles_test.zbr "bug687: no handle 
 # BUG-688: a port in an int variable reaches every networking call (old runtime: zig
 # refused `expected type 'u16', found 'i64'`); out-of-range ports are refused by name.
 smoke_run test/bug688_port_int_test.zbr "bug688: every networking call takes an int port"
+# querySegments (from zebra-sprocket): on the vanilla SQLite beside the compiler it must
+# REFUSE by name and return no rows -- without the up-front check a plain SELECT came back
+# as 1 row whose _segment came from the weak fallback. The fork's positive path is
+# witnessed by zebra-sprocket (check_atlas, gen_check, probe_transport), not here.
+smoke_run test/sqlite_query_segments_test.zbr "segments: OK"
+smoke_run test/sqlite_query_segments_test.zbr "this SQLite has no stored procedures -- querySegments needs one built with them"
 # BUG-689: Http.get/post results are typed HttpResponse?, so their members are checked.
 smoke_tc_fail test/fail_fixtures/bug689_http_client_untyped_test.zbr "bug689_http_client_untyped_test.zbr:8:20: error: 'HttpResponse' has no field 'body'; the response body is .text"
 smoke_tc_fail test/fail_fixtures/bug689_http_client_untyped_test.zbr "bug689_http_client_untyped_test.zbr:10:14: error: 'HttpResponse' has no field 'statusCode'"

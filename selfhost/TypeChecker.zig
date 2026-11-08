@@ -4329,7 +4329,7 @@ pub fn _zbr_fn_udpSocketMethodKnown(name: []const u8) bool {
 pub fn _zbr_fn_sqliteDbMethodKnown(name: []const u8) bool {
     @setRuntimeSafety(true);
 // zbr:selfhost/TypeChecker.zbr:2397
-    return (((((std.mem.eql(u8, name, "exec") or std.mem.eql(u8, name, "query")) or std.mem.eql(u8, name, "begin")) or std.mem.eql(u8, name, "commit")) or std.mem.eql(u8, name, "rollback")) or std.mem.eql(u8, name, "close"));
+    return ((((((std.mem.eql(u8, name, "exec") or std.mem.eql(u8, name, "query")) or std.mem.eql(u8, name, "querySegments")) or std.mem.eql(u8, name, "begin")) or std.mem.eql(u8, name, "commit")) or std.mem.eql(u8, name, "rollback")) or std.mem.eql(u8, name, "close"));
 }
 
 // zbr:selfhost/TypeChecker.zbr:2399
@@ -9269,14 +9269,14 @@ pub fn _zbr_fn_inferExpr(e: _zbr_ty_Expr, ctx: *_zbr_ty_InferCtx) _zbr_ty_Type_ 
 // zbr:selfhost/TypeChecker.zbr:5157
                             if ((!_zbr_fn_sqliteDbMethodKnown(mem.member))) {
 // zbr:selfhost/TypeChecker.zbr:5158
-                                ctx.addErr(ctx.file, mem.span.line, mem.span.col, _str_concat(_str_concat("'SqliteDb' has no method '", mem.member, _zbr_rt._allocator), "' (exec/query/begin/commit/rollback/close)", _zbr_rt._allocator));
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col, _str_concat(_str_concat("'SqliteDb' has no method '", mem.member, _zbr_rt._allocator), "' (exec/query/querySegments/begin/commit/rollback/close)", _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:5160
                                 return _zbr_ty_Type_.unknown_;
                             }
 // zbr:selfhost/TypeChecker.zbr:5161
                             const sqmname: []const u8 = mem.member;
 // zbr:selfhost/TypeChecker.zbr:5162
-                            if (std.mem.eql(u8, sqmname, "query")) {
+                            if ((std.mem.eql(u8, sqmname, "query") or std.mem.eql(u8, sqmname, "querySegments"))) {
 // zbr:selfhost/TypeChecker.zbr:5163
                                 return _zbr_ty_Type_.sqlite_row_list;
                             }
@@ -10681,7 +10681,7 @@ pub fn _zbr_fn_isSqliteQueryCallExpr(e: _zbr_ty_Expr, ctx: *_zbr_ty_InferCtx) bo
             const mem_ptr = cal.callee.member;
             const mem = mem_ptr.*;
 // zbr:selfhost/TypeChecker.zbr:5996
-            if (std.mem.eql(u8, mem.member, "query")) {
+            if ((std.mem.eql(u8, mem.member, "query") or std.mem.eql(u8, mem.member, "querySegments"))) {
 // zbr:selfhost/TypeChecker.zbr:5997
                 if (_zbr_val(mem.object.*) == .ident) {
                     const id = mem.object.*.ident;

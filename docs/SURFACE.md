@@ -129,9 +129,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `close` `recv` `send`
 
-### SqliteDb (6)
+### SqliteDb (7)
 
-`begin` `close` `commit` `exec` `query` `rollback`
+`begin` `close` `commit` `exec` `query` `querySegments` `rollback`
 
 ### SqliteRow (4)
 
