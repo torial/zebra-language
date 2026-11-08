@@ -6,6 +6,60 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-684: a `Ws.serve` server printed Zig "unexpected NTSTATUS" traces when clients dropped -- FIXED 2026-11-07 (what is Zebra's; the rest is Zig 0.16's std, kept by decision)
+
+**Reported 2026-11-07 by Fable** while confirming BUG-682's fix with the GameEngine's
+`net_departure_test`: 550 to 655 traces per run, every one CONNECTION_RESET,
+CONNECTION_ABORTED or LOCAL_DISCONNECT, on the server's reads at client departures. These are
+std's Debug-mode prints for an NTSTATUS it does not map, and they appear before the runtime's
+`catch` turns the failed read into nil. The program is correct and carries on, so this is not
+a failure. But a user sees pages of Zig traces about runtime code they never wrote, which is
+BUG-542's shape (that one fixed the WRITE of a second close frame; this is the READ). It
+predates BUG-682 and is unchanged by it.
+
+**Narrowed the same evening, mostly not Zebra's toolchain.** Fable's per-status stacks
+(logs in GameEngine/.zig-cache/{net_dep_run_1, f65_manual/B_1, bug682/*}.txt) show the
+engine builds with **Zig 0.16**, whose `netReadWindows` / `netWriteWindows` trace every
+status they do not map. In **0.17**, which this repo pins, both map CONNECTION_RESET,
+REMOTE_DISCONNECT and LOCAL_DISCONNECT to `error.ConnectionResetByPeer` silently. The trace
+is printed only in Debug: `std.options.unexpected_error_tracing` defaults to Debug, so
+`--release` prints none. Two probes here on 0.17 printed nothing: a client closing while the
+server reads, and a client PROCESS exiting with unread data (a reset), 5 departures.
+- **Hardened on the bug682 branch:** `_ws_send` and the pong are no-ops once the close
+  handshake has begun or a read has shown the peer gone. RFC 6455 §5.5.1 requires this, and
+  it stops a broadcasting server from writing into a departing client's socket, which is where
+  every write-side trace in Fable's logs came from (0.16 or not).
+- **What is left on 0.17:** CONNECTION_ABORTED on a read is still unmapped (3 of 339 in one
+  engine run). One option is global: `.unexpected_error_tracing = false` in the runtime's
+  `std_options`. It would silence every unmapped OS status in Debug, including ones that
+  would help diagnose a genuine runtime bug, so it is a decision, not a fix.
+
+**Control when fixing:** a `Ws.serve` program whose client exits without closing (a
+reset) on 0.17 prints nothing today. The engine on 0.16 is the instrument that sees the
+write-side traces; ask its session to rerun `net_departure_test` against the branch.
+
+**Closed the same evening.** Fable reran the engine's departure test against the branch
+(f9b0c76), split by phase and by std frame:
+- **Graceful hang-ups** print nothing at all with the engine's close.
+- **Abrupt resets** (Zig 0.16) left about 3.6 traces per departure: one write and one read
+  that DISCOVER the reset, plus 1.6 follow-up writes.
+
+The follow-ups were Zebra's. A failed write did not mark the peer gone, so a broadcast loop
+kept writing until the reader thread's read failed. `_WsConn.writeAll` now stores
+`close_sent` on any error (an `errdefer`), so the next `_ws_send` writes nothing. The
+WebSocket fixtures stayed clean, 10 of 10 each.
+
+**What is left is not Zebra's to remove:**
+- The two discovery traces per abrupt departure, printed by Zig 0.16's std before any
+  `catch` runs. On the 0.17 this repo pins, those statuses are mapped and silent.
+- CONNECTION_ABORTED on a read, which 0.17 does not map.
+
+Turning `unexpected_error_tracing` off in the runtime's `std_options` would hide both, and
+hide every other unmapped OS status in Debug with them. **Sean, 2026-11-07: keep the tracing
+on.**
+
+---
+
 ### BUG-685: an `Http.serve` handler of the wrong shape passed `-c` and failed inside the runtime's Zig -- FIXED 2026-11-07
 
 **Found 2026-11-07** through BUG-680's new refusal, which caught `res.body` in the book's

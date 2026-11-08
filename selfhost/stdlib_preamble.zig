@@ -2919,6 +2919,11 @@ pub const _WsConn = struct {
 
     pub fn writeAll(self: *_WsConn, buf: []const u8) !void {
         if (self.send_shut.load(.seq_cst)) return error.BrokenPipe;
+        // BUG-684: a failed WRITE shows the peer gone as surely as a failed read, so it
+        // stops later sends the same way. Without this a broadcast loop kept writing into
+        // a reset socket until the reader thread's read failed (Fable: 1.6 extra failed
+        // writes per abrupt departure, each one an NTSTATUS trace under Zig 0.16).
+        errdefer self.close_sent.store(true, .seq_cst);
         switch (self.impl) {
             .plain => |*p| {
                 p.wr.interface.writeAll(buf) catch return error.BrokenPipe;

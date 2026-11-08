@@ -57,7 +57,8 @@ confirmed via `tools/bootstrap_check.sh`.
   docs/SURFACE.md now lists all of these members.
 - **BUG-684 (runtime, hardening):** after the WebSocket close handshake begins, or after a
   read shows the peer gone, `send` (and the automatic pong) write nothing, as RFC 6455
-  requires. A broadcasting server no longer writes into departing clients' sockets.
+  requires, and a failed write now counts as the peer gone, like a failed read. A
+  broadcasting server no longer writes into departing clients' sockets.
 - **BUG-685:** an `Http.serve` handler of the wrong shape -- two parameters, no return type,
   or a return type other than HttpResponse -- is refused at `-c`, naming the right form.
   It used to fail inside the runtime's Zig.
