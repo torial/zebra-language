@@ -6,6 +6,83 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep -- CLOSED 2026-11-07, NOT REPRODUCED (cause never established; the mitigation stays)
+
+**Found 2026-08-15** during an `output_sweep --update-baseline`. `log_test` and
+`refinement_type_test` were auto-excluded as nondeterministic and so dropped out
+of behaviour coverage. Both are deterministic:
+
+| check | result |
+|---|---|
+| built executable, 10 consecutive runs (`refinement_type_test`) | byte-identical, 12 bytes, rc=0 |
+| built executable, 8 consecutive runs (`log_test`) | byte-identical, 178 bytes |
+| through the harness's own `--show --only` path, 5 runs | byte-identical |
+
+The disagreement appears **only** inside a full 354-file sweep. What the
+exclusion records actually show is narrower than "truncation", and the
+distinction matters because the wrong word sends the next reader chasing the
+wrong mechanism: the recorded reason is a single `<` line — `0` for
+`refinement_type_test`, `All log tests passed.` for `log_test` — meaning that
+line was present in one sample and absent in another. Both happen to be the last
+line of the recorded output, which is suggestive, but nothing here establishes
+that the tail was cut rather than a sample differing some other way.
+
+**The obvious explanation was tested and FAILED.** This repo has a documented
+Windows hazard — stdout to a PIPE can lose writes, which is why `rebuild.sh` and
+`mutation_check.py` both redirect to a file — and `output_sweep` captures with
+`$(...)`, a pipe. Predicted: pipe capture truncates occasionally, file capture
+never does. Observed: **12/12 identical through both.** The theory is recorded
+here as eliminated, not as the answer.
+
+Remaining candidates, none tested: interference from an earlier fixture in the
+same sweep (a server or thread fixture outliving its `timeout`), console/handle
+contention, or something about sustained sequential load.
+
+**Mitigated, not fixed.** `output_sweep --update-baseline` now requires an
+exclusion to REPRODUCE: three samples, and if they disagree, a three-sample
+confirmation round; only a repeated difference excludes. A file that disagrees
+once and is then unanimous is kept and reported as a `transient` in the run
+summary. Both paths are control-tested (a clock-printing fixture must still be
+excluded; a forced single disagreement must be kept). That converts this from
+silent coverage loss into a printed number — but it does not explain the
+underlying disagreement, and a rising transient count is the signal to come
+back to this ticket.
+
+**Closed 2026-11-07 as NOT REPRODUCED. This is not a fix, and the cause was never found.**
+
+*What was tried, on the current tree (1b83990, Zig 0.17.1):*
+- `log_test` and `refinement_type_test`, built once, were run 900 times each through the
+  sweep's capture shape (`$(prog </dev/null 2>&1)`), 300 at 8-way and 600 at 24-way
+  parallelism. `string_builder_test` was run the same way as a third deterministic program.
+- Each of the two was run 60 more times through the compiler's run path, exactly as
+  `run_one` does (`timeout 40 zebra file.zbr </dev/null 2>&1`), at 6-way parallelism.
+- Result: every run of each program byte-identical, after the compiler's `wrote <temp dir>`
+  line was stripped. Every run carried the last line that went missing in August, and every
+  run exited `rc=0`.
+- Control: `log_json_test` prints a timestamp. It produced 12 distinct outputs in 300 runs,
+  so the comparison could see a difference.
+
+*What changed since August, which is why this cannot speak to the August mechanism:*
+- In August, `print` went through `std.debug.print` to STDERR; since BUG-318 (2026-08-29)
+  it is a buffered stdout writer.
+- The runtime handles Git Bash's overlapped pipes since BUG-635.
+- The toolchain moved from Zig 0.16 to 0.17.
+So the path that misbehaved no longer exists. What was measured is that the current path
+does not show the symptom.
+
+*Since August:*
+- Both files have been in the baseline (re-admitted 2026-08-16, with 0 transients) and
+  under every FULL and DAILY tier, with no disagreement recorded on either.
+- Every baseline re-record since reported 0 transients, except the documented race in
+  `arena_concurrency_hazard_test`.
+- The nearest relative is 2026-09-18's EMPTY capture of `bug259_runtime_exit_code_test`
+  under load. It is equally unexplained and did not recur.
+
+**What stays:** the confirmation round and the transient counter `output_sweep` prints on
+every run. A transient on a deterministic file is the signal to reopen this.
+
+---
+
 ### BUG-684: a `Ws.serve` server printed Zig "unexpected NTSTATUS" traces when clients dropped -- FIXED 2026-11-07 (what is Zebra's; the rest is Zig 0.16's std, kept by decision)
 
 **Reported 2026-11-07 by Fable** while confirming BUG-682's fix with the GameEngine's
