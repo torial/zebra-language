@@ -51,6 +51,13 @@ shutdown on a socket the peer had already closed. The shutdown is now conditiona
 in-flight reader. Final: the four WebSocket fixtures 12 of 12 clean each on the new runtime;
 on the old one, bug682 red as above and the other three clean.
 
+**The real attacker, the same evening (Fable):** the GameEngine's `net_departure_test` was
+regenerated against this branch at 4dca0dc, with the engine's `close()` mutated back to
+`_ws_close`, the shape that died 3 of 3 on the pinned runtime. Result: 3 of 3 exit 0. That
+is 120 closes under a blocked reader, with 0 "reached unreachable" and 0 INVALID_HANDLE
+traces, and the engine's own close stays green. The SERVER-side NTSTATUS traces at client
+departures remain as before (BUG-684).
+
 **The runtime's public names are unchanged**, and that was nearly missed: the first cut made
 `closed` atomic and `_ws_send_close_frame` return bool. The GameEngine's `net_host.zig` sets
 `conn.closed = true` and calls `_ws_send_close_frame(c.conn)` as a statement, and both would
