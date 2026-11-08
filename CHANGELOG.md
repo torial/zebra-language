@@ -228,6 +228,18 @@ run `zebra -c` over your code first.
 
 ### Fixes
 
+- **A server no longer leaks a handle per connection** (BUG-687). `Tcp.serve`, `Ws.serve`
+  and `Http.serve` never detached the thread each connection ran on, so on Windows a
+  long-running server held one more handle for every client it had ever accepted.
+
+- **A port in an `int` variable works with every networking call** (BUG-688).
+  `Tcp.connect`, `Tcp.serve`, `Ws.serve`, `Http.serve`, `Udp.bind` and `UdpSocket.send`
+  took a 16-bit port that only a literal could reach; a computed port failed inside zig.
+  They take `int` now, and refuse an out-of-range port by name.
+
+- **`Http.get`/`post`/`json`/`postJson` results are typed** (BUG-689), so a misspelled
+  member (`resp.body` for `resp.text`) is refused at `-c` instead of failing inside zig.
+
 - **The bundled SQLite includes FTS5 and RTREE** (BUG-686). The compiler built
   `sqlite3.c` with no feature defines, so full-text search (`USING fts5`) and spatial
   indexes (`USING rtree`) failed at run time with "no such module". Both are enabled now,

@@ -4567,6 +4567,10 @@ Ws.serve(8765, def(ws: WsConn)
 |-----------------------------------|-----------------|-------------------------------------|
 | `Tcp.connect(host, port)`         | `TcpConn?`      |                                     |
 | `Tcp.serve(port, handler)`        | void            | Accepts in a loop; calls `handler(TcpConn)` per client |
+
+A port is an ordinary `int` in every networking call (`Tcp`, `Ws.serve`, `Http.serve`,
+`Udp`). One outside 0..65535 is refused by name and the call does nothing: `connect`
+returns nil, a server returns, `send` skips, and `Udp.bind` stops the program (BUG-688).
 | `Net.resolve(host)`               | `[]str`         | DNS lookup                          |
 
 On a `TcpConn`:

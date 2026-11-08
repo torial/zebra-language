@@ -1932,6 +1932,15 @@ smoke_run_bounded test/bug542_ws_close_once_test.zbr "bug542: host saw 2 message
 smoke_run_bounded test/bug682_ws_close_under_recv_test.zbr "bug682: reader ended cleanly after the close" 90 "NTSTATUS"
 # BUG-684: no WebSocket data after the close handshake, read as raw TCP (old runtime: 24 bytes = the close + two data frames).
 smoke_run_bounded test/bug684_no_data_after_close_test.zbr "bug684: nothing after the close" 90 "NTSTATUS"
+# BUG-687: Tcp/Ws/Http.serve detach each connection's thread -- the process handle count,
+# read through ntdll, must not grow by one per connection (old runtime: +30 over 30).
+smoke_run_bounded test/bug687_server_thread_handles_test.zbr "bug687: no handle per connection" 120 "NTSTATUS"
+# BUG-688: a port in an int variable reaches every networking call (old runtime: zig
+# refused `expected type 'u16', found 'i64'`); out-of-range ports are refused by name.
+smoke_run test/bug688_port_int_test.zbr "bug688: every networking call takes an int port"
+# BUG-689: Http.get/post results are typed HttpResponse?, so their members are checked.
+smoke_tc_fail test/fail_fixtures/bug689_http_client_untyped_test.zbr "bug689_http_client_untyped_test.zbr:8:20: error: 'HttpResponse' has no field 'body'; the response body is .text"
+smoke_tc_fail test/fail_fixtures/bug689_http_client_untyped_test.zbr "bug689_http_client_untyped_test.zbr:10:14: error: 'HttpResponse' has no field 'statusCode'"
 # BUG-636: the argv family of sys is checked in the front end -- a str command, a List(int),
 # a missing argument and a non-str cwd were each accepted by -c and failed inside zig, in
 # runtime code. The ok fixture runs every legitimate argv shape (bounded: it spawns itself).

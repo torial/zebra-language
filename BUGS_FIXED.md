@@ -6,6 +6,70 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-687: `Tcp.serve`, `Ws.serve` and `Http.serve` leaked a thread handle per accepted connection -- FIXED 2026-11-08
+
+- **Found by:** Fable, 2026-11-07, with the GameEngine's new handle ledger
+  (`net_departure_test`). 40 raw WebSocket clients that closed their own sockets cost
+  the server +42 handles, still held after every connection was named departed.
+- **Cause:** each server spawned its per-connection thread with
+  `_ = std.Thread.spawn(...)`, never detached or joined. On Windows the thread's HANDLE
+  stays open after the thread exits, so a long-lived server grew one handle per
+  connection, for the life of the process. `sys.go` already detached. `ThreadPool`
+  joins its workers.
+- **Fix:** all three spawn sites now detach the thread when the spawn succeeds; on
+  failure they still free the context and close the connection.
+- **Fixture:** `test/bug687_server_thread_handles_test.zbr`, `smoke_run_bounded`.
+  - It reads the process handle count through ntdll (ProcessHandleCount) around 30
+    connections to each server, after a warm-up round. Each connection waits for the
+    server's reply, so the server thread has run.
+  - Old runtime: `Tcp.serve: the process gained 30 handles over 30 connections`.
+  - Fixed: 0 for each of the three servers, 3 runs of 3.
+  - Off Windows the count reads -1. The servers are still exercised there, but nothing is
+    measured.
+- The engine's witness compares its own NetHost clients against raw ones, so its pin
+  tightens by itself when it moves to this runtime.
+
+### BUG-688: a port held in an `int` variable could not reach any networking call -- FIXED 2026-11-08
+
+- **Found:** writing BUG-687's fixture, whose rounds take the port as a parameter. Every
+  earlier networking fixture passed a literal.
+- **Repro:** `def tryPort(port: int)` calling `Tcp.connect("127.0.0.1", port)` passed
+  `-c`, then zig refused: `expected type 'u16', found 'i64'`. A literal, or a `var` the
+  compiler folds to a constant, happened to coerce.
+- **Cause:** `_tcp_connect`, `_tcp_serve`, `_ws_serve`, `_http_serve`, `_udp_bind` and
+  `UdpSocket.send_` took `port: u16`, a type a Zebra `int` cannot reach.
+- **Fix:** they take `port_in: i64` and convert through one helper, `_zbr_port`. An
+  out-of-range port is reported by name, e.g. `Tcp.connect: port 65536 is out of range
+  (0..65535)`, and the call does nothing: connect returns nil, the servers return, send
+  skips. `Udp.bind`, which has no failure value, panics with the same reason. A port is
+  never wrapped into a different valid port. A `u16` from host Zig code, like the
+  engine's, still coerces.
+- **Fixture:** `test/bug688_port_int_test.zbr`. It sends a computed out-of-range port
+  through each call, so no network is needed. On HEAD's runtime it failed with the zig
+  error above, at its first `Tcp.connect`.
+- **Not fixed:** a refused connection prints Zig's
+  `error.Unexpected NTSTATUS=0xc0000236 (CONNECTION_REFUSED)` before `Tcp.connect`
+  returns nil. That trace comes from Zig's std, the same class BUG-684 left visible on
+  Sean's word.
+
+### BUG-689: `Http.get` / `post` / `json` / `postJson` results were untyped, so their members went unchecked -- FIXED 2026-11-08
+
+- **Found:** writing BUG-687's fixture. `var r = Http.get(u)` then `if r as resp` and
+  `resp.body` passed `-c` and failed inside zig: `no field named 'body'` (the field is
+  `text`). The same access through an annotated `HttpResponse?` was already refused,
+  with BUG-680's tailored message.
+- **Cause:** the checker gave the client calls no result type, so the binding was
+  unknown and BUG-680's member check never ran. The same gap BUG-680 closed for an
+  unannotated `ThreadPool(n)`.
+- **Fix:** `get`, `post`, `json` and `postJson` are typed `HttpResponse?`, and `serve` is
+  typed void. Guarded like BUG-680: a user class named `Http` or `HttpResponse` is left
+  alone.
+- **Fixture:** `test/fail_fixtures/bug689_http_client_untyped_test.zbr`. Refused:
+  `resp.body` at 8:20 and `p!.statusCode` at 10:14. Accepted: a well-formed `status` +
+  `text` use, as the control.
+
+---
+
 ### BUG-686: the bundled SQLite was built with no feature defines, so FTS5 and RTREE were silently missing -- FIXED 2026-11-07
 
 - **Found by:** the Graze docs browser (zebra-sprocket). Its full-text search returned

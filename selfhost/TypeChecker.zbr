@@ -4612,6 +4612,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # (zebra_rt.HttpRequest) T'") -- the book carried one for months.
                         if bname == "Http" and mem.member == "serve" and not ctx.hasClassAny("Http") and c.args.len >= 2
                             checkHttpServeHandler(c.args.at(1).value, mem.span, ctx)
+                        # BUG-689: the client calls were untyped, so `var r = Http.get(u)`
+                        # bound an unknown and `r!.body` (the field is `text`) passed -c and
+                        # failed inside zig. Annotated `HttpResponse?` was already checked.
+                        if bname == "Http" and not ctx.hasClassAny("Http") and not ctx.hasClassAny("HttpResponse")
+                            if mem.member == "get" or mem.member == "post" or mem.member == "json" or mem.member == "postJson"
+                                return Type_.optional(Type_.named("HttpResponse"))
+                            if mem.member == "serve"
+                                return Type_.void_
                         if bname == "Ws"
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)

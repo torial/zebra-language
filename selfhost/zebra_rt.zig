@@ -2689,7 +2689,17 @@ pub fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) H
 // decoded here: percent-decoding is the caller's business, and doing it in the parser
 // would make `a=1&b=%26` ambiguous by turning an escaped separator into a real one.
 pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8, query: []const u8 = "" };
-pub fn _http_serve(port: u16, handler: anytype) void {
+/// BUG-688: a port arrives as Zebra's `int` (i64); a u16 parameter could not take a runtime
+/// one, so zig refused the emit. The range is checked here, once, and an out-of-range port is
+/// reported by the call that received it -- never wrapped into a different, valid port.
+pub fn _zbr_port(p: i64, what: []const u8) ?u16 {
+    return std.math.cast(u16, p) orelse {
+        std.debug.print("{s}: port {d} is out of range (0..65535)\n", .{ what, p });
+        return null;
+    };
+}
+pub fn _http_serve(port_in: i64, handler: anytype) void {
+    const port = _zbr_port(port_in, "Http.serve") orelse return;
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -2778,10 +2788,12 @@ pub fn _http_serve(port: u16, handler: anytype) void {
         const _conn = _srv.accept(_io) catch continue;
         const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+        // BUG-687: detach, or the thread's handle outlives it -- one leaked handle per
+        // accepted connection, for the life of the server (the old `_ =` discarded it).
+        if (std.Thread.spawn(.{}, _Ctx.run, .{_ctx})) |_t| _t.detach() else |_| {
             _alloc.destroy(_ctx);
             _conn.close(_io);
-        };
+        }
     }
 }
 
@@ -3210,7 +3222,8 @@ pub inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 }
 
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
-pub fn _ws_serve(port: u16, handler: anytype) void {
+pub fn _ws_serve(port_in: i64, handler: anytype) void {
+    const port = _zbr_port(port_in, "Ws.serve") orelse return;
     const _HFn = *const fn(*_WsConn) void;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -3282,7 +3295,9 @@ pub fn _ws_serve(port: u16, handler: anytype) void {
         const _c = _srv.accept(_io) catch continue;
         const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
         _ctx.* = .{ .conn = _c, .handler_fn = _fn };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
+        // BUG-687: detach, or the thread's handle outlives it -- one leaked handle per
+        // accepted connection, for the life of the server (the old `_ =` discarded it).
+        if (std.Thread.spawn(.{}, _Ctx.run, .{_ctx})) |_t| _t.detach() else |_| { _pa.destroy(_ctx); _c.close(_io); }
     }
 }
 
@@ -3591,7 +3606,8 @@ pub inline fn _zbr_invoke(fp: anytype, args: anytype) _ZbrInvokeRet(@TypeOf(fp.*
     return @call(.auto, T.call, .{fp} ++ args);
 }
 
-pub fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
+pub fn _tcp_connect(host: []const u8, port_in: i64) ?TcpConn {
+    const port = _zbr_port(port_in, "Tcp.connect") orelse return null;
     const stream = blk: {
         if (std.Io.net.IpAddress.parse(host, port)) |addr| {
             break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
@@ -3663,7 +3679,8 @@ pub fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     return _buf[0.._total];
 }
 pub fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
-pub fn _tcp_serve(port: u16, handler: anytype) void {
+pub fn _tcp_serve(port_in: i64, handler: anytype) void {
+    const port = _zbr_port(port_in, "Tcp.serve") orelse return;
     const _HFn = *const fn(TcpConn) void;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -3685,16 +3702,19 @@ pub fn _tcp_serve(port: u16, handler: anytype) void {
         const _conn = _srv.accept(_io) catch continue;
         const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+        // BUG-687: detach, or the thread's handle outlives it -- one leaked handle per
+        // accepted connection, for the life of the server (the old `_ =` discarded it).
+        if (std.Thread.spawn(.{}, _Ctx.run, .{_ctx})) |_t| _t.detach() else |_| {
             _alloc.destroy(_ctx);
             _conn.close(_io);
-        };
+        }
     }
 }
 
 pub const _UdpSocketInner = struct {
     inner: std.Io.net.Socket,
-    pub fn send_(self: *_UdpSocketInner, host: []const u8, port: u16, data: []const u8) void {
+    pub fn send_(self: *_UdpSocketInner, host: []const u8, port_in: i64, data: []const u8) void {
+        const port = _zbr_port(port_in, "UdpSocket.send") orelse return;
         const dest = std.Io.net.IpAddress.parse(host, port) catch {
             std.debug.print("UDP send: '{s}' is not an IP literal — use an IP address\n", .{host});
             return;
@@ -3717,7 +3737,8 @@ pub fn _udp_socket() UdpSocket {
     s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.socket: bind failed") };
     return s;
 }
-pub fn _udp_bind(port: u16) UdpSocket {
+pub fn _udp_bind(port_in: i64) UdpSocket {
+    const port = _zbr_port(port_in, "Udp.bind") orelse @panic("Udp.bind: port out of range");
     const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
     const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = port } };
     s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.bind: bind failed") };
