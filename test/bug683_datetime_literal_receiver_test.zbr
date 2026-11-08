@@ -18,4 +18,8 @@ def main()
     assert DateTime.fromEpoch(5000).toEpoch() == 5000
     assert DateTime.fromEpoch(5000).timestamp() == 5
     assert DateTime.fromEpoch(0).addDays(1).day == 2
+    # the same literal shape in the HttpResponse factory (status 200 by definition of ok())
+    assert HttpResponse.ok("x").status == 200
+    assert HttpResponse.new(201, "made").withHeader("a", "b").status == 201
+    assert HttpResponse.notFound("gone").text == "gone"
     print("bug683: ok")

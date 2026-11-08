@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-685: an `Http.serve` handler of the wrong shape passed `-c` and failed inside the runtime's Zig -- FIXED 2026-11-07
+
+**Found 2026-11-07** through BUG-680's new refusal, which caught `res.body` in the book's
+chapter 20 example. Looking closer, the example's whole handler was the wrong shape:
+`def(req: HttpRequest, res: HttpResponse)` writing into `res`. That passed `-c`, and a real
+build failed inside the generated runtime, in Zig's vocabulary: "expected type '*const fn
+(zebra_rt.HttpRequest) T', found '*const fn (zebra_rt.HttpRequest, T) void'". QUICKSTART had
+corrected the same shape on 2026-09-25. Nothing checked the handler, so the book kept it.
+
+**Fix:** `checkHttpServeHandler` in the checker, run on `Http.serve`'s second argument. The
+handler may be an inline `def(...)` or a top-level function named by identifier. It must
+take exactly one parameter. A declared return type must be HttpResponse, and an inline
+block-bodied handler must declare one. A handler the checker cannot see (a variable, a
+method) is left to the later passes, as before. The message names the expected form and the
+three response constructors.
+
+**Fixture:** `test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr`, four handlers:
+an inline two-parameter one, a named two-parameter one, one with no return type, and one
+returning str. Each refusal is registered. The four `Http.serve` corpus files still pass
+`-c`. The book example was fixed in the book (dd5e6c5) and passes `--check-full`.
+
+---
+
+### BUG-680: a field or method a runtime object type does not have passed `-c` and failed inside zig -- FIXED 2026-11-07
+
+**Found 2026-11-05** validating the book against rc9: `DateTime.now().epochMs` passed
+`zebra -c` and failed in zig, "no field named 'epochMs' in struct 'zebra_rt._DateTime'". The
+front end checked the members of the 16 runtime types with a `Type_` variant (BUG-369) and
+not the rest. Probing it found more:
+- DateTime could not be NAMED as a type at all. A field, a parameter, an annotation were each
+  "unknown type 'DateTime'", and codegen had no mapping for it.
+- `t.rows` on a CsvTable COMPILED. `_CsvTable` has a Zig field `rows`, so a misspelled
+  method call returned the runtime's raw slices.
+- Two emit leaks, filed as BUG-683.
+
+**Fix:**
+- **DateTime** is `Type_.named("DateTime")`, guarded against a user class of that name.
+  - Its constructors, fields and methods are typed.
+  - Any other member is refused naming the real ones, with pointed hints: a field called as
+    a method, a method read as a field, `epochMs` pointing at `toEpoch()`.
+  - It is a nameable type emitting `_DateTime`.
+  - Codegen's `isDateTimeExpr` asks the checker first, so fields, parameters, returns and
+    List elements dispatch.
+- **CsvTable, CsvWriter, HttpResponse, CalendarView, ThreadPool, DynLib** refuse an
+  unknown member from one table per kind (`runtimeObjMethods` / `runtimeObjFields`,
+  derived from CodeGen's dispatch arms). A known member keeps the typing it had, except
+  `inCalendar`, now a CalendarView, whose printed output was diffed unchanged.
+  - `r.body` points at `.text`.
+- **File** was already covered: it is a static namespace, refused by BUG-638's table.
+- `surface_inventory.py` derives every one of these, so docs/SURFACE.md lists them, 23 -> 32
+  receivers. Its printer had looped over a fixed list and would have dropped the derived
+  tables silently.
+
+**Measured before landing:** `-c` over 4,005 tracked .zbr in zebra-language, the book,
+zebra-ide and the GameEngine, old compiler vs new: 0 files changed. The positive control, a
+file reading `dt.epochMs`, IS reported changed.
+
+**Fixtures:**
+- `test/bug680_datetime_type_test.zbr`: field, parameter, return, List, optional;
+  hand-derived values.
+- `test/fail_fixtures/bug680_datetime_unknown_member_test.zbr`.
+- `test/fail_fixtures/bug680_runtime_obj_members_test.zbr`: one refusal per type, each
+  registered.
+
+The DateTime fixture found QUICKSTART's `toIso8601` example missing the `Z` the runtime
+prints. The doc was wrong.
+
+---
+
 ### BUG-683: `DateTime.fromEpoch(ms)` as a receiver or argument, and `not dt.before(x)`, passed `-c` and failed inside zig -- FIXED 2026-11-07
 
 **Found 2026-11-07** probing BUG-680 with `dt.after(DateTime.fromEpoch(0))`: `-c` exit 0,
@@ -20,6 +89,10 @@ parenthesised. Fixture `test/bug683_datetime_literal_receiver_test.zbr` (8 asser
 derived by hand from the epoch): red on the pre-fix compiler at its first comparison; the
 expected values were checked on the emitted Zig with both fixes applied by hand (all pass,
 and a planted wrong year panics naming it) before the compiler was rebuilt.
+**The same shape in the HttpResponse factory**, found an hour later: every
+`HttpResponse.ok/notFound/err/new(...)` emitted a bare `HttpResponse{ ... }`, so
+`HttpResponse.ok("x").status` failed the same way. The factory call is parenthesised whole.
+The fixture gained three asserts (status of `ok`, a `withHeader` chain, `notFound(...).text`).
 
 ---
 

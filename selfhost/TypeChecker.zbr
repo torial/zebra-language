@@ -2285,8 +2285,80 @@ def dateTimeMethodType(name: str): Type_
     if name == "before" or name == "after" or name == "equals"
         return Type_.bool_
     if name == "inCalendar"
-        return Type_.unknown_
+        return Type_.named("CalendarView")   # its fields are checked by the runtime-object table
     return Type_.named("DateTime")    # inZone, add*
+
+# BUG-680: the other runtime object types with no Type_ variant. Only the REFUSAL is
+# added -- a known member keeps whatever typing it had. Derived from CodeGen's dispatch
+# (`cw_nm == "CsvTable"` / "CsvWriter" / "HttpResponse") and QUICKSTART's tables.
+def runtimeObjMethods(tn: str): str
+    if tn == "CsvTable"
+        return " rowCount colCount header row rows dataRows get "
+    if tn == "CsvWriter"
+        return " writeRow build "
+    if tn == "HttpResponse"
+        return " withHeader "
+    if tn == "ThreadPool"
+        return " submit wait "          # `worker` is the runtime's own, not a user verb
+    if tn == "DynLib"
+        return " lookup close "
+    return ""
+
+def runtimeObjFields(tn: str): str
+    if tn == "HttpResponse"
+        return " status text headers "
+    if tn == "CalendarView"
+        return " year month day weekday monthName era "
+    return ""
+
+def runtimeObjCovered(tn: str): bool
+    return runtimeObjMethods(tn) != "" or runtimeObjFields(tn) != ""
+
+def runtimeObjHint(tn: str): str
+    var ms: str = runtimeObjMethods(tn).trim().replace(" ", ", ")
+    var fs: str = runtimeObjFields(tn).trim().replace(" ", ", ")
+    if fs == ""
+        return " (its methods: " + ms + ")"
+    if ms == ""
+        return " (its fields: " + fs + "; it has no methods)"
+    return " (its fields: " + fs + "; methods: " + ms + ")"
+
+# BUG-685: the handler handed to Http.serve -- an inline `def(...)` or a top-level function
+# named by identifier. Checked: one parameter; a DECLARED return type is HttpResponse; an
+# inline block-bodied handler declares one (it returns a value, so it must). A handler the
+# checker cannot see (a variable, a method) is left to the later passes, as before.
+def checkHttpServeHandler(h: Expr, sp: Span, ctx: InferCtx)
+    var shape: str = " -- write it as `def handle(req: HttpRequest): HttpResponse` and return HttpResponse.ok(body) / .notFound(body) / .new(status, body) (QUICKSTART's Http.serve)"
+    var nparams: int = -1
+    var ret_name: str = "?"
+    if h is Expr.lambda as lam
+        nparams = lam.params.len
+        if lam.return_type as lrt
+            ret_name = "a non-HttpResponse type"
+            if lrt is TypeRef.named as lrn
+                ret_name = lrn.name
+        else
+            if lam.body_ is LambdaBody.stmts
+                ret_name = ""
+    else
+        if h is Expr.ident as hid
+            if not ctx.hasLocal(hid.name)
+                if ctx.module_types.fnParamList("", hid.name) as hpl
+                    nparams = hpl.len
+                    if ctx.methodReturnAny("", hid.name) as hrt
+                        ret_name = userTypeName(hrt)
+                        if hrt is Type_.void_
+                            ret_name = ""
+                    else
+                        ret_name = ""
+    if nparams >= 0 and nparams != 1
+        ctx.addErr(ctx.file, sp.line, sp.col, "Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes " + nparams.toString() + shape)
+        return
+    if ret_name == ""
+        ctx.addErr(ctx.file, sp.line, sp.col, "Http.serve's handler must return an HttpResponse; this one declares no return type" + shape)
+        return
+    if ret_name != "?" and ret_name != "HttpResponse"
+        ctx.addErr(ctx.file, sp.line, sp.col, "Http.serve's handler must return an HttpResponse, not '" + ret_name + "'" + shape)
 
 def dateTimeMemberHint(): str
     return " (fields: year, month, day, hour, minute, second, weekday; methods: toEpoch, timestamp, toIso8601, format, inZone, inCalendar, addDays/Hours/Minutes/Seconds/Months/Years, daysBetween, secondsBetween, before, after, equals -- QUICKSTART's DateTime section)"
@@ -4194,6 +4266,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         dtf_why = dtf_why + "; the milliseconds since the epoch are toEpoch()"
                     ctx.addErr(ctx.file, m.span.line, m.span.col, dtf_why + dateTimeMemberHint())
                     return Type_.unknown_
+                # BUG-680: CsvTable / CsvWriter / HttpResponse refuse an unknown field. `t.rows`
+                # was worse than a zig error: `_CsvTable` HAS a Zig field `rows`, so it compiled
+                # and handed back the runtime's raw slices.
+                var rof_ms: str = runtimeObjMethods(tn)
+                if runtimeObjCovered(tn) and not ctx.hasClassAny(tn)
+                    if not ((" " + m.member + " ") in runtimeObjFields(tn))
+                        var rof_why: str = "'" + tn + "' has no field '" + m.member + "'"
+                        if (" " + m.member + " ") in rof_ms
+                            rof_why = "'" + tn + "." + m.member + "' is a method -- call it: " + m.member + "()"
+                        if tn == "HttpResponse" and m.member == "body"
+                            rof_why = rof_why + "; the response body is .text"
+                        ctx.addErr(ctx.file, m.span.line, m.span.col, rof_why + runtimeObjHint(tn))
+                        return Type_.unknown_
                 # Enum member access: Color.red → Type_.named("Color").
                 if ctx.hasEnumAny(tn)
                     return Type_.named(tn)
@@ -4307,6 +4392,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # builders escape this only because they own an enum variant:
                     # typeFromName("StrSet") returns Type_.str_set, so the branch returns.
                     if cname == "CsvWriter"
+                        return Type_.named(cname)
+                    # BUG-680: the same for ThreadPool, so an un-annotated `var pool =
+                    # ThreadPool(2)` has its methods checked (`pool.submitt(...)` reached zig).
+                    if cname == "ThreadPool" and not ctx.hasClassAny("ThreadPool")
                         return Type_.named(cname)
                     # BUG-287's rule, in inference too: inside a class, a bare `Widget()`
                     # naming one of ITS methods is that method, even where a class
@@ -4517,6 +4606,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.void_
                         if bname == "Build" and mem.member == "new"
                             return Type_.build_ctx
+                        # BUG-685: Http.serve's handler takes the request and RETURNS the
+                        # response. A `def(req, res)` handler writing into `res` passed -c and
+                        # failed inside the runtime's Zig ("expected type '*const fn
+                        # (zebra_rt.HttpRequest) T'") -- the book carried one for months.
+                        if bname == "Http" and mem.member == "serve" and not ctx.hasClassAny("Http") and c.args.len >= 2
+                            checkHttpServeHandler(c.args.at(1).value, mem.span, ctx)
                         if bname == "Ws"
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)
@@ -4728,6 +4823,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                     ctx.addErr(ctx.file, mem.span.line, mem.span.col, dt_why + dateTimeMemberHint())
                                     return Type_.unknown_
                                 return dateTimeMethodType(mem.member)
+                            # BUG-680: CsvTable / CsvWriter / HttpResponse refuse an unknown method.
+                            var ro_ms: str = runtimeObjMethods(tn)
+                            if runtimeObjCovered(tn) and not ctx.hasClassAny(tn)
+                                if not ((" " + mem.member + " ") in ro_ms)
+                                    var ro_why: str = "'" + tn + "' has no method '" + mem.member + "'"
+                                    if (" " + mem.member + " ") in runtimeObjFields(tn)
+                                        ro_why = "'" + tn + "." + mem.member + "' is a field, not a method -- drop the ()"
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col, ro_why + runtimeObjHint(tn))
+                                    return Type_.unknown_
                             # §28a: the ObjectPool(T) runtime API (_ObjectPool in the preamble).
                             if tn.startsWith("Atomic(") and tn.endsWith(")")
                                 var at_t: Type_ = typeFromName(tn.substring(7, tn.len - 1))

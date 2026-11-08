@@ -1054,11 +1054,13 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   smaller file -- verified by renaming genMimeCall.
                                 #   Red-checked three ways: a doc edit, a compiler table
                                 #   edit (`str: -trimLeft`), an extractor break.
-                                #   CANNOT SEE: instance methods on the runtime object
-                                #   types WITHOUT a Type_ variant (DateTime, File handles,
-                                #   HttpResponse, the GUI widget structs -- per-type
-                                #   generators with no shared shape), arities, argument
-                                #   types, or semantics. The 16 that HAVE a variant (Timer,
+                                #   CANNOT SEE: arities, argument types, or semantics.
+                                #   (The runtime object types with no Type_ variant --
+                                #   DateTime, CsvTable, CsvWriter, HttpResponse,
+                                #   CalendarView, ThreadPool, DynLib -- refuse unknown
+                                #   members since 2026-11-07, BUG-680, and are derived from
+                                #   their predicates / tables; File was always a static
+                                #   namespace.) The 16 that HAVE a variant (Timer,
                                 #   StringBuilder, SysProcess, Build/BuildTarget, Ws/Tcp/Udp
                                 #   conns, Sqlite*, CodeEditor, Gui, HttpRequest, Chan,
                                 #   Regex) were closed 2026-09-15 by the BUG-369 recipe --
@@ -1066,9 +1068,10 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
                                 #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 32 namespaces / 179 members,
-                                #   23 receivers / 289 methods by SURFACE.md's section counts (5 / 120
+                                #   32 receivers / 363 members by SURFACE.md's section counts (5 / 120
                                 #   on the day it was written; the SIMD vector/mask table and the
-                                #   Random instance joined 2026-09-18).
+                                #   Random instance joined 2026-09-18; 23 / 315 until BUG-680's
+                                #   runtime-object tables joined 2026-11-07).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified

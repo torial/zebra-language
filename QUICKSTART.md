@@ -4773,7 +4773,8 @@ def main()
     Http.serve(8080, handle)
 ```
 
-The handler takes the request and RETURNS the response: `HttpResponse.ok(body)`,
+The handler takes the request and RETURNS the response (`-c` refuses any other shape,
+BUG-685): `HttpResponse.ok(body)`,
 `HttpResponse.notFound(body)`, or `HttpResponse.new(status, body)` for any other status.
 (Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
 which does not build.)

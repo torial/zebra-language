@@ -1,0 +1,18 @@
+# BUG-680: a member CsvTable, CsvWriter or HttpResponse does not have is refused in the front
+# end, naming the real ones. Before the fix each line below passed `-c`; the three method
+# calls failed inside zig, and `t.rows` COMPILED -- `_CsvTable` has a Zig field `rows`, so it
+# handed back the runtime's raw slices. One refusal per line; the smoke registers each.
+
+def main()
+    var t = Csv.parse("a,b\n1,2\n")
+    print(t.rowCnt())
+    print(t.rows)
+    var w = CsvWriter()
+    print(w.bild())
+    var r = HttpResponse.new(201, "made")
+    print(r.body)
+    print(r.withHeadr("a", "b"))
+    var cv = DateTime.of(2024, 3, 15).inCalendar(Calendar.Gregorian)
+    print(cv.yeer)
+    var pool = ThreadPool(2)
+    pool.wiat()

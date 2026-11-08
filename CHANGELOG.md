@@ -51,12 +51,20 @@ confirmed via `tools/bootstrap_check.sh`.
   dispatch on all of them. A member it does not have (`dt.epochMs`) is refused at `-c`,
   naming the real ones, instead of failing inside zig. Before, any `DateTime` annotation was
   refused as an unknown type.
+- **BUG-680 (the other runtime objects):** CsvTable, CsvWriter, HttpResponse, CalendarView,
+  ThreadPool and DynLib refuse a member they do not have at `-c`, naming the real ones.
+  `t.rows` on a CsvTable used to compile and return the runtime's internal slices.
+  docs/SURFACE.md now lists all of these members.
 - **BUG-684 (runtime, hardening):** after the WebSocket close handshake begins, or after a
   read shows the peer gone, `send` (and the automatic pong) write nothing, as RFC 6455
   requires. A broadcasting server no longer writes into departing clients' sockets.
+- **BUG-685:** an `Http.serve` handler of the wrong shape -- two parameters, no return type,
+  or a return type other than HttpResponse -- is refused at `-c`, naming the right form.
+  It used to fail inside the runtime's Zig.
 - **BUG-683:** `DateTime.fromEpoch(ms)` used as a receiver or argument
   (`DateTime.fromEpoch(0).year`, `dt.after(DateTime.fromEpoch(0))`) and `not dt.before(x)`
-  passed `-c` and failed inside zig. Both emits are parenthesised now.
+  passed `-c` and failed inside zig, and so did `HttpResponse.ok("x").status`. The emits
+  are parenthesised now.
 
 ---
 

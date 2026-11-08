@@ -22749,7 +22749,14 @@ struct Generator
         w.emit(mname)
         w.emit("\")")
 
+    # BUG-683: wrapped in parentheses -- Zig allows no `.field` suffix on a bare struct
+    # literal, so `HttpResponse.ok("x").status` failed inside zig.
     def genHttpResponseFactory(mname: str, args: List(Arg))
+        w.emit("(")
+        genHttpResponseFactoryBody(mname, args)
+        w.emit(")")
+
+    def genHttpResponseFactoryBody(mname: str, args: List(Arg))
         if mname == "ok"
             w.emit("HttpResponse{ .status = 200, .text = ")
             if args.len > 0

@@ -1587,6 +1587,19 @@ smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_in
 # the type can be named as a field, parameter, return, List element and optional.
 smoke_tc_fail test/fail_fixtures/bug680_datetime_unknown_member_test.zbr "bug680_datetime_unknown_member_test.zbr:7:13: error: 'DateTime' has no field 'epochMs'; the milliseconds since the epoch are toEpoch()"
 smoke_run test/bug680_datetime_type_test.zbr "bug680: ok"
+# BUG-680: CsvTable / CsvWriter / HttpResponse refuse a member they do not have (t.rows compiled before).
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:8:13: error: 'CsvTable' has no method 'rowCnt'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:9:13: error: 'CsvTable.rows' is a method -- call it: rows()"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:11:13: error: 'CsvWriter' has no method 'bild'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:13:13: error: 'HttpResponse' has no field 'body'; the response body is .text"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:14:13: error: 'HttpResponse' has no method 'withHeadr'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:16:14: error: 'CalendarView' has no field 'yeer'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:18:10: error: 'ThreadPool' has no method 'wiat'"
+# BUG-685: Http.serve's handler shape -- one parameter, returns HttpResponse -- is checked at -c.
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:16:10: error: Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes 2"
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:19:10: error: Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes 2"
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:20:10: error: Http.serve's handler must return an HttpResponse; this one declares no return type"
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:21:10: error: Http.serve's handler must return an HttpResponse, not 'str'"
 smoke_run test/bug628_inferred_throws_ok_test.zbr "bug628: 9 5 8"
 # BUG-626: a container whose element type differs from the slot's -- a return, a field store,
 # a call argument, typed vars (List, optional element, HashMap, Set, nested) and an assignment.

@@ -24,9 +24,9 @@ WHAT IT DERIVES, and from where (each an oracle the compiler already runs on):
                       method on these is REFUSED, so the predicate IS the surface.
 
 WHAT IT DOES NOT SEE (say it, or a clean run gets over-read): instance methods on the
-runtime object types that have NO Type_ variant of their own (DateTime, File handles,
-HttpResponse, the GUI widget structs) -- those still dispatch by name inside per-type
-generators; the 16 that do have a variant were closed 2026-09-15 and are derived above;
+runtime object types the checker does not type at all (none known as of 2026-11-07: BUG-680
+added DateTime, CsvTable, CsvWriter, HttpResponse, CalendarView, ThreadPool and DynLib, read
+from their predicates and tables above; File is a static namespace, derived with the others);
 argument arities and types; semantics. The heading counts print every
 run so a section that silently collapsed reads as a drop, not as a clean pass.
 
@@ -183,7 +183,36 @@ RECEIVERS = [("str", "strMethodKnown"), ("List(T)", "listMethodKnown"),
              ("SIMD vector / boolxN mask (QUICKSTART §32)", "simdMethodKnown"),
              # 2026-09-18: a Random INSTANCE (BUG-434 made it a named type; BUG-433's
              # `randBool` typo is refused here).
-             ("Random instance (QUICKSTART §14)", "randomMethodKnown")]
+             ("Random instance (QUICKSTART §14)", "randomMethodKnown"),
+             # 2026-11-07, BUG-680: DateTime became a checked type; its members are refused
+             # by these two predicates, so they are the surface by construction.
+             ("DateTime instance (methods)", "dateTimeMethodKnown"),
+             ("DateTime instance (fields)", "dateTimeFieldKnown")]
+
+# BUG-680: the other runtime object types refuse unknown members from two string tables,
+# `if tn == "X"` / `return " a b c "`, one per kind. Read here so they stay one copy.
+RUNTIME_TABLES = [("runtimeObjMethods", "methods"), ("runtimeObjFields", "fields")]
+
+
+def runtime_objects(lines):
+    res = {}
+    for fn, kind in RUNTIME_TABLES:
+        body = _body(lines, fn)
+        if body is None:
+            refuse("table %s not found in TypeChecker.zbr" % fn)
+        cur = None
+        for l in body:
+            m = re.match(r'\s*if tn == "([A-Za-z_][A-Za-z0-9_]*)"', l)
+            if m:
+                cur = m.group(1)
+                continue
+            m = re.match(r'\s*return "([^"]*)"', l)
+            if m and cur:
+                res["%s instance (%s)" % (cur, kind)] = sorted(set(m.group(1).split()))
+                cur = None
+    if len(res) < 5:
+        refuse("only %d runtime-object tables derived from %s (floor 5)" % (len(res), RUNTIME_TABLES))
+    return res
 
 
 def receivers():
@@ -197,6 +226,7 @@ def receivers():
         for l in body:
             names += re.findall(r'name == "([A-Za-z_][A-Za-z0-9_]*)"', l)
         res[label] = sorted(set(names))
+    res.update(runtime_objects(lines))
     if len(res) < FLOORS["receivers"]:
         refuse("only %d receiver predicates (floor %d)" % (len(res), FLOORS["receivers"]))
     total = sum(len(v) for v in res.values())
@@ -305,7 +335,11 @@ def render():
     o.append("")
     o.append("## Builtin receiver methods")
     o.append("")
-    for label, _ in RECEIVERS:
+    # Every derived receiver, the fixed list first and then the runtime-object tables in
+    # name order. Looping over RECEIVERS alone dropped the tables from the document while
+    # they were derived and floor-checked -- a section the gate measured and did not show.
+    labels = [label for label, _ in RECEIVERS] + sorted(k for k in rc if k not in dict(RECEIVERS))
+    for label in labels:
         o.append("### %s (%d)" % (label, len(rc[label])))
         o.append("")
         o.append(" ".join("`%s`" % m for m in rc[label]))

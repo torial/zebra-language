@@ -165,6 +165,42 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `nextBool` `nextFloat` `nextInt`
 
+### DateTime instance (methods) (17)
+
+`addDays` `addHours` `addMinutes` `addMonths` `addSeconds` `addYears` `after` `before` `daysBetween` `equals` `format` `inCalendar` `inZone` `secondsBetween` `timestamp` `toEpoch` `toIso8601`
+
+### DateTime instance (fields) (8)
+
+`day` `epoch_ms` `hour` `minute` `month` `second` `weekday` `year`
+
+### CalendarView instance (fields) (6)
+
+`day` `era` `month` `monthName` `weekday` `year`
+
+### CsvTable instance (methods) (7)
+
+`colCount` `dataRows` `get` `header` `row` `rowCount` `rows`
+
+### CsvWriter instance (methods) (2)
+
+`build` `writeRow`
+
+### DynLib instance (methods) (2)
+
+`close` `lookup`
+
+### HttpResponse instance (fields) (3)
+
+`headers` `status` `text`
+
+### HttpResponse instance (methods) (1)
+
+`withHeader`
+
+### ThreadPool instance (methods) (2)
+
+`submit` `wait`
+
 ## Namespaces (33) and static members (180; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
