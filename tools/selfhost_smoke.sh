@@ -1583,6 +1583,10 @@ smoke_run test/bug631_zero_pad_sign_test.zbr "bug631: [-005] [0005] [-005] [00-5
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:12: error: throws call needs '?'"
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23: error: throws call needs '?'"
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25: error: throws call needs '?'"
+# BUG-680: DateTime is a checked type -- an unknown member is refused naming the real one, and
+# the type can be named as a field, parameter, return, List element and optional.
+smoke_tc_fail test/fail_fixtures/bug680_datetime_unknown_member_test.zbr "bug680_datetime_unknown_member_test.zbr:7:13: error: 'DateTime' has no field 'epochMs'; the milliseconds since the epoch are toEpoch()"
+smoke_run test/bug680_datetime_type_test.zbr "bug680: ok"
 smoke_run test/bug628_inferred_throws_ok_test.zbr "bug628: 9 5 8"
 # BUG-626: a container whose element type differs from the slot's -- a return, a field store,
 # a call argument, typed vars (List, optional element, HashMap, Set, nested) and an assignment.

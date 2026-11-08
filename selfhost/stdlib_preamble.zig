@@ -3002,6 +3002,7 @@ fn _ws_send_close_frame_once(conn: *_WsConn) bool {
 }
 
 pub fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
+    if (conn.close_sent.load(.seq_cst)) return; // BUG-684: nothing after the close handshake
     const plen: u8 = @intCast(@min(payload.len, 125));
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
@@ -3095,6 +3096,11 @@ pub fn _ws_connect(url: []const u8) ?*_WsConn {
 }
 
 pub fn _ws_send(conn: *_WsConn, msg: []const u8) void {
+    // BUG-684: no data after the close handshake began (RFC 6455 5.5.1: after a Close frame
+    // an endpoint MUST NOT send data) or after a read showed the peer gone. A server
+    // broadcasting to a departing client kept writing into the dying socket; each write
+    // failed, and under Zig 0.16 each failure printed an "unexpected NTSTATUS" trace.
+    if (conn.close_sent.load(.seq_cst)) return;
     const len = msg.len;
     var hdr: [14]u8 = undefined;
     hdr[0] = 0x81; // FIN=1, opcode=1 (text)

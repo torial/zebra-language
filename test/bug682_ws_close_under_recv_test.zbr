@@ -15,6 +15,9 @@
 # reader's report awaited through a channel with a timeout.
 
 var reader_done: Chan(int) = Chan(int)(1)
+# The server reports too, so main never returns under a live server thread (the program's
+# memory is torn down at exit: a segfault after the sentinel, 1 run in 10, before this).
+var host_done: Chan(int) = Chan(int)(1)
 
 def host(ws: WsConn)
     var i: int = 0
@@ -26,6 +29,7 @@ def host(ws: WsConn)
     while m != nil
         m = ws.recv()
     ws.close()
+    host_done.send(1)
 
 def main()
     sys.go(def()
@@ -53,7 +57,8 @@ def main()
         sys.sleep(50)
         ws.close()
         var got: int? = reader_done.recvTimeout(20.0)
-        if got as n
+        var served: int? = host_done.recvTimeout(20.0)
+        if got != nil and served != nil
             print("bug682: reader ended cleanly after the close")
         else
             print("bug682: reader never finished")

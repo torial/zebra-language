@@ -57,13 +57,26 @@ a failure. But a user sees pages of Zig traces about runtime code they never wro
 BUG-542's shape (that one fixed the WRITE of a second close frame; this is the READ). It
 predates BUG-682 and is unchanged by it.
 
-**Fix shape (to decide):** the trace is printed inside std (`windows.unexpectedStatus`), so
-the runtime cannot catch its way out. Options: read through a path that maps these statuses
-(check what 0.17 offers), or accept it as Debug-only noise and document it. Measure what a
-`--release` build prints first.
+**Narrowed the same evening, mostly not Zebra's toolchain.** Fable's per-status stacks
+(logs in GameEngine/.zig-cache/{net_dep_run_1, f65_manual/B_1, bug682/*}.txt) show the
+engine builds with **Zig 0.16**, whose `netReadWindows` / `netWriteWindows` trace every
+status they do not map. In **0.17**, which this repo pins, both map CONNECTION_RESET,
+REMOTE_DISCONNECT and LOCAL_DISCONNECT to `error.ConnectionResetByPeer` silently. The trace
+is printed only in Debug: `std.options.unexpected_error_tracing` defaults to Debug, so
+`--release` prints none. Two probes here on 0.17 printed nothing: a client closing while the
+server reads, and a client PROCESS exiting with unread data (a reset), 5 departures.
+- **Hardened on the bug682 branch:** `_ws_send` and the pong are no-ops once the close
+  handshake has begun or a read has shown the peer gone. RFC 6455 §5.5.1 requires this, and
+  it stops a broadcasting server from writing into a departing client's socket, which is where
+  every write-side trace in Fable's logs came from (0.16 or not).
+- **What is left on 0.17:** CONNECTION_ABORTED on a read is still unmapped (3 of 339 in one
+  engine run). One option is global: `.unexpected_error_tracing = false` in the runtime's
+  `std_options`. It would silence every unmapped OS status in Debug, including ones that
+  would help diagnose a genuine runtime bug, so it is a decision, not a fix.
 
 **Control when fixing:** a `Ws.serve` program whose client exits without closing (a
-reset): today it prints the traces; after the fix nothing, and `recv()` returns nil.
+reset) on 0.17 prints nothing today. The engine on 0.16 is the instrument that sees the
+write-side traces; ask its session to rerun `net_departure_test` against the branch.
 
 ---
 
@@ -94,7 +107,21 @@ Separately, codegen recognises a DateTime by NAME (`isDateTimeExpr`: locals init
 from `DateTime.*` or an `add*` call), not by type, so `c.when.year` on a field would emit
 `.year` on the raw struct even once the annotation is accepted.
 
-**Plan (daytime):** (1) give DateTime a checker type, either a `Type_` variant as BUG-345
+**DateTime half DONE on the bug682 branch (2026-11-07):** `Type_.named("DateTime")`, guarded
+by `not hasClassAny("DateTime")` like CsvTable (a variant would have touched every
+exhaustive `branch` over Type_ for no gain). `DateTime.now/of/fromEpoch` are typed DateTime;
+the seven fields and `epoch_ms` are int; the methods are typed per QUICKSTART; any other
+member is refused at -c with the real names (a field called as a method, a method read as a
+field, and `epochMs` each get a pointed hint). `DateTime` is accepted as a type name and emits
+`_DateTime`. Codegen's `isDateTimeExpr` asks the checker first, so a field, a parameter and
+a List element dispatch `.year` and the rest. Fixtures: `test/bug680_datetime_type_test.zbr`
+(field, param, return, List, optional; hand-derived values) and
+`test/fail_fixtures/bug680_datetime_unknown_member_test.zbr`. A user class named DateTime is
+untouched (probed). Writing the fixture found QUICKSTART's `toIso8601` example missing the
+`Z`; the doc was wrong, the runtime right. STILL OPEN: CsvTable, HttpResponse, File handles,
+one at a time, by the same recipe.
+
+**Original plan (kept for the remaining types):** (1) give DateTime a checker type, either a `Type_` variant as BUG-345
 did for Timer or `Type_.named("DateTime")` guarded by `not ctx.hasClassAny("DateTime")` as
 CsvTable does. Choose by counting the exhaustive `branch` sites a new variant touches.
 (2) Type the constructors and the `add*`/`inZone` results as it, the seven fields int, and

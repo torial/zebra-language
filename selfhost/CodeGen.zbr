@@ -5208,6 +5208,9 @@ struct Generator
                 if n.name == "Random"
                     w.emit("_Random")                 # BUG-434: a seeded stream as a field / typed local
                     return
+                if n.name == "DateTime" and not class_names.contains_("DateTime")
+                    w.emit("_DateTime")               # BUG-680: a DateTime as a field / param / return
+                    return
                 if n.name == "DynLib"
                     w.emit("*_DynLib")
                     return
@@ -9923,6 +9926,15 @@ struct Generator
                 return false
 
     def isDateTimeExpr(e: Expr): bool
+        # BUG-680: the checker types DateTime values now, so a field (`c.when.year`), a
+        # parameter and a call's result dispatch like a local initialised from DateTime.*.
+        if .infer_ctx != nil and not class_names.contains_("DateTime")
+            var dt_t: Type_ = inferExpr(e, .infer_ctx!)
+            if dt_t is Type_.ref_to as dt_rt
+                dt_t = dt_rt
+            if dt_t is Type_.named as dt_tn
+                if dt_tn == "DateTime"
+                    return true
         if e is Expr.ident as id
             return .datetime_vars.contains_(id.name)
         if e is Expr.call as c

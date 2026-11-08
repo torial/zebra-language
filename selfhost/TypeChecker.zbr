@@ -2265,6 +2265,32 @@ def jsonMethodKnown(name: str): bool
 def randomMethodKnown(name: str): bool
     return name == "nextInt" or name == "nextFloat" or name == "nextBool" or name == "bytes"
 
+# BUG-680: DateTime's surface, from QUICKSTART's DateTime tables and the CodeGen arms that
+# dispatch them (isDateTimeExpr's users). A name outside these is refused in the front end.
+def dateTimeFieldKnown(name: str): bool
+    return name == "year" or name == "month" or name == "day" or name == "hour" or name == "minute" or name == "second" or name == "weekday" or name == "epoch_ms"
+
+def dateTimeMethodKnown(name: str): bool
+    if name == "inZone" or name == "inCalendar" or name == "toEpoch" or name == "timestamp" or name == "toIso8601" or name == "format"
+        return true
+    if name == "addDays" or name == "addHours" or name == "addMinutes" or name == "addSeconds" or name == "addMonths" or name == "addYears"
+        return true
+    return name == "daysBetween" or name == "secondsBetween" or name == "before" or name == "after" or name == "equals"
+
+def dateTimeMethodType(name: str): Type_
+    if name == "toEpoch" or name == "timestamp" or name == "daysBetween" or name == "secondsBetween"
+        return Type_.int_
+    if name == "toIso8601" or name == "format"
+        return Type_.string_
+    if name == "before" or name == "after" or name == "equals"
+        return Type_.bool_
+    if name == "inCalendar"
+        return Type_.unknown_
+    return Type_.named("DateTime")    # inZone, add*
+
+def dateTimeMemberHint(): str
+    return " (fields: year, month, day, hour, minute, second, weekday; methods: toEpoch, timestamp, toIso8601, format, inZone, inCalendar, addDays/Hours/Minutes/Seconds/Months/Years, daysBetween, secondsBetween, before, after, equals -- QUICKSTART's DateTime section)"
+
 def timerMethodKnown(name: str): bool
     return name == "elapsed" or name == "elapsedMicros" or name == "reset"
 
@@ -4156,6 +4182,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 if m.member == "method" or m.member == "path" or m.member == "content" or m.member == "query"
                     return Type_.string_
             if obj_t is Type_.named as tn
+                # BUG-680: DateTime's fields are computed ints; any other name is refused
+                # (`dt.epochMs` reached zig as "no field named 'epochMs' in '_DateTime'").
+                if tn == "DateTime" and not ctx.hasClassAny("DateTime")
+                    if dateTimeFieldKnown(m.member)
+                        return Type_.int_
+                    var dtf_why: str = "'DateTime' has no field '" + m.member + "'"
+                    if dateTimeMethodKnown(m.member)
+                        dtf_why = "'DateTime." + m.member + "' is a method -- call it: " + m.member + "()"
+                    if m.member == "epochMs" or m.member == "epoch" or m.member == "millis"
+                        dtf_why = dtf_why + "; the milliseconds since the epoch are toEpoch()"
+                    ctx.addErr(ctx.file, m.span.line, m.span.col, dtf_why + dateTimeMemberHint())
+                    return Type_.unknown_
                 # Enum member access: Color.red → Type_.named("Color").
                 if ctx.hasEnumAny(tn)
                     return Type_.named(tn)
@@ -4539,6 +4577,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 # BUG-638: refused by the general namespace check.
                                 checkNamespaceMember(bname, mem, ctx)
                                 return Type_.unknown_
+                            # BUG-680: a DateTime value, so its members are checked.
+                            return Type_.named("DateTime")
                         if bname == "Json"
                             if mem.member == "object" or mem.member == "array"
                                 return Type_.json_value
@@ -4679,6 +4719,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                        "'float' has no method '" + mem.member + "' (toInt/toFloat32/toString; abs, floor, ceil, round, sqrt are Math.* functions)")
                             return Type_.unknown_
                         on Type_.named as tn
+                            # BUG-680: DateTime's methods, typed; any other name refused.
+                            if tn == "DateTime" and not ctx.hasClassAny("DateTime")
+                                if not dateTimeMethodKnown(mem.member)
+                                    var dt_why: str = "'DateTime' has no method '" + mem.member + "'"
+                                    if dateTimeFieldKnown(mem.member)
+                                        dt_why = "'DateTime." + mem.member + "' is a field, not a method -- drop the ()"
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col, dt_why + dateTimeMemberHint())
+                                    return Type_.unknown_
+                                return dateTimeMethodType(mem.member)
                             # §28a: the ObjectPool(T) runtime API (_ObjectPool in the preamble).
                             if tn.startsWith("Atomic(") and tn.endsWith(")")
                                 var at_t: Type_ = typeFromName(tn.substring(7, tn.len - 1))
@@ -9848,7 +9897,7 @@ def isZigPrimTypeName(n: str): bool
 # the first corpus sweep flagged `ThreadPool` and `Random` because they are neither in the
 # preamble's pub names nor in typeFromName. Keep in step with genType's `n.name ==` arms.
 def isBuiltinObjectTypeName(n: str): bool
-    return n == "CodeEditor" or n == "StringBuilder" or n == "CsvWriter" or n == "CsvTable" or n == "SysProcess" or n == "Timer" or n == "Random" or n == "DynLib" or n == "ThreadPool" or n == "WsConn" or n == "Build" or n == "BuildTarget" or n == "Allocator" or n == "Regex" or n == "StrSet" or n == "TcpConn" or n == "UdpSocket" or n == "SqliteDb" or n == "SqliteRow" or n == "HttpRequest" or n == "Gui" or n == "JsonValue" or n == "byte" or n == "usize" or n == "int128" or n == "uint128"
+    return n == "CodeEditor" or n == "StringBuilder" or n == "CsvWriter" or n == "CsvTable" or n == "SysProcess" or n == "Timer" or n == "Random" or n == "DynLib" or n == "ThreadPool" or n == "WsConn" or n == "Build" or n == "BuildTarget" or n == "Allocator" or n == "Regex" or n == "StrSet" or n == "TcpConn" or n == "UdpSocket" or n == "SqliteDb" or n == "SqliteRow" or n == "HttpRequest" or n == "Gui" or n == "JsonValue" or n == "DateTime" or n == "byte" or n == "usize" or n == "int128" or n == "uint128"
 
 def knownGenericName(n: str): bool
     return n == "List" or n == "HashMap" or n == "Set" or n == "Chan" or n == "Iter" or n == "Atomic"

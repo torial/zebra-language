@@ -4405,6 +4405,9 @@ disagreements in `find` and `match`.
 | `DateTime.of(y,m,d)`             | `DateTime` | Midnight UTC on that date            |
 | `DateTime.of(y,m,d,h,min,s)`     | `DateTime` | Full UTC date+time                   |
 
+`DateTime` is also a type you can name: a class field (`var when: DateTime`), a parameter,
+a return type, `List(DateTime)`, `DateTime?`. A member it does not have is refused at `-c`.
+
 **Field access** (computed from `epoch_ms`)
 
 | Field        | Returns | Notes               |
@@ -4430,7 +4433,7 @@ disagreements in `find` and `match`.
 | `dt.addMonths(n)`                 | `DateTime`     |                                               |
 | `dt.addYears(n)`                  | `DateTime`     |                                               |
 | `dt.toEpoch()`                    | int            | Milliseconds since Unix epoch                 |
-| `dt.toIso8601()`                  | str            | e.g. `"2024-03-15T14:30:45"`                 |
+| `dt.toIso8601()`                  | str            | e.g. `"2024-03-15T14:30:45Z"` (UTC)          |
 | `dt.format(pattern)`              | str            | `"yyyy-MM-dd HH:mm:ss"` etc.                  |
 | `dt.daysBetween(other)`           | int            |                                               |
 | `dt.secondsBetween(other)`        | int            |                                               |
