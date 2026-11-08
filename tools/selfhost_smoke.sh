@@ -1900,7 +1900,7 @@ smoke_run test/bug242_csv_roundtrip_test.zbr "bug242: OK"
 # the QUICK tier is worse than an uncovered namespace: it teaches people to re-run gates
 # until they pass, which costs the whole tier its meaning.
 smoke_run_bounded test/shell_test.zbr    "shell_test: OK" 90
-smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
+smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90 "NTSTATUS"
 # BUG-611: the handshake's accept value against RFC 6455's own sample key, read back over raw TCP
 smoke_run_bounded test/bug611_ws_accept_test.zbr "bug611_ws_accept: OK" 90
 # BUG-542: a close frame goes out once -- recv() answers the peer's close, and the handler's

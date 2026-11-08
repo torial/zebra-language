@@ -2827,9 +2827,10 @@ pub const _WsConn = struct {
         tls:   *_WsTlsState,
     },
     server_side: bool,
-    // `close()` was called. Atomic since BUG-682: a connection may be closed from one
-    // thread while another is in `recv()`.
-    closed: std.atomic.Value(bool) = .init(false),
+    // `close()` was called. Stays a plain bool: a host (the GameEngine's net_host.zig) sets
+    // it to keep Ws.serve from closing after its handler. Every step of `_ws_close` after
+    // this check is idempotent on its own (BUG-682), so two racing closes are harmless.
+    closed: bool = false,
     // BUG-542: a close frame goes out at most once, and never after a read has shown the
     // peer gone. Without it a peer's close was answered by `_ws_recv` AND again by the
     // handler's `ws.close()` (or Ws.serve's fallback); the second write met a socket the
@@ -2976,7 +2977,15 @@ pub fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []cons
     );
 }
 
-pub fn _ws_send_close_frame(conn: *_WsConn) bool {
+// The public form keeps its pre-BUG-682 signature: a host calls it as a statement (the
+// GameEngine's NetHost.close sends only the close frame and lets the peer close).
+pub fn _ws_send_close_frame(conn: *_WsConn) void {
+    _ = _ws_send_close_frame_once(conn);
+}
+
+// True iff THIS call wrote the close frame; an atomic swap decides, so a reader answering
+// the peer's close and a closer on another thread cannot both send one (BUG-682).
+fn _ws_send_close_frame_once(conn: *_WsConn) bool {
     if (conn.close_sent.swap(true, .seq_cst)) return false;
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
@@ -3157,7 +3166,7 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
                 msg.appendSlice(alloc, payload) catch return null;
                 if (fin) return msg.toOwnedSlice(alloc) catch null;
             },
-            8  => { _ = _ws_send_close_frame(conn); return null; },
+            8  => { _ws_send_close_frame(conn); return null; },
             9  => _ws_send_pong(conn, payload),
             0xa => {}, // pong — ignore
             else => return null,
@@ -3166,13 +3175,14 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
 }
 
 pub fn _ws_close(conn: *_WsConn) void {
-    if (conn.closed.swap(true, .seq_cst)) return;
+    if (conn.closed) return;
+    conn.closed = true;
     // The OS-level shutdown (a FIN to the peer) only when a reader is in flight -- the case
     // it exists for -- and only when THIS close started the closing handshake. Otherwise
     // the handle is closed below exactly as before BUG-682: a shutdown on a socket the peer
     // already dropped makes Windows report CONNECTION_RESET, which std prints as an
     // "unexpected NTSTATUS" trace (BUG-542's shape; ws_echo_test showed it 4 of 15 runs).
-    const started = _ws_send_close_frame(conn);
+    const started = _ws_send_close_frame_once(conn);
     conn.send_shut.store(true, .seq_cst);
     if (started and conn.ws_state.load(.seq_cst) >= _WsConn._WS_READER) conn.shutdownSend();
     conn.requestRelease();

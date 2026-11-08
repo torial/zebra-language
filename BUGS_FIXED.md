@@ -51,6 +51,16 @@ shutdown on a socket the peer had already closed. The shutdown is now conditiona
 in-flight reader. Final: the four WebSocket fixtures 12 of 12 clean each on the new runtime;
 on the old one, bug682 red as above and the other three clean.
 
+**The runtime's public names are unchanged**, and that was nearly missed: the first cut made
+`closed` atomic and `_ws_send_close_frame` return bool. The GameEngine's `net_host.zig` sets
+`conn.closed = true` and calls `_ws_send_close_frame(c.conn)` as a statement, and both would
+have stopped compiling. `closed` stays a plain bool (every step of `_ws_close` after it is
+idempotent on its own), and the bool lives in a private `_ws_send_close_frame_once`. Checked
+by compiling those two engine statements against both runtimes, plus a planted
+bool-returning signature that must fail. One behaviour change a host will see: `Ws.serve`
+now closes the socket after the handler returns even when the handler set `closed`. Before,
+that flag skipped the close entirely and leaked the handle.
+
 **Known limit:** a reader waiting for a peer that never answers the close frame waits for
 it; before the fix the close killed it instead. TLS connections take the same path
 (`shutdown` on the TCP stream; `end()` and the free stay in the final release), but no
