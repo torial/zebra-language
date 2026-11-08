@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`JsonValue.values()` and `JsonValue.entries()` are refused at `-c`** (BUG-691). They were
+  in the checker's known-method list but never implemented: a call reached the Map helpers
+  and failed inside zig (`union 'json.dynamic.Value' has no member named 'KV'`, or `no
+  field named 'items'`). The refusal names the documented forms -- `tryList()` for an
+  array's elements, `keys()` and `get(k)` for an object. Neither was ever in QUICKSTART.
+- **V backend: `f() catch nil` / `catch |e| ...` / `catch <value>` over a def returning
+  `T? throws`** now builds (BUG-690). The option was declared `??T`, and the `or` block
+  mixed `?T` with the `ZOpt[T]` wrapper.
 - **`SqliteDb.querySegments(sql)` / `querySegments(sql, params)`**: a stored procedure's
   nested result sets as one row list with a leading `_segment` column. Moved from
   zebra-sprocket, whose v4 runtime patch added `query_segments` -- a method the checker

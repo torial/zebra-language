@@ -1,0 +1,11 @@
+# BUG-691: JsonValue.values() / entries() were in the known-method list and never
+# implemented -- they reached the Map helpers and failed inside zig. Both are refused
+# at -c now, naming tryList() and keys(); line 10 is the documented form, accepted.
+def main()
+    var j = Json.parse("{\"a\": 1, \"b\": [2, 3]}")!
+    var arr = j.get("b")!
+    var items: List(JsonValue) = arr.values()
+    for k, v in j.entries()
+        print(k)
+    var ok: List(JsonValue) = arr.tryList()!
+    print(items.count() + ok.count())

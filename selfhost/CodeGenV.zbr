@@ -3338,6 +3338,21 @@ class VGen
             on Expr.catch_ as c
                 # `expr catch |e| fallback` -> `(expr or { e := err  fallback })`:
                 # the or block's last expression is its value
+                # a nilable-and-throws callee yields the `ZOpt[T]` wrapper, so the fallback
+                # (a `?T`) is wrapped to match and the whole is opened back to `?T` (BUG-690)
+                var cxt: str = .vTypeOf(c.expr)
+                if cxt.startsWith("!?") and not isNilLit(c.fallback)
+                    var inner: str = cxt.substring(2, cxt.len)
+                    var bind: str = ""
+                    var bound: bool = false
+                    if c.err_var as ev2
+                        .catch_bindings.add(vSafe(ev2))
+                        bind = vSafe(ev2) + " := err\n_ = " + vSafe(ev2) + "\n"
+                        bound = true
+                    var wrapped = "zopt_of(" + .exprStr(c.expr) + " or {\n" + bind + "zopt_from[" + inner + "](" + .exprStr(c.fallback) + ")\n})"
+                    if bound
+                        .catch_bindings = dropLast(.catch_bindings)
+                    return wrapped
                 if c.err_var as ev
                     .catch_bindings.add(vSafe(ev))
                     var out = "(" + .exprStr(c.expr) + " or {\n" + vSafe(ev) + " := err\n_ = " + vSafe(ev) + "\n" + .exprStr(c.fallback) + "\n})"
@@ -3352,15 +3367,26 @@ class VGen
                     var crt: str = .vTypeOf(c.expr)
                     .tmpN = .tmpN + 1
                     var zr: str = "zr" + .tmpN.toString()
+                    # a nilable-and-throws callee (`!?T`, spelled `!ZOpt[T]`): its value is
+                    # the wrapper, opened with zopt_of, and the option is `?T` -- not `??T`,
+                    # which V does not parse (BUG-690, from the engine's guiscene.zbr)
+                    var nilable: bool = crt.startsWith("!?")
+                    var opened: str = zr + "v"
+                    if nilable
+                        opened = "zopt_of(" + zr + "v)"
                     if crt.startsWith("!") and not .in_cond
                         var cot: str = "?" + crt.substring(1, crt.len)
+                        if nilable
+                            cot = crt.substring(1, crt.len)
                         .line("mut " + zr + " := " + cot + "(none)")
                         .local_names.add(zr)
                         .local_types.set(zr, cot)
                         .line("if " + zr + "v := " + .exprStr(c.expr) + " {")
-                        .line("\t" + zr + " = " + zr + "v")
+                        .line("\t" + zr + " = " + opened)
                         .line("}")
                         return zr
+                    if nilable
+                        return "(if " + zr + "v := " + .exprStr(c.expr) + " { zopt_of(" + zr + "v) } else { none })"
                     return "(if " + zr + " := " + .exprStr(c.expr) + " { " + zr + " } else { none })"
                 return "(" + .exprStr(c.expr) + " or { " + .exprStr(c.fallback) + " })"
             else

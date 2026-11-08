@@ -1,7 +1,8 @@
 # v_poc5.zbr -- the V backend's fifth program: errors (2026-10-13). A
 # throws def that raises, a `?` chain through a second throws def, a
 # def-level `catch |e|` on a plain def, and the expression-level catch both
-# ways. Runs on the Zig backend too.
+# ways. Runs on the Zig backend too. And `catch nil` over a def that is nilable AND
+# throws, bound with `as` (BUG-690: the option was declared `??T`, which V refuses).
 
 def parsePositive(s: str): int throws
     var n: int = s.tryInt() orelse 0 - 1
@@ -14,6 +15,18 @@ def sumAll(parts: List(str)): int throws
     for p in parts
         total = total + parsePositive(p)?
     return total
+
+def lookup(key: str): int? throws
+    if key == ""
+        raise "empty key"
+    if key == "none"
+        return nil
+    return key.len
+
+def emptyAs(msg: str): int?
+    if msg == "empty key"
+        return 0 - 2
+    return nil
 
 def safeSum(parts: List(str)): int
     var total: int = sumAll(parts)?
@@ -30,4 +43,20 @@ def main()
     var n: int = parsePositive("7") catch 0 - 1
     var m: int = parsePositive("nope") catch |e| 0 - e.message.len   # (a capture must be used or omitted: Zebra's rule)
     print("catch expr: " + n.toString() + " " + m.toString())
+    for k in ["abc", "none", ""]
+        var got = lookup(k) catch nil
+        if got as v
+            print("lookup " + k + ": " + v.toString())
+        else
+            print("lookup " + k + ": nil")
+        var viaErr: int? = lookup(k) catch |e| emptyAs(e.message)
+        var viaLit: int? = lookup(k) catch 0 - 1
+        if viaErr as ve
+            print("  catch |e|: " + ve.toString())
+        else
+            print("  catch |e|: nil")
+        if viaLit as vl
+            print("  catch -1: " + vl.toString())
+        else
+            print("  catch -1: nil")
     print("v_poc5: all ok")

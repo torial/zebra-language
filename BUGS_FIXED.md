@@ -52,6 +52,52 @@ Open bugs live in `BUGS.md`.
   returns nil. That trace comes from Zig's std, the same class BUG-684 left visible on
   Sean's word.
 
+### BUG-691: `JsonValue.values()` / `entries()` passed `-c` and failed inside zig -- FIXED 2026-11-08
+
+- **Found by:** Fable, 2026-11-08, the GameEngine's first use of `JsonValue.values()`
+  (`var items: List(JsonValue) = arr.values()` in `zbra/guiscene.zbr`, pin 8b4c5e0): the
+  build failed at `zebra_rt.zig:1115:79: union 'json.dynamic.Value' has no member named
+  'KV'`. Fable read it as a Zig 0.16 gap (the engine's toolchain). It is not: the same
+  failure on the pinned 0.17, and `entries()` fails there too (`no field named 'items'`).
+- **Cause:** `jsonMethodKnown` listed `values` and `entries`, so the checker accepted them,
+  but no JSON arm handled either; CodeGen's generic dispatch sent them to the Map helpers
+  (`_zebra_map_values`, which reads `.KV`) and the `entries` pass-through. Neither was in
+  QUICKSTART's JsonValue table, and the refusal message for unknown members already left
+  them out -- only the list disagreed. BUG-680's derivation took the list as the surface.
+- **Fix:** both refused at `-c` (`selfhost/TypeChecker.zbr`), naming `tryList()` for an
+  array's elements and `keys()` / `get(k)` for an object. Removed from the surface
+  (`docs/SURFACE.md`: JsonValue 24 -> 22). Implementing them was the alternative; refusing
+  needs no new semantics (is `values()` of an array its elements?) and the documented
+  forms already cover both uses.
+- **Pinned:** `test/fail_fixtures/bug691_json_values_entries_fail.zbr` (`smoke_tc_fail`,
+  both columns), with `tryList()` on the next line as the accepted control.
+
+### BUG-690: V backend: `f() catch nil` over a nilable-and-throws def declared a `??T` option -- FIXED 2026-11-08
+
+- **Found by:** Fable, 2026-11-08, in the GameEngine's `zbra/guiscene.zbr` (engine
+  commit 2de5596): `var scOpt = readColor(p, "Color") catch nil` with `readColor`
+  returning `Color3? throws`, then `if scOpt as sc` / `g.color = sc`. The Zig backend
+  was right; the V route did not build. Fable saw `cannot assign to g.color: expected
+  Color3, not ?Color3` under V b399a50; under V 0.5.2 the same emit fails one step
+  earlier, `unexpected token ?` on `mut zr1 := ??Color3(none)`. The engine moved the
+  shape check into `readColor` and dropped the catch. The `?`-propagated form
+  (`if readColor(p, "Color")? as sc`) was fine on both backends.
+- **Cause:** a `T? throws` result is `!?T` in CodeGenV's type table and `!ZOpt[T]` in
+  the V signature (V has no `!?T`). The `catch nil` lowering prefixed `?` to the
+  result's type -- `??T` -- and assigned the raw `ZOpt[T]` wrapper to it. `try`
+  (`f()?`) already opened the wrapper with `zopt_of`; `catch nil` did not.
+- **Fix (`selfhost/CodeGenV.zbr`, `Expr.catch_`):** for a `!?T` callee the option is
+  declared `?T` and set to `zopt_of(<result>)`, in both the hoisted and the inline form.
+- **Pinned:** `examples/v_poc5.zbr` gained a `lookup(): int? throws` called through
+  `catch nil` and bound with `as` -- value, nil and raise each once -- which
+  `tools/v_check.sh` builds on V and diffs against the Zig run. Red against the pre-fix
+  emitter (the `??Color3` above, the same lowering).
+- **The same root, second shape, found by probing for it:** `f() catch |e| fallback` and
+  `f() catch <value>` over a `!?T` callee put a `?T` fallback in V's `or` block where the
+  result is the `ZOpt[T]` wrapper (`or block must provide a value of type ZOpt[i64], not
+  ?i64`). Now the fallback is wrapped with `zopt_from[T]` and the whole opened with
+  `zopt_of`. v_poc5 runs all three forms against value, nil and raise.
+
 ### BUG-689: `Http.get` / `post` / `json` / `postJson` results were untyped, so their members went unchecked -- FIXED 2026-11-08
 
 - **Found:** writing BUG-687's fixture. `var r = Http.get(u)` then `if r as resp` and

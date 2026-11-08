@@ -2249,7 +2249,7 @@ def setMethodKnown(name: str): bool
     return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString" or name == "copy"
 
 def jsonMethodKnown(name: str): bool
-    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "keys" or name == "values" or name == "entries" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "keys" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
 
 # ── The runtime OBJECT receivers (2026-09-15, Sean: "resolving in general also gives us
 # better -c coverage") ─────────────────────────────────────────────────────────────────
@@ -5288,6 +5288,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.bool_
                             if jmname == "stringify"
                                 return Type_.string_
+                            if jmname == "values" or jmname == "entries"
+                                # BUG-691: listed as known and never implemented -- they reached
+                                # the Map helpers and failed inside zig (`no member named 'KV'`)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'JsonValue' has no method '" + jmname + "': an array's elements are `tryList()` (List(JsonValue)?), an object's member names `keys()` -- read each member with get(k)")
+                                return Type_.unknown_
                             if not jsonMethodKnown(jmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                            "'JsonValue' has no method '" + jmname + "' (read with j[\"k\"]? or has/get/tryStr/tryInt/tryFloat/tryBool/tryObj/tryList; also keys, isNull/isObject/isArray, put*/append*, stringify)")

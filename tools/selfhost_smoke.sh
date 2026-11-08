@@ -2787,6 +2787,9 @@ smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmark
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:16: error: 'str' has no method 'trimm'"
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:30: error: 'List' has no method 'sizee'"
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:43: error: 'Timer' has no method 'elapsedMs'"
+# BUG-691: JsonValue values()/entries() were known-but-unimplemented (a zig failure, `KV`); refused now
+smoke_tc_fail test/fail_fixtures/bug691_json_values_entries_fail.zbr "bug691_json_values_entries_fail.zbr:7:38: error: 'JsonValue' has no method 'values': an array's elements are"
+smoke_tc_fail test/fail_fixtures/bug691_json_values_entries_fail.zbr "bug691_json_values_entries_fail.zbr:8:19: error: 'JsonValue' has no method 'entries'"
 # Failure locations (GameEngine, 2026-10-08): ` at <file>:<line>:` in every failure kind.
 smoke_run_fail test/fail_fixtures/assert_msg_location_fail.zbr "assert failed at test/fail_fixtures/assert_msg_location_fail.zbr:4: x must be positive"
 smoke_run_fail test/fail_fixtures/require_location_fail.zbr "require failed at test/fail_fixtures/require_location_fail.zbr:4: in 'half'"

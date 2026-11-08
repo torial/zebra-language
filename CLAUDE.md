@@ -1068,7 +1068,7 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
                                 #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 32 namespaces / 179 members,
-                                #   32 receivers / 364 members by SURFACE.md's section counts (5 / 120
+                                #   32 receivers / 362 members by SURFACE.md's section counts (5 / 120
                                 #   on the day it was written; the SIMD vector/mask table and the
                                 #   Random instance joined 2026-09-18; 23 / 315 until BUG-680's
                                 #   runtime-object tables joined 2026-11-07).
