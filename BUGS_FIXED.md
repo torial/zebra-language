@@ -38,6 +38,8 @@ server reads, and a client PROCESS exiting with unread data (a reset), 5 departu
 reset) on 0.17 prints nothing today. The engine on 0.16 is the instrument that sees the
 write-side traces; ask its session to rerun `net_departure_test` against the branch.
 
+**Fixture:** `test/bug684_no_data_after_close_test.zbr` -- a raw TCP client sends a masked close and reads to EOF; the handler's two sends after the handshake must put nothing on the wire (old runtime: 24 bytes, the close plus both data frames, 3 of 3).
+
 **Closed the same evening.** Fable reran the engine's departure test against the branch
 (f9b0c76), split by phase and by std frame:
 - **Graceful hang-ups** print nothing at all with the engine's close.

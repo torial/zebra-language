@@ -1928,6 +1928,8 @@ smoke_run_bounded test/bug542_ws_close_once_test.zbr "bug542: host saw 2 message
 # not close the socket under the read (old runtime: an NTSTATUS trace 11 of 12 runs, a panic
 # on the cancelled read 1 of 12 -- the panic loses the sentinel, the trace hits the forbid).
 smoke_run_bounded test/bug682_ws_close_under_recv_test.zbr "bug682: reader ended cleanly after the close" 90 "NTSTATUS"
+# BUG-684: no WebSocket data after the close handshake, read as raw TCP (old runtime: 24 bytes = the close + two data frames).
+smoke_run_bounded test/bug684_no_data_after_close_test.zbr "bug684: nothing after the close" 90 "NTSTATUS"
 # BUG-636: the argv family of sys is checked in the front end -- a str command, a List(int),
 # a missing argument and a non-str cwd were each accepted by -c and failed inside zig, in
 # runtime code. The ok fixture runs every legitimate argv shape (bounded: it spawns itself).
