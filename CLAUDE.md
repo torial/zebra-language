@@ -2216,7 +2216,8 @@ python tools/gui_surface_drift.py  # THE GUI-SURFACE DRIFT GATE, registered as `
                                 #   GuiContext's verbs, the _GuiBackend table, the `_gui_*`
                                 #   helpers CodeGen emits calls to, and TypeChecker's
                                 #   guiMethodKnown are FOUR hand-kept copies of one surface.
-                                #   Four checks: verbs identical stub/tui/libui; table fields
+                                #   Five checks (the fifth, BUG-693: every `_code_editor_*` CodeGen emits is defined in
+                                #   all three regions): verbs identical stub/tui/libui; table fields
                                 #   identical tui/libui (the stub may print instead of
                                 #   dispatch); helpers identical and covering every `_gui_*(`
                                 #   in CodeGen.zbr; guiMethodKnown == the verb set (a verb

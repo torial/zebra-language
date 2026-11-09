@@ -5021,6 +5021,10 @@ pub fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ =
 pub fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
 pub fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
 pub fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+// No Scintilla on the stub: the hatch answers 0 for every message, as the tui section did
+// (BUG-693 -- the stub is the headless backend since Zig 0.17 refused tui).
+pub fn _code_editor_sci(_ed: *_CodeEditor, msg: i64, wparam: i64, lparam: i64) i64 { _ = _ed; _ = msg; _ = wparam; _ = lparam; return 0; }
+pub fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const u8) i64 { _ = _ed; _ = msg; _ = wparam; _ = text; return 0; }
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 pub fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;

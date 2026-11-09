@@ -2414,6 +2414,8 @@ smoke_run test/bug246_unannotated_generic_ctor_test.zbr "bug246: OK"
 # string comparison passes against the broken compiler, because the {any} defect is in the
 # formatter. The first draft of this fixture did exactly that and tested only half 1.
 smoke_run  test/bug212_code_editor_const_test.zbr "bug212: OK"
+smoke_run  test/bug693_code_editor_sci_stub_test.zbr "bug693: OK"
+smoke_run  test/bug692_split_arg_test.zbr "bug692: OK"
 # The debug source-map fixture (tools/debug_map_check.sh). Registered here so something
 # RUNS it; the gate asserts its provenance markers, this asserts it still works.
 smoke_run test/bug329_print_sourcemap_test.zbr "bug329: OK"

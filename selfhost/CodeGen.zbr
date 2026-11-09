@@ -10124,6 +10124,14 @@ struct Generator
     # (`ms.add(HashMap())` on a `List(HashMap(str, int))`), the way a `var m: HashMap(..)
     # = HashMap()` takes it from the annotation.
     def genStoredValue(recv: Expr, v: Expr)
+        # BUG-692: `ll.add(s.split(" "))` / a HashMap value -- a split stored into a
+        # List(str) element is collected, as everywhere else a List(str) is wanted.
+        if isSplitIter(v) and not isNamedRecvCall(v)
+            if storedElemType(recv) as st692
+                if st692 is Type_.list_ as st692e
+                    if st692e is Type_.string_
+                        genSplitCollect(v, nil)
+                        return
         if v is Expr.call as vc
             if vc.args.len == 0
                 if vc.callee is Expr.ident as vid
@@ -10298,6 +10306,32 @@ struct Generator
         # BUG-185: but NOT when the receiver is a string — string methods emit a
         # by-value special form, so `_mc_N.concat(…)` would be invalid Zig; genExpr
         # handles the string chain.  (Mirrors the var-init and return paths.)
+        # BUG-692: `xs = s.split(sep)` / `obj.field = s.lines()` into a List(str) target --
+        # the assignment position, typed by inference (the target has no TypeRef here).
+        if a.op == AssignOp.assign and .infer_ctx != nil
+            if isSplitIter(a.value) and not isNamedRecvCall(a.value)
+                if inferExpr(a.target, .infer_ctx!) is Type_.list_ as asl_elem
+                    if asl_elem is Type_.string_
+                        if a.target is Expr.index
+                            # An element target (`m["k"] = ...`, `xs[i] = ...`) has its own
+                            # store forms below (`_zbr_set`, `.put`), and `target = ` would be
+                            # an invalid left side. Collect into a temporary, then assign THAT
+                            # through the ordinary path.
+                            var sv692: str = "_zbr_sv" + w.nextUid().toString()
+                            writeIndent()
+                            w.emit("{ const " + sv692 + " = ")
+                            genSplitCollect(a.value, nil)
+                            w.emit(";\n")
+                            genAssign(StmtAssign(a.span, a.target, a.op, Expr.ident(ExprIdent(a.span, sv692))))
+                            writeIndent()
+                            w.emit("}\n")
+                            return
+                        writeIndent()
+                        genExpr(a.target)
+                        w.emit(" = ")
+                        genSplitCollect(a.value, nil)
+                        w.emit(";\n")
+                        return
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
             if ch != nil and chainRecvNeedsHoist((ch!).recv)
@@ -11028,6 +11062,12 @@ struct Generator
             return
         if emitListLitForParam(e, hint)
             return
+        # BUG-692: an inline `s.split(sep)` / `s.lines()` handed to a `List(str)` parameter --
+        # a function's, a method's or a constructor's -- reached zig as the raw SplitIterator.
+        # The var-init (BUG-092) and return (BUG-350) positions collected it; this is the
+        # argument position, through the one collector.
+        if collectSplitForList(e, hint)
+            return
         if e is Expr.call as c
             if c.args.len == 0
                 if c.callee is Expr.ident as id
@@ -11102,7 +11142,9 @@ struct Generator
     # Zig; a List(str) position (an annotated var, a `return` from a `List(str)`
     # function) wants them collected. One labeled block expression, usable in any
     # expression position, so the two sites cannot drift.
-    def genSplitCollect(ie: Expr, list_t: TypeRef)
+    # `list_t` nil means List(str), for a slot typed by inference rather than a TypeRef
+    # (an assignment target, BUG-692).
+    def genSplitCollect(ie: Expr, list_t: TypeRef?)
         var uid092 = w.nextUid()
         var lbl092: str = "blk092_${uid092.toString()}"
         var lname092: str = "_ll_${uid092.toString()}"
@@ -11112,9 +11154,9 @@ struct Generator
         w.emit(": { var ")
         w.emit(lname092)
         w.emit(": ")
-        genType(list_t)
+        genSplitListType(list_t)
         w.emit(" = _zbr_new(")
-        genType(list_t)
+        genSplitListType(list_t)
         w.emit("); var ")
         w.emit(sname092)
         w.emit(" = ")
@@ -11132,6 +11174,21 @@ struct Generator
         w.emit(" ")
         w.emit(lname092)
         w.emit("; }")
+
+    def genSplitListType(list_t: TypeRef?)
+        if list_t as lt
+            genType(lt)
+        else
+            w.emit("_ZbrList([]const u8)")
+
+    # BUG-692: emit `e` collected when it is a str split/lines iterator going to a List slot.
+    # Returns false (emitting nothing) otherwise, so callers fall through to their own path.
+    def collectSplitForList(e: Expr, hint: TypeRef): bool
+        if hint is TypeRef.generic as sgt692
+            if sgt692.name == "List" and isSplitIter(e) and not isNamedRecvCall(e)
+                genSplitCollect(e, hint)
+                return true
+        return false
 
     # True when `e` is `recv.m(..)` and recv is a user class/struct instance -- a
     # user-defined `split` must not be mistaken for the str builtin.
@@ -19239,6 +19296,8 @@ struct Generator
                                     um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
                                     if not um_emitted
                                         um_emitted = emitListLitForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-632
+                                    if not um_emitted
+                                        um_emitted = collectSplitForList(args.at(um_ai).value, ump_p.type_!)   # BUG-692
                         if not um_emitted
                             genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
@@ -21322,6 +21381,8 @@ struct Generator
                         genSigValue(a.value)
                         done = true
                     else if emitListLitForParam(a.value, pt)   # BUG-632
+                        done = true
+                    else if collectSplitForList(a.value, pt)   # BUG-692
                         done = true
             if not done
                 genExpr(a.value)

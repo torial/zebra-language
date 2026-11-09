@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-693. Next new bug: BUG-694.**
+**Last bug number generated: BUG-694. Next new bug: BUG-695.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -95,53 +95,13 @@
 
 ---
 
-
-### BUG-692: a `split` passed inline as a `List(str)` argument emits the raw SplitIterator (found 2026-11-08)
-- **Reported by** the GameEngine session (Fable's seat), running a control on the
-  v-backend-poc worktree; **reproduced on main** (`99aa12c`'s zebra.exe), Debug, with a
-  program of its own.
-- **Repro:**
-  ```zebra
-  class Rec
-      var tags: List(str)
-      cue init(tags: List(str))
-          this.tags = tags
-  def count(xs: List(str)): int
-      return xs.len()
-  def main()
-      var r = Rec("a*b*c".upper().split("*"))   # error at this line
-      print(count("a,b".split(",")))           # and, alone, at this one
-  ```
-  zig: `expected type 'List(str)', found 'mem.SplitIterator(u8,.sequence)'`, at the
-  call's line. Both a CONSTRUCTOR argument and a plain FUNCTION argument fail (measured
-  separately: zig stops at the first).
-- **Workaround:** bind it first -- `var tags = s.split("*")`, then `Rec(tags)`; that
-  path collects (BUG-092).
-- **The family:** BUG-092 (var init), BUG-350 (`return`), BUG-336/605 (`.at`/`.len`)
-  each fixed one POSITION where a lazy `split` meets a `List(str)` slot. Argument position
-  is the one left. Fix the position-independent way if there is one -- collect wherever
-  the expected type is `List(str)` -- rather than a fourth site; a fifth position will
-  otherwise be found the same way.
-- **Control when fixing:** both lines above must build and print 3 / 2; a `for t in
-  s.split(",")` must stay lazy (no collect); leakgen should generate the shape.
-- **The V target** emits the inline form fine (`zstr_split` returns the box).
-
----
-
-### BUG-693: `CodeEditor.sci` does not build on the default (stub) backend -- the IDE's headless tests have no backend on Zig 0.17 (found 2026-11-09)
-- Found by reading zebra-ide's CI: `check` has been red against every release since rc7. Its
-  three headless legs (`keys_test`, `model_test`, the `ide.zbr` compile control) pass
-  `--gui-backend=tui`, which Zig 0.17 refuses -- and the refusal says to use libui_ng "or no
-  flag". With no flag, `model_test.zbr` (which `use`s ide.zbr) fails inside zig on 99aa12c:
-  `ide.zbr:238: error: use of undeclared identifier '_code_editor_sci'`.
-- Cause: codegen lowers `ed.sci(...)` to `_code_editor_sci` / `_code_editor_sci_str`
-  (CodeGen.zbr ~20175). Both GUI sections define them (the tui one as `return 0` stubs);
-  the stub backend's GUI region in stdlib_preamble.zig defines the other 19 `_code_editor_*`
-  helpers and not these two. `gui-surface` checks GuiContext verbs, the backend table and
-  `_gui_*` helpers, not `_code_editor_*`, so nothing saw it.
-- Fix: add the two stub helpers to the preamble (return 0, as the tui section did), and grow
-  gui_surface_drift to require every `_code_editor_*` name CodeGen emits in all three
-  regions. Then move zebra-ide's three legs off `--gui-backend=tui`.
-- Control when fixing: `model_test.zbr` prints `model_test: ok` with no flag; the drift gate
-  goes red with one helper deleted from the preamble. keys_test already passes with no flag.
-
+### BUG-694: a one-argument `HashMap(V)()` passes the front end and fails inside zig (found 2026-11-09)
+- Found while probing BUG-692. `var m = HashMap(int)(); m["k"] = 3` emits
+  `var m = _zbr_new(_ZbrAutoMap(i64))` and zig refuses: `local variable is never mutated`
+  (reported at the declaration). The documented spelling is `HashMap(K, V)()` (QUICKSTART
+  "HashMap -- construct with HashMap(K,V)()"), and it works; no corpus file uses one argument.
+- Fix: refuse a one-argument `HashMap(...)()` at `-c`, naming `HashMap(str, V)()` (the
+  annotated `var m: HashMap(...) = HashMap()` form is separate and fine). Measure the corpus,
+  zebra-ide and the GameEngine first.
+- Control: the refusal fires with a column; `HashMap(str, int)()` and `HashMap()` under an
+  annotation still build.

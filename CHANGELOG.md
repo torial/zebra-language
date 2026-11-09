@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An inline `split` / `lines()` goes anywhere a `List(str)` does** (BUG-692): as a
+  function, method or constructor argument (positional or named, in or across modules),
+  assigned to a `List(str)` local, field or container element, or added to a list of lists. It used to compile only as a variable's
+  initialiser or a `return` value; elsewhere zig refused the lazy iterator.
+- **`CodeEditor.sci` / `sciStr` build on the default backend** (BUG-693), answering 0 as they
+  did on tui. Since Zig 0.17 refused `--gui-backend=tui`, the default backend is the headless
+  one, and a program using the Scintilla hatch had no backend it could be tested on.
 - **`JsonValue.values()` and `JsonValue.entries()` are refused at `-c`** (BUG-691). They were
   in the checker's known-method list but never implemented: a call reached the Map helpers
   and failed inside zig (`union 'json.dynamic.Value' has no member named 'KV'`, or `no

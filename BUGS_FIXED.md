@@ -6,6 +6,43 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-693: `CodeEditor.sci` / `sciStr` did not build on the default (stub) backend -- FIXED 2026-11-09
+
+- **Found by:** reading zebra-ide's CI, 2026-11-09: its `check` workflow had been red against
+  every release since rc7. Three headless legs passed `--gui-backend=tui`, refused on Zig 0.17;
+  the refusal says to use no flag, and with no flag `model_test.zbr` failed inside zig:
+  `use of undeclared identifier '_code_editor_sci'`.
+- **Cause:** both GUI sections define `_code_editor_sci` / `_code_editor_sci_str`; the stub
+  region of `stdlib_preamble.zig` defined the other 19 `_code_editor_*` helpers and not these
+  two. `gui-surface` compared GuiContext verbs, the backend table and `_gui_*` helpers only.
+- **Fix:** the two helpers in the stub region (answer 0, as the tui section's did), and
+  `gui_surface_drift.py` check 5: every `_code_editor_*` name CodeGen.zbr emits must be defined
+  in all three regions (refuses under 15 extracted names). Red-checked: before the preamble
+  change it named exactly the two missing helpers.
+- **Fixture:** `test/bug693_code_editor_sci_stub_test.zbr` (smoke_run), red on the pre-fix
+  compiler with the reported error. zebra-ide's `model_test` prints `model_test: ok` with no
+  backend flag.
+
+### BUG-692: an inline `split` / `lines()` handed to a `List(str)` slot emitted the raw SplitIterator -- FIXED 2026-11-09
+
+- **Found by:** the GameEngine session, 2026-11-08: `Rec("a*b*c".upper().split("*"))` with a
+  `List(str)` constructor parameter, and alone `count("a,b".split(","))`. zig: `expected type
+  'List(str)', found 'mem.SplitIterator(u8,.sequence)'`.
+- **Cause:** `split`/`lines` lower to a lazy Zig iterator. Only the var-init (BUG-092) and
+  `return` (BUG-350) positions collected it into a list. Argument and assignment positions
+  passed the iterator through.
+- **Fix:** one predicate, `collectSplitForList`, around the existing collector
+  (`genSplitCollect`), in the three argument paths: `genCallWithTypeHint` (functions,
+  constructors, named and cross-module arguments), `genArgListByParams`, and the user-method
+  fast loop. `genStoredValue` collects a split stored into a `List(str)` element (`ll.add`,
+  a field map's value). `genAssign` collects for a `List(str)` target typed by inference (a
+  local, `this.field`, `obj.field`); an element target (`m["k"]`, `xs[i]`) is collected into a
+  temporary and assigned through the ordinary store path. `for x in s.split(...)` stays lazy.
+- **Fixture:** `test/bug692_split_arg_test.zbr` (smoke_run), twelve positions. Run on a
+  compiler built from HEAD's committed `.zig` before the change, it fails at its first
+  (line 44, the reported error); the element positions were checked separately there and
+  fail the same way.
+
 ### BUG-687: `Tcp.serve`, `Ws.serve` and `Http.serve` leaked a thread handle per accepted connection -- FIXED 2026-11-08
 
 - **Found by:** Fable, 2026-11-07, with the GameEngine's new handle ledger
