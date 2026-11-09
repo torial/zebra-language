@@ -423,6 +423,63 @@ Two conclusions: **the tracing collector fails all three tests at the host bound
 the engine's exact seam; and **counting passes only if its elision and its cycle leaks are
 REPORTABLE** -- a tooling requirement to write into the design, not an afterthought.
 
+## 6c. The collector as the default with the allocator mechanism kept -- the proof of concept (Fable, 2026-11-09, at Sean's request)
+
+Sean's question: for the V backend, make V's collector the default and preserve the
+allocator mechanism for fine-grained control when wanted -- what does it mean in practice,
+and where are the seams? Built on `v-backend-poc` and put through its paces; the full
+account with every table is the wiki's `pages/fable/fieldnotes_v-gc-regions_2026-11-09.md`.
+
+**The mechanism.** `allocate <source>` is a **region** (`zebra_rt.v`, the `// == regions ==`
+section): the record of what the runtime made while the block was open -- its lists, maps,
+sets, builders, class instances, the pieces of a `split`, and every string the emitter routes
+through `zr_s` (the string builtins, concatenation, interpolation) -- freed explicitly at the
+block's exit with `GC_FREE`, so the block's garbage never waits for a collection and never
+counts toward one. The record holds hidden (xor'd) words and keeps nothing alive; popped
+records are pooled. `<<-` copies out (`zr_co_str` / `zr_co_list`, deep for strings), into the
+parent block's record or the collector's heap. `-gc boehm` is the emitted run line's default,
+`--no-gc` asks for none. Every exit is spelled (V's `defer` is function-scoped): return, raise,
+break, continue, and a catch unwinds to the depth its try entered at; a return's or raise's
+value is hoisted and copied out BEFORE the pops. `-d zbr_region_check` frees nothing and
+POISONS -- a string reads `<freed at FILE:LINE>`, a container empties -- so an escape without
+`<<-` names its block when read; `-d zbr_region_stats` reports blocks, frees, collections,
+heap and any block left open.
+
+**Measured** (V master b399a50, tcc, Sean's loop over 100 MB; a frame-shaped program of 600
+frames x 2,000 temporaries over 100k warm records):
+
+| | peak | wall | collections |
+|---|---:|---:|---:|
+| B plain, `-gc none` | 2,440 MB | 10.2 s | -- |
+| B plain, collector | **8 MB** | 10.0-11.6 s | 1,809 |
+| C `allocate` + `<<-`, collector | 7 MB | 11.1 s | **987** |
+| C `allocate` + `<<-`, `-gc none` | 2,564 MB | 33.7 s | nothing reclaimed |
+
+| frame program | mean ms | worst | over 20 ms | collections |
+|---|---:|---:|---:|---:|
+| collector alone | 3.3 | 30-31 | 11 | 22 |
+| block per item | 4.7-5.0 | 30-51 | 5-8 | 16 |
+| collector alone, `boehm_incr` | 3.9 | 18-20 | 0 | 72-76 |
+| block per item, `boehm_incr` | 4.8 | **11-13** | 0 | 44-46 |
+
+**The reading.** The collector carries everything by default and `allocate` becomes a
+scheduling hint: the block's garbage goes back the moment the block ends, which halves the
+collections on the loop and takes a third away on the frame program, and lowers the worst
+frame under incremental collection. The spelling and the copy-out rule are the Zig arena's,
+and the V side gains a deterministic debug mode the Zig side lacks (the poison epitaph).
+
+**The seams** (fifteen in the wiki page; the ones that bind): V's `free()` is a no-op under
+the collector (the first run's 13.8 million "frees" freed nothing -- the region calls
+`GC_FREE` itself); V master's arrays are managed, `data` an interior pointer behind a header
+(`GC_base` under the collector, the array's own `free` without one); `GC_is_marked` has no
+header check; conservative stack scanning roots dead temporaries, so an escape check by
+marking named every record (hence the poison); V folds literal `+` and `repeat` into
+statics; a HashMap's storage stays the collector's; a `C.malloc`'d host record is no root
+(a `GC_MALLOC_UNCOLLECTABLE` one is) -- the engine's seam of §6b, now with its witness
+(`region_probe.v`); and **without the collector the mechanism is not a working mode on
+Windows** (nothing reclaimed, three times the wall, and a V double-free question in a
+twelve-line repro).
+
 ## 7. Acceptance (Fable's witness list)
 
 Before Sean decides on a branch:

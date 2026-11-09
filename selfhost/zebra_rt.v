@@ -19,13 +19,13 @@ pub mut:
 }
 
 pub fn new_zlist[T]() &ZList[T] {
-	return &ZList[T]{}
+	return zr_l(&ZList[T]{})
 }
 
 pub fn zlist_of[T](zr_items []T) &ZList[T] {
-	return &ZList[T]{
+	return zr_l(&ZList[T]{
 		items: zr_items
-	}
+	})
 }
 
 pub fn (mut zr_l ZList[T]) add(zr_x T) {
@@ -107,7 +107,7 @@ pub fn (zr_m &ZMap[K, V]) fetch(zr_k K) V {
 }
 
 pub fn new_zmap[K, V]() &ZMap[K, V] {
-	return &ZMap[K, V]{}
+	return zr_m(&ZMap[K, V]{})
 }
 
 pub fn (mut zr_z ZMap[K, V]) set(zr_k K, zr_v V) {
@@ -164,7 +164,7 @@ pub mut:
 }
 
 pub fn new_zset[T]() &ZSet[T] {
-	return &ZSet[T]{}
+	return zr_set(&ZSet[T]{})
 }
 
 pub fn (mut zr_s ZSet[T]) add(zr_x T) {
@@ -201,7 +201,7 @@ pub mut:
 }
 
 pub fn new_zstring_builder() &ZStringBuilder {
-	return &ZStringBuilder{}
+	return zr_sb(&ZStringBuilder{})
 }
 
 pub fn (mut zr_b ZStringBuilder) append(zr_s string) {
@@ -301,6 +301,377 @@ pub mut:
 pub fn zbox[T](zr_x T) &ZBox[T] {
 	return &ZBox[T]{ v: zr_x }
 }
+
+// == regions ==
+// Zebra's `allocate` block on a collected heap (the V GC proof of concept,
+// 2026-11-09). The collector owns every allocation; a block is the RECORD of what
+// the runtime made while it was open, freed explicitly at the block's exit (V's
+// free: GC_FREE under the collector, the libc allocator's free under -gc none),
+// so the block's garbage never waits for a collection and never counts toward
+// one. The record holds HIDDEN words (each pointer xor'd), so the record itself
+// keeps nothing alive. `<<-` copies a value out into the enclosing context before
+// the exit frees it; a value that leaves the block any other way is read after
+// its free, as in the Zig backend's arena. What the record covers is what the
+// runtime constructs (lists, maps, sets, builders, class instances) and the
+// strings the emitter routes through zr_s; V's own interpolation is the
+// collector's.
+//   -d zbr_region_check: the exit frees nothing and POISONS instead -- a string's
+//     bytes become `<freed at SITE>`, a container's length goes to zero -- and the
+//     poisoned blocks are kept (never reused), so a value that escaped without
+//     `<<-` says where it died the moment it is read. The diagnostic mode. (The
+//     first design, a full collection per exit and GC_is_marked on each record,
+//     named every record as escaped: the emitted expression's temporaries stay in
+//     the function's frame and the conservative scan roots them.)
+//   -d zbr_region_stats: a line at exit with the blocks, frees and escapes seen.
+const zr_hide = uint(0x5A5A5A5A5A5A5A5A)
+
+const zr_k_str = u8(1) // a string's bytes
+const zr_k_list = u8(2) // a ZList box and its items' storage
+const zr_k_map = u8(3) // a ZMap box and its map's storage
+const zr_k_set = u8(4) // a ZSet box and its map's storage
+const zr_k_sb = u8(5) // a ZStringBuilder box and its parts' storage
+const zr_k_obj = u8(6) // a class instance: its block alone
+
+@[heap]
+pub struct ZRegion {
+pub mut:
+	site    string
+	kinds   []u8
+	words   []uint
+	freed   int
+}
+
+// the layouts a record frees through: V's array and map are one struct whatever
+// the element types (the sizes travel inside), so a box is read through a view
+// of one concrete type, never a generic cast (`array` and `map` themselves are
+// internal types V refuses as fields)
+struct ZListView {
+mut:
+	items []u8
+}
+
+struct ZMapView {
+mut:
+	m map[int]int
+}
+
+struct ZSbView {
+mut:
+	parts []u8
+}
+
+__global (
+	zr_regions        []&ZRegion
+	zr_region_blocks  int
+	zr_region_frees   int
+	zr_region_hooked  bool
+	zr_poisoned       []voidptr // check mode: the poisoned blocks, held so they are never reused
+	zr_region_spare   []&ZRegion // popped records kept for the next push: a block allocates nothing of its own
+)
+
+fn C.GC_base(voidptr) voidptr
+fn C.GC_FREE(voidptr)
+fn C.strlen(&char) int
+fn C.GC_get_heap_size() uint
+fn C.GC_get_gc_no() uint
+fn C.atexit(fn ())
+
+pub fn zr_region_push(zr_site string) {
+	// a spare record is reused with its arrays' capacity (the first measurement
+	// had every block allocate a record and two arrays: three collector
+	// allocations a block, 3.6 million over the frame benchmark, and more
+	// collections with the blocks than without them)
+	if zr_region_spare.len > 0 {
+		mut zr_r := zr_region_spare.pop()
+		zr_r.site = zr_site
+		zr_r.freed = 0
+		zr_regions << zr_r
+	} else {
+		zr_regions << &ZRegion{
+			site: zr_site
+		}
+	}
+	zr_region_blocks++
+	zr_stats_hook()
+}
+
+// -d zbr_region_stats: the report registered for the exit, once (the emitter
+// calls this at main's start too, so a program with no block reports its
+// collector); nothing otherwise
+pub fn zr_stats_hook() {
+	$if zbr_region_stats ? {
+		if !zr_region_hooked {
+			zr_region_hooked = true
+			C.atexit(zr_region_report)
+		}
+	}
+}
+
+// records p under the open block, if any
+@[inline]
+fn zr_rec(zr_kind u8, zr_p voidptr) {
+	if zr_regions.len == 0 || zr_p == unsafe { nil } {
+		return
+	}
+	mut zr_r := zr_regions[zr_regions.len - 1]
+	zr_r.kinds << zr_kind
+	zr_r.words << (uint(zr_p) ^ zr_hide)
+}
+
+// a string the block made: its bytes recorded (a literal's are static, never)
+pub fn zr_s(zr_x string) string {
+	if zr_regions.len > 0 && zr_x.is_lit == 0 {
+		zr_rec(zr_k_str, zr_x.str)
+	}
+	return zr_x
+}
+
+pub fn zr_l[T](zr_x &ZList[T]) &ZList[T] {
+	zr_rec(zr_k_list, voidptr(zr_x))
+	return zr_x
+}
+
+pub fn zr_m[K, V](zr_x &ZMap[K, V]) &ZMap[K, V] {
+	zr_rec(zr_k_map, voidptr(zr_x))
+	return zr_x
+}
+
+pub fn zr_set[T](zr_x &ZSet[T]) &ZSet[T] {
+	zr_rec(zr_k_set, voidptr(zr_x))
+	return zr_x
+}
+
+pub fn zr_sb(zr_x &ZStringBuilder) &ZStringBuilder {
+	zr_rec(zr_k_sb, voidptr(zr_x))
+	return zr_x
+}
+
+// a class instance the block made
+pub fn zr_o[T](zr_x &T) &T {
+	zr_rec(zr_k_obj, voidptr(zr_x))
+	return zr_x
+}
+
+// frees one block V's allocator gave out; never nil, a static or an interior
+// pointer (GC_FREE on any of them is an access violation, seen in the probe).
+// Under the collector this is GC_FREE itself: V's own free() is a no-op there
+// (vlib/builtin/allocation.c.v: "better to leave it to Boehm's gc"), and the
+// first full run's 13.8 million "frees" freed nothing. Without the collector
+// it is V's free, which matches V's allocator (_aligned_malloc on Windows).
+fn zr_free_block(zr_p voidptr) bool {
+	if zr_p == unsafe { nil } {
+		return false
+	}
+	$if gcboehm ? {
+		if C.GC_base(zr_p) != zr_p {
+			return false
+		}
+		C.GC_FREE(zr_p)
+	} $else {
+		unsafe { free(zr_p) }
+	}
+	return true
+}
+
+// frees an array's storage: V master's arrays are MANAGED -- the allocation
+// begins at a header before `data`, so data is an interior pointer (freeing it
+// was the first -gc none run's access violation). Under the collector the base
+// is asked for and freed; without one the array frees itself, header and all.
+// A slice's storage is its owner's and a nofree array's is nobody's: left.
+fn zr_free_array(mut zr_a []u8) bool {
+	if zr_a.data == unsafe { nil } || zr_a.flags.has(.is_slice) || zr_a.flags.has(.nofree) {
+		return false
+	}
+	$if gcboehm ? {
+		zr_b := C.GC_base(zr_a.data)
+		if zr_b == unsafe { nil } {
+			return false
+		}
+		C.GC_FREE(zr_b)
+	} $else {
+		unsafe { zr_a.free() }
+	}
+	return true
+}
+
+fn zr_region_free(zr_kind u8, zr_p voidptr) int {
+	mut zr_n := 0
+	match zr_kind {
+		zr_k_list {
+			mut zr_v := unsafe { &ZListView(zr_p) }
+			if zr_free_array(mut zr_v.items) {
+				zr_n++
+			}
+		}
+		zr_k_map, zr_k_set {
+			// a map's storage (its metas and key-values) is freed by V's own
+			// map.free, which is a no-op under the collector: there a HashMap's
+			// storage stays the collector's and only its box is the block's
+			$if !gcboehm ? {
+				mut zr_v := unsafe { &ZMapView(zr_p) }
+				unsafe { zr_v.m.free() }
+				zr_n++
+			}
+		}
+		zr_k_sb {
+			mut zr_v := unsafe { &ZSbView(zr_p) }
+			if zr_free_array(mut zr_v.parts) {
+				zr_n++
+			}
+		}
+		else {}
+	}
+	if zr_free_block(zr_p) {
+		zr_n++
+	}
+	return zr_n
+}
+
+fn zr_kind_name(zr_kind u8) string {
+	return match zr_kind {
+		zr_k_str { 'string' }
+		zr_k_list { 'List' }
+		zr_k_map { 'HashMap' }
+		zr_k_set { 'Set' }
+		zr_k_sb { 'StringBuilder' }
+		else { 'object' }
+	}
+}
+
+// check mode: the object is not freed but made to say where it died
+fn zr_poison(zr_kind u8, zr_p voidptr, zr_site string) {
+	match zr_kind {
+		zr_k_str {
+			zr_n := unsafe { C.strlen(&char(zr_p)) }
+			zr_msg := '<freed at ${zr_site}>'
+			mut zr_b := unsafe { &u8(zr_p) }
+			for zr_i in 0 .. zr_n {
+				unsafe {
+					zr_b[zr_i] = if zr_i < zr_msg.len { zr_msg[zr_i] } else { `~` }
+				}
+			}
+		}
+		zr_k_list {
+			mut zr_v := unsafe { &ZListView(zr_p) }
+			zr_v.items.clear() // a later .at() is the runtime's bounds refusal
+		}
+		zr_k_map, zr_k_set {
+			mut zr_v := unsafe { &ZMapView(zr_p) }
+			zr_v.m.clear()
+		}
+		zr_k_sb {
+			mut zr_v := unsafe { &ZSbView(zr_p) }
+			zr_v.parts.clear()
+		}
+		else {}
+	}
+	zr_poisoned << zr_p
+}
+
+pub fn zr_region_pop() {
+	if zr_regions.len == 0 {
+		zbr_panic('region: a block exit with no block open')
+	}
+	mut zr_r := zr_regions.pop()
+	$if zbr_region_check ? {
+		for zr_i, zr_w in zr_r.words {
+			zr_poison(zr_r.kinds[zr_i], voidptr(zr_w ^ zr_hide), zr_r.site)
+		}
+		zr_r.freed = zr_r.words.len
+	} $else {
+		for zr_i, zr_w in zr_r.words {
+			zr_r.freed += zr_region_free(zr_r.kinds[zr_i], voidptr(zr_w ^ zr_hide))
+		}
+	}
+	zr_region_frees += zr_r.freed
+	zr_r.kinds.clear()
+	zr_r.words.clear()
+	zr_region_spare << zr_r
+}
+
+// a block left by an error (a raise caught outside it): every block opened
+// since the catch's own depth is closed
+pub fn zr_region_unwind(zr_depth int) {
+	for zr_regions.len > zr_depth {
+		zr_region_pop()
+	}
+}
+
+// `<<-`: the value copied into the enclosing context (the parent block's record
+// when one is open, else the collector's heap), so it survives the block's exit
+pub fn zr_co_str(zr_x string) string {
+	if zr_regions.len == 0 {
+		return zr_x
+	}
+	zr_top := zr_regions.pop()
+	zr_c := zr_s(zr_x.clone())
+	zr_regions << zr_top
+	return zr_c
+}
+
+pub fn zr_co_list[T](zr_x &ZList[T]) &ZList[T] {
+	if zr_regions.len == 0 {
+		return zr_x
+	}
+	zr_top := zr_regions.pop()
+	mut zr_c := zr_l(&ZList[T]{
+		items: zr_x.items.clone()
+	})
+	$if T is string {
+		for zr_i in 0 .. zr_c.items.len {
+			zr_c.items[zr_i] = zr_s(zr_c.items[zr_i].clone())
+		}
+	}
+	zr_regions << zr_top
+	return zr_c
+}
+
+fn zr_region_report() {
+	if zr_regions.len > 0 {
+		eprintln('regions: ${zr_regions.len} block(s) still OPEN at exit (an exit path the emitter did not close): ${zr_regions.map(it.site)}')
+	}
+	$if gcboehm ? {
+		$if zbr_region_check ? {
+			eprintln('regions: ${zr_region_blocks} block(s), ${zr_region_frees} object(s) poisoned at their exits (check mode: nothing freed by hand); collector: ${C.GC_get_gc_no()} collection(s), heap ${C.GC_get_heap_size() / 1048576} MB at exit')
+		} $else {
+			eprintln('regions: ${zr_region_blocks} block(s), ${zr_region_frees} block(s) freed at their exits; collector: ${C.GC_get_gc_no()} collection(s), heap ${C.GC_get_heap_size() / 1048576} MB at exit')
+		}
+	} $else {
+		eprintln('regions: ${zr_region_blocks} block(s), ${zr_region_frees} block(s) freed at their exits (no collector: nothing else is ever freed)')
+	}
+}
+
+// sys.memStats on V: arenaBytes is the collector's heap (its capacity, as the
+// Zig arena's is); the census fields are -1, unmeasured, as the Zig runtime
+// spells them without --census
+pub struct ZMemStats {
+pub:
+	arena_bytes i64
+	census_on   bool
+	allocations i64
+	alloc_bytes i64
+	live_bytes  i64
+}
+
+pub fn zsys_mem_stats() ZMemStats {
+	$if gcboehm ? {
+		return ZMemStats{
+			arena_bytes: i64(C.GC_get_heap_size())
+			allocations: -1
+			alloc_bytes: -1
+			live_bytes:  -1
+		}
+	} $else {
+		return ZMemStats{
+			arena_bytes: -1
+			allocations: -1
+			alloc_bytes: -1
+			live_bytes:  -1
+		}
+	}
+}
+
+// == regions end ==
 
 // == concurrency ==
 // Zebra's Atomic(T): a value under a mutex -- V's sync.stdatomic has no value
@@ -1591,15 +1962,36 @@ pub fn zstr_char_at(zr_s string, zr_i i64) string {
 }
 
 pub fn zstr_split(zr_s string, zr_sep string) &ZList[string] {
-	return &ZList[string]{
-		items: zr_s.split(zr_sep)
+	zr_parts := zr_s.split(zr_sep)
+	if zr_regions.len > 0 {
+		// the pieces are the block's too (a piece that IS the input -- V's split
+		// hands the string itself back when the separator is absent -- is not
+		// recorded again: its maker recorded it; an empty piece is V's static
+		// '' -- is_lit -- and freeing it is an access violation under -gc none,
+		// where no GC_base stands guard: seen on the first full run)
+		for zr_p in zr_parts {
+			if zr_p.str != zr_s.str && zr_p.is_lit == 0 {
+				zr_rec(zr_k_str, zr_p.str)
+			}
+		}
 	}
+	return zr_l(&ZList[string]{
+		items: zr_parts
+	})
 }
 
 pub fn zstr_lines(zr_s string) &ZList[string] {
-	return &ZList[string]{
-		items: zr_s.split_into_lines()
+	zr_parts := zr_s.split_into_lines()
+	if zr_regions.len > 0 {
+		for zr_p in zr_parts {
+			if zr_p.str != zr_s.str && zr_p.is_lit == 0 {
+				zr_rec(zr_k_str, zr_p.str)
+			}
+		}
 	}
+	return zr_l(&ZList[string]{
+		items: zr_parts
+	})
 }
 
 pub fn zstr_pad_left(zr_s string, zr_width i64, zr_pad string) string {

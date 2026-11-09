@@ -1872,7 +1872,7 @@ pub fn _zbr_fn_emitUsage(to_stdout: bool) void {
 // zbr:selfhost/main.zbr:1112
     _zbr_fn_usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout);
 // zbr:selfhost/main.zbr:1113
-    _zbr_fn_usageLine("  zebra --target v --gc <source.zbr>       ... and say the run line with V's collector on (off by default: nothing is freed, as Zebra's arena)", to_stdout);
+    _zbr_fn_usageLine("  zebra --target v --no-gc <source.zbr>    ... and say the run line with V's collector OFF (the collector is the default since 2026-11-09; an allocate block frees its own record either way)", to_stdout);
 // zbr:selfhost/main.zbr:1114
     _zbr_fn_usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout);
 // zbr:selfhost/main.zbr:1115
@@ -2959,13 +2959,8 @@ pub fn _zbr_fn_vTarget(path: []const u8, gc_on: bool, module_path: []const u8, g
 // zbr:selfhost/main.zbr:1684
                     _zbr_print("{s}\n", .{"  this program names Gui or CodeEditor and no --gui-backend was given: the V target has no headless section, so the file will not build as it is; emit it with --gui-backend=libui_ng"});
                 }
-// zbr:selfhost/main.zbr:1689
-                var globals_flag: []const u8 = "";
-// zbr:selfhost/main.zbr:1690
-                if (res.has_globals) {
 // zbr:selfhost/main.zbr:1691
-                    globals_flag = " -enable-globals";
-                }
+                const globals_flag: []const u8 = " -enable-globals";
 // zbr:selfhost/main.zbr:1692
                 if (std.mem.eql(u8, gui_backend, "libui_ng")) {
 // zbr:selfhost/main.zbr:1698
@@ -2976,10 +2971,10 @@ pub fn _zbr_fn_vTarget(path: []const u8, gc_on: bool, module_path: []const u8, g
 // zbr:selfhost/main.zbr:1700
                     if (gc_on) {
 // zbr:selfhost/main.zbr:1701
-                        _zbr_print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("  run it: v -gc boehm", globals_flag, _zbr_rt._allocator), " run ", _zbr_rt._allocator), out, _zbr_rt._allocator), "   (--gc: V's collector on)", _zbr_rt._allocator)});
+                        _zbr_print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("  run it: v -gc boehm", globals_flag, _zbr_rt._allocator), " run ", _zbr_rt._allocator), out, _zbr_rt._allocator), "   (V's collector, the default; --no-gc for none)", _zbr_rt._allocator)});
                     } else {
 // zbr:selfhost/main.zbr:1703
-                        _zbr_print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("  run it: v -gc none", globals_flag, _zbr_rt._allocator), " run ", _zbr_rt._allocator), out, _zbr_rt._allocator), "   (no collector, as Zebra's arena; --gc turns V's on)", _zbr_rt._allocator)});
+                        _zbr_print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("  run it: v -gc none", globals_flag, _zbr_rt._allocator), " run ", _zbr_rt._allocator), out, _zbr_rt._allocator), "   (--no-gc: no collector; an allocate block's exit frees its record, nothing else is ever freed)", _zbr_rt._allocator)});
                     }
                 }
             }
@@ -7999,7 +7994,7 @@ pub fn main(_zinit: std.process.Init) void {
                 _zbr_exit(@as(i64, 2));
             }
 // zbr:selfhost/main.zbr:4395
-            const known_flags: []const u8 = "--also --gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h";
+            const known_flags: []const u8 = "--also --gc --no-gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h";
 // zbr:selfhost/main.zbr:4396
             const bad_flag: []const u8 = args.unknownFlag(known_flags);
 // zbr:selfhost/main.zbr:4397
@@ -8577,7 +8572,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:4887
             if (mode_v) {
 // zbr:selfhost/main.zbr:4888
-                _zbr_fn_vTarget(path, args.contains("--gc"), module_path, gui_backend, args.option("--also", ""));
+                _zbr_fn_vTarget(path, (!args.contains("--no-gc")), module_path, gui_backend, args.option("--also", ""));
 // zbr:selfhost/main.zbr:4889
                 _zbr_exit(@as(i64, 0));
             }

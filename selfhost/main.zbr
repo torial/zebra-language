@@ -1110,7 +1110,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
     usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
-    usageLine("  zebra --target v --gc <source.zbr>       ... and say the run line with V's collector on (off by default: nothing is freed, as Zebra's arena)", to_stdout)
+    usageLine("  zebra --target v --no-gc <source.zbr>    ... and say the run line with V's collector OFF (the collector is the default since 2026-11-09; an allocate block frees its own record either way)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --census <source.zbr>              allocation census: who allocates, where, how much -> stderr + zebra-census.json on exit", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
@@ -1682,13 +1682,13 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
             # the Zig target's default section is the tui's headless Gui; the V
             # target has none, so the file names types nothing defines
             print("  this program names Gui or CodeEditor and no --gui-backend was given: the V target has no headless section, so the file will not build as it is; emit it with --gui-backend=libui_ng")
-        # the collector is an explicit mode on this backend, not the default
-        # (Sean, 2026-10-13: the language book tempers its line on GCs to
-        # "available as an explicitly enabled mode"): -gc none frees nothing,
-        # as Zebra's arena does today; --gc asks V for its Boehm collector
-        var globals_flag: str = ""
-        if res.has_globals
-            globals_flag = " -enable-globals"   # a mutable module-level var is a V __global
+        # the collector is this backend's default since 2026-11-09 (the GC proof
+        # of concept, Sean's question: V's collector as the default with the
+        # allocator mechanism kept): an `allocate` block is a region whose exit
+        # frees what the block made, under the collector or without it; --no-gc
+        # asks for -gc none, where nothing else is ever freed
+        # (-enable-globals always: the runtime's region stack is a __global)
+        var globals_flag: str = " -enable-globals"
         if gui_backend == "libui_ng"
             # the GUI build: libui-ng's ReleaseFast archive (zig build -Doptimize=ReleaseFast
             # -p zig-out-fast in libui-ng; the Debug one wants the sanitizer runtime), a
@@ -1698,9 +1698,9 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
             print("  build it: set ZEBRA_LIBUI_NG=<libui-ng checkout>; v -cc clang -cflags -Wno-incompatible-pointer-types -subsystem console -gc none -enable-globals -o <app>.exe " + out)
             print("  then copy the Common-Controls v6 manifest beside it as <app>.exe.manifest (the Zig scaffold's app.manifest), and run; ZGUI_SCRIPT=\"click:<label>;quit\" ZGUI_TRACE=1 drives it headless")
         else if gc_on
-            print("  run it: v -gc boehm" + globals_flag + " run " + out + "   (--gc: V's collector on)")
+            print("  run it: v -gc boehm" + globals_flag + " run " + out + "   (V's collector, the default; --no-gc for none)")
         else
-            print("  run it: v -gc none" + globals_flag + " run " + out + "   (no collector, as Zebra's arena; --gc turns V's on)")
+            print("  run it: v -gc none" + globals_flag + " run " + out + "   (--no-gc: no collector; an allocate block's exit frees its record, nothing else is ever freed)")
 catch |e|
     sys.errln("zebra --target v: " + e.message)
     sys.exit(1)
@@ -4427,7 +4427,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--also --gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--also --gc --no-gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4920,7 +4920,7 @@ def main()
     # emitter, the .v written beside the source; what the subset refused is
     # printed by name and line. No Zig, no runtime module, no build.
     if mode_v
-        vTarget(path, args.contains("--gc"), module_path, gui_backend, args.option("--also", ""))
+        vTarget(path, not args.contains("--no-gc"), module_path, gui_backend, args.option("--also", ""))
         sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo

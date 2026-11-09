@@ -20,7 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
-use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
+use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtAllocate, StmtCopyOut, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
 # (and which are references, hence `mut`)
@@ -90,6 +90,23 @@ def lowerOf(ch: char): str
     return ch.toString()
 
 # V's reserved words a Zebra name may collide with
+# whether a statement list's last statement leaves it (the region's pop was
+# emitted before the jump, and V refuses a statement after one)
+def endsWithJump(stmts: List(Stmt)): bool
+    if stmts.count() == 0
+        return false
+    branch stmts.at(stmts.count() - 1)
+        on Stmt.return_
+            return true
+        on Stmt.raise_
+            return true
+        on Stmt.break_
+            return true
+        on Stmt.continue_
+            return true
+        else
+            return false
+
 def vSafe(name: str): str
     var s = snakeCase(name)
     if s.startsWith("_")
@@ -152,6 +169,9 @@ class VGen
     var capturing: bool               # a function body is being captured (a stub replaces it if anything is refused)
     var fn_names: List(str)           # every free function's V name (a local of that name is renamed)
     var global_inits: List(str)       # `name = value` for every __global, set by zglobals_init() at main's start
+    var region_depth: int             # the `allocate` blocks (regions on the collected heap) open in the function being emitted
+    var fn_region_base: int           # region_depth at the enclosing function's entry: a return / raise pops down to it
+    var loop_region_base: int         # region_depth at the innermost loop's entry: a break / continue pops down to it
     var global_modules: HashMap(str, List(str))   # a module-level var's name -> the module stems that declare it
     var iface_names: List(str)        # the interfaces: V interfaces, their values pointers to classes
     var sig_names: List(str)          # the sig types: a lambda passed as one is cast to its name
@@ -213,6 +233,9 @@ class VGen
         .captured = List(str)()
         .fn_names = List(str)()
         .global_inits = List(str)()
+        .region_depth = 0
+        .fn_region_base = 0
+        .loop_region_base = 0
         .global_modules = HashMap(str, List(str))()
         .iface_names = List(str)()
         .sig_names = List(str)()
@@ -920,6 +943,9 @@ class VGen
         g.fn_names = .fn_names
         g.renames = .renames
         g.global_inits = .global_inits
+        g.region_depth = .region_depth
+        g.fn_region_base = .fn_region_base
+        g.loop_region_base = .loop_region_base
         g.global_modules = .global_modules
         g.iface_names = .iface_names
         g.sig_names = .sig_names
@@ -1360,8 +1386,13 @@ class VGen
         .depth = .depth + 1
         if m.name == "main" and .has_globals
             .line("zglobals_init()")
+        if m.name == "main"
+            .line("zr_stats_hook()")   # -d zbr_region_stats: the collector and the blocks reported at exit; nothing otherwise
         .current_params = m.params
         .current_ret = ret
+        .region_depth = 0
+        .fn_region_base = 0
+        .loop_region_base = 0
         .in_method = false
         .resetLocals(m.params)
         if m.stmts as body
@@ -1570,6 +1601,9 @@ class VGen
         .depth = .depth + 1
         .current_params = m.params
         .current_ret = ret
+        .region_depth = 0
+        .fn_region_base = 0
+        .loop_region_base = 0
         .in_method = true
         .resetLocals(m.params)
         if m.stmts as body
@@ -1624,7 +1658,7 @@ class VGen
         .line("fn new_" + snakeCase(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
         .depth = .depth + 1
         .resetLocals(ini.params)
-        .line("mut self := " + .structLit(owner, members))
+        .line("mut self := zr_o(" + .structLit(owner, members) + ")")   # the open allocate block's, if any
         if ini.stmts as body
             .in_ctor = true
             .genBody(body, "new_" + snakeCase(owner))
@@ -1645,6 +1679,9 @@ class VGen
         .depth = .depth + 1
         .current_params = m.params
         .current_ret = ret
+        .region_depth = 0
+        .fn_region_base = 0
+        .loop_region_base = 0
         .in_method = false
         .resetLocals(m.params)
         var saved = .current_fields
@@ -2105,6 +2142,9 @@ class VGen
         .depth = .depth + 1
         .current_params = m.params
         .current_ret = ret
+        .region_depth = 0
+        .fn_region_base = 0
+        .loop_region_base = 0
         .in_method = true
         .resetLocals(m.params)
         if m.stmts as body
@@ -2250,11 +2290,17 @@ class VGen
                 .in_cond = false
                 .line("for " + wcond + " {")
                 .depth = .depth + 1
+                var wlb: int = .loop_region_base
+                .loop_region_base = .region_depth
                 .genStmts(w.stmts)
+                .loop_region_base = wlb
                 .depth = .depth - 1
                 .line("}")
             on Stmt.for_in as fi
+                var filb: int = .loop_region_base
+                .loop_region_base = .region_depth
                 .genForIn(fi)
+                .loop_region_base = filb
             on Stmt.for_num as fnum
                 var v = vSafe(fnum.var_)
                 .local_names.add(fnum.var_)
@@ -2263,27 +2309,45 @@ class VGen
                     step = " += " + .exprStr(fnum.step!)
                 .line("for " + v + " := i64(" + .exprStr(fnum.start) + "); " + v + " < " + .exprStr(fnum.stop_) + "; " + v + step + " {")
                 .depth = .depth + 1
+                var nlb: int = .loop_region_base
+                .loop_region_base = .region_depth
                 .genStmts(fnum.stmts)
+                .loop_region_base = nlb
                 .depth = .depth - 1
                 .line("}")
                 .popLocal(fnum.var_)
             on Stmt.return_ as r
                 if r.value as rv
+                    var rvs: str = .exprStr(rv)
+                    if .region_depth > .fn_region_base and not isNilLit(rv)
+                        # a value returned from inside an allocate block is computed
+                        # and copied out BEFORE the pops free the block (a string or
+                        # a List through zr_co_*; anything else as it is: an instance
+                        # the block made is freed under it, as under the Zig arena).
+                        # The first edge test returned a block's string after its
+                        # pop and read the next caller's bytes.
+                        .matchN = .matchN + 1
+                        var rt: str = "zrv" + .matchN.toString()
+                        .line(rt + " := " + .coWrap(rv, rvs))
+                        rvs = rt
+                    .popRegions(.fn_region_base)
                     if .current_ret.startsWith("!?")
                         # a nilable-and-throws def: the value wrapped (see retSpelling)
                         var wt: str = .current_ret.substring(2, .current_ret.len)
                         if isNilLit(rv)
                             .line("return ZOpt[" + wt + "]{}")
                         else if .vTypeOf(rv).startsWith("?")
-                            .line("return zopt_from(" + .exprStr(rv) + ")")
+                            .line("return zopt_from(" + rvs + ")")
                         else
-                            .line("return ZOpt[" + wt + "]{ has: true, val: " + .exprStr(rv) + " }")
+                            .line("return ZOpt[" + wt + "]{ has: true, val: " + rvs + " }")
                     else
-                        .line("return " + .exprStr(rv))
-                else if .in_ctor
-                    .line("return self")   # a `cue init` returning early: the object
+                        .line("return " + rvs)
                 else
-                    .line("return")
+                    .popRegions(.fn_region_base)
+                    if .in_ctor
+                        .line("return self")   # a `cue init` returning early: the object
+                    else
+                        .line("return")
             on Stmt.assert_ as asrt
                 # never V's `assert`: -prod drops it, statement and all, and a
                 # Zebra assert is evaluated in every build (the act is often
@@ -2302,8 +2366,10 @@ class VGen
             on Stmt.print_ as p
                 .genPrint(p)
             on Stmt.break_
+                .popRegions(.loop_region_base)
                 .line("break")
             on Stmt.continue_
+                .popRegions(.loop_region_base)
                 .line("continue")
             on Stmt.pass_
                 pass
@@ -2317,8 +2383,12 @@ class VGen
                 .genInScope(si)
             on Stmt.with_ as ww
                 .genStmts(ww.stmts)   # a `with` block: its statements, as the Zig target emits them
+            on Stmt.allocate_ as al
+                .genAllocate(al)
+            on Stmt.copy_out as co
+                .genCopyOut(co)
             else
-                .refused.add("a statement kind the subset does not spell (destructure, allocate, copy-out, contract, yield)")
+                .refused.add("a statement kind the subset does not spell (destructure, contract, yield)")
 
     # an expression statement; a mutating method on a call's RESULT binds a
     # temporary first (V: "cannot pass expression as mut"): `rows.at(0).add(7)`
@@ -2358,6 +2428,13 @@ class VGen
             msg = .exprStr(m)
         if r.details as d
             msg = "(" + msg + " + ': ' + " + .exprStr(d) + ")"
+        if .region_depth > .fn_region_base
+            # the message copied out before the pops free the block it was built in
+            .matchN = .matchN + 1
+            var et: str = "zre" + .matchN.toString()
+            .line(et + " := zr_co_str(" + msg + ")")
+            msg = et
+        .popRegions(.fn_region_base)
         .line("return error(" + msg + ")")
 
     # the def-level `catch |e|`: the body as a result-returning closure over
@@ -2375,6 +2452,70 @@ class VGen
         .line(tn + ".begin()")
         .genStmts(si.stmts)
         .line(tn + ".end()")
+
+    # the regions open above `base` closed before a jump out of them (a return,
+    # a raise, a break, a continue): V's defer runs at the FUNCTION's end, not
+    # the block's, so every exit is spelled
+    def popRegions(base: int)
+        var i: int = .region_depth
+        while i > base
+            .line("zr_region_pop()")
+            i = i - 1
+
+    # `allocate <source>` on the collected heap: a region -- the record of what
+    # the runtime makes while the block is open, freed at its exit (zebra_rt.v,
+    # the regions section; the GC proof of concept, 2026-11-09). Every allocator
+    # source is the one region here; the comment says which was asked for. The
+    # statements stand inline, not in a `{ }`: V's flow analysis does not look
+    # into a bare block, so a def whose block ends in `return` read as "missing
+    # return at end of function". Zebra ALLOWS a shadowing local, and inline the
+    # block's names share the enclosing V scope: a block that declares a name
+    # already declared is refused by name (the fix is a rename). A block whose
+    # last statement leaves (return, raise, break, continue) had its pop
+    # emitted before the jump; a pop after it is V's "unreachable code".
+    def genAllocate(al: StmtAllocate)
+        var kind: str = "an allocator"
+        if al.source is Expr.call as c
+            if c.callee is Expr.ident as id
+                kind = id.name
+        for st in al.stmts
+            if st is Stmt.var_ as sv
+                if .local_names.contains(sv.name)
+                    .refuse("a local `" + sv.name + "` declared in an allocate block shadows an enclosing local (the block's statements stand in the enclosing V scope): rename one", sv.span)
+        .line("// allocate " + kind + ": a region on the collected heap")
+        .line("zr_region_push('" + .current_file + ":" + al.span.line.toString() + "')")
+        .region_depth = .region_depth + 1
+        .genStmts(al.stmts)
+        .region_depth = .region_depth - 1
+        if not endsWithJump(al.stmts)
+            .line("zr_region_pop()")
+
+    # `target <<- value`: inside a block, the value copied into the enclosing
+    # context before the exit frees the block's (zr_co_*: a string, a List of
+    # anything, a List of strings deep); outside one, a plain assignment, as the
+    # Zig target spells it. A value type is assigned as it is: a struct holding a
+    # string the block made keeps a freed string (the Zig arena's hazard too).
+    def genCopyOut(co: StmtCopyOut)
+        if not co.deep
+            .refuse("'<-' is channel send/receive only; arena copy-out uses '<<-' (target <<- value)", co.span)
+            return
+        var val: str = .exprStr(co.value)
+        if .region_depth > 0
+            var vt: str = .vTypeOf(co.value)
+            if vt.startsWith("&") and not vt.startsWith("&ZList[")
+                .refuse("a copy-out of a " + vt + " (a string, a List or a value is the subset)", co.span)
+            val = .coWrap(co.value, val)
+        .line(.exprStr(co.target) + " = " + val)
+
+    # a rendered value copied into the enclosing context (zr_co_*) when its type
+    # is one the runtime copies -- a string, a List -- else as it is
+    def coWrap(e: Expr, rendered: str): str
+        var vt: str = .vTypeOf(e)
+        if vt == "string"
+            return "zr_co_str(" + rendered + ")"
+        if vt.startsWith("&ZList[")
+            return "zr_co_list(" + rendered + ")"
+        return rendered
 
     def genTryCatch(tc: StmtTryCatch)
         if tc.clauses.count() != 1
@@ -2398,12 +2539,25 @@ class VGen
         var lead: str = ""
         if .current_ret != "" and not (.current_ret == "!")
             lead = "return "
+        # the regions open as the try is entered, a runtime count: a raise inside
+        # a block in the body leaves the body's blocks open, and the catch
+        # closes them (an error is a return from the closure, past their pops)
+        .matchN = .matchN + 1
+        var rd: str = "zrd" + .matchN.toString()
+        .line(rd + " := zr_regions.len")
         .line(lead + "fn " + capList + "() " + inner + " {")
         .depth = .depth + 1
+        var tfb: int = .fn_region_base
+        var tlb: int = .loop_region_base
+        .fn_region_base = .region_depth
+        .loop_region_base = .region_depth
         .genStmts(tc.stmts)
+        .fn_region_base = tfb
+        .loop_region_base = tlb
         .depth = .depth - 1
         .line("}() or {")
         .depth = .depth + 1
+        .line("zr_region_unwind(" + rd + ")")
         for cl in tc.clauses
             if cl.type_ != nil
                 .refuse("a typed catch clause", cl.span)
@@ -3383,10 +3537,13 @@ class VGen
             i = i + 1
         return "zfmt_f('" + fmt + "', [" + vals + "])"
 
+    # an interpolation with a hole is a string V builds: the open allocate
+    # block's (zr_s); a literal with no hole is static and is not
     def vInterp(si: ExprStringInterp): str
         if .vInterpFloatsOnly(si)
-            return .vInterpFmt(si)
+            return "zr_s(" + .vInterpFmt(si) + ")"
         var out: str = "'"
+        var holes: int = 0
         var i: int = 0
         var n: int = si.parts.count()
         while i < n
@@ -3395,6 +3552,7 @@ class VGen
                 on StringPart.literal as lit
                     out = out + .vEscape(lit)
                 on StringPart.expr_ as ex
+                    holes = holes + 1
                     # a float hole with a fixed spec goes through the runtime's zfmt_one
                     # here too, so a float is spelled the same whatever its neighbours
                     # (the Zig backend's digits; V's str_intp differs on ties and specials)
@@ -3423,6 +3581,8 @@ class VGen
                     else
                         .refused.add("a format spec (" + f + ") with no expression before it")
             i = i + 1
+        if holes > 0
+            return "zr_s(" + out + "')"
         return out + "'"
 
     # a list literal's element type: the declared one, else the first
@@ -3963,6 +4123,7 @@ class VGen
             if name == "run": return "zsys_run(" + a + ")"
             if name == "sleep": return "time.sleep(i64(" + a + ") * time.millisecond)"
             if name == "readLine": return "zsys_readline()"
+            if name == "memStats": return "zsys_mem_stats()"   # arenaBytes: the collector's heap; the census fields -1
             if name == "readBytes": return "zsys_read_bytes(" + a + ")"
             if name == "readStdinAvailable": return "zsys_read_stdin_available()"
             if name == "stdinClosed": return "zsys_stdin_closed()"
@@ -4084,12 +4245,14 @@ class VGen
         if name == "tryInt" and args.count() == 0: return "zstr_try_int(" + obj + ")"
         if name == "tryFloat" and args.count() == 0: return "zstr_try_float(" + obj + ")"
         if name == "indexOf" and args.count() == 1: return "zstr_index_of(" + obj + ", " + .argsStr(args) + ")"
-        if name == "replace" and args.count() == 2: return obj + ".replace(" + .argsStr(args) + ")"
-        if name == "replaceAll" and args.count() == 2: return obj + ".replace(" + .argsStr(args) + ")"
-        if name == "repeat" and args.count() == 1: return obj + ".repeat(int(" + .argsStr(args) + "))"
+        # zr_s: a string V's builtin makes is the open allocate block's (the
+        # regions section of zebra_rt.v); nothing when no block is open
+        if name == "replace" and args.count() == 2: return "zr_s(" + obj + ".replace(" + .argsStr(args) + "))"
+        if name == "replaceAll" and args.count() == 2: return "zr_s(" + obj + ".replace(" + .argsStr(args) + "))"
+        if name == "repeat" and args.count() == 1: return "zr_s(" + obj + ".repeat(int(" + .argsStr(args) + ")))"
         if name == "reverse" and args.count() == 0: return obj + ".reverse()"
-        if name == "trimLeft" and args.count() == 0: return obj + ".trim_space_left()"
-        if name == "trimRight" and args.count() == 0: return obj + ".trim_space_right()"
+        if name == "trimLeft" and args.count() == 0: return "zr_s(" + obj + ".trim_space_left())"
+        if name == "trimRight" and args.count() == 0: return "zr_s(" + obj + ".trim_space_right())"
         if name == "equals" and args.count() == 1: return "(" + obj + " == " + .argsStr(args) + ")"
         if name == "eqlIgnoreCase" and args.count() == 1: return "(" + obj + ".to_lower() == (" + .argsStr(args) + ").to_lower())"
         if name == "build" and args.count() == 0: return obj + ".build()"
@@ -4102,11 +4265,11 @@ class VGen
         if name == "contains" and args.count() == 1: return obj + ".contains(" + .argsStr(args) + ")"
         if name == "startsWith" and args.count() == 1: return obj + ".starts_with(" + .argsStr(args) + ")"
         if name == "endsWith" and args.count() == 1: return obj + ".ends_with(" + .argsStr(args) + ")"
-        if name == "substring" and args.count() == 2: return obj + "[int(" + .exprStr(args.at(0).value) + ")..int(" + .exprStr(args.at(1).value) + ")]"   # int bounds: MSVC (vlang/v#30352)
+        if name == "substring" and args.count() == 2: return "zr_s(" + obj + "[int(" + .exprStr(args.at(0).value) + ")..int(" + .exprStr(args.at(1).value) + ")])"   # int bounds: MSVC (vlang/v#30352); a copy in V master (the probe of 2026-11-09)
         if name == "split" and args.count() == 1: return obj + ".split(" + .argsStr(args) + ")"
-        if name == "trim" and args.count() == 0: return obj + ".trim_space()"
-        if (name == "upper" or name == "toUpper") and args.count() == 0: return obj + ".to_upper()"
-        if (name == "lower" or name == "toLower") and args.count() == 0: return obj + ".to_lower()"
+        if name == "trim" and args.count() == 0: return "zr_s(" + obj + ".trim_space())"
+        if (name == "upper" or name == "toUpper") and args.count() == 0: return "zr_s(" + obj + ".to_upper())"
+        if (name == "lower" or name == "toLower") and args.count() == 0: return "zr_s(" + obj + ".to_lower())"
         if name == "clear" and args.count() == 0: return obj + ".clear()"
         # a method on one of the program's own classes: self.m(...) / obj.m(...)
         var key: str = "." + vSafe(name)
@@ -4233,7 +4396,10 @@ class VGen
             else
                 l = .exprStr(b.left)
         if b.op == BinaryOp.add or .in_cond
-            return l + " " + binaryOpV(b.op) + " " + .exprStr(b.right)
+            var joined: str = l + " " + binaryOpV(b.op) + " " + .exprStr(b.right)
+            if b.op == BinaryOp.add and .vTypeOf(b.left) == "string"
+                return "zr_s(" + joined + ")"   # a concatenation is the open allocate block's
+            return joined
         # the right term rendered with its hoisted lines caught: a temporary
         # bound for it (a mutating call on a call's result, an unwrap) would
         # otherwise stand BEFORE the statement -- ahead of the left terms' side

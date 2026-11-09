@@ -2397,6 +2397,20 @@ In the order they pay, each with the witness that says it is done:
    and its CONST SHADOW refusal silent against nineteen control consts
    named like the former locals; item 22 has the account.
 
+7. **The collector as the default, `allocate` kept as a region** -- DONE
+   2026-11-09 (Sean's question of the evening; `docs/design/memory_model.md`
+   §6c, the wiki's `fieldnotes_v-gc-regions_2026-11-09`): `-gc boehm` is the
+   emitted run line's default (`--no-gc` for none), `allocate` and `<<-` leave
+   the refused list -- a block is a record of what the runtime made while it
+   was open, GC_FREE'd at its exit, `<<-` the copy-out; every exit spelled
+   (return, raise, break, continue, a catch's unwind), the return's value
+   hoisted and copied out before the pops, a shadowing local refused by name;
+   `-d zbr_region_check` poisons instead of freeing (`<freed at FILE:LINE>`),
+   `-d zbr_region_stats` reports. The loop's collections halved, the frame
+   program's cut by a third, the worst frame under `boehm_incr` 11-13 ms.
+   Without the collector the frees reclaim nothing on Windows (V's aligned
+   allocator, managed arrays): not a working mode, said in the note.
+
 ## Float interpolation as one formatted write (2026-10-23)
 
 The memory-model note's fix (1) (`docs/design/memory_model.md` §6a): the
