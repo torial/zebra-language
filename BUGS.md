@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-691. Next new bug: BUG-692.**
+**Last bug number generated: BUG-692. Next new bug: BUG-693.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -95,3 +95,35 @@
 
 ---
 
+
+### BUG-692: a `split` passed inline as a `List(str)` argument emits the raw SplitIterator (found 2026-11-08)
+- **Reported by** the GameEngine session (Fable's seat), running a control on the
+  v-backend-poc worktree; **reproduced on main** (`99aa12c`'s zebra.exe), Debug, with a
+  program of its own.
+- **Repro:**
+  ```zebra
+  class Rec
+      var tags: List(str)
+      cue init(tags: List(str))
+          this.tags = tags
+  def count(xs: List(str)): int
+      return xs.len()
+  def main()
+      var r = Rec("a*b*c".upper().split("*"))   # error at this line
+      print(count("a,b".split(",")))           # and, alone, at this one
+  ```
+  zig: `expected type 'List(str)', found 'mem.SplitIterator(u8,.sequence)'`, at the
+  call's line. Both a CONSTRUCTOR argument and a plain FUNCTION argument fail (measured
+  separately: zig stops at the first).
+- **Workaround:** bind it first -- `var tags = s.split("*")`, then `Rec(tags)`; that
+  path collects (BUG-092).
+- **The family:** BUG-092 (var init), BUG-350 (`return`), BUG-336/605 (`.at`/`.len`)
+  each fixed one POSITION where a lazy `split` meets a `List(str)` slot. Argument position
+  is the one left. Fix the position-independent way if there is one -- collect wherever
+  the expected type is `List(str)` -- rather than a fourth site; a fifth position will
+  otherwise be found the same way.
+- **Control when fixing:** both lines above must build and print 3 / 2; a `for t in
+  s.split(",")` must stay lazy (no collect); leakgen should generate the shape.
+- **The V target** emits the inline form fine (`zstr_split` returns the box).
+
+---
