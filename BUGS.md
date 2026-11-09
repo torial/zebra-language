@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-692. Next new bug: BUG-693.**
+**Last bug number generated: BUG-693. Next new bug: BUG-694.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -127,3 +127,21 @@
 - **The V target** emits the inline form fine (`zstr_split` returns the box).
 
 ---
+
+### BUG-693: `CodeEditor.sci` does not build on the default (stub) backend -- the IDE's headless tests have no backend on Zig 0.17 (found 2026-11-09)
+- Found by reading zebra-ide's CI: `check` has been red against every release since rc7. Its
+  three headless legs (`keys_test`, `model_test`, the `ide.zbr` compile control) pass
+  `--gui-backend=tui`, which Zig 0.17 refuses -- and the refusal says to use libui_ng "or no
+  flag". With no flag, `model_test.zbr` (which `use`s ide.zbr) fails inside zig on 99aa12c:
+  `ide.zbr:238: error: use of undeclared identifier '_code_editor_sci'`.
+- Cause: codegen lowers `ed.sci(...)` to `_code_editor_sci` / `_code_editor_sci_str`
+  (CodeGen.zbr ~20175). Both GUI sections define them (the tui one as `return 0` stubs);
+  the stub backend's GUI region in stdlib_preamble.zig defines the other 19 `_code_editor_*`
+  helpers and not these two. `gui-surface` checks GuiContext verbs, the backend table and
+  `_gui_*` helpers, not `_code_editor_*`, so nothing saw it.
+- Fix: add the two stub helpers to the preamble (return 0, as the tui section did), and grow
+  gui_surface_drift to require every `_code_editor_*` name CodeGen emits in all three
+  regions. Then move zebra-ide's three legs off `--gui-backend=tui`.
+- Control when fixing: `model_test.zbr` prints `model_test: ok` with no flag; the drift gate
+  goes red with one helper deleted from the preamble. keys_test already passes with no flag.
+
