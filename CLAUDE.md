@@ -251,8 +251,8 @@ per-tier counts, computed from the registrations rather than written down.
 It runs only the gates registered `run_v` -- today one, `v-check`
 <!-- doc-gen: 1 = grep -cE '^[[:space:]]*(run|pin)_v "' tools/gates.sh --> -- and no ladder
 tier runs or counts them, because they need a V toolchain the ladder does not and answer a
-different question. `v-check` is `tools/v_check.sh` under the V the engine pins (ee6d62a;
-`V=<v.exe>` overrides): the v_poc examples and the five selfhost dumps emitted to V, built
+different question. `v-check` is `tools/v_check.sh` under the V the engine pins (master b399a50
+since 2026-11-08, was ee6d62a; `V=<v.exe>` overrides): the v_poc examples and the five selfhost dumps emitted to V, built
 and run, each diffed against a FRESH Zig run; the route's modules (CodeGen, Checker, main)
 within their refusal baseline and `v -check` clean; a nil unwrap naming its place; stdin
 polled without blocking; the V-built compiler answering the LSP; a runtime name
