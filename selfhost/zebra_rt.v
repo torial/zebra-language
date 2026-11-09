@@ -323,6 +323,14 @@ pub fn zbox[T](zr_x T) &ZBox[T] {
 //     named every record as escaped: the emitted expression's temporaries stay in
 //     the function's frame and the conservative scan roots them.)
 //   -d zbr_region_stats: a line at exit with the blocks, frees and escapes seen.
+// the collector's header: V's own prelude declares what V's builtin calls, not
+// GC_base / GC_get_gc_no / GC_get_heap_size -- tcc took them as implicit int
+// functions (a pointer truncated to 32 bits, unnoticed while the heap sat low),
+// clang under -prod refuses them
+$if gcboehm ? {
+	#include <gc.h>
+}
+
 const zr_hide = uint(0x5A5A5A5A5A5A5A5A)
 
 const zr_k_str = u8(1) // a string's bytes
@@ -2383,7 +2391,7 @@ fn zfbig_decimal(zf_b ZfBig, zf_out &u8) int {
 				zf_j--
 			}
 		} else {
-			for zf_j in 0 .. 9 - zf_nd {
+			for _ in 0 .. 9 - zf_nd {   // (an unused loop variable is -prod's error)
 				unsafe {
 					zf_out[zf_len] = `0`
 				}

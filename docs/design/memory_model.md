@@ -455,15 +455,28 @@ frames x 2,000 temporaries over 100k warm records):
 | C `allocate` + `<<-`, collector | 7 MB | 11.1 s | **987** |
 | C `allocate` + `<<-`, `-gc none` | 2,564 MB | 33.7 s | nothing reclaimed |
 
-| frame program | mean ms | worst | over 20 ms | collections |
+| frame program (tcc, unoptimized) | mean ms | worst | over 20 ms | collections |
 |---|---:|---:|---:|---:|
 | collector alone | 3.3 | 30-31 | 11 | 22 |
 | block per item | 4.7-5.0 | 30-51 | 5-8 | 16 |
 | collector alone, `boehm_incr` | 3.9 | 18-20 | 0 | 72-76 |
 | block per item, `boehm_incr` | 4.8 | **11-13** | 0 | 44-46 |
 
-**The reading.** The collector carries everything by default and `allocate` becomes a
-scheduling hint: the block's garbage goes back the moment the block ends, which halves the
+| frame program, optimized (clang -O3; Zig --release) | mean ms | worst | over 20 ms | heap MB |
+|---|---:|---:|---:|---:|
+| V, collector alone | 0.69-0.70 | 12 | 0 | 88 |
+| V, block per item | 1.08-1.20 | 10-15 | 0 | 72 |
+| V, block per item, `boehm_incr` | 1.20-1.22 | 10-11 | 0 | 43-50 |
+| Zig, no block (the program arena) | 0.51-0.52 | 11 | 0 | **410, never freed** |
+| Zig, `allocate Arena()` per item | **10.2-11.8** | **94-107** | 20-52 | 80 |
+
+The loop optimized: B plain 5.27 s, C `allocate` + `<<-` 5.42 s (+3 percent), both 6 MB.
+
+**The reading.** Against the shipped backend first: the Zig arena is the fastest row and
+grows to 410 MB with nothing ever freed, and the Zig `allocate Arena()` per item -- the
+mechanism as it stands -- costs ten times what the V region costs on the same program, with
+worst frames near 100 ms (an arena per block mapping and unmapping pages). On V the collector
+carries everything by default and `allocate` becomes a scheduling hint: the block's garbage goes back the moment the block ends, which halves the
 collections on the loop and takes a third away on the frame program, and lowers the worst
 frame under incremental collection. The spelling and the copy-out rule are the Zig arena's,
 and the V side gains a deterministic debug mode the Zig side lacks (the poison epitaph).
@@ -476,9 +489,12 @@ header check; conservative stack scanning roots dead temporaries, so an escape c
 marking named every record (hence the poison); V folds literal `+` and `repeat` into
 statics; a HashMap's storage stays the collector's; a `C.malloc`'d host record is no root
 (a `GC_MALLOC_UNCOLLECTABLE` one is) -- the engine's seam of §6b, now with its witness
-(`region_probe.v`); and **without the collector the mechanism is not a working mode on
-Windows** (nothing reclaimed, three times the wall, and a V double-free question in a
-twelve-line repro).
+(`region_probe.v`); **without the collector the mechanism is not a working mode on
+Windows** (nothing reclaimed, three times the wall; V master's `[]string.free()` frees the
+elements too, so a list's storage is freed through a `[]u8` view); **V's `-prod` hangs the
+region build and it is the LTO** (`-prod -cflags -fno-lto` runs, as do -O2 / -O3 without
+-prod; not isolated); and an undeclared C function is an implicit int under tcc (a pointer
+truncated to 32 bits: the runtime includes `<gc.h>` under the collector now).
 
 ## 7. Acceptance (Fable's witness list)
 
