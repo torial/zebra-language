@@ -149,25 +149,34 @@ may find and file bugs anywhere.
 - Item 7's release legs that are not V: linux-aarch64, windows-aarch64, a macos-x86_64
   decision, riscv64 in `cross-sema`.
 - memory_model.md on the Zig side: the remaining no-regret steps (2b field stores copy, 3
-  outgrown buffers, 4 escape hatches, 5 builder reuse, 9 releasable JSON), then RC for strings,
-  containers and class instances in CodeGen + `zebra_rt.zig`.
+  outgrown buffers, 4 escape hatches, 5 builder reuse, 9 releasable JSON), then what the joint
+  memory design (below) decides for the Zig backend.
 
 **Fable -- V, and the engine as witness**
 - The V-as-default milestone (v_backend_poc.md "Recommendation" items 1-6): safety parity
   verified as a gate over both backends, corpus parity, the installable V toolchain, the
   instruments re-homed by backend, and `v"..."`'s coexistence with `zig"..."`.
 - Item 7's Vinix: define the target (a static musl binary, or the V route) and its witness.
-- memory_model.md on the V side: RC and arenas emitted by CodeGenV over `-gc none` (decided
-  2026-10-30: on the critical path to V), measured against the engine.
+- memory_model.md on the V side: the collector as the default with `allocate` regions as the
+  opt-in (Sean's direction 2026-11-09, which reopens the 2026-10-30 "RC over `-gc none`"),
+  its pauses measured against the engine per frame -- and work on V's collector itself if
+  the pauses need it.
+- **A GUI backend on V's own UI library** (Sean, 2026-11-09: "ui2", said to have more
+  features than libui-ng). No published V project carries that name; the likely one is
+  `vlang/gui` (v-gui: pure V, immediate mode, flex-box layout over `gg` and `sokol`), beside
+  the older `vlang/ui`. Confirm which with Sean, then map the `Gui` / `_GuiBackend` surface
+  onto it as a backend section, witnessed the way `gui-scaffold` and `libui-section` witness
+  today's -- and say what becomes of the libui-ng backend (v_backend_poc.md item 6).
 - The engine witness for each compiler change Opus asks it for, and no-regret item 7, the
   leak-budget gate (the engine's 60 s run).
 - The review owed on memory_model.md §6.1 (split: copy-at-store vs views, measured).
 
 **Joint, because it is a seam**
-- **The RC design** -- ONE note (memory_model.md §6 grown into a design) before either
-  backend emits a count: ownership at the host boundary (`_zbr_free`, free-at-sweep), the
-  intern pool, weak parent links (§6.2), cycles caught by a debug leak report. Each backend
-  implements it; the engine witnesses both.
+- **The memory design** -- ONE note (memory_model.md grown into a design) before either
+  backend changes how it frees. Sean's direction 2026-11-09: a collector by default,
+  allocators as the opt-in (recorded at the head of memory_model.md, with the questions it
+  owes: the pause bound and its per-frame witness, the Zig backend, values an embedding host
+  holds). Each backend implements it; the engine witnesses both.
 - **Who edits what.** CodeGenV.zbr, `zebra_rt.v` and the V pin are Fable's; the front end,
   CodeGen.zbr, `stdlib_preamble.zig` and the GUI sections are Opus's. A change to what the front
   end hands a backend (a new AST shape, a new builtin, a surface member) is announced to the

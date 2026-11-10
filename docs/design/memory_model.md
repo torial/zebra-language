@@ -8,6 +8,20 @@ where we disagree, both positions are kept. The 2026-10-11 decision ("reference 
 strings and containers, cycles accepted, debug-mode leak report") is the starting point, not
 assumed final.
 
+**REOPENED 2026-11-09 (Sean) -- a garbage collector as the language's DEFAULT, allocators as
+the opt-in.** Sean's reasoning, from the user's side: Zebra reads like Python, so a newcomer
+expects memory to be managed for them, and `allocate` blocks then give power users finer
+control on top. The risk he names is PAUSES, and he would invest in the collector itself
+(V's is open to LLM work and feedback) if that is what it takes. This supersedes the
+2026-10-11 reference-counting decision and the RC-specific parts of §6 (§6.2 weak links and
+§6.3 counted instances exist to make RC work; a tracing collector reclaims cycles) once Opus
+and Fable have written the design -- until then they stand, recorded, not deleted. Fable's
+proof of concept the night before (engine fieldnotes 2026-11-09: the collector as the V
+default, `allocate` as a GC_FREE'd region; a loop from 2,440 MB to 8) is the first evidence.
+Questions the design owes: the pause bound and how it is witnessed per frame; what the Zig
+backend does (a collector there too, or a documented difference); and how an embedding host
+(`--library-mode`, node-addon, DynLib) holds Zebra values the collector must not reclaim.
+
 ---
 
 ## 1. The problem, measured
