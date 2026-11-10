@@ -23,6 +23,40 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+(nothing yet)
+
+---
+
+## Release 0.9.0 — 2026-11-09 (everything since rc9)
+
+**0.9.0 is the first release that is not a candidate.** It is "ready for others", not 1.0:
+the language surface is not yet frozen (that is the 1.0 promise; see
+`docs/NEXT_STEPS_to_1.0.md`), and the rc series has been where the semantics settled. Built
+with **Zig 0.17.1**, like rc9. Since rc9: runtime-object types a program can name and that
+refuse unknown members (BUG-680), WebSocket and server hardening (BUG-682, 684, 687), a port
+in an `int` (BUG-688), typed `Http` client results (BUG-689), FTS5 and RTREE in the bundled
+SQLite (BUG-686), an inline `split` accepted wherever a `List(str)` is (BUG-692), the
+Scintilla hatch on the default GUI backend (BUG-693, which zebra-ide's headless tests need),
+`querySegments` for stored procedures, free-at-sweep for embedding hosts, and V-backend
+fixes (BUG-681, 690).
+
+- **A server no longer leaks a handle per connection** (BUG-687). `Tcp.serve`, `Ws.serve`
+  and `Http.serve` never detached the thread each connection ran on, so on Windows a
+  long-running server held one more handle for every client it had ever accepted.
+
+- **A port in an `int` variable works with every networking call** (BUG-688).
+  `Tcp.connect`, `Tcp.serve`, `Ws.serve`, `Http.serve`, `Udp.bind` and `UdpSocket.send`
+  took a 16-bit port that only a literal could reach; a computed port failed inside zig.
+  They take `int` now, and refuse an out-of-range port by name.
+
+- **`Http.get`/`post`/`json`/`postJson` results are typed** (BUG-689), so a misspelled
+  member (`resp.body` for `resp.text`) is refused at `-c` instead of failing inside zig.
+
+- **The bundled SQLite includes FTS5 and RTREE** (BUG-686). The compiler built
+  `sqlite3.c` with no feature defines, so full-text search (`USING fts5`) and spatial
+  indexes (`USING rtree`) failed at run time with "no such module". Both are enabled now,
+  scoped to sqlite3.c; JSON functions were already built in.
+
 - **An inline `split` / `lines()` goes anywhere a `List(str)` does** (BUG-692): as a
   function, method or constructor argument (positional or named, in or across modules),
   assigned to a `List(str)` local, field or container element, or added to a list of lists. It used to compile only as a variable's
@@ -254,23 +288,6 @@ run `zebra -c` over your code first.
   A sized integer (`uint64`, `int32`...) also takes `toInt`, `toFloat` and `toString`.
 
 ### Fixes
-
-- **A server no longer leaks a handle per connection** (BUG-687). `Tcp.serve`, `Ws.serve`
-  and `Http.serve` never detached the thread each connection ran on, so on Windows a
-  long-running server held one more handle for every client it had ever accepted.
-
-- **A port in an `int` variable works with every networking call** (BUG-688).
-  `Tcp.connect`, `Tcp.serve`, `Ws.serve`, `Http.serve`, `Udp.bind` and `UdpSocket.send`
-  took a 16-bit port that only a literal could reach; a computed port failed inside zig.
-  They take `int` now, and refuse an out-of-range port by name.
-
-- **`Http.get`/`post`/`json`/`postJson` results are typed** (BUG-689), so a misspelled
-  member (`resp.body` for `resp.text`) is refused at `-c` instead of failing inside zig.
-
-- **The bundled SQLite includes FTS5 and RTREE** (BUG-686). The compiler built
-  `sqlite3.c` with no feature defines, so full-text search (`USING fts5`) and spatial
-  indexes (`USING rtree`) failed at run time with "no such module". Both are enabled now,
-  scoped to sqlite3.c; JSON functions were already built in.
 
 - **A class's own `cue init` is no longer replaced by a mixin's** (BUG-679). A class that
   `adds` a mixin declaring `cue init()` had its constructor call refused as "too many
