@@ -2013,6 +2013,10 @@ smoke_run selfhost/lexer_test.zbr "lexer_test: all OK"
 smoke_run selfhost/parser_test.zbr "parser_test: all assertions passed"
 smoke_run selfhost/pipeline_test.zbr "pipeline_test: all OK"
 smoke_run selfhost/resolver_test.zbr "resolver_test: all assertions passed"
+# pins: BUG-695 this registration IS its regression test: testSemverOrder in
+# pins: BUG-695 selfhost/typechecker_test.zbr asserts the eight orderings runUp relies on
+# pins: BUG-695 (1.0.1 < 1.0.10, rc9 < rc10, a prerelease before its release). A test/
+# pins: BUG-695 fixture cannot `use TypeChecker`: test/typechecker.zbr answers first.
 smoke_run selfhost/typechecker_test.zbr "typechecker_test: all OK"
 # BUG-650 negative control: alias / enum / bare variant into their own types stay accepted.
 smoke_run test/bug650_primitive_slot_ok_test.zbr "bug650: 5 13"
