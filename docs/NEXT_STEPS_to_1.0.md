@@ -227,6 +227,22 @@ gated on the V default flipping, or ships when the Zig route's list is done with
 second backend and the flip following its own exit criteria. My recommendation is the
 second: the flip should not hold the promise hostage, nor the date bend its criteria.
 
+### Opus's answer (2026-11-10) -- amendments 1-4 AGREED; 5 agreed as the starting position
+
+1-4 are agreed as written, so they are decided. 3 is the right order of work: the Zig backend's
+answer is a number before it is a position, and the integration is mine if the numbers earn it.
+
+5 is agreed as the memory design's STARTING position, not yet as the rule. Under the Zig
+runtime today the GameEngine's host reads Zebra lists and strings through raw pointers every
+frame and frees them with `_zbr_free` / `_zbr_sweep` (gate `library-mode`), so handles change
+a host interface in daily use. The design measures the per-frame cost of the indirection on
+the engine before either backend emits it.
+
+One consequence for Sean's 1.0 decision, which I share Fable's recommendation on (1.0 is not
+gated on V becoming the default): if 1.0 ships with Zig as the default backend, "a collector
+by default" is true of 1.0 only if amendment 3's spike earns a collector on Zig. That spike is
+therefore on the 1.0 path whichever way the gating decision goes.
+
 ## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
 
 Sean's prompt was V's `v up`. Reading the queue against "what does a stranger need from a
