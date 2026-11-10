@@ -3,17 +3,19 @@
 # against the literal range in the FRONT END and refuses by name when outside it
 # (tools/cli_check.sh has the refusing leg with `^99.0`; test/fail_fixtures/
 # build_requires_rejected_test.zbr pins the diagnostic text). This fixture is the
-# satisfied side: every form of range the check accepts, all satisfied by any 0.9.x
-# or later compiler... except the two exact/tilde forms, which are pinned to the
-# 0.9 line on purpose and must be BUMPED when `_zbr_version` leaves 0.9 -- that is
-# the fixture reminding us the check is real.
+# satisfied side: every form of range the check accepts. The `>=` forms hold for any
+# 0.9 or later compiler; the caret, tilde and exact forms are pinned to the CURRENT
+# line on purpose and must be BUMPED when `_zbr_version` leaves it -- that is the
+# fixture reminding us the check is real. Moved from the 0.9 line to the 1.0 line
+# on 2026-11-09, when main became 1.0.0-dev (a prerelease counts as its release, so
+# 1.0.0-dev satisfies `1.0.0`; under it, `^0.9` -- major 0, same minor -- refuses).
 def main()
     var b = Build.new()
     b.requires(">=0.9")
     b.requires(">=0.9.0")
-    b.requires("^0.9")          # major 0: same minor, at least 0.9.0
-    b.requires("~0.9.0")        # same major.minor
-    b.requires("0.9.0")         # exact (a prerelease of 0.9.0 counts as 0.9.0)
-    b.requires("=0.9.0")
+    b.requires("^1.0")          # same major, at least 1.0.0
+    b.requires("~1.0.0")        # same major.minor
+    b.requires("1.0.0")         # exact (a prerelease of 1.0.0 counts as 1.0.0)
+    b.requires("=1.0.0")
     var app = b.exe("req_app", "test/toplevel_main_test.zbr")
     print("build requires: ok")

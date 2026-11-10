@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-694. Next new bug: BUG-695.**
+**Last bug number generated: BUG-695. Next new bug: BUG-696.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -92,6 +92,26 @@
   binary that predates step 2's rebuild, or Zig build-cache reuse in step 2 that skips the
   recompile when source timestamps haven't changed. Not fully traced.
 - **Where this is also documented:** Comment in `tools/bootstrap_check.sh` update-mode header.
+
+---
+
+### BUG-695: `zebra up` compares versions by prefix, so 1.0.1 is "up to date" against 1.0.10 (found 2026-11-09)
+- `runUp` in `selfhost/main.zbr` decides "up to date" with `latest.startsWith(installed)`,
+  where `latest` is the asset's `<ver>_zig0.17` and `installed` is `_zbr_version`. A prefix is
+  not a version comparison: an installed `1.0.1` against a latest `1.0.10_zig0.17` reports
+  "up to date"; an installed `0.9.0` against `0.9.0-rc9_zig0.17` would too; and a source build
+  of `1.0.0-dev` (main since 2026-11-09) is told the older `0.9.0` is "update available" -- an
+  offer to downgrade. Only `--check` reaches the comparison outside an install layout (a real
+  `zebra up` refuses unless the binary sits in `.../current`), so today nobody is downgraded;
+  the 1.0.x patch case is the one that will bite.
+- Fix: strip the `_zig...` suffix and compare with the semver helpers `b.requires` already
+  uses (`semverParts` / `semverCmp`, TypeChecker.zbr), with a prerelease ordered BEFORE its
+  release (`1.0.0-dev` < `1.0.0`, unlike `requires`, which deliberately lets a prerelease
+  satisfy its release). Say "newer than latest" when installed > latest, rather than offering
+  the older one. Factor the comparison into a pure function a fixture can call without the
+  network.
+- Control: 1.0.1 vs 1.0.10 -> update available; 1.0.10 vs 1.0.10 -> up to date; 1.0.0-dev
+  vs 0.9.0 -> newer than latest; 0.9.0-rc9 vs 0.9.0 -> update available.
 
 ---
 

@@ -128,6 +128,57 @@ as they land, so this list stays the one place that says what is left.
      whether the route is the V backend -- then a witness.
    - [ ] RISC-V: very low priority; `cross-sema` could analyse riscv64-linux at no cost.
 
+## WHO TAKES WHAT (PROPOSED 2026-11-09 by Opus; PENDING Fable's written agreement)
+
+Sean, 2026-11-09, after 0.9.0 shipped: Opus and Fable work on different parts of 1.0 and
+coordinate -- Opus the Zebra expert (language, front end, Zig backend, runtime), Fable the V
+expert. Once Fable agrees in writing, this split is decided (a joint position is
+pre-approved); a disagreement goes to Sean. Owners below are by who changes the code; either
+may find and file bugs anywhere.
+
+**Opus -- the language and the Zig route**
+- Working-list 1a, the four open pattern searches (the move-to-module tool and its must-fail
+  half; alpha-rename; a full-build leg for whole-program doc examples; equivalent spellings;
+  the identifier probe), and the open ledger (BUG-694, BUG-695 first).
+- Item 3's two decisions to write down (`allocate` is single-threaded in the memory model;
+  the transform interface and automatic arena scoping marked post-1.0).
+- Item 4, the freeze: CHANGELOG reconciliation, stability_policy.md §6 re-read against the
+  tree, `surface-freeze` declared the promise.
+- Item 5: the overnight mutation run; `zebra up`'s Windows swap (needs Sean's machine).
+- Item 6, the concurrency dogfood programs -- they test the Zig runtime's memory claims.
+- Item 7's release legs that are not V: linux-aarch64, windows-aarch64, a macos-x86_64
+  decision, riscv64 in `cross-sema`.
+- memory_model.md on the Zig side: the remaining no-regret steps (2b field stores copy, 3
+  outgrown buffers, 4 escape hatches, 5 builder reuse, 9 releasable JSON), then RC for strings,
+  containers and class instances in CodeGen + `zebra_rt.zig`.
+
+**Fable -- V, and the engine as witness**
+- The V-as-default milestone (v_backend_poc.md "Recommendation" items 1-6): safety parity
+  verified as a gate over both backends, corpus parity, the installable V toolchain, the
+  instruments re-homed by backend, and `v"..."`'s coexistence with `zig"..."`.
+- Item 7's Vinix: define the target (a static musl binary, or the V route) and its witness.
+- memory_model.md on the V side: RC and arenas emitted by CodeGenV over `-gc none` (decided
+  2026-10-30: on the critical path to V), measured against the engine.
+- The engine witness for each compiler change Opus asks it for, and no-regret item 7, the
+  leak-budget gate (the engine's 60 s run).
+- The review owed on memory_model.md §6.1 (split: copy-at-store vs views, measured).
+
+**Joint, because it is a seam**
+- **The RC design** -- ONE note (memory_model.md §6 grown into a design) before either
+  backend emits a count: ownership at the host boundary (`_zbr_free`, free-at-sweep), the
+  intern pool, weak parent links (§6.2), cycles caught by a debug leak report. Each backend
+  implements it; the engine witnesses both.
+- **Who edits what.** CodeGenV.zbr, `zebra_rt.v` and the V pin are Fable's; the front end,
+  CodeGen.zbr, `stdlib_preamble.zig` and the GUI sections are Opus's. A change to what the front
+  end hands a backend (a new AST shape, a new builtin, a surface member) is announced to the
+  other in writing in the same session, with the commit; CodeGenV refuses an unmapped name by
+  name (decided 2026-10-30), so nothing reaches V silently.
+- **Machine and merges.** Daytime is Opus on the compiler, evening Fable on the engine (the
+  laptop is also Sean's day-job machine). No merge into the main checkout while the other's
+  tier runs there; Fable merges into main and Opus pushes, as since 2026-10-15.
+- **Bug numbers.** Take the next number from BUGS.md on a freshly fetched main and commit the
+  filing at once (the BUG-260 / BUG-610 collisions were two sessions reading the same counter).
+
 ## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
 
 Sean's prompt was V's `v up`. Reading the queue against "what does a stranger need from a
