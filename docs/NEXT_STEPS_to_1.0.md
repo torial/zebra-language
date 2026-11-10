@@ -161,12 +161,17 @@ may find and file bugs anywhere.
   opt-in (Sean's direction 2026-11-09, which reopens the 2026-10-30 "RC over `-gc none`"),
   its pauses measured against the engine per frame -- and work on V's collector itself if
   the pauses need it.
-- **A GUI backend on V's own UI library** (Sean, 2026-11-09: "ui2", said to have more
-  features than libui-ng). No published V project carries that name; the likely one is
-  `vlang/gui` (v-gui: pure V, immediate mode, flex-box layout over `gg` and `sokol`), beside
-  the older `vlang/ui`. Confirm which with Sean, then map the `Gui` / `_GuiBackend` surface
-  onto it as a backend section, witnessed the way `gui-scaffold` and `libui-section` witness
-  today's -- and say what becomes of the libui-ng backend (v_backend_poc.md item 6).
+- **A GUI backend on V's ui2** (Sean, 2026-11-09/10: https://github.com/vlang/ui2 -- the
+  declarative V toolkit with native controls on Windows/macOS, a custom gg/sokol renderer
+  elsewhere, its own code editor, and the desktop Vinix boots). Map the `Gui` /
+  `_GuiBackend` surface onto it as a `gui_ui2_section.v`, witnessed the way `gui-scaffold`
+  and `libui-section` witness today's, and say what becomes of the libui-ng backend
+  (v_backend_poc.md item 6). DO NOT RE-MEASURE what is already known: the wiki's
+  `project_zebra-ide-on-ui2` (2026-10-28: ui2's editor renders right under
+  `-d ui2_custom_rendering` on Windows, the native EDIT path is wrong for code; a staged port
+  is about three months), `project_scintilla-on-ui2`, and `epic_zebra-ide-on-ui2` -- the IDE
+  on ui2 is an epic Sean PARKED 2026-10-29, separate from this backend; zebra-ide's
+  `docs/editor_spec/` is that epic's step 2, already started.
 - The engine witness for each compiler change Opus asks it for, and no-regret item 7, the
   leak-budget gate (the engine's 60 s run).
 - The review owed on memory_model.md §6.1 (split: copy-at-store vs views, measured).
@@ -242,6 +247,18 @@ One consequence for Sean's 1.0 decision, which I share Fable's recommendation on
 gated on V becoming the default): if 1.0 ships with Zig as the default backend, "a collector
 by default" is true of 1.0 only if amendment 3's spike earns a collector on Zig. That spike is
 therefore on the 1.0 path whichever way the gating decision goes.
+
+### Sean (2026-11-10) -- is 1.0 gated on the V default? OPEN; reassess 2026-12-10
+
+Not decided by the joint recommendation above. Sean is inclined to WAIT for V, and has
+nice-to-have items not yet on this list that he would like in 1.0, which would give us work
+while the language stabilises. The two of us agreeing was itself the reason for pause: a
+joint position is normally auto-approved, so this one is explicitly held open. Revisit on
+**2026-12-10** with a month's more knowledge (the Boehm-on-Zig spike, the merged V branch,
+the pause witness). Until then neither of us treats 1.0's gating as settled. **The rule for
+that day (Sean, 2026-11-10):** if Opus and Fable both still agree, on 2026-12-10, that 1.0
+should NOT wait for the V default, that is the decision. So each of us re-forms the position
+fresh on that date, from what the month measured -- not by re-reading this paragraph.
 
 ## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
 
