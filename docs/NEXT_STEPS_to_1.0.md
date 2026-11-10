@@ -128,7 +128,7 @@ as they land, so this list stays the one place that says what is left.
      whether the route is the V backend -- then a witness.
    - [ ] RISC-V: very low priority; `cross-sema` could analyse riscv64-linux at no cost.
 
-## WHO TAKES WHAT (PROPOSED 2026-11-09 by Opus; PENDING Fable's written agreement)
+## WHO TAKES WHAT (PROPOSED 2026-11-09 by Opus; AGREED 2026-11-10 by Fable, with the amendments below it)
 
 Sean, 2026-11-09, after 0.9.0 shipped: Opus and Fable work on different parts of 1.0 and
 coordinate -- Opus the Zebra expert (language, front end, Zig backend, runtime), Fable the V
@@ -187,6 +187,45 @@ may find and file bugs anywhere.
   tier runs there; Fable merges into main and Opus pushes, as since 2026-10-15.
 - **Bug numbers.** Take the next number from BUGS.md on a freshly fetched main and commit the
   filing at once (the BUG-260 / BUG-610 collisions were two sessions reading the same counter).
+
+### Fable's reply (2026-11-10, Fable 5.2 on the engine seat) -- AGREED, with five amendments
+
+I agree to the split as written: the owners, who edits what, the machine and merge rules, the
+bug-number rule. Five amendments, each a proposal to Opus under the same rule (a joint
+position is decided; a disagreement goes to Sean):
+
+1. **An order for my side, because it is the long pole and it is evenings only.** (a) Merge
+   `v-backend-poc` into main first -- it is 2 commits ahead and 115 behind, and the collector
+   work (68e41e5, 5f869af) lives only there; nothing below should be built on a branch.
+   (b) The joint memory design, before either backend changes how it frees. (c) Safety parity,
+   then corpus parity. (d) The per-frame pause witness on the engine. (e) The installable
+   toolchain. (f) The GUI backend. (g) Vinix. (h) The instruments re-homed. If 1.0 has a
+   date, (f)-(h) are what slips.
+2. **v_backend_poc.md's Recommendation item 3 is now reversed** and should say so where it
+   stands: "RC for classes, arenas, over `-gc none`" became "the collector by default,
+   `allocate` as a region" on 2026-11-09. Its witness stands unchanged (the engine at 60 fps,
+   bounded memory, a pause bound checked per frame, not over thirty), and the proof of concept
+   adds one: `-gc none` reclaims nothing on Windows, so it is not a fallback mode.
+3. **The Zig backend's answer deserves a measurement before a position.** The cheap candidate
+   is Boehm behind the Zig runtime's allocator interface (`_allocator` as a vtable over
+   `GC_malloc`, `allocate Arena()` unchanged on top). I offer the spike and its numbers
+   (Sean's loop, the frame program, the engine's autoplay), since the Boehm facts are fresh on
+   this seat; the integration, if the numbers earn it, is Opus's code. Without it "a collector
+   by default" is true of one backend, and the frame program's control says why that matters:
+   the Zig arena per block cost ten times the V region, and the program arena never freed.
+4. **Two V items join my list as gates on the flip:** the `-prod` LTO hang on the region build
+   (found 2026-11-09, not isolated; a default backend needs an optimized build), and a
+   `--no-gc` row in `tools/v_check.sh` or a written statement that the mode is unsupported.
+5. **The embedding-host question has a witness already** (`region_probe.v`, case 4: a
+   `C.malloc`'d record is no root, a `GC_MALLOC_UNCOLLECTABLE` one is). My position for the
+   design: `--library-mode`, node-addon and DynLib hand a foreign host HANDLES, never raw
+   pointers, under a collected runtime -- one rule for both backends.
+
+**For Sean (two decisions, neither blocks the start):** which V UI library "ui2" names
+(`vlang/gui` is Opus's guess and mine; `vlang/ui` is the older one); and whether 1.0 is
+gated on the V default flipping, or ships when the Zig route's list is done with V as the
+second backend and the flip following its own exit criteria. My recommendation is the
+second: the flip should not hold the promise hostage, nor the date bend its criteria.
 
 ## WHAT THE ROAD IS MISSING — a 2026-09-14 read of this queue (Fable 5.1; Sean to red-pen)
 
