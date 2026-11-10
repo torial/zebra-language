@@ -1,0 +1,7 @@
+# BUG-656: helper module for bug656_dep_ctor_defaults_test.
+class Pt
+    var x: int
+    var y: int
+    cue init(x: int, y: int = 7)
+        .x = x
+        .y = y

@@ -113,7 +113,7 @@ pub fn _initIo(io: std.Io) void {
 /// The compiler's version -- the ONE place it is written. `zebra --version` prints it
 /// (selfhost/main.zbr versionBanner) and .github/workflows/release.yml refuses a tag
 /// that does not spell it (tag = v<_zbr_version>_zig<zig major.minor>). Bump here.
-pub const _zbr_version: []const u8 = "0.9.0-rc8";
+pub const _zbr_version: []const u8 = "1.0.0-dev";
 /// NESTED CONTAINERS ARE HEAP-BOXED (2026-09-24, BUG-314's other half): a List's element
 /// or a HashMap's value that is itself a List / HashMap / Set is stored as a pointer, so
 /// `.at(i)` / `.get(k)` alias the parent's slot. Codegen wraps the value at every STORE
@@ -155,53 +155,10 @@ pub fn _ZbrBoxOf(comptime T: type) type {
     return if (@typeInfo(T) == .pointer) T else *T;
 }
 // BUG-501 1d: which representation a List/HashMap/Set has. false = a value
-// (std.ArrayList); true = a pointer to a heap header. The shims below let codegen emit
-// the same text under both (docs/design/container_reference_semantics.md §9).
+// (std.ArrayList); true = a pointer to a heap header. The shims that let codegen emit the
+// same text under both (`_zbr_ref`, `_zbr_cderef`, `_zbr_unboxed`) were deleted 2026-10-27,
+// once the N-1 anchor read its own runtime (BUG-543) and nothing here called them.
 pub const _zbr_ref_containers = true;
-/// The type of a container parameter its function mutates: a pointer to the caller's
-/// value today; the container itself once it is already a reference.
-pub fn _ZbrRefOf(comptime T: type) type {
-    return if (_zbr_cont_ptr(T)) T else *T;
-}
-/// The argument for such a parameter, given the address of the caller's variable.
-pub inline fn _zbr_ref(p: anytype) _ZbrRefOf(std.meta.Child(@TypeOf(p))) {
-    if (comptime _zbr_cont_ptr(std.meta.Child(@TypeOf(p)))) return p.*;
-    return p;
-}
-/// A mutated container parameter handed on to a by-value one: the value behind the
-/// pointer today; the reference itself once containers are references.
-pub inline fn _zbr_cderef(p: anytype) _ZbrCDerefOf(@TypeOf(p)) {
-    if (comptime _zbr_ref_containers) return p;
-    return p.*;
-}
-fn _ZbrCDerefOf(comptime T: type) type {
-    return if (_zbr_ref_containers) T else std.meta.Child(T);
-}
-/// The value behind a box, for a site that wants the container itself (a by-value
-/// parameter, a `.contains()` comparison); a value passes through.
-pub fn _zbr_unboxed(v: anytype) _ZbrUnboxOf(@TypeOf(v)) {
-    const T = @TypeOf(v);
-    if (comptime _zbr_ref_containers and (_zbr_cont_ptr(T) or
-        (@typeInfo(T) == .optional and _zbr_cont_ptr(@typeInfo(T).optional.child)))) return v;
-    if (comptime @typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one) return v.*;
-    if (comptime @typeInfo(T) == .optional) {
-        const C = @typeInfo(T).optional.child;
-        if (comptime @typeInfo(C) == .pointer and @typeInfo(C).pointer.size == .one) {
-            return if (v) |p| p.* else null;
-        }
-    }
-    return v;
-}
-fn _ZbrUnboxOf(comptime T: type) type {
-    if (_zbr_ref_containers and (_zbr_cont_ptr(T) or
-        (@typeInfo(T) == .optional and _zbr_cont_ptr(@typeInfo(T).optional.child)))) return T;
-    if (@typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one) return @typeInfo(T).pointer.child;
-    if (@typeInfo(T) == .optional) {
-        const C = @typeInfo(T).optional.child;
-        if (@typeInfo(C) == .pointer and @typeInfo(C).pointer.size == .one) return ?@typeInfo(C).pointer.child;
-    }
-    return T;
-}
 // sys.sleep(ms): Zig 0.16 removed std.Thread.sleep; sleeping now goes through the
 // Io interface.  Cancellation is benign here (we only sleep to pace/poll), so swallow it.
 pub fn _sysSleep(ms: i64) void {
@@ -349,6 +306,15 @@ pub inline fn _zbr_shr(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
     const T = _zbr_shift_t(@TypeOf(a));
     return std.math.shr(T, @as(T, a), b);
 }
+// `a <<| b`, saturating shift left. Zig's `<<|` refuses a signed amount, so the amount is
+// converted here; any non-negative amount saturates (3 <<| 70 is maxInt). A negative
+// amount shifts right, as it does for `<<` (std.math.shl), where nothing can saturate.
+pub inline fn _zbr_shl_sat(a: anytype, b: anytype) _zbr_shift_t(@TypeOf(a)) {
+    const T = _zbr_shift_t(@TypeOf(a));
+    const x: T = a;
+    if (b < 0) return std.math.shl(T, x, b);
+    return x <<| @as(u64, @intCast(b));
+}
 
 // SIMD (QUICKSTART §32). Comparison operators on vectors are native Zig and yield
 // @Vector(N, bool) -- a `boolxN` in Zebra. These helpers carry the pieces that need a
@@ -489,6 +455,18 @@ pub fn _zebra_le(a: anytype, b: anytype) bool {
     // BUG-609: an enum orders by declaration (Sean, 2026-10-21).
     if (comptime @typeInfo(@TypeOf(a)) == .@"enum") return _zbr_enum_ord(a) <= _zbr_enum_ord(b);
     return a <= b;
+}
+// BUG-669: `%` is @rem (BUG-236), and @rem(minInt, -1) is the one remainder Zig does not
+// check: x86's idiv faults on it, so the program died with NO message, in Debug too. It
+// traps with the overflow message instead, as `minInt / -1` does (Rust panics on it in
+// every mode); any other remainder by -1 is 0, which @rem gives. Inline, so a remainder
+// of two constants still folds.
+pub inline fn _zbr_rem(a: anytype, b: anytype) @TypeOf(a, b) {
+    const T = @TypeOf(a, b);
+    if (comptime @typeInfo(T) == .int and @typeInfo(T).int.signedness == .signed) {
+        if (b == -1 and a == std.math.minInt(T)) @panic("integer overflow");
+    }
+    return @rem(a, b);
 }
 pub fn _zebra_gt(a: anytype, b: anytype) bool {
     if (comptime _zbr_is_strlike(@TypeOf(a))) return std.mem.order(u8, _zbr_as_str(a), _zbr_as_str(b)) == .gt;
@@ -646,6 +624,10 @@ pub fn _zebra_in(item: anytype, container: anytype) bool {
             for (container.items) |elem| {
                 if (comptime _zbr_is_bytes(I)) {
                     if (std.mem.eql(u8, elem, item)) return true;
+                } else if (comptime _zbr_is_container(@TypeOf(elem)) or _zbr_cont_ptr(@TypeOf(elem))) {
+                    // A list of collections: `in` compares contents, as `==` does (BUG-506).
+                    // It compared the element POINTERS, so `[1, 2] in [[1, 2], [3]]` was false.
+                    if (_zbr_cont_eql(elem, item)) return true;
                 } else {
                     if (elem == item) return true;
                 }
@@ -857,6 +839,88 @@ fn _zbr_deinit_container(p: anytype) void {
     const H = @TypeOf(p.*);
     // ArrayList is unmanaged (deinit takes the allocator); the maps are managed.
     if (comptime @hasField(H, "items")) p.deinit(_allocator) else p.deinit();
+}
+/// FREE-AT-SWEEP (2026-11-07, joint with Fable for the GameEngine's F64 server soak): queue a
+/// container to be freed at the next `_zbr_sweep()`, which the host calls at a frame boundary.
+/// For the rebuild-and-reassign shape -- `var keep = List(T)() ... ; _doors = keep` in a
+/// `release` path -- where the old list cannot be freed at once because the loop that caused
+/// the release may still be walking it, and is otherwise never freed.
+///
+/// IT IS A PROMISE NOBODY CHECKS. Containers are references (BUG-501 1d), so a missed alias --
+/// another variable or field holding the old list, a closure that captured it, a caller it was
+/// returned to -- is a USE-AFTER-FREE after the sweep, not a leak, and nothing detects it today.
+/// The sweep covers exactly one alias: a walk that ends before the frame boundary. Call it only
+/// where the caller has established that nothing else holds the container.
+///
+/// Shallow, like `_zbr_free`: header and storage, never the elements. Freed with the allocator
+/// current at THIS call (the program's or the host's). Refused inside an `allocate` block: its
+/// arena frees the container when the block ends and the sweep would free it again. Queuing
+/// the same container twice is ignored (counted), never a double free. A queue never swept
+/// simply holds its containers -- the leak it replaces -- and the census says how many.
+/// Under the counted representation (docs/design/memory_model.md §6) this becomes a CHECK that
+/// the count reached zero by the sweep. From Zebra: `zig"_zbr_free_at_sweep(${xs})"`.
+const _ZbrSweepEntry = struct { ptr: *anyopaque, alloc: std.mem.Allocator, free_fn: *const fn (*anyopaque, std.mem.Allocator) void };
+pub var _zbr_sweep_q: std.ArrayList(_ZbrSweepEntry) = .empty;
+pub var _zbr_sweep_mu: std.Io.Mutex = .init;
+pub var _zbr_sweep_freed: u64 = 0; // containers freed by sweeps, all time
+pub var _zbr_sweep_runs: u64 = 0; // sweeps that ran
+pub var _zbr_sweep_dupes: u64 = 0; // queueings ignored because the container was already queued
+fn _zbr_sweep_lock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_sweep_mu.lockUncancelable(_io);
+}
+fn _zbr_sweep_unlock() void {
+    if (comptime !@import("builtin").single_threaded) _zbr_sweep_mu.unlock(_io);
+}
+/// True inside a scoped `allocate` block: `_allocator` is then neither the program allocator,
+/// the host's, nor the census's root wrapper around one of them.
+pub fn _zbr_in_allocate_scope() bool {
+    const p = _allocator.ptr;
+    if (p == _prog_alloc().ptr) return false;
+    if (_host_alloc_set and p == _host_alloc.ptr) return false;
+    if (p == @as(*anyopaque, @ptrCast(&_zbr_cens_root))) return false;
+    return true;
+}
+pub fn _zbr_free_at_sweep(c: anytype) void {
+    const C = @TypeOf(c);
+    if (comptime @typeInfo(C) != .pointer or !_zbr_ref_containers)
+        @compileError("_zbr_free_at_sweep takes a Zebra List, HashMap or Set (a container reference), got " ++ @typeName(C));
+    if (_zbr_in_allocate_scope())
+        @panic("_zbr_free_at_sweep inside an `allocate` block: the block's arena frees this container when the block ends, and the sweep would free it again -- queue it outside the block");
+    const F = struct {
+        fn free(p: *anyopaque, a: std.mem.Allocator) void {
+            const cp: C = @ptrCast(@alignCast(p));
+            const H = @TypeOf(cp.*);
+            // ArrayList is unmanaged (deinit takes the allocator); the maps carry their own.
+            if (comptime @hasField(H, "items")) cp.deinit(a) else cp.deinit();
+            a.destroy(cp);
+        }
+    };
+    const ptr: *anyopaque = @ptrCast(@constCast(c));
+    _zbr_sweep_lock();
+    defer _zbr_sweep_unlock();
+    for (_zbr_sweep_q.items) |e| if (e.ptr == ptr) {
+        _zbr_sweep_dupes += 1;
+        return;
+    };
+    // The queue's own buffer lives in the program arena: it is cleared, never shrunk, so it
+    // costs its high-water mark once.
+    _zbr_sweep_q.append(_prog_alloc(), .{ .ptr = ptr, .alloc = _allocator, .free_fn = &F.free }) catch @panic("OOM");
+}
+/// Free every container queued by `_zbr_free_at_sweep`. Call it where no walk of a queued
+/// container can still be in progress -- a frame boundary.
+pub fn _zbr_sweep() void {
+    _zbr_sweep_lock();
+    defer _zbr_sweep_unlock();
+    for (_zbr_sweep_q.items) |e| e.free_fn(e.ptr, e.alloc);
+    _zbr_sweep_freed += _zbr_sweep_q.items.len;
+    _zbr_sweep_runs += 1;
+    _zbr_sweep_q.clearRetainingCapacity();
+}
+/// Containers queued and not yet swept.
+pub fn _zbr_sweep_pending() usize {
+    _zbr_sweep_lock();
+    defer _zbr_sweep_unlock();
+    return _zbr_sweep_q.items.len;
 }
 /// `xs.copy()` -- a SHALLOW copy (BUG-501 §6 decision 2, Sean 2026-09-30): a new container
 /// holding the same elements; a nested container is SHARED, not cloned (`<<-` is the deep
@@ -1338,7 +1402,7 @@ pub fn _sys_stdin_closed() bool {
 }
 // Raw bytes to stdout, no newline, no formatting (DAP frames must be byte-exact).
 pub fn _sys_write_stdout(s: []const u8) void {
-    std.Io.File.stdout().writeStreamingAll(_io, s) catch {};
+    _zbr_stdout().writeStreamingAll(_io, s) catch {};
 }
 pub fn _sys_process_read_available(p: *_SysProcess) []const u8 {
     return _sys_pipe_read_available(p.child.stdout);
@@ -1896,7 +1960,7 @@ pub fn _build_target_by_name(b: *_Build, name: []const u8) *_BuildTarget {
     std.process.exit(1);
 }
 pub fn _build_list_targets(b: *_Build) void {
-    const _stdout = std.Io.File.stdout();
+    const _stdout = _zbr_stdout();
     _stdout.writeStreamingAll(_io, "{\"targets\":[") catch {};
     for (b.targets.items, 0..) |t, i| {
         if (i > 0) _stdout.writeStreamingAll(_io, ",") catch {};
@@ -2625,7 +2689,17 @@ pub fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) H
 // decoded here: percent-decoding is the caller's business, and doing it in the parser
 // would make `a=1&b=%26` ambiguous by turning an escaped separator into a real one.
 pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8, query: []const u8 = "" };
-pub fn _http_serve(port: u16, handler: anytype) void {
+/// BUG-688: a port arrives as Zebra's `int` (i64); a u16 parameter could not take a runtime
+/// one, so zig refused the emit. The range is checked here, once, and an out-of-range port is
+/// reported by the call that received it -- never wrapped into a different, valid port.
+pub fn _zbr_port(p: i64, what: []const u8) ?u16 {
+    return std.math.cast(u16, p) orelse {
+        std.debug.print("{s}: port {d} is out of range (0..65535)\n", .{ what, p });
+        return null;
+    };
+}
+pub fn _http_serve(port_in: i64, handler: anytype) void {
+    const port = _zbr_port(port_in, "Http.serve") orelse return;
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -2714,10 +2788,12 @@ pub fn _http_serve(port: u16, handler: anytype) void {
         const _conn = _srv.accept(_io) catch continue;
         const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+        // BUG-687: detach, or the thread's handle outlives it -- one leaked handle per
+        // accepted connection, for the life of the server (the old `_ =` discarded it).
+        if (std.Thread.spawn(.{}, _Ctx.run, .{_ctx})) |_t| _t.detach() else |_| {
             _alloc.destroy(_ctx);
             _conn.close(_io);
-        };
+        }
     }
 }
 
@@ -2763,9 +2839,80 @@ pub const _WsConn = struct {
         tls:   *_WsTlsState,
     },
     server_side: bool,
-    closed: bool,
+    // `close()` was called. Stays a plain bool: a host (the GameEngine's net_host.zig) sets
+    // it to keep Ws.serve from closing after its handler. Every step of `_ws_close` after
+    // this check is idempotent on its own (BUG-682), so two racing closes are harmless.
+    closed: bool = false,
+    // BUG-542: a close frame goes out at most once, and never after a read has shown the
+    // peer gone. Without it a peer's close was answered by `_ws_recv` AND again by the
+    // handler's `ws.close()` (or Ws.serve's fallback); the second write met a socket the
+    // peer had already dropped, and on Windows std printed an "unexpected NTSTATUS" trace
+    // (LOCAL_DISCONNECT / CONNECTION_ABORTED are unmapped) before our `catch {}` ran.
+    // `closed` still means "the stream was closed" -- the two are different events.
+    close_sent: std.atomic.Value(bool) = .init(false),
+    // BUG-682: the socket HANDLE is closed only when no read can touch it. `close()` used
+    // to close it under a reader blocked in `recv()` on another thread; on Windows the
+    // reader then read a closed handle (an "unexpected NTSTATUS INVALID_HANDLE" trace) or
+    // had its pending read cancelled, which std maps to `unreachable` (exit 3, silent:
+    // Fable, GameEngine F65). Now `close()` sends the close frame and shuts down only the
+    // SEND side; the reader sees the peer's answering close and returns nil; whoever
+    // leaves last closes the handle. One word holds the reader count and two flags so
+    // admitting a reader and closing the handle are mutually exclusive (a CAS each).
+    ws_state: std.atomic.Value(u32) = .init(0),
+    send_shut: std.atomic.Value(bool) = .init(false),
+
+    const _WS_CLOSING: u32 = 1;
+    const _WS_RELEASED: u32 = 2;
+    const _WS_READER: u32 = 4;
+
+    fn enterRead(self: *_WsConn) bool {
+        var st = self.ws_state.load(.seq_cst);
+        while (true) {
+            if (st & _WS_RELEASED != 0) return false;
+            st = self.ws_state.cmpxchgWeak(st, st + _WS_READER, .seq_cst, .seq_cst) orelse return true;
+        }
+    }
+
+    fn exitRead(self: *_WsConn) void {
+        _ = self.ws_state.fetchSub(_WS_READER, .seq_cst);
+        self.tryRelease();
+    }
+
+    // Close the handle iff close was requested, no reader is in flight, and nobody has.
+    fn tryRelease(self: *_WsConn) void {
+        var st = self.ws_state.load(.seq_cst);
+        while (true) {
+            if (st & _WS_RELEASED != 0 or st & _WS_CLOSING == 0 or st >= _WS_READER) return;
+            st = self.ws_state.cmpxchgWeak(st, st | _WS_RELEASED, .seq_cst, .seq_cst) orelse {
+                self.closeStream();
+                return;
+            };
+        }
+    }
+
+    fn requestRelease(self: *_WsConn) void {
+        _ = self.ws_state.fetchOr(_WS_CLOSING, .seq_cst);
+        self.tryRelease();
+    }
+
+    // Ws.serve, after the handler returned: the connection is about to be freed, so the
+    // handle is closed now whatever is in flight (a host reading or sending on it from
+    // another thread past that point is the host's bug -- QUICKSTART's Ws notes).
+    fn forceRelease(self: *_WsConn) void {
+        const st = self.ws_state.fetchOr(_WS_CLOSING | _WS_RELEASED, .seq_cst);
+        if (st & _WS_RELEASED == 0) self.closeStream();
+    }
+
+    fn shutdownSend(self: *_WsConn) void {
+        switch (self.impl) {
+            .plain => |p| p.stream.shutdown(_io, .send) catch {},
+            .tls   => |t| t.stream.shutdown(_io, .send) catch {},
+        }
+    }
 
     pub fn readExact(self: *_WsConn, buf: []u8) !void {
+        if (!self.enterRead()) return error.ConnectionResetByPeer;
+        defer self.exitRead();
         switch (self.impl) {
             .plain => |*p| {
                 var remaining = buf;
@@ -2783,6 +2930,12 @@ pub const _WsConn = struct {
     }
 
     pub fn writeAll(self: *_WsConn, buf: []const u8) !void {
+        if (self.send_shut.load(.seq_cst)) return error.BrokenPipe;
+        // BUG-684: a failed WRITE shows the peer gone as surely as a failed read, so it
+        // stops later sends the same way. Without this a broadcast loop kept writing into
+        // a reset socket until the reader thread's read failed (Fable: 1.6 extra failed
+        // writes per abrupt departure, each one an NTSTATUS trace under Zig 0.16).
+        errdefer self.close_sent.store(true, .seq_cst);
         switch (self.impl) {
             .plain => |*p| {
                 p.wr.interface.writeAll(buf) catch return error.BrokenPipe;
@@ -2841,7 +2994,16 @@ pub fn _ws_tls_init(state: *_WsTlsState, stream: std.Io.net.Stream, host: []cons
     );
 }
 
+// The public form keeps its pre-BUG-682 signature: a host calls it as a statement (the
+// GameEngine's NetHost.close sends only the close frame and lets the peer close).
 pub fn _ws_send_close_frame(conn: *_WsConn) void {
+    _ = _ws_send_close_frame_once(conn);
+}
+
+// True iff THIS call wrote the close frame; an atomic swap decides, so a reader answering
+// the peer's close and a closer on another thread cannot both send one (BUG-682).
+fn _ws_send_close_frame_once(conn: *_WsConn) bool {
+    if (conn.close_sent.swap(true, .seq_cst)) return false;
     const close_code = [2]u8{ 0x03, 0xe8 }; // 1000 normal closure
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
@@ -2853,9 +3015,11 @@ pub fn _ws_send_close_frame(conn: *_WsConn) void {
         const frame = [4]u8{ 0x88, 0x02, close_code[0], close_code[1] };
         conn.writeAll(&frame) catch {};
     }
+    return true;
 }
 
 pub fn _ws_send_pong(conn: *_WsConn, payload: []const u8) void {
+    if (conn.close_sent.load(.seq_cst)) return; // BUG-684: nothing after the close handshake
     const plen: u8 = @intCast(@min(payload.len, 125));
     if (!conn.server_side) {
         var mk: [4]u8 = undefined;
@@ -2903,12 +3067,11 @@ pub fn _ws_connect(url: []const u8) ?*_WsConn {
     if (is_tls) {
         const ts: *_WsTlsState = _pa.create(_WsTlsState) catch { stream.close(_io); _pa.destroy(conn); return null; };
         _ws_tls_init(ts, stream, host) catch { stream.close(_io); _pa.destroy(ts); _pa.destroy(conn); return null; };
-        conn.* = .{ .impl = .{ .tls = ts }, .server_side = false, .closed = false };
+        conn.* = .{ .impl = .{ .tls = ts }, .server_side = false };
     } else {
         // Initialize _WsPlain at its final heap address before setting up reader/writer,
         // because Stream.Reader/Writer use @fieldParentPtr and need a stable address.
-        conn.server_side = false;
-        conn.closed = false;
+        conn.* = .{ .impl = undefined, .server_side = false };
         conn.impl = .{ .plain = .{ .stream = stream, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
         conn.impl.plain.rd = conn.impl.plain.stream.reader(_io, &conn.impl.plain.rbuf);
         conn.impl.plain.wr = conn.impl.plain.stream.writer(_io, &conn.impl.plain.wbuf);
@@ -2950,6 +3113,11 @@ pub fn _ws_connect(url: []const u8) ?*_WsConn {
 }
 
 pub fn _ws_send(conn: *_WsConn, msg: []const u8) void {
+    // BUG-684: no data after the close handshake began (RFC 6455 5.5.1: after a Close frame
+    // an endpoint MUST NOT send data) or after a read showed the peer gone. A server
+    // broadcasting to a departing client kept writing into the dying socket; each write
+    // failed, and under Zig 0.16 each failure printed an "unexpected NTSTATUS" trace.
+    if (conn.close_sent.load(.seq_cst)) return;
     const len = msg.len;
     var hdr: [14]u8 = undefined;
     hdr[0] = 0x81; // FIN=1, opcode=1 (text)
@@ -2993,28 +3161,28 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
     defer msg.deinit(alloc);
     while (true) {
         var hdr2: [2]u8 = undefined;
-        conn.readExact(&hdr2) catch return null;
+        conn.readExact(&hdr2) catch { conn.close_sent.store(true, .seq_cst); return null; };
         const fin     = (hdr2[0] & 0x80) != 0;
         const opcode  = hdr2[0] & 0x0f;
         const has_mask = (hdr2[1] & 0x80) != 0;
         var plen: u64 = hdr2[1] & 0x7f;
         if (plen == 126) {
             var ext2: [2]u8 = undefined;
-            conn.readExact(&ext2) catch return null;
+            conn.readExact(&ext2) catch { conn.close_sent.store(true, .seq_cst); return null; };
             plen = (@as(u64, ext2[0]) << 8) | ext2[1];
         } else if (plen == 127) {
             var ext8: [8]u8 = undefined;
-            conn.readExact(&ext8) catch return null;
+            conn.readExact(&ext8) catch { conn.close_sent.store(true, .seq_cst); return null; };
             plen = 0;
             for (ext8) |b| plen = (plen << 8) | b;
         }
         var mk: [4]u8 = .{ 0, 0, 0, 0 };
-        if (has_mask) conn.readExact(&mk) catch return null;
+        if (has_mask) conn.readExact(&mk) catch { conn.close_sent.store(true, .seq_cst); return null; };
         // Read payload (cap at 64 MiB)
         const safe: usize = @intCast(@min(plen, 64 * 1024 * 1024));
         const payload = alloc.alloc(u8, safe) catch return null;
         defer alloc.free(payload);
-        conn.readExact(payload) catch return null;
+        conn.readExact(payload) catch { conn.close_sent.store(true, .seq_cst); return null; };
         if (has_mask) { for (payload, 0..) |*b, i| { b.* = b.* ^ mk[i % 4]; } }
         switch (opcode) {
             0, 1, 2 => {
@@ -3030,11 +3198,17 @@ pub fn _ws_recv(conn: *_WsConn, alloc: std.mem.Allocator) ?[]const u8 {
 }
 
 pub fn _ws_close(conn: *_WsConn) void {
-    if (!conn.closed) {
-        conn.closed = true;
-        _ws_send_close_frame(conn);
-        conn.closeStream();
-    }
+    if (conn.closed) return;
+    conn.closed = true;
+    // The OS-level shutdown (a FIN to the peer) only when a reader is in flight -- the case
+    // it exists for -- and only when THIS close started the closing handshake. Otherwise
+    // the handle is closed below exactly as before BUG-682: a shutdown on a socket the peer
+    // already dropped makes Windows report CONNECTION_RESET, which std prints as an
+    // "unexpected NTSTATUS" trace (BUG-542's shape; ws_echo_test showed it 4 of 15 runs).
+    const started = _ws_send_close_frame_once(conn);
+    conn.send_shut.store(true, .seq_cst);
+    if (started and conn.ws_state.load(.seq_cst) >= _WsConn._WS_READER) conn.shutdownSend();
+    conn.requestRelease();
     // WsConn struct itself not freed here — OK for arena-allocator model
 }
 
@@ -3048,7 +3222,8 @@ pub inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
 }
 
 // Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
-pub fn _ws_serve(port: u16, handler: anytype) void {
+pub fn _ws_serve(port_in: i64, handler: anytype) void {
+    const port = _zbr_port(port_in, "Ws.serve") orelse return;
     const _HFn = *const fn(*_WsConn) void;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -3099,18 +3274,14 @@ pub fn _ws_serve(port: u16, handler: anytype) void {
             // Create WsConn and call handler
             const ws: *_WsConn = _pa.create(_WsConn) catch { ctx.conn.close(_io); return; };
             defer _pa.destroy(ws);
-            ws.server_side = true;
-            ws.closed = false;
+            ws.* = .{ .impl = undefined, .server_side = true };
             ws.impl = .{ .plain = .{ .stream = ctx.conn, .rbuf = undefined, .wbuf = undefined, .rd = undefined, .wr = undefined } };
             ws.impl.plain.rd = ws.impl.plain.stream.reader(_io, &ws.impl.plain.rbuf);
             ws.impl.plain.wr = ws.impl.plain.stream.writer(_io, &ws.impl.plain.wbuf);
             _ws_invoke(ctx.handler_fn, ws);
             // Close if handler didn't (or errored out)
-            if (!ws.closed) {
-                ws.closed = true;
-                _ws_send_close_frame(ws);
-                ws.closeStream();
-            }
+            _ws_close(ws);
+            ws.forceRelease();
         }
     };
     const _pa = std.heap.page_allocator;
@@ -3124,7 +3295,9 @@ pub fn _ws_serve(port: u16, handler: anytype) void {
         const _c = _srv.accept(_io) catch continue;
         const _ctx = _pa.create(_Ctx) catch { _c.close(_io); continue; };
         _ctx.* = .{ .conn = _c, .handler_fn = _fn };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch { _pa.destroy(_ctx); _c.close(_io); };
+        // BUG-687: detach, or the thread's handle outlives it -- one leaked handle per
+        // accepted connection, for the life of the server (the old `_ =` discarded it).
+        if (std.Thread.spawn(.{}, _Ctx.run, .{_ctx})) |_t| _t.detach() else |_| { _pa.destroy(_ctx); _c.close(_io); }
     }
 }
 
@@ -3389,8 +3562,11 @@ pub fn _ZbrBound(comptime Recv: type, comptime name: []const u8) type {
 // A class receiver is a reference: a method that does not mutate gets a `*const` self in
 // the emit, but the bound call may reach one that does, so the binding holds `*T`.
 pub fn _ZbrBindRecv(comptime T: type) type {
+    // A STRUCT receiver must arrive as a pointer -- its variable's cell (BUG-596). A struct
+    // VALUE here would bind a copy: compiles, runs, and prints stale numbers. Refused instead.
     return switch (@typeInfo(T)) {
         .pointer => |pi| *pi.child,
+        .@"struct" => @compileError("internal: a struct method bound by value would bind a copy (BUG-596): " ++ @typeName(T)),
         else => T,
     };
 }
@@ -3430,7 +3606,8 @@ pub inline fn _zbr_invoke(fp: anytype, args: anytype) _ZbrInvokeRet(@TypeOf(fp.*
     return @call(.auto, T.call, .{fp} ++ args);
 }
 
-pub fn _tcp_connect(host: []const u8, port: u16) ?TcpConn {
+pub fn _tcp_connect(host: []const u8, port_in: i64) ?TcpConn {
+    const port = _zbr_port(port_in, "Tcp.connect") orelse return null;
     const stream = blk: {
         if (std.Io.net.IpAddress.parse(host, port)) |addr| {
             break :blk addr.connect(_io, .{ .mode = .stream }) catch return null;
@@ -3502,7 +3679,8 @@ pub fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     return _buf[0.._total];
 }
 pub fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
-pub fn _tcp_serve(port: u16, handler: anytype) void {
+pub fn _tcp_serve(port_in: i64, handler: anytype) void {
+    const port = _zbr_port(port_in, "Tcp.serve") orelse return;
     const _HFn = *const fn(TcpConn) void;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -3524,16 +3702,19 @@ pub fn _tcp_serve(port: u16, handler: anytype) void {
         const _conn = _srv.accept(_io) catch continue;
         const _ctx = _alloc.create(_Ctx) catch { _conn.close(_io); continue; };
         _ctx.* = .{ .conn = _conn, .handler_fn = _fn };
-        _ = std.Thread.spawn(.{}, _Ctx.run, .{_ctx}) catch {
+        // BUG-687: detach, or the thread's handle outlives it -- one leaked handle per
+        // accepted connection, for the life of the server (the old `_ =` discarded it).
+        if (std.Thread.spawn(.{}, _Ctx.run, .{_ctx})) |_t| _t.detach() else |_| {
             _alloc.destroy(_ctx);
             _conn.close(_io);
-        };
+        }
     }
 }
 
 pub const _UdpSocketInner = struct {
     inner: std.Io.net.Socket,
-    pub fn send_(self: *_UdpSocketInner, host: []const u8, port: u16, data: []const u8) void {
+    pub fn send_(self: *_UdpSocketInner, host: []const u8, port_in: i64, data: []const u8) void {
+        const port = _zbr_port(port_in, "UdpSocket.send") orelse return;
         const dest = std.Io.net.IpAddress.parse(host, port) catch {
             std.debug.print("UDP send: '{s}' is not an IP literal — use an IP address\n", .{host});
             return;
@@ -3556,7 +3737,8 @@ pub fn _udp_socket() UdpSocket {
     s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.socket: bind failed") };
     return s;
 }
-pub fn _udp_bind(port: u16) UdpSocket {
+pub fn _udp_bind(port_in: i64) UdpSocket {
+    const port = _zbr_port(port_in, "Udp.bind") orelse @panic("Udp.bind: port out of range");
     const s = _allocator.create(_UdpSocketInner) catch @panic("OOM");
     const addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{0,0,0,0}, .port = port } };
     s.* = .{ .inner = std.Io.net.IpAddress.bind(&addr, _io, .{ .mode = .dgram }) catch @panic("Udp.bind: bind failed") };
@@ -3585,8 +3767,15 @@ pub const _RNode = struct {
 };
 pub const _RFlags = struct {
     ignore_case: bool = false, multiline: bool = false, dot_all: bool = false, unlimited: bool = false,
-    lazy_match: bool = false, // set when any *? +? ?? is parsed
 };
+// BUG-014: how a scan ends. `.first` is leftmost-first (Perl, Python, JS): threads run in
+// priority order -- a greedy split prefers the loop, a lazy one the exit, `|` its left
+// side -- and once a thread matches, every LOWER-priority thread is dropped, so each
+// quantifier's greediness is its own. `.any` drops nothing and reports the furthest end
+// any path reached: `re.match(s)` asks whether ANY path consumes all of `s` (`a|ab` must
+// match "ab", as Python's fullmatch does). There used to be one global "shortest" flag,
+// set by any lazy quantifier, which made every quantifier in the pattern lazy.
+pub const _RMode = enum { first, any };
 pub const _RFrag = struct {
     start: u32, outs: [64]u32 = @as([64]u32, @splat(0xFFFF_FFFF)), n: u8 = 0,
     pub fn one(s: u32, d: u32) _RFrag { var f = _RFrag{ .start = s }; f.outs[0] = d; f.n = 1; return f; }
@@ -3604,9 +3793,6 @@ pub const _RC = struct {
     pub fn addNode(c: *_RC, n: _RNode) error{OutOfMemory}!u32 {
         const idx: u32 = @intCast(c.nodes.items.len);
         try c.nodes.append(c.alloc, n); return idx;
-    }
-    pub fn patch(c: *_RC, f: _RFrag, t: u32) void {
-        for (f.outs[0..f.n]) |i| c.nodes.items[i & 0x7FFF_FFFF].out1 = t;
     }
     pub fn patchFrag(c: *_RC, f: _RFrag, t: u32) void {
         for (f.outs[0..f.n]) |i| {
@@ -3651,7 +3837,9 @@ pub const _RC = struct {
                     c.nodes.items[open].out1 = inner.start;
                     return _RFrag.one(open, close);
                 }
-                _ = c.expect(')'); return _RFrag.one(open, open);
+                const close = try c.addNode(.{ .kind = .save, .slot = slot + 1 });
+                c.nodes.items[open].out1 = close;
+                _ = c.expect(')'); return _RFrag.one(open, close);
             },
             ')', '|' => return null,
             '[' => {
@@ -3678,39 +3866,54 @@ pub const _RC = struct {
             else => { _ = c.eat(); const idx = try c.addNode(.{ .kind = .lit, .c = ch }); return _RFrag.one(idx, idx); },
         }
     }
+    // BUG-662: the fragment combinators. An `outs` entry names a dangling exit: a node's
+    // out1, or -- with the high bit -- a split's out2; only patchFrag reads that bit.
+    pub fn concat(c: *_RC, a: ?_RFrag, b: _RFrag) _RFrag {
+        const f = a orelse return b;
+        c.patchFrag(f, b.start);
+        return .{ .start = f.start, .outs = b.outs, .n = b.n };
+    }
+    // `f?`: EVERY exit of `f` stays an exit (a `(a|b)?` used to keep only the first).
+    pub fn optional(c: *_RC, f: _RFrag, lazy: bool) error{OutOfMemory}!_RFrag {
+        const sp = try c.addNode(.{ .kind = .split,
+            .out1 = if (lazy) 0xFFFF_FFFF else f.start,
+            .out2 = if (lazy) f.start else 0xFFFF_FFFF });
+        var r = _RFrag{ .start = sp, .outs = f.outs, .n = f.n };
+        if (r.n >= r.outs.len) @panic("regex: pattern too complex");
+        r.outs[r.n] = if (lazy) sp else sp | 0x8000_0000; r.n += 1;
+        return r;
+    }
+    // `f*` (from_loop = true starts at the split) and `f+` (starts at `f`).
+    // The split is marked as a LOOP (`slot` 1 = greedy, exit on out2; 2 = lazy, exit on
+    // out1), which the closures need -- see `_rLoopExit`.
+    pub fn loop(c: *_RC, f: _RFrag, lazy: bool, from_loop: bool) error{OutOfMemory}!_RFrag {
+        const sp = try c.addNode(.{ .kind = .split, .slot = if (lazy) 2 else 1,
+            .out1 = if (lazy) 0xFFFF_FFFF else f.start,
+            .out2 = if (lazy) f.start else 0xFFFF_FFFF });
+        c.patchFrag(f, sp);
+        var r = _RFrag{ .start = if (from_loop) sp else f.start };
+        r.outs[0] = if (lazy) sp else sp | 0x8000_0000; r.n = 1;
+        return r;
+    }
+    // Matches the empty string: a save to a slot no group owns, which both closures
+    // follow without recording anything.
+    pub fn empty(c: *_RC) error{OutOfMemory}!_RFrag {
+        const idx = try c.addNode(.{ .kind = .save, .slot = 0xFF });
+        return _RFrag.one(idx, idx);
+    }
     pub fn parsePieceFixed(c: *_RC) error{OutOfMemory}!?_RFrag {
         const atom_pos = c.pos;
+        const caps0 = c.n_caps;
         const atom = try c.parseAtom() orelse return null;
         const q = c.peek() orelse return atom;
         switch (q) {
-            '*' => {
+            '*', '+', '?' => {
                 _ = c.eat(); const lazy = c.expect('?');
-                if (lazy) c.flags.lazy_match = true;
-                const sp = try c.addNode(.{ .kind = .split,
-                    .out1 = if (lazy) 0xFFFF_FFFF else atom.start,
-                    .out2 = if (lazy) atom.start  else 0xFFFF_FFFF });
-                c.patch(atom, sp);
-                var f = _RFrag{ .start = sp };
-                f.outs[0] = if (lazy) sp else sp | 0x8000_0000; f.n = 1; return f;
-            },
-            '+' => {
-                _ = c.eat(); const lazy = c.expect('?');
-                if (lazy) c.flags.lazy_match = true;
-                const sp = try c.addNode(.{ .kind = .split,
-                    .out1 = if (lazy) 0xFFFF_FFFF else atom.start,
-                    .out2 = if (lazy) atom.start  else 0xFFFF_FFFF });
-                c.patch(atom, sp);
-                var f = _RFrag{ .start = atom.start };
-                f.outs[0] = if (lazy) sp else sp | 0x8000_0000; f.n = 1; return f;
-            },
-            '?' => {
-                _ = c.eat(); const lazy = c.expect('?');
-                if (lazy) c.flags.lazy_match = true;
-                const sp = try c.addNode(.{ .kind = .split,
-                    .out1 = if (lazy) 0xFFFF_FFFF else atom.start,
-                    .out2 = if (lazy) atom.start  else 0xFFFF_FFFF });
-                return if (lazy) _RFrag.two(sp, sp, atom.outs[0])
-                       else      _RFrag.two(sp, atom.outs[0], sp | 0x8000_0000);
+                return switch (q) {
+                    '*' => try c.loop(atom, lazy, true),
+                    '+' => try c.loop(atom, lazy, false),
+                    else => try c.optional(atom, lazy),
+                };
             },
             '{' => {
                 _ = c.eat();
@@ -3722,35 +3925,31 @@ pub const _RC = struct {
                     else { m = 0; while (c.peek()) |d| { if (d < '0' or d > '9') break; m = m *% 10 +% (d - '0'); _ = c.eat(); } }
                 }
                 _ = c.expect('}');
+                const lazy = c.expect('?'); // `x{1,3}?` -- the `?` was read as a literal
                 if (!c.flags.unlimited) { if (n > 100) n = 100; if (m > 100) m = 100; }
-                if (n == 0 and m == 0 and !unbounded) return atom; // degenerate {0}
+                if (m < n) m = n;
                 const after_q = c.pos;
-                // build result: start with the already-parsed atom (counts as copy 1)
-                var result: _RFrag = atom;
-                // mandatory copies 2..n
-                var i: u32 = 1;
-                while (i < n) : (i += 1) {
-                    c.pos = atom_pos; const next = try c.parseAtom() orelse break; c.pos = after_q;
-                    c.patchFrag(result, next.start);
-                    result = .{ .start = result.start, .outs = next.outs, .n = next.n };
+                // BUG-662: x{n,m} is n copies of x, then m-n optional ones (x* when
+                // unbounded). Each copy is a fresh parse of the atom with the group
+                // counter rewound, so a capturing group keeps ONE number however many
+                // copies there are -- `(a){2}` is group 1, set by the last copy.
+                var used = false;
+                var res: ?_RFrag = null;
+                var k: u32 = 0;
+                const copies = n + (if (unbounded) @as(u32, 1) else m - n);
+                while (k < copies) : (k += 1) {
+                    var x = atom;
+                    if (used) {
+                        c.pos = atom_pos; c.n_caps = caps0;
+                        x = try c.parseAtom() orelse break;
+                        c.pos = after_q;
+                    }
+                    used = true;
+                    if (k < n) res = c.concat(res, x)
+                    else if (unbounded) res = c.concat(res, try c.loop(x, lazy, true))
+                    else res = c.concat(res, try c.optional(x, lazy));
                 }
-                // optional copies n+1..m
-                var j: u32 = 0;
-                while (j < m -| n) : (j += 1) {
-                    c.pos = atom_pos; const next = try c.parseAtom() orelse break; c.pos = after_q;
-                    const sp = try c.addNode(.{ .kind = .split, .out1 = next.start, .out2 = 0xFFFF_FFFF });
-                    c.patchFrag(result, sp);
-                    var f2 = _RFrag{ .start = result.start }; f2.outs[0] = next.outs[0]; f2.outs[1] = sp | 0x8000_0000; f2.n = 2; result = f2;
-                }
-                // unbounded: add * at end
-                if (unbounded) {
-                    c.pos = atom_pos; const last_a = try c.parseAtom() orelse { c.pos = after_q; return result; }; c.pos = after_q;
-                    const sp = try c.addNode(.{ .kind = .split, .out1 = last_a.start, .out2 = 0xFFFF_FFFF });
-                    c.patch(last_a, sp);
-                    c.patchFrag(result, sp);
-                    var f3 = _RFrag{ .start = result.start }; f3.outs[0] = sp | 0x8000_0000; f3.n = 1; return f3;
-                }
-                return result;
+                return res orelse try c.empty(); // x{0} / x{0,0}: the empty string
             },
             else => return atom,
         }
@@ -3775,9 +3974,13 @@ pub const _RC = struct {
     }
 };
 pub const Regex = struct {
-    nodes: []_RNode, start: u32, alloc: std.mem.Allocator, flags: _RFlags = .{},
+    nodes: []_RNode, start: u32, alloc: std.mem.Allocator, flags: _RFlags = .{}, n_caps: u8 = 0,
     pub fn closure(re: *const Regex, cur: *std.ArrayListUnmanaged(u32), vis: []bool, alloc: std.mem.Allocator, idx: u32, pos: usize, input: []const u8) error{OutOfMemory}!void {
-        if (idx == 0xFFFF_FFFF or idx >= re.nodes.len or vis[idx]) return;
+        if (idx == 0xFFFF_FFFF or idx >= re.nodes.len) return;
+        if (vis[idx] and re.nodes[idx].kind != .save) {
+            if (_rLoopExit(&re.nodes[idx])) |ex| try re.closure(cur, vis, alloc, ex, pos, input);
+            return;
+        }
         vis[idx] = true;
         const nd = &re.nodes[idx];
         switch (nd.kind) {
@@ -3799,33 +4002,49 @@ pub const Regex = struct {
             else => try cur.append(alloc, idx),
         }
     }
-    pub fn matchAt(re: *const Regex, input: []const u8, from: usize, shortest: bool) error{OutOfMemory}!?usize {
+    pub fn matchAt(re: *const Regex, input: []const u8, from: usize, mode: _RMode) error{OutOfMemory}!?usize {
         const alloc = re.alloc;
         var cur: std.ArrayListUnmanaged(u32) = .empty; var nxt: std.ArrayListUnmanaged(u32) = .empty;
         defer cur.deinit(alloc); defer nxt.deinit(alloc);
         const vis = try alloc.alloc(bool, re.nodes.len); defer alloc.free(vis);
         @memset(vis, false); try re.closure(&cur, vis, alloc, re.start, from, input);
         var last: ?usize = null;
-        for (cur.items) |si| if (re.nodes[si].kind == .match) { last = from; if (shortest) return last; break; };
         var pos = from;
-        while (pos < input.len and cur.items.len > 0) : (pos += 1) {
-            const ch = input[pos]; nxt.clearRetainingCapacity(); @memset(vis, false);
+        while (cur.items.len > 0) : (pos += 1) {
+            nxt.clearRetainingCapacity(); @memset(vis, false);
             for (cur.items) |si| {
                 const nd = &re.nodes[si];
-                const ok = switch (nd.kind) {
-                    .lit => if (re.flags.ignore_case) std.ascii.toLower(nd.c) == std.ascii.toLower(ch) else nd.c == ch,
-                    .dot => if (re.flags.dot_all) true else ch != '\n',
-                    .cls => if (re.flags.ignore_case) _rClsMatch(nd, ch) or _rClsMatch(nd, std.ascii.toLower(ch)) or _rClsMatch(nd, std.ascii.toUpper(ch)) else _rClsMatch(nd, ch),
-                    else => false,
-                };
-                if (ok) try re.closure(&nxt, vis, alloc, nd.out1, pos + 1, input);
+                if (nd.kind == .match) { last = pos; if (mode == .first) break; continue; }
+                if (pos < input.len and _rStep(re, nd, input[pos])) try re.closure(&nxt, vis, alloc, nd.out1, pos + 1, input);
             }
+            if (pos >= input.len) break;
             std.mem.swap(std.ArrayListUnmanaged(u32), &cur, &nxt);
-            for (cur.items) |si| if (re.nodes[si].kind == .match) { last = pos + 1; if (shortest) return last; break; };
         }
         return last;
     }
 };
+// BUG-662: a loop iteration that consumed nothing ENDS the loop (Python, Perl). Within
+// one closure no input is consumed, so reaching a loop's split a second time means the
+// path came round an empty iteration; it continues at the loop's exit, at the priority
+// of the path that got there, instead of being dropped. Dropping it let a LOWER-priority
+// alternative win: `(a|b??)+` on "aab" found "aab" where Python finds "aa". When the
+// split was reached twice for another reason, its exit has already been explored and
+// the second visit adds nothing. A `save` is never treated as visited: the empty
+// iteration of `(.?)+` comes back through the group's closing save before it reaches
+// the split, and every epsilon cycle passes through a split, which still is.
+pub fn _rLoopExit(nd: *const _RNode) ?u32 {
+    if (nd.kind != .split) return null;
+    return switch (nd.slot) { 1 => nd.out2, 2 => nd.out1, else => null };
+}
+// Does the consuming node `nd` accept `ch`? Shared by both simulations.
+pub fn _rStep(re: *const Regex, nd: *const _RNode, ch: u8) bool {
+    return switch (nd.kind) {
+        .lit => if (re.flags.ignore_case) std.ascii.toLower(nd.c) == std.ascii.toLower(ch) else nd.c == ch,
+        .dot => if (re.flags.dot_all) true else ch != '\n',
+        .cls => if (re.flags.ignore_case) _rClsMatch(nd, ch) or _rClsMatch(nd, std.ascii.toLower(ch)) or _rClsMatch(nd, std.ascii.toUpper(ch)) else _rClsMatch(nd, ch),
+        else => false,
+    };
+}
 pub fn _rSetBit(bits: *[32]u8, c: u8) void { bits[c >> 3] |= @as(u8, 1) << @intCast(c & 7); }
 pub fn _rGetBit(bits: *const [32]u8, c: u8) bool { return (bits[c >> 3] >> @intCast(c & 7)) & 1 != 0; }
 pub fn _rClsMatch(nd: *const _RNode, c: u8) bool { const h = _rGetBit(&nd.bits, c); return if (nd.neg) !h else h; }
@@ -3852,12 +4071,12 @@ pub fn _regex_compile(pattern: []const u8, flags_str: []const u8) Regex {
     const match_idx = c.addNode(.{ .kind = .match }) catch @panic("regex OOM");
     if (frag_opt) |frag| {
         c.patchFrag(frag, match_idx);
-        return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = frag.start, .alloc = alloc, .flags = c.flags };
+        return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = frag.start, .alloc = alloc, .flags = c.flags, .n_caps = c.n_caps };
     }
-    return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = match_idx, .alloc = alloc, .flags = c.flags };
+    return .{ .nodes = c.nodes.toOwnedSlice(alloc) catch @panic("regex OOM"), .start = match_idx, .alloc = alloc, .flags = c.flags, .n_caps = c.n_caps };
 }
 pub fn _regex_match(re: Regex, input: []const u8) bool {
-    const end = re.matchAt(input, 0, false) catch return false;
+    const end = re.matchAt(input, 0, .any) catch return false;
     return end != null and end.? == input.len;
 }
 // BUG-532: `re.test(s)` -- the pattern matches somewhere in `s` (an empty match counts),
@@ -3865,14 +4084,14 @@ pub fn _regex_match(re: Regex, input: []const u8) bool {
 pub fn _regex_test(re: Regex, input: []const u8) bool {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
-        if ((re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) != null) return true;
+        if ((re.matchAt(input, i, .first) catch @panic("regex: out of memory")) != null) return true;
     }
     return false;
 }
 pub fn _regex_find(re: Regex, input: []const u8) []const u8 {
     var i: usize = 0;
     while (i <= input.len) : (i += 1) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| return input[i..e];
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| return input[i..e];
     }
     return "";
 }
@@ -3881,7 +4100,7 @@ pub fn _regex_find_all(re: Regex, input: []const u8) _ZbrList([]const u8) {
     var out = _zbr_new(_ZbrList([]const u8));
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             out.append(std.heap.page_allocator, input[i..e]) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else i += 1;
@@ -3895,7 +4114,7 @@ pub fn _regex_split(re: Regex, input: []const u8) _ZbrList([]const u8) {
     var start: usize = 0;
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             if (e > i) {
                 out.append(std.heap.page_allocator, input[start..i]) catch @panic("OOM");
                 start = e;
@@ -3910,7 +4129,7 @@ pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 
     var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < input.len) {
-        if (re.matchAt(input, i, re.flags.lazy_match) catch @panic("regex: out of memory")) |e| {
+        if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             out.appendSlice(std.heap.page_allocator, sub) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else {
@@ -3931,7 +4150,10 @@ pub fn _re_eclosure_s(
     state: u32, saves: [_MAX_SAVE_SLOTS]usize, pos: usize, input: []const u8,
 ) std.mem.Allocator.Error!void {
     if (state == 0xFFFF_FFFF or state >= re.nodes.len) return;
-    if (vis[state]) return;
+    if (vis[state] and re.nodes[state].kind != .save) {
+        if (_rLoopExit(&re.nodes[state])) |ex| try _re_eclosure_s(re, cur, vis, alloc, ex, saves, pos, input);
+        return;
+    }
     vis[state] = true;
     const nd = &re.nodes[state];
     switch (nd.kind) {
@@ -3971,23 +4193,19 @@ pub fn _re_match_with_saves(re: *const Regex, input: []const u8, from: usize) ?[
     defer alloc.free(vis);
     @memset(vis, false);
     _re_eclosure_s(re, &cur, vis, alloc, re.start, empty, from, input) catch return null;
+    // BUG-014: the same priority walk as `matchAt(.first)`, carrying each thread's saves, so
+    // the groups reported are the ones a backtracking engine (Python's) would report.
     var last: ?[_MAX_SAVE_SLOTS]usize = null;
-    for (cur.items) |t| { if (re.nodes[t.state].kind == .match) { last = t.saves; if (re.flags.lazy_match) return last; break; } }
     var pos = from;
-    while (pos < input.len and cur.items.len > 0) : (pos += 1) {
-        const ch = input[pos]; nxt.clearRetainingCapacity(); @memset(vis, false);
+    while (cur.items.len > 0) : (pos += 1) {
+        nxt.clearRetainingCapacity(); @memset(vis, false);
         for (cur.items) |t| {
             const nd = &re.nodes[t.state];
-            const ok = switch (nd.kind) {
-                .lit => if (re.flags.ignore_case) std.ascii.toLower(nd.c) == std.ascii.toLower(ch) else nd.c == ch,
-                .dot => if (re.flags.dot_all) true else ch != '\n',
-                .cls => if (re.flags.ignore_case) _rClsMatch(nd, ch) or _rClsMatch(nd, std.ascii.toLower(ch)) or _rClsMatch(nd, std.ascii.toUpper(ch)) else _rClsMatch(nd, ch),
-                else => false,
-            };
-            if (ok) _re_eclosure_s(re, &nxt, vis, alloc, nd.out1, t.saves, pos + 1, input) catch {};
+            if (nd.kind == .match) { last = t.saves; break; }
+            if (pos < input.len and _rStep(re, nd, input[pos])) _re_eclosure_s(re, &nxt, vis, alloc, nd.out1, t.saves, pos + 1, input) catch {};
         }
+        if (pos >= input.len) break;
         std.mem.swap(std.ArrayListUnmanaged(_RegThread), &cur, &nxt);
-        for (cur.items) |t| { if (re.nodes[t.state].kind == .match) { last = t.saves; if (re.flags.lazy_match) return last; break; } }
     }
     return last;
 }
@@ -3997,11 +4215,8 @@ pub fn _regex_groups(re: Regex, input: []const u8) _ZbrList(?[]const u8) {
     // to stop at the first unset slot, so `(a)(x)?(b)` on "ab" lost `b` and `(cat)|(dog)` on
     // "dog" returned nothing. `nil`, not "": an empty string is a group that matched empty.
     const alloc = std.heap.page_allocator;
-    // Group k owns save slots 2k (open) and 2k+1 (close); count the opens.
-    var ngroups: usize = 0;
-    for (re.nodes) |nd| {
-        if (nd.kind == .save and nd.slot % 2 == 0) ngroups += 1;
-    }
+    // Group k owns save slots 2k (open) and 2k+1 (close).
+    var ngroups: usize = re.n_caps;
     if (ngroups > _MAX_SAVE_SLOTS / 2) ngroups = _MAX_SAVE_SLOTS / 2;
     var start: usize = 0;
     while (start <= input.len) : (start += 1) {
@@ -4152,6 +4367,32 @@ pub const _SqliteRow = struct {
     pub fn bool_(self: _SqliteRow, name: []const u8) bool { return self.int_(name) != 0; }
 };
 
+// ── querySegments: stored-procedure result sets (2026-11-08, from zebra-sprocket) ──
+// The SQLite beside the compiler is vanilla, which has no stored procedures; the
+// sprocket fork adds them, and two C functions the segment walk needs. They are
+// declared here as WEAK DEFINITIONS: when the fork's sqlite3.c is linked its strong
+// definitions win, and when it is not these fallbacks satisfy the link. `linked()`
+// asks which one the linker kept, by address, so a program never runs the walk on a
+// fallback value -- querySegments refuses by name instead. (A weak REFERENCE,
+// `@extern(.weak)`, was tried first: on Windows it reads non-null when absent and
+// the call segfaults.) The exports sit in this struct so only a program that calls
+// querySegments carries them. CANNOT DETECT: the fork linked from a prebuilt
+// archive -- the fallback satisfies the reference first, so it reports "absent".
+const _SqliteProcs = struct {
+    fn absentSegment(stmt: *_sqlite3_stmt) callconv(.c) c_int { _ = stmt; return -1; }
+    fn absentNext(stmt: *_sqlite3_stmt) callconv(.c) c_int { _ = stmt; return 1; } // SQLITE_ERROR
+    comptime {
+        @export(&absentSegment, .{ .name = "sqlite3_proc_current_segment", .linkage = .weak, .visibility = .hidden });
+        @export(&absentNext, .{ .name = "sqlite3_proc_next_resultset", .linkage = .weak, .visibility = .hidden });
+    }
+    extern fn sqlite3_proc_current_segment(stmt: *_sqlite3_stmt) c_int;
+    extern fn sqlite3_proc_next_resultset(stmt: *_sqlite3_stmt) c_int;
+    fn linked() bool {
+        return @intFromPtr(&sqlite3_proc_current_segment) != @intFromPtr(&absentSegment) and
+            @intFromPtr(&sqlite3_proc_next_resultset) != @intFromPtr(&absentNext);
+    }
+};
+
 pub const _SqliteDbInner = struct {
     db: *_sqlite3,
 
@@ -4221,6 +4462,144 @@ pub const _SqliteDbInner = struct {
     pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
     pub fn query_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetch(sql, &.{}); }
     pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetch(sql, params); }
+    // ── querySegments: one row per result-set row of a stored procedure, each with a
+    // leading "_segment" column (0 = the parent rows, k = the k-th nested table). Two
+    // transports: the engine's own merge, "CALL p(...) WITH INTERLEAVED", renamed per
+    // segment from PRAGMA proc_info (DISJOINT layout: segment k's payload starts at
+    // 2 + the arities before it); and, when the engine refuses that (different-key
+    // siblings, several result sets), the walk over sqlite3_proc_next_resultset. Rows
+    // arrive interleaved (parent, then its children) from the first and
+    // segment-major from the second; parent rows carry fold columns only from the walk.
+    fn _colVal(stmt: *_sqlite3_stmt, ci: c_int) _SqliteVal {
+        return switch (sqlite3_column_type(stmt, ci)) {
+            _SQLITE_INTEGER => .{ .int   = sqlite3_column_int64(stmt, ci) },
+            _SQLITE_FLOAT   => .{ .float = sqlite3_column_double(stmt, ci) },
+            _SQLITE_TEXT    => blk: {
+                const raw = sqlite3_column_text(stmt, ci) orelse break :blk .null_;
+                const t = std.mem.sliceTo(raw, 0);
+                break :blk .{ .text = _allocator.dupe(u8, t) catch t };
+            },
+            else => .null_,
+        };
+    }
+    fn _segInterSql(sql: []const u8) ?[:0]const u8 {
+        // "CALL name(args) [RETURNING ...]" -> "CALL name(args) WITH INTERLEAVED"
+        var cut: usize = sql.len;
+        var i: usize = 0;
+        while (i + 11 <= sql.len) : (i += 1) {
+            if (std.ascii.eqlIgnoreCase(sql[i .. i + 11], " returning ")) { cut = i; break; }
+        }
+        return std.fmt.allocPrintSentinel(_allocator, "{s} WITH INTERLEAVED", .{sql[0..cut]}, 0) catch null;
+    }
+    fn _segProcName(sql: []const u8) ?[]const u8 {
+        var i: usize = 0;
+        while (i < sql.len and sql[i] == ' ') i += 1;
+        if (i + 5 > sql.len or !std.ascii.eqlIgnoreCase(sql[i .. i + 5], "call ")) return null;
+        i += 5;
+        while (i < sql.len and sql[i] == ' ') i += 1;
+        const start = i;
+        while (i < sql.len and (std.ascii.isAlphanumeric(sql[i]) or sql[i] == '_')) i += 1;
+        if (i == start) return null;
+        return sql[start..i];
+    }
+    // Per-segment column names: index 0 = the parent's VALUE columns (an empty
+    // decltype marks a nested column, which the interleaved payload does not carry),
+    // index k = child k's columns.
+    fn _segNames(self: *_SqliteDbInner, proc: []const u8) ?[]const []const []const u8 {
+        const psql = std.fmt.allocPrintSentinel(_allocator, "PRAGMA proc_info({s})", .{proc}, 0) catch return null;
+        defer _allocator.free(psql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, psql, -1, &stmt, null) != _SQLITE_OK) return null;
+        defer _ = sqlite3_finalize(stmt);
+        var segs = std.ArrayList(std.ArrayList([]const u8)).empty;
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            const set = sqlite3_column_int64(stmt, 0);
+            if (set < 1) continue;               // set 0 is the parameters
+            const idx: usize = @intCast(set - 1);
+            while (segs.items.len <= idx) segs.append(_allocator, std.ArrayList([]const u8).empty) catch return null;
+            const raw = sqlite3_column_text(stmt, 2) orelse continue;
+            const decl = sqlite3_column_text(stmt, 3);
+            if (idx == 0 and (decl == null or decl.?[0] == 0)) continue;
+            const nm = _allocator.dupe(u8, std.mem.sliceTo(raw, 0)) catch return null;
+            segs.items[idx].append(_allocator, nm) catch return null;
+        }
+        if (segs.items.len == 0) return null;
+        const out = _allocator.alloc([]const []const u8, segs.items.len) catch return null;
+        for (segs.items, 0..) |seg, k| out[k] = seg.items;
+        return out;
+    }
+    fn _segInterleaved(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) ?_ZbrList(_SqliteRow) {
+        const proc = _segProcName(sql) orelse return null;
+        const names = self._segNames(proc) orelse return null;
+        const isql = _segInterSql(sql) orelse return null;
+        defer _allocator.free(isql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, isql, -1, &stmt, null) != _SQLITE_OK) return null;
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        const bases = _allocator.alloc(usize, names.len) catch return null;
+        var acc: usize = 2;
+        for (names, 0..) |segn, k| { bases[k] = acc; acc += segn.len; }
+        var rows = _zbr_new(_ZbrList(_SqliteRow));
+        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            const seg64 = sqlite3_column_int64(stmt, 0);
+            if (seg64 < 0 or seg64 >= names.len) return null;   // shape drift: the walk serves it
+            const seg: usize = @intCast(seg64);
+            var rnames = std.ArrayList([]const u8).empty;
+            var vals = std.ArrayList(_SqliteVal).empty;
+            rnames.append(_allocator, "_segment") catch return null;
+            vals.append(_allocator, .{ .int = seg64 }) catch return null;
+            for (names[seg], 0..) |nm, j| {
+                rnames.append(_allocator, nm) catch return null;
+                vals.append(_allocator, _colVal(stmt, @intCast(bases[seg] + j))) catch return null;
+            }
+            rows.append(_allocator, .{ .names = rnames.items, .vals = vals.items }) catch return null;
+        }
+        return rows;
+    }
+    fn _segWalk(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
+        var rows = _zbr_new(_ZbrList(_SqliteRow));
+        const csql = _allocator.dupeSentinel(u8, sql, 0) catch return rows;
+        defer _allocator.free(csql);
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
+            std.debug.print("SQLite querySegments error: {s}\n", .{sqlite3_errmsg(self.db)});
+            return rows;
+        }
+        defer _ = sqlite3_finalize(stmt);
+        _bind(stmt, params);
+        while (true) {
+            const ncols = sqlite3_column_count(stmt);   // re-read: each segment has its own shape
+            while (sqlite3_step(stmt) == _SQLITE_ROW) {
+                const seg = _SqliteProcs.sqlite3_proc_current_segment(stmt);
+                var names = std.ArrayList([]const u8).empty;
+                var vals = std.ArrayList(_SqliteVal).empty;
+                names.append(_allocator, "_segment") catch {};
+                vals.append(_allocator, .{ .int = @as(i64, seg) }) catch {};
+                var ci: c_int = 0;
+                while (ci < ncols) : (ci += 1) {
+                    const col_name = std.mem.sliceTo(sqlite3_column_name(stmt, ci), 0);
+                    names.append(_allocator, _allocator.dupe(u8, col_name) catch col_name) catch {};
+                    vals.append(_allocator, _colVal(stmt, ci)) catch {};
+                }
+                rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
+            }
+            if (_SqliteProcs.sqlite3_proc_next_resultset(stmt) != _SQLITE_OK) break;
+        }
+        return rows;
+    }
+    pub fn _fetchSegments(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
+        if (!_SqliteProcs.linked()) {
+            std.debug.print("SQLite querySegments error: this SQLite has no stored procedures -- " ++
+                "querySegments needs one built with them (zebra-sprocket's sqlite3.c beside the compiler, " ++
+                "in vendor/sqlite/); use query() for an ordinary statement\n", .{});
+            return _zbr_new(_ZbrList(_SqliteRow));
+        }
+        if (self._segInterleaved(sql, params)) |r| return r;
+        return self._segWalk(sql, params);
+    }
+    pub fn querySegments_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetchSegments(sql, &.{}); }
+    pub fn querySegments_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetchSegments(sql, params); }
     pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
     pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
     pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
@@ -4642,6 +5021,10 @@ pub fn _code_editor_set_error_markers(_ed: *_CodeEditor, _m: anytype) void { _ =
 pub fn _code_editor_get_cursor_line(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
 pub fn _code_editor_get_cursor_col(_ed: *_CodeEditor) i64 { _ = _ed; return 1; }
 pub fn _code_editor_set_cursor_position(_ed: *_CodeEditor, line: i64, col: i64) void { _ = _ed; _ = line; _ = col; }
+// No Scintilla on the stub: the hatch answers 0 for every message, as the tui section did
+// (BUG-693 -- the stub is the headless backend since Zig 0.17 refused tui).
+pub fn _code_editor_sci(_ed: *_CodeEditor, msg: i64, wparam: i64, lparam: i64) i64 { _ = _ed; _ = msg; _ = wparam; _ = lparam; return 0; }
+pub fn _code_editor_sci_str(_ed: *_CodeEditor, msg: i64, wparam: i64, text: []const u8) i64 { _ = _ed; _ = msg; _ = wparam; _ = text; return 0; }
 // ─── Stub backend (single frame, prints to stderr) ───────────────────────────
 pub fn _stub_init(title: []const u8, width: i64, height: i64) anyerror!void {
     _ = title; _ = width; _ = height;
@@ -5076,7 +5459,7 @@ pub fn _arg_parse() ArgResult {
     return ArgResult{ ._raw = _out };
 }
 pub fn _term_is_tty() bool {
-    return std.Io.File.stdout().isTty(_io) catch false;
+    return _zbr_stdout().isTty(_io) catch false;
 }
 pub fn _term_width() i64 { return 80; }
 pub fn _term_height() i64 { return 24; }
@@ -5107,6 +5490,48 @@ pub fn _term_ansi(color: []const u8) []const u8 {
 // One syscall per print, where std.debug.print was also unbuffered but lock-protected.
 // Not measured. If a print-heavy program regresses, buffering belongs here, not at the
 // call site -- but measure before assuming, per FINDINGS.
+// BUG-635: Zig's `File.stdout()` / `File.stderr()` assume a SYNCHRONOUS handle. A parent
+// may hand the program an ASYNCHRONOUS (overlapped) pipe -- Git Bash does -- and then a
+// write that cannot complete at once (the 64 KiB pipe buffer is full: `prog | grep` on a
+// large output) returns PENDING, which std's blocking path treats as `unreachable`
+// (Io/Threaded.zig: "wrong File nonblocking flag"): a panic, the output lost. Ask Windows
+// how the handle was opened, once, and mark an asynchronous one `nonblocking`, so std takes
+// its path that waits for the write to finish.
+var _zbr_std_mode_checked: bool = false;
+var _zbr_stdout_async: bool = false;
+var _zbr_stderr_async: bool = false;
+fn _zbr_handle_is_async(h: std.os.windows.HANDLE) bool {
+    const w = std.os.windows;
+    var iosb: w.IO_STATUS_BLOCK = undefined;
+    // FileModeInformation (class 16) as a raw ULONG: FILE_SYNCHRONOUS_IO_ALERT is 0x10,
+    // _NONALERT 0x20; neither means the handle was opened for overlapped I/O. Raw, because
+    // 0.16 and 0.17 spell the struct and the enum differently (dual-version tree).
+    var mode: u32 = 0;
+    const st = w.ntdll.NtQueryInformationFile(h, &iosb, &mode, @sizeOf(u32), @enumFromInt(16));
+    if (st != .SUCCESS) return false;
+    return (mode & 0x30) == 0;
+}
+fn _zbr_std_mode_check() void {
+    if (_zbr_std_mode_checked) return;
+    _zbr_std_mode_checked = true;
+    if (comptime builtin.os.tag == .windows) {
+        _zbr_stdout_async = _zbr_handle_is_async(std.Io.File.stdout().handle);
+        _zbr_stderr_async = _zbr_handle_is_async(std.Io.File.stderr().handle);
+    }
+}
+pub fn _zbr_stdout() std.Io.File {
+    var f = std.Io.File.stdout();
+    _zbr_std_mode_check();
+    if (_zbr_stdout_async) f.flags.nonblocking = true;
+    return f;
+}
+pub fn _zbr_stderr() std.Io.File {
+    var f = std.Io.File.stderr();
+    _zbr_std_mode_check();
+    if (_zbr_stderr_async) f.flags.nonblocking = true;
+    return f;
+}
+
 pub fn _zbr_print(comptime fmt: []const u8, args: anytype) void {
     var buf: [4096]u8 = undefined;
     const s = std.fmt.bufPrint(&buf, fmt, args) catch {
@@ -5114,14 +5539,14 @@ pub fn _zbr_print(comptime fmt: []const u8, args: anytype) void {
         // Truncating would be the fabrication this bug is about.
         const heap = std.fmt.allocPrint(_allocator, fmt, args) catch return;
         defer _allocator.free(heap);
-        std.Io.File.stdout().writeStreamingAll(_io, heap) catch {};
+        _zbr_stdout().writeStreamingAll(_io, heap) catch {};
         return;
     };
-    std.Io.File.stdout().writeStreamingAll(_io, s) catch {};
+    _zbr_stdout().writeStreamingAll(_io, s) catch {};
 }
 
 pub fn _term_print(msg: []const u8, color: []const u8, newline: bool) void {
-    const _f = std.Io.File.stdout();
+    const _f = _zbr_stdout();
     if (_term_is_tty() and color.len > 0) {
         const _s = std.fmt.allocPrint(_allocator, "{s}{s}\x1b[0m", .{ _term_ansi(color), msg }) catch return;
         defer _allocator.free(_s);
@@ -5142,7 +5567,7 @@ pub fn _log_ts() []const u8 {
 }
 pub fn _log_emit(level_str: []const u8, level_num: u8, msg: []const u8) void {
     if (level_num < _log_level) return;
-    const _f = if (_log_to_stderr) std.Io.File.stderr() else std.Io.File.stdout();
+    const _f = if (_log_to_stderr) _zbr_stderr() else _zbr_stdout();
     if (_log_timestamps) {
         const _s = std.fmt.allocPrint(_allocator, "[{s:<5} {s}] {s}\n", .{ level_str, _log_ts(), msg }) catch return;
         defer _allocator.free(_s);
@@ -5198,7 +5623,7 @@ pub fn _log_json(level: []const u8, msg: []const u8, data: []const u8) void {
         const st = f.stat(_io) catch return;
         f.writePositionalAll(_io, buf.items, st.size) catch {};
     }
-    std.Io.File.stderr().writeStreamingAll(_io, buf.items) catch {};
+    _zbr_stderr().writeStreamingAll(_io, buf.items) catch {};
 }
 pub const UriResult = struct {
     scheme: []const u8,
@@ -5385,7 +5810,14 @@ pub var _zbr_cens_on: bool = false;
 // allocation; the line and the return address pin all but a std-internal path.)
 const _zbr_cens_depth = 12;
 const _ZbrCensKey = struct { path: usize, line: u32, ra: usize };
-const _ZbrCensVal = struct { path: []const u8, frames: [_zbr_cens_depth]usize = @splat(0), count: u64 = 0, bytes: u64 = 0 };
+// `kept_*` (2026-11-04): the blocks still live at report time that this row allocated or last
+// resized. Each wrapper keeps a pointer map (address -> row, length): an allocation enters it, a
+// free takes it out and credits its row, a resize MOVES the whole block to the resizing row (so a
+// row's kept can exceed what it requested -- a List grown at line 40 keeps its whole buffer
+// there), and a scoped block's release credits everything it held. The maps live on the page
+// allocator, outside every count, and the report says so.
+const _ZbrCensVal = struct { path: []const u8, frames: [_zbr_cens_depth]usize = @splat(0), count: u64 = 0, bytes: u64 = 0, kept_count: u64 = 0, kept_bytes: u64 = 0 };
+const _ZbrCensLive = struct { key: _ZbrCensKey, len: usize };
 var _zbr_cens_map: std.AutoHashMapUnmanaged(_ZbrCensKey, _ZbrCensVal) = .empty;
 var _zbr_cens_mu: std.Io.Mutex = .init;
 pub const _ZbrCensTotals = struct {
@@ -5398,6 +5830,9 @@ pub const _ZbrCensTotals = struct {
     interned: u64 = 0, // strings the intern pool copied (they bypass `_allocator`)
     interned_bytes: u64 = 0,
     released_scopes: u64 = 0, // scoped `allocate` blocks that ended (their arena freed at once)
+    unseen_frees: u64 = 0, // frees of a block the wrapper never saw allocated (a census installed mid-run)
+    unseen_resizes: u64 = 0,
+    len_mismatch: u64 = 0, // a free or resize whose length differs from the one recorded: a bug somewhere
 };
 pub var _zbr_cens: _ZbrCensTotals = .{};
 fn _zbr_cens_lock() void {
@@ -5406,7 +5841,31 @@ fn _zbr_cens_lock() void {
 fn _zbr_cens_unlock() void {
     if (comptime !@import("builtin").single_threaded) _zbr_cens_mu.unlock(_io);
 }
-fn _zbr_cens_note(w: *_ZbrCensAlloc, len: usize, ra: usize) void {
+const _ZbrCensRowRef = struct { key: _ZbrCensKey, row: *_ZbrCensVal };
+/// The row for (site, return address), made on first use. Caller holds the lock. The pointer is
+/// valid until the next insertion into `_zbr_cens_map`.
+fn _zbr_cens_row(site: _ZbrSite, ra: usize) ?_ZbrCensRowRef {
+    const key: _ZbrCensKey = .{ .path = @intFromPtr(site.path.ptr), .line = site.line, .ra = ra };
+    const gop = _zbr_cens_map.getOrPut(std.heap.page_allocator, key) catch return null;
+    if (!gop.found_existing) {
+        gop.value_ptr.* = .{ .path = site.path };
+        const st = std.debug.captureCurrentStackTrace(.{ .first_address = ra }, &gop.value_ptr.frames);
+        if (st.return_addresses.len == 0) gop.value_ptr.frames[0] = ra; // no unwinder: the one address we have
+    }
+    return .{ .key = key, .row = gop.value_ptr };
+}
+/// Takes a block out of `w`'s pointer map and off its row's kept figures. Caller holds the lock.
+/// False when the wrapper never saw the block allocated.
+fn _zbr_cens_drop(w: *_ZbrCensAlloc, p: usize, len: usize) bool {
+    const kv = w.ptrs.fetchRemove(p) orelse return false;
+    if (kv.value.len != len) _zbr_cens.len_mismatch += 1;
+    if (_zbr_cens_map.getPtr(kv.value.key)) |row| {
+        row.kept_count -= 1;
+        row.kept_bytes -= kv.value.len; // what was added, whatever length the caller claims now
+    }
+    return true;
+}
+fn _zbr_cens_note(w: *_ZbrCensAlloc, p: [*]u8, len: usize, ra: usize) void {
     const site = _zbr_site;
     _zbr_cens_lock();
     defer _zbr_cens_unlock();
@@ -5415,16 +5874,14 @@ fn _zbr_cens_note(w: *_ZbrCensAlloc, len: usize, ra: usize) void {
     _zbr_cens.bytes += len;
     _zbr_cens.live += @intCast(len);
     if (_zbr_cens.live > _zbr_cens.peak) _zbr_cens.peak = _zbr_cens.live;
-    const gop = _zbr_cens_map.getOrPut(std.heap.page_allocator, .{ .path = @intFromPtr(site.path.ptr), .line = site.line, .ra = ra }) catch return;
-    if (!gop.found_existing) {
-        gop.value_ptr.* = .{ .path = site.path };
-        const st = std.debug.captureCurrentStackTrace(.{ .first_address = ra }, &gop.value_ptr.frames);
-        if (st.return_addresses.len == 0) gop.value_ptr.frames[0] = ra; // no unwinder: the one address we have
-    }
-    gop.value_ptr.count += 1;
-    gop.value_ptr.bytes += len;
+    const r = _zbr_cens_row(site, ra) orelse return;
+    r.row.count += 1;
+    r.row.bytes += len;
+    w.ptrs.put(std.heap.page_allocator, @intFromPtr(p), .{ .key = r.key, .len = len }) catch return;
+    r.row.kept_count += 1;
+    r.row.kept_bytes += len;
 }
-fn _zbr_cens_shrink(w: *_ZbrCensAlloc, len: usize) void {
+fn _zbr_cens_shrink(w: *_ZbrCensAlloc, p: usize, len: usize) void {
     _zbr_cens_lock();
     defer _zbr_cens_unlock();
     w.live -= @intCast(len);
@@ -5432,6 +5889,7 @@ fn _zbr_cens_shrink(w: *_ZbrCensAlloc, len: usize) void {
     _zbr_cens.frees += 1;
     _zbr_cens.freed += len;
     _zbr_cens.live -= @intCast(len);
+    if (!_zbr_cens_drop(w, p, len)) _zbr_cens.unseen_frees += 1;
 }
 pub fn _zbr_cens_intern(len: usize) void {
     if (!_zbr_cens_on) return;
@@ -5447,6 +5905,7 @@ pub const _ZbrCensAlloc = struct {
     child: std.mem.Allocator,
     live: i64 = 0,
     freed: u64 = 0, // bytes this wrapper handed back to its child
+    ptrs: std.AutoHashMapUnmanaged(usize, _ZbrCensLive) = .empty, // the live blocks it made
     pub const _vt: std.mem.Allocator.VTable = .{ .alloc = _a, .resize = _r, .remap = _m, .free = _f };
     pub fn allocator(self: *_ZbrCensAlloc) std.mem.Allocator {
         return .{ .ptr = self, .vtable = &_vt };
@@ -5454,47 +5913,116 @@ pub const _ZbrCensAlloc = struct {
     fn _a(ctx: *anyopaque, len: usize, al: std.mem.Alignment, ra: usize) ?[*]u8 {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         const p = self.child.vtable.alloc(self.child.ptr, len, al, ra) orelse return null;
-        _zbr_cens_note(self, len, ra);
+        _zbr_cens_note(self, p, len, ra);
         return p;
     }
     fn _r(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) bool {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         if (!self.child.vtable.resize(self.child.ptr, mem, al, new_len, ra)) return false;
-        self._moved(mem.len, new_len, ra);
+        self._moved(@intFromPtr(mem.ptr), @intFromPtr(mem.ptr), mem.len, new_len, ra);
         return true;
     }
     fn _m(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         const p = self.child.vtable.remap(self.child.ptr, mem, al, new_len, ra) orelse return null;
-        self._moved(mem.len, new_len, ra);
+        self._moved(@intFromPtr(mem.ptr), @intFromPtr(p), mem.len, new_len, ra);
         return p;
     }
     fn _f(ctx: *anyopaque, mem: []u8, al: std.mem.Alignment, ra: usize) void {
         const self: *_ZbrCensAlloc = @ptrCast(@alignCast(ctx));
         self.child.vtable.free(self.child.ptr, mem, al, ra);
-        _zbr_cens_shrink(self, mem.len);
+        _zbr_cens_shrink(self, @intFromPtr(mem.ptr), mem.len);
     }
-    fn _moved(self: *_ZbrCensAlloc, old: usize, new: usize, ra: usize) void {
+    /// A resize or remap that succeeded: `oldp` (old bytes) is now `newp` (new bytes). Growth is
+    /// requested bytes, not a new allocation. The WHOLE block moves to the resizing row: the old
+    /// row's kept loses the old length, this row's gains the new one, and `bytes` above took only
+    /// the difference. A shrink in place follows the same rule with a negative difference (the
+    /// block now belongs to the line that shrank it -- `toOwnedSlice` hands a buffer to its caller).
+    fn _moved(self: *_ZbrCensAlloc, oldp: usize, newp: usize, old: usize, new: usize, ra: usize) void {
+        const site = _zbr_site;
+        _zbr_cens_lock();
+        defer _zbr_cens_unlock();
         if (new > old) {
-            _zbr_cens_note(self, new - old, ra);
-            _zbr_cens_lock();
-            _zbr_cens.allocs -= 1; // growth in place is bytes, not a new allocation
-            _zbr_cens_unlock();
+            self.live += @intCast(new - old);
+            _zbr_cens.bytes += new - old;
+            _zbr_cens.live += @intCast(new - old);
+            if (_zbr_cens.live > _zbr_cens.peak) _zbr_cens.peak = _zbr_cens.live;
         } else if (old > new) {
-            _zbr_cens_lock();
-            defer _zbr_cens_unlock();
             self.live -= @intCast(old - new);
             self.freed += old - new;
             _zbr_cens.freed += old - new;
             _zbr_cens.live -= @intCast(old - new);
         }
+        if (oldp == newp) {
+            // In place (the common case: an ArrayList growing or `toOwnedSlice` shrinking): the
+            // map entry is rewritten, not removed and re-inserted.
+            const ent = self.ptrs.getPtr(oldp) orelse return self._unseenResize(site, old, new, ra);
+            if (ent.len != old) _zbr_cens.len_mismatch += 1;
+            const was = ent.*;
+            const r = _zbr_cens_row(site, ra) orelse {
+                _ = _zbr_cens_drop(self, oldp, was.len);
+                return;
+            };
+            if (new > old) r.row.bytes += new - old;
+            if (std.meta.eql(was.key, r.key)) {
+                r.row.kept_bytes = r.row.kept_bytes - was.len + new;
+            } else {
+                if (_zbr_cens_map.getPtr(was.key)) |orow| {
+                    orow.kept_count -= 1;
+                    orow.kept_bytes -= was.len;
+                }
+                r.row.kept_count += 1;
+                r.row.kept_bytes += new;
+            }
+            ent.* = .{ .key = r.key, .len = new };
+            return;
+        }
+        if (!_zbr_cens_drop(self, oldp, old)) return self._unseenResize(site, old, new, ra);
+        const r = _zbr_cens_row(site, ra) orelse return;
+        if (new > old) r.row.bytes += new - old;
+        self.ptrs.put(std.heap.page_allocator, newp, .{ .key = r.key, .len = new }) catch return;
+        r.row.kept_count += 1;
+        r.row.kept_bytes += new;
+    }
+    /// A block from before the census was resized: its growth is counted, it is not kept.
+    fn _unseenResize(self: *_ZbrCensAlloc, site: _ZbrSite, old: usize, new: usize, ra: usize) void {
+        _ = self;
+        _zbr_cens.unseen_resizes += 1;
+        if (new <= old) return;
+        const r = _zbr_cens_row(site, ra) orelse return;
+        r.row.bytes += new - old;
     }
 };
 pub var _zbr_cens_root: _ZbrCensAlloc = .{ .child = undefined };
 var _zbr_cens_root_is_arena: bool = false;
-/// Entry prologue: wrap the allocator in force NOW (the arena, or a library host's).
+/// BUG-677: who installed the census, so a second install can say so; and whether the
+/// program was built with --census=host, so a report with no install can say so.
+var _zbr_cens_by_entry: bool = false;
+var _zbr_cens_again_noted: bool = false;
+var _zbr_cens_host: bool = false;
+/// The entry prologue of a plain --census build.
+pub fn _zbr_cens_install_entry() void {
+    _zbr_cens_install();
+    _zbr_cens_by_entry = true;
+}
+/// The entry prologue of a --census=host build: nothing is counted until the host installs.
+pub fn _zbr_cens_mark_host() void {
+    _zbr_cens_host = true;
+}
+/// Wrap the allocator in force NOW (the arena, or a library host's). A second call changes
+/// nothing, and says so once (BUG-677: a host's late install was silently a whole-run census).
 pub fn _zbr_cens_install() void {
-    if (_zbr_cens_on) return;
+    if (_zbr_cens_on) {
+        if (!_zbr_cens_again_noted) {
+            _zbr_cens_again_noted = true;
+            const msg = if (_zbr_cens_by_entry)
+                "zebra census: _zbr_cens_install() called again -- the entry prologue installed the census (built with --census), so counts still run from start-up. Build with --census=host to open the window yourself.\n"
+            else
+                "zebra census: _zbr_cens_install() called again -- an earlier call installed the census, so counts still run from then.\n";
+            _zbr_stderr().writeStreamingAll(_io, msg) catch {};
+        }
+        return;
+    }
     _zbr_cens_on = true;
     _zbr_cens_root_is_arena = !_host_alloc_set;
     _zbr_cens_root = .{ .child = _allocator };
@@ -5503,18 +6031,25 @@ pub fn _zbr_cens_install() void {
 /// A scoped `allocate` block's wrapper, emitted as a local: `.child` is the block's own
 /// allocator; on exit the block's arena frees everything it held at once.
 pub fn _zbr_cens_release(w: *_ZbrCensAlloc) void {
-    if (w.live <= 0) return;
     _zbr_cens_lock();
     defer _zbr_cens_unlock();
+    var it = w.ptrs.iterator();
+    while (it.next()) |e| if (_zbr_cens_map.getPtr(e.value_ptr.key)) |row| {
+        row.kept_count -= 1;
+        row.kept_bytes -= e.value_ptr.len;
+    };
+    w.ptrs.deinit(std.heap.page_allocator);
+    w.ptrs = .empty;
+    if (w.live <= 0) return;
     _zbr_cens.freed += @intCast(w.live);
     _zbr_cens.live -= w.live;
     _zbr_cens.released_scopes += 1;
     w.live = 0;
 }
-const _ZbrCensRow = struct { path: []const u8, line: u32, frames: [_zbr_cens_depth]usize, count: u64, bytes: u64 };
+const _ZbrCensRow = struct { path: []const u8, line: u32, frames: [_zbr_cens_depth]usize, count: u64, bytes: u64, kept_count: u64, kept_bytes: u64 };
 const _ZbrCensSym = struct { name: ?[]const u8, in_std: bool };
 const _ZbrCensKind = struct { kind: ?[]const u8, via: ?[]const u8 };
-const _ZbrCensOut = struct { path: []const u8, line: u32, kind: ?[]const u8, via: ?[]const u8, f0: usize, count: u64, bytes: u64 };
+const _ZbrCensOut = struct { path: []const u8, line: u32, kind: ?[]const u8, via: ?[]const u8, f0: usize, count: u64, bytes: u64, kept_count: u64, kept_bytes: u64 };
 fn _zbr_cens_sym(ra: usize, cache: *std.AutoHashMapUnmanaged(usize, _ZbrCensSym), syms: *std.ArrayList(std.debug.Symbol), text: std.mem.Allocator) _ZbrCensSym {
     if (cache.get(ra)) |c| return c;
     var r: _ZbrCensSym = .{ .name = null, .in_std = false };
@@ -5560,7 +6095,11 @@ fn _zbr_cens_json_str(out: *std.ArrayList(u8), a: std.mem.Allocator, s: []const 
 /// once (a host can dump mid-run); allocates only from the page allocator, so it does not
 /// count itself.
 pub fn _zbr_cens_flush() void {
-    if (!_zbr_cens_on) return;
+    if (!_zbr_cens_on) {
+        // BUG-677: no report is not an empty report -- say which it is
+        if (_zbr_cens_host) _zbr_stderr().writeStreamingAll(_io, "zebra census: built with --census=host and never installed (_zbr_cens_install() was not called), so nothing was counted -- no report, no zebra-census.json.\n") catch {};
+        return;
+    }
     const pa = std.heap.page_allocator;
     var text_arena = std.heap.ArenaAllocator.init(pa);
     defer text_arena.deinit();
@@ -5569,7 +6108,9 @@ pub fn _zbr_cens_flush() void {
     const t = _zbr_cens;
     var rows: std.ArrayList(_ZbrCensRow) = .empty;
     var it = _zbr_cens_map.iterator();
-    while (it.next()) |e| rows.append(ta, .{ .path = e.value_ptr.path, .line = e.key_ptr.line, .frames = e.value_ptr.frames, .count = e.value_ptr.count, .bytes = e.value_ptr.bytes }) catch break;
+    while (it.next()) |e| rows.append(ta, .{ .path = e.value_ptr.path, .line = e.key_ptr.line, .frames = e.value_ptr.frames, .count = e.value_ptr.count, .bytes = e.value_ptr.bytes, .kept_count = e.value_ptr.kept_count, .kept_bytes = e.value_ptr.kept_bytes }) catch break;
+    // The census's own tables, approximately (slots x entry + a metadata byte); page memory.
+    const table_bytes: usize = _zbr_cens_map.capacity() * (@sizeOf(_ZbrCensKey) + @sizeOf(_ZbrCensVal) + 1) + _zbr_cens_root.ptrs.capacity() * (@sizeOf(usize) + @sizeOf(_ZbrCensLive) + 1);
     _zbr_cens_unlock();
     // Name each row's kind, then merge rows that differ only in deeper frames: the report is
     // about (line, kind, via), and three callers of the same growth path are one row to a reader.
@@ -5585,9 +6126,11 @@ pub fn _zbr_cens_flush() void {
         if (gop.found_existing) {
             outs.items[gop.value_ptr.*].count += r.count;
             outs.items[gop.value_ptr.*].bytes += r.bytes;
+            outs.items[gop.value_ptr.*].kept_count += r.kept_count;
+            outs.items[gop.value_ptr.*].kept_bytes += r.kept_bytes;
         } else {
             gop.value_ptr.* = outs.items.len;
-            outs.append(ta, .{ .path = r.path, .line = r.line, .kind = k.kind, .via = k.via, .f0 = r.frames[0], .count = r.count, .bytes = r.bytes }) catch continue;
+            outs.append(ta, .{ .path = r.path, .line = r.line, .kind = k.kind, .via = k.via, .f0 = r.frames[0], .count = r.count, .bytes = r.bytes, .kept_count = r.kept_count, .kept_bytes = r.kept_bytes }) catch continue;
             if (k.kind == null) unresolved += 1;
         }
     }
@@ -5597,6 +6140,14 @@ pub fn _zbr_cens_flush() void {
         }
     };
     std.mem.sort(_ZbrCensOut, outs.items, {}, _Cmp.gt);
+    var kept_total: u64 = 0;
+    var kept_blocks: u64 = 0;
+    var kept_sites: usize = 0;
+    for (outs.items) |r| {
+        kept_total += r.kept_bytes;
+        kept_blocks += r.kept_count;
+        if (r.kept_bytes > 0) kept_sites += 1;
+    }
     var err: std.ArrayList(u8) = .empty;
     const w = struct {
         fn p(o: *std.ArrayList(u8), a: std.mem.Allocator, comptime f: []const u8, args: anytype) void {
@@ -5608,6 +6159,7 @@ pub fn _zbr_cens_flush() void {
     w.p(&err, ta, "  allocations {d}, {d:.2} MB requested; {d} frees, {d:.2} MB handed back; {d:.2} MB never freed (peak {d:.2} MB)\n", .{ t.allocs, _zbr_cens_mb(t.bytes), t.frees, _zbr_cens_mb(t.freed), _zbr_cens_mb(t.live), _zbr_cens_mb(t.peak) });
     w.p(&err, ta, "  interned strings: {d} ({d:.2} MB, outside the counts above)\n", .{ t.interned, _zbr_cens_mb(t.interned_bytes) });
     if (t.released_scopes > 0) w.p(&err, ta, "  scoped allocate blocks ended: {d} (their arenas returned what they held)\n", .{t.released_scopes});
+    w.p(&err, ta, "  free-at-sweep: {d} containers queued and not yet swept, {d} freed by {d} sweeps, {d} duplicate queueings ignored\n", .{ _zbr_sweep_q.items.len, _zbr_sweep_freed, _zbr_sweep_runs, _zbr_sweep_dupes });
     if (_zbr_cens_root_is_arena) {
         // What the arena holds = what was never freed + what was freed and KEPT (an arena
         // returns only its newest allocation: outgrown List/map/builder buffers land here) +
@@ -5619,21 +6171,40 @@ pub fn _zbr_cens_flush() void {
     } else {
         w.p(&err, ta, "  allocator: the host's (--library-mode); the arena line does not apply\n", .{});
     }
-    w.p(&err, ta, "  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)\n", .{});
-    w.p(&err, ta, "  {d} sites; top by bytes:\n", .{outs.items.len});
-    for (outs.items[0..@min(outs.items.len, 25)]) |r| {
-        const loc = std.fmt.allocPrint(ta, "{s}:{d}", .{ std.fs.path.basename(r.path), r.line }) catch continue;
-        const k: []const u8 = if (r.kind) |kk|
-            (if (r.via) |v| (std.fmt.allocPrint(ta, "{s} (via {s})", .{ kk, v }) catch kk) else kk)
-        else
-            std.fmt.allocPrint(ta, "?0x{x}", .{r.f0}) catch "?";
-        w.p(&err, ta, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes) });
-    }
+    w.p(&err, ta, "  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers), nor the census's own tables (~{d:.2} MB)\n", .{_zbr_cens_mb(table_bytes)});
+    w.p(&err, ta, "  kept (still live now, charged to the site that allocated or last resized each block): {d} blocks, {d:.2} MB\n", .{ kept_blocks, _zbr_cens_mb(kept_total) });
+    w.p(&err, ta, "  blocks the census never saw allocated: {d} frees, {d} resizes (expected when the census was installed after the program started -- an embedding host, --census-at; otherwise a block freed through an allocator that did not make it)\n", .{ t.unseen_frees, t.unseen_resizes });
+    w.p(&err, ta, "  frees or resizes with a length other than the one allocated: {d}\n", .{t.len_mismatch});
+    w.p(&err, ta, "  {d} sites; top by bytes requested:\n    {s:<28} {s:<48} {s:>10}  {s:>13}  {s:>13}\n", .{ outs.items.len, "site", "kind", "allocs", "requested", "kept" });
+    const _Row = struct {
+        fn line(o: *std.ArrayList(u8), a: std.mem.Allocator, r: _ZbrCensOut) void {
+            const loc = std.fmt.allocPrint(a, "{s}:{d}", .{ std.fs.path.basename(r.path), r.line }) catch return;
+            const k: []const u8 = if (r.kind) |kk|
+                (if (r.via) |v| (std.fmt.allocPrint(a, "{s} (via {s})", .{ kk, v }) catch kk) else kk)
+            else
+                std.fmt.allocPrint(a, "?0x{x}", .{r.f0}) catch "?";
+            const s = std.fmt.allocPrint(a, "    {s:<28} {s:<48} {d:>10}  {d:>10.3} MB  {d:>10.3} MB\n", .{ loc, k, r.count, _zbr_cens_mb(r.bytes), _zbr_cens_mb(r.kept_bytes) }) catch return;
+            o.appendSlice(a, s) catch {};
+        }
+    };
+    for (outs.items[0..@min(outs.items.len, 25)]) |r| _Row.line(&err, ta, r);
+    // The second ranking: what is still held, which is what a leak or a cache looks like.
+    const by_kept = ta.dupe(_ZbrCensOut, outs.items) catch outs.items[0..0];
+    const _CmpK = struct {
+        fn gt(_: void, x: _ZbrCensOut, y: _ZbrCensOut) bool {
+            return if (x.kept_bytes != y.kept_bytes) x.kept_bytes > y.kept_bytes else x.kept_count > y.kept_count;
+        }
+    };
+    std.mem.sort(_ZbrCensOut, by_kept, {}, _CmpK.gt);
+    w.p(&err, ta, "  top by bytes kept ({d} of {d} sites hold anything):\n", .{ kept_sites, outs.items.len });
+    for (by_kept[0..@min(kept_sites, 15)]) |r| _Row.line(&err, ta, r);
     if (unresolved > 0) w.p(&err, ta, "  {d} of {d} sites have an UNRESOLVED kind: this binary carries no debug info for that address (a --release build has none) -- shown as ?0x<address>\n", .{ unresolved, outs.items.len });
-    std.Io.File.stderr().writeStreamingAll(_io, err.items) catch {};
+    _zbr_stderr().writeStreamingAll(_io, err.items) catch {};
 
     var out: std.ArrayList(u8) = .empty;
-    w.p(&out, ta, "{{\"version\": 1, \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
+    w.p(&out, ta, "{{\"version\": 2, \"keptNote\": \"keptBytes is what is still live at this report and was allocated or last resized at the site; a resize moves the whole block, so it can exceed the bytes the site requested\", \"totals\": {{\"allocations\": {d}, \"bytes\": {d}, \"frees\": {d}, \"freed\": {d}, \"live\": {d}, \"peak\": {d}, \"interned\": {d}, \"internedBytes\": {d}, \"releasedScopes\": {d}", .{ t.allocs, t.bytes, t.frees, t.freed, t.live, t.peak, t.interned, t.interned_bytes, t.released_scopes });
+    w.p(&out, ta, ", \"keptBytes\": {d}, \"keptCount\": {d}, \"unseenFrees\": {d}, \"unseenResizes\": {d}, \"lengthMismatches\": {d}, \"censusTableBytes\": {d}", .{ kept_total, kept_blocks, t.unseen_frees, t.unseen_resizes, t.len_mismatch, table_bytes });
+    w.p(&out, ta, ", \"sweepPending\": {d}, \"sweepFreed\": {d}, \"sweeps\": {d}, \"sweepDuplicates\": {d}", .{ _zbr_sweep_q.items.len, _zbr_sweep_freed, _zbr_sweep_runs, _zbr_sweep_dupes });
     if (_zbr_cens_root_is_arena) w.p(&out, ta, ", \"arenaCapacity\": {d}, \"arenaFreedKept\": {d}", .{ _arena.queryCapacity(), _zbr_cens_root.freed });
     w.p(&out, ta, "}}, \"sites\": [", .{});
     for (outs.items, 0..) |r, i| {
@@ -5644,7 +6215,7 @@ pub fn _zbr_cens_flush() void {
         if (r.kind) |k| _zbr_cens_json_str(&out, ta, k) else out.appendSlice(ta, "null") catch {};
         out.appendSlice(ta, ", \"via\": ") catch {};
         if (r.via) |v| _zbr_cens_json_str(&out, ta, v) else out.appendSlice(ta, "null") catch {};
-        w.p(&out, ta, ", \"count\": {d}, \"bytes\": {d}}}", .{ r.count, r.bytes });
+        w.p(&out, ta, ", \"count\": {d}, \"bytes\": {d}, \"keptCount\": {d}, \"keptBytes\": {d}}}", .{ r.count, r.bytes, r.kept_count, r.kept_bytes });
     }
     out.appendSlice(ta, "]}\n") catch {};
     const path: []const u8 = _sys_getenv("ZEBRA_CENSUS_OUT") orelse "zebra-census.json";
@@ -5732,6 +6303,39 @@ pub fn _zbr_exit(code: i64) noreturn {
     _zbr_cens_flush();
     std.process.exit(@truncate(@as(u64, @bitCast(code))));
 }
+/// BUG-295: a computed module var in an import cycle is initialised on FIRST USE, by
+/// `_zbr_mvref_<name>()` in its defining module. Each initialiser in progress is one
+/// frame here (the frame lives on the accessor's stack), so an initialiser that needs
+/// its own value -- a genuine cycle -- can name the whole chain. No fixed capacity.
+pub const _ZbrInitFrame = struct { name: []const u8, prev: ?*const _ZbrInitFrame };
+pub var _zbr_init_head: ?*const _ZbrInitFrame = null;
+fn _zbr_init_print_from(f: *const _ZbrInitFrame, name: []const u8) void {
+    if (!std.mem.eql(u8, f.name, name)) {
+        if (f.prev) |p| _zbr_init_print_from(p, name);
+    }
+    std.debug.print("{s} -> ", .{f.name});
+}
+/// `shared` is false when each module carries its own runtime copy (--no-runtime-module):
+/// then this list holds only this module's frames, and printing it would present a
+/// fragment as the whole chain (it read `lib.y -> lib.y` for an x/y cycle).
+pub fn _zbr_init_cycle(name: []const u8, shared: bool) noreturn {
+    var found = false;
+    var f = _zbr_init_head;
+    while (f) |fr| : (f = fr.prev) {
+        if (std.mem.eql(u8, fr.name, name)) found = true;
+    }
+    if (shared and found) {
+        std.debug.print("error: module initialisation cycle: ", .{});
+        _zbr_init_print_from(_zbr_init_head.?, name);
+        std.debug.print("{s}\n", .{name});
+    } else {
+        std.debug.print("error: module initialisation cycle reaching {s}\n", .{name});
+        std.debug.print("  (the chain is not available: each module of this program has its own runtime copy, --no-runtime-module)\n", .{});
+    }
+    std.debug.print("  each initialiser needs the value of the next, so none of them can run first.\n", .{});
+    std.debug.print("  fix: give one of these variables a value that does not read the others.\n", .{});
+    _zbr_exit(1);
+}
 pub fn _profile_end() void {
     const start_ns = _profile_time_stack.pop() orelse return;
     const elapsed_ns = std.Io.Timestamp.now(_io, .awake).nanoseconds - start_ns;
@@ -5762,7 +6366,7 @@ pub fn _profile_report() void {
         fn lt(_: void, a: _ProfEntry, b: _ProfEntry) bool { return a.total_ns > b.total_ns; }
     };
     std.mem.sort(_ProfEntry, list.items, {}, _Cmp.lt);
-    const _stdout = std.Io.File.stdout();
+    const _stdout = _zbr_stdout();
     _stdout.writeStreamingAll(_io, "── Profile report ───────────────────────────────────────────────\n") catch {};
     for (list.items) |e| {
         const ms = @as(f64, @floatFromInt(e.total_ns)) / 1_000_000.0;
@@ -5772,7 +6376,7 @@ pub fn _profile_report() void {
     }
 }
 pub fn _profile_dump_folded() void {
-    const _stdout = std.Io.File.stdout();
+    const _stdout = _zbr_stdout();
     var it = _profile_entries.iterator();
     while (it.next()) |e| {
         const us: i64 = @intCast(@divFloor(e.value_ptr.total_ns, 1000));
@@ -6227,6 +6831,18 @@ pub const _ZbrFfmt = struct {
     fn _pad(self: _ZbrFfmt, w: *std.Io.Writer, head: []const u8, zeros: usize, suffix: []const u8) std.Io.Writer.Error!void {
         const total = head.len + zeros + suffix.len;
         const pad = if (self.width > total) self.width - total else 0;
+        if (self.alignc == '=') {
+            // the `0` flag (BUG-631): the sign first, the fill between it and the digits
+            var body = head;
+            if (body.len > 0 and (body[0] == '-' or body[0] == '+')) {
+                try w.writeByte(body[0]);
+                body = body[1..];
+            }
+            try w.splatBytesAll(self.fill, pad);
+            try w.writeAll(body);
+            try w.splatByteAll('0', zeros);
+            return w.writeAll(suffix);
+        }
         const left = switch (self.alignc) {
             '<' => 0,
             '^' => pad / 2,
@@ -6242,6 +6858,35 @@ pub const _ZbrFfmt = struct {
 
 pub fn _zbr_ffmt(x: anytype, prec: usize, emode: bool, fill: []const u8, alignc: u8, width: usize) _ZbrFfmt {
     return .{ .x = @as(f64, x), .prec = prec, .emode = emode, .fill = fill, .alignc = alignc, .width = width };
+}
+
+// BUG-631. `${n:04d}` / `${x:06}`: a number zero-padded to a width with the sign FIRST
+// (`-005`), as Python and C do. Zig's `{d:0>4}` pads before the whole text (`00-5`), so
+// CodeGen's zeroPadArgs routes such a hole here through `{f}`. The digits are Zig's own
+// `{d}` -- the same text the hole printed before, only the zeros move. 512 bytes holds any
+// i128 and the longest `{d}` of an f64.
+pub const _ZbrZpad = struct {
+    buf: [512]u8,
+    len: usize,
+    width: usize,
+
+    pub fn format(self: _ZbrZpad, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        var body: []const u8 = self.buf[0..self.len];
+        const pad = if (self.width > body.len) self.width - body.len else 0;
+        if (body.len > 0 and (body[0] == '-' or body[0] == '+')) {
+            try w.writeByte(body[0]);
+            body = body[1..];
+        }
+        try w.splatByteAll('0', pad);
+        try w.writeAll(body);
+    }
+};
+
+pub fn _zbr_zpad(x: anytype, width: usize) _ZbrZpad {
+    var r: _ZbrZpad = .{ .buf = undefined, .len = 0, .width = width };
+    const s: []const u8 = std.fmt.bufPrint(&r.buf, "{d}", .{x}) catch "";
+    r.len = s.len;
+    return r;
 }
 
 pub fn _zbr_show(x: anytype) []const u8 {
@@ -6411,8 +7056,15 @@ pub const std_options: std.Options = .{ .enable_segfault_handler = true };
 // std/start.zig rather than at the user's program. Windows never printed the trace;
 // Linux/macOS did (test/bug259_runtime_exit_code_test.zbr caught it), so this makes the
 // platforms agree. ZEBRA_PANIC_TRACE=1 restores the full Zig trace for compiler work.
+// The handler must not allocate through `_allocator`: under --census that is the counting
+// wrapper, and a panic raised while the census holds its lock (an accounting underflow) re-entered
+// the lock through `_sys_getenv`'s Windows allocation and hung with nothing printed (BUG-676).
 pub fn _zebra_panic(msg: []const u8, first_trace_addr: ?usize) noreturn {
-    if (_sys_getenv("ZEBRA_PANIC_TRACE") != null) std.debug.defaultPanic(msg, first_trace_addr);
+    const want_trace = if (comptime builtin.target.os.tag == .windows) blk: {
+        const environ: std.process.Environ = .{ .block = .global };
+        break :blk (environ.getAlloc(std.heap.page_allocator, "ZEBRA_PANIC_TRACE") catch null) != null;
+    } else _sys_getenv("ZEBRA_PANIC_TRACE") != null; // POSIX: no allocation
+    if (want_trace) std.debug.defaultPanic(msg, first_trace_addr);
     std.debug.print("thread {d} panic: {s}\n", .{ std.Thread.getCurrentId(), msg });
     std.process.exit(1);
 }

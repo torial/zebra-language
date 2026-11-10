@@ -1,0 +1,10 @@
+# BUG-650: returning an enum value from an `int` function.
+enum Color
+    red
+    green
+
+def give(): int
+    return Color.green
+
+def main()
+    print(give())

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# pins: BUG-671 a front-end refusal (post-emit, or raised by a later dep) leaves no .zig in --output-dir; a zig failure keeps its .zig
+# pins: BUG-653 `zebra diagnostics` (the LSP's view) knows a `use`d module's types; a real mismatch through one is still reported
+# pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
+# pins: BUG-547 --source-root makes emitted source paths machine-independent (two cwds, one output)
 # pins: BUG-516 a --module-path dep that is not emitted is named in a note, silent under --library-mode
 # pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
 #       asymmetry (usage for a BAD invocation stays on stderr, non-zero). A CLI bug
@@ -159,6 +163,30 @@ run --output-dir od_good hello.zbr
 chk "...and a GOOD compile still leaves its executable there (control)" \
     "$([ "$RC" = 0 ] && [ "$(ls "$W/od_good" 2>/dev/null | grep -c '\.exe$')" -ge 1 ] && echo 0 || echo 1)" \
     "exit=$RC files=[$(ls "$W/od_good" 2>/dev/null | tr '\n' ' ')]"
+chk "...a ZIG failure KEEPS its .zig as evidence, and the good compile has its .zig (control for BUG-671)" \
+    "$([ -f "$W/od_bad/zigbad.zig" ] && [ -f "$W/od_good/hello.zig" ] && echo 0 || echo 1)" \
+    "od_bad=[$(ls "$W/od_bad" 2>/dev/null | tr '\n' ' ')] od_good=[$(ls "$W/od_good" 2>/dev/null | tr '\n' ' ')]"
+
+# ---- BUG-671: a FRONT-END refusal leaves no .zig in --output-dir ---------------------
+# The refusals that run after emission (a throws call without `?`) found every module
+# already written, and a caller that judged success by "did a .zig come out" built a
+# program the front end had rejected. A raised refusal (a parse error in the SECOND dep)
+# must take back the first dep's emit too. The legs above are the control: a zig failure
+# keeps its .zig, a good compile keeps everything.
+printf 'def f() throws\n    raise "x"\ndef main()\n    f()\n' > "$W/noq.zbr"
+mkdir -p "$W/m671"
+printf 'def one(): int\n    return 1\n' > "$W/m671/a.zbr"
+printf 'def two(): int\n    return (2\n' > "$W/m671/b.zbr"
+printf 'use a\nuse b\ndef main()\n    print(a.one())\n' > "$W/m671/main.zbr"
+rm -rf "$W/od_noq" "$W/od_raised"
+run --emit-zig --output-dir od_noq noq.zbr
+chk "a refusal AFTER emission (throws call without \`?\`) leaves no .zig in --output-dir, and says so (BUG-671)" \
+    "$([ "$RC" = 1 ] && [ "$(ls "$W/od_noq" 2>/dev/null | grep -c '\.zig$')" = 0 ] && case "$ERR" in *"were removed: noq.zig"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC files=[$(ls "$W/od_noq" 2>/dev/null | tr '\n' ' ')] stderr=[$(echo "$ERR" | tail -1)]"
+run --emit-zig --output-dir od_raised m671/main.zbr
+chk "a RAISED refusal in a later dep takes back an earlier dep's .zig (BUG-671)" \
+    "$([ "$RC" = 1 ] && [ "$(ls "$W/od_raised" 2>/dev/null | grep -c '\.zig$')" = 0 ] && echo 0 || echo 1)" \
+    "exit=$RC files=[$(ls "$W/od_raised" 2>/dev/null | tr '\n' ' ')]"
 
 # ---- `zebra up` (2026-09-14): refuses, by name and OFFLINE, outside an install layout --
 # The compiler under test lives in zig-out/bin, not .../current, so `up` must refuse
@@ -179,6 +207,16 @@ run --allow-implicit-try hello.zbr
 chk "\`--allow-implicit-try\` is refused by name, saying to add \`?\`" \
     "$([ "$RC" != 0 ] && case "$ERR" in *"--allow-implicit-try was removed"*"?"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+# BUG-677: `--census=host` is the one value; any other `--census=VALUE` passed the BUG-323
+# check (it strips `=VALUE`) and the build silently had no census at all.
+run --census=bogus hello.zbr
+chk "\`--census=bogus\` is refused by name, naming \`host\`" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"--census=bogus: the only value is"*"host"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --census=host hello.zbr
+chk "\`--census=host\` runs, and its never-installed exit says so" \
+    "$([ "$RC" = 0 ] && case "$ERR" in *"never installed"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
 run --zig-backend hello.zbr
 chk "\`--zig-backend\` is refused by name (retired with the bootstrap), nothing compiled" \
     "$([ "$RC" != 0 ] && case "$ERR" in *"unrecognized flag: --zig-backend"*) echo 0;; *) echo 1;; esac || echo 1)" \
@@ -392,7 +430,7 @@ ZBR
 RC=$?
 chk "a build with NO explicit b.run() still produces the binary (auto-run)" \
     "$([ -x "$W/proj_autorun/zig-out/bin/demo" ] || [ -x "$W/proj_autorun/zig-out/bin/demo.exe" ] && echo 0 || echo 1)" \
-    "exit=$RC  zig-out/bin: $(ls "$W/proj_autorun/zig-out/bin" 2>/dev/null | tr "\n" " ")"
+    "exit=$RC  zig-out/bin: $(ls "$W/proj_autorun/zig-out/bin" 2>/dev/null | tr "\n" " ")  stderr: $(tail -4 "$E" 2>/dev/null | tr "\n" " ")"
 
 # `--list-targets` must LIST and must NOT build. Asserted in both directions on purpose:
 # "prints something" passes against a run that also built, and "built nothing" passes
@@ -501,6 +539,71 @@ chk "\`--out\` outside \`zebra diagnostics\` is refused" \
 run diagnostics hello.zbr --out zz_diag.json
 chk "...while \`zebra diagnostics F --out J\` still writes J" \
     "$([ "$RC" = 0 ] && [ -f "$W/zz_diag.json" ] && echo 0 || echo 1)" "exit=$RC"
+# `zebra diagnostics` (and the LSP, which shares tcCheckSide) checks in STRICT mode: an
+# annotated local whose init the checker cannot type is reported as a "TC gap". Every
+# such report on valid code is a false error in the editor.
+# Control first: strict mode is live -- `var x: int = Math` (a namespace as a value) must
+# be reported, or every `[]` below proves nothing.
+printf 'def main()\n    var x: int = Math\n    print(x)\n' > "$W/zz_gap.zbr"
+run diagnostics zz_gap.zbr
+chk "\`zebra diagnostics\` is strict: a namespace used as a value is reported (control)" \
+    "$(case "$OUT" in *"TC gap"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 200)]"
+# `-c --strict` (2026-10-28): the same strict view, opted into on the command line. A plain
+# `-c` must NOT pay for it (the opt-in is the point), `--strict` must report the gap at its
+# line, and a clean program must still pass under it.
+run -c zz_gap.zbr
+chk "plain \`-c\` does not run the strict check (exit 0 on the gap)" \
+    "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC stderr=[$(echo "$ERR" | grep error | head -1)]"
+run -c --strict zz_gap.zbr
+chk "\`-c --strict\` reports the gap at its line and fails" \
+    "$([ "$RC" != 0 ] && case "$ERR" in *"zz_gap.zbr:2:"*"TC gap"*) true;; *) false;; esac && echo 0 || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | grep error | head -1)]"
+run -c --strict hello.zbr
+chk "\`-c --strict\` passes a clean program" "$([ "$RC" = 0 ] && echo 0 || echo 1)" "exit=$RC"
+# BUG-252: is-checks, if/else-if captures (also over a ^Union field), reduce, Base64 and
+# an annotated zig"..." literal -- each reported as a gap until 2026-10-28.
+run diagnostics "$REPO/test/bug252_inference_gaps_test.zbr"
+chk "BUG-252: no false 'TC gap' on is / captures / reduce / Base64 (diagnostics = [])" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "[]" ] && echo 0 || echo 1)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+# The ratchet: the compiler's own source -- the largest Zebra corpus there is, using the
+# `use` graph throughout -- is clean in the editor's view. On 2026-10-28 it was not:
+# 13 gaps in TypeChecker, 3 in main (reported 35 lines off, BUG-655) and every imported
+# type in every module (BUG-653).
+sh_dirty=""
+for sh_f in $(cd "$REPO" && git ls-files 'selfhost/*.zbr'); do
+    run diagnostics "$REPO/$sh_f"
+    [ "$RC" = 0 ] && [ "$OUT" = "[]" ] || sh_dirty="$sh_dirty $sh_f"
+done
+chk "the compiler's own selfhost/*.zbr are clean under \`zebra diagnostics\`" \
+    "$([ -z "$sh_dirty" ] && echo 0 || echo 1)" "dirty:$sh_dirty"
+printf 'def main()\n    var v: str = zig"\\"x\\""\n    print(v)\n' > "$W/zz_zl.zbr"
+run diagnostics zz_zl.zbr
+chk "BUG-252: an annotated zig\"...\" literal is not a TC gap (diagnostics = [])" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "[]" ] && echo 0 || echo 1)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+# BUG-653: the side-check read no `use`d module, so an imported class was an "unknown
+# type" that `-c` accepts. Positive: a clean two-module program is []. Negative: a real
+# mismatch through the imported class is still reported, at its line.
+printf 'class Pt\n    var x: int\n    cue init(x: int)\n        .x = x\n' > "$W/zzlib.zbr"
+printf 'use zzlib exposing Pt\n\ndef main()\n    var p: Pt = Pt(3)\n    var n: int = p.x\n    print(n)\n' > "$W/zzmain.zbr"
+printf 'use zzlib exposing Pt\n\ndef main()\n    var p: Pt = Pt(3)\n    var s: str = p.x\n    print(s)\n' > "$W/zzmainbad.zbr"
+run diagnostics zzmain.zbr
+chk "BUG-653: an imported class is known to \`zebra diagnostics\` (diagnostics = [])" \
+    "$([ "$RC" = 0 ] && [ "$OUT" = "[]" ] && echo 0 || echo 1)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+run diagnostics zzmainbad.zbr
+chk "...and a real mismatch through it is still reported at its line (5:20)" \
+    "$(case "$OUT" in *'"line":5,"col":20'*"expected str, found int"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+# BUG-654: an error with no position was DROPPED, so a file that does not compile showed
+# `[]` -- clean. The `is` refusal carries its position now; a dep that does not parse is
+# reported on THIS file's `use` line (raised as is, the dep's `4:14` landed on line 4 here).
+printf 'def main()\n    var m: str? = nil\n    var b: bool = m is nil\n    print(b)\n' > "$W/zz_isnil.zbr"
+run diagnostics zz_isnil.zbr
+chk "BUG-654: a refused \`is\` reaches \`zebra diagnostics\` at its line (3)" \
+    "$(case "$OUT" in *'"line":3,'*"to test for nil"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
+printf 'class Pt\n    var x: int\n    cue init(x: int)\n        .x = = x\n' > "$W/zzbroken.zbr"
+printf '# a comment first, so the use line is not line 1\nuse zzbroken exposing Pt\n\ndef main()\n    var p: Pt = Pt(3)\n    print(p.x)\n' > "$W/zzusebroken.zbr"
+run diagnostics zzusebroken.zbr
+chk "BUG-654: a dep that does not parse is reported on the \`use\` line (2), naming it" \
+    "$(case "$OUT" in *'"line":2,'*"module 'zzbroken' does not compile"*"zzbroken.zbr:4:14"*) echo 0;; *) echo 1;; esac)" "exit=$RC stdout=[$(echo "$OUT" | head -c 300)]"
 # `--single-threaded` promises no threads (2026-09-26). A call that starts one is refused
 # in Zebra's words at the USER's line -- it used to be Zig's @compileError from inside
 # std/Thread.zig. Control: a threadless program still builds and runs with the flag.
@@ -576,6 +679,76 @@ run --library-mode --module-path mp516 -c mpuse.zbr
 chk "...and the note is silent under --library-mode (the host build provides the dep)" \
     "$(case "$ERR" in *"module-path"*) echo 1;; *) echo 0;; esac)" \
     "exit=$RC stderr=[$(echo "$ERR" | grep -m1 note)]"
+
+# ---- BUG-295 (0): an import cycle wholly inside --module-path dependencies was invisible --
+# those deps are read for TYPES only (scanDepForTypes), never through compileDep, which is
+# where cycles were reported. It must be WARNED about, exactly once, and never refused: the
+# code is usually someone else's (vendored), so `fix: move the names` is not advice to give.
+mkdir -p "$W/mpc"
+printf 'use cycb\ndef fa(): int\n    return 1\n' > "$W/mpc/cyca.zbr"
+printf 'use cyca\ndef fb(): int\n    return cyca.fa() + 1\n' > "$W/mpc/cycb.zbr"
+printf 'use cyca exposing fa\ndef main()\n    print(fa())\n' > "$W/mpcyc.zbr"
+run --module-path mpc -c mpcyc.zbr
+NCYC=$(printf '%s\n' "$ERR" | grep -c 'import cycle')
+chk "a cycle inside --module-path deps is WARNED, once, and the compile succeeds (BUG-295 (0))" \
+    "$([ "$RC" = 0 ] && [ "$NCYC" = 1 ] && case "$ERR" in *"warning: import cycle in --module-path dependencies: cyca -> cycb -> cyca"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC cycle-lines=$NCYC stderr=[$(echo "$ERR" | grep -m1 'cycle')]"
+# ...and an ordinary cycle reached through TWO `use` lines of the same module is reported
+# once: the dependency below names its importer twice, which printed the warning twice.
+printf 'use dupcb\ndef h(): int\n    return 3\ndef main()\n    print(dupcb.g())\n' > "$W/dupca.zbr"
+printf 'use dupca\nuse dupca exposing h\ndef g(): int\n    return h() + 4\n' > "$W/dupcb.zbr"
+run -c dupca.zbr
+NDUP=$(printf '%s\n' "$ERR" | grep -c 'warning: import cycle')
+chk "a cycle reached through two \`use\` lines of one module is reported ONCE" \
+    "$([ "$RC" = 0 ] && [ "$NDUP" = 1 ] && echo 0 || echo 1)" \
+    "exit=$RC warnings=$NDUP"
+
+# ---- BUG-547: --source-root DIR spells EMITTED source paths relative to DIR, so the same
+# source emitted from two different cwds is byte-identical. The control: without the flag the
+# two emits DIFFER (each spells the path as given), so the identity is the flag's doing.
+mkdir -p "$W/sr547/sub" "$W/sr547o"
+printf 'def main()\n    var x = 3\n    assert x == 3\n    print(x)\n' > "$W/sr547/sub/a.zbr"
+EA=$(cd "$W" && timeout "$TMO" "$ZEBRA" --source-root sr547 --emit-zig sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+EB=$(cd "$W/sr547o" && timeout "$TMO" "$ZEBRA" --source-root ../sr547 --emit-zig ../sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+NA=$(cd "$W" && timeout "$TMO" "$ZEBRA" --emit-zig sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+NB=$(cd "$W/sr547o" && timeout "$TMO" "$ZEBRA" --emit-zig ../sr547/sub/a.zbr 2>/dev/null </dev/null | tr -d '\r')
+chk "--source-root: two cwds emit byte-identical code, the path spelled sub/a.zbr (BUG-547)" \
+    "$( [ -n "$EA" ] && [ "$EA" = "$EB" ] && case "$EA" in *"zbr:sub/a.zbr:3"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "bytes=${#EA}/${#EB} marker=[$(printf '%s\n' "$EA" | grep -m1 'zbr:')]"
+chk "...control: without it the same two emits DIFFER (each spells the path as given)" \
+    "$( [ -n "$NA" ] && [ "$NA" != "$NB" ] && echo 0 || echo 1)" "bytes=${#NA}/${#NB}"
+run --source-root no_such_dir_547 -c hello.zbr
+chk "--source-root naming no directory is refused, naming it" \
+    "$( [ "$RC" = 2 ] && case "$ERR" in *"no_such_dir_547"*"no such directory"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
+
+# ---- BUG-543: the runtime is found from the BINARY, not the cwd. A zebra run inside a
+# clone of this repo used to take the clone's selfhost/stdlib_preamble.zig (the N-1 anchor
+# emitted its own codegen against today's runtime that way). The attacker is that clone:
+# a directory whose selfhost/ preamble carries a marker. Three binaries are run in it --
+# this checkout's (must take its own runtime), an INSTALLED copy with a marked preamble
+# beside it (must take that one), and a bare copy with nothing beside it, which falls back
+# to ./selfhost and so must SEE the clone's marker: that leg is the control proving the
+# marker reaches an emit at all, without which the two absences prove nothing.
+mkdir -p "$W/rt543/clone/selfhost" "$W/rt543/inst" "$W/rt543/bare"
+RT_SRC="$REPO/selfhost/stdlib_preamble.zig"
+{ cat "$RT_SRC"; echo '// ZZ543_CLONE'; } > "$W/rt543/clone/selfhost/stdlib_preamble.zig"
+{ cat "$RT_SRC"; echo '// ZZ543_INSTALLED'; } > "$W/rt543/inst/stdlib_preamble.zig"
+cp "$W/hello.zbr" "$W/rt543/clone/hello.zbr"
+for d in inst bare; do cp "$ZEBRA" "$W/rt543/$d/"; cp "$(dirname "$ZEBRA")"/*.dll "$W/rt543/$d/" 2>/dev/null; done
+rt543() {  # rt543 <zebra> <outdir> -> the runtime markers its emit carries, or EMPTY
+    ( cd "$W/rt543/clone" && timeout "$TMO" "$1" --emit-zig --output-dir "$2" hello.zbr >/dev/null 2>&1 </dev/null )
+    [ -s "$W/rt543/clone/$2/zebra_rt.zig" ] || { echo EMPTY; return; }
+    grep -oE 'ZZ543_[A-Z]+' "$W/rt543/clone/$2/zebra_rt.zig" | tr '\n' ' '
+}
+ZB=$(basename "$ZEBRA")
+R_BARE=$(rt543 "$W/rt543/bare/$ZB" o_bare); R_DEV=$(rt543 "$ZEBRA" o_dev); R_INST=$(rt543 "$W/rt543/inst/$ZB" o_inst)
+chk "runtime lookup control: a bare copy falls back to ./selfhost and its emit carries the clone's marker (BUG-543)" \
+    "$(case "$R_BARE" in "ZZ543_CLONE ") echo 0;; *) echo 1;; esac)" "markers=[$R_BARE]"
+chk "...this checkout's zebra run inside a clone takes ITS OWN runtime, not the clone's" \
+    "$(case "$R_DEV" in "") echo 0;; *) echo 1;; esac)" "markers=[$R_DEV]"
+chk "...an installed zebra run inside a clone takes the runtime BESIDE it" \
+    "$(case "$R_INST" in "ZZ543_INSTALLED ") echo 0;; *) echo 1;; esac)" "markers=[$R_INST]"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"

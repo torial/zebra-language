@@ -24,9 +24,9 @@ WHAT IT DERIVES, and from where (each an oracle the compiler already runs on):
                       method on these is REFUSED, so the predicate IS the surface.
 
 WHAT IT DOES NOT SEE (say it, or a clean run gets over-read): instance methods on the
-runtime object types that have NO Type_ variant of their own (DateTime, File handles,
-HttpResponse, the GUI widget structs) -- those still dispatch by name inside per-type
-generators; the 16 that do have a variant were closed 2026-09-15 and are derived above;
+runtime object types the checker does not type at all (none known as of 2026-11-07: BUG-680
+added DateTime, CsvTable, CsvWriter, HttpResponse, CalendarView, ThreadPool and DynLib, read
+from their predicates and tables above; File is a static namespace, derived with the others);
 argument arities and types; semantics. The heading counts print every
 run so a section that silently collapsed reads as a drop, not as a clean pass.
 
@@ -37,7 +37,9 @@ smaller surface diffed against a smaller file is still "matches".
 Usage:
     python tools/surface_inventory.py            # print the inventory
     python tools/surface_inventory.py --write    # write docs/SURFACE.md
-    python tools/surface_inventory.py --check    # gate: docs/SURFACE.md must equal the derivation
+    python tools/surface_inventory.py --check    # gate: docs/SURFACE.md must equal the derivation,
+                                                 #   and TypeChecker's namespaceMembers too (BUG-638)
+    python tools/surface_inventory.py --print-checker-table   # regenerate namespaceMembers
 """
 import pathlib
 import re
@@ -127,11 +129,13 @@ def namespaces():
     lines = read(CODEGEN)
     disp = {}
     for i, ln in enumerate(lines):
-        m = re.search(r'id\.name == "([A-Za-z]+)"', ln)
+        # [A-Za-z][A-Za-z0-9]*: `Base64` has a digit, and the letters-only pattern left it
+        # out of the surface entirely until 2026-10-27 (found writing BUG-638's table).
+        m = re.search(r'id\.name == "([A-Za-z][A-Za-z0-9]*)"', ln)
         if not m:
             continue
         for j in range(i + 1, min(i + 4, len(lines))):
-            c = re.search(r"\b(gen[A-Za-z]+Call)\(", lines[j])
+            c = re.search(r"\b(gen[A-Za-z0-9]+Call)\(", lines[j])
             if c:
                 disp.setdefault(m.group(1), c.group(1))
                 break
@@ -179,7 +183,36 @@ RECEIVERS = [("str", "strMethodKnown"), ("List(T)", "listMethodKnown"),
              ("SIMD vector / boolxN mask (QUICKSTART §32)", "simdMethodKnown"),
              # 2026-09-18: a Random INSTANCE (BUG-434 made it a named type; BUG-433's
              # `randBool` typo is refused here).
-             ("Random instance (QUICKSTART §14)", "randomMethodKnown")]
+             ("Random instance (QUICKSTART §14)", "randomMethodKnown"),
+             # 2026-11-07, BUG-680: DateTime became a checked type; its members are refused
+             # by these two predicates, so they are the surface by construction.
+             ("DateTime instance (methods)", "dateTimeMethodKnown"),
+             ("DateTime instance (fields)", "dateTimeFieldKnown")]
+
+# BUG-680: the other runtime object types refuse unknown members from two string tables,
+# `if tn == "X"` / `return " a b c "`, one per kind. Read here so they stay one copy.
+RUNTIME_TABLES = [("runtimeObjMethods", "methods"), ("runtimeObjFields", "fields")]
+
+
+def runtime_objects(lines):
+    res = {}
+    for fn, kind in RUNTIME_TABLES:
+        body = _body(lines, fn)
+        if body is None:
+            refuse("table %s not found in TypeChecker.zbr" % fn)
+        cur = None
+        for l in body:
+            m = re.match(r'\s*if tn == "([A-Za-z_][A-Za-z0-9_]*)"', l)
+            if m:
+                cur = m.group(1)
+                continue
+            m = re.match(r'\s*return "([^"]*)"', l)
+            if m and cur:
+                res["%s instance (%s)" % (cur, kind)] = sorted(set(m.group(1).split()))
+                cur = None
+    if len(res) < 5:
+        refuse("only %d runtime-object tables derived from %s (floor 5)" % (len(res), RUNTIME_TABLES))
+    return res
 
 
 def receivers():
@@ -193,12 +226,74 @@ def receivers():
         for l in body:
             names += re.findall(r'name == "([A-Za-z_][A-Za-z0-9_]*)"', l)
         res[label] = sorted(set(names))
+    res.update(runtime_objects(lines))
     if len(res) < FLOORS["receivers"]:
         refuse("only %d receiver predicates (floor %d)" % (len(res), FLOORS["receivers"]))
     total = sum(len(v) for v in res.values())
     if total < FLOORS["receiver_methods"]:
         refuse("only %d receiver methods derived (floor %d)" % (total, FLOORS["receiver_methods"]))
     return res
+
+
+# ---- the checker's namespace table (BUG-638) ----------------------------------------------
+# An unknown member of a CLOSED namespace is refused by the checker, from a table in
+# TypeChecker.zbr (`namespaceMembers`). That table is GENERATED from the derivation above
+# (`--print-checker-table`) and `--check` asserts the two are equal, so a member added to a
+# generator and not to the table -- which would be refused as unknown -- fails this gate
+# instead of reaching a user. An OPEN namespace (Math) is not in the table: unknown names
+# pass through to Zig by design.
+CHECKER_TABLE_FN = "namespaceMembers"
+
+
+def checker_table_text():
+    ns, _ = namespaces()
+    out = ["def %s(ns: str): str" % CHECKER_TABLE_FN]
+    for name in sorted(ns):
+        fn, mem, open_to = ns[name]
+        if open_to:
+            continue
+        out.append('    if ns == "%s"' % name)
+        out.append('        return "|%s|"' % "|".join(mem))
+    out.append('    return ""')
+    return out
+
+
+def checker_table():
+    body = _body(read(CHECKER), CHECKER_TABLE_FN)
+    if body is None:
+        refuse("%s not found in TypeChecker.zbr" % CHECKER_TABLE_FN)
+    res, cur = {}, None
+    for l in body:
+        m = re.match(r'\s*if ns == "([A-Za-z0-9_]+)"', l)
+        if m:
+            cur = m.group(1)
+            continue
+        m = re.match(r'\s*return "\|(.*)\|"', l)
+        if m and cur:
+            res[cur] = sorted(x for x in m.group(1).split("|") if x)
+            cur = None
+    if len(res) < FLOORS["namespaces"] - 1:
+        refuse("only %d namespaces in %s (floor %d)" % (len(res), CHECKER_TABLE_FN, FLOORS["namespaces"] - 1))
+    return res
+
+
+def check_checker_table():
+    want = {}
+    ns, _ = namespaces()
+    for name, (fn, mem, open_to) in ns.items():
+        if not open_to:
+            want[name] = sorted(mem)
+    have = checker_table()
+    bad = []
+    for name in sorted(set(want) | set(have)):
+        a, b = set(have.get(name, [])), set(want.get(name, []))
+        if name not in have:
+            bad.append("  %s: missing from %s" % (name, CHECKER_TABLE_FN))
+        elif name not in want:
+            bad.append("  %s: in %s but no closed generator" % (name, CHECKER_TABLE_FN))
+        elif a != b:
+            bad.append("  %s:%s%s" % (name, "".join("  +%s" % x for x in sorted(b - a)), "".join("  -%s" % x for x in sorted(a - b))))
+    return bad, len(have)
 
 
 # ---- render -----------------------------------------------------------------------------
@@ -240,7 +335,11 @@ def render():
     o.append("")
     o.append("## Builtin receiver methods")
     o.append("")
-    for label, _ in RECEIVERS:
+    # Every derived receiver, the fixed list first and then the runtime-object tables in
+    # name order. Looping over RECEIVERS alone dropped the tables from the document while
+    # they were derived and floor-checked -- a section the gate measured and did not show.
+    labels = [label for label, _ in RECEIVERS] + sorted(k for k in rc if k not in dict(RECEIVERS))
+    for label in labels:
         o.append("### %s (%d)" % (label, len(rc[label])))
         o.append("")
         o.append(" ".join("`%s`" % m for m in rc[label]))
@@ -269,7 +368,18 @@ def main():
         OUT.write_text(text, encoding="utf-8", newline="\n")
         print("surface-inventory: wrote %s" % OUT.relative_to(REPO))
         return
+    if mode == "--print-checker-table":
+        print("\n".join(checker_table_text()))
+        return
     if mode == "--check":
+        bad, n = check_checker_table()
+        if bad:
+            print("\n".join(bad))
+            print("surface-inventory: TypeChecker.zbr's %s DIFFERS from the namespace derivation -- "
+                  "a member the checker would refuse, or allow and zig would refuse (BUG-638). "
+                  "Replace it with `python tools/surface_inventory.py --print-checker-table`." % CHECKER_TABLE_FN)
+            sys.exit(1)
+        print("surface-inventory: %s matches the derivation (%d closed namespaces)" % (CHECKER_TABLE_FN, n))
         if not OUT.exists():
             print("surface-inventory: %s missing -- run --write" % OUT.relative_to(REPO))
             sys.exit(1)

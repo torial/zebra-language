@@ -26,10 +26,10 @@ jobs:
         run: |
           set -euo pipefail
           v=$(cat .zig-version)
-          [ "$v" = "0.17.0" ] || { echo "::error::this probe pins the 0.17.0 checksum; .zig-version says $v"; exit 1; }
+          [ "$v" = "0.17.1" ] || { echo "::error::this probe pins the 0.17.1 checksum; .zig-version says $v"; exit 1; }
           curl -fsSL "https://ziglang.org/download/$v/zig-aarch64-macos-$v.tar.xz" -o zig.tar.xz
           got=$(shasum -a 256 zig.tar.xz | cut -d" " -f1)
-          want=b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+          want=75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d
           [ "$got" = "$want" ] || { echo "::error::Zig checksum mismatch: got $got want $want"; exit 1; }
           tar xf zig.tar.xz && mv "zig-aarch64-macos-$v" zig-toolchain
           echo "$GITHUB_WORKSPACE/zig-toolchain" >> "$GITHUB_PATH"

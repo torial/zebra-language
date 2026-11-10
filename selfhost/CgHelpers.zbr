@@ -35,14 +35,14 @@
 #   scanMutations -- list literal args are never direct mutation sites
 # Extend these if a real case materialises during Phase 6 stress-testing.
 
-use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt, zigLitMentionsWord, isZigIdentChar
+use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt, zigLitMentionsWord, zigLitWrittenWords, isZigIdentChar
 use Ast exposing Stmt, Expr, AssignOp, BinaryOp, TypeRef, StringPart, DeclVar, Arg, DictEntry, ElseIf, BranchOn, CatchClause, GenericTypeRef, TupleTypeRef, NamedTypeRef, ExceptField, Param, LambdaBody, ExprLambda
 # Type-driven mutation analysis (scanMutations): the InferCtx lets us ask the
 # receiver's inferred type instead of guessing from the method NAME. Value-type
 # receivers (primitives, str, json) are passed by value, so only an explicit
 # mutating method requires the local to be `var`. TypeChecker imports only Ast,
 # so this does not create an import cycle.
-use TypeChecker exposing InferCtx, Type_, inferExpr
+use TypeChecker exposing InferCtx, Type_, inferExpr, intLitSuffix, intLitDigits, suffixZigType
 
 # ── StrSet ────────────────────────────────────────────────────────────────────
 # Mutable reference-type string set.
@@ -126,22 +126,15 @@ def assignOpStr(op: AssignOp): str
 # Valid Zig computing the wrong number -- invisible to every compile-only gate.
 #
 # Same shape as the float suffixes (`1.5_f32` -> `@as(f32, 1.5)`), which already worked.
-def hexLitZig(text: str): str
-    if not (text.startsWith("0x") or text.startsWith("0X"))
+# Decimal suffixes since 2026-11-05 (`300_i16` -> `@as(i16, 300)`; a decimal `300_16` is a
+# separator and passes through). The suffix is read by TypeChecker's intLitSuffix -- the
+# same reader that types the literal, so the cast and the type cannot disagree. A suffix
+# naming no type ("?") never gets here: the checker refuses it.
+def intLitZig(text: str): str
+    var sx: str = intLitSuffix(text)
+    if sx == "" or sx == "?"
         return text
-    var us = text.indexOf("_")
-    if us < 0
-        return text
-    const digits = text.substring(0, us)
-    const suffix = text.substring(us + 1, text.len)
-    if suffix.len == 0
-        return digits
-    if suffix.startsWith("u")
-        var bits = suffix.substring(1, suffix.len)
-        if bits.len == 0
-            bits = "64"
-        return "@as(u" + bits + ", " + digits + ")"
-    return "@as(i" + suffix + ", " + digits + ")"
+    return "@as(" + suffixZigType(sx) + ", " + intLitDigits(text) + ")"
 
 def binaryOpStr(op: BinaryOp): str
     branch op
@@ -163,6 +156,13 @@ def binaryOpStr(op: BinaryOp): str
         on BinaryOp.ge      return ">="
         on BinaryOp.and_    return "and"
         on BinaryOp.or_     return "or"
+        on BinaryOp.add_wrap return "+%"
+        on BinaryOp.sub_wrap return "-%"
+        on BinaryOp.mul_wrap return "*%"
+        on BinaryOp.add_sat return "+|"
+        on BinaryOp.sub_sat return "-|"
+        on BinaryOp.mul_sat return "*|"
+        on BinaryOp.shl_sat return "<<|"
         else
             # int_div, pow, dotdot, in_ -- handled specially in genBinary
             return "?"
@@ -772,7 +772,7 @@ def isBuiltinTypeName(name: str): bool
     return name == "StringBuilder" or name == "Regex" or name == "StrSet" or name == "Allocator" or name == "WsConn" or name == "TcpConn" or name == "UdpSocket" or name == "SqliteDb" or name == "SqliteRow" or name == "HttpRequest" or name == "Gui" or name == "CodeEditor" or name == "SysProcess" or name == "Timer" or name == "JsonValue" or name == "byte" or name == "usize" or name == "int128" or name == "uint128"
 
 def isStdlibNs(name: str): bool
-    return name == "Math" or name == "File" or name == "sys" or name == "Arg" or name == "Json" or name == "DynLib" or name == "Http" or name == "Ws" or name == "HttpResponse" or name == "Regex" or name == "DateTime" or name == "Hash" or name == "Crypto" or name == "Random" or name == "Terminal" or name == "Log" or name == "Csv" or name == "Timer" or name == "Progress" or name == "Profile" or name == "Uri" or name == "Compress" or name == "Mime" or name == "Tcp" or name == "Udp" or name == "Sqlite" or name == "Net" or name == "Gui" or name == "Shell" or name == "Dir" or name == "Path" or name == "Reflect" or name == "Build"
+    return name == "Math" or name == "File" or name == "sys" or name == "Arg" or name == "Json" or name == "DynLib" or name == "Http" or name == "Ws" or name == "HttpResponse" or name == "HttpRequest" or name == "Regex" or name == "DateTime" or name == "Hash" or name == "Crypto" or name == "Random" or name == "Terminal" or name == "Log" or name == "Csv" or name == "Timer" or name == "Progress" or name == "Profile" or name == "Uri" or name == "Compress" or name == "Mime" or name == "Tcp" or name == "Udp" or name == "Sqlite" or name == "Net" or name == "Gui" or name == "Shell" or name == "Dir" or name == "Path" or name == "Reflect" or name == "Build"
 
 def isZigPrimitiveName(name: str): bool
     if name.len >= 2
@@ -1730,8 +1730,6 @@ def subscriptWritesThroughReference(obj: Expr, ic: InferCtx?): bool
 # expr-walker: exhaustive
 # expr-walker-ok: ident — a bare name is a READ; whether it is mutated is decided by the
 #   construct around it (an assignment target, a method call's receiver), never by the name.
-# expr-walker-ok: zig_lit — a raw `zig"…"` literal is opaque text; a mutation inside it is
-#   Zig's business and invisible to a structural walk (the BUG-267 shape).
 # expr-walker-ok: lambda — MEASURED, not argued (2026-10-13): marking a local the lambda body
 #   mutates as `var` does not make it work. `var c = Counter(0)` / `var f = def(): int =
 #   c.bump()` fails as "expected '*Counter', found '*const Counter'", and with `c` made `var`
@@ -1848,6 +1846,10 @@ def scanMutationsInExpr(expr: Expr, out: StrSet, ic: InferCtx?)
                 for oa in oc.args
                     scanMutationsInExpr(oa.value, out, ic)
             scanMutationsInExpr(oc.base, out, ic)
+        # BUG-267: a local the escape assigns (or takes `&` of) must be emitted `var`.
+        on Expr.zig_lit as zl
+            for w in zigLitWrittenWords(zl.text)
+                out.add(w)
         else
             pass
 

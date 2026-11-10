@@ -20,6 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
+use TypeChecker exposing namespaceMembers, intLitSuffix, floatLitSuffix
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtAllocate, StmtCopyOut, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
@@ -45,13 +46,17 @@ class VResult
     var needs_math: bool
     var has_globals: bool    # a `__global` was emitted: the run needs -enable-globals
     var uses_gui: bool       # Gui / CodeEditor named: the file needs a --gui-backend section to build
+    var unverified: int      # method calls on a receiver whose type the emitter did not know: not checked against the runtime
+    var unchecked_arith: int # integer arithmetic the emitter could not route through a checked helper (BUG-667): V wraps there
 
-    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false)
+    cue init(source: str, refused: List(str), needs_math: bool, has_globals: bool = false, uses_gui: bool = false, unverified: int = 0, unchecked_arith: int = 0)
         .source = source
         .refused = refused
         .needs_math = needs_math
         .has_globals = has_globals
         .uses_gui = uses_gui
+        .unverified = unverified
+        .unchecked_arith = unchecked_arith
 
 # "setAnimate" -> "set_animate"; "winDist" -> "win_dist"; "x" -> "x"
 def snakeCase(name: str): str
@@ -106,6 +111,25 @@ def endsWithJump(stmts: List(Stmt)): bool
             return true
         else
             return false
+
+# `_zbr_free_at_sweep(<ident>)` -> the ident, else "". A prefix match on the call, so a
+# renamed local does not reopen the refusal; anything but a plain identifier argument is
+# not this shape and falls through to the zig-literal refusal.
+def freeAtSweepArg(t: str): str
+    var pre: str = "_zbr_free_at_sweep("
+    if not t.startsWith(pre) or not t.endsWith(")")
+        return ""
+    var id: str = t[pre.len .. t.len - 1].trim()
+    if id == ""
+        return ""
+    var i: int = 0
+    while i < id.len
+        var c: char = id[i]
+        var ok: bool = (c >= c'a' and c <= c'z') or (c >= c'A' and c <= c'Z') or c == c'_' or (i > 0 and c >= c'0' and c <= c'9')
+        if not ok
+            return ""
+        i = i + 1
+    return id
 
 def vSafe(name: str): str
     var s = snakeCase(name)
@@ -188,6 +212,12 @@ class VGen
     var current_class: str        # "" outside a class
     var needs_math: bool
     var tmpN: int                 # the temporaries bound for mutating calls on call results
+    var rt_fns: HashMap(str, bool)       # the runtime's free functions, read from zebra_rt.v (noteRuntime)
+    var rt_types: HashMap(str, bool)     # the runtime's struct / type / enum / interface names, the same
+    var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
+    var rt_receivers: HashMap(str, bool) # the receiver types those methods hang on (a call on one is checked)
+    var rt_unverified: int               # method calls on a receiver of unknown type: unchecked, and counted
+    var arith_unchecked: int             # BUG-667: arithmetic on an operand of unknown or unmapped integer type: V wraps it, counted
     var ref_params: HashMap(str, List(bool))   # by callee name (a function, `new_<class>`, a method): which params are references, hence `mut` (V's rule for a param mutated through a method; a method name shared across classes keeps the first)
 
     cue init()
@@ -252,9 +282,89 @@ class VGen
         .needs_math = false
         .tmpN = 0
         .ref_params = HashMap(str, List(bool))()
+        .rt_fns = HashMap(str, bool)()
+        .rt_types = HashMap(str, bool)()
+        .rt_methods = HashMap(str, bool)()
+        .rt_receivers = HashMap(str, bool)()
+        .rt_unverified = 0
+        .arith_unchecked = 0
 
     def refuse(what: str, span: Span)
         .refused.add(what + " (" + .current_file + ":" + span.line.toString() + ")")
+
+    # ── the runtime's names ────────────────────────────────────────────────
+    # What zebra_rt.v DEFINES, read from the runtime text itself rather than
+    # kept by hand: the emitter writes `zstr_pad_left(...)` or `l.contains(x)`
+    # on a ZList, and when the runtime has no such name the file used to be
+    # reported "nothing refused" and then failed in V (the 2026-10-30 census:
+    # 152 of 436 "clean" files did not build). A call the emitter writes into
+    # the runtime is checked against this table and refused, by name, when
+    # the runtime does not define it.
+    def noteRuntime(text: str)
+        for raw in text.split("\n")
+            var ln: str = raw
+            if ln.startsWith("pub ")
+                ln = ln.substring(4, ln.len)
+            if ln.startsWith("fn (")
+                var close: int = ln.indexOf(")")
+                if close > 4 and close + 2 < ln.len
+                    var recv: List(str) = ln.substring(4, close).split(" ")
+                    var ty: str = rtBaseType(recv.at(recv.count() - 1))
+                    var mname: str = identPrefix(ln.substring(close + 2, ln.len))
+                    if ty != "" and mname != ""
+                        .rt_methods.set(ty + "." + mname, true)
+                        .rt_receivers.set(ty, true)
+            else if ln.startsWith("fn ")
+                var fname: str = identPrefix(ln.substring(3, ln.len))
+                if fname != ""
+                    .rt_fns.set(fname, true)
+            else
+                for kw in ["struct ", "type ", "enum ", "interface "]
+                    if ln.startsWith(kw)
+                        var tname: str = identPrefix(ln.substring(kw.len, ln.len))
+                        if tname != ""
+                            .rt_types.set(tname, true)
+        # A table that parsed to almost nothing would refuse every runtime call
+        # (loud), and a check that silently stopped looking would refuse none
+        # (quiet): both are reported, the second through its controls.
+        if .rt_fns.count() < 50 or .rt_types.count() < 10 or .rt_methods.count() < 30
+            .refused.add("the runtime-name check: zebra_rt.v parsed to " + .rt_fns.count().toString() + " functions, " + .rt_types.count().toString() + " types and " + .rt_methods.count().toString() + " methods, under its floor -- no call into the runtime was checked")
+        else if .rt_fns.get("zlist_contains") == nil or .rt_methods.get("ZList.add") == nil or .rt_fns.get("zbr_control_never_defined") != nil
+            .refused.add("the runtime-name check: its controls failed (zlist_contains and ZList.add must be found, zbr_control_never_defined must not) -- no call into the runtime was checked")
+
+    # a call the emitter wrote: `zname(...)` / `zname[T](...)` into the runtime
+    # (a name the emitter itself spells, never a user's), checked by name
+    def rtFree(r: str, span: Span): str
+        if not r.startsWith("z")
+            return r
+        var name: str = identPrefix(r)
+        if name.len >= r.len or not name.contains("_")
+            return r
+        var next: str = r.substring(name.len, name.len + 1)
+        if next != "(" and next != "["
+            return r
+        if .rt_fns.get(name) == nil
+            .refuse("`" + name + "` (the emitter writes it; zebra_rt.v does not define it)", span)
+        return r
+
+    # `obj.m(...)` the emitter wrote on a receiver of the runtime's types,
+    # checked against the methods zebra_rt.v declares for that type; on a
+    # receiver of unknown type, counted rather than passed in silence
+    def rtMethod(r: str, obj: str, rtype: str, span: Span): str
+        if not r.startsWith(obj)
+            return .rtFree(r, span)
+        if not r.startsWith(obj + ".")
+            return r   # the receiver itself, indexed or sliced (`s[a..b]`): no call into the runtime
+        if rtype == ""
+            .rt_unverified = .rt_unverified + 1
+            return r
+        var base: str = rtBaseType(rtype)
+        if .rt_receivers.get(base) == nil
+            return r
+        var mname: str = identPrefix(r.substring(obj.len + 1, r.len))
+        if mname != "" and mname != "str" and .rt_methods.get(base + "." + mname) == nil
+            .refuse("`" + base + "." + mname + "` (the emitter writes it; zebra_rt.v declares no such method)", span)
+        return r
 
     def line(s: str)
         var out: str = ""
@@ -603,6 +713,8 @@ class VGen
         # 2026-10-15): a green from a runner that never ran.
         var root_main: bool = false
         var root_tests: List(str) = List(str)()
+        var class_main: str = ""
+        var class_main_throws: bool = false
         for d in ms.at(last).decls
             branch d
                 on Decl.method as rm
@@ -610,9 +722,33 @@ class VGen
                         root_main = true
                     if rm.name.startsWith("test_")
                         root_tests.add(rm.name)
+                on Decl.class_ as rc
+                    for mem in rc.members
+                        branch mem
+                            on Decl.method as cm
+                                if cm.mods.is_static and cm.name == "main" and cm.params.count() == 0 and class_main == ""
+                                    class_main = snakeCase(rc.name) + "_main"
+                                    class_main_throws = cm.throws_
+                            else
+                                pass
                 else
                     pass
-        if not root_main and root_tests.count() > 0
+        # a root whose entry is a class `static def main` (the Zig backend's
+        # BUG-539 entry): V's own main calls it. Without this V built an exe that
+        # ran nothing and exited 0 -- 13 corpus programs printed nothing under
+        # the V census of 2026-10-30, the icons_test shape again.
+        if not root_main and class_main != ""
+            .line("// the root's entry is a class static main")
+            .line("fn main() {")
+            if .has_globals
+                .line("\tzglobals_init()")
+            if class_main_throws
+                .line("\t" + class_main + "() or { zbr_panic(err.msg()) }")
+            else
+                .line("\t" + class_main + "()")
+            .line("}")
+            .line("")
+        if not root_main and class_main == "" and root_tests.count() > 0
             .line("// no main: the test_ defs run in order (zebra test on the V target)")
             .line("fn main() {")
             if .has_globals
@@ -953,6 +1089,10 @@ class VGen
         g.emitted_globals = .emitted_globals
         g.aliases = .aliases
         g.narrowed = .narrowed
+        g.rt_fns = .rt_fns
+        g.rt_types = .rt_types
+        g.rt_methods = .rt_methods
+        g.rt_receivers = .rt_receivers
         return g
 
     def isFnName(vname: str): bool
@@ -2118,6 +2258,14 @@ class VGen
                 return true
         return false
 
+    # a plain identifier naming a local of this function (not a module var, not a field)
+    def isLocalIdent(e: Expr): bool
+        branch e
+            on Expr.ident as id
+                return .isLocalName(id.name)
+            else
+                return false
+
     def isLocalName(name: str): bool
         for n in .local_names
             if n == name
@@ -2164,6 +2312,13 @@ class VGen
         var i: int = 0
         for s in stmts
             .genStmt(s)
+            # a statement after a return or a raise never runs, and V refuses it
+            # ("unreachable code"): not emitted, as the Zig backend does not emit
+            # it either (the parser's `@[...]` arm kept its old body after the
+            # BUG-565 raise, and the route stopped building under V, 2026-10-30)
+            if (s is Stmt.return_ or s is Stmt.raise_) and i + 1 < stmts.count()
+                .line("// (" + (stmts.count() - i - 1).toString() + " unreachable statement(s) after it: not emitted)")
+                break
             branch s
                 on Stmt.var_ as v
                     # a local nothing after it READS (an assignment is no read to V):
@@ -2265,7 +2420,12 @@ class VGen
                             var aidx: str = .exprStr(aix.index)
                             var arhs: str = .coerced(a.value, tt)
                             var aop: str = assignOpV(a.op)
-                            if aop != "="
+                            var acfn: str = checkedFnFor(compoundBase(a.op))
+                            if aop != "=" and acfn != "" and tt == "i64" and .vTypeOf(a.value) == "i64"
+                                arhs = acfn + "(" + aobj + ".at(" + aidx + "), " + arhs + ")"   # BUG-667
+                            else if aop != "="
+                                if acfn != "" and (tt == "" or tt == "u8")
+                                    .arith_unchecked = .arith_unchecked + 1
                                 arhs = aobj + ".at(" + aidx + ") " + aop.substring(0, aop.len - 1) + " " + arhs
                             .line(aobj + ".set(" + aidx + ", " + arhs + ")")
                             aix_done = true
@@ -2279,7 +2439,16 @@ class VGen
                     var rhs: str = .coerced(a.value, tt)
                     if .isRefParamName(a.value) and (tt.startsWith("&") or tt.startsWith("?&"))
                         rhs = "unsafe { " + rhs + " }"   # a reference parameter kept in a field: V's escape rule refuses it plain
-                    .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + rhs)
+                    var cfn: str = checkedFnFor(compoundBase(a.op))
+                    if cfn != "" and tt == "i64" and .vTypeOf(a.value) == "i64" and isPlainPlace(a.target)
+                        # BUG-667: `x += e` is `x = zadd(x, e)`; the place is a name or a
+                        # field path, so reading it twice reads the same thing
+                        var tgt: str = .exprStr(a.target)
+                        .line(tgt + " = " + cfn + "(" + tgt + ", " + rhs + ")")
+                    else
+                        if cfn != "" and (tt == "" or tt == "u8")
+                            .arith_unchecked = .arith_unchecked + 1
+                        .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + rhs)
             on Stmt.expr as e
                 .genExprStmt(e)
             on Stmt.if_ as i
@@ -2394,6 +2563,17 @@ class VGen
     # temporary first (V: "cannot pass expression as mut"): `rows.at(0).add(7)`
     def genExprStmt(e: Expr)
         branch e
+            on Expr.zig_lit as zl
+                # free-at-sweep (2026-11-07, the GameEngine's release paths): V's runtime is
+                # collected, so there is nothing to free at a frame boundary. The queued local
+                # is acknowledged (it is otherwise unread on this backend: V's unused variable).
+                var fas: str = freeAtSweepArg(zl.text)
+                if fas != ""
+                    .line("_ = " + .localName(fas) + " // _zbr_free_at_sweep: V's collector frees it")
+                    return
+                if zl.text == "_zbr_sweep()"
+                    .line("// _zbr_sweep(): nothing queued under V's collector")
+                    return
             on Expr.call as c
                 branch c.callee
                     on Expr.member as m
@@ -2849,6 +3029,8 @@ class VGen
                 var cs: str = probe.exprStr(ni.cond)
                 for r in probe.refused
                     .refused.add(r)
+                .rt_unverified = .rt_unverified + probe.rt_unverified
+                .arith_unchecked = .arith_unchecked + probe.arith_unchecked
                 if probe.sb.build() != ""
                     return false
                 .line("} else if " + condStr(cs) + " {")
@@ -3032,9 +3214,14 @@ class VGen
         if .vTypeOf(fi.iter) == "json2.Any"
             iter_s = "zjson_list(" + iter_s + ")"   # a Json array iterated
             .local_types.set(fi.vars.at(0), "json2.Any")
-        if not isNameExpr(fi.iter)
+        if not .isLocalIdent(fi.iter)
             # an expression iterated (a call, an unwrap, an orelse): bound first --
-            # V's C for `(expr or { ... }).items` in a for header did not compile
+            # V's C for `(expr or { ... }).items` in a for header did not compile.
+            # A MODULE VAR or a FIELD is bound too (BUG-681, 2026-11-07): V's C re-reads a
+            # global's (or `self.f`'s) `.items` on every iteration, so a body that reassigned
+            # the list (a release
+            # path rebuilding it) switched the walk to the NEW list mid-way -- 40 where Zig,
+            # which evaluates the header once, printed 45.
             .tmpN = .tmpN + 1
             var zi = "zit" + .tmpN.toString()
             .line(zi + " := " + iter_s)
@@ -3068,8 +3255,12 @@ class VGen
     def exprStr(e: Expr): str
         branch e
             on Expr.int_lit as il
+                if intLitSuffix(il.text) != ""
+                    .refuse("a suffixed literal `" + il.text + "` (the V route maps no literal suffix)", il.span)
                 return il.text
             on Expr.float_lit as fl
+                if floatLitSuffix(fl.text) != ""
+                    .refuse("a suffixed literal `" + fl.text + "` (the V route maps no literal suffix)", fl.span)
                 return fl.text
             on Expr.bool_lit as bl
                 if bl.value
@@ -3122,6 +3313,8 @@ class VGen
                 return .binaryStr(b)
             on Expr.unary as u
                 if u.op == UnaryOp.neg
+                    if .vTypeOf(u.operand) == "i64" and not isIntLit(u.operand)
+                        return "zneg(" + .exprStr(u.operand) + ")"   # BUG-667: -min traps
                     return "(-" + .exprStr(u.operand) + ")"
                 if u.op == UnaryOp.not_
                     return "(!" + .exprStr(u.operand) + ")"
@@ -3223,6 +3416,8 @@ class VGen
                     return "zsys_arch()"
                 if zl.text == "@as(i64, @intCast(std.os.windows.GetCurrentProcessId()))"
                     return "i64(os.getpid())"
+                if zl.text == "_zbr_sweep_pending()" or zl.text == "@as(i64, @intCast(_zbr_sweep_pending()))"
+                    return "i64(0)"   # free-at-sweep: nothing is ever queued under V's collector
                 .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
                 return "0"
             on Expr.opt_chain as oc
@@ -3297,6 +3492,21 @@ class VGen
             on Expr.catch_ as c
                 # `expr catch |e| fallback` -> `(expr or { e := err  fallback })`:
                 # the or block's last expression is its value
+                # a nilable-and-throws callee yields the `ZOpt[T]` wrapper, so the fallback
+                # (a `?T`) is wrapped to match and the whole is opened back to `?T` (BUG-690)
+                var cxt: str = .vTypeOf(c.expr)
+                if cxt.startsWith("!?") and not isNilLit(c.fallback)
+                    var inner: str = cxt.substring(2, cxt.len)
+                    var bind: str = ""
+                    var bound: bool = false
+                    if c.err_var as ev2
+                        .catch_bindings.add(vSafe(ev2))
+                        bind = vSafe(ev2) + " := err\n_ = " + vSafe(ev2) + "\n"
+                        bound = true
+                    var wrapped = "zopt_of(" + .exprStr(c.expr) + " or {\n" + bind + "zopt_from[" + inner + "](" + .exprStr(c.fallback) + ")\n})"
+                    if bound
+                        .catch_bindings = dropLast(.catch_bindings)
+                    return wrapped
                 if c.err_var as ev
                     .catch_bindings.add(vSafe(ev))
                     var out = "(" + .exprStr(c.expr) + " or {\n" + vSafe(ev) + " := err\n_ = " + vSafe(ev) + "\n" + .exprStr(c.fallback) + "\n})"
@@ -3311,15 +3521,26 @@ class VGen
                     var crt: str = .vTypeOf(c.expr)
                     .tmpN = .tmpN + 1
                     var zr: str = "zr" + .tmpN.toString()
+                    # a nilable-and-throws callee (`!?T`, spelled `!ZOpt[T]`): its value is
+                    # the wrapper, opened with zopt_of, and the option is `?T` -- not `??T`,
+                    # which V does not parse (BUG-690, from the engine's guiscene.zbr)
+                    var nilable: bool = crt.startsWith("!?")
+                    var opened: str = zr + "v"
+                    if nilable
+                        opened = "zopt_of(" + zr + "v)"
                     if crt.startsWith("!") and not .in_cond
                         var cot: str = "?" + crt.substring(1, crt.len)
+                        if nilable
+                            cot = crt.substring(1, crt.len)
                         .line("mut " + zr + " := " + cot + "(none)")
                         .local_names.add(zr)
                         .local_types.set(zr, cot)
                         .line("if " + zr + "v := " + .exprStr(c.expr) + " {")
-                        .line("\t" + zr + " = " + zr + "v")
+                        .line("\t" + zr + " = " + opened)
                         .line("}")
                         return zr
+                    if nilable
+                        return "(if " + zr + "v := " + .exprStr(c.expr) + " { zopt_of(" + zr + "v) } else { none })"
                     return "(if " + zr + " := " + .exprStr(c.expr) + " { " + zr + " } else { none })"
                 return "(" + .exprStr(c.expr) + " or { " + .exprStr(c.fallback) + " })"
             else
@@ -3404,6 +3625,8 @@ class VGen
                 inner.genStmts(sts)
                 for r in inner.refused
                     .refused.add(r)
+                .rt_unverified = .rt_unverified + inner.rt_unverified
+                .arith_unchecked = .arith_unchecked + inner.arith_unchecked
                 body = "\n" + inner.sb.build()
         .local_names = saved_locals
         return head + " {" + body + "}"
@@ -3922,6 +4145,8 @@ class VGen
             if .sigs.get("sig:" + lt) != nil
                 return .localName(name) + "(" + .argsStr(args, "sig:" + lt) + ")"   # a call through a function-typed value
         var fname: str = .freeFnName(name)
+        if startsUpper(name) and not .isFnName(fname) and not .isEnumName(name) and not .isUnionName(name) and not .isIfaceName(name) and .rt_types.get(name) == nil
+            .refused.add(name + "(...) (a type neither the program nor the V runtime declares: " + .current_file + ")")
         return fname + "(" + .argsStr(args, fname) + ")"
 
     # a type named as a constructor's argument (`List(int)`, `HashMap(str, Box)`)
@@ -3967,7 +4192,7 @@ class VGen
                 # (`Arg.parse()` beside the AST's `Arg` struct)
                 var bi: str = .staticCall(m, args, span)
                 if bi != ""
-                    return bi
+                    return .rtFree(bi, span)
             return skey2 + "(" + .argsStr(args, skey2) + ")"
         # a union variant constructed: U.v(x) -> U_v{ payload: x }, U.v() -> U_v{}
         if .isUnionName(owner)
@@ -3981,14 +4206,14 @@ class VGen
             .needs_math = true
             if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"
                 return "math." + name + "(" + .argsStr(args) + ")"
-            if name == "round": return "zmath_round(" + .argsStr(args) + ")"
+            if name == "round": return .rtFree("zmath_round(" + .argsStr(args) + ")", span)
             if name == "exp" or name == "log": return "math." + name + "(" + .argsStr(args) + ")"
-            if name == "clamp": return "zmath_clamp(" + .argsStr(args) + ")"
+            if name == "clamp": return .rtFree("zmath_clamp(" + .argsStr(args) + ")", span)
             .refuse("Math." + name, span)
             return "math." + name + "(" + .argsStr(args) + ")"
         var statics: str = .staticCall(m, args, span)
         if statics != ""
-            return statics
+            return .rtFree(statics, span)
         var obj = .exprStr(m.object)
         var rtype: str = .vTypeOf(m.object)
         if (not isNameExpr(m.object) or .isNarrowedIdent(m.object)) and not .in_cond and .mutatesReceiver(rtype, name)
@@ -4078,7 +4303,7 @@ class VGen
                 return "zsort_str(mut " + obj + ")"
             if name == "remove" and args.count() == 1: return obj + ".remove_at(" + .argsStr(args) + ")"   # Zebra's List.remove(i) is by index
             if name == "reverse" and args.count() == 0: return obj + ".reversed()"
-        return .mappedCall(obj, name, args, span, rtype)
+        return .rtMethod(.mappedCall(obj, name, args, span, rtype), obj, rtype, span)
 
     # File / Path / sys as static calls onto the runtime's wrappers ("" when
     # the object is not one of them); Json is the next slice
@@ -4087,6 +4312,10 @@ class VGen
         if ns == ""
             return ""
         if not isBuiltinNs(ns)
+            # a Zebra stdlib namespace the V emitter does not map (Regex, Csv,
+            # ThreadPool's kin): refused by name, not written as a module call
+            if namespaceMembers(ns) != "" and not (.isClassName(ns) or .isStructName(ns) or .isModuleName(ns) or .isEnumName(ns) or .isUnionName(ns) or .isIfaceName(ns))
+                .refuse(ns + "." + m.member + " (the V runtime has no " + ns + " yet)", span)
             return ""   # (before the arguments are rendered: rendering binds temporaries, and a second rendering bound them twice)
         var name = m.member
         var a = .argsStr(args)
@@ -4216,6 +4445,7 @@ class VGen
         if name == "toInt" and args.count() == 0: return "i64(" + obj + ")"
         # the containers: the runtime's ZList / ZMap methods, by their names
         if name == "count" and args.count() == 0: return obj + ".count()"
+        if name == "count" and args.count() == 1 and rtype == "string": return "i64(" + obj + ".count(" + .argsStr(args) + "))"   # a substring's occurrences: V's string.count
         if name == "at" and args.count() == 1: return obj + ".at(" + .argsStr(args) + ")"
         if name == "add" and args.count() == 1: return obj + ".add(" + .argsStr(args) + ")"
         if name == "set" and args.count() == 2: return obj + ".set(" + .argsStr(args) + ")"
@@ -4278,9 +4508,16 @@ class VGen
             rt = rt.substring(1, rt.len)
         if rt != "" and .sigs.get(rt + "." + vSafe(name)) != nil
             key = rt + "." + vSafe(name)   # the receiver's own method, whatever other classes call theirs
+        if rt == "string" or rt == "u8" or rt == "i64" or rt == "f64" or rt == "bool"
+            .refuse(rt + "." + vSafe(name) + " (no mapping for `" + name + "` on a V " + rt + ": the emitter would guess V's spelling)", span)
         return obj + "." + vSafe(name) + "(" + .argsStr(args, key) + ")"
 
     def binaryStr(b: ExprBinary): str
+        if isWrapSatV(b.op)
+            return .wrapSatStr(b)
+        var ck: str = .checkedArith(b)
+        if ck != ""
+            return ck
         if b.op == BinaryOp.or_ or b.op == BinaryOp.and_ or b.op == BinaryOp.add
             # decided before any operand is rendered: rendering binds temporaries,
             # and the chain renders its operands itself
@@ -4350,6 +4587,73 @@ class VGen
         # checker gives up at forty nested levels, and every term is evaluated
         # there, no short-circuit)
         return "(" + l + " " + binaryOpV(b.op) + " " + r + ")"
+
+    # Wrapping (`+% -% *%`) and saturating (`+| -| *|`) arithmetic. Wrapping is computed in
+    # u64 and cast back: a signed overflow in the C that V emits is undefined, and a narrow
+    # product promotes to C `int`, so V's own operator is not the answer for every width.
+    # Saturating has i64 helpers in the runtime. Any other width, and `<<|`, is refused by
+    # name rather than guessed.
+    def wrapSatStr(b: ExprBinary): str
+        var t: str = .vTypeOf(b.left)
+        if isIntLit(b.left)
+            t = .vTypeOf(b.right)
+        if isIntLit(b.left) and isIntLit(b.right)
+            t = "i64"
+        var ls: str = .exprStr(b.left)
+        var rs: str = .exprStr(b.right)
+        if not isIntLit(b.left) and not isIntLit(b.right)
+            var rt0: str = .vTypeOf(b.right)
+            if rt0 != t and (t == "i64" or rt0 == "i64") and (t == "u8" or t == "byte" or rt0 == "u8" or rt0 == "byte")
+                # byte with int joins to int, as for `+` (the checker's numericJoin)
+                t = "i64"
+                ls = "i64(" + ls + ")"
+                rs = "i64(" + rs + ")"
+        var wop: str = ""
+        if b.op == BinaryOp.add_wrap
+            wop = "+"
+        if b.op == BinaryOp.sub_wrap
+            wop = "-"
+        if b.op == BinaryOp.mul_wrap
+            wop = "*"
+        if wop != ""
+            if t == "byte"
+                t = "u8"   # V spells Zebra's byte both ways
+            if t == "i64" or t == "u8"
+                return t + "(u64(" + ls + ") " + wop + " u64(" + rs + "))"
+            .refused.add("a wrapping operator on an operand of V type `" + t + "` (only int and byte are mapped)")
+            return "0"
+        var sfn: str = ""
+        if b.op == BinaryOp.add_sat
+            sfn = "zsadd"
+        if b.op == BinaryOp.sub_sat
+            sfn = "zssub"
+        if b.op == BinaryOp.mul_sat
+            sfn = "zsmul"
+        if sfn != "" and t == "i64"
+            return sfn + "(" + ls + ", " + rs + ")"
+        if sfn == ""
+            .refused.add("the saturating shift `<<|` (no V mapping yet)")
+        else
+            .refused.add("a saturating operator on an operand of V type `" + t + "` (only int is mapped)")
+        return "0"
+
+    # BUG-667: an i64 +, -, *, /, % through the runtime's checked helper; "" when the op
+    # is not arithmetic or an operand is not an i64. An integer operand of a type the
+    # emitter does not know (or a byte, which V keeps as u8 and wraps) is counted.
+    def checkedArith(b: ExprBinary): str
+        var fn_: str = checkedFnFor(b.op)
+        if fn_ == ""
+            return ""
+        var lt: str = .vTypeOf(b.left)
+        var rt: str = .vTypeOf(b.right)
+        if lt == "i64" and rt == "i64"
+            if isIntLit(b.left) and isIntLit(b.right)
+                return ""   # a constant: V folds it at compile time
+            return fn_ + "(" + .exprStr(b.left) + ", " + .exprStr(b.right) + ")"
+        if lt == "" or rt == "" or lt == "u8" or rt == "u8"
+            if lt != "f64" and rt != "f64" and lt != "string" and rt != "string"
+                .arith_unchecked = .arith_unchecked + 1
+        return ""
 
     # a nil check reads the raw name, narrowed or not (a narrowed read would unwrap)
     def rawName(e: Expr, rendered: str): str
@@ -4432,6 +4736,40 @@ class VGen
         .depth = .depth - 1
         .line("}")
         return cn
+
+def isWrapSatV(op: BinaryOp): bool
+    return op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap or op == BinaryOp.add_sat or op == BinaryOp.sub_sat or op == BinaryOp.mul_sat or op == BinaryOp.shl_sat
+
+# BUG-667: integer overflow TRAPS (Sean, 2026-10-30) and V's integer operators wrap, so
+# an i64 +, -, *, / and % go through the runtime's checked helpers. "" for any other op.
+def checkedFnFor(op: BinaryOp): str
+    if op == BinaryOp.add: return "zadd"
+    if op == BinaryOp.sub: return "zsub"
+    if op == BinaryOp.mul: return "zmul"
+    if op == BinaryOp.div or op == BinaryOp.int_div: return "zdiv"
+    if op == BinaryOp.mod: return "zmod"
+    return ""
+
+# the arithmetic op a compound assignment applies (BinaryOp.eq, i.e. none, otherwise)
+def compoundBase(op: AssignOp): BinaryOp
+    if op == AssignOp.plus_eq: return BinaryOp.add
+    if op == AssignOp.minus_eq: return BinaryOp.sub
+    if op == AssignOp.star_eq: return BinaryOp.mul
+    if op == AssignOp.slash_eq or op == AssignOp.slashslash_eq: return BinaryOp.div
+    if op == AssignOp.percent_eq: return BinaryOp.mod
+    return BinaryOp.eq
+
+# a place that reads the same thing twice: a name, or a field path from one
+def isPlainPlace(e: Expr): bool
+    branch e
+        on Expr.ident
+            return true
+        on Expr.this_
+            return true
+        on Expr.member as m
+            return isPlainPlace(m.object)
+        else
+            return false
 
 def binaryOpV(op: BinaryOp): str
     if op == BinaryOp.add: return "+"
@@ -4815,6 +5153,28 @@ def condStr(s: str): str
     return s.substring(1, s.len - 1)
 
 # the builtin namespaces a static access may name
+def startsUpper(name: str): bool
+    for ch in name.chars()
+        return ch >= 'A' and ch <= 'Z'
+    return false
+
+# the identifier a string starts with ("zstr_pad_left(x)" -> "zstr_pad_left")
+def identPrefix(s: str): str
+    var n: int = 0
+    for ch in s.chars()
+        if (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z') or (ch >= '0' and ch <= '9') or ch == '_'
+            n = n + 1
+        else
+            break
+    return s.substring(0, n)
+
+# a V type as the runtime declares methods on it: `&ZList[T]` / `?&ZMap[K, V]` -> ZList
+def rtBaseType(t: str): str
+    var s: str = t
+    while s.startsWith("&") or s.startsWith("?")
+        s = s.substring(1, s.len)
+    return identPrefix(s)
+
 def isBuiltinNs(ns: str): bool
     return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp"
 
@@ -4828,6 +5188,7 @@ def isFloatLit(e: Expr): bool
 # the entry: the V source for a module, with the refusals
 def generateV(ms: List(Module), runtime: str): VResult
     var g = VGen()
+    g.noteRuntime(runtime)
     var body = g.genModules(ms)
     var head: str = "// generated by zebra --target v (proof of concept, 2026-10-13); do not edit\n"
     # the runtime (inlined below) uses math, os and strconv: always imported
@@ -4856,4 +5217,4 @@ def generateV(ms: List(Module), runtime: str): VResult
         if ha >= 0 and hb > ha
             rt_text = rt_text.substring(0, ha) + "// (the http section is left out: the program makes no request)\n" + rt_text.substring(hb + "// == http end ==".len, rt_text.len)
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
-    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui)
+    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)

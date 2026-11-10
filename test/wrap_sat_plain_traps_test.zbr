@@ -1,0 +1,11 @@
+# Plain `+` still TRAPS on overflow after `+%` and `+|` arrived: the new operators are
+# how a program asks to wrap or clamp, never a change to what `+` means. A byte reaching
+# 250 at run time plus 10 panics with Zig's message; the wrapping line before it prints 4.
+# (`b` is assigned twice so it is a run-time value: a constant would be folded, and zig
+# would refuse the overflow at build time instead of trapping.)
+def main()
+    var b: byte = 249
+    b = b + 1
+    print(b +% 10)
+    print(b + 10)
+    print("SURVIVED")

@@ -1,0 +1,25 @@
+# BUG-632: a list literal passed as an ARGUMENT takes the parameter's element type, as a
+# literal initialiser does. `f([1, 2])` into a `List(float)` built a List(i64) and failed
+# inside zig. Covers a free function, mixed int/float elements, an optional element type
+# with a nil, a str list, a method call and a bare owner call.
+def f(xs: List(float)): float
+    var t = 0.0
+    for x in xs
+        t += x
+    return t
+
+def g(xs: List(int?)): int
+    return xs.len
+
+def h(xs: List(str)): int
+    return xs.len
+
+class C
+    def m(xs: List(float)): int
+        return xs.len
+    def self_call(): int
+        return m([4, 5])
+
+def main()
+    var c = C()
+    print("bug632: ${f([1, 2])} ${f([1.5, 2])} ${g([1, nil, 3])} ${h(["a", "b"])} ${c.m([1, 2, 3])} ${c.self_call()}")

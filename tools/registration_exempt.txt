@@ -75,6 +75,12 @@ val_lib  # helper module imported by other tests; has no main()
 witness_zig_backend_literal  # asymmetry witness — asserted by tools/check_mode_check.sh, which REQUIRES it to pass -c and fail --check-full; a smoke registration would contradict that
 bug293_xmod_container_lib  # helper module imported by bug293_xmod_container_test; has no main()
 bug295_cycle_lib  # the other half of BUG-295's import cycle; exercised through bug295_cycle_test
+bug295_init_cycle_lib  # the other half of BUG-295's genuine init cycle; exercised through bug295_init_cycle_test
+bug295_lazy_init_lib  # the other half of BUG-295's lazy-init cycle; exercised through bug295_lazy_init_test
+bug664_cycle_static_lib  # the other half of BUG-664's static-across-a-cycle fixture; exercised through bug664_cycle_static_test
+bug664_same_name_lib  # the dependency half of BUG-664's same-class-name fixture; exercised through bug664_same_name_test
+bug666_cycle_rescan_lib  # the other half of BUG-666's import cycle; exercised through bug666_cycle_rescan_test
+bug666_cycle_rescan_shape  # BUG-666's union module, compiled before the cycle closes; exercised through bug666_cycle_rescan_test
 bug295_diamond_lib_leaf  # helper module imported by other tests; has no main()
 bug295_diamond_lib_left  # helper module imported by other tests; has no main()
 bug295_diamond_lib_right  # helper module imported by other tests; has no main()
@@ -84,5 +90,15 @@ bug295_shared_state_right  # helper module imported by other tests; has no main(
 tc_merge_fixture  # NOT a test and cannot compile standalone BY CONSTRUCTION: it holds git conflict markers (<<<<<<< / =======) and is INPUT to `zebra typecheck-merge`. The EMITFAIL is `unexpected top-level token: '<<'`, which is the file doing its job. Do not "fix" it.
 prog_args_passthrough_test  # asserted INLINE in selfhost_smoke.sh (BUG-347: it needs argv after `--`, which no smoke_* helper passes); the registration scanner cannot see the inline form
 bug415_dep_catch_lib  # helper module used by bug415_dep_module_catch_message_test; has no main()
+bug237_qualified_union_lib  # helper module imported by bug237_qualified_union_test; has no main()
 deprecated_warning_dep  # helper module imported by deprecated_warning_test (the @deprecated def lives here so the warning is witnessed across `use`); has no main()
 bug527_iface_mod  # support module for bug527_iface_field_assign_test (the interface + Holder in ANOTHER module); exercised through its importer
+bug641_qualified_fn_lib  # helper module imported by bug641_qualified_fn_infer_test; has no main()
+bug641_qualified_fn_lib2  # helper module imported by bug641_qualified_fn_infer_test; has no main()
+bug026_method_result_lib  # helper module imported by bug026_method_result_mutation_test; has no main()
+bug649_static_container_lib  # helper module imported by bug649_static_container_field_test; has no main()
+bug652_dep_static_lib  # helper module imported by bug652_dep_static_strname_test; has no main()
+bug656_dep_ctor_lib  # helper module imported by bug656_dep_ctor_defaults_test; has no main()
+bug658_qualified_enum_lib  # helper module imported by bug658_qualified_enum_value_test; has no main()
+bug099_unresolved_test  # a check_mode_check WITNESS (tools/check_mode_check.sh WITNESSES): passes -c and fails --check-full by design; asserted by that gate, not by smoke
+bug106_cast_test  # documentation only (no main): records why `expr to Type` casts cannot be written; nothing to run

@@ -23,7 +23,255 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **The V target: the collector is the default; `allocate` and `<<-` are in the subset; `--no-gc`
+  added.** `zebra --target v` says its run line with `-gc boehm` (was `-gc none`), and `--no-gc`
+  asks for none; `--gc` is still accepted and now unneeded. An `allocate` block is a region --
+  the record of what the runtime made while it was open, freed at the block's exit -- and `<<-`
+  copies a value out of it; `sys.memStats()` is mapped (arenaBytes is the collector's heap).
+  Surface: one flag added (`--no-gc`), none removed. docs/design/memory_model.md §6c.
+
+---
+
+## Release 0.9.0 — 2026-11-09 (everything since rc9)
+
+**0.9.0 is the first release that is not a candidate.** It is "ready for others", not 1.0:
+the language surface is not yet frozen (that is the 1.0 promise; see
+`docs/NEXT_STEPS_to_1.0.md`), and the rc series has been where the semantics settled. Built
+with **Zig 0.17.1**, like rc9. Since rc9: runtime-object types a program can name and that
+refuse unknown members (BUG-680), WebSocket and server hardening (BUG-682, 684, 687), a port
+in an `int` (BUG-688), typed `Http` client results (BUG-689), FTS5 and RTREE in the bundled
+SQLite (BUG-686), an inline `split` accepted wherever a `List(str)` is (BUG-692), the
+Scintilla hatch on the default GUI backend (BUG-693, which zebra-ide's headless tests need),
+`querySegments` for stored procedures, free-at-sweep for embedding hosts, and V-backend
+fixes (BUG-681, 690).
+
+- **A server no longer leaks a handle per connection** (BUG-687). `Tcp.serve`, `Ws.serve`
+  and `Http.serve` never detached the thread each connection ran on, so on Windows a
+  long-running server held one more handle for every client it had ever accepted.
+
+- **A port in an `int` variable works with every networking call** (BUG-688).
+  `Tcp.connect`, `Tcp.serve`, `Ws.serve`, `Http.serve`, `Udp.bind` and `UdpSocket.send`
+  took a 16-bit port that only a literal could reach; a computed port failed inside zig.
+  They take `int` now, and refuse an out-of-range port by name.
+
+- **`Http.get`/`post`/`json`/`postJson` results are typed** (BUG-689), so a misspelled
+  member (`resp.body` for `resp.text`) is refused at `-c` instead of failing inside zig.
+
+- **The bundled SQLite includes FTS5 and RTREE** (BUG-686). The compiler built
+  `sqlite3.c` with no feature defines, so full-text search (`USING fts5`) and spatial
+  indexes (`USING rtree`) failed at run time with "no such module". Both are enabled now,
+  scoped to sqlite3.c; JSON functions were already built in.
+
+- **An inline `split` / `lines()` goes anywhere a `List(str)` does** (BUG-692): as a
+  function, method or constructor argument (positional or named, in or across modules),
+  assigned to a `List(str)` local, field or container element, or added to a list of lists. It used to compile only as a variable's
+  initialiser or a `return` value; elsewhere zig refused the lazy iterator.
+- **`CodeEditor.sci` / `sciStr` build on the default backend** (BUG-693), answering 0 as they
+  did on tui. Since Zig 0.17 refused `--gui-backend=tui`, the default backend is the headless
+  one, and a program using the Scintilla hatch had no backend it could be tested on.
+- **`JsonValue.values()` and `JsonValue.entries()` are refused at `-c`** (BUG-691). They were
+  in the checker's known-method list but never implemented: a call reached the Map helpers
+  and failed inside zig (`union 'json.dynamic.Value' has no member named 'KV'`, or `no
+  field named 'items'`). The refusal names the documented forms -- `tryList()` for an
+  array's elements, `keys()` and `get(k)` for an object. Neither was ever in QUICKSTART.
+- **V backend: `f() catch nil` / `catch |e| ...` / `catch <value>` over a def returning
+  `T? throws`** now builds (BUG-690). The option was declared `??T`, and the `or` block
+  mixed `?T` with the `ZOpt[T]` wrapper.
+- **`SqliteDb.querySegments(sql)` / `querySegments(sql, params)`**: a stored procedure's
+  nested result sets as one row list with a leading `_segment` column. Moved from
+  zebra-sprocket, whose v4 runtime patch added `query_segments` -- a method the checker
+  has refused since runtime types gained member checks (2026-09-15). It needs a SQLite
+  built with stored procedures (the sprocket fork); the vanilla SQLite beside the
+  compiler has none, and there the call refuses by name and returns no rows. The fork's
+  two C functions are declared as weak definitions the fork's own replace at link time,
+  and the runtime asks which ones the linker kept. Only the vanilla refusal is tested in
+  this repo (`test/sqlite_query_segments_test.zbr`); the positive path is witnessed by
+  zebra-sprocket's checks. Needs Zig 0.17 (under 0.16 the fallback is always bound, so
+  it refuses even against the fork). Not on the V backend.
+
+- **The V runtime no longer declares `C.snprintf`.** `zebra_rt.v` carried
+  `fn C.snprintf(buf &char, n usize, ...)` for the old formatted-write path; the exact
+  formatter (2026-10-26) left it with no caller, and V master deprecates `usize`
+  (vlang/v fca9fad34), so every program emitted with `--target v` carried one warning
+  per file there, with no grace period before it becomes an error. Deleted; the emit's
+  output is the same under V 0.5.2 and master, and `tools/v_check.sh` is green under
+  both (20 rows each). Found by the brief-4 corpus run (14 of 14 programs identical on
+  master; the engine repo's `docs/v_cloud_briefs/`).
+
+- **`_zbr_free_at_sweep(c)` / `_zbr_sweep()`** (runtime functions, not language surface;
+  QUICKSTART §28): queue a List, HashMap or Set replaced in a rebuild-and-reassign `release`
+  path, and free the queue at a frame boundary the host chooses. Shallow, deduplicated,
+  refused inside `allocate`, counted by `--census` (`sweepPending`, `sweepFreed`, `sweeps`,
+  `sweepDuplicates` in the JSON totals). A missed alias is a use-after-free -- see QUICKSTART.
+  Joint design with the GameEngine session (its F64 server soak: 69 such sites, none freed).
+  On `--target v` the calls map to no-ops (V's runtime is collected).
+- **BUG-681 (V backend):** a walk over a module list or a field switched to the new list when
+  the loop body reassigned it; the for header is now bound once, as on Zig.
+- **BUG-682 (runtime):** `ws.close()` from one thread while another was in `ws.recv()` on
+  the same connection closed the socket under the read: on Windows an "unexpected NTSTATUS"
+  trace, or a panic / silent exit 3 from std's `unreachable` on the cancelled read. The
+  handle is now closed only when no read can touch it; the reader returns nil once the peer
+  answers the close. Reported by the GameEngine session (F65).
+- **BUG-680 (DateTime):** `DateTime` is a type a program can name -- a class field, a
+  parameter, a return type, a List element, an optional -- and its fields and methods
+  dispatch on all of them. A member it does not have (`dt.epochMs`) is refused at `-c`,
+  naming the real ones, instead of failing inside zig. Before, any `DateTime` annotation was
+  refused as an unknown type.
+- **BUG-680 (the other runtime objects):** CsvTable, CsvWriter, HttpResponse, CalendarView,
+  ThreadPool and DynLib refuse a member they do not have at `-c`, naming the real ones.
+  `t.rows` on a CsvTable used to compile and return the runtime's internal slices.
+  docs/SURFACE.md now lists all of these members.
+- **BUG-684 (runtime, hardening):** after the WebSocket close handshake begins, or after a
+  read shows the peer gone, `send` (and the automatic pong) write nothing, as RFC 6455
+  requires, and a failed write now counts as the peer gone, like a failed read. A
+  broadcasting server no longer writes into departing clients' sockets.
+- **BUG-685:** an `Http.serve` handler of the wrong shape -- two parameters, no return type,
+  or a return type other than HttpResponse -- is refused at `-c`, naming the right form.
+  It used to fail inside the runtime's Zig.
+- **BUG-683:** `DateTime.fromEpoch(ms)` used as a receiver or argument
+  (`DateTime.fromEpoch(0).year`, `dt.after(DateTime.fromEpoch(0))`) and `not dt.before(x)`
+  passed `-c` and failed inside zig, and so did `HttpResponse.ok("x").status`. The emits
+  are parenthesised now.
+
+---
+
+## Release 0.9.0-rc9 — 2026-11-05 (everything since rc8)
+
+rc9 is built with **Zig 0.17.1** (rc8 was 0.17.0). It carries **semantics changes in
+integer arithmetic**, decided 2026-10-30 and 2026-11-02:
+
+- **integer overflow traps in every build, `--release` included** (BUG-667): `--release` is
+  ReleaseFast, where Zig's overflow was undefined behaviour and printed a wrong number; a nil
+  unwrap and `min % -1` trap there too (BUG-668, BUG-669). Wrapping and saturating
+  arithmetic are explicit operators, with Zig's spelling: `+% -% *%` and `-%x`, `+| -| *|`
+  and `<<|`, each with a compound form;
+- **two integer types join the way `+` joins them**, for `+ - * / %`, `& | ^` and the
+  wrapping and saturating operators: the result is the wider type, a signed type wide
+  enough for both, or a refusal for `uint` beside a signed int (BUG-674). The result does
+  not narrow on its own -- `b = b + n` with a byte `b` and an int `n` is refused, naming
+  `.toByte()` (BUG-673) -- and a literal or constant expression beside a sized operand must
+  fit it, by value (BUG-672, BUG-675);
+- **literal suffixes**: decimal `300_i16`, `5_u8`, `7u` are new, and a suffix now types the
+  VARIABLE it initialises, for hex and floats too -- `var b = 0xFF_u8` is a byte (it was
+  emitted as an i64);
+- the sized conversions `toInt8() .. toUint64()` are CHECKED: a value that does not fit
+  stops the program (BUG-534).
+
+Also user-visible: `@[...]` is removed (`x in [a, b]` is the allocation-free membership
+test, BUG-565); a `catch` or `?` on a call that cannot fail is refused (BUG-546); regexes
+take per-quantifier greedy/lazy with leftmost-first matching (BUG-014); computed module
+variables and statics initialise on first use, so declaration order no longer matters
+(BUG-664); a float printed with a precision rounds its exact binary value, ties to even;
+`HashMap.clear()`; subdirectory modules and `zebra -c --strict` (BUG-449). New tooling:
+`zebra --census` (where the memory goes, per source line, with the bytes each site still
+keeps; `--census=host` for an embedding host's own window) and `--source-root`. The rest are
+front-end refusals of programs that failed inside Zig, each naming the line and the fix --
+run `zebra -c` over your code first.
+
+### Tooling
+
+- **The toolchain is Zig 0.17.1** (from 0.17.0). `.zig-version`, the CI and release
+  downloads and their sha256 pins (read from ziglang.org's index twice, and agreeing) move
+  together. No source change was needed: the FULL tier passed 49/49 in one invocation on a
+  cold cache, with `output_sweep` reporting all 466 programs' output identical.
+- **`zebra --census=host`: a census window the host opens** (BUG-677, joint with the
+  GameEngine). The entry prologue no longer installs the census in such a build; the host
+  calls `_zbr_cens_install()` at frame 0 or at its `--census-at` frame and the report counts
+  from there. A second `_zbr_cens_install()` -- which is what the engine's `--census-at`
+  did, so every "steady state" census it took was really a whole-run one -- now says so on
+  stderr, once, naming the entry prologue. A `--census=host` build that never installs says
+  so at its report and writes no zebra-census.json. `--census=VALUE` for any other value is
+  refused: it was accepted and the build silently had no census at all. Pinned by census_check
+  legs 5-7 and two cli_check legs.
+- **`--census` reports what each site still KEEPS** (requested by the GameEngine). Every site
+  gains the bytes and blocks still live at the report that it allocated or last resized -- a
+  resize moves the whole block, so a List's buffer is kept where it last grew -- and the report
+  adds a second ranking, top by bytes kept. It also prints frees and resizes of blocks the census
+  never saw (expected when a host installs it mid-run, 0 otherwise), frees whose length disagrees
+  with the allocation (always 0), and the size of its own tables. `zebra-census.json` is version
+  2: per-site `keptCount` / `keptBytes`, totals `keptBytes`, `unseenFrees`, `unseenResizes`,
+  `lengthMismatches`, `censusTableBytes`. A site's allocation count no longer includes in-place
+  resizes (they add bytes only). Cost in a Debug build: ~3.4 us per allocation, up from ~1.4.
+- **A panic inside the census no longer hangs the program** (BUG-676): the runtime's panic
+  handler allocated through the program allocator, which under `--census` re-entered the
+  census's lock.
+
 ### Language
+
+- **Decimal literal suffixes, and every suffix now types its variable.** `300_i16`, `300i16`,
+  `5_u8`, `7u`, `1_000_u32` are literals of the type they name (`_i` / `_u` alone are `int` /
+  `uint`; widths 8, 16, 32, 64, 128); they lexed before and no parser rule accepted them.
+  A suffix is now real for hex and float literals too: `var b = 0xFF_u8` is a byte and
+  `var f = 1.5_f32` a `float32` -- they were typed `int` / `float` by the checker and emitted
+  `var b: i64 = @as(u8, 0xFF)`, so the variable silently lost the type its literal had.
+  A suffixed literal joins like a variable of its type instead of adapting (`b + 5_i8` is an
+  `int16`), must fit its type (`300_u8`, `128_i8`, `-5_u8`, `99999999999999999999_i64` are
+  refused at the literal; `-128_i8` is emitted `@as(i8, -128)` and fits), and a width with no
+  type (`5_i7`, `5_uint8`, `1.5_f16`, `0xFF_7`) is refused by name -- `0xFF_7` used to emit
+  `@as(i7, 0xFF)`. A constant expression over a suffixed literal must fit its type too
+  (`200_u8 + 100_u8` was "overflow of integer type 'u8'" from inside Zig), and a digit
+  separator must sit between two digits (`5_` and `1.5_` were Zig errors). Decimal `300_16`
+  is still 30016 -- a separator -- while hex `0xFF_32` is a 32-bit 255. The V route refuses a
+  suffixed literal by name. QUICKSTART §3.1b2; pinned by `test/boundary/int_suffix_*`.
+  Measured over 3,179 files (this repo, zebra-ide, the GameEngine): no file changed verdict.
+- **A constant expression beside a sized integer must fit it too** (BUG-675), and `%` over
+  two constants has a type (BUG-678). `k + 100 * 3` and `k + 1_000` on a byte passed the
+  front end and failed inside Zig ("type 'u8' cannot represent integer value '300'"); they
+  are refused at the constant, naming its value and the range. The value is what counts:
+  `k + (300 - 200)` is 100 and compiles. `n + 100 % 7` was refused as "cannot infer the type";
+  it is an `int`. No file in this repo, zebra-ide or the GameEngine changed verdict.
+- **A literal beside a sized integer must fit it, and `+ - * / %` do not narrow on their
+  own** (BUG-672, BUG-673). `k + 300` on a byte, for `+ - * / %`, `& | ^` and their
+  compound forms, was a Zig error about generated code (for `%`, at a line inside
+  `zebra_rt.zig`); it is refused at the literal, naming the range. `b = b + n` with a byte
+  `b` and an int `n` -- and the same value as a `var` initialiser, a `return` or an
+  argument -- was `expected type 'u8', found 'i64'` from Zig, while `b += n` was already
+  refused; all are refused now, naming `.toByte()` / `.toInt16()` / .... A comparison
+  (`k < 300`) still compiles; Zig answers it correctly. A program that built only because
+  Zig folded two never-mutated locals at compile time is now refused too.
+- **`& | ^` on two different integer types join them as `+` does** (BUG-674). `b & n` with a
+  byte and an int is an int (it was typed a byte, and `var c: byte = b & n` failed inside Zig
+  with `expected type 'u8', found 'i64'`); `byte & int8` is an `int16`, both operands
+  converted (Zig refused it outright); `uint ^ int` is refused, naming the conversion. A
+  literal still adapts (`b & 0x0F` is a byte), as does `& | ^` over constants. A constant
+  shift does not: `b & (1 << 3)` is an int, so storing it into a byte now asks for
+  `.toByte()` where it used to fail inside Zig. No file in this repo, zebra-ide or the
+  GameEngine changed verdict.
+- **Wrapping and saturating arithmetic, with Zig's operators and spelling.** `a +% b`,
+  `a -% b`, `a *% b` and `-%a` wrap around the operand type; `a +| b`, `a -| b`, `a *| b`
+  and `a <<| n` clamp at its bounds; each has a compound form (`+%=` ... `<<|=`). Plain
+  `+ - *` still trap on overflow. Integers only. Two operand types join exactly as for `+`
+  (`byte +% int` is an `int`, and wraps at 64 bits; `uint64` beside a signed int is
+  refused), and the result does not narrow on its own (`b +%= n` on a byte is refused like
+  `b += n`). A literal must fit the other operand (`b +| 300` on a byte is refused -- BUG-672's half for
+  these operators). There is no saturating negation; `-|x` is refused, naming `0 -| x`. Two
+  constants compute as an `int`. SIMD integer vectors take the `+ - *` forms lane-wise. On
+  the V backend wrapping is mapped for `int` and `byte`, saturating for `int`; the rest is
+  refused by name. QUICKSTART §3; pinned by `test/boundary/wrap_sat_probe`.
+
+- **Integer overflow traps in every build (BUG-667), and so does a nil unwrap (BUG-668).**
+  A `--release` build used to treat both as undefined behaviour: `x + 1` past the maximum
+  printed the maximum, `s!` on nil read garbage, exit 0. Every function the compiler emits
+  now opens with `@setRuntimeSafety(true)`, so Zig's own checks run in Zebra's code under a
+  ReleaseFast build -- `zebra --release` or a host building the emitted Zig -- and nowhere
+  else. The V backend routes `int` arithmetic through checked helpers (V's operators wrap).
+  **A program that relied on a release build wrapping silently now stops with
+  `integer overflow`.** Explicit wrapping operations are planned.
+
+- **`minimum % -1` traps instead of killing the program silently (BUG-669).** It is the one
+  remainder Zig's safety does not check, and x86 faults on it with no message, in Debug too.
+
+- **A struct's method can be used as a value (BUG-596).** `var f = p.move` binds the struct
+  VARIABLE `p` by reference: calls through `f` change `p`, a write to `p` is seen by `f`, and
+  `f` may be returned or stored (the variable is kept alive for it). The receiver must be a
+  `var` local; a parameter, loop variable, `this`, field or temporary is refused by name.
+  A class's method has bound to its object since 2026-10-16.
+
+- **`@[...]` is removed (BUG-565).** It worked only right after `in` -- QUICKSTART's own
+  `var nums = @[3, 1, 4, 1, 5]` never compiled -- and was a second spelling of the list
+  literal. Write `[...]`: `x in [a, b]` with primitive elements is now the same inline,
+  allocation-free test `@[...]` gave, and `[a, b]` anywhere else is a List. `@[` is refused
+  naming the replacement.
 
 - **A float formatted to a precision rounds its exact binary value, ties to even.**
   `${x:.2f}`, `${x:.2}` and `${x:.2e}` now print Python's digits (and glibc's and the UCRT's):
@@ -46,14 +294,246 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ### Fixes
 
-- **The V runtime no longer declares `C.snprintf`.** `zebra_rt.v` carried
-  `fn C.snprintf(buf &char, n usize, ...)` for the old formatted-write path; the exact
-  formatter (2026-10-26) left it with no caller, and V master deprecates `usize`
-  (vlang/v fca9fad34), so every program emitted with `--target v` carried one warning
-  per file there, with no grace period before it becomes an error. Deleted; the emit's
-  output is the same under V 0.5.2 and master, and `tools/v_check.sh` is green under
-  both (20 rows each). Found by the brief-4 corpus run (14 of 14 programs identical on
-  master; the engine repo's `docs/v_cloud_briefs/`).
+- **A class's own `cue init` is no longer replaced by a mixin's** (BUG-679). A class that
+  `adds` a mixin declaring `cue init()` had its constructor call refused as "too many
+  arguments ... expected at most 0" -- a regression since BUG-659 made constructors take the
+  call arity rule; rc8 compiled such programs. Found by validating the book before tagging.
+
+- **A refused compile leaves no `.zig` in `--output-dir` (BUG-671).** A program refused
+  after emission (a throws call without `?`, a type that could not be inferred) or by a
+  parse error in a later dependency left every module it had written in the directory,
+  so a caller that looked for the `.zig` built a rejected program. The files are removed
+  and named on stderr; a zig failure still keeps its `.zig` as evidence (BUG-324).
+
+- **A method call or field read on an optional value is refused (BUG-670).**
+  `m.get(k).count()` on a `HashMap(K, List(T))`, `f.get()` or `f.n` on a `Foo?`, and
+  `m.get("a").toString()` on an `int?` passed `-c` and failed inside zig; only `str?` was
+  refused (BUG-557). Refused at the receiver now, naming `if x != nil`, `x!` and `if x as v`.
+
+- **One statement per line, and commas between call arguments (BUG-643, BUG-644).**
+  `var x = 5 6` was `var x = 5` followed by a statement `6`, and `add(5 6)` was `add(5, 6)`;
+  both are refused now, naming the missing operator or comma. A branch's `else` takes a statement
+  on the same line, as an `on` arm does (`else  pass`); it needed a comma before.
+
+- **`x ?? y` is refused, naming `orelse` (BUG-642).** It passed `-c` and failed inside zig.
+
+- **`var x = lib.f()` is typed (BUG-641).** A qualified call to a used module's function was
+  untyped, so `.len` / `.add()` on its result were refused; `lib.f()` now types like the
+  exposed `f()`.
+
+- **Computed module variables and `static var`s initialise on first use (BUG-664)**: a
+  module var or static whose initialiser read one set LATER in start-up read uninitialised
+  memory and usually segfaulted -- `var a: int = b.len + 1` before `b`, a module var
+  reading a static (directly or through a function), a static reading a later class's
+  static. Each is now initialised once, when first read, and before `main` in any case,
+  so declaration order no longer matters. A read of a computed module var or static costs
+  a load and a compare (~0.7 ns in `--release`) and can no longer be hoisted out of a loop.
+
+- **An exhaustive `branch` with an `else` compiles in a program with an import cycle
+  (BUG-666)**: closing the cycle registered already-compiled modules' unions twice, so the
+  `else` was kept and zig refused it ("unreachable else prong").
+
+- **An import cycle among `--module-path` dependencies is reported (BUG-295)**: as a
+  warning, once, advising to report it upstream; it was invisible. A cycle reached through
+  two `use` lines of the same module is reported once rather than twice.
+
+- **An instance method that reads only static members compiles (BUG-665)**: zig refused
+  it with "unused function parameter" (`self`).
+
+- **A module in an import cycle initialises its computed variables on first use (BUG-295)**:
+  a dependency's initialiser that read its importer's computed module variable
+  (`var total: int = a.count + 1`) read uninitialised memory, because the dependency is
+  initialised first. Each such variable is now set when first read, from any module, and
+  a write made before its module's own initialisation survives it. Initialisers that need
+  each other's values stop the program at start-up naming the chain
+  (`error: module initialisation cycle: b.y -> a.x -> b.y`). The cycle warning remains and
+  its text now states this rule. `--single-file` builds a program with an import cycle;
+  it failed in zig with `use of undeclared identifier '_mod_<root>'`.
+
+- **A statement-form `zig"…"` can assign an existing local (BUG-267)**: `zig"out = 42;"`,
+  `out += …`, `out.f = …` or `&out` makes the local `var`; it was emitted `const` and zig
+  refused the write. And an escape ending in a block (`zig"if (c) { … }"`) no longer gets
+  a `;` appended after it (BUG-663).
+
+- **Regex quantifiers are greedy or lazy each on their own (BUG-014), and matching is
+  leftmost-first as in Python.** One `*?` used to make every quantifier lazy, so
+  `<.*?>.*>` found `"<a>b>"` in `"<a>b>c>"`. **Behaviour change:** `|` prefers its left
+  side instead of the longest alternative -- `a|ab` finds `"a"` in `"ab"` (`re.match`
+  still accepts any way of matching the whole input). Also fixed (BUG-662): nested
+  quantifiers like `(?:.*|a)+`, `(?:a|b)?`, `x{0,m}` and `x{0}` (both required a copy),
+  `x{m,n}?` (the `?` was a literal), and `(a){2}` (reported two groups).
+
+- **Subdirectory modules.** `use pkg.mod` is the file `pkg/mod.zbr` beside the importing
+  file (or on `--module-path`), and brings in the module `mod`: `mod.f()`, `mod.T`,
+  `use pkg.mod exposing f`. A module's own `use` resolves beside it. Two modules whose files
+  share a name cannot both be in one program; the second `use` is refused, naming the first.
+  (Until now a dotted `use` was refused, BUG-651.)
+
+- **`HttpRequest(method, path, content: "", query: "")` (BUG-449).** A handler can be tested
+  without a server; `HttpRequest.new(...)` is the same constructor, as for `HttpResponse`.
+
+- **`zebra -c --strict`.** The editor's strict view from the command line: also reports an
+  annotated local whose initialiser has no type the checker can infer, so the annotation is
+  unchecked. Plain `-c` is unchanged and does none of that work.
+
+- **`lib.count` reads and writes a used module's `var` (BUG-660)**; it failed inside zig.
+
+- **Assigning to a module `const` is refused (BUG-661)** -- in its own module, through
+  `exposing`, or as `lib.LIMIT`; each reached zig as "cannot assign to constant".
+
+- **A constructor call with the wrong number of arguments is refused (BUG-659).** `Pt(1)`
+  for `cue init(x: int, y: int)` compiled and ran with `y = 0`; `Pt(1, 2, 3)` failed inside
+  zig. Both are refused at `-c`, as function calls already were.
+
+- **`lib.Color.blue` works (BUG-658).** A used module's enum or union value, named through
+  the module without exposing the type, failed inside zig.
+
+- **A top-level `def main()` beside a class `static main` (BUG-657).** Both became an entry
+  point and the build failed; the top-level one is the entry.
+
+- **`lib.Pt(...)` fills defaults and honours named arguments (BUG-656).** Constructing a
+  dependency's class through its module name passed the given arguments in written order:
+  an omitted default failed inside zig, and `lib.Pt(y: 20, x: 1)` built x=20, y=1.
+
+- **Positions after a multi-line `"""` string are right (BUG-655).** One whose text starts on
+  its opening line did not count its newlines, so every later diagnostic, debugger marker and
+  coverage line was early by that many lines.
+
+- **The editor sees imported types and every error (BUG-653, BUG-654).** `zebra lsp` and
+  `zebra diagnostics` knew no type from a `use`d module (two false errors per use, and real
+  ones missed), dropped any error without a position (a file that did not compile showed as
+  clean), and placed a broken dependency's error on the edited file's line numbers. An `is`
+  with a non-type right-hand side (`x is nil`) now says where and what to write.
+
+- **No false "TC gap" errors in the editor (BUG-252).** `x is T`, a field of an
+  `if ... is U.v as n` capture (including `else if`), `reduce`, the Gui getters, `Base64.*`,
+  `sys.exec_inherit` and an annotated `zig"..."` literal were reported by `zebra lsp` /
+  `zebra diagnostics` as untyped. Unannotated locals initialised from them are typed too.
+
+- **An enum, union or class value in a primitive slot is refused at `-c` (BUG-650).**
+  `var c: int = Color.red`, `x = Color.red`, `f(Color.red)` for an `int` parameter, and
+  `var f: bool = Pt(3)` passed the front end and failed inside zig. A type alias into its base
+  type is unaffected.
+
+- **A static method of an imported class named like a string method works (BUG-652).**
+  `Util.trim(5)` or `mod.Util.isNumeric(5)`, with `Util` from another module, was compiled as
+  the string method of the same name.
+
+- **`use pkg.mod` is refused with the real reason (BUG-651).** Dotted module paths are not
+  supported; the message said only that `pkg.mod.zbr` was missing.
+
+- **A `static var` of a container type works (BUG-649).** `static var seen: List(int) = []`
+  stopped compiling when containers became references, and one with no initializer (the
+  form QUICKSTART documents) was left undefined. Both are built at program start now.
+
+- **`var vals: List(int) = []` as a field or module var builds a `List(int)` (BUG-648).**
+  It built a `List(str)` and failed inside zig.
+
+- **An untyped local's `.len` is refused rather than guessed from another class's field
+  name (BUG-017).** A local named like some class's List field, or like one of the
+  compiler's own AST fields (`args`, `message`...), took the List spelling and failed
+  inside zig; it gets the "cannot infer the type" refusal every other name gets.
+
+- **StringBuilder: `sb.len` works, and `list.at(i).append(s)` on a StringBuilder element
+  works (BUG-646, BUG-647).** Both passed `-c` and failed inside zig.
+
+- **docs/SURFACE.md no longer lists `StringBuilder.add` (BUG-645).** It was never callable:
+  the checker refuses it and suggests `append` (BUG-341). A listing correction, not a removal.
+
+- **`x is Mod.Class` is refused at `-c` (BUG-640).** It passed the front end and failed
+  inside zig; the message names `use Mod exposing Class` + `is Class`.
+
+- **A union reached by module qualification works like an exposed one (BUG-237).**
+  `on lib.Part.expr_ as e` bound the raw pointer of a `^T` payload, a fully covered qualified
+  `branch` with an `else` was refused by zig, and `if x is lib.Part.expr_ as e` did not
+  compile at all. All three now behave as they do with `use lib exposing Part`.
+
+- **`use foo exposing bar` works on native deps (BUG-263).** For a C source with a header and
+  for a hand-written `.zig` file, an exposed name was bound to nothing (C) or to a symbol the
+  file does not have (Zig), and the call failed inside zig. Both now bind the dep's own name.
+
+- **An unknown member of a builtin namespace is refused (BUG-638).** `Random.seeded(3)` or
+  `Terminal.clearScreen()` passed `zebra -c` and failed inside zig, often reported as
+  "unreachable code"; the front end now names the namespace and lists the members it has. A
+  local, parameter, class or module of the same name is unaffected. `Math` stays open (unknown
+  names pass through to `std.math`). `Base64` (encode/decode/encodeUrl/decodeUrl) now appears
+  in docs/SURFACE.md -- it had been left out by the inventory's pattern, not by the language.
+
+- **A list literal of runtime values compiles (BUG-637).** `[t1, t2]` of CSV tables, `sys.run`
+  results, regexes, dates, timers, processes or memory stats passed `zebra -c` and failed in
+  zig, because the element type was spelled wrong or guessed as `str`. Element 0's type now
+  comes from genType's own table, or from zig when the checker cannot name it.
+
+- **`sys.selfExe()` is a `str` (BUG-639).** `var e = sys.selfExe()` then `e.len()` failed in zig.
+
+- **`sys.run` / `sys.spawn` / `sys.spawnPiped` / `sys.spawnPipedIn` check their arguments
+  (BUG-636).** A command given as one string (`sys.run("git status")`), a list of non-strings
+  or a missing argument passed `zebra -c` and then failed inside zig, in runtime code. Each is
+  now refused at the call, naming the right shape: `sys.run(["git", "status"])`.
+
+- **A WebSocket close frame is sent once (BUG-542).** When the peer closed, `recv()`
+  answered its close frame and the handler's `ws.close()` sent a second one into the dropped
+  socket; on Windows Zig's std printed an "unexpected NTSTATUS" trace for that write. The
+  runtime now records that a close frame went out, or that a read found the peer gone.
+
+- **A `zebra` run inside a clone of the Zebra repo uses its own runtime (BUG-543).** The
+  runtime files read at codegen time were looked up in `./selfhost/` before the copy beside
+  the binary, so the working directory decided which runtime a program was built against. They
+  are found from the binary now: the checkout it was built in, then beside it, then the cwd.
+
+- **Printing more than 64 KiB into a pipe works on Windows (BUG-635).** From Git Bash,
+  `prog | grep` (or `zebra --emit-zig f.zbr | ...`) panicked "reached unreachable code" and
+  delivered nothing once one write filled the pipe. The runtime now detects the overlapped
+  pipe handle such a parent passes and lets the write wait for the reader.
+
+- **A statement-body lambda on a continuation line may indent its body past that line
+  (BUG-564), and a call inside a lambda body may span lines (BUG-634).** In
+  `add(a,\n    applyTo2(def(x: int): int\n        return x * 3\n    ))` the body is one level
+  past the `applyTo2(` line; it had to be one level past the statement, and anything deeper
+  failed with "unexpected end of input" at a later line. Both indentations are accepted. A
+  multi-line call or literal INSIDE a lambda body no longer ends its statement at the first
+  newline. A closer on the body's own last line (`return y))`) is refused by name.
+
+- **`in` on a list of collections compares contents (BUG-633).** `[1, 2] in [[1, 2], [3]]`
+  was false (the elements were compared as pointers); it now agrees with `==`.
+
+- **`--source-root DIR`: generated code no longer carries the build machine's paths
+  (BUG-547).** Every source path written into the emitted `.zig` -- the `// Source:` header,
+  the `// zbr:` markers, assert, contract and raise locations, the coverage record -- was
+  spelled as the path was given, so a project emitted with absolute paths committed its
+  author's disk layout and differed per machine. With `--source-root DIR` those paths are
+  relative to DIR when the source lies under it, and the same source emitted from any
+  directory is byte-identical. Explicit only: nothing is made relative to the cwd. Messages
+  the compiler prints keep the path as given. A new flag; `docs/SURFACE.md` re-derived.
+
+- **A function value with the wrong signature is refused (BUG-630).** A lambda assigned,
+  passed, returned or bound into a `sig` or `def(P): R` slot with a different arity,
+  parameter type or return type passed `zebra -c` and failed inside the runtime's
+  `_ZbrFn.from`. It is now refused at the value, naming the difference. BUG-626's messages
+  now spell `float` rather than the internal `flt`.
+
+- **A list literal passed as an argument takes the parameter's element type (BUG-632).**
+  `f([1, 2])` into a `List(float)` built a `List(int)` and failed inside zig; it now builds the
+  parameter's list, as `var xs: List(float) = [1, 2]` always did -- for a function, a method
+  and a call inside the class, primitive and optional elements.
+
+- **A container with the wrong element type is refused (BUG-626).** A `List(int)` passed for
+  a `List(str)`, a `List(int?)` bound to a `List(int)`, a `HashMap(str, int)` into a
+  `HashMap(str, str)` -- as an argument, a typed `var`, an assignment, a field store or a
+  `return` -- passed `zebra -c` and failed inside zig. It is now refused at the value, naming
+  both types. Only element types the compiler knows for certain are compared; a literal takes
+  the slot's type.
+
+- **A method that throws by inference needs `?` at its calls (BUG-628).** A `raise` or `?`
+  in a body makes a function throw without `throws` written. For a class or struct method,
+  a call without `?` passed `zebra -c` and then failed inside zig ("expected type 'i64',
+  found 'anyerror!i64'"). It is now refused at the call's line like a call to a declared
+  `throws` method.
+
+- **The `0` flag puts the zeros after the sign (BUG-631).** `${-5:04d}` printed `00-5` and
+  `${-2.5:06.1f}` printed `00-2.5`; they print `-005` and `-002.5` now, as in Python and C,
+  for ints and floats with or without a precision. An explicit fill (`${n:0>4}`) is unchanged.
+
 - **A lambda variable can be reassigned without a type annotation (BUG-629).**
   `var h = def(x: int): int = x + k` then `h = def(x: int): int = x - k` failed inside zig;
   the variable is now a function value as if declared `var h: def(int): int`, also when

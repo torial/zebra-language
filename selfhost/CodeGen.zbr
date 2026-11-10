@@ -23,9 +23,9 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
-use CgHelpers exposing hexLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, intConvTarget, numTypeName, lambdaSigNameable
+use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -91,10 +91,12 @@ def parseFmtSpec(spec: str): List(str)
     # Skip alternate form #
     if i < spec.len and spec[i] == c'#'
         i = i + 1
-    # Zero-pad
+    # Zero-pad. The `0` flag is SIGN-AWARE (`${-5:04d}` is `-005`), which Zig's padding is
+    # not, so it reads back as the align "=" -- Python's name for "pad after the sign" --
+    # and zigFmtSpec / floatPrecArgs / zeroPadArgs each decide what that means (BUG-631).
     if i < spec.len and spec[i] == c'0' and align_s == ""
         fill_s = "0"
-        align_s = ">"
+        align_s = "="
         i = i + 1
     # Width digits
     var w_start: int = i
@@ -173,6 +175,10 @@ def zigFmtSpec(spec: str, ex_type: Type_): str
                 else
                     pass
     var has_opts: bool = fill_s != "" or align_s != "" or width_s != "" or prec_s != ""
+    if align_s == "="
+        # The holes where the sign matters went to zeroPadArgs / floatPrecArgs; what is
+        # left (hex, octal, binary, chars) has no sign to place.
+        align_s = ">"
     if has_opts
         out = out + ":" + fill_s + align_s + width_s + prec_s
     return out
@@ -219,6 +225,40 @@ def floatPrecArgs(spec: str, ex_type: Type_): str
     if width_s == ""
         width_s = "0"
     return ", " + prec_s[1..prec_s.len] + ", " + emode + ", \"" + fill_s + "\", '" + align_s + "', " + width_s + ")"
+
+# BUG-631. A number hole with the `0` flag and no precision (`${n:04d}`, `${n:04}`,
+# `${x:06}`) puts its zeros AFTER the sign, which Zig's `{d:0>4}` cannot: it pads before
+# the whole text and printed `00-5`. Such a hole becomes `{f}` over the runtime's
+# `_zbr_zpad(x, width)`. Returns the call's trailing `, width)`, or "" when the hole keeps
+# Zig's formatting (no `0` flag, not a number, a precision -- floatPrecArgs has those --
+# or a type with no sign to place: `x`, `o`, `b` print the bits unsigned, `c` a byte).
+def zeroPadArgs(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var is_num: bool = false
+    branch ex_type
+        on Type_.int_
+            is_num = true
+        on Type_.int_n as _
+            is_num = true
+        on Type_.float_
+            is_num = true
+        on Type_.float_n as _
+            is_num = true
+        else
+            pass
+    if not is_num
+        return ""
+    var parts = parseFmtSpec(spec)
+    if parts.at(1) != "=" or parts.at(3) != ""
+        return ""
+    var type_s: str = parts.at(4)
+    if not (type_s == "" or type_s == "d" or type_s == "i" or type_s == "n" or type_s == "f" or type_s == "g" or type_s == "G")
+        return ""
+    var width_s: str = parts.at(2)
+    if width_s == ""
+        width_s = "0"
+    return ", " + width_s + ")"
 
 # BUG-301. `:c` renders one BYTE, and Zig's {c} takes a u8. An int literal coerced at
 # comptime so `"${206:c}"` worked; a COMPUTED value did not, and the user got a raw Zig
@@ -274,6 +314,13 @@ def getVariantKey(e: Expr): str?
         var obj_name = getIdentName(m.object)
         if obj_name as obj_n
             return makeDottedKey(obj_n, m.member)
+        # BUG-237: `on Mod.Union.v` -- the key is module-local, "Union.v", exactly as for
+        # an exposed union. Without this a qualified arm never found its boxed flag and
+        # bound the raw `*T` payload.
+        var q_union = getMemberName(m.object)
+        if q_union as qu
+            if getMemberObjectIdent(m.object) != nil
+                return makeDottedKey(qu, m.member)
     return nil
 
 # B4: collect names that are the target of a DIRECT assignment (`x = …`,
@@ -336,7 +383,241 @@ def computeBoxCandidates(stmts: List(Stmt), ic: InferCtx?, rebound: StrSet): Str
     for nm in caps.items()
         if writes.contains_(nm) and decls.contains_(nm)
             out.add(nm)
+    # BUG-596: a struct `var` whose METHOD is read as a value (`var f = p.move`) is bound by
+    # reference, so it lives in a cell whatever else happens to it: the bound value holds the
+    # cell's pointer and may outlive the frame. `rebound` too, so boxedFor keeps it.
+    if ic as bic
+        var bexprs = List(Expr)()
+        exprsInStmts(stmts, bexprs)
+        var binds = StrSet()
+        for be in bexprs
+            structBindsInExpr(be, bic, binds)
+        for bn in binds.items()
+            if decls.contains_(bn)
+                out.add(bn)
+                rebound.add(bn)
     return out
+
+# BUG-596: the name of the struct local `m` reads a method of as a VALUE, or "". A field of
+# the same name wins (it is what is read). Callee position is the caller's business.
+def structBindRecv(m: ExprMember, ic: InferCtx): str
+    if m.object is Expr.ident as oid
+        var rt: Type_ = inferExpr(m.object, ic)
+        if rt is Type_.named as rn
+            var ct_opt = ic.module_types.classOf(rn)
+            if ct_opt == nil
+                ct_opt = ic.dep_types.classOf(rn)
+            if ct_opt as ct
+                if ct.is_struct and not ct.is_interface
+                    if ic.fieldTypeAny(rn, m.member) == nil and ic.methodReturnAny(rn, m.member) != nil
+                        return oid.name
+    return ""
+
+# BUG-596: every expression a statement list holds directly -- conditions, initialisers,
+# targets, arguments -- in nested blocks too; not the sub-expressions of those.
+# stmt-walker: exhaustive
+def exprsInStmts(stmts: List(Stmt), out: List(Expr))
+    for st in stmts
+        branch st
+            on Stmt.var_ as sv
+                if sv.init_expr as svi
+                    out.add(svi)
+            on Stmt.destruct as sd
+                out.add(sd.init_expr)
+            on Stmt.if_ as si
+                out.add(si.cond)
+                exprsInStmts(si.then_stmts, out)
+                for ei in si.else_ifs
+                    out.add(ei.cond)
+                    exprsInStmts(ei.stmts, out)
+                if si.else_stmts as ies
+                    exprsInStmts(ies, out)
+            on Stmt.while_ as sw
+                out.add(sw.cond)
+                exprsInStmts(sw.stmts, out)
+            on Stmt.for_in as sfi
+                out.add(sfi.iter)
+                if sfi.filter as sff
+                    out.add(sff)
+                exprsInStmts(sfi.stmts, out)
+                if sfi.else_ as fie
+                    exprsInStmts(fie, out)
+            on Stmt.for_num as sfn
+                out.add(sfn.start)
+                out.add(sfn.stop_)
+                if sfn.step as sfs
+                    out.add(sfs)
+                exprsInStmts(sfn.stmts, out)
+                if sfn.else_ as fne
+                    exprsInStmts(fne, out)
+            on Stmt.branch_ as sbr
+                out.add(sbr.expr)
+                for arm in sbr.cases
+                    for av in arm.values
+                        out.add(av)
+                    for ag in arm.guard_expr
+                        out.add(ag)
+                    exprsInStmts(arm.stmts, out)
+                if sbr.else_ as bre
+                    exprsInStmts(bre, out)
+            on Stmt.with_ as swi
+                out.add(swi.target)
+                exprsInStmts(swi.stmts, out)
+            on Stmt.in_scope as sis
+                out.add(sis.expr)
+                exprsInStmts(sis.stmts, out)
+            on Stmt.try_catch as stc
+                exprsInStmts(stc.stmts, out)
+                for cc in stc.clauses
+                    exprsInStmts(cc.stmts, out)
+            on Stmt.allocate_ as sal
+                out.add(sal.source)
+                exprsInStmts(sal.stmts, out)
+            on Stmt.return_ as sr
+                if sr.value as srv
+                    out.add(srv)
+            on Stmt.yield_ as sy
+                out.add(sy.value)
+            on Stmt.assert_ as sas
+                out.add(sas.cond)
+                if sas.message as sam
+                    out.add(sam)
+            on Stmt.assign as sa
+                out.add(sa.target)
+                out.add(sa.value)
+            on Stmt.expr as se
+                out.add(se)
+            on Stmt.raise_ as sra
+                if sra.message as srm
+                    out.add(srm)
+                if sra.details as srd
+                    out.add(srd)
+            on Stmt.copy_out as sco
+                out.add(sco.target)
+                out.add(sco.value)
+            on Stmt.print_ as spr
+                for pa in spr.args
+                    out.add(pa)
+            on Stmt.contract as sct
+                for cx in sct.exprs
+                    out.add(cx)
+            else
+                pass
+
+# BUG-596: the struct locals whose method `e` reads as a value, lambda bodies included. A
+# member in callee position (`p.move()`) is a call, not a bind.
+# expr-walker: exhaustive
+# expr-walker-ok: ident -- a bare name is not a member read.
+# expr-walker-ok: zig_lit -- raw Zig text binds nothing.
+def structBindsInExpr(e: Expr, ic: InferCtx, out: StrSet)
+    branch e
+        on Expr.member as mem
+            var sbr: str = structBindRecv(mem, ic)
+            if sbr != ""
+                out.add(sbr)
+            structBindsInExpr(mem.object, ic, out)
+        on Expr.call as c
+            if c.callee is Expr.member as ccm
+                structBindsInExpr(ccm.object, ic, out)
+            else
+                structBindsInExpr(c.callee, ic, out)
+            for a in c.args
+                structBindsInExpr(a.value, ic, out)
+        on Expr.lambda as lam
+            # The body's own locals are typed only inside it: bind the parameters and walk
+            # the body (quietly -- this measures, the checker has reported), then restore the
+            # enclosing scope, as checkLambdaBody does. Without it a struct `var` declared in
+            # a lambda is not seen, not boxed, and its bind fails inside zig.
+            var lsaved = HashMap(str, Type_)()
+            for lsk, lsv in ic.scope
+                lsaved.set(lsk, lsv)
+            var lquiet: bool = ic.quiet_errors
+            ic.quiet_errors = true
+            for lp in lam.params
+                if lp.type_ != nil
+                    ic.bind(lp.name, typeFromRef(lp.type_!))
+                else
+                    ic.bind(lp.name, Type_.unknown_)
+            branch lam.body_
+                on LambdaBody.stmts as lbs
+                    walkStmts(lbs, ic)
+                    var les = List(Expr)()
+                    exprsInStmts(lbs, les)
+                    for le in les
+                        structBindsInExpr(le, ic, out)
+                on LambdaBody.expr_ as lbe
+                    structBindsInExpr(lbe, ic, out)
+            ic.quiet_errors = lquiet
+            ic.scope = lsaved
+        on Expr.catch_ as ec
+            structBindsInExpr(ec.expr, ic, out)
+            structBindsInExpr(ec.fallback, ic, out)
+        on Expr.unary as u
+            structBindsInExpr(u.operand, ic, out)
+        on Expr.binary as b
+            structBindsInExpr(b.left, ic, out)
+            structBindsInExpr(b.right, ic, out)
+        on Expr.index as ix
+            structBindsInExpr(ix.object, ic, out)
+            structBindsInExpr(ix.index, ic, out)
+        on Expr.slice as slc
+            structBindsInExpr(slc.object, ic, out)
+            if slc.start as sst
+                structBindsInExpr(sst, ic, out)
+            if slc.stop_ as ssp
+                structBindsInExpr(ssp, ic, out)
+        on Expr.cast as ca
+            structBindsInExpr(ca.expr, ic, out)
+        on Expr.to_non_nil as tnn
+            structBindsInExpr(tnn.expr, ic, out)
+        on Expr.is_nil as isn
+            structBindsInExpr(isn.expr, ic, out)
+        on Expr.orelse_ as oe
+            structBindsInExpr(oe.expr, ic, out)
+            structBindsInExpr(oe.fallback, ic, out)
+        on Expr.if_expr as ie
+            structBindsInExpr(ie.cond, ic, out)
+            structBindsInExpr(ie.then_expr, ic, out)
+            structBindsInExpr(ie.else_expr, ic, out)
+        on Expr.try_ as tr
+            structBindsInExpr(tr.expr, ic, out)
+        on Expr.list_lit as ll
+            for le2 in ll.elems
+                structBindsInExpr(le2, ic, out)
+        on Expr.array_lit as al
+            for ae in al.elems
+                structBindsInExpr(ae, ic, out)
+        on Expr.set_lit as sl
+            for se in sl.elems
+                structBindsInExpr(se, ic, out)
+        on Expr.tuple_lit as tl
+            for te in tl.elems
+                structBindsInExpr(te, ic, out)
+        on Expr.dict_lit as dl
+            for de in dl.entries
+                structBindsInExpr(de.key, ic, out)
+                structBindsInExpr(de.value, ic, out)
+        on Expr.string_interp as sip
+            for sp in sip.parts
+                if sp is StringPart.expr_ as spe
+                    structBindsInExpr(spe, ic, out)
+        on Expr.type_check as tck
+            structBindsInExpr(tck.expr, ic, out)
+        on Expr.chained_cmp as ccmp
+            for co in ccmp.operands
+                structBindsInExpr(co, ic, out)
+        on Expr.except_ as exc
+            structBindsInExpr(exc.base, ic, out)
+            for ef in exc.fields
+                structBindsInExpr(ef.value, ic, out)
+        on Expr.old_ as eo
+            structBindsInExpr(eo.operand, ic, out)
+        on Expr.opt_chain as oc
+            structBindsInExpr(oc.base, ic, out)
+            for oa in oc.args
+                structBindsInExpr(oa.value, ic, out)
+        else
+            pass
 
 def boxInfoStmts(stmts: List(Stmt), caps: StrSet, writes: StrSet, decls: StrSet, rebound: StrSet, ic: InferCtx?)
     scanMutationsInto(stmts, writes, ic)
@@ -1095,9 +1376,14 @@ def stmtMentionsThis(s: Stmt): bool
 # bare `threshold` there is the parameter. (`.threshold` is still `this`, which
 # bodyMentionsThis sees.) The pure helper `def expt(threshold: float, ...)` on a class
 # with a `threshold` field kept its `self` undiscarded and Zig refused the parameter.
+# Does the body read `self`? A STATIC field or method does not: a bare one is emitted
+# through its type (`_zbr_ty_Reg.n`), so counting it left `self` unused and undiscarded,
+# and zig refused the method -- "unused function parameter" (BUG-665).
 def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl), params: List(Param)): bool
     for d in members
         if d is Decl.var_ as fld
+            if fld.mods.is_static
+                continue
             var shadowed: bool = false
             for sp in params
                 if sp.name == fld.name
@@ -1109,6 +1395,8 @@ def bodyUsesAnyField(stmts: List(Stmt), members: List(Decl), params: List(Param)
 def bodyUsesAnyMethod(stmts: List(Stmt), members: List(Decl)): bool
     for d in members
         if d is Decl.method as dm
+            if dm.mods.is_static
+                continue
             if nameUsedInStmts(dm.name, stmts)
                 return true
     return false
@@ -1208,6 +1496,84 @@ def isDeferredModuleVar(mv: DeclVar): bool
         return mv.init_expr! is Expr.call
     return false
 
+# BUG-295 / BUG-664: every COMPUTED module var (`isDeferredModuleVar`) and computed static
+# (`isDeferredStaticField`) is initialised on FIRST USE. They used to be assigned in one
+# sweep -- module vars in source order, then statics -- so any initialiser that read one
+# set LATER read garbage: a module var reading a later one (`var a = b.len + 1`), a module
+# var reading a static (directly, or through a function no ordering can see), a static
+# reading a later class's static, and across an import cycle, where the dependency's
+# initialisers run first. Each is one instance, initialised once: `_zbr_mvref_<name>()`
+# (a module var) or `<Type>._zbr_sfref_<field>()` (a static) runs its initialiser if it
+# has not run, and every reference -- this module's, `lib.x`, an exposed `x`, `Reg.f`,
+# `lib.Reg.f`, a bare `f` in a method -- goes through it as `...().*`, reads and writes
+# alike. The init sweep forces the accessors, so everything is set before main and a
+# write made by an earlier initialiser survives. An initialiser that needs its own value
+# is a genuine cycle and stops naming the chain (`_zbr_init_cycle`).
+# Constant-initialised vars and statics need nothing: they are set statically.
+# Sean, 2026-10-29: "initialize at first use".
+def isLazyModuleVar(name: str): bool
+    return (" " + name + " ") in _lazy_mvs
+
+# A reference to dep `stem`'s module var `name`: is it lazy there? Recorded by
+# noteDepCodegenFacts (`$mvlazy:`) for every deferred var.
+def depModuleVarIsLazy(mt: ModuleTypes, alias: str, name: str): bool
+    var stem: str = alias
+    var dot: int = stem.lastIndexOf(".")
+    if dot >= 0
+        stem = stem.substring(dot + 1, stem.len)
+    return mt.hasModuleVar("$mvlazy:" + stem + "." + name)
+
+# BUG-664: is `cls.field` a lazy static of THIS module's class `cls`?
+def ownStaticIsLazy(cls: str, field: str): bool
+    return (" " + cls + "." + field + " ") in _lazy_sfs
+
+# ...of class `cls` in the dependency reached as `alias` (`use a.b.lib` -> stem `lib`).
+# Keyed by the defining module's stem, not the class name alone: a program's own `Reg`
+# and a dependency's `Reg` can both exist, with a same-named static computed in one and
+# constant in the other, and a name-only key emitted `_zbr_sfref_n()` against the struct
+# that has none (bug664_same_name_test).
+def depStaticIsLazy(mt: ModuleTypes, alias: str, cls: str, field: str): bool
+    var stem: str = alias
+    var dot: int = stem.lastIndexOf(".")
+    if dot >= 0
+        stem = stem.substring(dot + 1, stem.len)
+    return mt.hasModuleVar("$sflazy:" + stem + "." + cls + "." + field)
+
+def isOwnLazyStaticOwner(cls: str): bool
+    return (" " + cls + " ") in _lazy_own_types
+
+# The non-generic classes and structs at top level: the ones whose statics are file-
+# lifetime globals inside a file-scope struct (generic statics are per instantiation and
+# are never deferred).
+def lazyStaticOwners(decls: List(Decl)): List(Decl)
+    var out = List(Decl)()
+    for d in decls
+        if d is Decl.class_ as c
+            if c.type_params.len == 0
+                out.add(d)
+        else if d is Decl.struct_
+            out.add(d)
+    return out
+
+# BUG-649: a `static var` is a file-lifetime global inside its class's struct, so it
+# has the module var's problem (BUG-153/496) and gets the module var's answer: declared
+# `= undefined` and assigned in _initModuleVars(). Two shapes. An initializer that is not
+# a comptime literal -- since containers became references (BUG-501 1d) every container
+# constructor allocates, and `static var seen: List(int) = []` stopped compiling ("unable
+# to resolve comptime value"). And a CONTAINER with no initializer, which was `= undefined`
+# and stayed so: QUICKSTART's own `static var instances: List(Registry)` wrote through
+# garbage on its first `.add`. A generic class's statics are not covered (per
+# instantiation; the caller excludes them).
+def isDeferredStaticField(f: DeclVar): bool
+    if not f.mods.is_static
+        return false
+    if f.type_ != nil
+        if isContainerTypeRef(f.type_!)
+            return true
+    if f.init_expr != nil
+        return not isComptimeModuleInit(f.init_expr!)
+    return false
+
 # BUG-548: an initializer that allocates at run time.
 def isAllocatingModuleInit(e: Expr): bool
     branch e
@@ -1305,6 +1671,24 @@ def returnedCaptureLambda(stmts: List(Stmt)): ExprLambda?
 # closure changes lives in a cell and `call` always takes `@This()`: nothing to record.)
 def noteDepCodegenFacts(mt: ModuleTypes, m: Module, strip_contracts: bool)
     mt.dep_struct_recv = mt.dep_struct_recv + structReceiverTable(m.decls, strip_contracts)
+    # BUG-295 / BUG-664: its computed module vars and statics, read through accessors.
+    for nd in m.decls
+        if nd is Decl.var_ as nv
+            if isDeferredModuleVar(nv)
+                mt.addModuleVar("$mvlazy:" + moduleStemOf(m.file) + "." + nv.name)
+    for sd in lazyStaticOwners(m.decls)
+        var sd_name: str = ""
+        var sd_members = List(Decl)()
+        if sd is Decl.class_ as sdc
+            sd_name = sdc.name
+            sd_members = sdc.members
+        else if sd is Decl.struct_ as sds
+            sd_name = sds.name
+            sd_members = sds.members
+        for sm in sd_members
+            if sm is Decl.var_ as sv
+                if isDeferredStaticField(sv)
+                    mt.addModuleVar("$sflazy:" + moduleStemOf(m.file) + "." + sd_name + "." + sv.name)
 
 def generateModule(m: Module, file: str): str
     return generateModuleWith(m, file, List(str)(), ModuleTypes(), false, nil, false)
@@ -1354,6 +1738,28 @@ def structReceiverTable(decls: List(Decl), strip_contracts: bool): str
 
 def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_mt: ModuleTypes, strip_contracts: bool, tc_result: TcResult?, library_mode: bool): str
     var w = Writer()
+    _lazy_stem = moduleStemOf(file)
+    _lazy_mvs = " "
+    for lzd in m.decls
+        if lzd is Decl.var_ as lzv
+            if isDeferredModuleVar(lzv)
+                _lazy_mvs = _lazy_mvs + lzv.name + " "
+    _lazy_sfs = " "
+    _lazy_own_types = " "
+    for lzo in lazyStaticOwners(m.decls)
+        var lzo_name: str = ""
+        var lzo_members = List(Decl)()
+        if lzo is Decl.class_ as lzc
+            lzo_name = lzc.name
+            lzo_members = lzc.members
+        else if lzo is Decl.struct_ as lzs
+            lzo_name = lzs.name
+            lzo_members = lzs.members
+        _lazy_own_types = _lazy_own_types + lzo_name + " "
+        for lzm in lzo_members
+            if lzm is Decl.var_ as lzf
+                if isDeferredStaticField(lzf)
+                    _lazy_sfs = _lazy_sfs + lzo_name + "." + lzf.name + " "
     _cov_lines_s = ""
     _cov_max = 0
     var cn = StrSet()
@@ -1432,14 +1838,16 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 for mem in c.members
                     branch mem
                         on Decl.method as dm
-                            if dm.throws_
+                            # BUG-628: genMethod's rule for `anyerror!` (declared, or a
+                            # `raise`/`?` in the body), not the declaration alone.
+                            if methodEmitsErrorUnion(dm)
                                 g.throws_methods.add(makeDottedKey(c.name, dm.name))
                             if dm.name == "toString"
                                 g.toString_types.add(c.name)
                         on Decl.namespace_ as ns2
                             for nmem in ns2.decls
                                 if nmem is Decl.method as ndm
-                                    if ndm.throws_
+                                    if methodEmitsErrorUnion(ndm)
                                         g.throws_methods.add(makeDottedKey(c.name, ndm.name))
                         else
                             pass
@@ -1489,6 +1897,9 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     # TypeChecker.zbr); the hardcoded isUnionLikeName /
                     # isEnumLikeName lists remain: a fallback for the
                     # generate-single-file path where deps_mt is empty.
+                    # BUG-664: which module an exposed name came from (a static's accessor
+                    # is a fact about the class's own module).
+                    g.addExposedFrom(exposed_name, imp.path)
                     if deps_mt.hasModuleVar(exposed_name)
                         # BUG-158: an exposed cross-module module var — genUse skips its
                         # `const` and genIdent emits `alias._zbr_mv_name` at each use.
@@ -1548,7 +1959,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                     g.struct_with_init.add(s.name)
                 for mem in s.members
                     if mem is Decl.method as dm
-                        if dm.throws_
+                        if methodEmitsErrorUnion(dm)
                             g.throws_methods.add(makeDottedKey(s.name, dm.name))
                         if dm.name == "toString"
                             g.toString_types.add(s.name)
@@ -1619,7 +2030,7 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 reflect_classes.add(rc.name)
     if reflect_classes.len > 0
         # Emit a wrapper struct so that reflect slices work with .items.len and .items[i]
-        w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { return self.items[@intCast(i)]; } };\n")
+        w.emit("const _ReflectStrSlice = struct { items: []const []const u8, fn count(self: @This()) i64 { @setRuntimeSafety(true); return @intCast(self.items.len); } fn at(self: @This(), i: i64) []const u8 { @setRuntimeSafety(true); return self.items[@intCast(i)]; } };\n")
         w.emit("fn _reflect_lookup_name(tag: u64) []const u8 {\n")
         var ri2 = 0
         while ri2 < reflect_classes.len
@@ -1662,19 +2073,77 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
     # reference in Zig.  See docs/single_file_emit_design.md §7a.1.
     if _single_file
         w.emit("pub fn _initModuleVarsImpl() void {\n")
+        w.emit("    " + safetyStmt() + "\n")
     else
         w.emit("pub fn _initModuleVars() void {\n")
+        w.emit("    " + safetyStmt() + "\n")
     w.emit("    if (_module_vars_inited) return;\n")
     w.emit("    _module_vars_inited = true;\n")
     for mvd in m.decls
         if mvd is Decl.var_ as mv
-            if isDeferredModuleVar(mv)
+            if isLazyModuleVar(mv.name)
+                # BUG-295: forced through the accessor -- assigning here would re-run an
+                # initialiser a cycle partner already forced, clobbering any write since.
+                w.emit("    _ = _zbr_mvref_" + mv.name + "();\n")
+            else if isDeferredModuleVar(mv)
                 w.emit("    _zbr_mv_")
                 w.emit(mv.name)
                 w.emit(" = ")
-                g.genModuleVarInit(mv.init_expr!)
+                g.genModuleVarInit(mv.init_expr!, mv.type_)
                 w.emit(";\n")
+    # BUG-649: the statics genFieldDecl declared `= undefined` (non-generic classes and
+    # structs at top level -- the ones whose Zig name is a file-scope struct).
+    for sd in m.decls
+        var sd_name: str = ""
+        var sd_members = List(Decl)()
+        if sd is Decl.class_ as sdc
+            if sdc.type_params.len == 0
+                sd_name = sdc.name
+                sd_members = sdc.members
+        else if sd is Decl.struct_ as sds
+            sd_name = sds.name
+            sd_members = sds.members
+        if sd_name != ""
+            for sm in sd_members
+                if sm is Decl.var_ as sv
+                    if isDeferredStaticField(sv)
+                        # BUG-664: forced through its accessor, like a module var
+                        w.emit("    _ = ")
+                        g.emitTypeName(sd_name)
+                        w.emit("._zbr_sfref_" + sv.name + "();\n")
     w.emit("}\n")
+    # BUG-295: one first-use accessor per lazy module var (see isLazyModuleVar).
+    # State 0 = not run, 1 = initialiser running, 2 = done. BUG-664: the accessor is an
+    # `inline` fast path (a load, a compare, a return) over a cold out-of-line initialiser;
+    # one plain function was ~8x slower in a --release hot loop (1772 ms vs 215 ms for
+    # 400M reads), since every read paid a call.
+    for lmd in m.decls
+        if lmd is Decl.var_ as lmv
+            if isLazyModuleVar(lmv.name)
+                var lq: str = "\"" + _lazy_stem + "." + lmv.name + "\""
+                # one runtime for the whole program unless every module splices its own
+                var lshared: str = "true"
+                if not _runtime_module and not _single_file
+                    lshared = "false"
+                w.emit("var _zbr_mvst_" + lmv.name + ": u8 = 0;\n")
+                w.emit("pub inline fn _zbr_mvref_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
+                w.emit("    if (_zbr_mvst_" + lmv.name + " == 2) return &_zbr_mv_" + lmv.name + ";\n")
+                w.emit("    return _zbr_mvinit_" + lmv.name + "();\n")
+                w.emit("}\n")
+                w.emit("fn _zbr_mvinit_" + lmv.name + "() *@TypeOf(_zbr_mv_" + lmv.name + ") {\n")
+                w.emit("    @branchHint(.cold);\n")
+                w.emit("    " + safetyStmt() + "\n")
+                w.emit("    if (_zbr_mvst_" + lmv.name + " == 1) _zbr_init_cycle(" + lq + ", " + lshared + ");\n")
+                w.emit("    _zbr_mvst_" + lmv.name + " = 1;\n")
+                w.emit("    var _zbr_frame: _ZbrInitFrame = .{ .name = " + lq + ", .prev = _zbr_init_head };\n")
+                w.emit("    _zbr_init_head = &_zbr_frame;\n")
+                w.emit("    _zbr_mv_" + lmv.name + " = ")
+                g.genModuleVarInit(lmv.init_expr!, lmv.type_)
+                w.emit(";\n")
+                w.emit("    _zbr_init_head = _zbr_frame.prev;\n")
+                w.emit("    _zbr_mvst_" + lmv.name + " = 2;\n")
+                w.emit("    return &_zbr_mv_" + lmv.name + ";\n")
+                w.emit("}\n")
     if _coverage
         # This module's coverage record. Order-independent at top level, so it can
         # sit after the statements that index it. `counts` is indexed by SOURCE LINE.
@@ -1691,12 +2160,12 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                 first = false
         w.emit("};\n")
         w.emit("pub var _zbr_covf: _ZbrCovFile = .{ .path = \"")
-        w.emit(fwdSlashes(file))
+        w.emit(emitLoc(file))
         w.emit("\", .lines = &_zbr_cov_lines, .counts = &_zbr_cov_counts };\n")
     if _census
         # One address per module: the census keys a site by this pointer and line.
         w.emit("const _zbr_cens_path: []const u8 = \"")
-        w.emit(fwdSlashes(file))
+        w.emit(emitLoc(file))
         w.emit("\";\n")
     return w.output()
 
@@ -1730,6 +2199,13 @@ def generateEntryPoint(m: Module, library_mode: bool): str
                                     main_throws = nmth.throws_
             else
                 pass
+    # BUG-657: a top-level `def main()` is the program's entry even when a class also has a
+    # `static main` (the compiler's own *_test.zbr call `T.main()` from one). Both became a
+    # file-scope `pub fn main` and zig refused the duplicate; `-c` passed.
+    for td in m.decls
+        if td is Decl.method as tdm
+            if tdm.name == "main" and not tdm.mods.is_static
+                main_class = ""
     if main_class == ""
         # Single-file: a top-level free `def main` was emitted as `_Mod.main` (with
         # the _zinit param + runtime init injected); Zig's startup wants root.main,
@@ -1739,10 +2215,10 @@ def generateEntryPoint(m: Module, library_mode: bool): str
             for decl in m.decls
                 if decl is Decl.method as tm
                     if tm.name == "main" and not tm.mods.is_static and tm.params.len == 0
-                        var tm_throws: bool = tm.throws_ or (tm.stmts != nil and bodyHasRaise(tm.stmts!))
+                        var tm_throws: bool = methodEmitsErrorUnion(tm)
                         if tm_throws
-                            return "pub fn main(_zinit: std.process.Init) anyerror!void {\n    return _Mod.main(_zinit);\n}\n"
-                        return "pub fn main(_zinit: std.process.Init) void {\n    _Mod.main(_zinit);\n}\n"
+                            return "pub fn main(_zinit: std.process.Init) anyerror!void {\n    " + safetyStmt() + "\n    return _Mod.main(_zinit);\n}\n"
+                        return "pub fn main(_zinit: std.process.Init) void {\n    " + safetyStmt() + "\n    _Mod.main(_zinit);\n}\n"
         return ""
     # Single-file: the entry stays at file scope but the user's main class now
     # lives inside `_Mod`, so qualify the call.
@@ -1751,6 +2227,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
         mod_prefix = "_Mod."
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
+    sb.append("    " + safetyStmt() + "\n")
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
@@ -1764,7 +2241,7 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     if not library_mode
         sb.append("    defer _arena.deinit();\n")
     sb.append(covPrologue("    "))    # after the arena defer: the flush allocates (see the test main)
-    sb.append(censFlush("    "))
+    sb.append(censFlush("    ", library_mode))
     if main_throws
         sb.append("    ")
         sb.append(mod_prefix)
@@ -2195,6 +2672,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
 
     var sb: StringBuilder = StringBuilder()
     sb.append("pub fn main(_zinit: std.process.Init) void {\n")
+    sb.append("    " + safetyStmt() + "\n")
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
@@ -2207,7 +2685,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     # from the arena -- registered first it ran last, on a freed arena (a segfault at
     # exit that the first IDE witness found; the probe's free main had the other order).
     sb.append(covPrologue("    "))
-    sb.append(censFlush("    "))
+    sb.append(censFlush("    ", false))
     sb.append("    var _test_pass: usize = 0;\n")
     sb.append("    var _test_fail: usize = 0;\n")
     var ti: int = 0
@@ -2309,7 +2787,7 @@ def generateErrorMsgHelperWith(dep_modules: List(str)): str
 # ── Full file generator ───────────────────────────────────────────────────────
 #
 # Returns a complete, self-contained .zig file.
-# preamble_path must be relative to the current working directory.
+# preamble_path is any readable path (main.zbr's runtimeFilePath finds it).
 
 # Normalize path separators to forward slash so emitted `// Source:` / `// zbr:`
 # markers are byte-identical regardless of the host path separator. On Windows
@@ -2318,6 +2796,42 @@ def generateErrorMsgHelperWith(dep_modules: List(str)): str
 # generated .zig differ run-to-run. Mirrors writePathFwd in src/CodeGen.zig.
 def fwdSlashes(p: str): str
     return p.replace("\\", "/")
+
+# BUG-547: `--source-root DIR`. Every source path EMITTED into generated code -- the
+# `// Source:` header, the `// zbr:` markers, assert / contract / raise locations, the
+# coverage record -- is spelled relative to DIR when the source lies under it, so a
+# committed `.zig` does not carry the build machine's disk and is the same on every
+# machine. Explicit only, never the cwd: the emitted bytes must not depend on where the
+# command was run. Diagnostics the compiler PRINTS keep the path as the user gave it.
+# Paths are compared absolute (a relative one resolved against the cwd), with `/`
+# separators; a Windows drive letter compares case-insensitively.
+var _source_root: str = ""
+
+def setSourceRoot(r: str)
+    var root: str = absSlashPath(r)
+    while root.len > 1 and root.endsWith("/")
+        root = root[0 .. root.len - 1]
+    _source_root = root
+
+def absSlashPath(p_in: str): str
+    var p: str = fwdSlashes(p_in)
+    if p.startsWith("/") or (p.len > 1 and p[1 .. 2] == ":")
+        return p
+    while p.startsWith("./")
+        p = p[2 .. p.len]
+    return fwdSlashes(sys.cwd()) + "/" + p
+
+def emitLoc(p: str): str
+    var f: str = fwdSlashes(p)
+    if _source_root == "" or f == ""
+        return f
+    var a: str = absSlashPath(f)
+    var pre: str = _source_root + "/"
+    if a.len > pre.len
+        var head: str = a[0 .. pre.len]
+        if head == pre or (pre.len > 1 and pre[1 .. 2] == ":" and head.lower() == pre.lower())
+            return a[pre.len .. a.len]
+    return f
 
 # Single-file (Phase 2): a dependency module's `use` path → its file-scope namespace
 # struct name.  `_mod_` prefix keeps it distinct from a same-named class the module
@@ -2426,6 +2940,13 @@ def setRuntimeModule(v: bool)
 # Space-fenced string of the CURRENT module's instrumented lines (" 12 13 "), reset per
 # module; a module-global container would need deferred init for no benefit.
 var _coverage: bool = false
+# BUG-295: this module's module vars initialised on FIRST USE (see moduleVarIsLazy),
+# space-fenced (" a b "), reset by generateModuleWith. Generations never interleave
+# (a module's deps finish before it is generated), so one module-global is enough.
+var _lazy_mvs: str = ""
+var _lazy_sfs: str = ""
+var _lazy_own_types: str = ""
+var _lazy_stem: str = ""
 var _cov_lines_s: str = ""
 var _cov_max: int = 0
 
@@ -2442,29 +2963,54 @@ def coverageOn(): bool
 # wraps `_allocator` and flushes the report at exit. Off: nothing is emitted, and the
 # default emit is byte-identical. The runtime half is `_ZbrCensAlloc` in the preamble.
 var _census: bool = false
+var _census_host: bool = false
 var _cens_save_n: int = 0
 
 def setCensus(v: bool)
     _census = v
+
+# BUG-677: `--census=host` -- the entry prologue does not install the census; the host
+# calls `_zbr_cens_install()` when its window should open.
+def setCensusHost(v: bool)
+    _census_host = v
 
 def censusOn(): bool
     return _census
 
 # The entry prologue's install line: right after `_allocator` is chosen, before any
 # dependency or module var initialises, so their allocations land in `<init>`.
+# With --census=host (BUG-677) it installs nothing and records that a host will, so the
+# report can say so when none did.
 def censInstall(indent: str): str
     if not _census
         return ""
-    return indent + "_zbr_cens_install();\n"
+    if _census_host
+        return indent + "_zbr_cens_mark_host();\n"
+    return indent + "_zbr_cens_install_entry();\n"
 
 # After the arena defer, so it runs FIRST (defers are LIFO) and reads a live arena.
-def censFlush(indent: str): str
+# A --census=host LIBRARY gets none: its main returns before the host's window opens, so
+# a report there would say "never installed" about a census the host installs next. The
+# host flushes (`_zbr_cens_flush()`) when it wants the report.
+def censFlush(indent: str, library: bool): str
     if not _census
+        return ""
+    if _census_host and library
         return ""
     return indent + "defer _zbr_cens_flush();\n"
 
 # A function body's save/restore of the current site. The counter keeps nested lambda
 # bodies (emitted as fns inside the enclosing fn) from shadowing an outer save.
+# BUG-667 / BUG-668: Zig's own safety checks (integer overflow, a nil `.?`, an
+# `@intCast` out of range, `unreachable`) switched on in the function it opens, so a
+# ReleaseFast build -- `zebra --release`, or a host building emitted Zebra -- traps
+# where Debug traps instead of carrying on with undefined behaviour. Per FUNCTION,
+# because a per-module optimize mode does not split safety (measured). Every
+# function emitted into a user module opens with it; tools/runtime_safety_check.py
+# derives that from the output.
+def safetyStmt(): str
+    return "@setRuntimeSafety(true);"
+
 def censSave(): str
     _cens_save_n = _cens_save_n + 1
     var nm: str = "_zbr_ss_" + _cens_save_n.toString()
@@ -2822,7 +3368,7 @@ def rtAssemble(file: str, preamble: str, body: str): str
     var sb: StringBuilder = StringBuilder()
     sb.append("// Generated by zebra-selfhost.\n")
     sb.append("// Source: ")
-    sb.append(fwdSlashes(file))
+    sb.append(emitLoc(file))
     sb.append("\n\n")
     if _runtime_module
         var qualified: str = rtQualify(body)
@@ -3134,7 +3680,7 @@ def generateNodeAddon(m: Module, file: str, preamble_path: str, napi_preamble_pa
     var decls: str = generateModuleWith(m, file, List(str)(), ModuleTypes(), strip_contracts, nil, false)
     var sb: StringBuilder = StringBuilder()
     sb.append("// Generated by zebra-selfhost (node-addon).\n// Source: ")
-    sb.append(fwdSlashes(file))
+    sb.append(emitLoc(file))
     sb.append("\n\n")
     sb.append(guiSelectPreamble(preamble))
     sb.append("\n")
@@ -3149,7 +3695,7 @@ def generateNodeAddon(m: Module, file: str, preamble_path: str, napi_preamble_pa
 def generateNodeDts(m: Module, file: str): str
     var sb: StringBuilder = StringBuilder()
     sb.append("// Auto-generated by zebra --target node-addon. Do not edit.\n// Source: ")
-    sb.append(fwdSlashes(file))
+    sb.append(emitLoc(file))
     sb.append("\n\n")
     for d in m.decls
         if d is Decl.method as mth
@@ -3257,7 +3803,7 @@ def generateSingleFileCombined(m: Module, file: str, preamble_path: str, dep_bod
     var sb: StringBuilder = StringBuilder()
     sb.append("// Generated by zebra-selfhost (single-file).\n")
     sb.append("// Source: ")
-    sb.append(fwdSlashes(file))
+    sb.append(emitLoc(file))
     sb.append("\n\n")
     sb.append(guiSelectPreamble(preamble))
     sb.append("\n")
@@ -3270,6 +3816,17 @@ def generateSingleFileCombined(m: Module, file: str, preamble_path: str, dep_bod
     sb.append("const _Mod = struct {\n")
     sb.append(decls)
     sb.append("};\n")
+    # BUG-295 (4): a dependency on an import cycle `use`s the ROOT, and genUse binds that
+    # to `_mod_<root>` like any other module -- which did not exist, so every cycle failed
+    # to build under --single-file. Name the root under that spelling too, unless a
+    # dependency already owns it. Only on a cycle, so acyclic output is unchanged.
+    var root_sf: str = sfModStructName(moduleStemOf(file))
+    var root_taken: bool = not deps_mt.hasModuleVar("$cyc:" + moduleStemOf(file))
+    for dn in dep_names
+        if sfModStructName(dn) == root_sf
+            root_taken = true
+    if not root_taken
+        sb.append("const ${root_sf} = _Mod;\n")
     # One file-scope init dispatcher: deps first, root last (a module var may reference an
     # exposed cross-module symbol, so the dep it comes from must be initialised first).
     sb.append("pub fn _initModuleVars() void {\n")
@@ -3493,6 +4050,22 @@ var _implicit_try_sites: List(str) = List(str)()
 def recordImplicitTry(site: str)
     _implicit_try_sites.add(site)
 
+# Does genMethod give `m` an `anyerror!` return type? Declared `throws`, or a `raise` or
+# `?` in the body (the `test_*` harness rule is the one addition, applied in genMethod
+# and declMayFail). BUG-628: every "is this call a throws call" lookup asks this, so a
+# method that throws by inference gets the same implicit-try refusal as a declared one.
+# BUG-632: `int`, `float`, `str`, a sized integer..., or one of those under `?`.
+def isPrimitiveElemRef(t: TypeRef): bool
+    if t is TypeRef.nilable as inner
+        return isPrimitiveElemRef(inner)
+    if t is TypeRef.named as n
+        var nm: str = n.name
+        return nm == "int" or nm == "uint" or nm == "float" or nm == "bool" or nm == "char" or nm == "str" or nm == "byte" or nm == "float32" or nm == "float64" or nm == "int8" or nm == "int16" or nm == "int32" or nm == "int64" or nm == "uint8" or nm == "uint16" or nm == "uint32" or nm == "uint64"
+    return false
+
+def methodEmitsErrorUnion(m: DeclMethod): bool
+    return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
+
 def implicitTrySites(): List(str)
     return _implicit_try_sites
 
@@ -3664,6 +4237,18 @@ def addNativeLibUse(path: str)
 
 def isNativeLibUse(path: str): bool
     return _hasNativeUse(_native_lib_uses, path)
+
+# BUG-263: a `use foo` that resolved to a hand-written `foo.zig`. It is @imported like a
+# Zebra module, but its declarations carry no `_zbr_fn_` / `_zbr_ty_` prefix, so an
+# `exposing` alias must name the dep's symbol as written. A List like the library set
+# (module-scope StrSet caution, BUG-264).
+var _native_zig_uses: List(str) = List(str)()
+
+def addNativeZigUse(path: str)
+    _native_zig_uses.add(path)
+
+def isNativeZigUse(path: str): bool
+    return _hasNativeUse(_native_zig_uses, path)
 
 # True once a user `extern def` has actually been EMITTED (BUG-265). main.zbr uses
 # this to keep such a program off the self-hosted backend, which silently produces a
@@ -3855,6 +4440,7 @@ struct Generator
                                        # class_names too, so without this the alias in
                                        # `Parser.Parser.parse()` reads as a type reference.
     var exposed_module_vars  : HashMap(str, str)  # BUG-158: exposed cross-module module-var name → import alias
+    var exposed_from         : HashMap(str, str)  # BUG-664: any exposed name → the `use` path it came from
     # Phase 7b additions
     var mut_set              : StrSet?  # locals mutated in current block; nil → all emitted as const; set by genStmts
     # BUG-569: the OUTERMOST block's mutation set -- scanMutations recurses, so it is every
@@ -3996,6 +4582,7 @@ struct Generator
         .namespace_names       = StrSet()
         .import_aliases        = StrSet()
         .exposed_module_vars   = HashMap(str, str)()
+        .exposed_from          = HashMap(str, str)()
         # Phase 7b field initializations
         .mut_set               = nil
         .fn_mut_all            = nil
@@ -4109,6 +4696,12 @@ struct Generator
         var g = this except
             indent = indent + 1
         return g
+
+    # the safety line as the first statement of a body opened at this indent
+    def emitSafety()
+        var sg = indented()
+        sg.writeIndent()
+        w.emit(safetyStmt() + "\n")
 
     def withEnsureCtx(armed: bool, uses_result: bool): Generator
         var g = this except
@@ -4491,49 +5084,6 @@ struct Generator
             dynlib_vars            = StrSet()
         return g
 
-    # BUG-153: true if `nm` is a module-global `var` of type Atomic(T).  A module
-    # global isn't tracked by infer_ctx or the per-method atomic_locals set, so the
-    # `.add` rewrite consults this directly to keep an Atomic's `.add` (vs List's
-    # `.append`).  Non-mutating (returns bool) — safe to call on a const receiver.
-    # BUG-264. THE SAME HOLE AS BUG-153, one guard below: `inferExpr` sees only locals and
-    # params, so a MODULE-SCOPE collection is invisible to the `Type_.named` test that would
-    # otherwise stop `.add` being rewritten as a List append. BUG-153 patched that for
-    # `Atomic`; `StrSet` is the identical case and was left open because every pre-existing
-    # module-scope collection in the compiler's own source happened to be a `List(str)` --
-    # so the wrong branch was the right answer until someone declared a `StrSet`.
-    #
-    # The receiver TYPE resolves correctly (`StrSet`); only the method LOWERING was wrong.
-    # Reading the declaration directly is what the Atomic twin does, and it is the reason
-    # this is a small fix rather than a change to inference.
-    #
-    # BOTH DECLARATION FORMS: annotated (`var s: StrSet = StrSet()`) and bare
-    # (`var s = StrSet()`, which carries no type annotation at all -- see the note at the
-    # `Detect StrSet from init expression` site). The Atomic twin handles only the
-    # annotated form; a bare `StrSet()` would have slipped straight through.
-    def isModuleGlobalStrSet(nm: str): bool
-        for gd in module_decls
-            if gd is Decl.var_ as gv
-                if gv.name == nm
-                    if gv.type_ != nil
-                        if gv.type_! is TypeRef.named as gvn
-                            if gvn.name == "StrSet"
-                                return true
-                    if gv.init_expr != nil
-                        if gv.init_expr! is Expr.call as gvc
-                            if gvc.callee is Expr.ident as gvi
-                                if gvi.name == "StrSet"
-                                    return true
-        return false
-
-    def isModuleGlobalAtomic(nm: str): bool
-        for gd in module_decls
-            if gd is Decl.var_ as gv
-                if gv.name == nm and gv.type_ != nil
-                    if gv.type_! is TypeRef.generic as gvg
-                        if gvg.name == "Atomic"
-                            return true
-        return false
-
     # ── Output helpers ────────────────────────────────────────────────────────
 
     def emitTryBlockCatch()
@@ -4657,6 +5207,9 @@ struct Generator
                     return
                 if n.name == "Random"
                     w.emit("_Random")                 # BUG-434: a seeded stream as a field / typed local
+                    return
+                if n.name == "DateTime" and not class_names.contains_("DateTime")
+                    w.emit("_DateTime")               # BUG-680: a DateTime as a field / param / return
                     return
                 if n.name == "DynLib"
                     w.emit("*_DynLib")
@@ -4989,18 +5542,15 @@ struct Generator
         # at the last dot and slash-converts it; the selfhost uses n.path verbatim
         # here, as it does in the plain @import arm below — a pre-existing shared
         # limit, not something these arms introduce), INCLUDING the fact that neither emits
-        # the exposed-name aliases below: in the bootstrap that aliasing lives in
-        # the Zebra-dep branch only, so `use foo exposing bar` on a C dep produces
-        # nothing in either compiler.  That is a real hole (filed as BUG-263), but
-        # it is a SHARED one — "fixing" it on this side alone would open a
-        # selfhost gap in divergence_check, which is the thing this port exists to
-        # keep at zero.
+        # the exposed-name aliases (BUG-263, fixed 2026-10-27 once the bootstrap was gone:
+        # the header branch now emits them below, through the same genExposedAliases).
         if isCWithHeaderUse(alias)
             # C source + matching header: the symbols come from the header, so
-            # Zebra code calls them as `alias.some_fn(...)`.
+            # Zebra code calls them as `alias.some_fn(...)` -- or bare, when exposed.
             w.emit("const ")
             w.emit(modAliasSymbol(alias))                   # BUG-483
             w.emit(" = @import(\"" + cHeaderZigFile(alias) + "\");\n")   # Zig 0.17: no @cImport
+            genExposedAliases(n, alias, true)
             return
         if isCNoHeaderUse(alias)
             # C source, no header: nothing to import.  The author declares the
@@ -5069,44 +5619,55 @@ struct Generator
                 w.emit(" = ")
                 w.emit(imp)
                 w.emit(";\n")
-            var i: int = 0
-            while i < n.exposed.len
-                var ename: str = n.exposed.at(i)
-                # BUG-158: an exposed cross-module module var has no plain `alias.name`
-                # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
-                # import) — genIdent rewrites each reference, so emit no `const` here.
-                if ename != alias and not .exposed_module_vars.contains(ename)
-                    # BUG-220: an exposed top-level `def` is emitted by its defining module
-                    # under the reserved `_zbr_fn_` prefix, so the alias must name the
-                    # prefixed symbol. The alias binding is ALSO a file-scope declaration,
-                    # so it takes the prefix too — otherwise `const count = Mod._zbr_fn_count;`
-                    # would reintroduce the very collision the prefix exists to prevent.
-                    var uname: str = ename
-                    if toplevel_fns.contains_(ename)
-                        uname = topLevelFnZigName(ename)
-                    # BUG-281 B: an exposed TYPE is emitted by its defining module under
-                    # the `_zbr_ty_` prefix, for the same reason and with the same
-                    # both-halves rule as the `_zbr_fn_` case above.
-                    else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename) and not isNamespaceName(ename)   # BUG-476 / BUG-490 / BUG-579: sigs, interfaces and namespaces are unprefixed
-                        uname = zbrTypeSymbol(ename)
-                    # BUG-587 (BUG-286's namespace half, across a module): a namespace keeps
-                    # its own name, escaped as its defining module escaped it (`opaque`).
-                    else if isNamespaceName(ename)
-                        uname = zigSafeName(ename)
-                    w.emit("const ")
+            genExposedAliases(n, alias, isNativeZigUse(alias))
+
+    # `use Mod exposing a, b`: bind each exposed name in this file. The LOCAL binding is
+    # spelled the way this module's own references are (`_zbr_fn_` / `_zbr_ty_`, BUG-220 /
+    # BUG-281 B); the DEP's symbol is spelled that way only when the dep is a Zebra module.
+    # A native dep -- a C header or a hand-written `.zig` (BUG-263) -- exports its names as
+    # written, so `const _zbr_fn_zadd = _zbr_mod_Zhelp.zadd;`.
+    def genExposedAliases(n: DeclUse, alias: str, native: bool)
+        var i: int = 0
+        while i < n.exposed.len
+            var ename: str = n.exposed.at(i)
+            # BUG-158: an exposed cross-module module var has no plain `alias.name`
+            # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
+            # import) — genIdent rewrites each reference, so emit no `const` here.
+            if ename != alias and not .exposed_module_vars.contains(ename)
+                # BUG-220: an exposed top-level `def` is emitted by its defining module
+                # under the reserved `_zbr_fn_` prefix, so the alias must name the
+                # prefixed symbol. The alias binding is ALSO a file-scope declaration,
+                # so it takes the prefix too — otherwise `const count = Mod._zbr_fn_count;`
+                # would reintroduce the very collision the prefix exists to prevent.
+                var uname: str = ename
+                if toplevel_fns.contains_(ename)
+                    uname = topLevelFnZigName(ename)
+                # BUG-281 B: an exposed TYPE is emitted by its defining module under
+                # the `_zbr_ty_` prefix, for the same reason and with the same
+                # both-halves rule as the `_zbr_fn_` case above.
+                else if isUserTypeName(ename) and not isSigName(ename) and not isIfaceName(ename) and not isNamespaceName(ename)   # BUG-476 / BUG-490 / BUG-579: sigs, interfaces and namespaces are unprefixed
+                    uname = zbrTypeSymbol(ename)
+                # BUG-587 (BUG-286's namespace half, across a module): a namespace keeps
+                # its own name, escaped as its defining module escaped it (`opaque`).
+                else if isNamespaceName(ename)
+                    uname = zigSafeName(ename)
+                w.emit("const ")
+                w.emit(uname)
+                w.emit(" = ")
+                w.emit(modAliasSymbol(alias))           # BUG-483
+                w.emit(".")
+                if native
+                    w.emit(ename)
+                else
                     w.emit(uname)
-                    w.emit(" = ")
-                    w.emit(modAliasSymbol(alias))           # BUG-483
-                    w.emit(".")
-                    w.emit(uname)
-                    w.emit(";\n")
-                    # BUG-588: an exposed @reflectable class brings its strict JSON parser
-                    # with it, so `Json.parse(Point, s)` here names the same symbol.
-                    if .dep_types.hasClass("$refl:" + ename)
-                        w.emit("const _json_parse_strict_" + ename + " = ")
-                        w.emit(modAliasSymbol(alias))
-                        w.emit("._json_parse_strict_" + ename + ";\n")
-                i = i + 1
+                w.emit(";\n")
+                # BUG-588: an exposed @reflectable class brings its strict JSON parser
+                # with it, so `Json.parse(Point, s)` here names the same symbol.
+                if .dep_types.hasClass("$refl:" + ename)
+                    w.emit("const _json_parse_strict_" + ename + " = ")
+                    w.emit(modAliasSymbol(alias))
+                    w.emit("._json_parse_strict_" + ename + ";\n")
+            i = i + 1
 
     # ── genFieldDecl ──────────────────────────────────────────────────────────
 
@@ -5131,6 +5692,13 @@ struct Generator
         genFieldInitExprIn(fexpr, tr)
 
     def genFieldInitExprIn(fexpr: Expr, tr: TypeRef?)
+        # BUG-648: `var vals: List(int) = []` -- an empty literal has no element to infer
+        # from, so the expression-position emit took its `[]const u8` fallback and the
+        # constructor assigned a List(str) to a List(int) field. The declared type is the
+        # only source, exactly as for an empty `[]` passed to a List(T) parameter (BUG-463).
+        if tr != nil
+            if emitEmptyListForParam(fexpr, tr!)
+                return
         if tr != nil and isBareCollectionCtor(fexpr)
             genCallWithTypeHint(fexpr, tr!)
         else
@@ -5180,9 +5748,66 @@ struct Generator
                         w.emit(dmv_ann)
                     else
                         w.emit("@TypeOf(")
-                        genModuleVarInit(n.init_expr!)
+                        genModuleVarInit(n.init_expr!, n.type_)
                         w.emit(")")
                 w.emit(" = undefined;\n")
+                return
+            # BUG-649: a static built at run time. BUG-664: initialised on first use by
+            # `_zbr_sfref_<name>()`, declared here beside it (see isLazyModuleVar).
+            if n.mods.is_static and not .is_generic and isDeferredStaticField(n)
+                w.emit(": ")
+                if n.type_ != nil
+                    genType(n.type_!)
+                else
+                    var dsf_ann: str = ""
+                    if .module_types.fieldType(owner, n.name) as dsf_t
+                        dsf_ann = tcTypeAnnotation(dsf_t)
+                    if dsf_ann != ""
+                        w.emit(dsf_ann)
+                    else
+                        w.emit("@TypeOf(")
+                        genModuleVarInit(n.init_expr!, n.type_)
+                        w.emit(")")
+                w.emit(" = undefined;\n")
+                var sq: str = "\"" + _lazy_stem + "." + owner + "." + n.name + "\""
+                var sshared: str = "true"
+                if not _runtime_module and not _single_file
+                    sshared = "false"
+                var sst: str = "_zbr_sfst_" + n.name
+                w.emit("    var " + sst + ": u8 = 0;\n")
+                # an inline fast path over a cold initialiser, as for a module var
+                w.emit("    pub inline fn _zbr_sfref_" + n.name + "() *@TypeOf(")
+                emitName(n.name)
+                w.emit(") {\n")
+                w.emit("        if (" + sst + " == 2) return &")
+                emitName(n.name)
+                w.emit(";\n")
+                w.emit("        return _zbr_sfinit_" + n.name + "();\n")
+                w.emit("    }\n")
+                w.emit("    fn _zbr_sfinit_" + n.name + "() *@TypeOf(")
+                emitName(n.name)
+                w.emit(") {\n")
+                w.emit("        @branchHint(.cold);\n")
+                w.emit("        if (" + sst + " == 1) _zbr_init_cycle(" + sq + ", " + sshared + ");\n")
+                w.emit("        " + sst + " = 1;\n")
+                w.emit("        var _zbr_frame: _ZbrInitFrame = .{ .name = " + sq + ", .prev = _zbr_init_head };\n")
+                w.emit("        _zbr_init_head = &_zbr_frame;\n")
+                w.emit("        ")
+                emitName(n.name)
+                w.emit(" = ")
+                if n.init_expr != nil
+                    genModuleVarInit(n.init_expr!, n.type_)
+                else
+                    w.emit("_zbr_new(")
+                    genType(n.type_!)
+                    w.emit(")")
+                w.emit(";\n")
+                w.emit("        _zbr_init_head = _zbr_frame.prev;\n")
+                w.emit("        " + sst + " = 2;\n")
+                w.emit("        return &")
+                emitName(n.name)
+                w.emit(";\n")
+                w.emit("    }\n")
                 return
             # Untyped static `var` of a literal would be comptime_int/float (Zig:
             # "must be const or comptime"); annotate it the same way genLocalVar
@@ -5196,18 +5821,18 @@ struct Generator
                 if n.init_expr != nil
                     branch n.init_expr!
                         on Expr.int_lit
-                            w.emit(": i64")
+                            w.emit(": " + numLitZig(n.init_expr!))
                         on Expr.float_lit
-                            w.emit(": f64")
+                            w.emit(": " + numLitZig(n.init_expr!))
                         on Expr.string_lit
                             w.emit(": []const u8")
                         on Expr.unary as un
                             if un.op == UnaryOp.neg
                                 branch un.operand
                                     on Expr.int_lit
-                                        w.emit(": i64")
+                                        w.emit(": " + numLitZig(n.init_expr!))
                                     on Expr.float_lit
-                                        w.emit(": f64")
+                                        w.emit(": " + numLitZig(n.init_expr!))
                                     else
                                         pass
                         else
@@ -5370,6 +5995,8 @@ struct Generator
             emitTypeName(n.name)                            # BUG-281 B
             w.emit(" {\n")
             sig_ig.writeIndent()
+            w.emit(safetyStmt() + "\n")
+            sig_ig.writeIndent()
             if si_first
                 w.emit("return .{};\n")
             else
@@ -5405,6 +6032,8 @@ struct Generator
                         ig.genExpr(df_fld.init_expr!)
                         w.emit(")")
                     w.emit(" {\n")
+                    sig_ig.writeIndent()
+                    w.emit(safetyStmt() + "\n")
                     sig_ig.writeIndent()
                     w.emit("return ")
                     if df_fld.init_expr != nil
@@ -5473,6 +6102,8 @@ struct Generator
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") []const u8 {\n")
         var ig_ts = indented()
+        ig_ts.writeIndent()
+        w.emit(safetyStmt() + "\n")
         # Build format string in a StringBuilder
         var fmt_str: str = n.name + "("
         var field_count = 0
@@ -5525,6 +6156,8 @@ struct Generator
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") bool {\n")
         var ig_eq = indented()
+        ig_eq.writeIndent()
+        w.emit(safetyStmt() + "\n")
         var field_count = 0
         for decl in n.members
             if decl is Decl.var_ as fld
@@ -5565,6 +6198,8 @@ struct Generator
         emitTypeName(n.name)                                # BUG-281 B
         w.emit(") u64 {\n")
         var ig_h = indented()
+        ig_h.writeIndent()
+        w.emit(safetyStmt() + "\n")
         ig_h.writeIndent()
         w.emit("var hasher = std.hash.Wyhash.init(0);\n")
         for decl in n.members
@@ -5646,6 +6281,8 @@ struct Generator
             ig.writeIndent()
             ig.w.emit("pub fn init() *@This() {\n")
             var dig = ig.indented()
+            dig.writeIndent()
+            dig.w.emit(safetyStmt() + "\n")
             dig.writeIndent()
             dig.w.emit("const self = _allocator.create(@This()) catch @panic(\"OOM\");\n")
             dig.writeIndent()
@@ -6215,6 +6852,8 @@ struct Generator
             ig.w.emit(" {\n")
             var dig = ig.indented()
             dig.writeIndent()
+            dig.w.emit(safetyStmt() + "\n")
+            dig.writeIndent()
             dig.w.emit("const self = _allocator.create(")
             dig.emitTypeName(n.name)                        # BUG-281 B
             dig.w.emit(") catch @panic(\"OOM\");\n")
@@ -6343,6 +6982,7 @@ struct Generator
                     w.emit("() *")
                     w.emit(iface_name)
                     w.emit(" {\n")
+                    w.emit("    " + safetyStmt() + "\n")
                     w.emit("    if (_zbr_export_")
                     w.emit(sym)
                     w.emit("_iface == null) {\n")
@@ -6407,6 +7047,7 @@ struct Generator
         w.emit("(_src: []const u8) ?*")
         emitTypeName(n.name)                                # BUG-281 B: the TYPE
         w.emit(" {\n")
+        w.emit("    " + safetyStmt() + "\n")
         w.emit("    const _v = _json_parse(_src) orelse return null;\n")
         w.emit("    if (!_json_is_object(_v)) return null;\n")
         if f_names.len > 0
@@ -6644,6 +7285,8 @@ struct Generator
         sg.w.emit(" {\n")
         var wg = sg.indented()
         wg.writeIndent()
+        wg.w.emit(safetyStmt() + "\n")
+        wg.writeIndent()
         wg.w.emit("while (true) {\n")
         var swg = wg.indented()
         swg.writeIndent()
@@ -6702,6 +7345,8 @@ struct Generator
                 w.emit("anytype")
             pi = pi + 1
         w.emit(") *" + typeZigName(gen_cls) + " {\n")
+        sg.writeIndent()
+        sg.w.emit(safetyStmt() + "\n")
         sg.writeIndent()
         sg.w.emit("const _g = _allocator.create(" + typeZigName(gen_cls) + ") catch @panic(\"OOM\");\n")
         sg.writeIndent()
@@ -6875,7 +7520,7 @@ struct Generator
         # `def` line instead of leaking the generated path.
         if source_file != "" and m.span.line > 0
             writeIndent()
-            w.emit("// zbr:" + fwdSlashes(source_file) + ":" + m.span.line.toString() + "\n")
+            w.emit("// zbr:" + emitLoc(source_file) + ":" + m.span.line.toString() + "\n")
         writeIndent()
         if m.mods.is_once
             w.emit("fn ")
@@ -6944,7 +7589,7 @@ struct Generator
             w.emit("_zinit: std.process.Init")
         w.emit(") ")
         var mstmts_pre: List(Stmt)? = m.stmts
-        var auto_throws = m.throws_ or (mstmts_pre != nil and bodyHasRaise(mstmts_pre!))
+        var auto_throws = methodEmitsErrorUnion(m)
         # BUG-386: a `test_*` fn (the harness's own inclusion rule: the prefix and no
         # params) whose body has a plain `assert` returns an error union too, so the
         # assert can FAIL THE TEST instead of panicking the whole run.
@@ -6981,6 +7626,7 @@ struct Generator
                         if nt.name == "str"
                             sp.add(p.name)
             w.emit(" {\n")
+            emitSafety()
             # Root entry point (Zig 0.16): inject _io/_args/_allocator init + dep propagation
             if owner == "" and m.name == "main"
                 var ei = indented()
@@ -6997,7 +7643,7 @@ struct Generator
                     ei.w.emit("_allocator = _prog_alloc();\n")
                 if _census
                     ei.writeIndent()
-                    ei.w.emit("_zbr_cens_install();\n")
+                    ei.w.emit(censInstall(""))
                 if not .library_mode
                     ei.writeIndent()
                     ei.w.emit("defer _arena.deinit();\n")
@@ -7054,9 +7700,10 @@ struct Generator
                         if cov_line != ""
                             ei.writeIndent()
                             ei.w.emit(cov_line + "\n")
-                if _census
+                var cens_flush_line: str = censFlush("", .library_mode)
+                if cens_flush_line != ""
                     ei.writeIndent()
-                    ei.w.emit("defer _zbr_cens_flush();\n")
+                    ei.w.emit(cens_flush_line)
                 # BUG-466: an error reaching the end of a throwing `main` prints its message
                 # and exits 1. Registered AFTER the arena/coverage defers so it runs FIRST
                 # (defers are LIFO) -- the message may live in the arena.
@@ -7070,6 +7717,7 @@ struct Generator
                     else
                         w.emit("void")
                     w.emit(" {\n")
+                    emitSafety()
                 # `zebra build --list-targets`: arm before any user statement, so
                 # _build_run() prints the target list instead of invoking the compiler.
                 if _list_targets_mode
@@ -7258,6 +7906,7 @@ struct Generator
         else
             emitTypeName(owner)                             # BUG-281 B
         w.emit(" {\n")
+        emitSafety()
         var ig = indented()
         if _census
             ig.writeIndent()
@@ -7613,7 +8262,7 @@ struct Generator
                     genType(vmth.return_type!)
                 else
                     w.emit("void")
-                w.emit(" { const _zbr_s: *_T = @ptrCast(@alignCast(_zbr_ptr)); return _zbr_s.")
+                w.emit(" { " + safetyStmt() + " const _zbr_s: *_T = @ptrCast(@alignCast(_zbr_ptr)); return _zbr_s.")
                 w.emit(vmth.name)
                 w.emit("(")
                 var vpi = 0
@@ -7672,6 +8321,8 @@ struct Generator
                     w.emit("void")
                 w.emit(" {\n")
                 mig.writeIndent()
+                w.emit(safetyStmt() + "\n")
+                mig.writeIndent()
                 if mth.throws_
                     w.emit("return try self.vtable.")
                 else
@@ -7727,6 +8378,8 @@ struct Generator
                             else
                                 w.emit("void")
                             w.emit(" {\n")
+                            mig.writeIndent()
+                            w.emit(safetyStmt() + "\n")
                             mig.writeIndent()
                             if smth.throws_
                                 w.emit("return try self.vtable.__as_")
@@ -7833,6 +8486,7 @@ struct Generator
             w.emit("void")
         if mth.stmts as mstmts
             w.emit(" {\n")
+            emitSafety()
             var ig = indented()
             # Seed inference so `this`/`self` resolves to the extend target type, so
             # stdlib method chains on `this` (e.g. `this.upper().concat("!")`) dispatch
@@ -8187,7 +8841,7 @@ struct Generator
         if source_file != ""
             if _ln > 0
                 w.emit("// zbr:")
-                w.emit(fwdSlashes(source_file))
+                w.emit(emitLoc(source_file))
                 w.emit(":")
                 w.emit(_ln.toString())
                 w.emit("\n")
@@ -8255,14 +8909,18 @@ struct Generator
                         # 2026-09-24: a builtin container receiver (`parent.at(0).add(x)`,
                         # now a boxed inner list) dispatches through codegen's own forms;
                         # hoisting it to `_mc_N` loses that (the BUG-337 rule, statement form).
-                        if not isBuiltinTypedRecv(mem.object)
+                        # BUG-647: the same ALLOW rule the var-init and assignment hoists use
+                        # (BUG-531), not a deny-list of containers: `sbs.at(0).append("x")` on
+                        # a StringBuilder was hoisted and emitted a raw `.append("x")`.
+                        if chainRecvNeedsHoist(mem.object)
                             hoisted = hoistCallOnTemp(mem.object, mem.member, ec.args)
                 if not hoisted
                     writeIndent()
                     # BUG-006: zig"stmt;" already ends with ";"; skip the extra one.
+                    # BUG-663: and a statement ending in a BLOCK takes none either.
                     if e is Expr.zig_lit as zl
                         w.emit(zl.text)
-                        if not zl.text.endsWith(";")
+                        if zigStmtNeedsSemicolon(zl.text)
                             w.emit(";")
                         w.emit("\n")
                     else
@@ -8902,9 +9560,9 @@ struct Generator
             # to avoid comptime_int/comptime_float or *const [N:0]u8 issues in Zig.
             branch n.init_expr!
                 on Expr.int_lit
-                    w.emit(": i64")
+                    w.emit(": " + numLitZig(n.init_expr!))
                 on Expr.float_lit
-                    w.emit(": f64")
+                    w.emit(": " + numLitZig(n.init_expr!))
                 on Expr.string_lit
                     w.emit(": []const u8")
                 on Expr.unary as un
@@ -8918,9 +9576,9 @@ struct Generator
                     if un.op == UnaryOp.neg
                         branch un.operand
                             on Expr.int_lit
-                                w.emit(": i64")
+                                w.emit(": " + numLitZig(n.init_expr!))
                             on Expr.float_lit
-                                w.emit(": f64")
+                                w.emit(": " + numLitZig(n.init_expr!))
                             else
                                 pass
                 else
@@ -9066,15 +9724,13 @@ struct Generator
                 if m.name == name
                     # The same rule genMethod uses for the `anyerror!` in the signature, so a
                     # function that throws by inference is a throwing callee (BUG-467).
-                    return m.throws_ or (m.stmts != nil and bodyHasRaise(m.stmts!))
+                    return methodEmitsErrorUnion(m)
         return false
 
     # genMethod's rule for `anyerror!` in a signature, plus the `test_*` harness rule
     # (BUG-386), as one predicate: can a call to `m` produce an error?
     def declMayFail(m: DeclMethod): bool
-        if m.throws_ or m.name.startsWith("test_")
-            return true
-        return m.stmts != nil and bodyHasRaise(m.stmts!)
+        return m.name.startsWith("test_") or methodEmitsErrorUnion(m)
 
     # BUG-546: the name of the call `e` if it certainly emits a plain value, not an
     # error union -- so a `catch` or `?` on it would reach zig as "expected error union
@@ -9270,6 +9926,15 @@ struct Generator
                 return false
 
     def isDateTimeExpr(e: Expr): bool
+        # BUG-680: the checker types DateTime values now, so a field (`c.when.year`), a
+        # parameter and a call's result dispatch like a local initialised from DateTime.*.
+        if .infer_ctx != nil and not class_names.contains_("DateTime")
+            var dt_t: Type_ = inferExpr(e, .infer_ctx!)
+            if dt_t is Type_.ref_to as dt_rt
+                dt_t = dt_rt
+            if dt_t is Type_.named as dt_tn
+                if dt_tn == "DateTime"
+                    return true
         if e is Expr.ident as id
             return .datetime_vars.contains_(id.name)
         if e is Expr.call as c
@@ -9459,6 +10124,14 @@ struct Generator
     # (`ms.add(HashMap())` on a `List(HashMap(str, int))`), the way a `var m: HashMap(..)
     # = HashMap()` takes it from the annotation.
     def genStoredValue(recv: Expr, v: Expr)
+        # BUG-692: `ll.add(s.split(" "))` / a HashMap value -- a split stored into a
+        # List(str) element is collected, as everywhere else a List(str) is wanted.
+        if isSplitIter(v) and not isNamedRecvCall(v)
+            if storedElemType(recv) as st692
+                if st692 is Type_.list_ as st692e
+                    if st692e is Type_.string_
+                        genSplitCollect(v, nil)
+                        return
         if v is Expr.call as vc
             if vc.args.len == 0
                 if vc.callee is Expr.ident as vid
@@ -9633,6 +10306,32 @@ struct Generator
         # BUG-185: but NOT when the receiver is a string — string methods emit a
         # by-value special form, so `_mc_N.concat(…)` would be invalid Zig; genExpr
         # handles the string chain.  (Mirrors the var-init and return paths.)
+        # BUG-692: `xs = s.split(sep)` / `obj.field = s.lines()` into a List(str) target --
+        # the assignment position, typed by inference (the target has no TypeRef here).
+        if a.op == AssignOp.assign and .infer_ctx != nil
+            if isSplitIter(a.value) and not isNamedRecvCall(a.value)
+                if inferExpr(a.target, .infer_ctx!) is Type_.list_ as asl_elem
+                    if asl_elem is Type_.string_
+                        if a.target is Expr.index
+                            # An element target (`m["k"] = ...`, `xs[i] = ...`) has its own
+                            # store forms below (`_zbr_set`, `.put`), and `target = ` would be
+                            # an invalid left side. Collect into a temporary, then assign THAT
+                            # through the ordinary path.
+                            var sv692: str = "_zbr_sv" + w.nextUid().toString()
+                            writeIndent()
+                            w.emit("{ const " + sv692 + " = ")
+                            genSplitCollect(a.value, nil)
+                            w.emit(";\n")
+                            genAssign(StmtAssign(a.span, a.target, a.op, Expr.ident(ExprIdent(a.span, sv692))))
+                            writeIndent()
+                            w.emit("}\n")
+                            return
+                        writeIndent()
+                        genExpr(a.target)
+                        w.emit(" = ")
+                        genSplitCollect(a.value, nil)
+                        w.emit(";\n")
+                        return
         if a.op == AssignOp.assign
             var ch = tryChain(a.value)
             if ch != nil and chainRecvNeedsHoist((ch!).recv)
@@ -10144,7 +10843,7 @@ struct Generator
         for d in owner_members
             if d is Decl.method as dm
                 if dm.name == name
-                    return dm.throws_
+                    return methodEmitsErrorUnion(dm)
         return false
 
     # Look up if a same-module class method throws (pre-populated at module init).
@@ -10273,11 +10972,11 @@ struct Generator
     # BUG-496: a module var's initializer, emitted with a module-level inference context.
     # It binds no locals, so a reference to another module var still resolves through
     # the "" sentinel and keeps its `_zbr_mv_` spelling in genIdent.
-    def genModuleVarInit(e: Expr)
+    def genModuleVarInit(e: Expr, tr: TypeRef?)
         var mctx = InferCtx(.module_types, "")
         mctx.withDepTypes(.dep_types)
         var mg = withInferCtx(mctx)
-        mg.genExpr(e)
+        mg.genFieldInitExprIn(e, tr)       # BUG-648: the declared type types an empty `[]`
 
     # Is this type a `sig` (or `def(P): R`) -- a fat pointer a value must be CONVERTED
     # into? The checker registers every sig as the pseudo-class `$sig:Name`.
@@ -10361,6 +11060,14 @@ struct Generator
         # `total([])` whose parameter is not `List(str)`.
         if emitEmptyListForParam(e, hint)
             return
+        if emitListLitForParam(e, hint)
+            return
+        # BUG-692: an inline `s.split(sep)` / `s.lines()` handed to a `List(str)` parameter --
+        # a function's, a method's or a constructor's -- reached zig as the raw SplitIterator.
+        # The var-init (BUG-092) and return (BUG-350) positions collected it; this is the
+        # argument position, through the one collector.
+        if collectSplitForList(e, hint)
+            return
         if e is Expr.call as c
             if c.args.len == 0
                 if c.callee is Expr.ident as id
@@ -10435,7 +11142,9 @@ struct Generator
     # Zig; a List(str) position (an annotated var, a `return` from a `List(str)`
     # function) wants them collected. One labeled block expression, usable in any
     # expression position, so the two sites cannot drift.
-    def genSplitCollect(ie: Expr, list_t: TypeRef)
+    # `list_t` nil means List(str), for a slot typed by inference rather than a TypeRef
+    # (an assignment target, BUG-692).
+    def genSplitCollect(ie: Expr, list_t: TypeRef?)
         var uid092 = w.nextUid()
         var lbl092: str = "blk092_${uid092.toString()}"
         var lname092: str = "_ll_${uid092.toString()}"
@@ -10445,9 +11154,9 @@ struct Generator
         w.emit(": { var ")
         w.emit(lname092)
         w.emit(": ")
-        genType(list_t)
+        genSplitListType(list_t)
         w.emit(" = _zbr_new(")
-        genType(list_t)
+        genSplitListType(list_t)
         w.emit("); var ")
         w.emit(sname092)
         w.emit(" = ")
@@ -10465,6 +11174,21 @@ struct Generator
         w.emit(" ")
         w.emit(lname092)
         w.emit("; }")
+
+    def genSplitListType(list_t: TypeRef?)
+        if list_t as lt
+            genType(lt)
+        else
+            w.emit("_ZbrList([]const u8)")
+
+    # BUG-692: emit `e` collected when it is a str split/lines iterator going to a List slot.
+    # Returns false (emitting nothing) otherwise, so callers fall through to their own path.
+    def collectSplitForList(e: Expr, hint: TypeRef): bool
+        if hint is TypeRef.generic as sgt692
+            if sgt692.name == "List" and isSplitIter(e) and not isNamedRecvCall(e)
+                genSplitCollect(e, hint)
+                return true
+        return false
 
     # True when `e` is `recv.m(..)` and recv is a user class/struct instance -- a
     # user-defined `split` must not be mistaken for the str builtin.
@@ -12108,7 +12832,7 @@ struct Generator
     def isSqliteQueryIter(e: Expr): bool
         if e is Expr.call as c
             if c.callee is Expr.member as m
-                if m.member == "query"
+                if m.member == "query" or m.member == "querySegments"
                     if .infer_ctx != nil
                         var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                         if recv_t is Type_.sqlite_db
@@ -13254,6 +13978,7 @@ struct Generator
         else
             emitTypeName(owner)                             # BUG-281 B
         w.emit(") void {\n")
+        emitSafety()
         var ig0 = indented()
         # §28a: the invariant is read in the class's own scope -- `size == items.count()`
         # was a list_dispatch guess with no inference context to type `items`.
@@ -13279,13 +14004,13 @@ struct Generator
         var ln: int = exprSpanLine(e)
         if ln <= 0
             return ""
-        return " at " + fwdSlashes(source_file) + ":" + ln.toString() + ":"
+        return " at " + emitLoc(source_file) + ":" + ln.toString() + ":"
 
     # The `<file>:<line>` of a raise, for `_error_ctx.at` ("" when unknown).
     def raiseAt(r: StmtRaise): str
         if r.span.line <= 0
             return ""
-        return fwdSlashes(source_file) + ":" + r.span.line.toString()
+        return emitLoc(source_file) + ":" + r.span.line.toString()
 
     def genRequireChecks(req_list: List(Expr), context: str)
         if strip_contracts
@@ -13537,10 +14262,12 @@ struct Generator
         branch e
             on Expr.string_lit as _
                 return "str"
-            on Expr.int_lit as _
-                return "int"
-            on Expr.float_lit as _
-                return "float"
+            on Expr.int_lit as ak_il
+                if intLitSuffix(ak_il.text) == ""
+                    return "int"                   # a suffixed one is its suffix's type, below
+            on Expr.float_lit as ak_fl
+                if floatLitSuffix(ak_fl.text) == ""
+                    return "float"
             on Expr.bool_lit as _
                 return "bool"
             else
@@ -13611,7 +14338,7 @@ struct Generator
                 # BUG-506: containers compare structurally -- the plain assert path does that.
                 if isBoxedElemType(inferExpr(bin.left, .infer_ctx!)) or isBoxedElemType(inferExpr(bin.right, .infer_ctx!))
                     return false
-            var loc: str = fwdSlashes(source_file) + ":" + a.span.line.toString()
+            var loc: str = emitLoc(source_file) + ":" + a.span.line.toString()
             writeIndent()
             w.emit("{\n")
             indent = indent + 1
@@ -13662,12 +14389,12 @@ struct Generator
             w.emit(", ")
             if a.message != nil
                 # the location before the author's text, as below
-                w.emit("_zbr_assert_msg_at(\"" + fwdSlashes(source_file) + ":" + a.span.line.toString() + "\", ")
+                w.emit("_zbr_assert_msg_at(\"" + emitLoc(source_file) + ":" + a.span.line.toString() + "\", ")
                 genExpr(a.message!)
                 w.emit(")")
             else
                 w.emit("\"assert failed at ")
-                w.emit(fwdSlashes(source_file))
+                w.emit(emitLoc(source_file))
                 w.emit(":")
                 w.emit(a.span.line.toString())
                 w.emit("\"")
@@ -13678,7 +14405,7 @@ struct Generator
             # the `// zbr:` comment of the emitted Zig (GameEngine, 2026-10-08).
             w.emit("if (!(")
             genExpr(a.cond)
-            w.emit(")) std.debug.panic(\"assert failed at " + fwdSlashes(source_file) + ":" + a.span.line.toString() + ": {s}\", .{")
+            w.emit(")) std.debug.panic(\"assert failed at " + emitLoc(source_file) + ":" + a.span.line.toString() + ": {s}\", .{")
             genExpr(a.message!)
             w.emit("});\n")
         else
@@ -13710,7 +14437,7 @@ struct Generator
             w.emit("if (!(")
             genExpr(a.cond)
             w.emit(")) std.debug.panic(\"assert failed at ")
-            w.emit(fwdSlashes(source_file))
+            w.emit(emitLoc(source_file))
             w.emit(":")
             w.emit(a.span.line.toString())
             w.emit("\\n\", .{});\n")
@@ -14037,18 +14764,13 @@ struct Generator
             i += 1
 
     def genFloatLit(text: str)
-        # Strip _f32/_f64/f32/f64 suffix; emit @as(fNN, value). Zig has no suffixed float literals.
-        # Use replace("suffix","") to extract the bare value — avoids str.len (uint) arithmetic.
-        if text.endsWith("_f32")
-            w.emit("@as(f32, " + text.replace("_f32", "") + ")")
-        else if text.endsWith("_f64")
-            w.emit("@as(f64, " + text.replace("_f64", "") + ")")
-        else if text.endsWith("f32")
-            w.emit("@as(f32, " + text.replace("f32", "") + ")")
-        else if text.endsWith("f64")
-            w.emit("@as(f64, " + text.replace("f64", "") + ")")
-        else
+        # `1.5_f32` -> @as(f32, 1.5): Zig has no suffixed float literals. The suffix is read
+        # by TypeChecker's floatLitSuffix, the reader that also types the literal.
+        var fx: str = floatLitSuffix(text)
+        if fx == "" or fx == "?"
             w.emit(text)
+        else
+            w.emit("@as(" + suffixZigType(fx) + ", " + floatLitDigits(text) + ")")
 
     # ── genExpr ───────────────────────────────────────────────────────────────
 
@@ -14079,7 +14801,7 @@ struct Generator
         w.callee_next = false
         branch e
             on Expr.int_lit as il
-                w.emit(hexLitZig(il.text))
+                w.emit(intLitZig(il.text))
             on Expr.float_lit as fl
                 genFloatLit(fl.text)
             on Expr.bool_lit as bl
@@ -14129,12 +14851,40 @@ struct Generator
             on Expr.ident as id
                 genIdent(id)
             on Expr.member as m
+                # BUG-664: a computed static, read or written through its accessor.
+                var sf_cls: str = ""
+                var sf_from: str = ""
+                if m.object is Expr.ident as sf_oi
+                    if not isLocalOrParamName(sf_oi.name)
+                        sf_cls = sf_oi.name
+                else if m.object is Expr.member as sf_om
+                    if sf_om.object is Expr.ident as sf_alias
+                        if import_aliases.contains_(sf_alias.name) and not isLocalOrParamName(sf_alias.name)
+                            sf_cls = sf_om.member
+                            sf_from = sf_alias.name
+                if sf_cls != "" and staticRefIsLazy(sf_from, sf_cls, m.member)
+                    genExpr(m.object)
+                    w.emit("._zbr_sfref_" + m.member + "().*")
+                    return
                 # BUG-596: a method read as a VALUE binds to its receiver. Not as a callee.
                 if not is_callee and boundMethodClass(m) != ""
                     w.emit("_zbr_bind(")
                     genExpr(m.object)
                     w.emit(", \"" + m.member + "\")")
                     return
+                # A STRUCT's method binds the variable by reference: the cell's POINTER, not
+                # `p.*`. A receiver that is not a boxed local emits as the value it is, which
+                # `_zbr_bind` refuses at comptime rather than binding a silent copy.
+                if not is_callee and .infer_ctx != nil
+                    var sb_recv: str = structBindRecv(m, .infer_ctx!)
+                    if sb_recv != ""
+                        w.emit("_zbr_bind(")
+                        if not lp_renamed.contains_(sb_recv) and (fnBoxedHas(sb_recv) or capture_boxed.contains_(sb_recv))
+                            w.emit(boxPtrSpelling(sb_recv))
+                        else
+                            genExpr(m.object)
+                        w.emit(", \"" + m.member + "\")")
+                        return
                 # Catch-variable member: e.message → _zbr_error_msg(), e.details → _error_ctx.details
                 if catch_var != ""
                     if m.object is Expr.ident as mid
@@ -14206,7 +14956,17 @@ struct Generator
                                 # `self.source.items.len` on a `[]const u8`).
                                 is_list_obj = isListField(fn2)
                             else if _len_unknown
-                                is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
+                                # BUG-017: a DECLARED local is decided by its own type, as in
+                                # fieldAwareIsList (BUG-141): the name lookups below answer for
+                                # some other class's field, or the compiler's own AST
+                                # (isKnownListField: `args`, `message`, `value`...). An
+                                # untyped `var vals = zig"..."` beside any class with a
+                                # `vals: List(int)` emitted `vals.items.len` -- a zig error
+                                # in place of the §28a refusal it gets under another name.
+                                if m.object is Expr.ident and .infer_ctx != nil and (.infer_ctx!).hasLocal(fn2)
+                                    is_list_obj = localIsList(fn2)
+                                else
+                                    is_list_obj = isListField(fn2) or localIsList(fn2) or isKnownListField(fn2) or fieldIsList(.module_types, .dep_types, fn2)
                         if _len_unknown
                             is_hm_obj = fieldAwareIsHashMap(fn2)
                     if is_list_obj
@@ -14243,6 +15003,14 @@ struct Generator
                                 w.emit("@as(i64, @intCast(")
                                 genExpr(m.object)
                                 w.emit(".count()))")
+                                return
+                            on Type_.string_builder
+                                # BUG-646: `sb.len` (the property spelling List uses) passed
+                                # the checker and fell to the str spelling below, `.len` on
+                                # a List(u8): a zig error. The builder's bytes are `.items`.
+                                w.emit("@as(i64, @intCast(")
+                                genExpr(m.object)
+                                w.emit(".items.len))")
                                 return
                             else
                                 pass
@@ -14324,10 +15092,22 @@ struct Generator
                 # Guarded on the object being an import alias, so an ordinary field
                 # that happens to share a name with a type is untouched.
                 if m.object is Expr.ident as xm_alias
-                    if import_aliases.contains_(xm_alias.name) and isUserTypeName(m.member) and not isSigName(m.member)   # BUG-476
+                    # BUG-658: a dep's enum/union that is NOT exposed is in dep_types only, so
+                    # `lib.Color.blue` emitted `lib.Color` and zig found no member `Color`.
+                    var xm_dep_ty: bool = .dep_types.hasEnum(m.member) or .dep_types.hasUnion(m.member) or .dep_types.hasClass(m.member)
+                    if import_aliases.contains_(xm_alias.name) and not isLocalOrParamName(xm_alias.name) and (isUserTypeName(m.member) or xm_dep_ty) and not isSigName(m.member)   # BUG-476
                         genExpr(m.object)
                         w.emit(".")
                         w.emit(zbrTypeSymbol(m.member))
+                        return
+                    # BUG-660: `lib.count` -- a used module's top-level `var`, read or
+                    # written through the module. The declaration is `_zbr_mv_count` there;
+                    # the bare member made zig say "has no member named 'count'".
+                    if import_aliases.contains_(xm_alias.name) and not unwrapped_imports.contains_(xm_alias.name) and not isLocalOrParamName(xm_alias.name) and .dep_types.hasModuleVar("$mv:" + xm_alias.name + "." + m.member)
+                        if depModuleVarIsLazy(.dep_types, xm_alias.name, m.member)   # BUG-295
+                            w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mvref_" + m.member + "().*")
+                        else
+                            w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mv_" + m.member)
                         return
                 genExpr(m.object)
                 w.emit(".")
@@ -14575,14 +15355,14 @@ struct Generator
                 var ll_kw: str = "var "
                 if ll.elems.len == 0
                     ll_kw = "const "
-                w.emit("(" + ll_label + ": { " + ll_kw + ll_var + ": _ZbrList(")
+                w.emit("(" + ll_label + ": { ")
                 var elem_zig: str = "[]const u8"
+                # BUG-637: set when element 0's type is unknown -- it is bound to this
+                # const first and the list takes `@TypeOf` of the binding.
+                var e0_var: str = ""
                 if ll.elem_type != nil
                     # honoured for future explicit-typed list literal
-                    genType(ll.elem_type!)
-                    w.emit(") = _zbr_new(_ZbrList(")
-                    genType(ll.elem_type!)
-                    w.emit(")); ")
+                    elem_zig = zigTypeText(ll.elem_type!)
                 else if ll.elems.len > 0 and .infer_ctx != nil
                     var et: Type_ = inferExpr(ll.elems.at(0), .infer_ctx!)
                     # §27a: user class/struct elements render *Class (classes) /
@@ -14604,21 +15384,41 @@ struct Generator
                             # Zig with "use of undeclared identifier 'Color'".
                             if class_names.contains_(et_snm)
                                 elem_zig = "*" + typeZigName(et_snm)
-                            else
+                            else if "." in et_snm or isUserTypeName(et_snm)
                                 elem_zig = typeZigName(et_snm)
+                            else
+                                # BUG-637: a RUNTIME value type (`CsvTable`, `SysProcess`,
+                                # ...) is spelled by genType's table; typeZigName knows
+                                # user types only and returned the bare Zebra name, which
+                                # zig reported as an undeclared identifier.
+                                var sp637: Span = Span(0, 0, 0, 0)
+                                elem_zig = zigTypeText(TypeRef.named(NamedTypeRef(sp637, et_snm)))
                         else if isBoxedElemType(et)
                             # a literal of containers: the elements are boxed (2026-09-24)
                             var nz: str = genFieldZigType(et)
                             elem_zig = if(nz == "", "[]const u8", nz)
                         else
                             elem_zig = zigTypeForListElem(et)
-                    w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
-                else
-                    w.emit(elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
+                            # BUG-637: an element the checker cannot type (a runtime value:
+                            # a DateTime, a Regex, a sys.run result...) fell back to
+                            # `[]const u8`, a fabricated type zig then refused. Bind element
+                            # 0 first and let zig say what it is -- evaluated once, in the
+                            # same order as before.
+                            if elem_zig == "[]const u8" and not isString(et) and not isStringExpr(ll.elems.at(0))
+                                e0_var = ll_var + "_e0"
+                                elem_zig = "@TypeOf(" + e0_var + ")"
+                if e0_var != ""
+                    w.emit("const " + e0_var + " = ")
+                    genExpr(ll.elems.at(0))
+                    w.emit("; ")
+                w.emit(ll_kw + ll_var + ": _ZbrList(" + elem_zig + ") = _zbr_new(_ZbrList(" + elem_zig + ")); ")
                 var li = 0
                 while li < ll.elems.len
                     w.emit(ll_var + ".append(_allocator, ")
-                    genExpr(ll.elems.at(li))
+                    if li == 0 and e0_var != ""
+                        w.emit(e0_var)
+                    else
+                        genExpr(ll.elems.at(li))
                     w.emit(") catch @panic(\"OOM\"); ")
                     li += 1
                 w.emit("break :" + ll_label + " " + ll_var + "; })")
@@ -15067,6 +15867,23 @@ struct Generator
     def addExposedModuleVar(name: str, alias: str)
         .exposed_module_vars.put(name, alias)
 
+    def addExposedFrom(name: str, path: str)
+        .exposed_from.put(name, path)
+
+    # BUG-664: is `cls.field` read through a first-use accessor? `alias` is the module
+    # the class was reached through (`lib.Reg.f`), or "" for a bare `Reg.f`: this
+    # module's own class, an exposed one, or an unwrapped `use Reg`.
+    def staticRefIsLazy(alias: str, cls: str, field: str): bool
+        if alias != ""
+            return depStaticIsLazy(.dep_types, alias, cls, field)
+        if isOwnLazyStaticOwner(cls)
+            return ownStaticIsLazy(cls, field)
+        if .exposed_from.contains(cls)
+            return depStaticIsLazy(.dep_types, .exposed_from.fetch(cls), cls, field)
+        if unwrapped_imports.contains_(cls)
+            return depStaticIsLazy(.dep_types, cls, cls, field)
+        return false
+
     # Register an extension method's return type. Wrapped in a method so the
     # HashMap.put uses a bare self-field — an explicit `g.ext_method_ret.put(...)`
     # from the setup pass mis-resolves in the bootstrap and drops the `catch`
@@ -15146,6 +15963,9 @@ struct Generator
         if in_method and isFieldName(id.name)
             if isSharedField(id.name)
                 emitTypeName(owner)                         # BUG-281 B
+                if ownStaticIsLazy(owner, id.name)   # BUG-664
+                    w.emit("._zbr_sfref_" + id.name + "().*")
+                    return
             else
                 w.emit(self_name)
             w.emit(".")
@@ -15157,6 +15977,9 @@ struct Generator
         # field of the same name already won returned above (fields shadow
         # module vars inside methods).
         if isModuleVarName(id.name) and not isLocalOrParamName(id.name)
+            if isLazyModuleVar(id.name)                                     # BUG-295
+                w.emit("_zbr_mvref_" + id.name + "().*")
+                return
             w.emit("_zbr_mv_")
             w.emit(id.name)
             return
@@ -15165,6 +15988,9 @@ struct Generator
         # Same shadow guard: a local/param of the same name keeps its bare name.
         if .exposed_module_vars.contains(id.name) and not isLocalOrParamName(id.name)
             w.emit(modAliasSymbol(.exposed_module_vars.fetch(id.name)))   # BUG-483
+            if depModuleVarIsLazy(.dep_types, .exposed_module_vars.fetch(id.name), id.name)   # BUG-295
+                w.emit("._zbr_mvref_" + id.name + "().*")
+                return
             w.emit("._zbr_mv_")
             w.emit(id.name)
             return
@@ -15275,7 +16101,7 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
-            if b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge or b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
+            if b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge or b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or (isWrapSatOp(b.op) and b.op != BinaryOp.shl_sat)
                 w.emit("(")
                 genExpr(b.left)
                 w.emit(" ")
@@ -15284,6 +16110,40 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
+        # Wrapping (`+% -% *%`) and saturating (`+| -| *|`) arithmetic is Zig's own
+        # operator. Two operand types convert to their join first, as for `+` (BUG-445).
+        # Two constants are the other special case: Zig would fold them as comptime_int, where
+        # nothing wraps: `9223372036854775807 +% 1` must be an int's answer, so the left
+        # one is typed. `<<|` goes through the runtime: Zig wants an unsigned amount.
+        if isWrapSatOp(b.op)
+            if b.op == BinaryOp.shl_sat
+                w.emit("_zbr_shl_sat(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(")")
+                return
+            w.emit("(")
+            if isNumLit(b.left) and isNumLit(b.right)
+                w.emit("@as(i64, ")
+                genExpr(b.left)
+                w.emit(")")
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                genExpr(b.right)
+                w.emit(")")
+                return
+            # two integer types: both convert to their join, as for `+` (BUG-445)
+            var wst: Type_ = mixedNumericTarget(b.left, b.right)
+            if wst is Type_.unknown_
+                genExpr(b.left)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                genExpr(b.right)
+            else
+                emitAsNum(b.left, wst)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                emitAsNum(b.right, wst)
+            w.emit(")")
+            return
         if b.op == BinaryOp.add
             # Check if string concatenation — use _str_concat which is always safe (no try needed)
             if .isStringBoth(b.left, "bin_add_l") or .isStringBoth(b.right, "bin_add_r")
@@ -15317,11 +16177,21 @@ struct Generator
         # BUG-445: operands of two different numeric types -- float with int, float32
         # with float, signed with a narrower unsigned -- are converted to the joined type
         # (numericJoin) before the operator. `/` is handled below with the same target.
+        # `& | ^` too (BUG-674): zig refuses `u8 & i8` outright and peers `u8 & i64` to i64.
+        if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
+            var bnt: Type_ = mixedNumericTarget(b.left, b.right)
+            if not (bnt is Type_.unknown_)
+                w.emit("(")
+                emitAsNum(b.left, bnt)
+                w.emit(" " + binaryOpStr(b.op) + " ")
+                emitAsNum(b.right, bnt)
+                w.emit(")")
+                return
         if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.mod or b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
             var mnt: Type_ = mixedNumericTarget(b.left, b.right)
             if not (mnt is Type_.unknown_)
                 if b.op == BinaryOp.mod
-                    w.emit("@rem(")
+                    w.emit("_zbr_rem(")   # BUG-669
                     emitAsNum(b.left, mnt)
                     w.emit(", ")
                     emitAsNum(b.right, mnt)
@@ -15365,7 +16235,7 @@ struct Generator
             #
             # The gcd/lcm helpers below keep @mod deliberately: they run Euclid's
             # algorithm over already-positive values, where the two agree.
-            w.emit("@rem(")
+            w.emit("_zbr_rem(")   # BUG-669: min % -1 traps, not a silent fault
             genExpr(b.left)
             w.emit(", ")
             genExpr(b.right)
@@ -15482,7 +16352,23 @@ struct Generator
                 w.emit("_zebra_in(")
                 genExpr(b.left)
                 w.emit(", ")
-                genExpr(b.right)
+                # BUG-565: `x in [a, b]` with a literal of primitives is tested against a
+                # tuple, inline -- no List is built, so it costs nothing in a loop. This is
+                # what `@[...]` was for; with it, `@[...]` was a second spelling and was
+                # removed. Other literals (classes, structs, nested lists) keep the List,
+                # whose comparison is structural.
+                if inLitAsTuple(b.right)
+                    if b.right is Expr.list_lit as in_ll
+                        w.emit(".{")
+                        var in_i: int = 0
+                        while in_i < in_ll.elems.len
+                            if in_i > 0
+                                w.emit(", ")
+                            genExpr(in_ll.elems.at(in_i))
+                            in_i += 1
+                        w.emit("}")
+                else
+                    genExpr(b.right)
                 w.emit(")")
                 return
             # Default: string substring check via std.mem.indexOf.
@@ -15806,6 +16692,14 @@ struct Generator
 
     def genUnary(u: ExprUnary)
         if u.op == UnaryOp.neg
+            # `-128_i8`: the sign goes INSIDE the cast. `-@as(i8, 128)` is a Zig error --
+            # 128 is not an i8 -- while int8's minimum is a value the user may write.
+            var neg_opd: Expr = u.operand
+            if neg_opd is Expr.int_lit as neg_il
+                var nsx: str = intLitSuffix(neg_il.text)
+                if nsx != "" and nsx != "?"
+                    w.emit("@as(" + suffixZigType(nsx) + ", -" + intLitDigits(neg_il.text) + ")")
+                    return
             w.emit("(-")
             genExpr(u.operand)
             w.emit(")")
@@ -15958,6 +16852,7 @@ struct Generator
         var needs_tostring: List(bool) = List(bool)()
         var show_wraps: List(bool) = List(bool)()     # {show}: wrap the arg in _zbr_show()
         var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
+        var zpad_args: List(str) = List(str)()        # a number with the `0` flag: _zbr_zpad(arg + these)
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -15978,7 +16873,8 @@ struct Generator
                         if .infer_ctx != nil
                             ex_type = inferExpr(e, .infer_ctx!)
                         var fpa: str = floatPrecArgs(fmt_spec, ex_type)
-                        if fpa != ""
+                        var zpa: str = zeroPadArgs(fmt_spec, ex_type)
+                        if fpa != "" or zpa != ""
                             fmt_str = fmt_str + "{f}"
                             cast_types.add("")
                             cast_trunc.add(false)
@@ -15988,6 +16884,7 @@ struct Generator
                             cast_types.add(bitCastType(fmt_spec, ex_type))
                             cast_trunc.add(fmt_spec.endsWith("c"))
                         ffmt_args.add(fpa)
+                        zpad_args.add(zpa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
                     else
@@ -16026,6 +16923,7 @@ struct Generator
                         cast_types.add("")
                         cast_trunc.add(false)
                         ffmt_args.add("")
+                        zpad_args.add("")
                         needs_tostring.add(ts)
                 on StringPart.format as _
                     pass
@@ -16044,10 +16942,15 @@ struct Generator
                 var cast: str = cast_types.at(arg_idx)
                 var ts: bool = needs_tostring.at(arg_idx)
                 var fpa: str = ffmt_args.at(arg_idx)
+                var zpa: str = zpad_args.at(arg_idx)
                 if fpa != ""
                     w.emit("_zbr_ffmt(")
                     genExpr(e)
                     w.emit(fpa)
+                else if zpa != ""
+                    w.emit("_zbr_zpad(")
+                    genExpr(e)
+                    w.emit(zpa)
                 else if cast != ""
                     if cast_trunc.at(arg_idx)
                         # BUG-301. One preamble helper rather than an inline cast: the
@@ -16251,6 +17154,11 @@ struct Generator
             if hr_ctor.name == "HttpResponse"
                 genHttpResponseFactory("new", c.args)
                 return
+            # BUG-449: the request a handler receives, built by hand (the checker has
+            # already held the arguments to method, path, content, query).
+            if hr_ctor.name == "HttpRequest" and not isLocalOrParamName("HttpRequest") and not class_names.contains_("HttpRequest")
+                genHttpRequestCall("new", c.args)
+                return
         # Cross-module constructor: Module.ClassName(args) → Module.ClassName.init(args)
         # Two detection paths:
         # 1. isCrossModuleCtorCall: obj_name == member_name (same-name unwrap)
@@ -16277,6 +17185,20 @@ struct Generator
                     w.emit(".")
                     w.emit(zbrTypeSymbol(cm_mem!))          # BUG-281 B
                 w.emit(".init(")
+                # BUG-656: `lib.Pt(1)` for `cue init(x: int, y: int = 7)` emitted `.init(1)`
+                # and zig refused it -- this path wrote the given arguments only, where the
+                # exposed `Pt(1)` fills defaults and matches named arguments.
+                var xm_ps: List(Param)? = lookupFnParams(cm_mem! + ".init")
+                var xm_fill: bool = false
+                for xm_ck in c.args
+                    if xm_ck.name != nil
+                        xm_fill = true
+                if xm_ps != nil and c.args.len < xm_ps!.len
+                    xm_fill = true
+                if xm_fill
+                    genArgListFull(c.args, xm_ps)
+                    w.emit(")")
+                    return
                 var fc = true
                 var xm_ai: int = 0
                 for a in c.args
@@ -16889,6 +17811,9 @@ struct Generator
                 w.emit(")")
                 return
             if mname == "before" or mname == "after" or mname == "equals"
+                # BUG-683: parenthesised whole -- `not dt.before(x)` emitted
+                # `!dt.epoch_ms < x.epoch_ms`, where `!` binds to the integer.
+                w.emit("(")
                 genExpr(m.object)
                 w.emit(".epoch_ms ")
                 if mname == "before"
@@ -16901,7 +17826,7 @@ struct Generator
                     genExpr(args.at(0).value)
                 else
                     w.emit("_dt_now()")
-                w.emit(".epoch_ms")
+                w.emit(".epoch_ms)")
                 return
             if mname == "daysBetween" or mname == "secondsBetween"
                 if mname == "daysBetween"
@@ -17212,17 +18137,17 @@ struct Generator
                                 w.emit("\"\"")
                             w.emit(")")
                         return
-                    if mname == "query"
+                    if mname == "query" or mname == "querySegments"
                         if args.len >= 2
                             genExpr(m.object)
-                            w.emit(".query_p_(")
+                            w.emit("." + mname + "_p_(")
                             genExpr(args.at(0).value)
                             w.emit(", ")
                             genSqliteParams(args.at(1).value)
                             w.emit(")")
                         else
                             genExpr(m.object)
-                            w.emit(".query_(")
+                            w.emit("." + mname + "_(")
                             if args.len > 0
                                 genExpr(args.at(0).value)
                             else
@@ -18369,6 +19294,10 @@ struct Generator
                                     pass
                                 else if ump_p.type_ != nil
                                     um_emitted = emitEmptyListForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-463
+                                    if not um_emitted
+                                        um_emitted = emitListLitForParam(args.at(um_ai).value, ump_p.type_!)   # BUG-632
+                                    if not um_emitted
+                                        um_emitted = collectSplitForList(args.at(um_ai).value, ump_p.type_!)   # BUG-692
                         if not um_emitted
                             genExpr(args.at(um_ai).value)
                         um_ai = um_ai + 1
@@ -18458,18 +19387,19 @@ struct Generator
             var is_atomic = false
             if add_obj_name != nil
                 var add_nm = add_obj_name!
-                # BUG-264: `or isModuleGlobalStrSet` -- a module-scope var is neither a
-                # local nor a field, so both existing tests miss it.
-                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm) or .isModuleGlobalStrSet(add_nm)
+                # BUG-306: a module-scope var (BUG-264's StrSet, BUG-153's Atomic) is
+                # typed by populateModuleTypes, so inferExpr below sees it; the two
+                # declaration-reading oracles that covered it are gone.
+                is_strset = strset_locals.contains_(add_nm) or fieldIsStrSet(.module_types, .dep_types, add_nm)
                 is_class_ref = isUpperCase(add_nm)
-                # BUG-153: a module-global Atomic isn't tracked by inferExpr (which
-                # only sees locals/params), so guard the List `.add`→`.append` rewrite
-                # explicitly — an Atomic's `.add` is a real method, not a List append.
-                is_atomic = atomic_locals.contains_(add_nm) or isModuleGlobalAtomic(add_nm)
+                is_atomic = atomic_locals.contains_(add_nm)
             if .infer_ctx != nil and not is_strset and not is_class_ref and not is_atomic
                 var add_recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
                 if add_recv_t is Type_.named as nc
                     is_class_inst = nc.len > 0
+                # An ANNOTATED `StrSet` types as Type_.str_set, not named (typeFromName).
+                if add_recv_t is Type_.str_set
+                    is_strset = true
             if not is_strset and not is_class_ref and not is_class_inst and not is_atomic
                 var add_item_is_str = false
                 var add_item_is_ref = false
@@ -19179,6 +20109,9 @@ struct Generator
                 return
             if id.name == "HttpResponse"
                 genHttpResponseFactory(mname, args)
+                return
+            if id.name == "HttpRequest" and not isLocalOrParamName("HttpRequest") and not class_names.contains_("HttpRequest")
+                genHttpRequestCall(mname, args)
                 return
             if id.name == "Regex"
                 genRegexCall(mname, args)
@@ -20275,6 +21208,47 @@ struct Generator
                     return true
         return false
 
+    # BUG-632: a NON-empty `[a, b]` passed to a `List(X)` parameter takes X too, as a typed
+    # `var` initialiser does (BUG-230's labelled block). The general list-literal path infers
+    # the element type from the first element, so `f([1, 2])` into a `List(float)` built a
+    # List(i64) and zig refused it. Only a primitive element (or an optional one): a generic
+    # parameter's `T` means nothing at the call site, and a class element is already
+    # spelled correctly by the general path.
+    def emitListLitForParam(e: Expr, hint: TypeRef): bool
+        if e is Expr.list_lit as ll
+            if ll.elems.len == 0 or ll.elem_type != nil
+                return false
+            if hint is TypeRef.generic as gt
+                if gt.name == "List" and gt.args.len == 1 and isPrimitiveElemRef(gt.args.at(0))
+                    var uid: int = w.nextUid()
+                    var lbl: str = "blk632_" + uid.toString()
+                    var nm: str = "_ll632_" + uid.toString()
+                    w.emit("(" + lbl + ": { var " + nm + ": ")
+                    genType(hint)
+                    w.emit(" = _zbr_new(")
+                    genType(hint)
+                    w.emit("); ")
+                    for el in ll.elems
+                        w.emit(nm + ".append(_allocator, ")
+                        genExpr(el)
+                        w.emit(") catch @panic(\"OOM\"); ")
+                    w.emit("break :" + lbl + " " + nm + "; })")
+                    return true
+        return false
+
+    # BUG-565: the right operand of `in` is a non-empty, untyped list literal whose elements
+    # are all primitives (int, float, bool, char, str) -- emitted as a tuple, not a List.
+    def inLitAsTuple(e: Expr): bool
+        if e is Expr.list_lit as ll
+            if ll.elems.len == 0 or ll.elem_type != nil or .infer_ctx == nil
+                return false
+            for el in ll.elems
+                var et: Type_ = inferExpr(el, .infer_ctx!)
+                if not (et is Type_.int_ or et is Type_.float_ or et is Type_.bool_ or et is Type_.char_ or et is Type_.string_ or et is Type_.uint_)
+                    return false
+            return true
+        return false
+
     # BUG-501 1d: `first(int)([])` -- the empty list a GENERIC parameter receives. Its type
     # is the parameter's `List(...)` with the callee's type parameters replaced by the
     # call's type arguments, spelled through `_zbr_new` so it builds a header once
@@ -20405,6 +21379,10 @@ struct Generator
                 if ps.at(i).type_ as pt
                     if isSigTypeRef(pt)
                         genSigValue(a.value)
+                        done = true
+                    else if emitListLitForParam(a.value, pt)   # BUG-632
+                        done = true
+                    else if collectSplitForList(a.value, pt)   # BUG-692
                         done = true
             if not done
                 genExpr(a.value)
@@ -20961,6 +21939,7 @@ struct Generator
                         if not lg.emitLambdaStmtsRetType(ss)
                             w.emit("void")
             w.emit(" {")
+            w.emit(" " + safetyStmt())
             # BUG-514 (Fable, GameEngine): a parameter the body never reads is an unused
             # function parameter to Zig -- a hard error. A `def` gets `_ = p;` (genMethod);
             # a lambda did not, so a handler that ignores one of its sig's parameters failed
@@ -21796,7 +22775,49 @@ struct Generator
         w.emit("\")")
 
     # ── genHttpResponseFactory ───────────────────────────────────────────────
+    # BUG-449: `HttpRequest(method, path, content = "", query = "")` / `HttpRequest.new(...)`.
+    def genHttpRequestCall(mname: str, args: List(Arg))
+        if mname == "new"
+            var slots: List(str) = List(str)()
+            slots.add("method")
+            slots.add("path")
+            slots.add("content")
+            slots.add("query")
+            w.emit("HttpRequest{")
+            var si: int = 0
+            while si < 4
+                if si > 0
+                    w.emit(",")
+                w.emit(" ." + slots.at(si) + " = ")
+                var found: bool = false
+                var pos: int = 0
+                for a in args
+                    if a.name as an
+                        if an == slots.at(si) and not found
+                            genExpr(a.value)
+                            found = true
+                    else
+                        if pos == si and not found
+                            genExpr(a.value)
+                            found = true
+                        pos = pos + 1
+                if not found
+                    w.emit("\"\"")
+                si = si + 1
+            w.emit(" }")
+            return
+        w.emit("@compileError(\"selfhost: unknown HttpRequest.")
+        w.emit(mname)
+        w.emit("\")")
+
+    # BUG-683: wrapped in parentheses -- Zig allows no `.field` suffix on a bare struct
+    # literal, so `HttpResponse.ok("x").status` failed inside zig.
     def genHttpResponseFactory(mname: str, args: List(Arg))
+        w.emit("(")
+        genHttpResponseFactoryBody(mname, args)
+        w.emit(")")
+
+    def genHttpResponseFactoryBody(mname: str, args: List(Arg))
         if mname == "ok"
             w.emit("HttpResponse{ .status = 200, .text = ")
             if args.len > 0
@@ -21891,12 +22912,14 @@ struct Generator
             w.emit("_dt_now()")
             return
         if mname == "fromEpoch"
-            w.emit("_DateTime{ .epoch_ms = ")
+            # BUG-683: parenthesised, because Zig allows no `.field` suffix on a bare struct
+            # literal, and every DateTime use reads `.epoch_ms` off its receiver/argument.
+            w.emit("(_DateTime{ .epoch_ms = ")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("0")
-            w.emit(" }")
+            w.emit(" })")
             return
         if mname == "of"
             w.emit("_dt_from_gregorian(")

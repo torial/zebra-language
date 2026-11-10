@@ -14,7 +14,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `cue init` `cue toString` `cue equals` `cue hash` `cue compare` `cue iter` `cue next` `cue begin` `cue end`
 
-## Command forms (43)
+## Command forms (47)
 
 - `zebra <source.zbr>`
 - `zebra repl`
@@ -39,13 +39,17 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra --single-threaded <source.zbr>`
 - `zebra --target`
 - `zebra --module-path DIR <source.zbr>`
+- `zebra --source-root DIR <source.zbr>`
+- `zebra --target`
 - `zebra --target`
 - `zebra --target`
 - `zebra --target`
 - `zebra --coverage <source.zbr>`
 - `zebra --census <source.zbr>`
+- `zebra --census=host <source.zbr>`
 - `zebra --warn-non-exhaustive <source.zbr>`
 - `zebra --warnings-as-errors <source.zbr>`
+- `zebra -c --strict <source.zbr>`
 - `zebra --allow-inference-guess <f.zbr>`
 - `zebra --gui-backend=BACKEND <source.zbr>`
 - `zebra --keep-temp <source.zbr>`
@@ -60,9 +64,9 @@ named in the tool's header; what it cannot see is listed there too.
 - `zebra fmt --print <file.zbr>`
 - `zebra up`
 
-## Flags (34)
+## Flags (37)
 
-`--allow-inference-guess` `--also` `--build-file` `--census` `--check` `--check-full` `--coverage` `--cpu` `--dump-map` `--dump-transform` `--emit-zig` `--gc` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--module-path` `--only` `--out` `--output-dir` `--print` `--release` `--scaffold-only` `--shared` `--single-threaded` `--tag` `--target` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--warnings-as-errors` `-c` `-h`
+`--allow-inference-guess` `--also` `--build-file` `--census` `--check` `--check-full` `--coverage` `--cpu` `--dump-map` `--dump-transform` `--emit-zig` `--gc` `--gui-backend` `--keep-temp` `--list` `--list-targets` `--module-path` `--no-gc` `--only` `--out` `--output-dir` `--print` `--release` `--scaffold-only` `--shared` `--single-threaded` `--source-root` `--strict` `--tag` `--target` `--to` `--turbo` `--version` `--warn-non-exhaustive` `--warnings-as-errors` `-c` `-h`
 
 ## Generic constructors (7)
 
@@ -86,9 +90,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `add` `clear` `contains` `copy` `count` `items` `len` `remove` `toString`
 
-### JsonValue (24)
+### JsonValue (22)
 
-`append` `appendBool` `appendFloat` `appendInt` `entries` `get` `has` `isArray` `isNull` `isObject` `keys` `put` `putBool` `putFloat` `putInt` `stringify` `toString` `tryBool` `tryFloat` `tryInt` `tryList` `tryObj` `tryStr` `values`
+`append` `appendBool` `appendFloat` `appendInt` `get` `has` `isArray` `isNull` `isObject` `keys` `put` `putBool` `putFloat` `putInt` `stringify` `toString` `tryBool` `tryFloat` `tryInt` `tryList` `tryObj` `tryStr`
 
 ### Regex (7)
 
@@ -98,9 +102,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `elapsed` `elapsedMicros` `reset`
 
-### StringBuilder (7)
+### StringBuilder (6)
 
-`add` `append` `appendChar` `build` `clear` `len` `toString`
+`append` `appendChar` `build` `clear` `len` `toString`
 
 ### SysProcess (8)
 
@@ -126,9 +130,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `close` `recv` `send`
 
-### SqliteDb (6)
+### SqliteDb (7)
 
-`begin` `close` `commit` `exec` `query` `rollback`
+`begin` `close` `commit` `exec` `query` `querySegments` `rollback`
 
 ### SqliteRow (4)
 
@@ -162,11 +166,51 @@ named in the tool's header; what it cannot see is listed there too.
 
 `bytes` `nextBool` `nextFloat` `nextInt`
 
-## Namespaces (31) and static members (175; 1 namespace(s) OPEN: Math)
+### DateTime instance (methods) (17)
+
+`addDays` `addHours` `addMinutes` `addMonths` `addSeconds` `addYears` `after` `before` `daysBetween` `equals` `format` `inCalendar` `inZone` `secondsBetween` `timestamp` `toEpoch` `toIso8601`
+
+### DateTime instance (fields) (8)
+
+`day` `epoch_ms` `hour` `minute` `month` `second` `weekday` `year`
+
+### CalendarView instance (fields) (6)
+
+`day` `era` `month` `monthName` `weekday` `year`
+
+### CsvTable instance (methods) (7)
+
+`colCount` `dataRows` `get` `header` `row` `rowCount` `rows`
+
+### CsvWriter instance (methods) (2)
+
+`build` `writeRow`
+
+### DynLib instance (methods) (2)
+
+`close` `lookup`
+
+### HttpResponse instance (fields) (3)
+
+`headers` `status` `text`
+
+### HttpResponse instance (methods) (1)
+
+`withHeader`
+
+### ThreadPool instance (methods) (2)
+
+`submit` `wait`
+
+## Namespaces (33) and static members (180; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
 `parse`
+
+### Base64 (4) <!-- genBase64Call -->
+
+`decode` `decodeUrl` `encode` `encodeUrl`
 
 ### Build (1) <!-- genBuildStaticCall -->
 
@@ -207,6 +251,10 @@ named in the tool's header; what it cannot see is listed there too.
 ### Http (5) <!-- genHttpCall -->
 
 `get` `json` `post` `postJson` `serve`
+
+### HttpRequest (1) <!-- genHttpRequestCall -->
+
+`new`
 
 ### Json (5) <!-- genJsonCall -->
 

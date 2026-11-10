@@ -1,0 +1,106 @@
+# @boundary runs
+#
+# Wrapping (`+% -% *%`, `-%x`) and saturating (`+| -| *| <<|`) integer arithmetic, Zig's
+# operators and Zig's spelling (Sean, 2026-11-02). The expectations were written from
+# Zig 0.17's semantics -- probed with zig itself where a case was not obvious (`<<|` with
+# an amount past the width, `0 -% min`) -- BEFORE this probe was first run.
+#
+# What each row pins: the TYPE decides where a result wraps or saturates (byte at 255,
+# int8 at -128..127, int and uint at 64 bits); two constants are computed as an int, not
+# folded unbounded; `-%x` is `0 -% x`; every compound form works on a local, a field and
+# an index; interpolation takes the same path as a statement.
+
+struct Ctr
+    var n: byte
+
+def main()
+    var b: byte = 250
+    print(b +% 10)
+    print(b +| 10)
+    print(b *% 2)
+    print(b *| 2)
+
+    var z: byte = 5
+    print(z -% 10)
+    print(z -| 10)
+    print(-%z)
+
+    var s: int8 = 100
+    print(s +% 100)
+    print(s +| 100)
+    print(s *% 2)
+    var m: int8 = -128
+    print(-%m)
+    print(0 -| m)
+    print(m -| 1)
+
+    var big: int = 9223372036854775807
+    print(big +% 1)
+    print(big +| 1)
+    print(big *| 2)
+    var lo: int = big +% 1
+    print(lo -% 1)
+    print(lo -| 1)
+    print(lo *| 2)
+    print(9223372036854775807 +% 1)
+
+    var u: uint = 0
+    print(u -% 1)
+    print(u -| 1)
+
+    var one: int = 1
+    print(one <<| 70)
+    var bb: byte = 3
+    print(bb <<| 7)
+    print(bb <<| 1)
+    var e: int = 16
+    print(e <<| -2)
+    var neg: int = -5
+    print(neg <<| 70)
+
+    print("w=${b +% 10} s=${b +| 10}")
+
+    var c: byte = 200
+    c +%= 100
+    print(c)
+    c +|= 250
+    print(c)
+    c -|= 255
+    print(c)
+    c -%= 1
+    print(c)
+    var mm: int8 = 64
+    mm *%= 2
+    print(mm)
+    var sh: byte = 100
+    sh <<|= 2
+    print(sh)
+
+    var p = Ctr(n: 250)
+    p.n +%= 10
+    print(p.n)
+    p.n *|= 100
+    print(p.n)
+
+    var xs: List(byte) = [250, 1]
+    xs[0] +%= 10
+    xs[1] -|= 5
+    print(xs[0])
+    print(xs[1])
+
+    # Mixed operand types join exactly as `+` joins them (Sean, 2026-11-03: "keeping it
+    # consistent with + is key"), and the result wraps or clamps at the JOINED type:
+    # byte with int is an int; int16 with byte is an int16, so 300 *% 200 wraps at 16 bits.
+    var jb: byte = 250
+    var jn: int = 10
+    print(jb +% jn)
+    print(jb +| jn)
+    print(jn -% jb)
+    var jh: int16 = 32767
+    var j1: byte = 1
+    print(jh +% j1)
+    print(jh +| j1)
+    var jm: int16 = 300
+    var j2: byte = 200
+    print(jm *% j2)
+    print(jm *| j2)

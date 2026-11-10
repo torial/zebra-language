@@ -22,7 +22,7 @@
 #   - Recursive tree walking: resolveStmt - resolveExpr
 #   - ^T field auto-deref: c.name, m.stmts etc. work through *PClass/*PMethod
 
-use Parser exposing PNode, PParam, POptChain, PIfExpr, PCaptureVar, PExprId, PPos
+use Parser exposing PNode, PParam, POptChain, PIfExpr, PCaptureVar, PExprId, PPos, useBindName
 use CgHelpers exposing isStdlibNs, isBuiltinTypeName
 
 # -- Symbol kind encoding (stored: int in scope HashMaps) -------------------
@@ -244,7 +244,7 @@ class Resolver
                 .module_scope.put(v.name, 0)
                 .symbol_count = .symbol_count + 1
             on PNode.use_ as u
-                .module_scope.put(u.path, 5)
+                .module_scope.put(useBindName(u.path), 5)      # `use pkg.mod` binds `mod`
                 for name in u.exposed
                     .module_scope.put(name, 5)
             on PNode.namespace_decl as ns

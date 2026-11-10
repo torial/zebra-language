@@ -20,7 +20,9 @@ Checks, each a numbered line so a red is one fix:
   4. TypeChecker.guiMethodKnown lists exactly the GuiContext verbs a program may call
      (the checker refuses names outside the list, so a verb missing there is invisible,
      and a name there without a method fails inside zig).
-Exit 0 with `all checks pass`, 1 otherwise.
+  5. Every `_code_editor_*` name CodeGen.zbr emits is defined in all three regions
+     (BUG-693; refuses, exit 2, if fewer than 15 names extract).
+Exit 0 with `all checks pass`, 1 otherwise, 2 if an extractor stopped matching.
 """
 import re, sys, pathlib
 
@@ -92,6 +94,20 @@ def main():
     hmissing = {k: sorted((allh | emitted) - v) for k, v in h.items() if (allh | emitted) - v}
     report(3, "_gui_* helpers identical and cover CodeGen's emits", not hmissing,
            "missing " + "; ".join(f"{k}: {v}" for k, v in hmissing.items()))
+
+    # 5 (BUG-693): CodeEditor methods lower to `_code_editor_*` fns, one copy per region. The
+    # stub lacked `_code_editor_sci`/`_sci_str` for weeks: invisible while the tui backend was
+    # the headless one, then the only route for a program using `ed.sci` once 0.17 refused tui.
+    def ce_helpers(text):
+        return set(re.findall(r"^(?:pub )?fn (_code_editor_\w+)\(", text, re.M))
+    ce = {"stub": ce_helpers(pre), "tui": ce_helpers(tui), "libui": ce_helpers(lui)}
+    ce_emitted = {n for n in re.findall(r"(_code_editor_[a-z_]+)", cg) if not n.endswith("_")}
+    if len(ce_emitted) < 15:
+        print(f"REFUSE: only {len(ce_emitted)} _code_editor_* names found in CodeGen.zbr -- the extractor stopped matching")
+        return 2
+    cemissing = {k: sorted(ce_emitted - v) for k, v in ce.items() if ce_emitted - v}
+    report(5, "_code_editor_* helpers cover CodeGen's emits in all three", not cemissing,
+           "missing " + "; ".join(f"{k}: {v}" for k, v in cemissing.items()))
 
     i = tc.index("def guiMethodKnown(")
     body = tc[i:tc.index("\ndef ", i + 1)]

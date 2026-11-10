@@ -1,0 +1,16 @@
+# BUG-672: a literal beside a sized integer adapts to its type, so it must fit there.
+def f(k: byte, hh: int16): int
+    var x: byte = k
+    var h: int16 = hh
+    print(k + 300)
+    print(300 - k)
+    print(k % 300)
+    print(k & 0x1FF)
+    x = k + -1
+    x += 300
+    h = h * 40000
+    print(x)
+    print(h)
+    return 0
+def main()
+    print(f(5, 6))

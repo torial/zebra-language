@@ -38,11 +38,11 @@
 
 # File, Arg, sys, Shell are built-in stdlib globals — no `use` needed.
 
-use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
+use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch, useFilePath, useBindName
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, censusOn
+use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, addNativeZigUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, setCensusHost, censusOn, setSourceRoot
 use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
@@ -61,6 +61,12 @@ class MultiCompiler
     # cannot tell them apart; this stack can, and it carries the PATH for free, since
     # the stack IS the chain.
     var in_progress: List(str)
+    # BUG-295: each cycle reported, by canonical key (see cycleKey) -- so two `use` lines
+    # of one module, or a cycle reached by both compileDep and scanDepForTypes, print once.
+    var reported_cycles: List(str)
+    # BUG-295 (0): the modules scanDepForTypes is inside of, as a stack -- the type-only
+    # scan of --module-path deps has its own path through the import graph.
+    var scan_stack: List(str)
     # BUG-295 (b): one entry per distinct import EDGE, "dep|importer". Recorded even
     # when the dep is skipped as already-visited -- the skipped imports are exactly the
     # ones that make a module SHARED, so counting only first visits would see nothing.
@@ -69,10 +75,10 @@ class MultiCompiler
     # types has no instance to share, so it is not worth a word; this is what keeps the
     # end-of-compilation note from listing every module in a healthy dependency graph.
     var stateful_mods: List(str)
-    # Sean's call: report, do not refuse. A cycle is currently UNDEFINED rather than
-    # wrong — Zebra has no answer for module-init order across one — so the honest
-    # move is to say so where the user is already looking, and decide error-vs-warning
-    # after watching it fire on real code. Flip this one line to refuse.
+    # Sean's call: report, do not refuse (decided 2026-10-29, once a cycle had an
+    # answer for module-init order: each module stays ONE instance, a singleton, and its
+    # computed vars initialise on first use -- see CodeGen isLazyModuleVar). Flip this
+    # one line to refuse.
     var cycle_is_error: bool
     # BUG-502: what each module may NAME as a class -- its own classes and those of the
     # modules it `use`s directly. It replaced one list accumulated across the whole compile
@@ -99,6 +105,7 @@ class MultiCompiler
     var tag_filter: str?       # --tag X: only run tests matching this tag
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
     var warnings_as_errors: bool   # --warnings-as-errors: a warning fails the compile (2026-09-24)
+    var strict_check: bool         # --strict: the editor's strict view on every module checked (2026-10-28)
     var uses_sqlite: bool      # true when root generated code calls Sqlite.open/query
     var module_path: str       # --module-path DIR: extra search dir for `use` deps
     var type_scanned: List(str)  # deps scanned for types only (not emitted)
@@ -112,10 +119,15 @@ class MultiCompiler
     # last written to. Both are per-process caches — see writeRuntimeModule.
     var rt_text: str
     var rt_written: str
+    # BUG-671: every file this run WROTE under --output-dir (module emits, the runtime, a C
+    # header's bindings), so a front-end refusal can take them back -- see exitWith.
+    var emitted: List(str)
 
     cue init(preamble_path: str, output_dir: str)
         .visited = List(str)()
         .in_progress = List(str)()
+        .reported_cycles = List(str)()
+        .scan_stack = List(str)()
         .import_edges = List(str)()
         .stateful_mods = List(str)()
         .cycle_is_error = false
@@ -139,12 +151,14 @@ class MultiCompiler
         .tag_filter = nil
         .warn_non_exhaustive = false
         .warnings_as_errors = false
+        .strict_check = false
         .uses_sqlite = false
         .module_path = ""
         .type_scanned = List(str)()
         .node_addon = false
         .rt_text = ""
         .rt_written = ""
+        .emitted = List(str)()
         .sf_dep_bodies = List(str)()
         .sf_dep_names = List(str)()
 
@@ -186,15 +200,53 @@ class MultiCompiler
             i = i + 1
         return out + .moduleNameOf(p)
 
+    # A cycle's identity, whichever module it was entered from: its module names rotated
+    # to start at the smallest. `a -> b -> a` and `b -> a -> b` are one cycle.
+    def cycleKey(names: List(str)): str
+        var lo: int = 0
+        var i: int = 1
+        while i < names.len
+            if names.at(i) < names.at(lo)
+                lo = i
+            i = i + 1
+        var key: str = ""
+        var k: int = 0
+        while k < names.len
+            key = key + names.at((lo + k) % names.len) + " "
+            k = k + 1
+        return key
+
+    # True the first time a cycle is seen; it is recorded either way.
+    def firstReportOf(stack: List(str), start: int): bool
+        var names: List(str) = List(str)()
+        var i: int = start
+        while i < stack.len
+            names.add(.moduleNameOf(stack.at(i)))
+            i = i + 1
+        var key: str = .cycleKey(names)
+        if .hasListed(reported_cycles, key)
+            return false
+        reported_cycles.add(key)
+        return true
+
     def reportImportCycle(start: int, p: str)
+        # BUG-295: every module on the cycle initialises its computed vars on first use.
+        # All of them are still in progress here, so none has been generated yet.
+        var cm: int = start
+        while cm < in_progress.len
+            dep_types.addModuleVar("$cyc:" + .moduleNameOf(in_progress.at(cm)))
+            cm = cm + 1
+        if not .firstReportOf(in_progress, start)
+            return
         var kind: str = "warning"
         if cycle_is_error
             kind = "error"
         sys.errln(kind + ": import cycle: " + .importCyclePath(start, p))
-        sys.errln("  a module in a cycle is compiled ONCE and the first import wins, so")
-        sys.errln("  the second module sees a PARTIAL view of the first. That is well")
-        sys.errln("  defined for functions and types and UNDEFINED for module-level state:")
-        sys.errln("  no initialisation order satisfies both directions.")
+        sys.errln("  each module in a cycle is still ONE instance, shared by every importer,")
+        sys.errln("  and each of its module-level variables is set before it is first read:")
+        sys.errln("  one computed from other modules is initialised on first use. Initialisers")
+        sys.errln("  that need each other's values cannot be ordered; the program stops at")
+        sys.errln("  start-up naming them.")
         sys.errln("  fix: move the names they share into a third module that both import.")
         if cycle_is_error
             .exitWith(1, false)
@@ -288,7 +340,12 @@ class MultiCompiler
     # binary) is removed -- unless the BUILD or the PROGRAM failed (keep: its .zig is the
     # evidence) or --keep-temp asked for it. A kept directory is NAMED, because its path is
     # random per run and can no longer be guessed. With --output-dir there is no scratch.
+    # A non-zero exit WITHOUT `keep` is a FRONT-END REFUSAL (the program was rejected
+    # before zig saw it); a non-zero exit WITH `keep` is a failure whose emit is the
+    # evidence (zig refused it, BUG-324). Keep that distinction at every call site.
     def exitWith(code: int, keep: bool)
+        if code != 0 and not keep
+            .removeEmitted()
         if scratch_dir != ""
             if keep_temp
                 sys.errln("note: the scratch build is kept in " + scratch_dir)
@@ -298,6 +355,43 @@ class MultiCompiler
             else
                 removeScratchDir(scratch_dir)
         sys.exit(code)
+
+    # BUG-671: a refused compile leaves no .zig behind in --output-dir. The refusals that
+    # run after emission (a throws call without `?`, a `catch` that cannot fire, a guessed
+    # type) found every module already written, and a caller that judged success by
+    # "did a .zig come out" built the refused program and got a zig error about code the
+    # front end had already rejected. A temp-mode emit needs nothing here: its whole
+    # scratch directory goes. A file that will not delete is NAMED, never silently kept.
+    def removeEmitted()
+        if output_dir == "" or emitted.len == 0
+            return
+        var gone: List(str) = List(str)()
+        var stuck: List(str) = List(str)()
+        for ep in emitted
+            if not gone.contains(ep) and not stuck.contains(ep)
+                if File.tryDelete(ep)
+                    gone.add(ep)
+                else
+                    stuck.add(ep)
+        var names: str = ""
+        for gp in gone
+            if names != ""
+                names = names + ", "
+            names = names + Path.basename(gp)
+        if gone.len > 0
+            sys.errln("note: the compile was refused, so the " + gone.len.toString() + " file(s) it wrote to " + output_dir + " were removed: " + names)
+        for sp in stuck
+            sys.errln("note: the compile was refused, and " + sp + " (written by it) could not be removed -- do not build it")
+        emitted.clear()
+
+    # The root compile, with a RAISED refusal (a parse error in a dependency, a failed
+    # import) routed through exitWith like the reported ones, so earlier modules' emits
+    # are taken back too (BUG-671).
+    def compileRoot(zbr_path: str)
+        .compileDep(zbr_path, true)?
+    catch |e|
+        sys.errln(e.message)
+        .exitWith(1, false)
 
     def reportModulePathDeps()
         if library_mode or mp_noted.len == 0
@@ -400,6 +494,11 @@ class MultiCompiler
                 tc_ctx.withDepTypes(dep_types)
                 if warn_non_exhaustive
                     tc_ctx.enableWarnNonExhaustive()
+                # --strict (Sean, 2026-10-28): the checks `zebra lsp` / `zebra diagnostics`
+                # run, opted into from the command line -- `-c --strict` is the editor's view
+                # of a whole program. Off by default, so a plain `-c` costs nothing extra.
+                if strict_check
+                    tc_ctx.enableStrict()
                 tc_ctx.withReservedRuntimeNames(rtReservedNames(.preamble_path))   # BUG-359
                 tc_ctx.withRuntimePublicNames(rtPublicNames(.preamble_path))       # BUG-446
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
@@ -433,7 +532,7 @@ class MultiCompiler
                         # --target node-addon: N-API glue instead of an entry thunk,
                         # plus the JS require() shim and TypeScript declarations,
                         # written next to the SOURCE (not the temp .zig dir).
-                        zig_src = generateNodeAddon(module, zbr_path, preamble_path, "selfhost/napi_preamble.zig", strip_contracts)?
+                        zig_src = generateNodeAddon(module, zbr_path, preamble_path, runtimeFilePath("napi_preamble.zig"), strip_contracts)?
                         var stem_na: str = zbr_path
                         if stem_na.endsWith(".zbr")
                             for s in zbr_path.split(".zbr")
@@ -484,6 +583,7 @@ class MultiCompiler
                 if not (singleFile() and not node_addon and not is_root)
                     var zig_path: str = .zbrToZig(zbr_path)
                     File.write(zig_path, zig_src)
+                    .emitted.add(zig_path)
                     sys.errln("wrote " + zig_path)
                     # Runtime-module: the program `@import("zebra_rt.zig")`s relative to
                     # its own directory, so the runtime has to sit beside it.  Every emit
@@ -529,11 +629,19 @@ class MultiCompiler
     def compileDep_use(u: PUse, parent_path: str) throws
         # Resolve dep path: same directory: parent. Try .zbr first, then .c.
         var src_dir: str = .dirOf(parent_path)
-        var dep_name: str = u.path
+        # `use pkg.mod` is the file pkg/mod.zbr; the module it brings in is `mod`
+        # (PUse.bindName), which is the name every native-dep registration below uses.
+        var dep_name: str = useFilePath(u.path)
         var dep_path: str = dep_name + ".zbr"
         if src_dir != ""
             dep_path = src_dir + "/" + dep_name + ".zbr"
         if fileExistsExact(dep_path)
+            # A module is known by its file's stem from here on -- the `use` binding, the
+            # emitted <stem>.zig -- so a second file with the same stem would silently take
+            # the first one's place. Refuse it, naming both.
+            var clash: str = .stemClash(dep_path)
+            if clash != ""
+                raise parent_path + ":" + useLineOf(File.read(parent_path), u.path).toString() + ":1: error: `use " + u.path + "`: this program already has a module named `" + useBindName(u.path) + "` (" + clash + "); a module is known by its file name, so two files called " + useBindName(u.path) + ".zbr cannot both be used -- rename one"
             .recordImportEdge(dep_path, parent_path)
             .noteModDep(parent_path, dep_path)
             .compileDep(dep_path, false)?
@@ -554,8 +662,8 @@ class MultiCompiler
                 # FileNotFound` about a file the compiler chose not to write. Recorded
                 # here and reported ONCE by reportModulePathDeps after the graph is known
                 # -- one line per dep buried a hand-compiled engine test in ten.
-                if not mp_noted.contains(dep_name)
-                    mp_noted.add(dep_name)
+                if not mp_noted.contains(useBindName(u.path))
+                    mp_noted.add(useBindName(u.path))
                 return
         # Native C dep: collect path and optional -I dir; zig handles compilation.
         var c_path: str = dep_name + ".c"
@@ -569,14 +677,14 @@ class MultiCompiler
             # BUG-261: tell the codegen this `use` is native C.  Without this the
             # path below records the -I dir and the .c file for zig, but genUse
             # still emits `@import("<dep>.zig")` for a file that does not exist.
-            # Registered on `u.path` (the name as WRITTEN in the `use`), because
+            # Registered on the module's name (`use pkg.foo` -> `foo`), because
             # that is the key genUse looks up — not the resolved filesystem path.
-            addNativeCUse(u.path, File.exists(h_path))
+            addNativeCUse(useBindName(u.path), File.exists(h_path))
             if File.exists(h_path)
                 var c_dir: str = .dirOf(c_path)
                 if c_dir == ""
                     c_dir = "."
-                c_headers.add(u.path + "\t" + h_path + "\t" + c_dir)
+                c_headers.add(useBindName(u.path) + "\t" + h_path + "\t" + c_dir)
                 var already_added: bool = false
                 var dchk: int = 0
                 while dchk < c_i_dirs.len
@@ -618,12 +726,19 @@ class MultiCompiler
         # missed the library, fell through to importing `foo.zig`, and the extern stayed
         # undefined at link time (found by tools/ffi_lib_check.sh on the first Linux CI).
         # The bare name is tried first at each extension, so Windows is unchanged.
+        # A dotted `use pkg.foo` puts the `lib` prefix on the FILE name: pkg/libfoo.a.
+        var lib_pre: str = ""
+        var lib_base: str = dep_name
+        var lib_sl: int = dep_name.lastIndexOf("/")
+        if lib_sl >= 0
+            lib_pre = dep_name.substring(0, lib_sl + 1)
+            lib_base = dep_name.substring(lib_sl + 1, dep_name.len)
         var lib_names: List(str) = List(str)()
         var lx: int = 0
         while lx < lib_exts.len
-            lib_names.add(dep_name + "." + lib_exts.at(lx))
+            lib_names.add(lib_pre + lib_base + "." + lib_exts.at(lx))
             if lib_exts.at(lx) != "lib"
-                lib_names.add("lib" + dep_name + "." + lib_exts.at(lx))
+                lib_names.add(lib_pre + "lib" + lib_base + "." + lib_exts.at(lx))
             lx = lx + 1
         var ln: int = 0
         while ln < lib_names.len
@@ -635,7 +750,7 @@ class MultiCompiler
                 lib_path = module_path + "/" + lib_name
             if fileExistsExact(lib_path)
                 lib_sources.add(lib_path)
-                addNativeLibUse(u.path)
+                addNativeLibUse(useBindName(u.path))
                 return
             ln = ln + 1
         # BUG-262: a native `.zig` dep, and it is LAST on purpose.
@@ -668,6 +783,7 @@ class MultiCompiler
                 zsi = zsi + 1
             if not zs_seen
                 zig_sources.add(zig_dep_path)
+            addNativeZigUse(useBindName(u.path))                   # BUG-263
             return
         # Nothing matched. Until 2026-09-16 this fell off the end and compilation went on
         # with the `use` unresolved -- genUse still emitted `@import("<dep>.zig")`, the
@@ -688,6 +804,15 @@ class MultiCompiler
         # whose `use` target is not beside it as an ARTIFACT, not a broken example.
         raise "`use " + u.path + "`: module not found -- no " + dep_name + ".zbr (or .c / .lib / .a / .so / .dylib, lib" + dep_name + ".a/.so/.dylib, .zig) " + looked
 
+    # The visited module whose stem equals dep_path's while the file differs, or "".
+    def stemClash(dep_path: str): str
+        var stem: str = .moduleNameOf(dep_path)
+        var want: str = dep_path.replace("\\", "/")
+        for vp in visited
+            if .moduleNameOf(vp) == stem and vp.replace("\\", "/") != want
+                return vp
+        return ""
+
     def alreadyTypeScanned(p: str): bool
         var i: int = 0
         while i < type_scanned.len
@@ -707,6 +832,7 @@ class MultiCompiler
         if .alreadyTypeScanned(zbr_path)
             return
         type_scanned.add(zbr_path)
+        scan_stack.add(zbr_path)
 
         var src: str = File.read(zbr_path)
         const pm_node = Parser.Parser.parse(src, zbr_path)?
@@ -717,16 +843,26 @@ class MultiCompiler
                 for decl in pm.decls
                     branch decl
                         on PNode.use_ as sub_use
-                            var sub_name: str = sub_use.path
+                            var sub_name: str = useFilePath(sub_use.path)
                             var sub_dir: str = .dirOf(zbr_path)
                             var sub_adj: str = sub_name + ".zbr"
                             if sub_dir != ""
                                 sub_adj = sub_dir + "/" + sub_name + ".zbr"
                             if fileExistsExact(sub_adj)
-                                .scanDepForTypes(sub_adj)?
+                                # BUG-666: a module compileDep already compiled is in
+                                # dep_types; scanning it again registered its union
+                                # variants twice, so a branch covering every variant
+                                # looked partial and kept an `else` zig refuses. That
+                                # happens whenever a cycle sends the scan back through
+                                # compiled modules (the compiler's own TypeChecker <->
+                                # CgHelpers cycle failed to build exactly so).
+                                if not .alreadyVisited(sub_adj)
+                                    .noteScanCycle(sub_adj)
+                                    .scanDepForTypes(sub_adj)?
                             else if module_path != ""
                                 var sub_mp: str = module_path + "/" + sub_name + ".zbr"
                                 if fileExistsExact(sub_mp)
+                                    .noteScanCycle(sub_mp)
                                     .scanDepForTypes(sub_mp)?
                         else
                             pass
@@ -748,6 +884,37 @@ class MultiCompiler
                 noteDepCodegenFacts(dep_types, module, strip_contracts)   # BUG-581 / BUG-586
             else
                 pass
+        .popScanStack()
+
+    def popScanStack()
+        var rebuilt: List(str) = List(str)()
+        var i: int = 0
+        while i < scan_stack.len - 1
+            rebuilt.add(scan_stack.at(i))
+            i = i + 1
+        scan_stack = rebuilt
+
+    # BUG-295 (0): a cycle among the modules the type-only scan walks -- --module-path
+    # deps, which never reach compileDep, where cycles are otherwise reported. Always a
+    # WARNING, even with cycle_is_error: this is usually someone else's code, so the
+    # advice is to report it, not to restructure it. A cycle compileDep already reported
+    # (the scan re-walks an adjacent cycle's members for their types) is not repeated.
+    def noteScanCycle(sub: str)
+        var i: int = 0
+        while i < scan_stack.len
+            if scan_stack.at(i) == sub
+                if .firstReportOf(scan_stack, i)
+                    var path: str = ""
+                    var k: int = i
+                    while k < scan_stack.len
+                        path = path + .moduleNameOf(scan_stack.at(k)) + " -> "
+                        k = k + 1
+                    sys.errln("warning: import cycle in --module-path dependencies: " + path + .moduleNameOf(sub))
+                    sys.errln("  these modules are read here for their types only, not compiled; whatever")
+                    sys.errln("  builds them gets one instance of each, its computed variables set on first")
+                    sys.errln("  use. If they are not yours, the cycle is theirs to fix: report it upstream.")
+                return
+            i = i + 1
 
     # Write zebra_rt.zig into the same directory as an emitted program.  Deps and the
     # root all emit into one directory, so this is called once per module and rewrites
@@ -791,6 +958,7 @@ class MultiCompiler
                 .rt_written = rt_path
                 return
         File.write(rt_path, .rt_text)
+        .emitted.add(rt_path)
         .rt_written = rt_path
 
     def zbrToZig(zbr_path: str): str
@@ -894,6 +1062,7 @@ class MultiCompiler
                 raise "zig translate-c failed for " + parts.at(1) + ":\n" + tr.stderr
             if not (File.exists(dst) and File.read(dst) == tr.stdout)
                 File.write(dst, tr.stdout)
+                .emitted.add(dst)
             i = i + 1
 
     def moduleNameOf(zbr_path_in: str): str
@@ -1108,15 +1277,19 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --single-threaded <source.zbr>     no threads: the allocator drops its mutex; spawning a thread fails to compile", to_stdout)
     usageLine("  zebra --target v --also=a.zbr,b.zbr <root.zbr>  emit these modules into the V file too (what a host calls that the root does not use; the = form: a space-separated value reads as the source)", to_stdout)
     usageLine("  zebra --module-path DIR <source.zbr>     also look in DIR for `use`d modules and prebuilt libraries", to_stdout)
+    usageLine("  zebra --source-root DIR <source.zbr>     spell source paths in the generated .zig relative to DIR (markers, failure locations)", to_stdout)
     usageLine("  zebra --target node-addon <source.zbr>   build a Node.js native addon (.node + .js + .d.ts, QUICKSTART §45)", to_stdout)
     usageLine("  zebra --target v <source.zbr>            write <source>.v for the V compiler (a proof of concept: a subset; the rest refused by name)", to_stdout)
     usageLine("  zebra --target v --no-gc <source.zbr>    ... and say the run line with V's collector OFF (the collector is the default since 2026-11-09; an allocate block frees its own record either way)", to_stdout)
+    usageLine("  zebra --target v --gc <source.zbr>       ... accepted and unneeded: V's collector is the default (kept so a 0.9 command line still runs)", to_stdout)
     usageLine("  zebra --coverage <source.zbr>            line coverage -> zebra-coverage.json on exit (also: zebra test --coverage)", to_stdout)
     usageLine("  zebra --census <source.zbr>              allocation census: who allocates, where, how much -> stderr + zebra-census.json on exit", to_stdout)
+    usageLine("  zebra --census=host <source.zbr>         the census compiled in, installed by the host: _zbr_cens_install() opens the window", to_stdout)
     usageLine("  zebra --warn-non-exhaustive <source.zbr> warn branch...else that silently catches union variants", to_stdout)
     usageLine("  zebra --warnings-as-errors <source.zbr> fail the compile on any warning (a deprecation, a function used as a value)", to_stdout)
+    usageLine("  zebra -c --strict <source.zbr>           also report what the editor reports: an annotated local whose initialiser has no inferable type", to_stdout)
     usageLine("  zebra --allow-inference-guess <f.zbr>    one-release migration aid: guess a type that cannot be inferred (warns) instead of refusing", to_stdout)
-    usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: tui or libui_ng", to_stdout)
+    usageLine("  zebra --gui-backend=BACKEND <source.zbr> compile GUI app: libui_ng (tui is unavailable on Zig 0.17)", to_stdout)
     usageLine("  zebra --keep-temp <source.zbr>           keep the scratch build and print its directory (kept and printed anyway on failure)", to_stdout)
     usageLine("  zebra --gui-backend=X --scaffold-only <f>  write the GUI project beside the emit; do not build or run it", to_stdout)
     usageLine("  zebra --version                          print version and exit", to_stdout)
@@ -1422,17 +1595,31 @@ def extractConflictSide(src: str, want_ours: bool): str
 # Run the selfhost TC pipeline on src (a string), collecting diagnostics into diags.
 # Catches parse/resolve/build errors and reports them as diagnostic strings so the
 # caller gets a clean list regardless. Does not compile to Zig.
-# The preamble lives in the repo (selfhost/) or, for an installed zebra.exe, next
-# to the binary. One resolver, used by the compile route and by the side-check
-# route (`tcCheckSide`) so BUG-359's reserved-name check sees the same runtime.
+# One resolver, used by the compile route and by the side-check route (`tcCheckSide`)
+# so BUG-359's reserved-name check sees the same runtime.
 def defaultPreamblePath(): str
-    var pp: str = "selfhost/stdlib_preamble.zig"
-    if not File.exists(pp)
-        var pre_exe_dir: str = Path.dirname(sys.selfExe())
-        if pre_exe_dir == ""
-            pre_exe_dir = "."
-        pp = pre_exe_dir + "/stdlib_preamble.zig"
-    return pp
+    return runtimeFilePath("stdlib_preamble.zig")
+
+# A runtime file the compiler reads at codegen time (the preamble, a GUI section, the
+# napi helpers, the V runtime), found from the BINARY rather than from the working
+# directory (BUG-543): first the checkout the binary was built in
+# (<checkout>/zig-out/bin/zebra.exe -> <checkout>/selfhost/NAME), then beside the binary
+# (an installed zebra), and only then ./selfhost/NAME, for a compiler built into a
+# scratch directory and run from a checkout (tools/regen_recover.sh). The cwd used to
+# come FIRST, so any zebra run inside a clone of this repo took the clone's runtime --
+# the N-1 anchor emitted its own codegen against today's runtime that way.
+def runtimeFilePath(name: str): str
+    var exe_dir: str = Path.dirname(sys.selfExe())
+    if exe_dir == ""
+        exe_dir = "."
+    if exe_dir.replace("\\", "/").endsWith("/zig-out/bin")
+        var built_in: str = exe_dir + "/../../selfhost/" + name
+        if File.exists(built_in)
+            return built_in
+    var beside: str = exe_dir + "/" + name
+    if File.exists(beside)
+        return beside
+    return "selfhost/" + name
 
 # --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
 # .v beside the source, the refusals listed (never skipped silently), the run
@@ -1627,15 +1814,10 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
     modules = vRenameCollisions(modules)?
     if modules.count() > 0
         # the V runtime (the boxed containers), inlined into the emitted file:
-        # in the repo, or next to an installed zebra.exe, as the preamble is
-        var rt_path: str = "selfhost/zebra_rt.v"
+        # found as the preamble is (runtimeFilePath)
+        var rt_path: str = runtimeFilePath("zebra_rt.v")
         if not File.exists(rt_path)
-            var exe_dir: str = Path.dirname(sys.selfExe())
-            if exe_dir == ""
-                exe_dir = "."
-            rt_path = exe_dir + "/zebra_rt.v"
-        if not File.exists(rt_path)
-            sys.errln("zebra --target v: the V runtime zebra_rt.v is not at selfhost/zebra_rt.v nor beside zebra.exe: nothing written")
+            sys.errln("zebra --target v: the V runtime zebra_rt.v is not in the checkout this zebra was built in, nor beside zebra.exe, nor at selfhost/zebra_rt.v: nothing written")
             sys.exit(1)
         var res: VResult = generateV(modules, File.read(rt_path))
         # a GUI program: the libui-ng section (Gui, the run loop, the libui-ng
@@ -1644,12 +1826,7 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
         # widgets are a V compile error naming the method)
         var gui_note: str = ""
         if gui_backend == "libui_ng"
-            var sec_path: str = "selfhost/gui_libui_ng_section.v"
-            if not File.exists(sec_path)
-                var exe_dir2: str = Path.dirname(sys.selfExe())
-                if exe_dir2 == ""
-                    exe_dir2 = "."
-                sec_path = exe_dir2 + "/gui_libui_ng_section.v"
+            var sec_path: str = runtimeFilePath("gui_libui_ng_section.v")
             if not File.exists(sec_path)
                 sys.errln("zebra --target v --gui-backend=libui_ng: the section gui_libui_ng_section.v is not at selfhost/ nor beside zebra.exe: nothing written")
                 sys.exit(1)
@@ -1678,6 +1855,9 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
                 print("    " + r)
         else
             print("  nothing refused: the whole file is in the subset")
+        # printed at zero too: a count that only appears when it is bad has no baseline
+        print("  " + res.unverified.toString() + " method call(s) on a receiver whose type the emitter did not know: not checked against the runtime")
+        print("  " + res.unchecked_arith.toString() + " integer operation(s) on an operand of unknown or byte type: not overflow-checked (V wraps there)")
         if res.uses_gui and gui_backend == ""
             # the Zig target's default section is the tui's headless Gui; the V
             # target has none, so the file names types nothing defines
@@ -1705,6 +1885,43 @@ catch |e|
     sys.errln("zebra --target v: " + e.message)
     sys.exit(1)
 
+# BUG-653: the types of the modules a side-checked file `use`s. Without them the LSP and
+# `zebra diagnostics` refused every imported class as an "unknown type" that `-c` accepts.
+# Same resolution the compile route reads types from: a dep beside the file (and its own
+# deps, recursively, by scanDepForTypes). A dep that does not build is reported ON THIS
+# FILE's `use` line, naming the dep and where its error is -- raised as is, its own
+# `dep.zbr:4:14` was shown at line 4 of the file being edited.
+def sideDepTypes(pm: PModule, path: str, src: str): ModuleTypes throws
+    var drv = MultiCompiler(defaultPreamblePath(), "")
+    var dir: str = drv.dirOf(lspUriToPath(path))
+    for decl in pm.decls
+        if decl is PNode.use_ as u
+            var dep: str = useFilePath(u.path) + ".zbr"
+            if dir != ""
+                dep = dir + "/" + dep
+            if fileExistsExact(dep)
+                var dmsg: str = depScanError(drv, dep)
+                if dmsg != ""
+                    raise path + ":" + useLineOf(src, u.path).toString() + ":0: error: module '" + u.path + "' does not compile: " + dmsg
+    return drv.dep_types
+
+# "" when the dep's types were read, else its error.
+def depScanError(drv: MultiCompiler, dep: str): str
+    drv.scanDepForTypes(dep)
+    return ""
+catch |de|
+    return de.message
+
+# The 1-based line of `use NAME` in src (PUse carries no position); 1 if not found.
+def useLineOf(src: str, name: str): int
+    var ln: int = 0
+    for l in src.split("\n")
+        ln += 1
+        var t: str = l.trim()
+        if t == "use " + name or t.startsWith("use " + name + " ")
+            return ln
+    return 1
+
 def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = false)
     var pm_node = Parser.Parser.parse(src, path)?
     var resolver = Resolver.Resolver(path, src)
@@ -1719,6 +1936,7 @@ def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = fal
         var tc_mt: ModuleTypes = buildModuleTypes(module)
         var tc_ctx: InferCtx = InferCtx(tc_mt, "")
         tc_ctx.withSource(src)
+        tc_ctx.withDepTypes(sideDepTypes(pm, path, src)?)
         tc_ctx.enableStrict()
         tc_ctx.withReservedRuntimeNames(rtReservedNames(defaultPreamblePath()))   # BUG-359
         tc_ctx.withRuntimePublicNames(rtPublicNames(defaultPreamblePath()))       # BUG-446
@@ -1734,7 +1952,11 @@ def tcCheckSide(src: str, path: str, diags: List(str), with_warnings: bool = fal
                 if wline.trimLeft() != ""
                     diags.add(wline)
 catch |e|
-    diags.add("error: " + e.message)
+    # BUG-654: a raised error that already says where (`file:L:C: error: ...`) is kept as is.
+    if e.message.contains(": error: ")
+        diags.add(e.message)
+    else
+        diags.add("error: " + e.message)
 
 # ── LSP diagnostics (JSON seam) ───────────────────────────────────────────────
 # `zebra diagnostics <file>` runs the front-end (parse → resolve → typecheck) and
@@ -1829,6 +2051,10 @@ def collectLspDiags(src: str, path: str): List(LspDiag)
             var d = parseDiagLine(ln)
             if d as dd
                 diags.add(dd)
+            else if ln.startsWith("error: ")
+                # BUG-654: an error with no position was DROPPED, so a file that does not
+                # compile showed no diagnostics at all. It goes on line 1, and says why.
+                diags.add(LspDiag(1, 0, "error", ln[7..ln.len] + " (the compiler gave no position; shown on line 1)"))
     return diags
 
 def buildDiagnosticsJson(path: str): str throws
@@ -4427,7 +4653,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--also --gc --no-gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--also --gc --no-gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --source-root --strict --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -4802,6 +5028,7 @@ def main()
     # The hard exhaustiveness ERROR (no else + missing variant) is unaffected.
     var warn_ne              = args.contains("--warn-non-exhaustive")
     var werror               = args.contains("--warnings-as-errors")
+    var strict_ck            = args.contains("--strict")
     var gui_backend: str     = args.option("--gui-backend", "")
     # --gui-backend=tui|libui_ng are emitted+scaffolded by this compiler; no flag is the
     # stub backend (prints to stderr, for tests), and `--gui-backend=stub` is the same
@@ -4854,7 +5081,19 @@ def main()
     # runtime: the inline shape gives every module its own copy of the site variable and the
     # table, so a dependency's allocations would be charged to the wrong lines. Refused there
     # rather than reported wrong.
-    if args.contains("--census")
+    # `--census=host` (BUG-677): the census is compiled in but the entry prologue does not
+    # install it -- the host calls `_zbr_cens_install()` when its window opens. Any other
+    # `--census=VALUE` is refused by name: unknownFlag strips `=VALUE` and `contains` matches
+    # only the bare flag, so it was accepted and the build had NO census at all (measured on
+    # the pre-fix compiler). (args.option would also read `--census prog.zbr` as a value, so
+    # only the `=` form is read here.)
+    var census_host: bool = args.contains("--census=host")
+    if not census_host and not args.contains("--census")
+        var census_val: str = args.option("--census", "")
+        if census_val != ""
+            sys.errln("zebra: --census=" + census_val + ": the only value is `host` (--census=host: the entry prologue does not install the census; the host calls _zbr_cens_install() when its window opens). Plain --census counts from start-up.")
+            sys.exit(2)
+    if args.contains("--census") or census_host
         if mode_v
             sys.errln("zebra: --census is not available with --target v: the census is part of the Zig runtime. Drop --target v to measure allocations.")
             sys.exit(2)
@@ -4862,6 +5101,7 @@ def main()
             sys.errln("zebra: --census needs the runtime-module shape (the default); it is off here because of --no-runtime-module or --target node-addon, where each module carries its own runtime and allocations would be charged to the wrong lines. Drop that flag to measure allocations.")
             sys.exit(2)
         setCensus(true)
+        setCensusHost(census_host)
     # Preamble resolution (BUG: cwd-dependent File.read).  Prefer the repo-relative
     # path so every gate (all run from the repo root) is byte-identical; fall back to
     # a copy installed alongside the exe so `zebra.exe` works when invoked from any
@@ -4911,6 +5151,18 @@ def main()
     # source (e.g. an engine's zbra/ next to game/scripts/).  Found deps are
     # parsed for types only, not emitted — BUG-125.
     var module_path: str   = args.option("--module-path", "")
+    # --source-root DIR (BUG-547): source paths EMITTED into generated code are spelled
+    # relative to DIR, so a committed .zig is the same on every machine. Checked here, when
+    # declared, rather than discovered as absolute paths in the output.
+    var source_root: str = args.option("--source-root", "")
+    if args.contains("--source-root") and source_root == ""
+        sys.errln("zebra: --source-root needs a directory: --source-root DIR")
+        sys.exit(2)
+    if source_root != ""
+        if not (File.exists(source_root) and File.isDir(source_root))
+            sys.errln("zebra: --source-root " + source_root + ": no such directory -- give the directory the generated paths should be relative to")
+            sys.exit(2)
+        setSourceRoot(source_root)
 
     # ── Selfhost pipeline (the only pipeline since 2026-09-15; --zig-backend is gone) ──
     # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
@@ -4929,11 +5181,12 @@ def main()
     mc.tag_filter = run_tag_filter
     mc.warn_non_exhaustive = warn_ne
     mc.warnings_as_errors = werror
+    mc.strict_check = strict_ck
     mc.module_path = module_path
     mc.node_addon = mode_node
     mc.keep_temp = keep_temp
     mc.scratch_stem = Path.stem(path)
-    mc.compileDep(path, true)?
+    mc.compileRoot(path)
     # BUG-295 (b): after the whole graph is known, name the shared STATEFUL modules.
     mc.reportSharedStatefulModules()
     mc.reportModulePathDeps()
@@ -5113,7 +5366,7 @@ def main()
             sys.errln("zebra: could not find the Node.js N-API headers.")
             sys.errln("  Fetch them once with:   npx --yes node-gyp install")
             sys.errln("  Or set ZEBRA_NODE_INCLUDE=<path-to>/include/node (and, on Windows, ZEBRA_NODE_LIB=<path-to>/node.lib)")
-            mc.exitWith(1, false)
+            mc.exitWith(1, true)   # not a refusal: the emit is good, the headers are missing
 
     # --selfhost-compile: invoke zig to compile/run the generated file
     var zig_path: str = mc.zbrToZig(path)
@@ -5326,6 +5579,14 @@ def main()
             exe_dir = "."
         var sqlite_c: str = exe_dir + "/vendor/sqlite/sqlite3.c"
         if File.exists(sqlite_c)
+            # BUG-686: the amalgamation fences optional modules behind
+            # SQLITE_ENABLE_*, so without these FTS5 and RTREE compile out and a
+            # program gets "no such module" at run time. JSON is built in by default
+            # (3.38+). `-cflags ... --` scopes the defines to sqlite3.c alone.
+            argv2.add("-cflags")
+            argv2.add("-DSQLITE_ENABLE_FTS5")
+            argv2.add("-DSQLITE_ENABLE_RTREE")
+            argv2.add("--")
             argv2.add(sqlite_c)
     # CPU target: pass -mcpu=VALUE when --cpu was specified
     if cpu_flag != ""

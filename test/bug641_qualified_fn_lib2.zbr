@@ -1,0 +1,5 @@
+# BUG-641 helper: a `pick()` of a DIFFERENT type, so typing `lib.pick()` from the table
+# every dependency shares would pick the wrong module's answer for one of the two.
+
+def pick(): str
+    return "hello"

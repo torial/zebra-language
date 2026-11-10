@@ -1,0 +1,13 @@
+# BUG-689: Http.get/post/json/postJson were untyped in the checker, so a response bound
+# without an annotation was never member-checked: `resp.body` (the field is `text`)
+# passed -c and failed inside zig. Annotated `HttpResponse?` was already refused.
+
+def main()
+    var r = Http.get("http://127.0.0.1:1/")
+    if r as resp
+        print(resp.body)
+    var p = Http.post("http://127.0.0.1:1/", "x")
+    print(p!.statusCode)
+    var ok = Http.get("http://127.0.0.1:1/")
+    if ok as good
+        print(good.status.toString() + " " + good.text)

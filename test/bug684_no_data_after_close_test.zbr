@@ -1,0 +1,54 @@
+# BUG-684: after the close handshake, a WebSocket endpoint sends no more data (RFC 6455
+# 5.5.1). A broadcasting server used to keep writing into a departing client's socket --
+# each write failing, and under Zig 0.16 each failure printed an "unexpected NTSTATUS" trace.
+#
+# Observed from OUTSIDE, as raw TCP: the client does the handshake by hand, sends a masked
+# close frame, and reads everything until EOF. The server's handler answers the close
+# (inside recv) and then calls send twice; those must put nothing on the wire. On the old
+# runtime the bytes after the close frame contained both "late" frames. (The other half of
+# the fix -- a FAILED write marking the peer gone -- is witnessed by the GameEngine's
+# departure test under 0.16, where the failures are visible; 0.17 maps them silently.)
+
+var host_done: Chan(int) = Chan(int)(1)
+
+def handler(ws: WsConn)
+    var m = ws.recv()
+    while m != nil
+        m = ws.recv()
+    ws.send("late-one")
+    ws.send("late-two")
+    host_done.send(1)
+
+def main()
+    sys.go(def()
+        Ws.serve(19920, handler)
+    )
+    var rest: str = ""
+    var status: str = ""
+    var connected: bool = false
+    var attempts: int = 0
+    while attempts < 20 and not connected
+        var c = Tcp.connect("127.0.0.1", 19920)
+        if c as conn
+            connected = true
+            conn.write("GET / HTTP/1.1\r\nHost: 127.0.0.1:19920\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+            status = conn.readLine()
+            var guard = 0
+            var line = conn.readLine()
+            while guard < 16 and line.contains(":")
+                line = conn.readLine()
+                guard = guard + 1
+            # a masked close frame with no payload: FIN+close, MASK+len 0, a zero mask key
+            conn.write("\x88\x80\x00\x00\x00\x00")
+            rest = conn.readAll()
+            conn.close()
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+    var served: int? = host_done.recvTimeout(20.0)
+    assert connected, "the raw client reached the in-process server within 20 attempts"
+    assert status.contains("101"), "the server switched protocols: " + status
+    assert served != nil, "the handler ran to its end"
+    assert rest.startsWith("\x88"), "the server answered the close first"
+    assert not rest.contains("late"), "no data frame after the close handshake; got " + rest.len.toString() + " bytes after the handshake"
+    print("bug684: nothing after the close")

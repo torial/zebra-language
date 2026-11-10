@@ -26,7 +26,7 @@ def pwc(pid: int): int
 # Array-literal form of the same defect: `array_lit` sat in the identical
 # "no user idents" list as `list_lit`.
 def viaArray(n: int): int
-    var xs = @[n, 2, 3]
+    var xs = [n, 2, 3]
     return xs.len
 
 # Control, opposite direction: `a` is genuinely unused and MUST still be discarded.

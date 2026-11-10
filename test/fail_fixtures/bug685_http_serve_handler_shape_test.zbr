@@ -1,0 +1,21 @@
+# BUG-685: Http.serve's handler takes the request and RETURNS the response. Each handler
+# below passed `-c` and failed inside the runtime's Zig ("expected type '*const fn
+# (zebra_rt.HttpRequest) T', found '*const fn (zebra_rt.HttpRequest, T) void'"); the book's
+# chapter 20 carried the first shape for months. One refusal per call; the smoke registers each.
+
+def twoParams(req: HttpRequest, res: HttpResponse)
+    pass
+
+def noReturn(req: HttpRequest)
+    pass
+
+def wrongReturn(req: HttpRequest): str
+    return "ok"
+
+def main()
+    Http.serve(8080, def(req: HttpRequest, res: HttpResponse)
+        res.status = 200
+    )
+    Http.serve(8081, twoParams)
+    Http.serve(8082, noReturn)
+    Http.serve(8083, wrongReturn)

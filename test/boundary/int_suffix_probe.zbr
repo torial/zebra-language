@@ -1,0 +1,57 @@
+# @boundary runs
+#
+# Integer and float literal SUFFIXES (Sean, 2026-11-05: "finish the decimal suffixes").
+# Expectations written by hand from the rule below BEFORE this probe was first run.
+#
+# The rule: a suffix gives the literal its type, and the type is real -- a variable
+# initialised from it has that type, and arithmetic wraps or saturates there.
+#   decimal  `_i` / `_u` alone (int, uint) or with 8, 16, 32, 64, 128 bits; the `_` is
+#            optional (`300_i16`, `300i16`, `7u`). A bare `_16` is a digit SEPARATOR.
+#   hex      `_u` / `_u8` ... as for decimal, and a bare size is the signed type
+#            (`0xFF_32` is 255 as an int32) -- hex has no separator.
+#   float    `_f32` / `_f64` (`f32` / `f64` without the `_`).
+# A suffixed literal does NOT adapt to the other operand the way a plain literal does: it
+# joins like a variable of its type.
+
+def half(v: byte): byte
+    return v / 2
+
+def twice(v: float32): float32
+    return v * 2.0
+
+def main()
+    var a = 300_i16
+    var b = 5_u8
+    var c = 7u
+    var d = 0xFF_u8
+    var e = -128_i8
+    var f = 1_000_i32
+    var g = 300_16
+    var h = 0xFF_32
+    print(a)
+    print(b)
+    print(c)
+    print(d)
+    print(e)
+    print(f)
+    print(g)
+    print(h)
+
+    # The suffix's type is the variable's type: each line only that type gives.
+    print(half(b))
+    print(half(d))
+    print(b +% 255_u8)
+    print(a +| 32767_i16)
+    print(e -% 1_i8)
+    print(c *| 0xFFFFFFFFFFFFFFFF_u)
+
+    # A suffixed literal joins like a variable; a plain one still adapts.
+    var k: int = 1000
+    print(k + b)
+    print(5_u8 + 3)
+    print(b + 5_i8)
+    print("${b} ${a}")
+
+    var x = 1.5_f32
+    print(x + 1.0_f32)
+    print(twice(x))

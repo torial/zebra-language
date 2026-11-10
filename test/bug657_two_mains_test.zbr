@@ -1,0 +1,11 @@
+# BUG-657: a class `static main` beside a top-level `def main()` -- the top-level one is the
+# entry (it may call the other). Both became a file-scope `pub fn main` and zig refused the
+# duplicate; the compiler's own lexer_test has exactly this shape.
+class App
+    static
+        def main
+            print("bug657: App.main")
+
+def main()
+    print("bug657: top-level main")
+    App.main()

@@ -1,0 +1,10 @@
+# BUG-017: an untyped local is decided by its OWN type, not by a same-named List field of
+# another class. `vals` here is unknown (a zig escape), so `.len` must be refused like any
+# unknown receiver -- it emitted `vals.items.len`, a zig error, because Holder has a List
+# field called `vals`.
+class Holder
+    var vals: List(int) = []
+
+def main()
+    var vals = zig"@as([]const u8, &[_]u8{97, 98, 99})"
+    print("${vals.len}")

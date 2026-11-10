@@ -8,6 +8,20 @@ where we disagree, both positions are kept. The 2026-10-11 decision ("reference 
 strings and containers, cycles accepted, debug-mode leak report") is the starting point, not
 assumed final.
 
+**REOPENED 2026-11-09 (Sean) -- a garbage collector as the language's DEFAULT, allocators as
+the opt-in.** Sean's reasoning, from the user's side: Zebra reads like Python, so a newcomer
+expects memory to be managed for them, and `allocate` blocks then give power users finer
+control on top. The risk he names is PAUSES, and he would invest in the collector itself
+(V's is open to LLM work and feedback) if that is what it takes. This supersedes the
+2026-10-11 reference-counting decision and the RC-specific parts of §6 (§6.2 weak links and
+§6.3 counted instances exist to make RC work; a tracing collector reclaims cycles) once Opus
+and Fable have written the design -- until then they stand, recorded, not deleted. Fable's
+proof of concept the night before (engine fieldnotes 2026-11-09: the collector as the V
+default, `allocate` as a GC_FREE'd region; a loop from 2,440 MB to 8) is the first evidence.
+Questions the design owes: the pause bound and how it is witnessed per frame; what the Zig
+backend does (a collector there too, or a documented difference); and how an embedding host
+(`--library-mode`, node-addon, DynLib) holds Zebra values the collector must not reclaim.
+
 ---
 
 ## 1. The problem, measured
@@ -101,6 +115,33 @@ measured.
    literals only. Under counting the rule disappears (the field holds a count). Engine witness:
    the plain run's intern-pool count flat over 60 s. This is the live leak in every Roblox port.
    **(a) DONE 2026-10-22:** 50,000 field stores 202 MB -> 5.2 MB; (b) remains.
+   **(b) does not bound anything on its own (Opus, 2026-11-07, answering Fable's F64 server
+   soak: 2,987 to 11,274 interned strings an hour).** On the arena path a copy-at-store frees
+   nothing unless the OLD field value is freed on overwrite, and that needs to know no local,
+   capture or other field still holds it: ownership information the runtime does not have.
+   Sweeping the pool needs the same knowledge (tracing or counting). A blanket bypass for
+   non-literal strings would dangle an `allocate`-block string or a borrowed slice, and would
+   cost MORE for repeated values ("62"), which today share one interned copy. So the bound
+   comes from counted strings (§6), not from a change to `_intern`. Unmeasured: the stored
+   string's own allocation (a `_str_concat` or toString result in `_allocator`) is also never
+   freed, so the pool may not be the whole string leak. **Sized the same day (Fable, a
+   whole-run `--census` of the autoplay, 2026-11-04, read as a ratio):** intern pool 1,685
+   strings / 27,463 B; the 114 `_str_concat` sites 1,344 strings / 24,297 B kept, kept ==
+   count at every site; 35 toString-shaped sites 667 / 1,698 B. So the pool's copy roughly
+   DOUBLES dynamic text (an upper bound: the census names the allocating site, not which
+   results reached a field). On a server the "62" case is the common one, and there the one
+   interned copy per distinct value is the cheap half; the uninterned result that produced it
+   is the expensive half.
+   The container half of the same gap (a module list rebuilt in a `release` path, the old
+   list never freed) got a stopgap the same day, joint with Fable: runtime-only
+   `_zbr_free_at_sweep` / `_zbr_sweep` (QUICKSTART §28; no language surface, so the
+   `zig"..."` call sites are a grep-able list of where the contract is relied on). Shallow,
+   allocator recorded at the call, refused inside `allocate`, deduped, counted by the census;
+   under the counted model it becomes a CHECK that the count reached zero by the sweep. A
+   missed alias is a use-after-free, so it is opt-in per site. Fable's alias survey of the
+   engine's 69 sites: 66 rebuild-and-reassign, every other use a walk / count / at / add inside
+   one call; one seam (`health.healthList()` returns the registry list itself, callers walk it
+   at once today).
 3. **Free outgrown container buffers** (Fable). The old buffer on growth is pure waste under
    any model; route container storage through an allocator that frees.
 4. **One allocator interface, no page-allocator escapes** (Fable). Each of the 76 hatches turns
@@ -127,6 +168,10 @@ measured.
    saves NOTHING on this loop -- every growth happens in place on the arena's newest allocation.
    It matters where other allocations interleave with growth (the census probe shows that case).
    The census also found **BUG-619**: `readLine` read stdin a byte per read call.
+   **Kept column added 2026-11-04** (Fable): per site, the bytes still live that it allocated or
+   last resized, and a ranking by bytes kept -- the per-site answer to "what is the arena's
+   never-freed figure made of". Under `--census-at` it can separate a steady-state leak from
+   startup state, which the requested-bytes ranking cannot.
 7. **A leak-budget gate** (Fable): a fixed-length plain run (the engine for 60 s; Sean's loop
    over a large file) must not grow committed private memory past a budget. The same gate
    witnesses whatever model lands.

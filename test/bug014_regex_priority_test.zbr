@@ -1,0 +1,37 @@
+# BUG-014 / BUG-662: the regex engine is leftmost-first (Python, Perl, JS), and each
+# quantifier's laziness is its own. The expected line in selfhost_smoke.sh was taken
+# from Python's `re` before this file was first run.
+def show(re: Regex, s: str): str
+    var parts = List(str)()
+    for g in re.groups(s)
+        if g as v
+            parts.add("<" + v + ">")
+        else
+            parts.add("-")
+    return parts.join(",")
+
+def main()
+    var out = List(str)()
+    # BUG-014: one lazy quantifier made EVERY quantifier lazy -> "<a>b>"
+    out.add(Regex.compile("<.*?>.*>").find("<a>b>c>"))
+    out.add(show(Regex.compile("(a+?)(a+)"), "aaaa"))
+    # leftmost-first: the left alternative wins a search; a full match takes any path
+    out.add(Regex.compile("a|ab").find("ab") + " " + Regex.compile("a|ab").match("ab").toString())
+    # BUG-662: `(?:a|b)?` kept only the first exit of the alternation
+    out.add(Regex.compile("(?:a|b)?c").find("bc"))
+    # BUG-662: `x{0,2}` made the first copy mandatory; `b{0}` matched a `b`
+    out.add(Regex.compile("x{0,2}y").find("y") + " " + Regex.compile("ab{0}c").match("ac").toString())
+    # BUG-662: a repeated group kept ONE number (it was two groups)
+    out.add(show(Regex.compile("(a){2}"), "aa"))
+    # BUG-662: `{m,n}?` is lazy (the `?` was a literal)
+    out.add(Regex.compile("a{1,3}?").find("aaa") + " " + Regex.compile("a{1,3}").find("aaa"))
+    # BUG-662: `+` around a group ending in a quantifier rewired the inner loop
+    out.add(Regex.compile("(?:.*|a)+c{1,3}a(?:[ac])").match("bcccaa").toString())
+    # an iteration that matches nothing ends the loop
+    out.add(Regex.compile("(a|b??)+").find("aab"))
+    out.add(show(Regex.compile("(.?)+b+"), "abbb"))
+    out.add(show(Regex.compile("a()b"), "ab"))
+    out.add(Regex.compile("<.+?>").findAll("<x><yy>").join(","))
+    out.add(Regex.compile("a.*?b").replace("a1b a22b", "X"))
+    out.add(Regex.compile(",\\s*?").split("p, q,r").join("/"))
+    print("bug014: " + out.join(" | "))

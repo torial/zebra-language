@@ -1,0 +1,5 @@
+# There is no saturating negation (Zig has none either): `-|x` is refused by name, and the
+# message names `0 -| x` and `-%x` as what to write instead.
+def main()
+    var x: int = 5
+    print(-|x)

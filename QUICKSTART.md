@@ -43,16 +43,16 @@ call C libraries via `zig"..."` escape hatches (§23).
 
 ### Installation
 
-**Requirements:** Zig **0.17.0** -- the version releases are built and tested with (a
+**Requirements:** Zig **0.17.1** -- the version releases are built and tested with (a
 release archive bundles it, so this matters only when building from source). The
 recommended way to install Zig on Windows or Linux is
 [zvm](https://github.com/tristanisham/zvm) (Zig Version Manager):
 
 ```bash
 # Install zvm (follow instructions at https://github.com/tristanisham/zvm)
-# Then install Zig 0.17.0:
-zvm install 0.17.0
-zvm use 0.17.0
+# Then install Zig 0.17.1:
+zvm install 0.17.1
+zvm use 0.17.1
 ```
 
 **Clone and build:**
@@ -115,8 +115,9 @@ Hello, Zebra!
 - A statement continues across lines inside `( )`, `[ ]` and `{ }`: a newline there does not
   end it, and the continuation lines' indentation is free. That is how a long call, a nested
   list or a dict literal is written over several lines. A statement-body lambda inside one
-  still indents its body one level past the *statement*. Outside brackets a newline ends the
-  statement (a multi-line pipeline needs parentheses, §3).
+  indents its body one level past the line its `def(` is on (or, equally, one level past the
+  statement), and a call or literal inside that body may itself continue over several lines.
+  Outside brackets a newline ends the statement (a multi-line pipeline needs parentheses, §3).
 
 **A slightly larger example** — reading command-line arguments:
 
@@ -311,6 +312,17 @@ def main()
   a `zig"…"` literal use `${TypeName}` (§23) and let the compiler supply it.
 - Unlike locals, module-scope `const` is a real keyword here: use it for named
   constants, `var` for shared mutable state.
+- **Initialisation order does not matter.** A module var with a constant initialiser
+  (`var n = 0`) is set when the program loads. One whose initialiser is computed -- a
+  container (`var seen: List(int) = []`), a call, a read of another module var or a
+  `static var` -- is initialised once, on its **first use**, and in any case before
+  `main` runs. So `var a: int = b.len + 1` may come before `var b: List(int) = [1, 2]`,
+  and an initialiser may call a function that reads another computed variable. The same
+  holds for a class's computed `static var` (§5) and across modules, import cycles
+  included (§15). Initialisers that need each other's values cannot be ordered: the
+  program stops at start-up with `error: module initialisation cycle: a -> b -> a` and
+  exit code 1. Cost: reading a computed module var or static is a load and a compare
+  (~0.7 ns in `--release`), and the optimiser cannot hoist such a read out of a loop.
 
 ---
 
@@ -335,10 +347,10 @@ def main()
 
 Optionals: `T?` → `?T` in Zig.  `nil` → `null`.
 
-Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
-`@as(fNN, val)` directly.
+Float suffix literals: `1.5_f32` is a `float32`, `2.5_f64` a `float` (`0.5f32` and `3.0f64`
+without the `_`); integer suffixes are `300_i16`, `5_u8`, `7u` -- §3.1b2.
 
-**Mixed numeric arithmetic takes the wider type** (`+ - * / %` and comparisons):
+**Mixed numeric arithmetic takes the wider type** (`+ - * / %`, `& | ^` on integers, and comparisons):
 
 | operands | result |
 |---|---|
@@ -349,19 +361,56 @@ Float suffix literals: `1.5_f32`, `2.5_f64`, `0.5f32`, `3.0f64` emit
 | signed with a narrower unsigned | a signed type wide enough for both (`byte` with `int8` -> `int16`, `uint32` with `int` -> `int`) |
 | signed with `uint` / `uint64` / wider unsigned | **refused**: no signed type holds every value -- convert first (`u.toInt()`, which traps if it does not fit) |
 
-An int literal adapts to the other side (`u + 1` on a `uint64` is fine). `int / int` is
-still integer division. A compound assignment stores the result back, so `f += n` (float
-with int) is fine and `n += f` is refused -- the result would be a float.
+An int literal adapts to the other side (`u + 1` on a `uint64` is fine), and so does
+arithmetic made only of literals (`b + 3 * 4`). **It must fit there**: `k + 300` on a byte
+is refused, for `+ - * / %`, `& | ^` and their compound forms (`k += 300`), and so is a
+constant expression by its VALUE (`k + 100 * 3` is 300, refused; `k + (300 - 200)` is 100,
+fine) and a literal with digit separators (`k + 1_000`). A comparison is not refused: `k < 300` compiles and is `true`. `int / int` is still integer division. The result
+does not narrow on its own, so `b = b + n` with a byte `b` and an int `n` is refused, as
+`b += n` is -- convert it (`(b + n).toByte()`, `.toInt16()`, ...). A compound assignment
+stores the result back, so `f += n` (float with int) is fine and `n += f` is refused -- the
+result would be a float.
+
+**Integer overflow TRAPS, in every build** (BUG-667, decided 2026-10-30). `+ - *`, unary
+`-`, the compound forms, `minimum / -1` and `minimum % -1` panic with `integer overflow`
+when the true result does not fit the type -- in a `--release` build too, and on the V
+backend, whose own operators wrap. A program never carries on with a wrapped or invented
+value. (A byte counts: `b - 2` on a `byte` holding 1 traps. On the V backend the check
+covers `int` so far; `--target v` reports how many integer operations it could not check.)
+
+**Code that means to wrap or clamp says so with an operator** (Zig's, spelled as in Zig,
+2026-11-02). `%` wraps around the type; `|` saturates at its bounds:
+
+| wrapping | saturating | on a `byte` holding 250 |
+|---|---|---|
+| `a +% b` | `a +\| b` | `b +% 10` is `4`, `b +\| 10` is `255` |
+| `a -% b` | `a -\| b` | on a byte holding 5: `z -% 10` is `251`, `z -\| 10` is `0` |
+| `a *% b` | `a *\| b` | `b *% 2` is `244`, `b *\| 2` is `255` |
+| `-%a` | -- | `0 -% a`: the minimum negates to itself |
+| -- | `a <<\| n` | `3 <<\| 7` on a byte is `255`; a negative `n` shifts right, as for `<<` |
+
+Each has a compound form (`+%=`, `-%=`, `*%=`, `+\|=`, `-\|=`, `*\|=`, `<<\|=`). There is no
+saturating negation; write `0 -\| a`. They are **integers only**. Two operand types
+**join exactly as they do for `+`**, and the result wraps or clamps at the joined type:
+`byte +% int` is an `int`, `int16 *% byte` an `int16` (so `300 *% 200` there is `-5536`),
+and `uint64` beside a signed int is refused as it is for `+`. The result does not narrow on
+its own, so `b +%= n` with a byte `b` and an int `n` is refused like `b += n`. An int
+literal adapts to the other operand when it fits there (`b +% 10`); `b +\| 300` on a byte is
+refused. Two
+constants are computed as an `int` (`9223372036854775807 +% 1` is the minimum). On SIMD
+vectors the `+ - *` forms work lane-wise on integer lanes. On the V backend wrapping is
+mapped for `int` and `byte` and saturating for `int`; anything else, and `<<\|`, is
+refused by name.
 
 ### §3.1 Operator precedence (highest → lowest)
 
 | Level | Operators | Notes |
 |-------|-----------|-------|
 | 1 — postfix | `x!`  `x?`  `.method()`  `[i]`  `?.` | Force-unwrap, optional-chain |
-| 2 — unary | `not`  `-x`  `~x` | Logical not; negation; bitwise complement |
-| 3 — multiplicative | `*`  `/`  `%` | |
-| 4 — additive | `+`  `-` | String concat is also `+` |
-| 5 — shift | `<<`  `>>` | `a << -b` **needs the space** — see below |
+| 2 — unary | `not`  `-x`  `-%x`  `~x` | Logical not; negation (`-%` wraps); bitwise complement |
+| 3 — multiplicative | `*`  `/`  `%`  `*%`  `*\|` | `*%` wraps, `*\|` saturates (§3) |
+| 4 — additive | `+`  `-`  `+%`  `-%`  `+\|`  `-\|` | String concat is also `+` |
+| 5 — shift | `<<`  `>>`  `<<\|` | `a << -b` **needs the space** — see below |
 | 6 — bitwise and | `&` | |
 | 7 — bitwise xor | `^` | |
 | 8 — bitwise or | `\|` | |
@@ -383,12 +432,27 @@ def main()
     print(golden)                            # 11400714819323198485
 ```
 
-Suffixes set the literal's type: `_u` is `uint`, `_u32` is `uint32`, and a bare size
-(`_8 _16 _32 _64`) is the signed form. `0xFF_32` is 255 as a 32-bit int.
+### §3.1b2 Literal suffixes
 
-> **The suffix types the LITERAL, not the variable.** `var b = 0xFF_u` still infers `b` as
-> `int`, which is fine until the value exceeds i64 — so for large constants, annotate the
-> variable (`var golden: uint = …`) rather than relying on `_u`.
+A suffix gives a literal its type, and the type is real: `var b = 5_u8` is a byte, so
+`b +% 255_u8` wraps at 255 and `b` can be passed where a byte is expected.
+
+| literal | type | note |
+|---|---|---|
+| `300_i16`, `300i16` | `int16` | decimal: `_i` / `_u` with 8, 16, 32, 64 or 128 bits; the `_` is optional |
+| `7u`, `7_u`, `7_i` | `uint`, `uint`, `int` | no width: the 64-bit type |
+| `1_000_u32` | `uint32` | separators before a suffix are fine |
+| `0xFF_u8`, `0xFF_u` | `byte`, `uint` | hex: `_u` as for decimal |
+| `0xFF_32` | `int32` | hex: a bare size is the SIGNED type |
+| `300_16` | `int`, value 30016 | decimal: a bare `_16` is a digit separator, not a size |
+| `1.5_f32`, `0.5f32`, `2.5_f64` | `float32`, `float32`, `float` | floats |
+
+The literal must fit its type -- `300_u8`, `128_i8` and `-5_u8` are refused at the literal,
+naming the range; `-128_i8` is int8's minimum and is fine (the sign belongs to the literal).
+A width with no Zebra type (`5_i7`, `5_uint8`, `1.5_f16`) is refused by name. A suffixed
+literal does NOT adapt to the other operand the way a plain one does (`b + 3` is a byte for a
+byte `b`): it joins like a variable of its type, so `b + 5_i8` is an `int16`, as `byte`
+with `int8` always is.
 
 ### §3.1b′ Float literals
 
@@ -434,6 +498,14 @@ does: arithmetic on `int`, logical on `uint`.
 
 `&` `|` `^` `~` `<<` `>>` operate on any integer type. **The result keeps the operand's type**, which
 is the rule worth remembering — it is why Zebra needs no separate unsigned-shift operator.
+
+When `&` `|` `^` combine two DIFFERENT integer types, they join exactly as `+` does (the
+*Mixed numeric arithmetic* table in §3): the
+wider type wins, a narrow unsigned beside a signed type goes to a signed type that holds both
+(`byte & int8` is an `int16`), and a `uint` beside an `int` is refused. So `b & n` with a byte
+and an int is an int, and does not narrow back into a byte on its own (`(b & n).toByte()`). A
+literal adapts to the other operand, so `b & 0x0F` stays a byte. A shift's result is always its
+LEFT operand's type.
 
 ```zebra
 def main()
@@ -546,7 +618,7 @@ open(path: "data.txt", mode: "w")       # all named
 - Default expressions are evaluated at the **call site** (not at definition time).  You can
   use runtime values as defaults:
   ```zebra
-  def log(msg: str, level: int = Log.defaultLevel())
+  def show(msg: str, width: int = Terminal.width())
       ...
   ```
 - Type annotation on the default is required — `name = "r"` without `: str` is a
@@ -764,12 +836,12 @@ class Foo
 
 **Key points:**
 
-- `static var` is initialized **once**, at program start (Zig `const` or `var` at module
-  scope).  There is no per-instance copy.
+- `static var` is initialized **once**: a constant initialiser when the program loads, a
+  computed one (a container, a call, a read of another static or module var) on its
+  first use and in any case before `main` -- the module-var rule of §2.1. There is no
+  per-instance copy.
 - `static def` has no `this` / no leading-dot access — it cannot read or write instance
   fields.  If you need `this`, the method is not static.
-- `static var` with a `List` or `HashMap` default must be initialized in `cue init`
-  or a static `def` — direct default expressions are evaluated at compile time.
 - Static and instance members share the same namespace; you cannot have a static `def foo`
   and an instance `def foo` in the same class.
 - `static` members are accessed cross-module as `Module.ClassName.member` (note the two
@@ -1038,6 +1110,12 @@ nested container inside it is still shared; `<<-` is the deep copy).
 size, and element-wise equal -- strings by content, nested collections recursively, class
 instances by identity (BUG-506).
 
+**A container's element type is part of its type.** A `List(int)` cannot go where a
+`List(str)` is declared, nor a `List(int?)` where a `List(int)` is -- an argument, a typed
+`var`, an assignment, a field store or a `return` is refused naming both types:
+`type mismatch: expected List(str), got List(int)`. A literal takes the slot's element type,
+so `var xs: List(float) = [1, 2]` is fine (2026-10-26, BUG-626).
+
 ```zebra
 # List
 var items = List(int)()              # empty list, constructor form
@@ -1190,9 +1268,11 @@ for n, s in pairs           # n: int, s: str
 for n, s in pairs if n > 0 # where clause supported
     print(n)
 
-# Array literal
-var nums = @[3, 1, 4, 1, 5]
-if 3 in nums
+# Membership in a literal: `x in [a, b, c]`. With primitive elements no List is built --
+# the test is checked inline, so it costs nothing in a loop. (`@[...]` was this form's old
+# spelling; it was removed 2026-10-27, BUG-565.) Elements that are collections compare by
+# contents, as `==` does.
+if 3 in [3, 1, 4, 1, 5]
     print("three is present")
 ```
 
@@ -1305,7 +1385,9 @@ var got = someObj.method()?          # propagates if method throws
 # NEW: var r = divide(10, 2)?
 ```
 
-- `throws` on a `def` makes it return `anyerror!T`.
+- `throws` on a `def` makes it return `anyerror!T`. So does a `raise` or a `?` in its
+  body, with no `throws` written: such a function or method is a throwing callee like a
+  declared one, and the `?` rule below applies to its calls too (BUG-628, 2026-10-26).
 - **Write `?` on every call to a `throws` function.** As of §28b step 5
   (2026-07-15) the legacy auto-propagation is a **compile error**: an omitted
   `?` on a throws call is rejected with `throws call needs '?'` in both
@@ -1553,7 +1635,9 @@ var result = sb.build()              # str (drains the builder)
   octal, `b` binary, `f` float, `e`/`E` scientific, `c` char-or-byte (below), `s`
   string.  Examples: `${n:08x}` → `000000ff`, `${v:.2f}` → `3.14`,
   `${s:>20}` right-aligns in a 20-char field, `${s:-<15}` left-aligns with
-  `-` fill.  A part the formatter does not support -- a sign (`+`), `#`, digit
+  `-` fill.  A `0` before the width is the zero-pad flag, and it puts the zeros after
+  the sign: `${-5:04d}` → `-005`, `${-2.5:06.1f}` → `-002.5`. An explicit fill and
+  alignment is a plain fill: `${-5:0>4}` → `00-5`.  A part the formatter does not support -- a sign (`+`), `#`, digit
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
 - **How a float is rounded to a precision** (`.2f`, `.2`, `.2e`): Zebra rounds the
@@ -1918,6 +2002,36 @@ var v: math_utils.Vec2 = math_utils.Vec2(1.0, 2.0)
 # OR with exposing:
 var v: Vec2 = Vec2(1.0, 2.0)
 ```
+
+**Subdirectory modules** — a dotted `use` names a file in a subdirectory, relative to
+the importing file (or to `--module-path`):
+
+```zebra
+# file: main.zbr, beside a directory geo/ holding shapes.zbr
+use geo.shapes                       # the file geo/shapes.zbr
+use geo.deep.util exposing clamp     # geo/deep/util.zbr
+
+def main
+    var a = shapes.area(3, 4)        # the module is called `shapes`: the LAST segment
+    var b: shapes.Box = shapes.Box(2, 5)
+    shapes.count = shapes.count + 1  # a module's top-level var, read and written through it
+```
+
+A module's own `use` lines resolve beside *that* file, so `geo/shapes.zbr` reaches its
+sibling `geo/helpers.zbr` with a plain `use helpers`. A module is known by its file name
+everywhere after the `use`, so two files with the same name (`a/util.zbr`, `b/util.zbr`)
+cannot both be in one program; the second `use` is refused, naming the first.
+
+**Import cycles** — two modules may `use` each other (`a` uses `b`, `b` uses `a`). The
+compiler warns, naming the cycle, and builds it. Each module is still ONE instance shared by
+every importer, and each of its module-level variables is set before it is first read: a
+variable whose initialiser is computed (it calls something, or reads another module) is
+initialised on its first use, wherever that comes from. So `b`'s
+`var total: int = a.count + 1` sees `a.count` set even though `b` is initialised first.
+Initialisers that need each other's values (`a.x = b.y + 1`, `b.y = a.x + 1`) cannot be
+ordered; the program stops at start-up with
+`error: module initialisation cycle: b.y -> a.x -> b.y` and exit code 1. A class's
+computed `static var` follows the same rule (§2.1).
 
 **Partial files** — `Foo.zbr` is the primary; `Foo.json.zbr`, `Foo.ui.zbr`
 etc. are partials whose `class Foo` members merge into the primary.
@@ -2330,6 +2444,16 @@ result = outer(def()
 - The `def(params)` keyword starts the lambda; its body is the indented block that follows.
 - The call's closing `)` must be dedented to the level of the **call site** (not the lambda body).
 - Nesting is unlimited — each inner `def(` starts its own indented body.
+- On a continuation line of a multi-line call, the body goes one level past **that line**
+  (or one level past the statement, the older form; both are accepted):
+  ```zebra
+  var t = add(first,
+      applyTo2(def(x: int): int
+          return x * 3
+      ))
+  ```
+- The body's last line cannot also close the call (`return y))`): put the closer on its own
+  line.
 - Named keyword arguments work the same way: `f(key: def() body )`.
 
 ### §19.5 A method as a value — bound to its object
@@ -2358,8 +2482,32 @@ def main()
     print([1, 2, 3].map(c.add))     # [16, 18, 21]
 ```
 
-A STRUCT's method cannot be used as a value yet: it would bind the struct variable itself,
-which is not built yet (BUG-596). Call it in place, or make the type a class.
+A STRUCT's method binds the struct VARIABLE it is read from, by reference: the variable and
+the bound value see each other's changes, and the bound value may outlive the function (the
+variable is kept alive for it).
+
+```zebra
+sig IntFn(): int
+
+struct P
+    var x: int
+    def move(): int
+        .x += 1
+        return .x
+
+def main()
+    var p = P(x: 1)
+    var f: IntFn = p.move
+    f()
+    f()
+    print(p.x)                      # 3: the calls moved p
+    p.x = 10
+    print(f())                      # 11: the binding sees the write
+```
+
+So the receiver must be a `var` local of the function. A parameter, a loop variable, `this`,
+a field (`h.p.move`) or a temporary (`P(x: 1).move`) is refused: copy it into a `var` first,
+call the method in place, or make the type a class.
 
 ---
 
@@ -2391,6 +2539,11 @@ def main
   function. Any named function, lambda or `capture` closure converts into one where it
   meets a sig-typed slot — a parameter, a typed variable or field, a `List(Sig)` element,
   a `return`. Two sigs with the same signature are the same type. At most 8 parameters.
+- **The signature must match.** A lambda (or bound method) whose arity, parameter types or
+  return type differ from the slot's is refused where it meets the slot, naming the
+  difference: `a function cannot go into 'o': its parameter 1 is str where int is expected`.
+  The same holds for an inline `def(P): R` type (2026-10-26, BUG-630). Parameter NAMES may
+  differ; a type the compiler cannot see on either side is not compared.
 - **From Zig** (a `zig"..."` block or a host program): call one as `cb.call(args)` and
   build one with the decl literal `.from(f)` (`f` a function, a function pointer, or a
   closure struct). A sig is not a C function pointer and cannot cross an `extern`
@@ -2747,10 +2900,12 @@ map straight onto the C ones:
   and Zebra binds it normally.  A local read only inside the escape is counted as
   used, so it needs no dummy reference.
 
-  The *statement* form (`zig"…; out = …;"`, assigning an existing local) does not
-  work: nothing tracks assignments made inside an escape, so `out` is emitted
-  `const` and Zig rejects the write.  That is BUG-267's remaining half, and the
-  expression form above avoids it.
+  The *statement* form (`zig"out = …;"`) can assign an existing local: a name the
+  escape assigns (`out = …`, `out += …`, `out.f = …`) or takes the address of
+  (`&out`) makes the local `var` (BUG-267, 2026-10-28).  Like the read side, the scan
+  is textual: it does not skip Zig strings or comments, and an index write
+  (`out[i] = …`) does not count.  A `;` is appended unless the escape already ends
+  in one or ends in a block (`if (c) { … }`, `while … { … }`, `blk: { … }`) -- BUG-663.
 - The library must sit beside the source or on `--module-path`; there is no
   system-library search path and no `-l` flag.
 - `extern` applies to `def` only — not to variables, types, or classes.
@@ -3097,10 +3252,16 @@ function that allocated, and the program prints a report on stderr at exit (incl
   allocations 1369, 0.06 MB requested; 30 frees, 0.05 MB handed back; live 0.01 MB (peak 0.02 MB)
   interned strings: 301 (0.00 MB, outside the counts above)
   program arena holds 0.05 MB from the OS; 0.04 MB of it is not live (outgrown buffers and frees an arena cannot honour)
-  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers)
-  21 sites; top by bytes:
-    helper.zbr:6                 _zbr_fn_build_list (via ensureTotalCapacity)    200   0.026 MB
-    main.zbr:29                  _str_concat (via concatMaybeSentinel)           200   0.001 MB
+  NOT counted: the runtime's page-allocator escape hatches (JSON values, raise messages, HTTP buffers, pool headers), nor the census's own tables (~0.09 MB)
+  kept (still live now, charged to the site that allocated or last resized each block): 1139 blocks, 0.01 MB
+  blocks the census never saw allocated: 0 frees, 0 resizes (expected when the census was installed after the program started -- ...)
+  frees or resizes with a length other than the one allocated: 0
+  21 sites; top by bytes requested:
+    site                         kind                                             allocs      requested           kept
+    helper.zbr:6                 _zbr_fn_build_list (via ensureTotalCapacityPrecise)   8   0.019 MB       0.007 MB
+    main.zbr:29                  _str_concat (via concatMaybeSentinel)           200       0.001 MB       0.001 MB
+  top by bytes kept (16 of 21 sites hold anything):
+    ...
 ```
 
 - **The line** is the statement running when the allocation happened. A call does not
@@ -3115,12 +3276,70 @@ function that allocated, and the program prints a report on stderr at exit (incl
   live: memory a freeing allocator would have returned.
 - Inside a scoped `allocate` block the block's allocator is counted too, and released in
   one step when the block ends.
+- **Kept** (2026-11-04) is what is still live at the report, charged to the site that
+  allocated each block -- or last RESIZED it: a resize moves the whole block, so a List that
+  grows at line 40 keeps its whole buffer there, and a site's kept can exceed what it
+  requested. A freed or outgrown buffer leaves its row; a scoped block's release credits
+  everything it held. The second ranking, by bytes kept, is what a leak or a cache looks like.
+  `allocs` counts allocations only; a resize adds bytes, not an allocation.
+- **Blocks the census never saw** are frees and resizes of memory allocated before the
+  census was installed. A program's own `--census` run reports 0; a host that installs the
+  census mid-run (the GameEngine's `--census-at`) will see many, and they are expected. A
+  length mismatch (a free claiming a different size than was allocated) should always be 0.
+- Tracking kept costs a pointer-map entry per LIVE block (about 54 bytes, page memory, shown
+  as "the census's own tables") and roughly 2 us of CPU per allocation in the Debug build a
+  census uses (measured: 0.39 us an allocation without the census, 1.37 before kept, 3.44 with
+  it, on a loop that only allocates). An arena program that never frees is the worst case: 800k
+  live strings of 5 MB needed 43 MB of tables. A program that frees keeps the map to what is live.
 
 `sys.memStats()` gains `.censusOn`, `.allocations`, `.allocBytes` and `.liveBytes`; the
 three counts are `-1` (not measured) unless the program was built with `--census`.
 `--census` needs the default runtime-module shape: it is refused with
 `--no-runtime-module`, `--target node-addon` and `--target v`. A `--library-mode` host
 can call `_zbr_cens_flush()` whenever it wants a report.
+
+**A window instead of the whole run: `--census=host`** (BUG-677, 2026-11-05). The census is
+compiled in but the entry prologue does not install it: the program, or the host embedding
+a `--library-mode` build, calls `_zbr_cens_install()` when the window should open, and the
+report counts only what comes after. Such a library's `main` writes no report when it
+returns (that is before a host's window opens); the host calls `_zbr_cens_flush()`. A
+`--census=host` build that is never installed says so at its report -- "never installed",
+no `zebra-census.json` -- so no report is never mistaken for an empty one. A second
+`_zbr_cens_install()` changes nothing, and says so once, naming who installed first. Any
+other `--census=VALUE` is refused.
+
+**Freeing a replaced container at a frame boundary: `_zbr_free_at_sweep` / `_zbr_sweep`**
+(runtime functions, 2026-11-07, for the GameEngine). A module list rebuilt in a `release`
+path -- build `keep`, then `_doors = keep` -- leaves the old list unfreed, and it cannot be
+freed on the spot because the loop that caused the release may still be walking it. Queue it,
+and let the host free the queue where no walk can be in progress:
+
+```zebra
+def release(obj: Door)
+    var keep = List(Door)()
+    for d in _doors
+        if d != obj
+            keep.add(d)
+    var old = _doors
+    zig"_zbr_free_at_sweep(old)"      # pass a LOCAL: a module var's emitted name is not its Zebra name
+    _doors = keep
+```
+
+The host (or the program) calls `_zbr_sweep()` at the frame boundary -- `zig"_zbr_sweep()"`
+from Zebra, `rt._zbr_sweep()` from a Zig host. Shallow: the container's header and storage
+are freed, never its elements. **It is a promise nothing checks:** containers are
+references, so if anything else still holds the old list -- another variable or field, a
+closure that captured it, a caller it was returned to -- that holder reads freed memory after
+the sweep. The sweep covers exactly one alias, a walk that ends before the frame boundary.
+Queuing the same container twice frees it once; queuing inside an `allocate` block is refused
+by name (the block's arena would free it too); a queue never swept just keeps its
+containers. `_zbr_sweep_pending()` counts what is queued, and a `--census` report prints
+pending / freed / sweeps. Deliberately not a language method: the `zig"..."` call sites are a
+grep-able list of where a program relies on this contract. Under counted containers (the
+memory model's direction) the same call becomes a check that nothing else held the container.
+On `--target v` the three calls (`_zbr_free_at_sweep(<local>)`, `_zbr_sweep()`, and
+`_zbr_sweep_pending()` bare or as `@as(i64, @intCast(...))`) map to no-ops and `0`: V's
+runtime is collected.
 
 ### Recycling churny objects: `ObjectPool(T)`
 
@@ -3980,7 +4199,7 @@ Zig 0.17.
 | `sys.errln(msg)`    | void              | Write to stderr + newline                    |
 | `sys.getenv(name)`  | `str?`            | Environment variable or nil                  |
 | `sys.cwd()`         | `str`             | Current working directory (absolute path)    |
-| `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}` |
+| `sys.run(argv)`     | `SysRunResult`    | Spawn subprocess; `{stdout, stderr, exit_code}`. `argv` is a `List(str)`, one element per argument -- `sys.run(["git", "status"])`; no shell splits a string (the same for every `argv` below) |
 | `sys.sleep(ms)`     | void              | Sleep for `ms` milliseconds                  |
 | `sys.readLine()`    | `str?`            | Read one line from stdin (strips `\n`); nil on EOF |
 | `sys.spawn(argv)`   | `SysProcess`      | Start a child (stdin/stdout ignored); `.isRunning()`, `.kill()`, `.pid` |
@@ -4163,6 +4382,18 @@ class Stream
 | `re.split(s)`                     | `[]str`        | The pieces between matches (BUG-416) |
 | `re.groups(s)`                    | `[]str?`       | The capture groups of the FIRST match, group 1 at index 0 (the whole match is not included), ONE entry per group: `nil` for a group that took no part in the match, `""` for one that matched empty. No match gives `[]`. Unwrap an element (`if g as v`) before using it as a `str` |
 
+**Which match is found.** Matching is leftmost-first, as in Python, Perl and JavaScript:
+of the matches starting at the leftmost position, the one the pattern prefers wins. Each
+quantifier decides for itself: `*`, `+`, `?` and `{m,n}` prefer more, their lazy forms
+`*?`, `+?`, `??` and `{m,n}?` prefer fewer, and `|` prefers its left side. So
+`<.*?>.*>` finds all of `"<a>b>c>"`, and `a|ab` finds `"a"` in `"ab"`. `re.match(s)` asks
+whether ANY way of matching covers all of `s` (`a|ab` matches `"ab"`). A loop iteration
+that matches nothing ends the loop (BUG-014 / BUG-662). One known difference from Python:
+when a loop whose body can match the empty string is nested inside another such loop,
+`groups()` may report a different (empty vs non-empty) last iteration for an inner group.
+The match itself agrees: 15,000 random patterns compared against Python's `re`, 0
+disagreements in `find` and `match`.
+
 ### `DateTime` — date/time
 
 **Constructors**
@@ -4173,6 +4404,9 @@ class Stream
 | `DateTime.fromEpoch(ms)`          | `DateTime` | From milliseconds since Unix epoch   |
 | `DateTime.of(y,m,d)`             | `DateTime` | Midnight UTC on that date            |
 | `DateTime.of(y,m,d,h,min,s)`     | `DateTime` | Full UTC date+time                   |
+
+`DateTime` is also a type you can name: a class field (`var when: DateTime`), a parameter,
+a return type, `List(DateTime)`, `DateTime?`. A member it does not have is refused at `-c`.
 
 **Field access** (computed from `epoch_ms`)
 
@@ -4199,7 +4433,7 @@ class Stream
 | `dt.addMonths(n)`                 | `DateTime`     |                                               |
 | `dt.addYears(n)`                  | `DateTime`     |                                               |
 | `dt.toEpoch()`                    | int            | Milliseconds since Unix epoch                 |
-| `dt.toIso8601()`                  | str            | e.g. `"2024-03-15T14:30:45"`                 |
+| `dt.toIso8601()`                  | str            | e.g. `"2024-03-15T14:30:45Z"` (UTC)          |
 | `dt.format(pattern)`              | str            | `"yyyy-MM-dd HH:mm:ss"` etc.                  |
 | `dt.daysBetween(other)`           | int            |                                               |
 | `dt.secondsBetween(other)`        | int            |                                               |
@@ -4249,7 +4483,8 @@ Representative zones (≈ 75 total):
 | `HttpResponse.ok(body)` / `.notFound(body)` / `.err(body)` | `HttpResponse` |
 | `HttpResponse.new(status, body)` — **any status code** | `HttpResponse` |
 | `r.status / r.text / r.headers`               | mixed           |
-| `req.method / req.path / req.content` (handler arg) | `str`     |
+| `req.method / req.path / req.content / req.query` (handler arg) | `str` |
+| `HttpRequest(method, path, content: "", query: "")` / `HttpRequest.new(...)` | `HttpRequest` |
 
 `HttpResponse.new(status, body)` is how you build a response with a status the
 named factories do not cover — a 405, a 302, a 422:
@@ -4260,10 +4495,26 @@ var r = HttpResponse.new(405, "method not allowed")
 
 It was reachable but undocumented until 2026-08-08, and a framework author
 shipped a 404 in place of a 405 for want of this line.  The bare-constructor
-form `HttpResponse(405, "…")` does **not** work — that is BUG-250.
+form `HttpResponse(405, "…")` is the same call (BUG-250, fixed 2026-08-20).
 
-`Http.serve`'s handler receives an `HttpRequest` whose `method`, `path` and
-`content` are ordinary `str`, so they compare with `==` like any other string.
+`Http.serve`'s handler receives an `HttpRequest` whose `method`, `path`,
+`content` and `query` are ordinary `str`, so they compare with `==` like any other string.
+
+A handler can be tested without starting a server by building the request yourself:
+`HttpRequest(method, path, content: "", query: "")`. `method` and `path` are required;
+the others default to `""`. `HttpRequest.new(...)` is the same constructor, matching
+`HttpResponse.new`.
+
+```zebra
+def route(req: HttpRequest): HttpResponse
+    if req.path == "/hello"
+        return HttpResponse.ok("hi ${req.query}")
+    return HttpResponse.notFound("no ${req.path}")
+
+def main()
+    var r = route(HttpRequest("GET", "/hello", query: "name=zebra"))
+    assert r.status == 200
+```
 
 ### `Ws` — WebSocket client and server
 
@@ -4302,6 +4553,13 @@ Ws.serve(8765, def(ws: WsConn)
 - `wss://` (TLS) is supported for `Ws.connect`; `Ws.serve` uses plain TCP (put a reverse proxy for TLS serving).
 - Client→server frames are automatically masked (RFC 6455 §5.3).
 - Pings from the server are answered automatically with pong.
+- `Ws.serve` frees the `WsConn` when the handler returns. If another thread sends on that
+  connection, make sure no send is in flight when the handler returns. For example, put the
+  client's "alive" flag and every `send` under one mutex, and clear the flag under it before
+  returning. Otherwise a failed write lands in freed memory.
+- `close()` may be called while another thread is in `recv()` on the same connection: the
+  close frame goes out, and the reader returns nil once the peer answers it (BUG-682). A
+  peer that never answers keeps that reader waiting.
 
 ### Networking — `Tcp`, `Udp`, `Net`
 
@@ -4309,6 +4567,10 @@ Ws.serve(8765, def(ws: WsConn)
 |-----------------------------------|-----------------|-------------------------------------|
 | `Tcp.connect(host, port)`         | `TcpConn?`      |                                     |
 | `Tcp.serve(port, handler)`        | void            | Accepts in a loop; calls `handler(TcpConn)` per client |
+
+A port is an ordinary `int` in every networking call (`Tcp`, `Ws.serve`, `Http.serve`,
+`Udp`). One outside 0..65535 is refused by name and the call does nothing: `connect`
+returns nil, a server returns, `send` skips, and `Udp.bind` stops the program (BUG-688).
 | `Net.resolve(host)`               | `[]str`         | DNS lookup                          |
 
 On a `TcpConn`:
@@ -4389,9 +4651,11 @@ r.close()
 
 | Call                              | Returns      | Notes                                       |
 |-----------------------------------|--------------|----------------------------------------------|
-| `Mime.lookup(filename)`           | str          | MIME type by extension                       |
+| `Mime.fromExt(".png")`            | str          | MIME type by extension (with the dot)        |
+| `Mime.toExt("image/png")`         | str          | Extension for a MIME type                    |
 | `Uri.parse(s)`                    | `UriResult?` | Scheme/host/path/query/fragment              |
-| `Terminal.clearScreen()` etc.     | void         | ANSI helpers                                 |
+| `Terminal.isTty()` / `.width()` / `.height()` | bool / int | Is stdout a terminal; its size  |
+| `Terminal.write(s)` / `.writeln(s)` | void       | Write to the terminal                        |
 | `Timer.start()`                   | `Timer`      | `t.elapsed()` ms as float; `t.elapsedMicros()` int; `t.reset()` |
 
 ### `Compress` — gzip compression
@@ -4513,7 +4777,8 @@ def main()
     Http.serve(8080, handle)
 ```
 
-The handler takes the request and RETURNS the response: `HttpResponse.ok(body)`,
+The handler takes the request and RETURNS the response (`-c` refuses any other shape,
+BUG-685): `HttpResponse.ok(body)`,
 `HttpResponse.notFound(body)`, or `HttpResponse.new(status, body)` for any other status.
 (Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
 which does not build.)
@@ -5342,6 +5607,10 @@ Zebra ships with a bundled SQLite amalgamation (`sqlite3.c`). The compiler injec
 
 **Setup**: the `vendor/sqlite/sqlite3.c` file must be present alongside the compiler binary (`{exe_dir}/vendor/sqlite/sqlite3.c`).
 
+**Modules compiled in**: FTS5 full-text search (`CREATE VIRTUAL TABLE t USING fts5(...)`, `WHERE t MATCH '...'`),
+the R*Tree spatial index (`USING rtree(...)`), and the JSON functions (`json_extract` and the rest), on top of the
+SQLite defaults. A program cannot add others yet.
+
 ### Opening a database
 
 ```zebra
@@ -5389,6 +5658,29 @@ d.begin()
 d.exec("INSERT INTO users VALUES (?, ?)", [3, "carol"])
 d.commit()      # or d.rollback() to discard
 ```
+
+### Stored procedures: `querySegments`
+
+```zebra
+var rows = d.querySegments("CALL atlas()")          # or (sql, [params])
+for row in rows
+    if row.asInt("_segment") == 0
+        print(row.asStr("title"))                     # a parent row
+```
+
+For a SQLite built with stored procedures -- zebra-sprocket's fork, whose `sqlite3.c`
+replaces the one in `vendor/sqlite/` beside the compiler. A procedure that returns
+nested tables comes back as one flat list: every row carries a leading `_segment`
+column, 0 for the parent rows and k for the k-th nested table, and the rest of its
+columns by name. The result is typed like `query()`'s.
+
+On the vanilla SQLite that ships with Zebra, `querySegments` prints
+`this SQLite has no stored procedures` on stderr and returns no rows -- for any
+statement, including a plain `SELECT`, so its rows are never mistaken for an answer.
+Use `query()` there. The fork must be linked from its `.c` source: a prebuilt archive
+is reported as absent. It also needs Zig 0.17 (the version the compiler pins): under
+Zig 0.16 the runtime always binds its own fallback, so `querySegments` refuses even
+with the fork linked.
 
 ### Closing
 

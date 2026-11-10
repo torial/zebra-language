@@ -191,6 +191,108 @@ def zigLitMentionsWord(code: str, name: str): bool
             i = i + 1
     return false
 
+# BUG-267 (write half): the names a `zig"…"` literal WRITES -- assigns (`name = …`, a
+# compound `name += …`, `<<=`, `+%=` …, or through a field, `name.f = …`) or takes the
+# address of (`&name`). The mutation scan marks them, so a local written only inside an
+# escape is emitted `var` (it was `const`, and zig refused the assignment). Left out on
+# purpose: a comparison (`==`, `<=`, `!=`), a field of something else (`self.x = …` names
+# the field `x`), and an index write (`name[i] = …` -- a List or map writes through its
+# reference, and `var` there is zig's "never mutated"). Like the read half, the scan does
+# not skip zig strings or comments.
+def zigLitWrittenWords(code: str): List(str)
+    var out = List(str)()
+    var n: int = code.len
+    var i: int = 0
+    while i < n
+        var ch = code[i]
+        if ch == c'&' and i + 1 < n and isZigIdentChar(code[i + 1]) and not isDigitChar(code[i + 1])
+            # `&name`, unless it is a binary `a&b`: the previous non-space is an operand
+            var pj: int = i - 1
+            while pj >= 0 and (code[pj] == c' ' or code[pj] == c'\t')
+                pj = pj - 1
+            var binary = false
+            if pj >= 0
+                if isZigIdentChar(code[pj]) or code[pj] == c')' or code[pj] == c']'
+                    binary = true
+            var ws: int = i + 1
+            var we: int = ws
+            while we < n and isZigIdentChar(code[we])
+                we = we + 1
+            if not binary
+                out.add(code.substring(ws, we))
+            i = we
+        else if isZigIdentChar(ch)
+            var start: int = i
+            while i < n and isZigIdentChar(code[i])
+                i = i + 1
+            var field = start > 0 and code[start - 1] == c'.'
+            if not field and not isDigitChar(code[start])
+                var j: int = i
+                # field accessors: `name.a.b`
+                while j + 1 < n and code[j] == c'.' and isZigIdentChar(code[j + 1])
+                    j = j + 1
+                    while j < n and isZigIdentChar(code[j])
+                        j = j + 1
+                while j < n and (code[j] == c' ' or code[j] == c'\t')
+                    j = j + 1
+                var os: int = j
+                while j < n and isAssignOpChar(code[j])
+                    j = j + 1
+                if j < n and code[j] == c'=' and (j + 1 >= n or code[j + 1] != c'=')
+                    if isCompoundAssignOp(code.substring(os, j))
+                        out.add(code.substring(start, i))
+        else
+            i = i + 1
+    return out
+
+# BUG-663: does a statement-form `zig"…"` need a `;` appended? Not when it already ends
+# in one, and not when it ends in a BLOCK -- `if (c) { … }`, `while (…) |v| { … }`,
+# `else { … }`, `blk: { … }`, a bare `{ … }` -- where Zig refuses a stray `;` ("expected
+# statement, found ';'"). A `}` that closes a LITERAL (`.{ … }`, `T{ … }`, `[_]u8{ … }`)
+# still needs one: the character before its `{` is `.`, a name or `]`, never `)`, `|`,
+# `:` or `else`. Braces inside zig strings are not skipped, like the rest of this scan.
+def zigStmtNeedsSemicolon(code: str): bool
+    var t: str = code.trim()
+    if t.len == 0
+        return false
+    if t.endsWith(";")
+        return false
+    if not t.endsWith("}")
+        return true
+    var depth: int = 0
+    var i: int = t.len - 1
+    while i >= 0
+        if t[i] == c'}'
+            depth = depth + 1
+        else if t[i] == c'{'
+            depth = depth - 1
+            if depth == 0
+                break
+        i = i - 1
+    if i < 0
+        return true
+    var j: int = i - 1
+    while j >= 0 and (t[j] == c' ' or t[j] == c'\t' or t[j] == c'\n' or t[j] == c'\r')
+        j = j - 1
+    if j < 0
+        return false
+    if t[j] == c')' or t[j] == c'|' or t[j] == c':'
+        return false
+    if j >= 3 and t.substring(j - 3, j + 1) == "else" and (j == 3 or not isZigIdentChar(t[j - 4]))
+        return false
+    return true
+
+def isDigitChar(c: char): bool
+    return c >= c'0' and c <= c'9'
+
+def isAssignOpChar(c: char): bool
+    return c == c'+' or c == c'-' or c == c'*' or c == c'/' or c == c'%' or c == c'&' or c == c'|' or c == c'^' or c == c'<' or c == c'>'
+
+# The operator before `=` in a Zig assignment: none, or a compound one. A lone `<` / `>`
+# (`<=`, `>=`) is a comparison and is not in the list.
+def isCompoundAssignOp(op: str): bool
+    return op == "" or op == "+" or op == "-" or op == "*" or op == "/" or op == "%" or op == "&" or op == "|" or op == "^" or op == "<<" or op == ">>" or op == "+%" or op == "-%" or op == "*%" or op == "+|" or op == "-|" or op == "*|" or op == "<<|"
+
 # CONSERVATIVE expression-level companion: TRUE for any expr form it doesn't
 # model, so a use hidden inside one (type_check / if_expr / catch / …) is never
 # missed.  Leaves (literals / nil / this) must return FALSE so a `var X = nil`

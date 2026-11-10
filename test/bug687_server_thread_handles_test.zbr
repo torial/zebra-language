@@ -1,0 +1,114 @@
+# BUG-687: Tcp.serve, Ws.serve and Http.serve spawned one thread per connection and
+# never detached or joined it. On Windows the thread's HANDLE then stays open after the
+# thread exits, so a server leaked one handle per accepted connection for the life of
+# the process (found by the GameEngine's handle ledger: +42 handles for 40 clients).
+#
+# Witness: the process handle count, read through ntdll (ProcessHandleCount), around N short connections
+# to each server. Each connection waits for the server's reply, so its server thread has
+# run; then the program sleeps for the threads to exit. A leak costs about N handles a
+# server; detached, the count stays near flat. Off Windows the count is not readable this
+# way and the leg prints the same line without measuring (it still exercises the
+# servers).
+
+var N: int = 30
+
+def tcpHandler(conn: TcpConn)
+    var req = conn.readLine()
+    conn.write("pong " + req + "\n")
+    conn.close()
+
+def wsHandler(ws: WsConn)
+    var m = ws.recv()
+    while m != nil
+        ws.send("pong")
+        m = ws.recv()
+
+def httpHandler(req: HttpRequest): HttpResponse
+    return HttpResponse.ok("pong")
+
+# -1 where the count cannot be read (not Windows)
+def handleCount(): int
+    var n: int = zig"blk: { if (comptime builtin.os.tag == .windows) { const W = std.os.windows; var c: u32 = 0; _ = W.ntdll.NtQueryInformationProcess(W.GetCurrentProcess(), .HandleCount, &c, @sizeOf(u32), null); break :blk @as(i64, c); } else { break :blk @as(i64, -1); } }"
+    return n
+
+def tcpRound(port: int): int
+    var ok = 0
+    var i = 0
+    while i < N
+        var c = Tcp.connect("127.0.0.1", port)
+        if c as conn
+            conn.write("ping\n")
+            if conn.readLine() == "pong ping"
+                ok = ok + 1
+            conn.close()
+        i = i + 1
+    return ok
+
+def wsRound(port: int): int
+    var ok = 0
+    var i = 0
+    while i < N
+        var c = Ws.connect("ws://127.0.0.1:" + port.toString() + "/")
+        if c as ws
+            ws.send("ping")
+            if ws.recv() == "pong"
+                ok = ok + 1
+            ws.close()
+        i = i + 1
+    return ok
+
+def httpRound(port: int): int
+    var ok = 0
+    var i = 0
+    while i < N
+        var r = Http.get("http://127.0.0.1:" + port.toString() + "/")
+        if r as resp
+            if resp.text == "pong"
+                ok = ok + 1
+        i = i + 1
+    return ok
+
+# measure one server: a warm-up round first (lazy runtime state allocates handles once),
+# then N connections between two counts
+def leg(name: str, kind: int, port: int)
+    var warm = 0
+    if kind == 0
+        warm = tcpRound(port)
+    else if kind == 1
+        warm = wsRound(port)
+    else
+        warm = httpRound(port)
+    assert warm == N, name + ": the warm-up round got " + warm.toString() + " of " + N.toString() + " replies"
+    sys.sleep(300)
+    var h0 = handleCount()
+    var ok = 0
+    if kind == 0
+        ok = tcpRound(port)
+    else if kind == 1
+        ok = wsRound(port)
+    else
+        ok = httpRound(port)
+    sys.sleep(500)
+    var h1 = handleCount()
+    assert ok == N, name + ": got " + ok.toString() + " of " + N.toString() + " replies"
+    if h0 >= 0
+        var grew = h1 - h0
+        assert grew < N / 2, name + ": the process gained " + grew.toString() + " handles over " + N.toString() + " connections (one per connection is the leak)"
+    print("bug687: " + name + " ok")
+
+def main()
+    sys.go(def()
+        Tcp.serve(19931, tcpHandler)
+    )
+    sys.go(def()
+        Ws.serve(19932, wsHandler)
+    )
+    sys.go(def()
+        Http.serve(19933, httpHandler)
+    )
+    sys.sleep(300)
+    leg("Tcp.serve", 0, 19931)
+    leg("Ws.serve", 1, 19932)
+    leg("Http.serve", 2, 19933)
+    print("bug687: no handle per connection")
+    sys.exit(0)

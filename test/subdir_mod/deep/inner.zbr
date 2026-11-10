@@ -1,0 +1,7 @@
+# Two directories down: `use subdir_mod.deep.inner`.
+def tag(): str
+    return "inner"
+
+enum Level
+    low
+    high

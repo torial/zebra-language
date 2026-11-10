@@ -1,0 +1,19 @@
+# BUG-693: `ed.sci(...)` / `ed.sciStr(...)` lower to `_code_editor_sci` / `_code_editor_sci_str`.
+# Both GUI sections defined them; the STUB backend's region of stdlib_preamble.zig did not, so
+# any program calling the Scintilla hatch failed inside zig on the default backend
+# ("use of undeclared identifier '_code_editor_sci'"). That was invisible while tui was the
+# headless backend; once Zig 0.17 refused tui, the stub became the only headless route and
+# zebra-ide's model_test had no backend at all.
+#
+# The stub answers 0 for every message (no Scintilla). Asserted as an int in arithmetic,
+# not as a meaningful value -- pinning 0 would pin the stub, as bug212's note says.
+const SCI_GETCURRENTPOS = 2008
+const SCI_SETTEXT = 2181
+
+def main()
+    var e = CodeEditor()
+    e.setText("hi")
+    var pos: int = e.sci(SCI_GETCURRENTPOS, 0, 0)
+    var n: int = e.sciStr(SCI_SETTEXT, 0, "there")
+    if (pos + n + 1) == (1 + n + pos)
+        print("bug693: OK")

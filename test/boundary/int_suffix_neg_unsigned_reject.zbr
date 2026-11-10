@@ -1,0 +1,6 @@
+# @boundary rejects -5_u8 does not fit in 'byte' (0..255), the type its suffix gives it
+#
+# A negated unsigned literal has no value in its type. Written before the feature was built.
+def main()
+    var b = -5_u8
+    print(b)

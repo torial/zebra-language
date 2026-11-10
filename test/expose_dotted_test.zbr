@@ -1,5 +1,8 @@
 # expose_dotted_test.zbr -- regression test for `use dotted.path exposing Symbol`.
 #
+# BUG-651: the selfhost has no subdirectory modules, so this file is registered
+# smoke_tc_fail on the dotted-`use` refusal; that pin flips the day they land.
+#
 # Bug history: when a user writes `use expose_dotted.lib exposing DottedLib`, the
 # TypeChecker registered the symbol with name "DottedLib" (the exposed name) but
 # looked it up in imported_modules under "DottedLib" — which fails because the map

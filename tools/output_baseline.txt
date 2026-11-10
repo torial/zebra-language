@@ -366,12 +366,13 @@ bug294-copied=7
 bug294-passed=7
 === bug294_hat_deref_declorder_test sha1=ad180244f980 ===
 bug294-declorder=7
-=== bug295_cycle_test sha1=6afc631070c0 ===
+=== bug295_cycle_test sha1=fbde8c819947 ===
 warning: import cycle: bug295_cycle_test -> bug295_cycle_lib -> bug295_cycle_test
-  a module in a cycle is compiled ONCE and the first import wins, so
-  the second module sees a PARTIAL view of the first. That is well
-  defined for functions and types and UNDEFINED for module-level state:
-  no initialisation order satisfies both directions.
+  each module in a cycle is still ONE instance, shared by every importer,
+  and each of its module-level variables is set before it is first read:
+  one computed from other modules is initialised on first use. Initialisers
+  that need each other's values cannot be ordered; the program stops at
+  start-up naming them.
   fix: move the names they share into a third module that both import.
 bug295-cycle=6
 === bug295_diamond_test sha1=816340bf1411 ===

@@ -11,7 +11,7 @@
 #
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
-use Ast exposing Span, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
+use Ast exposing Span, ExprIntLit, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, IntBase, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
@@ -81,6 +81,19 @@ class HashMapType_
     cue init(key_t: Type_, val_t: Type_)
         .key_t = key_t
         .val_t = val_t
+
+# BUG-630: a function value's shape. `ret` is what a call on it returns (all the variant
+# carried before); `params` are the parameter types, `unknown_` where one is not written,
+# and `arity` is -1 when the parameter list itself is not known (a bound method).
+class FnType_
+    var ret: ^TypeRef
+    var params: List(Type_)
+    var arity: int
+
+    cue init(ret: TypeRef, params: List(Type_), arity: int)
+        .ret = ret
+        .params = params
+        .arity = arity
 
 class TupleType_
     var elems: List(Type_)
@@ -194,7 +207,7 @@ union Type_
 
     # Inline function-pointer type `def(P): R` — carries the RETURN type ref so a
     # call on a value of this type infers R (matches src/TypeChecker.zig fn_type).
-    fn_type_: ^TypeRef
+    fn_type_: FnType_
 
     # Unrecoverable: upstream error or unsupported construct.
     # Suppresses further cascading errors (matches src/TypeChecker.zig).
@@ -467,6 +480,9 @@ class ModuleTypes
     # own table (buildModuleTypes), never for the merged dependency table, so one module's
     # imports cannot leak into another's lookups.
     var exposed_from: HashMap(str, str)
+    # BUG-638: the stems this FILE `use`s (`use pkg/Random` -> "Random"), filled like
+    # exposed_from, so a module named like a builtin namespace stays the user's.
+    var use_stems: HashMap(str, bool)
     cue init()
         classes = HashMap()
         strset_field_names = HashMap()
@@ -492,6 +508,7 @@ class ModuleTypes
         dep_struct_recv = ""
         generic_fn_tparams = HashMap()
         exposed_from = HashMap()
+        use_stems = HashMap()
 
     def addModuleVar(name: str)
         .module_vars.put(internString(name), true)
@@ -954,7 +971,10 @@ def typeFromRef(tr: TypeRef): Type_
         on TypeRef.fn_type as ftr
             # Inline function-pointer type `def(P): R` — carry R so a call on a
             # value of this type infers R (see inferExpr Expr.call).
-            return Type_.fn_type_(ftr.ret)
+            var ftps: List(Type_) = List(Type_)()
+            for ftp in ftr.params
+                ftps.add(typeFromRef(ftp))
+            return Type_.fn_type_(FnType_(ftr.ret, ftps, ftps.len))
         else
             # error_union, stream, same_ — handled as unknown.
             return Type_.unknown_
@@ -1106,9 +1126,14 @@ def addClassMembers(mt: ModuleTypes, ct: ClassTypes, members: List(Decl))
                             ct.addCtorParam(typeFromRef(p.type_!))
                         else
                             ct.addCtorParam(Type_.unknown_)
-                ct.setFnParamList("init", ini.params)
-                if ini.stmts as ini_body
-                    ct.setFnBody("init", ini_body)
+                # BUG-679: first wins for the param list and body too. A mixin's members
+                # are merged in AFTER the class's own (pass 2), so a mixin `cue init()`
+                # replaced the class's `cue init(t, b)` here, and BUG-659's arity check
+                # then refused `BlogPost("Hello", "body")` as "expected at most 0".
+                if ct.fnParamList("init") == nil
+                    ct.setFnParamList("init", ini.params)
+                    if ini.stmts as ini_body
+                        ct.setFnBody("init", ini_body)
             else
                 pass
 
@@ -1131,6 +1156,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
         arg_ct.setMethodReturn("contains", Type_.bool_)
         arg_ct.setMethodReturn("optionInt", Type_.int_)
         arg_ct.setMethodReturn("usage", Type_.string_)       # §28a: `args.usage().len` guessed
+        arg_ct.setMethodReturn("unknownFlag", Type_.string_) # BUG-252: the one ArgResult method missing
         mt.addClass(arg_ct)
     # Pass 1: register classes, structs, mixins, unions, top-level defs.
     for decl in m.decls
@@ -1257,6 +1283,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # §28a: a `sig` value is callable; `f(1)` on one returns the sig's type.
                 # Registered like `$Arg` (a pseudo-class the member tables already search).
                 var sgct: ClassTypes = ClassTypes("$sig:" + sgd.name)
+                sgct.setFnParamList("call", sgd.params)        # BUG-630: its parameter types
                 if sgd.return_type as sgr
                     sgct.setMethodReturn("call", typeFromRef(sgr))
                 else
@@ -1342,6 +1369,9 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 # BUG-158: record the module-var name so an exposed cross-module
                 # reference emits `alias._zbr_mv_name`.
                 mt.addModuleVar(mv.name)
+                mt.addModuleVar("$mv:" + moduleStemOf(m.file) + "." + mv.name)   # BUG-660: `lib.count`
+                if mv.is_const                                                      # BUG-661
+                    mt.addModuleVar("$mc:" + moduleStemOf(m.file) + "." + mv.name)
                 # Module-level var/const: register its type under the "" sentinel
                 # class so inferExpr resolves bare references (e.g. int-method
                 # dispatch on `counter.str()`). Untyped literal inits are inferred
@@ -1349,26 +1379,20 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                 if mv.type_ != nil
                     module_fns.setField(mv.name, typeFromRef(mv.type_!))
                 else if mv.init_expr != nil
-                    var mv_t: Type_ = Type_.unknown_
+                    var mv_t: Type_ = numLitType(mv.init_expr!)
                     branch mv.init_expr!
-                        on Expr.int_lit
-                            mv_t = Type_.int_
-                        on Expr.float_lit
-                            mv_t = Type_.float_
                         on Expr.string_lit
                             mv_t = Type_.string_
-                        on Expr.unary as mv_un
-                            if mv_un.op == UnaryOp.neg
-                                branch mv_un.operand
-                                    on Expr.int_lit
-                                        mv_t = Type_.int_
-                                    on Expr.float_lit
-                                        mv_t = Type_.float_
-                                    else
-                                        pass
                         else
                             pass
                     module_fns.setField(mv.name, mv_t)
+                # BUG-660: the same type under this module's own `$fns:<mod>`, so a
+                # qualified `lib.count` is typed from lib's var and not a same-named one.
+                var mv_key: str = "$fns:" + moduleStemOf(m.file)
+                if mt.classOf(mv_key) == nil
+                    mt.addClass(ClassTypes(mv_key))
+                if module_fns.fieldType(mv.name) as mv_ft
+                    mt.classOf(mv_key)!.setField(mv.name, mv_ft)
             on Decl.namespace_ as ns_decl
                 # Register namespace types so member-access inference works.
                 # Dotted name "Outer.Inner" → create ClassTypes for each path
@@ -1463,6 +1487,7 @@ def buildModuleTypes(m: Module): ModuleTypes
     for d in m.decls                                    # BUG-604
         if d is Decl.use_ as du
             var stem: str = moduleStemOf(du.path)
+            mt.use_stems.put(internString(stem), true)
             for xn in du.exposed
                 mt.exposed_from.put(internString(xn), internString(stem))
     return mt
@@ -1556,6 +1581,11 @@ class InferCtx
     # to a numeric loop whose variable is assignable). Each is a Zig `const` capture, so
     # assigning one leaked "cannot assign to constant". Same shape as params_here.
     var loop_consts: str
+    # BUG-596: the names declared with `var` (or destructured) in the function being checked,
+    # lambda bodies included -- the locals CodeGen can keep in a heap cell. A struct method
+    # read as a value binds THAT variable by reference, so only these receivers are accepted.
+    # Same shape as params_here; reset per function.
+    var var_locals: str
     # BUG-629: locals an UNANNOTATED `var` bound to a lambda whose signature cannot be
     # written down (an expression lambda with no return type, or an untyped parameter).
     # Each lambda is its own Zig type, so reassigning one leaked "has no member named
@@ -1583,6 +1613,7 @@ class InferCtx
         .params_here = " "
         .copy_locals = " "
         .loop_consts = " "
+        .var_locals = " "
         .opaque_lambdas = " "
 
     def setParamsHere(names: str)
@@ -1618,6 +1649,23 @@ class InferCtx
     def resetCopyLocals()
         .copy_locals = " "
         .opaque_lambdas = " "
+        .var_locals = " "
+
+    def markVarLocal(name: str)
+        if not ((" " + name + " ") in .var_locals)
+            .var_locals = .var_locals + name + " "
+
+    def unmarkVarLocal(name: str)
+        .var_locals = .var_locals.replace(" " + name + " ", " ")
+
+    def isVarLocal(name: str): bool
+        return (" " + name + " ") in .var_locals
+
+    def varLocals(): str
+        return .var_locals
+
+    def setVarLocals(names: str)
+        .var_locals = names
 
     def markOpaqueLambda(name: str)
         if not ((" " + name + " ") in .opaque_lambdas)
@@ -1809,6 +1857,10 @@ class InferCtx
         if .module_types.hasUnion(name)
             return true
         return .dep_types.hasUnion(name)
+
+    # BUG-638: this file has `use .../<name>`.
+    def isUsedModule(name: str): bool
+        return .module_types.use_stems.contains(name)
 
     def bind(name: str, t: Type_)
         scope.put(name, t)
@@ -2081,6 +2133,100 @@ def extendTargetName(target: TypeRef): str
         return eg.name
     return ""
 
+# BUG-638: the static members of each CLOSED builtin namespace, "|a|b|". GENERATED -- do not
+# edit by hand: `python tools/surface_inventory.py --print-checker-table` derives it from the
+# CodeGen generators (genXxxCall), and surface-freeze fails when the two differ. Math is OPEN
+# (unknown names pass through to std.math) and is not here; "" = not a closed namespace.
+def namespaceMembers(ns: str): str
+    if ns == "HttpRequest"
+        return "|new|"
+    if ns == "Arg"
+        return "|parse|"
+    if ns == "Base64"
+        return "|decode|decodeUrl|encode|encodeUrl|"
+    if ns == "Build"
+        return "|new|"
+    if ns == "Compress"
+        return "|gunzip|gzip|"
+    if ns == "Crypto"
+        return "|decrypt|deriveKey|encrypt|"
+    if ns == "Csv"
+        return "|parse|parseFile|"
+    if ns == "DateTime"
+        return "|fromEpoch|now|of|"
+    if ns == "Dir"
+        return "|create|createAll|delete|deleteAll|exists|list|tryDeleteAll|walk|"
+    if ns == "File"
+        return "|append|copy|delete|exists|isDir|isFile|listDir|modtime|read|readLines|rename|size|tryDelete|write|writeLines|"
+    if ns == "Gui"
+        return "|clipboardText|getDpi|registerIcon|run|scaleAllSizes|setClipboardText|setColor|setColorsDark|setStyleFloat|setVec2|"
+    if ns == "Hash"
+        return "|blake3|crc32|fnv64|hmac256|hmac512|md5|sha256|sha512|xxHash64|"
+    if ns == "Http"
+        return "|get|json|post|postJson|serve|"
+    if ns == "Json"
+        return "|array|object|parse|parseStrict|stringify|"
+    if ns == "Log"
+        return "|debug|err|error|info|json|setFile|setLevel|setOutput|timestamp|warn|"
+    if ns == "Mime"
+        return "|fromExt|toExt|"
+    if ns == "Net"
+        return "|resolve|"
+    if ns == "Path"
+        return "|absolute|basename|dirname|ext|extension|isAbsolute|join|stem|"
+    if ns == "Profile"
+        return "|dump_folded|end|report|reset|start|"
+    if ns == "Progress"
+        return "|bar|"
+    if ns == "Random"
+        return "|bytes|choice|gaussian|new|randBool|randFloat|randInt|seed|shuffle|weighted|"
+    if ns == "Reflect"
+        return "|className|fieldNames|fieldTypes|hostKind|"
+    if ns == "Regex"
+        return "|compile|"
+    if ns == "Shell"
+        return "|run|"
+    if ns == "Sqlite"
+        return "|open|"
+    if ns == "Tcp"
+        return "|connect|serve|"
+    if ns == "Terminal"
+        return "|height|isTty|width|write|writeln|"
+    if ns == "Timer"
+        return "|start|"
+    if ns == "Udp"
+        return "|bind|socket|"
+    if ns == "Uri"
+        return "|parse|"
+    if ns == "Ws"
+        return "|connect|serve|"
+    if ns == "sys"
+        return "|args|cwd|err|errln|exec_inherit|exit|getenv|go|memStats|readBytes|readLine|readStdinAvailable|run|selfExe|setenv|sleep|spawn|spawnPiped|spawnPipedIn|stdinClosed|writeStdout|"
+    return ""
+
+# BUG-638: an unknown member of a closed builtin namespace (`Random.seeded`, `Csv.writer`)
+# passed -c and reached zig as the generator's @compileError, which zig reported as
+# "unreachable code" at the user's line -- the sentence naming the mistake never arrived.
+# A local, parameter, class, enum, union, module variable or used module of the same name is
+# the USER's, so it is left alone. Called from checkCallExpr (every call, statement position
+# included) and from inferExpr's DateTime/Crypto arms; the message is identical from both,
+# so addErr's duplicate filter reports a site once.
+def checkNamespaceMember(ns: str, mem: ExprMember, ctx: InferCtx)
+    var known: str = namespaceMembers(ns)
+    if known == ""
+        return
+    if known.contains("|" + mem.member + "|")
+        return
+    if ctx.hasLocal(ns) or ctx.hasClassAny(ns) or ctx.hasEnumAny(ns) or ctx.hasUnion(ns)
+        return
+    if ctx.isUsedModule(ns) or ctx.module_types.hasModuleVar(ns)
+        return
+    var shown: str = known.substring(1, known.len - 1).replaceAll("|", ", ")
+    var hint: str = ""
+    if ns == "DateTime"
+        hint = "; inZone and the rest are methods on a DateTime value"
+    ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'" + ns + "' has no static function '" + mem.member + "' (it has: " + shown + hint + ")")
+
 def strMethodKnown(name: str): bool
     return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
 
@@ -2103,7 +2249,7 @@ def setMethodKnown(name: str): bool
     return name == "add" or name == "remove" or name == "contains" or name == "count" or name == "len" or name == "items" or name == "clear" or name == "toString" or name == "copy"
 
 def jsonMethodKnown(name: str): bool
-    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "keys" or name == "values" or name == "entries" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
+    return name == "has" or name == "get" or name == "tryStr" or name == "tryInt" or name == "tryFloat" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "keys" or name == "isNull" or name == "isObject" or name == "isArray" or name == "stringify" or name == "toString" or name == "put" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "append" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
 
 # ── The runtime OBJECT receivers (2026-09-15, Sean: "resolving in general also gives us
 # better -c coverage") ─────────────────────────────────────────────────────────────────
@@ -2119,6 +2265,104 @@ def jsonMethodKnown(name: str): bool
 def randomMethodKnown(name: str): bool
     return name == "nextInt" or name == "nextFloat" or name == "nextBool" or name == "bytes"
 
+# BUG-680: DateTime's surface, from QUICKSTART's DateTime tables and the CodeGen arms that
+# dispatch them (isDateTimeExpr's users). A name outside these is refused in the front end.
+def dateTimeFieldKnown(name: str): bool
+    return name == "year" or name == "month" or name == "day" or name == "hour" or name == "minute" or name == "second" or name == "weekday" or name == "epoch_ms"
+
+def dateTimeMethodKnown(name: str): bool
+    if name == "inZone" or name == "inCalendar" or name == "toEpoch" or name == "timestamp" or name == "toIso8601" or name == "format"
+        return true
+    if name == "addDays" or name == "addHours" or name == "addMinutes" or name == "addSeconds" or name == "addMonths" or name == "addYears"
+        return true
+    return name == "daysBetween" or name == "secondsBetween" or name == "before" or name == "after" or name == "equals"
+
+def dateTimeMethodType(name: str): Type_
+    if name == "toEpoch" or name == "timestamp" or name == "daysBetween" or name == "secondsBetween"
+        return Type_.int_
+    if name == "toIso8601" or name == "format"
+        return Type_.string_
+    if name == "before" or name == "after" or name == "equals"
+        return Type_.bool_
+    if name == "inCalendar"
+        return Type_.named("CalendarView")   # its fields are checked by the runtime-object table
+    return Type_.named("DateTime")    # inZone, add*
+
+# BUG-680: the other runtime object types with no Type_ variant. Only the REFUSAL is
+# added -- a known member keeps whatever typing it had. Derived from CodeGen's dispatch
+# (`cw_nm == "CsvTable"` / "CsvWriter" / "HttpResponse") and QUICKSTART's tables.
+def runtimeObjMethods(tn: str): str
+    if tn == "CsvTable"
+        return " rowCount colCount header row rows dataRows get "
+    if tn == "CsvWriter"
+        return " writeRow build "
+    if tn == "HttpResponse"
+        return " withHeader "
+    if tn == "ThreadPool"
+        return " submit wait "          # `worker` is the runtime's own, not a user verb
+    if tn == "DynLib"
+        return " lookup close "
+    return ""
+
+def runtimeObjFields(tn: str): str
+    if tn == "HttpResponse"
+        return " status text headers "
+    if tn == "CalendarView"
+        return " year month day weekday monthName era "
+    return ""
+
+def runtimeObjCovered(tn: str): bool
+    return runtimeObjMethods(tn) != "" or runtimeObjFields(tn) != ""
+
+def runtimeObjHint(tn: str): str
+    var ms: str = runtimeObjMethods(tn).trim().replace(" ", ", ")
+    var fs: str = runtimeObjFields(tn).trim().replace(" ", ", ")
+    if fs == ""
+        return " (its methods: " + ms + ")"
+    if ms == ""
+        return " (its fields: " + fs + "; it has no methods)"
+    return " (its fields: " + fs + "; methods: " + ms + ")"
+
+# BUG-685: the handler handed to Http.serve -- an inline `def(...)` or a top-level function
+# named by identifier. Checked: one parameter; a DECLARED return type is HttpResponse; an
+# inline block-bodied handler declares one (it returns a value, so it must). A handler the
+# checker cannot see (a variable, a method) is left to the later passes, as before.
+def checkHttpServeHandler(h: Expr, sp: Span, ctx: InferCtx)
+    var shape: str = " -- write it as `def handle(req: HttpRequest): HttpResponse` and return HttpResponse.ok(body) / .notFound(body) / .new(status, body) (QUICKSTART's Http.serve)"
+    var nparams: int = -1
+    var ret_name: str = "?"
+    if h is Expr.lambda as lam
+        nparams = lam.params.len
+        if lam.return_type as lrt
+            ret_name = "a non-HttpResponse type"
+            if lrt is TypeRef.named as lrn
+                ret_name = lrn.name
+        else
+            if lam.body_ is LambdaBody.stmts
+                ret_name = ""
+    else
+        if h is Expr.ident as hid
+            if not ctx.hasLocal(hid.name)
+                if ctx.module_types.fnParamList("", hid.name) as hpl
+                    nparams = hpl.len
+                    if ctx.methodReturnAny("", hid.name) as hrt
+                        ret_name = userTypeName(hrt)
+                        if hrt is Type_.void_
+                            ret_name = ""
+                    else
+                        ret_name = ""
+    if nparams >= 0 and nparams != 1
+        ctx.addErr(ctx.file, sp.line, sp.col, "Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes " + nparams.toString() + shape)
+        return
+    if ret_name == ""
+        ctx.addErr(ctx.file, sp.line, sp.col, "Http.serve's handler must return an HttpResponse; this one declares no return type" + shape)
+        return
+    if ret_name != "?" and ret_name != "HttpResponse"
+        ctx.addErr(ctx.file, sp.line, sp.col, "Http.serve's handler must return an HttpResponse, not '" + ret_name + "'" + shape)
+
+def dateTimeMemberHint(): str
+    return " (fields: year, month, day, hour, minute, second, weekday; methods: toEpoch, timestamp, toIso8601, format, inZone, inCalendar, addDays/Hours/Minutes/Seconds/Months/Years, daysBetween, secondsBetween, before, after, equals -- QUICKSTART's DateTime section)"
+
 def timerMethodKnown(name: str): bool
     return name == "elapsed" or name == "elapsedMicros" or name == "reset"
 
@@ -2129,7 +2373,7 @@ def codeEditorMethodKnown(name: str): bool
     return name == "setText" or name == "getText" or name == "setReadOnly" or name == "render" or name == "restyle" or name == "setErrorMarkers" or name == "setLanguage" or name == "getLanguage" or name == "getCursorLine" or name == "getCursorCol" or name == "setCursorPosition" or name == "sci" or name == "sciStr" or name == "hotkey" or name == "takeModified" or name == "takeCharAdded" or name == "takeMarginClick" or name == "takeKey"
 
 def stringBuilderMethodKnown(name: str): bool
-    return name == "append" or name == "appendChar" or name == "add" or name == "build" or name == "toString" or name == "clear" or name == "len"
+    return name == "append" or name == "appendChar" or name == "build" or name == "toString" or name == "clear" or name == "len"
 
 def sysProcessMethodKnown(name: str): bool
     return name == "isRunning" or name == "alive" or name == "kill" or name == "write" or name == "readAvailable" or name == "readErrAvailable" or name == "closeStdin" or name == "exitCode"
@@ -2150,7 +2394,7 @@ def udpSocketMethodKnown(name: str): bool
     return name == "send" or name == "recv" or name == "close"
 
 def sqliteDbMethodKnown(name: str): bool
-    return name == "exec" or name == "query" or name == "begin" or name == "commit" or name == "rollback" or name == "close"
+    return name == "exec" or name == "query" or name == "querySegments" or name == "begin" or name == "commit" or name == "rollback" or name == "close"
 
 def sqliteRowMethodKnown(name: str): bool
     return name == "asInt" or name == "asStr" or name == "asFloat" or name == "asBool"
@@ -2660,12 +2904,20 @@ def fmtSpecIgnored(spec: str): str
 # (`(1 + 2)`, `1 + 2.0`). Zig folds these at comptime, so they adapt to the other
 # operand's type exactly like a bare literal and must never be converted.
 def isNumLit(e: Expr): bool
-    if e is Expr.int_lit or e is Expr.float_lit
-        return true
+    # A SUFFIXED literal (`5_u8`, `1.5_f32`) carries its own type: it joins like a variable
+    # of that type and does not adapt to the other operand.
+    if e is Expr.int_lit as nl_i
+        return intLitSuffix(nl_i.text) == ""
+    if e is Expr.float_lit as nl_f
+        return floatLitSuffix(nl_f.text) == ""
     if e is Expr.unary as u
         return isNumLit(u.operand)
     if e is Expr.binary as b
         if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
+            return isNumLit(b.left) and isNumLit(b.right)
+        # BUG-674: `& | ^` over constants fold too (`b & (0xF0 | 0x0F)` adapts like a
+        # literal). NOT shifts: `1 << 3` lowers to the runtime's `_zbr_shl`, an i64 at run time.
+        if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
             return isNumLit(b.left) and isNumLit(b.right)
     return false
 
@@ -2945,6 +3197,641 @@ def bitwiseResultType(lt: Type_, rt: Type_, b: ExprBinary, opname: str, ctx: Inf
         ctx.addErr(ctx.file, eln, ecl,
                    "bitwise '" + opname + "' requires integer operands, got '"
                    + typeTag(bad_t) + "'")
+    # BUG-672: `& | ^` coerce a literal to the other operand's type, as `+` does. A shift
+    # amount is not coerced to the operand type (its range is 0..width-1), so not here.
+    if b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
+        literalOperandFitCheck(lt, rt, b, ctx)
+        # BUG-674: two integer types of different width or sign join exactly as `+` joins
+        # them (numericJoin), and codegen converts both operands to the join, as for `+`.
+        # The left type alone made `var c: byte = b & n` pass -c and fail in zig, which
+        # peers u8 with i64 to i64 (and refuses u8 with i8 outright).
+        if isIntegerType(lt) and isIntegerType(rt) and not isNumLit(b.left) and not isNumLit(b.right) and numTypeName(lt) != numTypeName(rt)
+            var bmsr: str = mixedSignRefusal(lt, rt)
+            if bmsr != ""
+                ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col), bmsr)
+                return Type_.unknown_       # refused: no type, so no second error at the slot
+            var bj: Type_ = numericJoin(lt, rt, false, false)
+            if not (bj is Type_.unknown_)
+                return bj
+        if isNumLit(b.left) and isIntegerType(rt)
+            return rt                       # a literal adapts to the other operand, as for `+`
+    if isIntegerType(lt)
+        return lt
+    return rt
+
+# BUG-672: a literal beside a sized integer operand adapts to that operand's type (QUICKSTART
+# §3), so it must FIT there: `k + 300` on a byte otherwise reaches zig as "type 'u8' cannot
+# represent integer value '300'" (for `%`, at a line inside zebra_rt.zig). The operators
+# that coerce it: `+ - * / %` and `& | ^`. NOT the comparisons -- zig compares a byte with
+# 300 and gets the right answer (`k < 300` is true), so refusing them would refuse working
+# code. Reported at the literal.
+def literalOperandFitCheck(lt: Type_, rt: Type_, b: ExprBinary, ctx: InferCtx)
+    var l_lit: bool = isNumLit(b.left)
+    var r_lit: bool = isNumLit(b.right)
+    if l_lit == r_lit
+        return
+    var lit: Expr = b.left
+    var other: Type_ = rt
+    if r_lit
+        lit = b.right
+        other = lt
+    var why: str = litFitsType(lit, other)
+    if why != ""
+        ctx.addErr(ctx.file, anchorLine(lit, b.span.line), anchorCol(lit, b.span.col),
+                   why + ", the type of the other operand of '" + plainOpText(b.op) + "'")
+
+def plainOpText(op: BinaryOp): str
+    if op == BinaryOp.add
+        return "+"
+    if op == BinaryOp.sub
+        return "-"
+    if op == BinaryOp.mul
+        return "*"
+    if op == BinaryOp.div
+        return "/"
+    if op == BinaryOp.mod
+        return "%"
+    if op == BinaryOp.bit_and
+        return "&"
+    if op == BinaryOp.bit_or
+        return "|"
+    if op == BinaryOp.bit_xor
+        return "^"
+    return "?"
+
+# BUG-673: the operators whose result is the JOIN of their operand types (numericJoin),
+# so `b + n` with a byte and an int is an int -- and `b & n` too (BUG-674). Shifts are not:
+# their result is the left operand's type.
+def isJoinedArithOp(op: BinaryOp): bool
+    return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.mod or op == BinaryOp.bit_and or op == BinaryOp.bit_or or op == BinaryOp.bit_xor
+
+# BUG-672: the compound assignments whose literal right side takes the target's type.
+def compoundCoercesLiteral(op: AssignOp): bool
+    return op == AssignOp.plus_eq or op == AssignOp.minus_eq or op == AssignOp.star_eq or op == AssignOp.slash_eq or op == AssignOp.percent_eq or op == AssignOp.ampersand_eq or op == AssignOp.vertical_bar_eq or op == AssignOp.caret_eq
+
+# ── Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) arithmetic ─────────────────
+#
+# Zig's operators and Zig's spelling (Sean, 2026-11-02): plain `+ - *` trap on overflow,
+# `+%` wraps around the type, `+|` clamps at its bounds. INTEGERS ONLY -- a float has no
+# wrap-around and Zig refuses both on one.
+#
+# THE TYPE DECIDES THE ANSWER. Two operand types join exactly as `+` joins them (BUG-445's
+# numericJoin -- Sean, 2026-11-03: "keeping it consistent with + is key"), so `byte +% int`
+# is an int and wraps at 64 bits, `int16 +% byte` an int16. A wrap/sat result is a value
+# that must not narrow silently: `b +%= n` on a byte is refused like `b += n`
+# (narrowsIntToByte / intNarrowHint). A literal adapts to the other side, as everywhere --
+# but only if it FITS there: `b +% 300` on a byte would otherwise reach Zig as "type 'u8'
+# cannot represent integer value 300".
+def isWrapSatOp(op: BinaryOp): bool
+    return op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap or op == BinaryOp.add_sat or op == BinaryOp.sub_sat or op == BinaryOp.mul_sat or op == BinaryOp.shl_sat
+
+def wrapSatOpText(op: BinaryOp): str
+    if op == BinaryOp.add_wrap
+        return "+%"
+    if op == BinaryOp.sub_wrap
+        return "-%"
+    if op == BinaryOp.mul_wrap
+        return "*%"
+    if op == BinaryOp.add_sat
+        return "+|"
+    if op == BinaryOp.sub_sat
+        return "-|"
+    if op == BinaryOp.mul_sat
+        return "*|"
+    return "<<|"
+
+def wrapSatKindWord(op: BinaryOp): str
+    if op == BinaryOp.add_wrap or op == BinaryOp.sub_wrap or op == BinaryOp.mul_wrap
+        return "wrapping"
+    return "saturating"
+
+# The value of one hex or decimal digit, -1 for anything else.
+def litDigitValue(d: str, hex: bool): int
+    const digs: str = "0123456789abcdef"
+    var lc: str = d.lower()
+    var ix: int = digs.indexOf(lc)
+    if ix < 0 or lc.len != 1
+        return -1
+    if ix >= 10 and not hex
+        return -1
+    return ix
+
+# BUG-675: the value of a constant integer expression -- the shapes isNumLit lets adapt to
+# the other operand (`100 * 3`, `1_000`, `-(2 + 3)`, `0xF0 | 0x0F`). `ok` is false whenever
+# the value is not certain: a float, a suffix naming no type (`5_i7`), `~`, a divide or
+# remainder with a negative operand or a zero divisor, a magnitude past 2^40. (A suffixed
+# literal has the value of its digits; it still never ADAPTS -- see isNumLit.) The caller
+# then checks nothing -- zig still sees the expression, so giving up can only miss, never
+# refuse. `huge` marks a LITERAL (or a negated one) past 2^40: certainly too wide for every
+# type checked here. Inside an expression a huge operand gives up instead, since it may
+# cancel (`10_000_000_000_000 - 9_999_999_999_999`).
+struct ConstVal
+    var ok: bool
+    var huge: bool
+    var val: int
+
+    cue init(ok: bool, huge: bool, val: int)
+        .ok = ok
+        .huge = huge
+        .val = val
+
+def constLitValue(e: Expr): ConstVal
+    if e is Expr.int_lit as il
+        if intLitSuffix(il.text) == "?"
+            return ConstVal(false, false, 0)
+        return constTextValue(intLitDigits(il.text), il.base == IntBase.hex)
+    return ConstVal(false, false, 0)
+
+def constTextValue(txt0: str, is_hex: bool): ConstVal
+    var txt: str = txt0
+    if is_hex
+        if not (txt.startsWith("0x") or txt.startsWith("0X"))
+            return ConstVal(false, false, 0)
+        txt = txt.substring(2, txt.len)
+    if txt.len == 0
+        return ConstVal(false, false, 0)
+    var v: int = 0
+    var huge: bool = false
+    var di: int = 0
+    while di < txt.len
+        var d: str = txt.substring(di, di + 1)
+        var dv: int = litDigitValue(d, is_hex)
+        # a decimal separator only BETWEEN two digits; `5_u8` reaches the `u` and gives up
+        var sep: bool = d == "_" and not is_hex and di > 0 and di + 1 < txt.len
+        if sep
+            sep = litDigitValue(txt.substring(di - 1, di), false) >= 0 and litDigitValue(txt.substring(di + 1, di + 2), false) >= 0
+        di = di + 1
+        if not sep
+            if dv < 0
+                return ConstVal(false, false, 0)  # a suffix: carries its own type, left to zig
+            if v > 1099511627776                  # 2^40, past every bound checked: stop growing
+                huge = true
+            else if is_hex
+                v = v * 16 + dv
+            else
+                v = v * 10 + dv
+    if huge or v > 1099511627776
+        return ConstVal(false, true, 0)
+    return ConstVal(true, false, v)
+
+def constIntValue(e: Expr): ConstVal
+    if e is Expr.int_lit
+        return constLitValue(e)
+    if e is Expr.unary as un
+        if un.op == UnaryOp.neg
+            var o: ConstVal = constIntValue(un.operand)
+            if o.ok
+                return ConstVal(true, false, 0 - o.val)
+            return ConstVal(false, o.huge, 0)
+        return ConstVal(false, false, 0)
+    if e is Expr.binary as b
+        return constBinValue(b)
+    return ConstVal(false, false, 0)
+
+def constBinValue(b: ExprBinary): ConstVal
+    const lim: int = 1099511627776            # 2^40
+    var l: ConstVal = constIntValue(b.left)
+    var r: ConstVal = constIntValue(b.right)
+    if not l.ok or not r.ok
+        return ConstVal(false, false, 0)
+    var v: int = 0
+    if b.op == BinaryOp.add
+        v = l.val + r.val
+    else if b.op == BinaryOp.sub
+        v = l.val - r.val
+    else if b.op == BinaryOp.mul
+        var la: int = l.val
+        if la < 0
+            la = 0 - la
+        var ra: int = r.val
+        if ra < 0
+            ra = 0 - ra
+        if ra != 0 and la > lim / ra
+            return ConstVal(false, false, 0)
+        v = l.val * r.val
+    else if b.op == BinaryOp.div or b.op == BinaryOp.mod
+        if l.val < 0 or r.val <= 0
+            return ConstVal(false, false, 0)  # zig's own rules for these; not modelled
+        if b.op == BinaryOp.div
+            v = l.val / r.val
+        else
+            v = l.val % r.val
+    else if b.op == BinaryOp.bit_and
+        v = l.val & r.val
+    else if b.op == BinaryOp.bit_or
+        v = l.val | r.val
+    else if b.op == BinaryOp.bit_xor
+        v = l.val ^ r.val
+    else
+        return ConstVal(false, false, 0)
+    if v > lim or v < 0 - lim
+        return ConstVal(false, false, 0)
+    return ConstVal(true, false, v)
+
+# ── Literal suffixes ─────────────────────────────────────────────────────────
+# ONE reader of a numeric literal's suffix, shared by the checker and both code
+# generators: two copies are how the checker's type and the emitted cast came to
+# disagree (`var b = 0xFF_u8` was typed an int and emitted `var b: i64 = @as(u8, 0xFF)`).
+#
+#   decimal  `_i` / `_u` alone (int, uint) or with 8, 16, 32, 64, 128 bits, the `_`
+#            optional: `300_i16`, `300i16`, `7u`, `1_000_u32`. A bare `_16` is a digit
+#            separator (`300_16` is 30016) and never reaches here.
+#   hex      `_u` / `_u8` ..., and a bare size is the signed type: `0xFF_32` is an int32.
+#
+# The Zebra type the suffix names ("int16", "uint", ...), "" when the literal has none,
+# "?" when it names none (`5_i7`, `5_uint8`, `1.5u`) -- refused by the checker, by name.
+def intLitSuffix(text: str): str
+    var sfx: str = ""
+    if text.startsWith("0x") or text.startsWith("0X")
+        var us: int = text.indexOf("_")
+        if us < 0
+            return ""
+        sfx = text.substring(us + 1, text.len)
+        if sfx.len == 0
+            return ""
+        if not sfx.startsWith("u")
+            sfx = "i" + sfx
+    else
+        var at: int = text.indexOf("i")
+        var au: int = text.indexOf("u")
+        if at < 0 or (au >= 0 and au < at)
+            at = au
+        if at < 0
+            return ""
+        var di: int = 0
+        while di < at
+            var dc: str = text.substring(di, di + 1)
+            if dc != "_" and litDigitValue(dc, false) < 0
+                return "?"                    # `1.5u`, `1e3i32`: not an integer
+            di = di + 1
+        sfx = text.substring(at, text.len)
+    var word: str = "int"
+    if sfx.startsWith("u")
+        word = "uint"
+    var bits: str = sfx.substring(1, sfx.len)
+    if bits == ""
+        return word
+    if bits == "8" or bits == "16" or bits == "32" or bits == "64" or bits == "128"
+        return word + bits
+    return "?"
+
+# The literal's digits without its suffix, as Zig reads them (`1_000_u32` -> `1_000`).
+def intLitDigits(text: str): str
+    if text.startsWith("0x") or text.startsWith("0X")
+        var us: int = text.indexOf("_")
+        if us < 0
+            return text
+        return text.substring(0, us)
+    var at: int = text.indexOf("i")
+    var au: int = text.indexOf("u")
+    if at < 0 or (au >= 0 and au < at)
+        at = au
+    if at < 0
+        return text
+    var d: str = text.substring(0, at)
+    if d.endsWith("_")
+        d = d.substring(0, d.len - 1)
+    return d
+
+# The float suffix as a Zebra type: "float32", "float" (`_f64`), "" for none, "?" for a
+# suffix that names no float type (`1.5f`, `1.5_f16`).
+def floatLitSuffix(text: str): str
+    var fi: int = text.indexOf("f")
+    if fi < 0
+        return ""
+    var sfx: str = text.substring(fi, text.len)
+    if sfx == "f32"
+        return "float32"
+    if sfx == "f64"
+        return "float"
+    return "?"
+
+# The digits of a float literal without its suffix (`1.5_f32` -> `1.5`).
+def floatLitDigits(text: str): str
+    var fi: int = text.indexOf("f")
+    if fi < 0
+        return text
+    var d: str = text.substring(0, fi)
+    if d.endsWith("_")
+        d = d.substring(0, d.len - 1)
+    return d
+
+# The Zig spelling of a Zebra integer type a suffix names ("int16" -> "i16", "uint" -> "u64").
+def suffixZigType(zname: str): str
+    if zname == "int"
+        return "i64"
+    if zname == "uint"
+        return "u64"
+    if zname == "float"
+        return "f64"
+    if zname == "float32"
+        return "f32"
+    if zname.startsWith("uint")
+        return "u" + zname.substring(4, zname.len)
+    return "i" + zname.substring(3, zname.len)
+
+# "" when a suffixed integer literal (negated when `neg`) fits the type its suffix gives
+# it; otherwise why not. Zig refuses `@as(u8, 300)` -- with a message about code the user
+# never wrote -- so the front end refuses it first, at the literal. The sign belongs to the
+# literal (`-128_i8` fits, emitted `@as(i8, -128)`). A 64-bit or wider value is not
+# bounded here past 2^40 (it may not fit an int to compute); only its sign is checked.
+def suffixLitFit(text: str, neg: bool, t: Type_): str
+    var w: int = numWidth(t)
+    var k: int = numKind(t)
+    var shown: str = text
+    if neg
+        shown = "-" + text
+    var hex: bool = text.startsWith("0x") or text.startsWith("0X")
+    var cv: ConstVal = constTextValue(intLitDigits(text), hex)
+    var why: str = shown + " does not fit in '" + numTypeName(t) + "' ("
+    var tail: str = "), the type its suffix gives it"
+    if w >= 64
+        var top: str = "18446744073709551615"
+        var bot: str = "0"
+        var mx: str = "18446744073709551615"
+        var mxh: str = "ffffffffffffffff"
+        if w > 64
+            top = "340282366920938463463374607431768211455"
+            mx = top
+            mxh = "ffffffffffffffffffffffffffffffff"
+        if k == 1
+            top = "9223372036854775807"
+            bot = "-9223372036854775808"
+            mx = top
+            mxh = "7fffffffffffffff"
+            if neg
+                mx = "9223372036854775808"
+                mxh = "8000000000000000"
+            if w > 64
+                top = "170141183460469231731687303715884105727"
+                bot = "-170141183460469231731687303715884105728"
+                mx = top
+                mxh = "7fffffffffffffffffffffffffffffff"
+                if neg
+                    mx = "170141183460469231731687303715884105728"
+                    mxh = "80000000000000000000000000000000"
+        var dg: str = intLitDigits(text)
+        var within: bool = false
+        if hex
+            within = digitsWithin(dg.substring(2, dg.len), mxh)
+        else
+            within = digitsWithin(dg, mx)
+        if (k == 2 and neg and (cv.huge or (cv.ok and cv.val > 0))) or not within
+            return why + bot + ".." + top + tail
+        return ""
+    if not cv.ok and not cv.huge
+        return ""
+    var bits: int = w
+    if k == 1
+        bits = w - 1
+    var hi: int = 1
+    var i: int = 0
+    while i < bits
+        hi = hi * 2
+        i = i + 1
+    var lo: int = 0
+    if k == 1
+        lo = 0 - hi
+    hi = hi - 1
+    var val: int = cv.val
+    if neg
+        val = 0 - val
+    if cv.huge or val < lo or val > hi
+        return why + lo.toString() + ".." + hi.toString() + tail
+    return ""
+
+# The type of a numeric literal (its suffix's, or int / float) and of a negated one;
+# unknown_ for anything else. For the places that type a declaration from its literal
+# initialiser without a context to report in -- inferExpr reports a bad suffix.
+def numLitType(e: Expr): Type_
+    var le: Expr = e
+    if e is Expr.unary as nu
+        if nu.op != UnaryOp.neg
+            return Type_.unknown_
+        le = nu.operand
+    if le is Expr.int_lit as ni
+        var isx: str = intLitSuffix(ni.text)
+        if isx == ""
+            return Type_.int_
+        if isx == "?"
+            return Type_.unknown_
+        return typeFromName(isx)
+    if le is Expr.float_lit as nf
+        var fsx: str = floatLitSuffix(nf.text)
+        if fsx == ""
+            return Type_.float_
+        if fsx == "?"
+            return Type_.unknown_
+        return typeFromName(fsx)
+    return Type_.unknown_
+
+# The type of an integer literal, negated when `neg`, refusing a suffix that names no
+# type and a value that does not fit the type its suffix names.
+def suffixedIntType(il: ExprIntLit, neg: bool, ctx: InferCtx): Type_
+    var sx: str = intLitSuffix(il.text)
+    if sx != "?"
+        var sepw: str = separatorWhy(il.text, intLitDigits(il.text), il.base == IntBase.hex)
+        if sepw != ""
+            ctx.addErr(ctx.file, il.span.line, il.span.col, sepw)
+            return Type_.unknown_
+    if sx == ""
+        return Type_.int_
+    if sx == "?"
+        ctx.addErr(ctx.file, il.span.line, il.span.col, suffixUnknownMsg(il.text))
+        return Type_.unknown_
+    var st: Type_ = typeFromName(sx)
+    var why: str = suffixLitFit(il.text, neg, st)
+    if why != ""
+        ctx.addErr(ctx.file, il.span.line, il.span.col, why)
+    return st
+
+# The Zig type a declaration takes from a numeric literal initialiser (or a negated one):
+# i64 / f64, or the suffix's type. `var x = 5_u8` was emitted `var x: i64 = @as(u8, 5)`,
+# so the variable silently became an i64. "" when `e` is not a numeric literal.
+def numLitZig(e: Expr): str
+    var le: Expr = e
+    if e is Expr.unary as nu
+        le = nu.operand
+    if le is Expr.int_lit as ni
+        var isx: str = intLitSuffix(ni.text)
+        if isx == "" or isx == "?"
+            return "i64"
+        return suffixZigType(isx)
+    if le is Expr.float_lit as nf
+        var fsx: str = floatLitSuffix(nf.text)
+        if fsx == "" or fsx == "?"
+            return "f64"
+        return suffixZigType(fsx)
+    return ""
+
+# "" when `val` fits the narrow integer type `t` (or `t` is 64 bits or wider, or not an
+# integer); otherwise the type and its range, "'byte' (0..255)".
+def narrowRangeWhy(val: int, t: Type_): str
+    var w: int = numWidth(t)
+    var k: int = numKind(t)
+    if w >= 64 or (k != 1 and k != 2)
+        return ""
+    var bits: int = w
+    if k == 1
+        bits = w - 1
+    var hi: int = 1
+    var i: int = 0
+    while i < bits
+        hi = hi * 2
+        i = i + 1
+    var lo: int = 0
+    if k == 1
+        lo = 0 - hi
+    hi = hi - 1
+    if val < lo or val > hi
+        return "'" + numTypeName(t) + "' (" + lo.toString() + ".." + hi.toString() + ")"
+    return ""
+
+def exprHasSuffixedLit(e: Expr): bool
+    if e is Expr.int_lit as hl
+        return intLitSuffix(hl.text) != ""
+    if e is Expr.unary as hu
+        return exprHasSuffixedLit(hu.operand)
+    if e is Expr.binary as hb
+        return exprHasSuffixedLit(hb.left) or exprHasSuffixedLit(hb.right)
+    return false
+
+# A constant expression over a SUFFIXED literal is computed by Zig at compile time, in its
+# type: `200_u8 + 100_u8` was "overflow of integer type 'u8' with value '300'" from inside
+# zig. Refused here, by value, at the expression. Over plain literals Zig computes in
+# comptime_int, unbounded, so only an expression holding a suffix is checked; each binary
+# node is checked as it is typed, so an intermediate that overflows is caught too.
+def suffixedConstFitCheck(b: ExprBinary, t: Type_, ctx: InferCtx)
+    if not exprHasSuffixedLit(b.left) and not exprHasSuffixedLit(b.right)
+        return
+    var cv: ConstVal = constBinValue(b)
+    if not cv.ok
+        return
+    var why: str = narrowRangeWhy(cv.val, t)
+    if why != ""
+        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col),
+                   cv.val.toString() + " (the value of this constant expression) does not fit in " + why + ", the type of its operands -- Zig computes it at compile time")
+
+# A digit separator must sit between two digits: `5_`, `1__000` and `1.5_` are Zig errors
+# about code the user never wrote. "" when the digits are fine.
+def separatorWhy(text: str, digits: str, hex: bool): str
+    var d: str = digits
+    if hex
+        d = digits.substring(2, digits.len)
+    var i: int = 0
+    while i < d.len
+        if d.substring(i, i + 1) == "_"
+            var okl: bool = i > 0 and litDigitValue(d.substring(i - 1, i), hex) >= 0
+            var okr: bool = i + 1 < d.len and litDigitValue(d.substring(i + 1, i + 2), hex) >= 0
+            if not okl or not okr
+                return "'" + text + "': a digit separator `_` must sit between two digits"
+        i = i + 1
+    return ""
+
+# Whether the digits `d` (separators allowed) are at most `max`, compared as numbers in
+# the same base without computing them -- for the 64- and 128-bit bounds an int cannot hold.
+def digitsWithin(d0: str, max: str): bool
+    var d: str = d0.replace("_", "").lower()
+    while d.len > 1 and d.startsWith("0")
+        d = d.substring(1, d.len)
+    if d.len != max.len
+        return d.len < max.len
+    var i: int = 0
+    while i < d.len
+        var dc: str = d.substring(i, i + 1)
+        var mc: str = max.substring(i, i + 1)
+        if dc != mc
+            return litDigitValue(dc, true) < litDigitValue(mc, true)
+        i = i + 1
+    return true
+
+def suffixUnknownMsg(text: str): str
+    if text.startsWith("0x") or text.startsWith("0X")
+        return "'" + text + "' has no type: a hex suffix is _u alone or with 8, 16, 32, 64 or 128 bits, or a bare size for the signed type (`0xFF_u8`, `0xFF_32`)"
+    return "'" + text + "' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits (`300_i16`, `5_u8`, `7u`)"
+
+# "" when the constant `e` (a literal, a negated one, or a constant expression over them --
+# BUG-675) fits in `t`; otherwise why not, naming the value. Only the sized types narrower
+# than 64 bits are checked; a suffixed literal (`5_u8`) carries its own type and is left to Zig.
+def litFitsType(e: Expr, t: Type_): str
+    var w: int = numWidth(t)
+    var k: int = numKind(t)
+    if w >= 64 or (k != 1 and k != 2)
+        return ""
+    var cv: ConstVal = constIntValue(e)
+    if not cv.ok and not cv.huge
+        return ""
+    var shown: str = ""
+    if e is Expr.int_lit as il
+        shown = il.text
+    else if e is Expr.unary as un
+        var ue: Expr = un.operand
+        if ue is Expr.int_lit as nl
+            shown = "-" + nl.text
+    if shown == ""
+        shown = cv.val.toString() + " (the value of this constant expression)"
+    var bits: int = w
+    if k == 1
+        bits = w - 1
+    var hi: int = 1
+    var i: int = 0
+    while i < bits
+        hi = hi * 2
+        i = i + 1
+    var lo: int = 0
+    if k == 1
+        lo = 0 - hi
+    hi = hi - 1
+    if cv.huge or cv.val < lo or cv.val > hi
+        return shown + " does not fit in '" + numTypeName(t) + "' (" + lo.toString() + ".." + hi.toString() + ")"
+    return ""
+
+def wrapSatResultType(lt: Type_, rt: Type_, b: ExprBinary, ctx: InferCtx): Type_
+    var opname: str = wrapSatOpText(b.op)
+    var ln: int = anchorLine(b.left, b.span.line)
+    var cl: int = anchorCol(b.left, b.span.col)
+    var bad: Type_? = nil
+    if isBitwiseOperandMistake(lt)
+        bad = lt
+    else if isBitwiseOperandMistake(rt)
+        bad = rt
+    if bad as bad_t
+        ctx.addErr(ctx.file, ln, cl,
+            wrapSatKindWord(b.op) + " '" + opname + "' requires integer operands, got '" + numTypeName(bad_t) + "'")
+        return Type_.unknown_
+    var l_lit: bool = isNumLit(b.left)
+    var r_lit: bool = isNumLit(b.right)
+    # `<<|`: the result has the LEFT operand's type, as for `<<`; the amount is any integer.
+    if b.op == BinaryOp.shl_sat
+        if isIntegerType(lt)
+            return lt
+        if l_lit
+            return Type_.int_
+        return Type_.unknown_
+    if l_lit and r_lit
+        return Type_.int_                 # two constants: computed as an int (codegen types it)
+    if l_lit
+        var lf: str = litFitsType(b.left, rt)
+        if lf != ""
+            ctx.addErr(ctx.file, ln, cl, lf + ", the type of the other operand of '" + opname + "'")
+        return rt
+    if r_lit
+        var rf: str = litFitsType(b.right, lt)
+        if rf != ""
+            ctx.addErr(ctx.file, anchorLine(b.right, b.span.line), anchorCol(b.right, b.span.col),
+                rf + ", the type of the other operand of '" + opname + "'")
+        return lt
+    # Two integer types join exactly as `+` joins them (numericJoin), and the result wraps
+    # or clamps at the JOINED type; what `+` refuses (a 64-bit unsigned beside a signed
+    # int) is refused here in the same words.
+    if isIntegerType(lt) and isIntegerType(rt) and numTypeName(lt) != numTypeName(rt)
+        var wmsr: str = mixedSignRefusal(lt, rt)
+        if wmsr != ""
+            ctx.addErr(ctx.file, ln, cl, wmsr)
+            return lt
+        var wj: Type_ = numericJoin(lt, rt, false, false)
+        if not (wj is Type_.unknown_)
+            return wj
     if isIntegerType(lt)
         return lt
     return rt
@@ -3233,10 +4120,21 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         on Expr.zig_lit as zl
             checkZigLitTypeRefs(zl, ctx)
             return Type_.unresolved
-        on Expr.int_lit as _
-            return Type_.int_
-        on Expr.float_lit as _
-            return Type_.float_
+        on Expr.int_lit as il_sx
+            return suffixedIntType(il_sx, false, ctx)
+        on Expr.float_lit as fl_sx
+            var fsx: str = floatLitSuffix(fl_sx.text)
+            var fsepw: str = separatorWhy(fl_sx.text, floatLitDigits(fl_sx.text).replace(".", "0").replace("e", "0").replace("E", "0").replace("+", "0").replace("-", "0"), false)
+            if fsepw != ""
+                ctx.addErr(ctx.file, fl_sx.span.line, fl_sx.span.col, fsepw)
+                return Type_.unknown_
+            if fsx == ""
+                return Type_.float_
+            if fsx == "?"
+                ctx.addErr(ctx.file, fl_sx.span.line, fl_sx.span.col,
+                           "'" + fl_sx.text + "' has no type: a float suffix is _f32 or _f64 (`1.5_f32`)")
+                return Type_.unknown_
+            return typeFromName(fsx)
         on Expr.bool_lit as _
             return Type_.bool_
         on Expr.char_lit as _
@@ -3294,6 +4192,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # inferExpr for the outer call.
             if ctx.module_types.hasClass(nm)
                 return Type_.named(nm)
+            # BUG-652: a class this file `use ... exposing`. It was `unresolved`, so a
+            # static call on it (`Util.trim(5)`) missed codegen's user-method dispatch and
+            # took the STRING lowering of a same-named str method (`std.mem.trim(u8, Util,
+            # ...)`). exposedOwner is this file's own list, so a class of a module it does
+            # not use cannot answer here (dep_types alone would: BUG-502's shape).
+            if ctx.module_types.exposedOwner(nm) != nil and ctx.dep_types.hasClass(nm)
+                return Type_.named(nm)
             # Enum type name used as a qualifier (e.g. `Color` in `Color.red`).
             if ctx.hasEnumAny(nm)
                 return Type_.named(nm)
@@ -3311,6 +4216,15 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 return mvt_v
             return Type_.unresolved
         on Expr.member as m
+            # BUG-652: `mod.Class` -- the qualified spelling of the same thing.
+            if m.object is Expr.ident as qmod
+                if ctx.isUsedModule(qmod.name) and not ctx.hasLocal(qmod.name) and ctx.dep_types.hasClass(m.member)
+                    return Type_.named(m.member)
+                # BUG-660: `lib.count`, a used module's top-level var.
+                if ctx.isUsedModule(qmod.name) and not ctx.hasLocal(qmod.name) and ctx.dep_types.hasModuleVar("$mv:" + qmod.name + "." + m.member)
+                    if ctx.dep_types.classOf("$fns:" + qmod.name) as qmv_fns
+                        if qmv_fns.fieldType(m.member) as qmv_t
+                            return qmv_t
             # Phase 17d — infer the object's type recursively, then look up
             # the field through module_types + dep_types. Unwraps `^T` and
             # `T?` because field access through a pointer or nilable has the
@@ -3340,6 +4254,31 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 if m.member == "method" or m.member == "path" or m.member == "content" or m.member == "query"
                     return Type_.string_
             if obj_t is Type_.named as tn
+                # BUG-680: DateTime's fields are computed ints; any other name is refused
+                # (`dt.epochMs` reached zig as "no field named 'epochMs' in '_DateTime'").
+                if tn == "DateTime" and not ctx.hasClassAny("DateTime")
+                    if dateTimeFieldKnown(m.member)
+                        return Type_.int_
+                    var dtf_why: str = "'DateTime' has no field '" + m.member + "'"
+                    if dateTimeMethodKnown(m.member)
+                        dtf_why = "'DateTime." + m.member + "' is a method -- call it: " + m.member + "()"
+                    if m.member == "epochMs" or m.member == "epoch" or m.member == "millis"
+                        dtf_why = dtf_why + "; the milliseconds since the epoch are toEpoch()"
+                    ctx.addErr(ctx.file, m.span.line, m.span.col, dtf_why + dateTimeMemberHint())
+                    return Type_.unknown_
+                # BUG-680: CsvTable / CsvWriter / HttpResponse refuse an unknown field. `t.rows`
+                # was worse than a zig error: `_CsvTable` HAS a Zig field `rows`, so it compiled
+                # and handed back the runtime's raw slices.
+                var rof_ms: str = runtimeObjMethods(tn)
+                if runtimeObjCovered(tn) and not ctx.hasClassAny(tn)
+                    if not ((" " + m.member + " ") in runtimeObjFields(tn))
+                        var rof_why: str = "'" + tn + "' has no field '" + m.member + "'"
+                        if (" " + m.member + " ") in rof_ms
+                            rof_why = "'" + tn + "." + m.member + "' is a method -- call it: " + m.member + "()"
+                        if tn == "HttpResponse" and m.member == "body"
+                            rof_why = rof_why + "; the response body is .text"
+                        ctx.addErr(ctx.file, m.span.line, m.span.col, rof_why + runtimeObjHint(tn))
+                        return Type_.unknown_
                 # Enum member access: Color.red → Type_.named("Color").
                 if ctx.hasEnumAny(tn)
                     return Type_.named(tn)
@@ -3361,7 +4300,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                 # reference (Sean, 2026-10-16) -- not built yet, though BUG-569's shared cells
                 # (2026-10-22) are what it would stand on -- so it is refused rather than
                 # reaching zig.
-                if boundMethodRet(tn, m.member, m.span.line, m.span.col, ctx) as bm_ret
+                if boundMethodRet(tn, m.member, m.object, m.span.line, m.span.col, ctx) as bm_ret
                     return bm_ret
                 if unknownUserMember(tn, m.member, ctx)
                     var owning_mixin: str = mixinOwningField(tn, m.member, ctx)
@@ -3454,6 +4393,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # typeFromName("StrSet") returns Type_.str_set, so the branch returns.
                     if cname == "CsvWriter"
                         return Type_.named(cname)
+                    # BUG-680: the same for ThreadPool, so an un-annotated `var pool =
+                    # ThreadPool(2)` has its methods checked (`pool.submitt(...)` reached zig).
+                    if cname == "ThreadPool" and not ctx.hasClassAny("ThreadPool")
+                        return Type_.named(cname)
                     # BUG-287's rule, in inference too: inside a class, a bare `Widget()`
                     # naming one of ITS methods is that method, even where a class
                     # `Widget` exists (codegen already dispatched it so; the type did not).
@@ -3480,7 +4423,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     if ctx.hasLocal(cname)
                         var lt: Type_ = ctx.localType(cname)
                         if lt is Type_.fn_type_ as fret
-                            return typeFromRef(fret)
+                            return typeFromRef(fret.ret)
                     # Bare call: check current class first, then module-level
                     # functions registered under the "" sentinel in ModuleTypes.
                     if ctx.current_class != ""
@@ -3525,6 +4468,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if ctx.methodReturnAny(bname, mem.member) as user_static_ret
                                 ctx.noteDeprecated(bname, mem.member, mem.span.line, mem.span.col)
                                 return user_static_ret
+                        # BUG-641: a qualified call to a used module's top-level def, `lib.f()`,
+                        # typed from that module's own `$fns:<mod>` facts (BUG-604) -- the
+                        # exposed spelling `f()` always was. Without it every un-annotated
+                        # `var x = lib.f()` was untyped and `.len` / `.add()` on it refused.
+                        if ctx.isUsedModule(bname) and not ctx.hasLocal(bname) and not ctx.hasClassAny(bname)
+                            if ctx.dep_types.classOf("$fns:" + bname) as qual_fns
+                                if qual_fns.methodReturn(mem.member) as qual_rt
+                                    return qual_rt
                         # The frame-callback `Gui.run(title, w, h, frame)` retired 2026-09-21
                         # (CHANGELOG): its only reason to exist was the value-returning
                         # widgets, which went with it. Six arguments or a refusal that names
@@ -3631,8 +4582,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # output, valid Zig). `hostname` is not a sys function.
                         if bname == "sys" and mem.member == "cwd"
                             return Type_.string_
+                        if bname == "sys" and mem.member == "exec_inherit"   # BUG-252: the child's exit code
+                            return Type_.int_
+                        # BUG-639: untyped, so `var e = sys.selfExe()` then `e.len()` was
+                        # lowered as a List length (`.items`) and failed inside zig.
+                        if bname == "sys" and mem.member == "selfExe"
+                            return Type_.string_
                         if bname == "Arg" and mem.member == "parse"
                             return Type_.named("$Arg")
+                        if bname == "Base64" and not ctx.hasLocal(bname) and not ctx.hasClassAny(bname)   # BUG-252
+                            if mem.member == "decode" or mem.member == "decodeUrl"
+                                return Type_.optional(Type_.string_)
+                            if mem.member == "encode" or mem.member == "encodeUrl"
+                                return Type_.string_
                         if bname == "Compress"
                             # QUICKSTART said List(byte); the runtime returns str (gunzip: str?).
                             if mem.member == "gunzip"
@@ -3644,6 +4606,20 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             return Type_.void_
                         if bname == "Build" and mem.member == "new"
                             return Type_.build_ctx
+                        # BUG-685: Http.serve's handler takes the request and RETURNS the
+                        # response. A `def(req, res)` handler writing into `res` passed -c and
+                        # failed inside the runtime's Zig ("expected type '*const fn
+                        # (zebra_rt.HttpRequest) T'") -- the book carried one for months.
+                        if bname == "Http" and mem.member == "serve" and not ctx.hasClassAny("Http") and c.args.len >= 2
+                            checkHttpServeHandler(c.args.at(1).value, mem.span, ctx)
+                        # BUG-689: the client calls were untyped, so `var r = Http.get(u)`
+                        # bound an unknown and `r!.body` (the field is `text`) passed -c and
+                        # failed inside zig. Annotated `HttpResponse?` was already checked.
+                        if bname == "Http" and not ctx.hasClassAny("Http") and not ctx.hasClassAny("HttpResponse")
+                            if mem.member == "get" or mem.member == "post" or mem.member == "json" or mem.member == "postJson"
+                                return Type_.optional(Type_.named("HttpResponse"))
+                            if mem.member == "serve"
+                                return Type_.void_
                         if bname == "Ws"
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)
@@ -3694,14 +4670,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(Type_.string_)
                             # BUG-398: anything else was typed str? and then a
                             # @compileError in codegen ("unreachable code" one line on).
-                            ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'Crypto' has no function '" + mem.member + "' (encrypt/decrypt/deriveKey)")
+                            # BUG-638: refused by the general namespace check.
+                            checkNamespaceMember(bname, mem, ctx)
                             return Type_.unknown_
                         if bname == "DateTime" and not ctx.hasClassAny("DateTime")
                             if mem.member != "now" and mem.member != "fromEpoch" and mem.member != "of"
                                 # BUG-398: `DateTime.listZones()` does not exist and `inZone`
                                 # is an instance method; both were a @compileError.
-                                ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'DateTime' has no static function '" + mem.member + "' (now/fromEpoch/of; inZone and the rest are methods on a DateTime value)")
+                                # BUG-638: refused by the general namespace check.
+                                checkNamespaceMember(bname, mem, ctx)
                                 return Type_.unknown_
+                            # BUG-680: a DateTime value, so its members are checked.
+                            return Type_.named("DateTime")
                         if bname == "Json"
                             if mem.member == "object" or mem.member == "array"
                                 return Type_.json_value
@@ -3732,6 +4712,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # to have a receiver type to dispatch on at all.
                         if bname == "HttpResponse"
                             return Type_.named("HttpResponse")
+                        if bname == "HttpRequest" and mem.member == "new"   # BUG-449
+                            return Type_.http_request
                     # ── Json static-method TC inference ──
                     #
                     # `Json.parse`, `Json.stringify`, `Json.parseStrict(T, src)`
@@ -3840,6 +4822,24 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                        "'float' has no method '" + mem.member + "' (toInt/toFloat32/toString; abs, floor, ceil, round, sqrt are Math.* functions)")
                             return Type_.unknown_
                         on Type_.named as tn
+                            # BUG-680: DateTime's methods, typed; any other name refused.
+                            if tn == "DateTime" and not ctx.hasClassAny("DateTime")
+                                if not dateTimeMethodKnown(mem.member)
+                                    var dt_why: str = "'DateTime' has no method '" + mem.member + "'"
+                                    if dateTimeFieldKnown(mem.member)
+                                        dt_why = "'DateTime." + mem.member + "' is a field, not a method -- drop the ()"
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col, dt_why + dateTimeMemberHint())
+                                    return Type_.unknown_
+                                return dateTimeMethodType(mem.member)
+                            # BUG-680: CsvTable / CsvWriter / HttpResponse refuse an unknown method.
+                            var ro_ms: str = runtimeObjMethods(tn)
+                            if runtimeObjCovered(tn) and not ctx.hasClassAny(tn)
+                                if not ((" " + mem.member + " ") in ro_ms)
+                                    var ro_why: str = "'" + tn + "' has no method '" + mem.member + "'"
+                                    if (" " + mem.member + " ") in runtimeObjFields(tn)
+                                        ro_why = "'" + tn + "." + mem.member + "' is a field, not a method -- drop the ()"
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col, ro_why + runtimeObjHint(tn))
+                                    return Type_.unknown_
                             # §28a: the ObjectPool(T) runtime API (_ObjectPool in the preamble).
                             if tn.startsWith("Atomic(") and tn.endsWith(")")
                                 var at_t: Type_ = typeFromName(tn.substring(7, tn.len - 1))
@@ -4047,29 +5047,27 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             if cemn == "hotkey"
                                 return Type_.void_
                         on Type_.string_builder
-                            if not stringBuilderMethodKnown(mem.member)
-                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'StringBuilder' has no method '" + mem.member + "' (append/appendChar/add/build/toString/clear/len)")
-                                return Type_.unknown_
                             var sbmname: str = mem.member
+                            # BUG-341. The receiver is KNOWN to be a StringBuilder and its
+                            # method set is closed, yet an unknown name fell through to the
+                            # List lowering and the user read Zig's `expected type 'u8'` about
+                            # an `append` they never wrote. Refuse here, where the type is
+                            # proven. `add` gets its own suggestion: it is the List spelling.
+                            # BUG-645: this is the ONE refusal; stringBuilderMethodKnown is the
+                            # method set (docs/SURFACE.md is derived from it), so it must not
+                            # admit a name that is refused here.
+                            if not stringBuilderMethodKnown(sbmname)
+                                var sb_hint: str = ""
+                                if sbmname == "add"
+                                    sb_hint = " (did you mean 'append'?)"
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'StringBuilder' has no '" + sbmname + "'" + sb_hint + " -- methods are append, appendChar, clear, len, build, toString")
+                                return Type_.unknown_
                             if sbmname == "build" or sbmname == "toString"
                                 return Type_.string_
                             if sbmname == "len"
                                 return Type_.int_
-                            if sbmname == "append" or sbmname == "appendChar" or sbmname == "clear"
-                                return Type_.void_
-                            # BUG-341. The receiver is KNOWN to be a StringBuilder and its
-                            # method set is closed (the six names above), yet an unknown name
-                            # fell through to the List lowering and the user read Zig's
-                            # `expected type 'u8'` about an `append` they never wrote. Refuse
-                            # here, where the type is proven. `add` gets its own suggestion:
-                            # it is the List spelling, and the IDE slice wrote it first.
-                            var sb_hint: str = ""
-                            if sbmname == "add"
-                                sb_hint = " (did you mean 'append'?)"
-                            ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                       "'StringBuilder' has no '" + sbmname + "'" + sb_hint + " -- methods are append, appendChar, clear, len, build, toString")
-                            return Type_.unknown_
+                            return Type_.void_
                         on Type_.sys_process
                             if not sysProcessMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
@@ -4158,10 +5156,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         on Type_.sqlite_db
                             if not sqliteDbMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/begin/commit/rollback/close)")
+                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/querySegments/begin/commit/rollback/close)")
                                 return Type_.unknown_
                             var sqmname: str = mem.member
-                            if sqmname == "query"
+                            if sqmname == "query" or sqmname == "querySegments"
                                 return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
                             return Type_.void_  # exec, begin, commit, rollback, close
                         on Type_.sqlite_row
@@ -4201,6 +5199,17 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                            "'Gui' has no method '" + mem.member + "' (QUICKSTART §30 lists the Gui widget calls)")
                                 return Type_.unknown_
+                            # BUG-252: the getters' results were untyped. The three GuiContext
+                            # definitions (stub, tui, libui_ng) declare these and agree.
+                            var gmn: str = mem.member
+                            if gmn == "takeKey" or gmn == "tabSelected" or gmn == "tableSelectedRow" or gmn == "tableActivatedRow"
+                                return Type_.int_
+                            if gmn == "getDpi" or gmn == "canvasWidth" or gmn == "canvasHeight"
+                                return Type_.float_
+                            if gmn == "beginTable"
+                                return Type_.bool_
+                            if gmn == "openFile" or gmn == "saveFile" or gmn == "openFolder"
+                                return Type_.optional(Type_.string_)
                         on Type_.http_request
                             if not httpRequestMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
@@ -4239,6 +5248,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(list_elem)
                             if lmname == "contains"
                                 return Type_.bool_
+                            # BUG-252: the runtime types a fold by its function's result, which
+                            # is only knowable here when the init and the element agree (an int
+                            # init over a float list folds to float).
+                            if lmname == "reduce" and c.args.len == 2
+                                var red_init: Type_ = inferExpr(c.args.at(0).value, ctx)
+                                if isConcretePrimitive(red_init) and typeTag(red_init) == typeTag(list_elem)
+                                    return red_init
                             # BUG-369: an unknown List method was a Zig error about `.items`.
                             if ctx.methodReturnAny("$extend:List", lmname) as lext_ret
                                 return lext_ret
@@ -4272,6 +5288,12 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.bool_
                             if jmname == "stringify"
                                 return Type_.string_
+                            if jmname == "values" or jmname == "entries"
+                                # BUG-691: listed as known and never implemented -- they reached
+                                # the Map helpers and failed inside zig (`no member named 'KV'`)
+                                ctx.addErr(ctx.file, mem.span.line, mem.span.col,
+                                           "'JsonValue' has no method '" + jmname + "': an array's elements are `tryList()` (List(JsonValue)?), an object's member names `keys()` -- read each member with get(k)")
+                                return Type_.unknown_
                             if not jsonMethodKnown(jmname)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
                                            "'JsonValue' has no method '" + jmname + "' (read with j[\"k\"]? or has/get/tryStr/tryInt/tryFloat/tryBool/tryObj/tryList; also keys, isNull/isObject/isArray, put*/append*, stringify)")
@@ -4413,7 +5435,7 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # through a local of that type already did.
                     var oc_t: Type_ = inferExpr(c.callee, ctx)
                     if oc_t is Type_.fn_type_ as oc_ret
-                        return typeFromRef(oc_ret)
+                        return typeFromRef(oc_ret.ret)
                     if oc_t is Type_.named as oc_nm
                         if ctx.methodReturnAny("$sig:" + oc_nm, "call") as oc_sig_rt
                             return oc_sig_rt
@@ -4434,7 +5456,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
             # §28a: a lambda with a declared return type is a callable of that type,
             # so `var inner = def(): int ...` then `inner() + 10` is typed.
             if elam.return_type != nil
-                return Type_.fn_type_(elam.return_type!)
+                var elps: List(Type_) = List(Type_)()
+                for elp in elam.params
+                    if elp.type_ as elpt
+                        elps.add(typeFromRef(elpt))
+                    else
+                        elps.add(Type_.unknown_)
+                return Type_.fn_type_(FnType_(elam.return_type!, elps, elps.len))
             return Type_.unknown_
         on Expr.old_ as eold
             # `old x` in an ensure is a snapshot of x taken at entry: x's type
@@ -4520,6 +5548,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.named(simdMaskName(simd_tn))
                 if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div
                     return Type_.named(simd_tn)
+                if isWrapSatOp(b.op)
+                    # lane-wise wrapping / saturating: Zig's own operators on integer lanes
+                    if b.op == BinaryOp.shl_sat
+                        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col),
+                            "'<<|' is not mapped for SIMD vectors (" + simd_tn + ") -- shift each lane, or use the wrapping and saturating `+ - *`, which work lane-wise")
+                    else if simd_tn.startsWith("f") or simd_tn.startsWith("bool")
+                        ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col),
+                            "'" + wrapSatOpText(b.op) + "' is not defined on a " + simd_tn + " vector -- wrapping and saturating `+ - *` work lane-wise on INTEGER lanes only")
+                    return Type_.named(simd_tn)
+            # Wrapping and saturating arithmetic takes the type of its operands, never a join.
+            if isWrapSatOp(b.op)
+                return wrapSatResultType(lt, rt, b, ctx)
             # BUG-445: mixed numeric arithmetic takes the wider type (numericJoin).
             if b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
                 if isNumeric(lt) and isNumeric(rt)
@@ -4528,9 +5568,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         msr = ""                        # a literal adapts to the other side
                     if msr != ""
                         ctx.addErr(ctx.file, anchorLine(b.left, b.span.line), anchorCol(b.left, b.span.col), msr)
-                        return lt
+                        return Type_.unknown_       # refused: no type, so no second error at the slot (BUG-673)
+                    literalOperandFitCheck(lt, rt, b, ctx)           # BUG-672
                     var nj: Type_ = numericJoin(lt, rt, isNumLit(b.left), isNumLit(b.right))
                     if not (nj is Type_.unknown_)
+                        suffixedConstFitCheck(b, nj, ctx)
                         return nj
             branch b.op
                 on BinaryOp.add
@@ -4605,6 +5647,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     if isNumeric(lt)
                         return lt
                     return rt
+                # BUG-678: `%` had no arm, so two constants (`100 % 7`) fell to unknown_ and
+                # `n + 100 % 7` was refused as "cannot infer".
+                on BinaryOp.mod
+                    arithOperandCheck(lt, rt, b, "%", ctx)
+                    if isNumeric(lt)
+                        return lt
+                    return rt
                 on BinaryOp.eq
                     compareOperandCheck(lt, rt, b, "==", ctx)
                     charStrCompareCheck(lt, rt, b, "==", ctx)
@@ -4631,7 +5680,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.bool_
                 on BinaryOp.in_
                     return Type_.bool_
-                # Bitwise PRESERVES the operand type -- the rule the bootstrap has had at
+                # Bitwise PRESERVES the operand type when both operands share it (two
+                # different integer types join as `+` does, BUG-674) -- the rule the bootstrap had at
                 # src/TypeChecker.zig:4306 all along. That is what makes `>>` follow the
                 # type (arithmetic on int, logical on uint) instead of needing a `>>>`
                 # operator the way Java does, and it is why an unsigned hash stays unsigned.
@@ -4674,6 +5724,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         #   not_     always bool_
         #   bit_not  operand type, preserved
         on Expr.unary as eun
+            var un_opd: Expr = eun.operand
+            if eun.op == UnaryOp.neg
+                if un_opd is Expr.int_lit as un_il
+                    if intLitSuffix(un_il.text) != ""
+                        return suffixedIntType(un_il, true, ctx)
             var un_t: Type_ = inferExpr(eun.operand, ctx)
             var un_ln: int = exprSpanLine(eun.operand)
             var un_cl: int = exprSpanCol(eun.operand)
@@ -4754,6 +5809,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
         on Expr.chained_cmp as cc
             for op in cc.operands
                 walkExpr(op, ctx)
+            return Type_.bool_
+        # BUG-252: `x is T` / `x is U.v` and `x is nil` are bool; both fell to `else`.
+        on Expr.type_check as etc
+            walkExpr(etc.expr, ctx)
+            return Type_.bool_
+        on Expr.is_nil as eisn
+            walkExpr(eisn.expr, ctx)
             return Type_.bool_
         on Expr.opt_chain as oc
             # Infer args so their types are recorded.
@@ -4937,7 +5999,7 @@ def isStrListCallExpr(e: Expr): bool
 def isSqliteQueryCallExpr(e: Expr, ctx: InferCtx): bool
     if e is Expr.call as cal
         if cal.callee is Expr.member as mem
-            if mem.member == "query"
+            if mem.member == "query" or mem.member == "querySegments"
                 if mem.object is Expr.ident as id
                     var ot: Type_ = ctx.localType(id.name)
                     if ot is Type_.sqlite_db
@@ -4996,6 +6058,8 @@ def copyReceiverName(recv: Expr, ctx: InferCtx): str
 # and had no destructure arm, so `var (x, z) = ("ab", 0)` in a sibling block kept the earlier
 # block's `var x: int` and `x.upper()` was refused.
 def bindDestructNames(sds: StmtDestruct, ctx: InferCtx)
+    for dvn in sds.names
+        ctx.markVarLocal(dvn)                               # BUG-596
     var rt: Type_ = inferExpr(sds.init_expr, ctx)
     if rt is Type_.ref_to as dr
         rt = dr
@@ -5042,6 +6106,32 @@ def walkStmts(stmts: List(Stmt), ctx: InferCtx)
     while eei >= 0
         ctx.bind(ee_names.at(eei), ee_saved.at(eei))
         eei -= 1
+
+# The type an `if COND as n` / `else if COND as n` binds `n` to: a union variant's
+# payload for `x is U.v as n`, the inner T for `x is T as n` / `x as n` over a T?, and
+# context_dependent when neither applies. walkStmt's main `if` keeps its own copy
+# because it also refuses `as` on a non-optional and allows `orelse`; the else-if arm
+# and the check pass both use this one (BUG-252: the check pass bound every
+# `is U.v as n` capture as context_dependent, so a field read on it was untyped).
+def ifCaptureType(cond: Expr, ctx: InferCtx): Type_
+    if cond is Expr.type_check as tce
+        if tce.variant_name as var_nm
+            var pt: Type_? = ctx.module_types.variantPayload(tce.type_name, var_nm)
+            if pt == nil
+                pt = ctx.dep_types.variantPayload(tce.type_name, var_nm)
+            if pt as cap_pt
+                return cap_pt
+            return Type_.context_dependent
+        var subj_t: Type_ = inferExpr(tce.expr, ctx)
+        if subj_t is Type_.optional as inner
+            return inner
+        return Type_.context_dependent
+    var cond_t: Type_ = inferExpr(cond, ctx)
+    if cond_t is Type_.ref_to as rt
+        cond_t = rt
+    if cond_t is Type_.optional as inner2
+        return inner2
+    return Type_.context_dependent
 
 def walkStmt(s: Stmt, ctx: InferCtx)
     branch s
@@ -5123,26 +6213,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
             for ei in si.else_ifs
                 walkExpr(ei.cond, ctx)
                 if ei.is_capture as ei_cap_name
-                    var ei_cap_t: Type_ = Type_.context_dependent
-                    if ei.cond is Expr.type_check as eice
-                        if eice.variant_name as e_var_nm
-                            var e_type_nm: str = eice.type_name
-                            var e_pt: Type_? = ctx.module_types.variantPayload(e_type_nm, e_var_nm)
-                            if e_pt == nil
-                                e_pt = ctx.dep_types.variantPayload(e_type_nm, e_var_nm)
-                            if e_pt as ei_cap_pt
-                                ei_cap_t = ei_cap_pt
-                        else
-                            var ei_subj_t: Type_ = inferExpr(eice.expr, ctx)
-                            if ei_subj_t is Type_.optional as ei_inner
-                                ei_cap_t = ei_inner
-                    else
-                        var ei_cond_t: Type_ = inferExpr(ei.cond, ctx)
-                        if ei_cond_t is Type_.ref_to as ei_rt
-                            ei_cond_t = ei_rt
-                        if ei_cond_t is Type_.optional as ei_inner
-                            ei_cap_t = ei_inner
-                    ctx.bind(ei_cap_name, ei_cap_t)
+                    ctx.bind(ei_cap_name, ifCaptureType(ei.cond, ctx))
                 walkStmts(ei.stmts, ctx)
             if si.else_stmts as se
                 walkStmts(se, ctx)
@@ -5303,6 +6374,12 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                         var cmsr: str = mixedSignRefusal(lhs_t, crt)
                         if isNumLit(sasn.value)
                             cmsr = ""
+                            # BUG-672: `x += 300` on a byte -- the literal takes x's type
+                            if compoundCoercesLiteral(sasn.op)
+                                var cfit: str = litFitsType(sasn.value, lhs_t)
+                                if cfit != ""
+                                    ctx.addErr(ctx.file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                               cfit + ", the type of the variable it combines with")
                         if cmsr != ""
                             ctx.addErr(ctx.file, anchorLine(sasn.target, sasn.span.line), anchorCol(sasn.target, sasn.span.col), cmsr)
                         else if numKind(lhs_t) != 3 and numKind(crt) == 3
@@ -5320,6 +6397,7 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                 if dv.init_expr != nil
                     t = inferExpr(dv.init_expr!, ctx)
             ctx.bind(dv.name, t)
+            ctx.markVarLocal(dv.name)                        # BUG-596
             ctx.unmarkOpaqueLambda(dv.name)
             if dv.type_ == nil and dv.init_expr != nil
                 if dv.init_expr! is Expr.lambda as dvlam
@@ -5520,8 +6598,8 @@ def checkLiteralHomogeneity(elems: List(Expr), kind: str, ctx: InferCtx)
 # BUG-431 (second half, 2026-09-18): an `int` VALUE flowing into a `byte` slot. Zig folds a
 # literal (`buf[k] = 2`, `var b: byte = 3 * 4`) but refuses a runtime i64 ("expected type
 # 'u8', found 'i64'") -- valid Zebra by the checker, a zig error by the compile. Refused
-# here, naming `.toByte()`. Only a NAMED value counts (an ident, member, call, index);
-# literals and arithmetic on them are left to zig, which folds them.
+# here, naming `.toByte()`. A NAMED value counts (an ident, member, call, index), and so does
+# arithmetic on one (BUG-673); literals and arithmetic on them are left to zig, which folds them.
 def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
     var is_byte: bool = false
     if declared is Type_.uint_n as dn
@@ -5540,6 +6618,11 @@ def narrowsIntToByte(declared: Type_, inferred: Type_, e: Expr): bool
             return true
         on Expr.index as _
             return true
+        on Expr.binary as nb
+            # a wrapping / saturating result has the operands' joined type (wrapSatResultType);
+            # so does `+ - * / %` (BUG-673: `b = b + n` with n an int is an int). A constant
+            # (`3 * 4`) is folded by zig and fits, so it is left alone.
+            return isWrapSatOp(nb.op) or (isJoinedArithOp(nb.op) and not isNumLit(e))
         else
             return false
 
@@ -5585,7 +6668,7 @@ def sizedIntMethodType(name: str): Type_
 # 'i64'"). Zig coerces only when the slot holds every value of the source: same sign and
 # at least as wide, or unsigned into a strictly wider signed. Returns the hint naming the
 # conversion, "" when the flow is fine. The byte case keeps BYTE_NARROW_HINT (`.toByte()`).
-# Same shapes as narrowsIntToByte: literals and arithmetic are left to zig, which folds them.
+# Same shapes as narrowsIntToByte: literals and constant arithmetic are left to zig, which folds them.
 def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
     var dk: int = numKind(declared)
     var sk: int = numKind(inferred)
@@ -5600,6 +6683,10 @@ def intNarrowHint(declared: Type_, inferred: Type_, e: Expr): str
             pass
         on Expr.index as _
             pass
+        on Expr.binary as nb
+            # a wrap/sat or `+ - * / %` result is typed by its join (BUG-673); a constant is folded
+            if not (isWrapSatOp(nb.op) or (isJoinedArithOp(nb.op) and not isNumLit(e)))
+                return ""
         else
             return ""
     var dw: int = numWidth(declared)
@@ -5795,6 +6882,10 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     var exp: Type_ = expected!  # safe: nil checked above
     if inferred is Type_.context_dependent
         return exp
+    var fv_why: str = fnValueMismatch(exp, inferred, ctx)   # BUG-630
+    if fv_why != ""
+        ctx.addErr(file, d_line, d_col, "a function cannot go into this function-typed slot: " + fv_why)
+        return exp
     if exp is Type_.named as exp_class
         # Type aliases are transparent — skip conformance check when expected is an alias.
         if ctx.isTypeAlias(exp_class)
@@ -5813,12 +6904,22 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if ex_hint != ""
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + numTypeName(exp) + ", got " + numTypeName(inferred) + " " + ex_hint)
         return exp
+    if containerMismatch(exp, inferred, e)
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + userTypeName(exp) + ", got " + userTypeName(inferred))
+        return exp
     if not isPrimitive(exp)
         return inferred
     if optionalIntoPlain(exp, inferred)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(exp) + "? " + UNWRAP_HINT)
         return exp
     if not isPrimitive(inferred)
+        # BUG-650: an argument or return value that is an enum / union / class value.
+        var ce_np: str = namedIntoPrimitive(inferred, ctx)
+        if ce_np == ""
+            ce_np = bareUnionVariant(e, ctx)
+        if ce_np != ""
+            ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + ce_np)
+            return exp
         return inferred
     if not typesCompatible(exp, inferred)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + typeTag(exp) + ", got " + typeTag(inferred))
@@ -5839,6 +6940,140 @@ def optionalIntoPlain(declared: Type_, inferred: Type_): bool
         if isPrimitive(inner)
             return typesCompatible(declared, inner)
     return false
+
+# BUG-626: a container whose ELEMENT type differs from the slot's -- `List(int)` passed for a
+# `List(str)`, `List(int?)` into a `List(int)` -- passed -c and failed inside zig. Only a
+# DEFINITE difference counts: both sides a primitive (int/uint/float/bool/char/str), an
+# optional of one against a plain one, or containers of those, recursively. A named class, a
+# generic parameter, a sized integer, a tuple or anything inferred `unknown` is left to zig,
+# so an inference gap can never turn into a refusal. A literal is never checked: its
+# elements take the slot's type (`var xs: List(float) = [1, 2]`).
+def containerMismatch(declared: Type_, inferred: Type_, e: Expr): bool
+    if e is Expr.list_lit or e is Expr.set_lit or e is Expr.dict_lit
+        return false
+    return containersDiffer(declared, inferred)
+
+def containersDiffer(a: Type_, b: Type_): bool
+    if a is Type_.list_ as al
+        if b is Type_.list_ as bl
+            return elemsDiffer(al, bl)
+        return false
+    if a is Type_.set_ as aset
+        if b is Type_.set_ as bset
+            return elemsDiffer(aset, bset)
+        return false
+    if a is Type_.chan_ as ach
+        if b is Type_.chan_ as bch
+            return elemsDiffer(ach, bch)
+        return false
+    if a is Type_.hashmap_ as ahm
+        if b is Type_.hashmap_ as bhm
+            return elemsDiffer(ahm.key_t, bhm.key_t) or elemsDiffer(ahm.val_t, bhm.val_t)
+        return false
+    return false
+
+def isContainerType(t: Type_): bool
+    return t is Type_.list_ or t is Type_.set_ or t is Type_.chan_ or t is Type_.hashmap_
+
+def isDefiniteElem(t: Type_): bool
+    return isPrimitive(t) or isContainerType(t)
+
+def elemsDiffer(a: Type_, b: Type_): bool
+    if a is Type_.optional as ao
+        if b is Type_.optional as bo
+            return elemsDiffer(ao, bo)
+        return isDefiniteElem(b)
+    if b is Type_.optional
+        return isDefiniteElem(a)
+    if isPrimitive(a) and isPrimitive(b)
+        return typeTag(a) != typeTag(b)
+    if isContainerType(a) and isContainerType(b)
+        if containersDiffer(a, b)
+            return true
+        # Two different container kinds (List against Set) are a difference too.
+        return containerKind(a) != containerKind(b)
+    if isPrimitive(a) and isContainerType(b)
+        return true
+    if isContainerType(a) and isPrimitive(b)
+        return true
+    return false
+
+def containerKind(t: Type_): str
+    if t is Type_.list_
+        return "List"
+    if t is Type_.set_
+        return "Set"
+    if t is Type_.chan_
+        return "Chan"
+    if t is Type_.hashmap_
+        return "HashMap"
+    return ""
+
+# BUG-630: a function VALUE flowing into a function-typed slot -- an inline `def(P): R` or a
+# `sig` -- with a different arity, parameter type or return type passed -c and failed inside
+# the runtime's `_ZbrFn.from`, a line the user never wrote. "" when the shapes agree or are
+# not both known; otherwise the reason, for the message. Types compare by `elemsDiffer`
+# (BUG-626's definite-difference rule), so an unwritten or unknown type is never refused.
+def fnValueMismatch(slot: Type_, val: Type_, ctx: InferCtx): str
+    if not (val is Type_.fn_type_)
+        return ""
+    var s_known: bool = false
+    var s_params: List(Type_) = List(Type_)()
+    var s_arity: int = -1
+    var s_ret: Type_ = Type_.unknown_
+    var st: Type_ = slot
+    if st is Type_.optional as so
+        st = so
+    if st is Type_.fn_type_ as sf
+        s_known = true
+        s_params = sf.params
+        s_arity = sf.arity
+        s_ret = typeFromRef(sf.ret)
+    else if st is Type_.named as sn
+        if ctx.fnParamListAny("$sig:" + sn, "call") as sps
+            s_known = true
+            for sp in sps
+                if sp.type_ as spt
+                    s_params.add(typeFromRef(spt))
+                else
+                    s_params.add(Type_.unknown_)
+            s_arity = s_params.len
+            if ctx.methodReturnAny("$sig:" + sn, "call") as srt
+                s_ret = srt
+    if not s_known
+        return ""
+    if val is Type_.fn_type_ as vf
+        if vf.arity >= 0 and s_arity >= 0 and vf.arity != s_arity
+            return "it takes " + vf.arity.toString() + " argument(s) where " + s_arity.toString() + " are expected"
+        var i: int = 0
+        while i < vf.params.len and i < s_params.len
+            if elemsDiffer(s_params.at(i), vf.params.at(i))
+                return "its parameter " + (i + 1).toString() + " is " + userTypeName(vf.params.at(i)) + " where " + userTypeName(s_params.at(i)) + " is expected"
+            i += 1
+        var v_ret: Type_ = typeFromRef(vf.ret)
+        if elemsDiffer(s_ret, v_ret)
+            return "it returns " + userTypeName(v_ret) + " where " + userTypeName(s_ret) + " is expected"
+    return ""
+
+# The spelling a user writes, for the BUG-626 message: `List(int?)`, `HashMap(str, int)`.
+def userTypeName(t: Type_): str
+    if t is Type_.optional as o
+        return userTypeName(o) + "?"
+    if t is Type_.list_ as l
+        return "List(" + userTypeName(l) + ")"
+    if t is Type_.set_ as st
+        return "Set(" + userTypeName(st) + ")"
+    if t is Type_.chan_ as ch
+        return "Chan(" + userTypeName(ch) + ")"
+    if t is Type_.hashmap_ as hm
+        return "HashMap(" + userTypeName(hm.key_t) + ", " + userTypeName(hm.val_t) + ")"
+    if t is Type_.float_
+        return "float"          # typeTag spells it `flt`
+    if isPrimitive(t)
+        return typeTag(t)
+    if t is Type_.named as n
+        return n
+    return "?"
 
 # Reconstruct a primitive Type_ from a typeTag string. Returns nil for
 # non-primitive tags so checkCallExpr skips those param positions.
@@ -5867,7 +7102,45 @@ def paramTypeFromTag(tag: str): Type_?
         return Type_.char_
     if tag == "str"
         return Type_.string_
+    # BUG-626: a container parameter, so its argument's element type is compared. An element
+    # this cannot decode (`opt` carries no payload, a class, a sized int) is `unknown`, which
+    # the comparison never refuses on.
+    if tag.endsWith(")")
+        var open_at: int = tag.indexOf("(")
+        if open_at > 0
+            var kind: str = tag[0 .. open_at]
+            var inner: str = tag[open_at + 1 .. tag.len - 1]
+            if kind == "list"
+                return Type_.list_(paramElemFromTag(inner))
+            if kind == "set"
+                return Type_.set_(paramElemFromTag(inner))
+            if kind == "chan"
+                return Type_.chan_(paramElemFromTag(inner))
+            if kind == "hmap"
+                var comma_at: int = topLevelComma(inner)
+                if comma_at > 0
+                    return Type_.hashmap_(HashMapType_(paramElemFromTag(inner[0 .. comma_at]), paramElemFromTag(inner[comma_at + 1 .. inner.len])))
     return nil
+
+def paramElemFromTag(tag: str): Type_
+    if paramTypeFromTag(tag) as t
+        return t
+    return Type_.unknown_
+
+# The index of the first comma not inside parentheses, or -1.
+def topLevelComma(s: str): int
+    var depth: int = 0
+    var i: int = 0
+    while i < s.len
+        var c: str = s[i .. i + 1]
+        if c == "("
+            depth += 1
+        else if c == ")"
+            depth -= 1
+        else if c == "," and depth == 0
+            return i
+        i += 1
+    return -1
 
 # Check argument types against declared param types at a call site.
 # Only catches primitive-to-primitive mismatches; skips named args, non-primitive
@@ -6101,7 +7374,103 @@ def namedArgsIsStruct(name: str, ctx: InferCtx): bool
         return dct.is_struct
     return false
 
+# BUG-449: `HttpRequest(method, path, content = "", query = "")`, or `HttpRequest.new(...)`
+# -- the request a handler receives, built by hand, so a router can be tested without a
+# server. Its four fields are the slots, in that order; method and path are required.
+def isHttpRequestCtor(call: ExprCall, ctx: InferCtx): bool
+    if ctx.hasLocal("HttpRequest") or ctx.hasClassAny("HttpRequest")
+        return false
+    if call.callee is Expr.ident as hid
+        return hid.name == "HttpRequest"
+    if call.callee is Expr.member as hmem
+        if hmem.object is Expr.ident as hobj
+            return hobj.name == "HttpRequest" and hmem.member == "new"
+    return false
+
+def httpRequestSlot(name: str): int
+    if name == "method"
+        return 0
+    if name == "path"
+        return 1
+    if name == "content"
+        return 2
+    if name == "query"
+        return 3
+    return -1
+
+def httpRequestFieldName(slot: int): str
+    if slot == 0
+        return "method"
+    if slot == 1
+        return "path"
+    if slot == 2
+        return "content"
+    return "query"
+
+def checkHttpRequestCtor(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var cline: int = line
+    var ccol: int = 0
+    if call.callee is Expr.ident as hid
+        cline = hid.span.line
+        ccol = hid.span.col
+    else if call.callee is Expr.member as hmem
+        cline = hmem.span.line
+        ccol = hmem.span.col
+    var filled: List(bool) = List(bool)()
+    filled.add(false)
+    filled.add(false)
+    filled.add(false)
+    filled.add(false)
+    var pos: int = 0
+    var named_seen: bool = false
+    for arg in call.args
+        var slot: int = pos
+        if arg.name as an
+            named_seen = true
+            slot = httpRequestSlot(an)
+            if slot < 0
+                ctx.addErr(file, cline, ccol, "HttpRequest has no field '" + an + "' (its fields are method, path, content, query)")
+                return
+        else
+            if named_seen
+                ctx.addErr(file, cline, ccol, "HttpRequest: a positional argument cannot follow a named one")
+                return
+            if pos >= 4
+                ctx.addErr(file, cline, ccol, "too many arguments to 'HttpRequest': expected at most 4 (method, path, content, query), found " + call.args.len.toString())
+                return
+            pos = pos + 1
+        if filled.at(slot)
+            ctx.addErr(file, cline, ccol, "HttpRequest: '" + httpRequestFieldName(slot) + "' is given twice")
+            return
+        filled.set(slot, true)
+        var at: Type_ = inferExpr(arg.value, ctx)
+        if isPrimitive(at) and not (at is Type_.string_)
+            ctx.addErr(file, cline, ccol, "type mismatch: HttpRequest's " + httpRequestFieldName(slot) + " is a str, found " + userTypeName(at))
+            return
+    if not filled.at(0) or not filled.at(1)
+        ctx.addErr(file, cline, ccol, "too few arguments to 'HttpRequest': method and path are required -- `HttpRequest(\"GET\", \"/\")`, with content and query optional")
+
+# BUG-661: a module-level `const` assigned to -- in its own module (`LIMIT = 7`) or through
+# `exposing` -- passed the front end and reached zig as "cannot assign to constant". The
+# owning module's stem, or nil when `name` is not a module const visible here.
+def moduleConstOwner(name: str, file: str, ctx: InferCtx): str?
+    if ctx.hasLocal(name) or ctx.isParamHere(name)
+        return nil
+    var own: str = moduleStemOf(file)
+    if ctx.module_types.hasModuleVar("$mc:" + own + "." + name)
+        return own
+    if ctx.module_types.exposedOwner(name) as xo
+        if ctx.dep_types.hasModuleVar("$mc:" + xo + "." + name)
+            return xo
+    return nil
+
+def moduleConstMsg(shown: str, owner: str): str
+    return "cannot assign to '" + shown + "' -- it is a `const` of module " + owner + "; declare it `var` there to make it writable"
+
 def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if isHttpRequestCtor(call, ctx)   # BUG-449: positional and named, checked together
+        checkHttpRequestCtor(call, file, line, ctx)
+        return
     # Named args reorder positional slots — skip (parity with checkCallExpr).
     for arg in call.args
         if arg.name != nil
@@ -6111,6 +7480,7 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     var is_ident: bool = false
     var ccol: int = 0
     var cline: int = line  # fallback; overridden by the callee's own span below
+    var ctor_name: str = ""   # BUG-659: set when the call constructs a class through its cue init
     branch call.callee
         on Expr.ident as cid
             is_ident = true
@@ -6127,9 +7497,22 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 # reaching this is the direct call.
                 if ctx.genericParamNames(cid.name).len > 0 and not ctx.hasLocal(cid.name)
                     ctx.addErr(file, cline, ccol, "`" + cid.name + "` is a generic class: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
-                return
+                    return
+                # BUG-659: a `cue init` takes the same arity rule as any call (BUG-142).
+                # Unchecked, a missing argument was padded with std.mem.zeroes -- `Pt(1)`
+                # built y=0 -- and an extra one failed inside zig. A class or struct with no
+                # cue init has no "init" list here and keeps its field rules.
+                # Only a class this file declares or exposes: dep_types also holds classes of
+                # modules it never uses (BUG-502 -- a FUNCTION `Widget` here, a class elsewhere).
+                var own_or_exposed: bool = ctx.module_types.hasClass(cid.name) or ctx.module_types.exposedOwner(cid.name) != nil
+                if ctx.hasLocal(cid.name) or not own_or_exposed or ctx.fnParamListAny(cid.name, "init") == nil
+                    return
+                lookup_class = cid.name
+                lookup_method = "init"
+                ctor_name = cid.name
             # BUG-469: a runtime object type called like a constructor it does not have.
-            if not ctx.hasLocal(cid.name)
+            # (Not for a user class -- `ctor_name` -- which may share a runtime type's name.)
+            if not ctx.hasLocal(cid.name) and ctor_name == ""
                 var rf_hint: str = runtimeFactoryHint(cid.name)
                 if rf_hint != ""
                     ctx.addErr(file, cline, ccol, "`" + cid.name + "()` is not a constructor -- " + rf_hint)
@@ -6137,7 +7520,7 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
             # BUG-460: a generic function called without its type argument. The curried
             # form's inner call `f(int)` is never walked here (checkCallsInExpr does not
             # descend into a call's callee), so reaching this is the direct call.
-            if (ctx.module_types.hasGenericFn(cid.name) or ctx.dep_types.hasGenericFn(cid.name)) and not ctx.hasLocal(cid.name)
+            if (ctx.module_types.hasGenericFn(cid.name) or ctx.dep_types.hasGenericFn(cid.name)) and not ctx.hasLocal(cid.name) and ctor_name == ""
                 ctx.addErr(file, cline, ccol, "`" + cid.name + "` is generic: pass its type argument(s) first, `" + cid.name + "(int)(...)` -- Zebra does not infer them from the arguments")
                 return
         on Expr.member as mem
@@ -6149,6 +7532,17 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                     var gq: str = gq_oid.name + "." + mem.member
                     ctx.addErr(file, mem.span.line, mem.span.col, "`" + gq + "` is a generic class: pass its type argument(s) first, `" + gq + "(int)(...)` -- Zebra does not infer them from the constructor's arguments")
                     return
+                # BUG-659: `lib.Pt(...)` -- a used module's class constructed qualified.
+                if not ctx.hasLocal(gq_oid.name) and not ctx.hasClassAny(gq_oid.name) and ctx.isUsedModule(gq_oid.name) and ctx.dep_types.hasClass(mem.member)
+                    # dep_types cannot say WHICH module owns the class (BUG-502): a same-named
+                    # function anywhere makes `lib.Name(...)` ambiguous here, so leave it.
+                    if ctx.dep_types.fnParamList(mem.member, "init") == nil or ctx.fnParamListAny("", mem.member) != nil
+                        return
+                    lookup_class = mem.member
+                    lookup_method = "init"
+                    ctor_name = gq_oid.name + "." + mem.member
+                    ccol = mem.span.col
+                    cline = mem.span.line
             var gm_cls: str = ""
             if mem.object is Expr.ident as gm_oid
                 if ctx.hasClassAny(gm_oid.name) and not ctx.hasLocal(gm_oid.name)
@@ -6167,7 +7561,9 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 recv = rrt
             if recv is Type_.optional as rot
                 recv = rot
-            if recv is Type_.named as tn
+            if ctor_name != ""
+                pass   # BUG-659: a qualified constructor, set above
+            else if recv is Type_.named as tn
                 lookup_class = tn
                 lookup_method = mem.member
                 ccol = mem.span.col
@@ -6203,13 +7599,16 @@ def checkArgCount(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # those calls are genuinely unsafe here rather than merely untidy: codegen pads the
     # missing argument with std.mem.zeroes, so the callee reads a silent zero. Turning
     # that into an error is the point of the change, not a side effect of it.
+    var callee_q: str = "'" + lookup_method + "'"
+    if ctor_name != ""
+        callee_q = "'" + ctor_name + "' (its cue init)"
     if provided < required
         if required == total
-            ctx.addErr(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected " + total.toString() + ", found " + provided.toString())
+            ctx.addErr(file, cline, ccol, "too few arguments to " + callee_q + ": expected " + total.toString() + ", found " + provided.toString())
         else
-            ctx.addErr(file, cline, ccol, "too few arguments to '" + lookup_method + "': expected at least " + required.toString() + ", found " + provided.toString())
+            ctx.addErr(file, cline, ccol, "too few arguments to " + callee_q + ": expected at least " + required.toString() + ", found " + provided.toString())
     else if provided > total
-        ctx.addErr(file, cline, ccol, "too many arguments to '" + lookup_method + "': expected at most " + total.toString() + ", found " + provided.toString())
+        ctx.addErr(file, cline, ccol, "too many arguments to " + callee_q + ": expected at most " + total.toString() + ", found " + provided.toString())
 
 # Walk an expression and run checkArgCount on every call it contains (the call
 # itself, calls in its arguments, and calls in compound sub-expressions). This is
@@ -6255,6 +7654,8 @@ def checkDeprecatedCall(c: ExprCall, ctx: InferCtx)
 # value is still fine where one belongs (passed to a `sig`, bound to a var, compared with
 # `==`), so only these operators are checked.
 def bareFnOperandOp(op: BinaryOp): bool
+    if isWrapSatOp(op)
+        return true
     return op == BinaryOp.add or op == BinaryOp.sub or op == BinaryOp.mul or op == BinaryOp.div or op == BinaryOp.int_div or op == BinaryOp.mod or op == BinaryOp.pow or op == BinaryOp.bit_and or op == BinaryOp.bit_or or op == BinaryOp.bit_xor or op == BinaryOp.shl or op == BinaryOp.shr or op == BinaryOp.lt or op == BinaryOp.le or op == BinaryOp.gt or op == BinaryOp.ge
 
 def checkBareFnOperand(e: Expr, file: str, ctx: InferCtx)
@@ -6527,6 +7928,9 @@ def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
             ctx.bind(lp.name, Type_.unknown_)
         lp_names = lp_names + lp.name + " "
     ctx.setParamsHere(lp_names)
+    var saved_vlocals: str = ctx.varLocals()                 # BUG-596: a param shadows a var
+    for lpv in lam.params
+        ctx.unmarkVarLocal(lpv.name)
     ctx.withYieldType(nil)
     if lam.return_type != nil
         ctx.withReturnType(typeFromRef(lam.return_type!))
@@ -6542,7 +7946,32 @@ def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
     ctx.withReturnType(saved_ret)
     ctx.withYieldType(saved_yield)
     ctx.setParamsHere(saved_params)
+    ctx.setVarLocals(saved_vlocals)
     ctx.setLoopConsts(saved_loops)
+
+# A method call or field read on an OPTIONAL receiver reached zig as a type error about
+# code the user never wrote: BUG-557 (`str?` methods, "expected 'str', found '?str'"), then
+# BUG-670 for every other payload -- `List(T)?` from HashMap.get ("does not support field
+# access"), a class `Foo?` ("no member function named 'get' in '?*Foo'"), `int?`.toString().
+# Refused at the receiver. Inside `if x != nil` the checker has already narrowed x, so the
+# guarded form is not refused; `x?.m()` is a different expression (Expr.opt_chain).
+def refuseOptionalReceiver(m: ExprMember, is_call: bool, file: str, ctx: InferCtx)
+    if inferExpr(m.object, ctx) is Type_.optional as ro_opt
+        var ro_nm: str = "the value"
+        if m.object is Expr.ident as ro_id
+            ro_nm = "'" + ro_id.name + "'"
+        var ro_line: int = exprSpanLine(m.object)
+        var ro_col: int = exprSpanCol(m.object)
+        if ro_line == 0
+            ro_line = m.span.line
+            ro_col = m.span.col
+        var ro_what: str = "`." + m.member + "()` cannot be called on it"
+        if not is_call
+            ro_what = "`." + m.member + "` cannot be read from it"
+        var ro_last: str = "bind it (if x as v ...)"
+        if ro_opt is Type_.string_
+            ro_last = "give a default (x orelse \"\")"
+        ctx.addErr(file, ro_line, ro_col, ro_nm + " may be nil here, so " + ro_what + " -- check it first (if x != nil ...), unwrap it (x!), or " + ro_last)
 
 # expr-walker: exhaustive
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
@@ -6563,17 +7992,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 # found '?str'". Refused at the receiver, as an operator on an optional is
                 # (below); inside `if x != nil` the checker has already narrowed x, so the
                 # guarded form is not refused. `x?.trim()` is a different expression.
-                if inferExpr(cm.object, ctx) is Type_.optional as cm_opt
-                    if cm_opt is Type_.string_
-                        var so_nm: str = "the value"
-                        if cm.object is Expr.ident as so_id
-                            so_nm = "'" + so_id.name + "'"
-                        var so_line: int = exprSpanLine(cm.object)
-                        var so_col: int = exprSpanCol(cm.object)
-                        if so_line == 0
-                            so_line = cm.span.line
-                            so_col = cm.span.col
-                        ctx.addErr(file, so_line, so_col, so_nm + " may be nil here, so `." + cm.member + "()` cannot be called on it -- check it first (if x != nil ...), unwrap it (x!), or give a default (x orelse \"\")")
+                refuseOptionalReceiver(cm, true, file, ctx)    # BUG-557, BUG-670
                 # BUG-551: a bare `list.sort()` orders the elements with `cue compare`; on a
                 # user type without one it reached zig as "operator < not allowed".
                 if cm.member == "sort" and c.args.len == 0
@@ -6622,6 +8041,8 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 checkCallsInExpr(a.value, file, line, ctx)
         on Expr.member as m
             checkCallsInExpr(m.object, file, line, ctx)
+            checkStructBind(m, file, ctx)                   # BUG-596
+            refuseOptionalReceiver(m, false, file, ctx)     # BUG-670: `f.n` on a `Foo?`
         on Expr.index as ix
             # BUG-331: a JSON read can fail, so it is marked like any other failing call.
             if inferExpr(ix.object, ctx) is Type_.json_value
@@ -6809,16 +8230,22 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 checkCallsInExpr(f.value, file, line, ctx)
         on Expr.type_check as tc
             checkCallsInExpr(tc.expr, file, line, ctx)
+            # BUG-640: `x is Mod.Name` reaches here as "variant `Name` of a union `Mod`" -- the
+            # AST builder cannot tell a module from a union -- and codegen then compared a tag
+            # against whatever `x` is, failing inside zig. A three-part `Mod.Union.v` arrives
+            # with the union as `type_name` (BUG-237), so only the two-part form lands here.
+            if tc.variant_name as tcv
+                if ctx.isUsedModule(tc.type_name) and not ctx.hasUnion(tc.type_name) and not ctx.hasLocal(tc.type_name)
+                    ctx.addErr(ctx.file, tc.span.line, tc.span.col, "`is " + tc.type_name + "." + tcv + "`: '" + tc.type_name + "' is a module, not a union. For a class, expose it (`use " + tc.type_name + " exposing " + tcv + "`) and write `is " + tcv + "`; for a union variant, write `is " + tc.type_name + ".<Union>." + tcv + "`")
         on Expr.is_nil as isn
             checkCallsInExpr(isn.expr, file, line, ctx)
         on Expr.old_ as ol
             checkCallsInExpr(ol.operand, file, line, ctx)
         on Expr.string_interp as si
-            # Requires `StringPart` in this module's `use Ast exposing ...` list --
-            # see BUG-237. Without it the union is still REFERENCEABLE, but codegen
-            # never registers its boxed variants, so `^Expr` payloads emit as raw
-            # pointers and Zig rejects them. That silent dependency cost six attempted
-            # spellings before the exposing list turned out to be the difference.
+            # `StringPart` is in this module's `use Ast exposing ...` list. Before BUG-237
+            # was fixed (2026-10-27) leaving it out still RESOLVED and emitted `^Expr`
+            # payloads as raw pointers; today the bare name is refused when unexposed, and
+            # `Ast.StringPart.expr_` works.
             var last_fe: Expr? = nil
             for part in si.parts
                 if part is StringPart.expr_ as se
@@ -6902,6 +8329,46 @@ def checkContainerArgs(recv: Type_, mem: ExprMember, call: ExprCall, file: str, 
                 checkExpr(arg.value, exp_t, file, aline, acol, ctx)
         idx += 1
 
+# BUG-636: the argv family of `sys` hands its first argument to a runtime helper that
+# takes `anytype`, so a wrong one was not refused anywhere before zig -- whose error then
+# named `argv.items` inside zebra_rt.zig, a line the user never wrote and with no line of
+# theirs. `sys.run("git status")` (one string, the shape every shell API teaches) was the
+# case found. Checked here: the argument count, and that the command is not a primitive or
+# a list of non-strings. Only a KNOWN wrong type is refused (the #5a rule): an argument
+# inference cannot type gets no check, so an inference gap cannot refuse valid code.
+def checkSysArgv(mem: ExprMember, call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var m: str = mem.member
+    var want: int = 0
+    if m == "run" or m == "spawn" or m == "spawnPiped" or m == "exec_inherit"
+        want = 1
+    else if m == "spawnPipedIn"
+        want = 2
+    else
+        return
+    var eline: int = line
+    var ecol: int = 0
+    if mem.span.line > 0
+        eline = mem.span.line
+        ecol = mem.span.col
+    var shape: str = "sys." + m + "([\"git\", \"status\"])"
+    if want == 2
+        shape = "sys." + m + "([\"git\", \"status\"], \"path/to/dir\")"
+    if call.args.len != want
+        ctx.addErr(file, eline, ecol, "sys." + m + " takes " + want.toString() + " argument(s), found " + call.args.len.toString() + " -- `" + shape + "`")
+        return
+    var at: Type_ = inferExpr(call.args.at(0).value, ctx)
+    var wrong: bool = isPrimitive(at)
+    if at is Type_.list_ as ael
+        if isPrimitive(ael) and not isString(ael)
+            wrong = true
+    if wrong
+        var why: str = ""
+        if isString(at)
+            why = "; no shell splits a string here"
+        ctx.addErr(file, eline, ecol, "sys." + m + " takes the command as a List(str), one element per argument, found " + userTypeName(at) + " -- `" + shape + "`" + why)
+    if want == 2
+        checkExpr(call.args.at(1).value, Type_.string_, file, eline, ecol, ctx)
+
 def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # Bail if any arg is named — reordering complicates positional indexing.
     for arg in call.args
@@ -6921,6 +8388,10 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 cline = cid.span.line
                 ccol = cid.span.col
         on Expr.member as mem
+            if mem.object is Expr.ident as nsid
+                if nsid.name == "sys" and not ctx.hasLocal("sys")
+                    checkSysArgv(mem, call, file, line, ctx)
+                checkNamespaceMember(nsid.name, mem, ctx)
             var recv: Type_ = inferExpr(mem.object, ctx)
             if recv is Type_.ref_to as rrt
                 recv = rrt
@@ -6985,6 +8456,20 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                     aline = amem.span.line
                     acol = amem.span.col
             checkExpr(arg.value, expected, file, aline, acol, ctx)
+        else
+            # BUG-630: a function-typed parameter (a `sig`, an inline `def(P): R`) has no
+            # tag the positional check decodes, so its argument is compared here.
+            var fps: List(Param)? = nil
+            if lookup_class != ""
+                fps = ctx.fnParamListAny(lookup_class, lookup_method)
+            if fps == nil
+                fps = ctx.fnParamListAny("", lookup_method)
+            if fps as fpl
+                if idx < fpl.len and arg.name == nil
+                    if fpl.at(idx).type_ as fpt
+                        var fa_why: str = fnValueMismatch(typeFromRef(fpt), inferExpr(arg.value, ctx), ctx)
+                        if fa_why != ""
+                            ctx.addErr(file, anchorLine(arg.value, cline), anchorCol(arg.value, ccol), "a function cannot go into parameter '" + fpl.at(idx).name + "': " + fa_why)
         idx += 1
 
 # BUG-288 batch 3: anchor a diagnostic on the EXPRESSION it is about, when there is one.
@@ -7069,6 +8554,11 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
     if dv.init_expr != nil
         if checkJsonInto(declared, dv.init_expr!, file, varDiagLine(dv), varDiagCol(dv), true, ctx)
             return
+    if dv.init_expr != nil
+        var fvd_why: str = fnValueMismatch(declared, inferExpr(dv.init_expr!, ctx), ctx)   # BUG-630
+        if fvd_why != ""
+            ctx.addErr(file, anchorLine(dv.init_expr!, varDiagLine(dv)), anchorCol(dv.init_expr!, varDiagCol(dv)), "a function cannot go into '" + dv.name + "': " + fvd_why)
+            return
     if declared is Type_.named as dec_class
         # Type aliases are transparent — skip the conformance check; codegen resolves to base.
         if ctx.isTypeAlias(dec_class)
@@ -7099,15 +8589,19 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         # t.toCPtr()`, `var xs: List(int) = s.sizee()` returned here first, passed `-c`,
         # and the typo reached zig. addErr drops an exact duplicate.
         if dv.init_expr != nil
-            inferExpr(dv.init_expr!, ctx)
+            var nd_inferred: Type_ = inferExpr(dv.init_expr!, ctx)
+            if containerMismatch(declared, nd_inferred, dv.init_expr!)   # BUG-626
+                ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + userTypeName(declared) + ", found " + userTypeName(nd_inferred))
         return
     if dv.init_expr == nil
         return
     var inferred: Type_ = inferExpr(dv.init_expr!, ctx)  # safe: nil returned above
-    # Strict mode (typecheck-merge only): flag inference gaps — TC should have
+    # Strict mode (`zebra lsp`, `zebra diagnostics`, typecheck-merge, `-c --strict`): flag inference gaps — TC should have
     # known the init-expr type for a primitive-annotated var but didn't.
-    if ctx.strict and inferred is Type_.unresolved
-        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+    # A `zig"..."` literal has no Zebra type by design; its annotation IS its type, so it
+    # is not an inference gap (BUG-252: the LSP flagged every annotated one).
+    if ctx.strict and inferred is Type_.unresolved and not (dv.init_expr! is Expr.zig_lit)
+        ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "the initialiser of '" + dv.name + "' has no type the checker can infer, so its " + typeTag(declared) + " annotation is unchecked (strict check: a TC gap)")
         return
     if optionalIntoPlain(declared, inferred)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(declared) + "? " + UNWRAP_HINT)
@@ -7118,9 +8612,60 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + dv.name + "' is declared " + typeTag(declared) + " and cannot hold nil -- declare it `" + typeTag(declared) + "?` if it can be absent (QUICKSTART §11)")
         return
     if not isPrimitive(inferred)
+        # BUG-650: an enum member, union value or class/struct instance into a primitive
+        # slot (`var c: int = Color.red`) returned here, passed `-c`, and zig refused it
+        # ("expected type 'i64', found 'Color'"). The bootstrap refused it (BUG-105); the
+        # selfhost never did. No such value converts implicitly; a type alias is exempt
+        # (it is transparent, QUICKSTART §36).
+        var npw: str = namedIntoPrimitive(inferred, ctx)
+        if npw == ""
+            npw = bareUnionVariant(dv.init_expr!, ctx)
+        if npw != ""
+            ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + npw)
         return
     if not typesCompatible(declared, inferred)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
+
+# BUG-650: the description of a user enum / union / class / struct value that cannot go
+# into a primitive slot ("Color (an enum)"), or "" when `t` is not one (a type alias, a
+# generic instantiation, or anything inference could not name).
+def namedIntoPrimitive(t: Type_, ctx: InferCtx): str
+    if t is Type_.named as nm
+        if nm.len == 0 or ctx.isTypeAlias(nm)
+            return ""
+        if ctx.hasEnumAny(nm)
+            return nm + " (an enum value)"
+        if ctx.hasUnion(nm)
+            return nm + " (a union value)"
+        # This module's classes only: dep_types also holds classes of modules this one
+        # never `use`s (BUG-502's shape), so a FUNCTION named like one of them --
+        # test/bug502_mod_b.zbr's `def Widget(n: int): int` -- inferred as that class.
+        if ctx.module_types.hasClass(nm)
+            return nm
+    return ""
+
+# BUG-650: either of the two below.
+def primSlotNamed(t: Type_, e: Expr, ctx: InferCtx): str
+    var r: str = namedIntoPrimitive(t, ctx)
+    if r == ""
+        r = bareUnionVariant(e, ctx)
+    return r
+
+# BUG-650: a payload-less variant written bare (`Wrap.unit`, no call) is a value of the
+# union, but inferExpr does not name it (it types `Wrap.unit()` and `Wrap.item(3)`), so
+# namedIntoPrimitive cannot see it. Recognised by shape here rather than by changing what
+# inference returns for it, which codegen also reads.
+def bareUnionVariant(e: Expr, ctx: InferCtx): str
+    if e is Expr.member as bm
+        if bm.object is Expr.ident as bid
+            if not ctx.hasLocal(bid.name) and ctx.hasUnion(bid.name)
+                for vn in ctx.module_types.variantNamesForUnion(bid.name)
+                    if vn == bm.member
+                        return bid.name + " (a union value)"
+                for vn2 in ctx.dep_types.variantNamesForUnion(bid.name)
+                    if vn2 == bm.member
+                        return bid.name + " (a union value)"
+    return ""
 
 def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     # Early-exit narrowing, as walkStmts applies it (the two walks must agree on what
@@ -7316,6 +8861,7 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         bt = inferExpr(dv.init_expr!, ctx)
                         ctx.quiet_errors = saved_q
                 ctx.bind(dv.name, bt)
+                ctx.markVarLocal(dv.name)                    # BUG-596
             on Stmt.if_ as si
                 checkCallsInExpr(si.cond, file, si.span.line, ctx)  # BUG-142
                 # `if x orelse d as n` always binds (walkStmt allows it), so an `else` on it
@@ -7346,17 +8892,10 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                 var c_cap_had: bool = false
                 var c_cap_saved: Type_ = Type_.unknown_
                 if si.is_capture as c_cap_name
-                    var c_cap_t: Type_ = Type_.context_dependent
-                    if not (si.cond is Expr.type_check)
-                        var c_cond_t: Type_ = inferExpr(si.cond, ctx)
-                        if c_cond_t is Type_.ref_to as c_crt
-                            c_cond_t = c_crt
-                        if c_cond_t is Type_.optional as c_cap_inner
-                            c_cap_t = c_cap_inner
                     if ctx.hasLocal(c_cap_name)
                         c_cap_had = true
                         c_cap_saved = ctx.localType(c_cap_name)
-                    ctx.bind(c_cap_name, c_cap_t)
+                    ctx.bind(c_cap_name, ifCaptureType(si.cond, ctx))
                 checkStmts(si.then_stmts, file, ctx)
                 var c_nri: int = c_nr_names.len - 1
                 while c_nri >= 0
@@ -7368,7 +8907,19 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     else
                         ctx.bind(c_cap_name2, Type_.unknown_)
                 for ei in si.else_ifs
-                    checkStmts(ei.stmts, file, ctx)
+                    if ei.is_capture as ei_cap
+                        var ei_had: bool = ctx.hasLocal(ei_cap)
+                        var ei_saved: Type_ = Type_.unknown_
+                        if ei_had
+                            ei_saved = ctx.localType(ei_cap)
+                        ctx.bind(ei_cap, ifCaptureType(ei.cond, ctx))
+                        checkStmts(ei.stmts, file, ctx)
+                        if ei_had
+                            ctx.bind(ei_cap, ei_saved)
+                        else
+                            ctx.bind(ei_cap, Type_.unknown_)
+                    else
+                        checkStmts(ei.stmts, file, ctx)
                 if si.else_stmts as cse
                     checkStmts(cse, file, ctx)
             on Stmt.while_ as sw
@@ -7479,6 +9030,13 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     else if ctx.isLoopConst(sa_id.name)
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "cannot assign to '" + sa_id.name + "' -- it is the variable of a `for ... in` loop; bind a new local (var " + sa_id.name + "2 = ...)")
+                    else if moduleConstOwner(sa_id.name, file, ctx) as mc_owner
+                        ctx.addErr(file, sasn.span.line, sasn.span.col, moduleConstMsg(sa_id.name, mc_owner))
+                # BUG-661: `lib.LIMIT = ...`, a used module's const through the module.
+                if sasn.target is Expr.member as sa_mem
+                    if sa_mem.object is Expr.ident as sa_mobj
+                        if ctx.isUsedModule(sa_mobj.name) and not ctx.hasLocal(sa_mobj.name) and ctx.dep_types.hasModuleVar("$mc:" + sa_mobj.name + "." + sa_mem.member)
+                            ctx.addErr(file, sasn.span.line, sasn.span.col, moduleConstMsg(sa_mobj.name + "." + sa_mem.member, sa_mobj.name))
                 # BUG-319. `s[i] = x` on a string was checked by NOTHING. It reached codegen,
                 # emitted a store into a `[]const u8`, and surfaced as Zig's `local variable is
                 # never mutated` -- a message that flatly contradicts the line the user just
@@ -7508,6 +9066,15 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     if sa_hint != ""
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "type mismatch: expected " + numTypeName(sa_slot) + ", found " + numTypeName(sa_val_t) + " " + sa_hint)
+                    else if sasn.op == AssignOp.assign and fnValueMismatch(sa_slot, sa_val_t, ctx) != ""   # BUG-630
+                        ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                   "a function cannot go into this function-typed slot: " + fnValueMismatch(sa_slot, sa_val_t, ctx))
+                    else if sasn.op == AssignOp.assign and isPrimitive(sa_slot) and not isPrimitive(sa_val_t) and primSlotNamed(sa_val_t, sasn.value, ctx) != ""   # BUG-650
+                        ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                   "type mismatch: expected " + typeTag(sa_slot) + ", found " + primSlotNamed(sa_val_t, sasn.value, ctx))
+                    else if sasn.op == AssignOp.assign and containerMismatch(sa_slot, sa_val_t, sasn.value)   # BUG-626
+                        ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
+                                   "type mismatch: expected " + userTypeName(sa_slot) + ", found " + userTypeName(sa_val_t))
             on Stmt.expr as se
                 checkCallsInExpr(se, file, 0, ctx)  # BUG-142 (line derived from callee span)
                 # Audit #2: a bare function name as a statement is a forgotten call.
@@ -8242,8 +9809,10 @@ def stmtReturnsValue(s: Stmt): bool
             return false
 
 # nil when `member` is not such a method (a field of that name wins: it is what is read).
-# A struct's method read as a value is refused here (BUG-596's struct half waits on BUG-569).
-def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Type_?
+# A STRUCT's method binds the VARIABLE by reference (Sean, 2026-10-16), so the receiver must
+# be a `var` local of this function (structBindRecvOk); any other is typed unknown here and
+# refused by checkStructBind, in the one pass that sees every expression typed and reports.
+def boundMethodRet(tn: str, member: str, recv: Expr, line: int, col: int, ctx: InferCtx): Type_?
     var ct_opt: ClassTypes? = ctx.module_types.classOf(tn)
     if ct_opt == nil
         ct_opt = ctx.dep_types.classOf(tn)
@@ -8254,12 +9823,36 @@ def boundMethodRet(tn: str, member: str, line: int, col: int, ctx: InferCtx): Ty
         return nil
     if ctx.fieldTypeAny(tn, member) != nil or ctx.methodReturnAny(tn, member) == nil
         return nil
-    if ct.is_struct
-        ctx.addErr(ctx.file, line, col, "a method of a STRUCT cannot be used as a value yet (`" + member + "` of '" + tn + "'): it binds the struct variable by reference, which is not built yet (BUG-596) -- call it in place, or make '" + tn + "' a class to pass its methods around")
+    if ct.is_struct and not structBindRecvOk(recv, ctx)
         return Type_.unknown_
     if ct.methodReturnRef(member) as rr
-        return Type_.fn_type_(rr)
+        return Type_.fn_type_(FnType_(rr, List(Type_)(), -1))
     return Type_.unknown_
+
+# BUG-596: a struct method may be bound only through a `var` local of this function -- the
+# locals CodeGen keeps in a heap cell (computeBoxCandidates' `decls`). Lambda parameters are
+# taken out of var_locals while their body is checked, so one that shadows a `var` is not one.
+def structBindRecvOk(recv: Expr, ctx: InferCtx): bool
+    if recv is Expr.ident as rid
+        return ctx.isVarLocal(rid.name) and not ctx.isParamHere(rid.name) and not ctx.isLoopConst(rid.name)
+    return false
+
+# BUG-596: refuse a struct method read as a value through anything but a `var` local. Called
+# from checkCallsInExpr's member arm, which a callee never reaches (the call arm walks only
+# its receiver), so every member here is a value read.
+def checkStructBind(m: ExprMember, file: str, ctx: InferCtx)
+    var rt: Type_ = inferExpr(m.object, ctx)
+    if rt is Type_.ref_to as rr
+        rt = rr
+    if rt is Type_.named as rn
+        var ct_opt: ClassTypes? = ctx.module_types.classOf(rn)
+        if ct_opt == nil
+            ct_opt = ctx.dep_types.classOf(rn)
+        if ct_opt as ct
+            if ct.is_struct and not ct.is_interface
+                if ctx.fieldTypeAny(rn, m.member) == nil and ctx.methodReturnAny(rn, m.member) != nil
+                    if not structBindRecvOk(m.object, ctx)
+                        ctx.addErr(file, m.span.line, m.span.col, "a method of a STRUCT used as a value (`" + m.member + "` of '" + rn + "') binds the struct VARIABLE it is read from, so that must be a `var` local of this function -- not a parameter, a loop variable, `this`, a field or a temporary; copy it into a `var` first, call the method in place, or make '" + rn + "' a class")
 
 # BUG-594: `member` is not a field, method or extension of `tn`, a user class or struct whose
 # member set is fully known. False for anything else (interfaces, unions, enums, aliases,
@@ -8422,7 +10015,7 @@ def isZigPrimTypeName(n: str): bool
 # the first corpus sweep flagged `ThreadPool` and `Random` because they are neither in the
 # preamble's pub names nor in typeFromName. Keep in step with genType's `n.name ==` arms.
 def isBuiltinObjectTypeName(n: str): bool
-    return n == "CodeEditor" or n == "StringBuilder" or n == "CsvWriter" or n == "CsvTable" or n == "SysProcess" or n == "Timer" or n == "Random" or n == "DynLib" or n == "ThreadPool" or n == "WsConn" or n == "Build" or n == "BuildTarget" or n == "Allocator" or n == "Regex" or n == "StrSet" or n == "TcpConn" or n == "UdpSocket" or n == "SqliteDb" or n == "SqliteRow" or n == "HttpRequest" or n == "Gui" or n == "JsonValue" or n == "byte" or n == "usize" or n == "int128" or n == "uint128"
+    return n == "CodeEditor" or n == "StringBuilder" or n == "CsvWriter" or n == "CsvTable" or n == "SysProcess" or n == "Timer" or n == "Random" or n == "DynLib" or n == "ThreadPool" or n == "WsConn" or n == "Build" or n == "BuildTarget" or n == "Allocator" or n == "Regex" or n == "StrSet" or n == "TcpConn" or n == "UdpSocket" or n == "SqliteDb" or n == "SqliteRow" or n == "HttpRequest" or n == "Gui" or n == "JsonValue" or n == "DateTime" or n == "byte" or n == "usize" or n == "int128" or n == "uint128"
 
 def knownGenericName(n: str): bool
     return n == "List" or n == "HashMap" or n == "Set" or n == "Chan" or n == "Iter" or n == "Atomic"

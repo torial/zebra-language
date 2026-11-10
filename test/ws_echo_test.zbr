@@ -18,8 +18,10 @@
 # Failure to bind reports AS failure to bind: `connected` is asserted separately from the
 # payload, so a port collision cannot masquerade as a broken echo.
 #
-# NOTE: a handful of `error.Unexpected NTSTATUS=...CONNECTION_REFUSED` lines on stderr are
-# EXPECTED while the server is still binding — that is the retry loop working.
+# NOTE: under Zig 0.16 a handful of `error.Unexpected NTSTATUS=...CONNECTION_REFUSED` lines
+# appeared on stderr while the server was still binding -- the retry loop working, with std
+# printing a trace for a status it did not map. Zig 0.17 maps it (error.ConnectionRefused):
+# 0 such lines in 5 runs, 2026-10-27. If they come back, read BUG-542 before ignoring them.
 
 def echoHandler(ws: WsConn)
     var m = ws.recv()

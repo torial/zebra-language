@@ -17,7 +17,7 @@
 #     annotate explicitly where needed.
 
 use Ast exposing StmtYield, Module, Decl, DeclUse, DeclNamespace, DeclClass, DeclInterface, DeclStruct, DeclMixin, DeclExtend, DeclEnum, DeclUnion, DeclSig, DeclTypeAlias, DeclMethod, DeclInit, DeclVar, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, FnTypeRef, Modifiers, Param, ParamMode, Span, TypeParam, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, StmtRaise, StmtTryCatch, StmtBranch, StmtAllocate, StmtCopyOut, StmtWith, StmtIn, StmtDestruct, StmtContract, ContractKind, ExprOrelse, BranchOn, StructFieldPat, StructPat, CatchClause, StmtPrint, AssignOp, ElseIf, Expr, ExprIdent, ExprMember, ExprCall, ExprIndex, ExprSlice, ExprBinary, ExprUnary, ExprBoolLit, ExprIntLit, ExprFloatLit, ExprCharLit, ExprStringLit, ExprZigLit, ExprStringInterp, ExprTry, ExprToNonNil, ExprExcept, ExprTypeCheck, ExceptField, IntBase, BinaryOp, UnaryOp, StringKind, StringPart, Arg, ExprLambda, LambdaBody, ExprTuple, ExprArrayLit, ExprListLit, ExprSetLit, ExprDictLit, DictEntry, ExprOld, ExprCatch, ExprChainedCmp, ExprOptChain, ExprIf
-use Parser exposing PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
+use Parser exposing useBindName, PNode, PModule, PClass, PExtend, PEnum, PField, PMethod, PInit, PReturn, PIf, PWhile, PForIn, PForNum, PVar, PAssign, PAssert, PRaise, PTryCatch, PMember, PCall, PNamedArg, PIndex, PSlice, PBinary, PUnary, PParam, PUnionDecl, PUnionVariant, PSig, PTypeAlias, PBranch, PBranchOn, PExcept, PExceptField, PStringInterp, PLambda, PCaptureVar, PWith, POrelse, PDestruct, PTupleLit, PCatch, PChainedCmp, POptChain, PIfExpr
 
 def zspan(): Span
     return Span(0, 0, 0, 0)
@@ -263,6 +263,15 @@ def getObjectIdentName(e: Expr): str?
         else
             return nil
 
+# BUG-237: the union of a MODULE-QUALIFIED variant, `Mod.Union` in `x is Mod.Union.v` --
+# `Union` when `e` is `member(ident(Mod), Union)`, else nil. Union-variant keys are
+# module-local ("Union.v"), the same spelling an exposed union reaches codegen with.
+def qualifiedUnionName(e: Expr): str?
+    if e is Expr.member as qm
+        if getObjectIdentName(qm.object) != nil
+            return qm.member
+    return nil
+
 def isScopedAllocatorExpr(e: Expr): bool
     if e is Expr.call as c
         if c.callee is Expr.ident as id
@@ -329,6 +338,7 @@ def pnDeclaredNames(stmts: List(PNode), out: HashMap(str, bool))
 
 class ASTBuilder
     var next_old_uid: int
+    var file: str   # BUG-654: so a refusal raised here can say where
     # BUG-595: while a mixin is built, its field names -> their stored names, and the subset
     # a BARE reference in the current method means (those the method does not declare itself).
     var mx_fields: HashMap(str, str)
@@ -336,12 +346,14 @@ class ASTBuilder
 
     cue init()
         .next_old_uid = 0
+        .file = ""
         .mx_fields = HashMap()
         .mx_bare = HashMap()
 
     # Entry point: convert a parsed PModule into a full Ast.zbr Module.
     static def build(pm: PModule, file: str): Module throws
         var ab = ASTBuilder()
+        ab.file = file
         var decls = ab.buildTopDecls(pm.decls)?
         return Module(file, decls)
 
@@ -356,7 +368,7 @@ class ASTBuilder
     def buildTopDecl(pn: PNode): Decl throws
         branch pn
             on PNode.use_ as u
-                return Decl.use_(DeclUse(zspan(), u.path, u.exposed))
+                return Decl.use_(DeclUse(zspan(), useBindName(u.path), u.exposed))   # `use pkg.mod` is the module `mod`
             on PNode.namespace_decl as ns
                 var nested: List(Decl) = .buildTopDecls(ns.decls)?
                 return Decl.namespace_(DeclNamespace(nameSpan(ns.line, ns.col, ns.name), ns.name, nested))
@@ -815,6 +827,14 @@ class ASTBuilder
                 # no gain. That double mention is the cost the `/=` comment names, and it is
                 # pre-existing for `/=`, `%=`, `//=` and `**=` -- on an index target it is
                 # the difference between working and not working at all.
+                # Wrapping and saturating compound assignment desugar on EVERY target, for
+                # the reason `/=` and `%=` do: the lowering is type-dependent (a literal pair
+                # needs its type, the V backend a helper per width) and genBinary is where
+                # that is decided. Same double-evaluation cost as the four above.
+                if pa.op == "+%=" or pa.op == "-%=" or pa.op == "*%=" or pa.op == "+|=" or pa.op == "-|=" or pa.op == "*|=" or pa.op == "<<|="
+                    const bop_ws = .compoundBinaryOp(pa.op)?
+                    const folded_ws = Expr.binary(ExprBinary(Span(pa.line, pa.col, pa.line, pa.col), bop_ws, target_expr, value_expr))
+                    return Stmt.assign(StmtAssign(Span(pa.line, pa.col, pa.line, pa.col), target_expr, AssignOp.assign, folded_ws))
                 if pa.op != "="
                     if target_expr is Expr.index
                         const bop_ix = .compoundBinaryOp(pa.op)?
@@ -1211,14 +1231,20 @@ class ASTBuilder
                         on Expr.member as em
                             # em.object is ^Expr; auto-deref passes Expr value to getObjectIdentName
                             var obj_name = getObjectIdentName(em.object)
+                            if obj_name == nil
+                                obj_name = qualifiedUnionName(em.object)    # BUG-237
                             if obj_name as obj_n
                                 var tc = ExprTypeCheck(spanOf(left_expr), left_expr, obj_n)
                                 tc.variant_name = em.member
                                 return Expr.type_check(tc)
                             else
-                                raise "buildExpr: `is` member object must be a plain identifier"
+                                var isp: Span = spanOf(right_expr)
+                                raise .file + ":" + isp.line.toString() + ":" + isp.col.toString() + ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`, `x is Mod.U.v`)"
                         else
-                            raise "buildExpr: `is` RHS must be a plain identifier or Union.variant"
+                            # BUG-654: this had no position, so `zebra diagnostics` (and the
+                            # LSP) dropped it and showed a file that does not compile as clean.
+                            var isp2: Span = spanOf(right_expr)
+                            raise .file + ":" + isp2.line.toString() + ":" + isp2.col.toString() + ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`); to test for nil, write `x == nil`"
                 const op = .toBinaryOp(pb.op)?
                 return Expr.binary(ExprBinary(spanOf(left_expr), op, left_expr, right_expr))
 
@@ -1482,6 +1508,20 @@ class ASTBuilder
             return BinaryOp.shl
         if op == ">>="
             return BinaryOp.shr
+        if op == "+%="
+            return BinaryOp.add_wrap
+        if op == "-%="
+            return BinaryOp.sub_wrap
+        if op == "*%="
+            return BinaryOp.mul_wrap
+        if op == "+|="
+            return BinaryOp.add_sat
+        if op == "-|="
+            return BinaryOp.sub_sat
+        if op == "*|="
+            return BinaryOp.mul_sat
+        if op == "<<|="
+            return BinaryOp.shl_sat
         raise "not a compound assignment operator: " + op
 
     def toAssignOp(op: str): AssignOp throws
@@ -1556,6 +1596,21 @@ class ASTBuilder
             return BinaryOp.shl
         if op == ">>"
             return BinaryOp.shr
+        # Wrapping (`%`) and saturating (`|`) arithmetic, Zig's operators.
+        if op == "+%"
+            return BinaryOp.add_wrap
+        if op == "-%"
+            return BinaryOp.sub_wrap
+        if op == "*%"
+            return BinaryOp.mul_wrap
+        if op == "+|"
+            return BinaryOp.add_sat
+        if op == "-|"
+            return BinaryOp.sub_sat
+        if op == "*|"
+            return BinaryOp.mul_sat
+        if op == "<<|"
+            return BinaryOp.shl_sat
         raise "toBinaryOp: unknown op: " + op
 
     def toUnaryOp(op: str): UnaryOp throws

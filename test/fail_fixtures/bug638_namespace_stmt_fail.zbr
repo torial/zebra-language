@@ -1,0 +1,5 @@
+# BUG-638: an unknown member of a builtin namespace, in STATEMENT position (no value used),
+# passed -c and reached zig as a @compileError that zig reported as "unreachable code".
+# Terminal has height/isTty/width/write/writeln; there is no clearScreen.
+def main()
+    Terminal.clearScreen()

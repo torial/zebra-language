@@ -6,6 +6,3130 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-693: `CodeEditor.sci` / `sciStr` did not build on the default (stub) backend -- FIXED 2026-11-09
+
+- **Found by:** reading zebra-ide's CI, 2026-11-09: its `check` workflow had been red against
+  every release since rc7. Three headless legs passed `--gui-backend=tui`, refused on Zig 0.17;
+  the refusal says to use no flag, and with no flag `model_test.zbr` failed inside zig:
+  `use of undeclared identifier '_code_editor_sci'`.
+- **Cause:** both GUI sections define `_code_editor_sci` / `_code_editor_sci_str`; the stub
+  region of `stdlib_preamble.zig` defined the other 19 `_code_editor_*` helpers and not these
+  two. `gui-surface` compared GuiContext verbs, the backend table and `_gui_*` helpers only.
+- **Fix:** the two helpers in the stub region (answer 0, as the tui section's did), and
+  `gui_surface_drift.py` check 5: every `_code_editor_*` name CodeGen.zbr emits must be defined
+  in all three regions (refuses under 15 extracted names). Red-checked: before the preamble
+  change it named exactly the two missing helpers.
+- **Fixture:** `test/bug693_code_editor_sci_stub_test.zbr` (smoke_run), red on the pre-fix
+  compiler with the reported error. zebra-ide's `model_test` prints `model_test: ok` with no
+  backend flag.
+
+### BUG-692: an inline `split` / `lines()` handed to a `List(str)` slot emitted the raw SplitIterator -- FIXED 2026-11-09
+
+- **Found by:** the GameEngine session, 2026-11-08: `Rec("a*b*c".upper().split("*"))` with a
+  `List(str)` constructor parameter, and alone `count("a,b".split(","))`. zig: `expected type
+  'List(str)', found 'mem.SplitIterator(u8,.sequence)'`.
+- **Cause:** `split`/`lines` lower to a lazy Zig iterator. Only the var-init (BUG-092) and
+  `return` (BUG-350) positions collected it into a list. Argument and assignment positions
+  passed the iterator through.
+- **Fix:** one predicate, `collectSplitForList`, around the existing collector
+  (`genSplitCollect`), in the three argument paths: `genCallWithTypeHint` (functions,
+  constructors, named and cross-module arguments), `genArgListByParams`, and the user-method
+  fast loop. `genStoredValue` collects a split stored into a `List(str)` element (`ll.add`,
+  a field map's value). `genAssign` collects for a `List(str)` target typed by inference (a
+  local, `this.field`, `obj.field`); an element target (`m["k"]`, `xs[i]`) is collected into a
+  temporary and assigned through the ordinary store path. `for x in s.split(...)` stays lazy.
+- **Fixture:** `test/bug692_split_arg_test.zbr` (smoke_run), twelve positions. Run on a
+  compiler built from HEAD's committed `.zig` before the change, it fails at its first
+  (line 44, the reported error); the element positions were checked separately there and
+  fail the same way.
+
+### BUG-687: `Tcp.serve`, `Ws.serve` and `Http.serve` leaked a thread handle per accepted connection -- FIXED 2026-11-08
+
+- **Found by:** Fable, 2026-11-07, with the GameEngine's new handle ledger
+  (`net_departure_test`). 40 raw WebSocket clients that closed their own sockets cost
+  the server +42 handles, still held after every connection was named departed.
+- **Cause:** each server spawned its per-connection thread with
+  `_ = std.Thread.spawn(...)`, never detached or joined. On Windows the thread's HANDLE
+  stays open after the thread exits, so a long-lived server grew one handle per
+  connection, for the life of the process. `sys.go` already detached. `ThreadPool`
+  joins its workers.
+- **Fix:** all three spawn sites now detach the thread when the spawn succeeds; on
+  failure they still free the context and close the connection.
+- **Fixture:** `test/bug687_server_thread_handles_test.zbr`, `smoke_run_bounded`.
+  - It reads the process handle count through ntdll (ProcessHandleCount) around 30
+    connections to each server, after a warm-up round. Each connection waits for the
+    server's reply, so the server thread has run.
+  - Old runtime: `Tcp.serve: the process gained 30 handles over 30 connections`.
+  - Fixed: 0 for each of the three servers, 3 runs of 3.
+  - Off Windows the count reads -1. The servers are still exercised there, but nothing is
+    measured.
+- The engine's witness compares its own NetHost clients against raw ones, so its pin
+  tightens by itself when it moves to this runtime.
+
+### BUG-688: a port held in an `int` variable could not reach any networking call -- FIXED 2026-11-08
+
+- **Found:** writing BUG-687's fixture, whose rounds take the port as a parameter. Every
+  earlier networking fixture passed a literal.
+- **Repro:** `def tryPort(port: int)` calling `Tcp.connect("127.0.0.1", port)` passed
+  `-c`, then zig refused: `expected type 'u16', found 'i64'`. A literal, or a `var` the
+  compiler folds to a constant, happened to coerce.
+- **Cause:** `_tcp_connect`, `_tcp_serve`, `_ws_serve`, `_http_serve`, `_udp_bind` and
+  `UdpSocket.send_` took `port: u16`, a type a Zebra `int` cannot reach.
+- **Fix:** they take `port_in: i64` and convert through one helper, `_zbr_port`. An
+  out-of-range port is reported by name, e.g. `Tcp.connect: port 65536 is out of range
+  (0..65535)`, and the call does nothing: connect returns nil, the servers return, send
+  skips. `Udp.bind`, which has no failure value, panics with the same reason. A port is
+  never wrapped into a different valid port. A `u16` from host Zig code, like the
+  engine's, still coerces.
+- **Fixture:** `test/bug688_port_int_test.zbr`. It sends a computed out-of-range port
+  through each call, so no network is needed. On HEAD's runtime it failed with the zig
+  error above, at its first `Tcp.connect`.
+- **Not fixed:** a refused connection prints Zig's
+  `error.Unexpected NTSTATUS=0xc0000236 (CONNECTION_REFUSED)` before `Tcp.connect`
+  returns nil. That trace comes from Zig's std, the same class BUG-684 left visible on
+  Sean's word.
+
+### BUG-691: `JsonValue.values()` / `entries()` passed `-c` and failed inside zig -- FIXED 2026-11-08
+
+- **Found by:** Fable, 2026-11-08, the GameEngine's first use of `JsonValue.values()`
+  (`var items: List(JsonValue) = arr.values()` in `zbra/guiscene.zbr`, pin 8b4c5e0): the
+  build failed at `zebra_rt.zig:1115:79: union 'json.dynamic.Value' has no member named
+  'KV'`. Fable read it as a Zig 0.16 gap (the engine's toolchain). It is not: the same
+  failure on the pinned 0.17, and `entries()` fails there too (`no field named 'items'`).
+- **Cause:** `jsonMethodKnown` listed `values` and `entries`, so the checker accepted them,
+  but no JSON arm handled either; CodeGen's generic dispatch sent them to the Map helpers
+  (`_zebra_map_values`, which reads `.KV`) and the `entries` pass-through. Neither was in
+  QUICKSTART's JsonValue table, and the refusal message for unknown members already left
+  them out -- only the list disagreed. BUG-680's derivation took the list as the surface.
+- **Fix:** both refused at `-c` (`selfhost/TypeChecker.zbr`), naming `tryList()` for an
+  array's elements and `keys()` / `get(k)` for an object. Removed from the surface
+  (`docs/SURFACE.md`: JsonValue 24 -> 22). Implementing them was the alternative; refusing
+  needs no new semantics (is `values()` of an array its elements?) and the documented
+  forms already cover both uses.
+- **Pinned:** `test/fail_fixtures/bug691_json_values_entries_fail.zbr` (`smoke_tc_fail`,
+  both columns), with `tryList()` on the next line as the accepted control.
+
+### BUG-690: V backend: `f() catch nil` over a nilable-and-throws def declared a `??T` option -- FIXED 2026-11-08
+
+- **Found by:** Fable, 2026-11-08, in the GameEngine's `zbra/guiscene.zbr` (engine
+  commit 2de5596): `var scOpt = readColor(p, "Color") catch nil` with `readColor`
+  returning `Color3? throws`, then `if scOpt as sc` / `g.color = sc`. The Zig backend
+  was right; the V route did not build. Fable saw `cannot assign to g.color: expected
+  Color3, not ?Color3` under V b399a50; under V 0.5.2 the same emit fails one step
+  earlier, `unexpected token ?` on `mut zr1 := ??Color3(none)`. The engine moved the
+  shape check into `readColor` and dropped the catch. The `?`-propagated form
+  (`if readColor(p, "Color")? as sc`) was fine on both backends.
+- **Cause:** a `T? throws` result is `!?T` in CodeGenV's type table and `!ZOpt[T]` in
+  the V signature (V has no `!?T`). The `catch nil` lowering prefixed `?` to the
+  result's type -- `??T` -- and assigned the raw `ZOpt[T]` wrapper to it. `try`
+  (`f()?`) already opened the wrapper with `zopt_of`; `catch nil` did not.
+- **Fix (`selfhost/CodeGenV.zbr`, `Expr.catch_`):** for a `!?T` callee the option is
+  declared `?T` and set to `zopt_of(<result>)`, in both the hoisted and the inline form.
+- **Pinned:** `examples/v_poc5.zbr` gained a `lookup(): int? throws` called through
+  `catch nil` and bound with `as` -- value, nil and raise each once -- which
+  `tools/v_check.sh` builds on V and diffs against the Zig run. Red against the pre-fix
+  emitter (the `??Color3` above, the same lowering).
+- **The same root, second shape, found by probing for it:** `f() catch |e| fallback` and
+  `f() catch <value>` over a `!?T` callee put a `?T` fallback in V's `or` block where the
+  result is the `ZOpt[T]` wrapper (`or block must provide a value of type ZOpt[i64], not
+  ?i64`). Now the fallback is wrapped with `zopt_from[T]` and the whole opened with
+  `zopt_of`. v_poc5 runs all three forms against value, nil and raise.
+
+### BUG-689: `Http.get` / `post` / `json` / `postJson` results were untyped, so their members went unchecked -- FIXED 2026-11-08
+
+- **Found:** writing BUG-687's fixture. `var r = Http.get(u)` then `if r as resp` and
+  `resp.body` passed `-c` and failed inside zig: `no field named 'body'` (the field is
+  `text`). The same access through an annotated `HttpResponse?` was already refused,
+  with BUG-680's tailored message.
+- **Cause:** the checker gave the client calls no result type, so the binding was
+  unknown and BUG-680's member check never ran. The same gap BUG-680 closed for an
+  unannotated `ThreadPool(n)`.
+- **Fix:** `get`, `post`, `json` and `postJson` are typed `HttpResponse?`, and `serve` is
+  typed void. Guarded like BUG-680: a user class named `Http` or `HttpResponse` is left
+  alone.
+- **Fixture:** `test/fail_fixtures/bug689_http_client_untyped_test.zbr`. Refused:
+  `resp.body` at 8:20 and `p!.statusCode` at 10:14. Accepted: a well-formed `status` +
+  `text` use, as the control.
+
+---
+
+### BUG-686: the bundled SQLite was built with no feature defines, so FTS5 and RTREE were silently missing -- FIXED 2026-11-07
+
+- **Found by:** the Graze docs browser (zebra-sprocket). Its full-text search returned
+  "no such module: fts5" in the app, while sqlite's own `testfixture` found 17 hits for the
+  same query -- so the missing piece was the build flag, not the query. Filed in
+  NEXT_STEPS_to_1.0 for Opus 2026-08-09 and given a number on 2026-11-07. Until then
+  sprocket worked around it by prepending `#define SQLITE_ENABLE_FTS5 1` to its copy of
+  `sqlite3.c`.
+- **Cause:** when a program uses `Sqlite`, `selfhost/main.zbr` adds
+  `{exe_dir}/vendor/sqlite/sqlite3.c` to the `zig build-exe` line with no `-D` flags. The
+  amalgamation fences its optional modules behind `#ifdef SQLITE_ENABLE_*`, so they were
+  compiled out, and a program only found out at run time.
+- **Fix:** the file is passed as
+  `-cflags -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE -- sqlite3.c`. The defines reach
+  sqlite3.c and no other C source of the program. JSON needs no flag: it is built in by
+  default since 3.38. A program cannot yet choose its own set (the `sqlite_features` knob
+  the report suggested); that waits for a program that needs a module outside these two.
+- **Fixture:** `test/bug686_sqlite_features_test.zbr`. It creates an FTS5 table and runs a
+  MATCH query, then an RTREE table and a bounding-box query, with a `json_extract` call as
+  the control. On the pre-fix compiler the JSON control passed and the FTS5 statements
+  failed with "no such table: docs" (the CREATE having failed), and the MATCH assertion
+  fired.
+
+---
+
+### BUG-289: two deterministic programs disagreed with themselves inside a full output_sweep -- CLOSED 2026-11-07, NOT REPRODUCED (cause never established; the mitigation stays)
+
+**Found 2026-08-15** during an `output_sweep --update-baseline`. `log_test` and
+`refinement_type_test` were auto-excluded as nondeterministic and so dropped out
+of behaviour coverage. Both are deterministic:
+
+| check | result |
+|---|---|
+| built executable, 10 consecutive runs (`refinement_type_test`) | byte-identical, 12 bytes, rc=0 |
+| built executable, 8 consecutive runs (`log_test`) | byte-identical, 178 bytes |
+| through the harness's own `--show --only` path, 5 runs | byte-identical |
+
+The disagreement appears **only** inside a full 354-file sweep. What the
+exclusion records actually show is narrower than "truncation", and the
+distinction matters because the wrong word sends the next reader chasing the
+wrong mechanism: the recorded reason is a single `<` line — `0` for
+`refinement_type_test`, `All log tests passed.` for `log_test` — meaning that
+line was present in one sample and absent in another. Both happen to be the last
+line of the recorded output, which is suggestive, but nothing here establishes
+that the tail was cut rather than a sample differing some other way.
+
+**The obvious explanation was tested and FAILED.** This repo has a documented
+Windows hazard — stdout to a PIPE can lose writes, which is why `rebuild.sh` and
+`mutation_check.py` both redirect to a file — and `output_sweep` captures with
+`$(...)`, a pipe. Predicted: pipe capture truncates occasionally, file capture
+never does. Observed: **12/12 identical through both.** The theory is recorded
+here as eliminated, not as the answer.
+
+Remaining candidates, none tested: interference from an earlier fixture in the
+same sweep (a server or thread fixture outliving its `timeout`), console/handle
+contention, or something about sustained sequential load.
+
+**Mitigated, not fixed.** `output_sweep --update-baseline` now requires an
+exclusion to REPRODUCE: three samples, and if they disagree, a three-sample
+confirmation round; only a repeated difference excludes. A file that disagrees
+once and is then unanimous is kept and reported as a `transient` in the run
+summary. Both paths are control-tested (a clock-printing fixture must still be
+excluded; a forced single disagreement must be kept). That converts this from
+silent coverage loss into a printed number — but it does not explain the
+underlying disagreement, and a rising transient count is the signal to come
+back to this ticket.
+
+**Closed 2026-11-07 as NOT REPRODUCED. This is not a fix, and the cause was never found.**
+
+*What was tried, on the current tree (1b83990, Zig 0.17.1):*
+- `log_test` and `refinement_type_test`, built once, were run 900 times each through the
+  sweep's capture shape (`$(prog </dev/null 2>&1)`), 300 at 8-way and 600 at 24-way
+  parallelism. `string_builder_test` was run the same way as a third deterministic program.
+- Each of the two was run 60 more times through the compiler's run path, exactly as
+  `run_one` does (`timeout 40 zebra file.zbr </dev/null 2>&1`), at 6-way parallelism.
+- Result: every run of each program byte-identical, after the compiler's `wrote <temp dir>`
+  line was stripped. Every run carried the last line that went missing in August, and every
+  run exited `rc=0`.
+- Control: `log_json_test` prints a timestamp. It produced 12 distinct outputs in 300 runs,
+  so the comparison could see a difference.
+
+*What changed since August, which is why this cannot speak to the August mechanism:*
+- In August, `print` went through `std.debug.print` to STDERR; since BUG-318 (2026-08-29)
+  it is a buffered stdout writer.
+- The runtime handles Git Bash's overlapped pipes since BUG-635.
+- The toolchain moved from Zig 0.16 to 0.17.
+So the path that misbehaved no longer exists. What was measured is that the current path
+does not show the symptom.
+
+*Since August:*
+- Both files have been in the baseline (re-admitted 2026-08-16, with 0 transients) and
+  under every FULL and DAILY tier, with no disagreement recorded on either.
+- Every baseline re-record since reported 0 transients, except the documented race in
+  `arena_concurrency_hazard_test`.
+- The nearest relative is 2026-09-18's EMPTY capture of `bug259_runtime_exit_code_test`
+  under load. It is equally unexplained and did not recur.
+
+**What stays:** the confirmation round and the transient counter `output_sweep` prints on
+every run. A transient on a deterministic file is the signal to reopen this.
+
+---
+
+### BUG-684: a `Ws.serve` server printed Zig "unexpected NTSTATUS" traces when clients dropped -- FIXED 2026-11-07 (what is Zebra's; the rest is Zig 0.16's std, kept by decision)
+
+**Reported 2026-11-07 by Fable** while confirming BUG-682's fix with the GameEngine's
+`net_departure_test`: 550 to 655 traces per run, every one CONNECTION_RESET,
+CONNECTION_ABORTED or LOCAL_DISCONNECT, on the server's reads at client departures. These are
+std's Debug-mode prints for an NTSTATUS it does not map, and they appear before the runtime's
+`catch` turns the failed read into nil. The program is correct and carries on, so this is not
+a failure. But a user sees pages of Zig traces about runtime code they never wrote, which is
+BUG-542's shape (that one fixed the WRITE of a second close frame; this is the READ). It
+predates BUG-682 and is unchanged by it.
+
+**Narrowed the same evening, mostly not Zebra's toolchain.** Fable's per-status stacks
+(logs in GameEngine/.zig-cache/{net_dep_run_1, f65_manual/B_1, bug682/*}.txt) show the
+engine builds with **Zig 0.16**, whose `netReadWindows` / `netWriteWindows` trace every
+status they do not map. In **0.17**, which this repo pins, both map CONNECTION_RESET,
+REMOTE_DISCONNECT and LOCAL_DISCONNECT to `error.ConnectionResetByPeer` silently. The trace
+is printed only in Debug: `std.options.unexpected_error_tracing` defaults to Debug, so
+`--release` prints none. Two probes here on 0.17 printed nothing: a client closing while the
+server reads, and a client PROCESS exiting with unread data (a reset), 5 departures.
+- **Hardened on the bug682 branch:** `_ws_send` and the pong are no-ops once the close
+  handshake has begun or a read has shown the peer gone. RFC 6455 §5.5.1 requires this, and
+  it stops a broadcasting server from writing into a departing client's socket, which is where
+  every write-side trace in Fable's logs came from (0.16 or not).
+- **What is left on 0.17:** CONNECTION_ABORTED on a read is still unmapped (3 of 339 in one
+  engine run). One option is global: `.unexpected_error_tracing = false` in the runtime's
+  `std_options`. It would silence every unmapped OS status in Debug, including ones that
+  would help diagnose a genuine runtime bug, so it is a decision, not a fix.
+
+**Control when fixing:** a `Ws.serve` program whose client exits without closing (a
+reset) on 0.17 prints nothing today. The engine on 0.16 is the instrument that sees the
+write-side traces; ask its session to rerun `net_departure_test` against the branch.
+
+**Fixture:** `test/bug684_no_data_after_close_test.zbr` -- a raw TCP client sends a masked close and reads to EOF; the handler's two sends after the handshake must put nothing on the wire (old runtime: 24 bytes, the close plus both data frames, 3 of 3).
+
+**Closed the same evening.** Fable reran the engine's departure test against the branch
+(f9b0c76), split by phase and by std frame:
+- **Graceful hang-ups** print nothing at all with the engine's close.
+- **Abrupt resets** (Zig 0.16) left about 3.6 traces per departure: one write and one read
+  that DISCOVER the reset, plus 1.6 follow-up writes.
+
+The follow-ups were Zebra's. A failed write did not mark the peer gone, so a broadcast loop
+kept writing until the reader thread's read failed. `_WsConn.writeAll` now stores
+`close_sent` on any error (an `errdefer`), so the next `_ws_send` writes nothing. The
+WebSocket fixtures stayed clean, 10 of 10 each.
+
+**What is left is not Zebra's to remove:**
+- The two discovery traces per abrupt departure, printed by Zig 0.16's std before any
+  `catch` runs. On the 0.17 this repo pins, those statuses are mapped and silent.
+- CONNECTION_ABORTED on a read, which 0.17 does not map.
+
+Turning `unexpected_error_tracing` off in the runtime's `std_options` would hide both, and
+hide every other unmapped OS status in Debug with them. **Sean, 2026-11-07: keep the tracing
+on.**
+
+---
+
+### BUG-685: an `Http.serve` handler of the wrong shape passed `-c` and failed inside the runtime's Zig -- FIXED 2026-11-07
+
+**Found 2026-11-07** through BUG-680's new refusal, which caught `res.body` in the book's
+chapter 20 example. Looking closer, the example's whole handler was the wrong shape:
+`def(req: HttpRequest, res: HttpResponse)` writing into `res`. That passed `-c`, and a real
+build failed inside the generated runtime, in Zig's vocabulary: "expected type '*const fn
+(zebra_rt.HttpRequest) T', found '*const fn (zebra_rt.HttpRequest, T) void'". QUICKSTART had
+corrected the same shape on 2026-09-25. Nothing checked the handler, so the book kept it.
+
+**Fix:** `checkHttpServeHandler` in the checker, run on `Http.serve`'s second argument. The
+handler may be an inline `def(...)` or a top-level function named by identifier. It must
+take exactly one parameter. A declared return type must be HttpResponse, and an inline
+block-bodied handler must declare one. A handler the checker cannot see (a variable, a
+method) is left to the later passes, as before. The message names the expected form and the
+three response constructors.
+
+**Fixture:** `test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr`, four handlers:
+an inline two-parameter one, a named two-parameter one, one with no return type, and one
+returning str. Each refusal is registered. The four `Http.serve` corpus files still pass
+`-c`. The book example was fixed in the book (dd5e6c5) and passes `--check-full`.
+
+---
+
+### BUG-680: a field or method a runtime object type does not have passed `-c` and failed inside zig -- FIXED 2026-11-07
+
+**Found 2026-11-05** validating the book against rc9: `DateTime.now().epochMs` passed
+`zebra -c` and failed in zig, "no field named 'epochMs' in struct 'zebra_rt._DateTime'". The
+front end checked the members of the 16 runtime types with a `Type_` variant (BUG-369) and
+not the rest. Probing it found more:
+- DateTime could not be NAMED as a type at all. A field, a parameter, an annotation were each
+  "unknown type 'DateTime'", and codegen had no mapping for it.
+- `t.rows` on a CsvTable COMPILED. `_CsvTable` has a Zig field `rows`, so a misspelled
+  method call returned the runtime's raw slices.
+- Two emit leaks, filed as BUG-683.
+
+**Fix:**
+- **DateTime** is `Type_.named("DateTime")`, guarded against a user class of that name.
+  - Its constructors, fields and methods are typed.
+  - Any other member is refused naming the real ones, with pointed hints: a field called as
+    a method, a method read as a field, `epochMs` pointing at `toEpoch()`.
+  - It is a nameable type emitting `_DateTime`.
+  - Codegen's `isDateTimeExpr` asks the checker first, so fields, parameters, returns and
+    List elements dispatch.
+- **CsvTable, CsvWriter, HttpResponse, CalendarView, ThreadPool, DynLib** refuse an
+  unknown member from one table per kind (`runtimeObjMethods` / `runtimeObjFields`,
+  derived from CodeGen's dispatch arms). A known member keeps the typing it had, except
+  `inCalendar`, now a CalendarView, whose printed output was diffed unchanged.
+  - `r.body` points at `.text`.
+- **File** was already covered: it is a static namespace, refused by BUG-638's table.
+- `surface_inventory.py` derives every one of these, so docs/SURFACE.md lists them, 23 -> 32
+  receivers. Its printer had looped over a fixed list and would have dropped the derived
+  tables silently.
+
+**Measured before landing:** `-c` over 4,005 tracked .zbr in zebra-language, the book,
+zebra-ide and the GameEngine, old compiler vs new: 0 files changed. The positive control, a
+file reading `dt.epochMs`, IS reported changed.
+
+**Fixtures:**
+- `test/bug680_datetime_type_test.zbr`: field, parameter, return, List, optional;
+  hand-derived values.
+- `test/fail_fixtures/bug680_datetime_unknown_member_test.zbr`.
+- `test/fail_fixtures/bug680_runtime_obj_members_test.zbr`: one refusal per type, each
+  registered.
+
+The DateTime fixture found QUICKSTART's `toIso8601` example missing the `Z` the runtime
+prints. The doc was wrong.
+
+---
+
+### BUG-683: `DateTime.fromEpoch(ms)` as a receiver or argument, and `not dt.before(x)`, passed `-c` and failed inside zig -- FIXED 2026-11-07
+
+**Found 2026-11-07** probing BUG-680 with `dt.after(DateTime.fromEpoch(0))`: `-c` exit 0,
+then zig "expected ',' after argument" at the user's line. Two emit defects in the DateTime
+paths of CodeGen. (1) `DateTime.fromEpoch(ms)` emitted a bare `_DateTime{ .epoch_ms = ms }`,
+and Zig allows no `.field` suffix on a struct literal; every DateTime use reads `.epoch_ms`
+off its receiver or argument, so `DateTime.fromEpoch(0).year`, `.toEpoch()`, `.weekday`, and
+any comparison taking one failed. (2) `before`/`after`/`equals` emitted
+`a.epoch_ms < b.epoch_ms` unparenthesised, so `not dt.before(x)` became
+`!dt.epoch_ms < ...` ("expected type 'bool', found 'i64'"). **Fix:** both emits are
+parenthesised. Fixture `test/bug683_datetime_literal_receiver_test.zbr` (8 asserts, values
+derived by hand from the epoch): red on the pre-fix compiler at its first comparison; the
+expected values were checked on the emitted Zig with both fixes applied by hand (all pass,
+and a planted wrong year panics naming it) before the compiler was rebuilt.
+**The same shape in the HttpResponse factory**, found an hour later: every
+`HttpResponse.ok/notFound/err/new(...)` emitted a bare `HttpResponse{ ... }`, so
+`HttpResponse.ok("x").status` failed the same way. The factory call is parenthesised whole.
+The fixture gained three asserts (status of `ok`, a `withHeader` chain, `notFound(...).text`).
+
+---
+
+### BUG-682: `ws.close()` under a reader in `ws.recv()` on another thread closed the socket under the read -- FIXED 2026-11-07
+
+**Reported 2026-11-07 by Fable** (GameEngine F65, `game/net_departure_test.zig`, 1c93942):
+`_ws_close` sent the close frame and closed the socket while another thread of the same
+program was in `_ws_recv` on it. On Windows the reader then either read a closed handle
+(std prints an "unexpected NTSTATUS INVALID_HANDLE" trace) or had its pending read
+cancelled, which std maps to `.CANCELLED => unreachable`: a panic in Debug, and in the
+engine's build exit 3 with nothing printed (3 of 3 runs there). Measured in Zebra with
+`test/bug682_ws_close_under_recv_test.zbr` on the old runtime: 11 of 12 runs printed the
+trace and 1 of 12 died "reached unreachable code".
+
+**Fix (runtime, `_WsConn`):** the socket handle is closed only when no read can touch it.
+One atomic word holds the reader count and two flags (close requested, handle released),
+so admitting a reader (every `readExact`) and closing the handle are mutually exclusive.
+`close()` sends the close frame, refuses every later write (a pong, a `send` after close),
+shuts down the OS send side only when a reader is in flight, and closes the handle at once
+if none is -- the single-threaded path is unchanged. A reader in flight sees the peer's
+answering close, returns nil, and closes the handle as it leaves. The close frame is
+decided by an atomic swap, so a reader answering the peer and a closer cannot both send
+one. `Ws.serve` closes the handle after the handler returns whatever is in flight (the
+connection is freed there; QUICKSTART's Ws notes say a host must not use it past that).
+
+**Measured, not argued:** the first cut shut down the send side on every close; `ws_echo_test`
+then printed a CONNECTION_RESET trace in 4 of 15 runs (0 of 10 on the old runtime) -- a
+shutdown on a socket the peer had already closed. The shutdown is now conditional on an
+in-flight reader. Final: the four WebSocket fixtures 12 of 12 clean each on the new runtime;
+on the old one, bug682 red as above and the other three clean.
+
+**The real attacker, the same evening (Fable):** the GameEngine's `net_departure_test` was
+regenerated against this branch at 4dca0dc, with the engine's `close()` mutated back to
+`_ws_close`, the shape that died 3 of 3 on the pinned runtime. Result: 3 of 3 exit 0. That
+is 120 closes under a blocked reader, with 0 "reached unreachable" and 0 INVALID_HANDLE
+traces, and the engine's own close stays green. The SERVER-side NTSTATUS traces at client
+departures remain as before (BUG-684).
+
+**The runtime's public names are unchanged**, and that was nearly missed: the first cut made
+`closed` atomic and `_ws_send_close_frame` return bool. The GameEngine's `net_host.zig` sets
+`conn.closed = true` and calls `_ws_send_close_frame(c.conn)` as a statement, and both would
+have stopped compiling. `closed` stays a plain bool (every step of `_ws_close` after it is
+idempotent on its own), and the bool lives in a private `_ws_send_close_frame_once`. Checked
+by compiling those two engine statements against both runtimes, plus a planted
+bool-returning signature that must fail. One behaviour change a host will see: `Ws.serve`
+now closes the socket after the handler returns even when the handler set `closed`. Before,
+that flag skipped the close entirely and leaked the handle.
+
+**Known limit:** a reader waiting for a peer that never answers the close frame waits for
+it; before the fix the close killed it instead. TLS connections take the same path
+(`shutdown` on the TCP stream; `end()` and the free stay in the final release), but no
+fixture runs a TLS reader and closer on two threads.
+
+---
+
+### BUG-681: on the V backend, a walk over a module list or a field switched to the new list when the body reassigned it -- FIXED 2026-11-07
+
+**Found and fixed 2026-11-07** while mapping the free-at-sweep calls for the GameEngine's V
+rows: `for x in _xs` whose body calls a release that rebuilds `_xs` printed 40 on V and 45
+on Zig. **Cause:** CodeGenV emitted `for x in u_xs.items`, and V's C re-reads a global's (or
+`self.f`'s) `.items` on every iteration, so the walk continued over the NEW list; Zig
+evaluates the for header once. **Fix:** genForIn binds the iterable to a temporary unless
+it is a plain local. Pinned by `tools/v_check.sh`'s `sweep_v` row (module var and field,
+diffed against a fresh Zig run); red on the pre-fix emitter (40).
+
+### BUG-679: a mixin's `cue init` replaced the class's own, so the class's constructor call was refused -- FIXED 2026-11-05
+
+**Found and fixed 2026-11-05**, by validating the book against the rc9 release commit
+(26d7838) before tagging it: the book's `09_multiple_mixins` -- `class BlogPost adds
+Timestamped, Tagged` with its own `cue init(t: str, b: str)` and a mixin `Tagged` declaring
+`cue init()` -- was refused at -c, "too many arguments to 'BlogPost' (its cue init): expected
+at most 0, found 2". rc7 and rc8 compiled it, and ran the class's own init.
+
+**Cause:** `addClassMembers` (TypeChecker.zbr) kept the FIRST cue init's parameter COUNT
+but overwrote the parameter LIST on every `Decl.init`, and a mixin's members are merged in
+after the class's own (pass 2). The list sat unused until BUG-659 (7c4d803, 2026-10-28) made
+the constructor take the call arity rule from it -- that is when the regression appeared.
+**Fix:** the list and body are first-wins too, so the class's own cue init stands.
+
+`test/bug679_mixin_cue_init_test.zbr` (smoke_run): red on 26d7838 with the book's message,
+green fixed; prints `Hello body 0`. Which init runs is unchanged -- the class's, as on rc7
+(the same program prints identically under rc7's binary).
+
+---
+
+### BUG-677: a second `_zbr_cens_install()` does nothing and says nothing, so a host's late census install is silently a whole-run census -- FIXED 2026-11-05
+
+**Fixed 2026-11-05** in the shape agreed with Fable (below). `zebra --census=host`
+(main.zbr: `--census=VALUE` for any other value is refused -- unknownFlag strips `=VALUE`, so
+it was accepted and the build had no census at all) sets CodeGen's `_census_host`: `censInstall` emits
+`_zbr_cens_mark_host()` instead of `_zbr_cens_install_entry()`, and `censFlush` emits no exit
+flush for a `--library-mode` build, whose `main` returns before the host's window opens. The
+runtime: `_zbr_cens_install()` on an installed census writes one note to stderr naming who
+installed first (the entry prologue, or an earlier call) and changes nothing; `_zbr_cens_flush()`
+on a census never installed in a host build says "never installed" and writes nothing.
+
+Control legs (census_check 5-7, all three in the agreed shape): a `--census=host` probe that allocates 40 times, installs from a `zig"..."` line and allocates again has no site for the line before the install and >= 7 counts for the line after (derived from the probe's `# cens:` labels); a plain `--census` program that installs again prints the note once, naming the entry prologue, with totals equal to the same program without the second call (8 vs 8); a `--census=host` program that never installs prints "never installed" and leaves no zebra-census.json. Red-checked against the pre-fix tree (9c434d8) with the new legs: those three fail and the other 70 pass -- the old compiler accepted `--census=host` and built with no census at all. cli_check gains `--census=bogus` refused by name and `--census=host` running.
+
+**The engine side, 2026-11-05 (Fable, on fc8241e):** all three legs held in the GameEngine. A
+`--census=host` window (`--census-at 120 --exit-at 420`) read beside the previous night's
+two-run subtraction of the same tree: 51,748 vs 50,277 allocations, 1.74 vs 1.72 MB live,
+kept 1.79 vs 1.72 MB, the same top fourteen sites in the same order, 12 unseen frees (the
+blocks from before the window, expected) vs 0, and a census table of 2.73 MB against 41.66.
+The two instruments agree, so `--census-at` is the reading and `--baseline` its control.
+
+
+**Found 2026-11-04 by Fable**, reading the first kept-column run (cbfe879). A program
+emitted with `--census` installs the census in its own entry prologue. The GameEngine host
+calls that `main` before its loop, and its `--census-at 120` then calls
+`_zbr_cens_install()` again, which returns at `if (_zbr_cens_on) return;` with no word.
+Every "steady state" census the engine took (2026-11-01, 11-03, 11-04) was really a
+whole-run census, and the only evidence was that the unseen-free count came out small where
+a late install would make it large. Nothing withheld fails: the runtime knows the call
+changed nothing and the caller cannot tell.
+
+**Fix shape (joint, Opus + Fable in writing, 2026-11-04 evening; supersedes the note-only
+shape agreed earlier that day, which left `--census-at` with no window):**
+1. `zebra --census=host`: the emitted entry prologue does NOT install; the host calls
+   `_zbr_cens_install()` when its window should start. Plain `--census` is unchanged. The
+   intent is in the BUILD -- an environment variable read at start-up (`ZEBRA_CENSUS_DEFER`
+   was proposed) was declined as ambient state: a shell that happens to set it gets a binary
+   that does not count, and nothing at the call site says why. Fable has no case for one
+   binary choosing at run time.
+2. A redundant install says so on stderr, once, naming who installed first (the entry
+   prologue) and that counts run from then -- keeping the `void` signature, since a Zig host
+   calling it as a statement would break on a returned value.
+3. A `--census=host` build that reaches exit with no install says so on stderr ("built for a
+   host install, never installed") and writes no zebra-census.json, so no report never reads
+   as an empty one.
+A `_zbr_cens_reset()` that zeroes the counts was offered and DECLINED. The engine works around
+the silence today (`NO WINDOW` printed, and the window taken as the difference of two runs'
+JSONs, `tools/census_kept.py --baseline`); when this lands its census regen passes
+`--census=host`, the host installs at frame 0 or at `--census-at`'s frame, and `--baseline`
+stays an option rather than the method. A new CLI form: `docs/SURFACE.md` (surface-freeze),
+`cli_check`, CHANGELOG and QUICKSTART move with it.
+
+**Control when fixing:** census_check legs -- (a) a `--census=host` probe that installs from a
+`zig"..."` line after N labelled allocations must report exactly the allocations made after
+the install (derived from the probe's labels, not from the runtime); (b) a plain `--census`
+program that calls `_zbr_cens_install()` again must see the note on stderr and unchanged
+totals, and one that never calls it again must print no note; (c) a `--census=host` program
+that never installs must print the never-installed note and leave no zebra-census.json.
+
+---
+
+### BUG-675: a constant expression or a `1_000` literal beside a narrow operand still reaches zig -- FIXED 2026-11-05
+
+**Fixed 2026-11-05.** `litFitsType` (TypeChecker.zbr) now folds the constant to a value
+before checking it: `constIntValue` evaluates `+ - * / %`, `& | ^` and unary `-` over
+literals (exactly the shapes `isNumLit` lets adapt), and `constLitValue` reads a literal with
+its digit separators. It gives up -- checks nothing, leaving zig to see the expression --
+whenever the value is not certain: a float, a suffix, `~`, a divide or remainder with a
+negative operand or a zero divisor, a product past 2^40. A literal past 2^40 is certainly
+too wide for every narrow type and is refused; inside an expression it gives up instead, since
+it may cancel. The diagnostic names the value: "300 (the value of this constant expression)
+does not fit in 'byte' (0..255), the type of the other operand of '+'".
+
+Measured before landing: `-c` over 3,179 files (this repo 1,285, zebra-ide 29, the GameEngine 1,865), before and after: 5,500 error lines before, 5,504 after, none removed. The four new lines are in one machine-ported GameEngine script (`ported_scripts/1055_Script_Script.zbr`) that already had 14 errors, so no file changed verdict: `int + str` concatenations that became visible because `secondsBetween % 60` now has a type (BUG-678). Fixtures: `test/bug675_const_expr_fit_test.zbr` (nine shapes that fit
+and must keep compiling, values printed, including an intermediate past 255 and a
+cancelling pair past 2^40) and `test/fail_fixtures/bug675_const_expr_fit_fail.zbr` (five
+refusals: `*`, a separator, `+|`, a negative difference, a compound `+=`). Red-checked with
+the pre-fix compiler: the fail fixture passes `-c` (0 errors) and the test fixture is refused
+at its BUG-678 line.
+
+
+**Found 2026-11-03**, the residual of BUG-672. `litFitsType` reads only a bare (or negated)
+decimal or hex `int_lit`, so with `k: byte` both `k + 100 * 3` and `k + 1_000` pass `zebra -c`
+and fail in zig with `type 'u8' cannot represent integer value '300'` / `'1000'` (probed). A
+constant expression adapts to the other operand exactly like a literal (`isNumLit`), so it
+must fit there too; a digit separator is treated as "a suffix or separator: not checked here".
+
+**Fix shape:** fold the constant (`+ - * / %` over literals, unary `-`) to a value in
+`litFitsType`, and skip `_` between digits while still leaving a type suffix (`0xFF_32`) alone.
+Front-end only; needs the same 3-repo `-c` sweep as BUG-672 before landing.
+
+**Control when fixing:** `k + 100 * 3` and `k + 1_000` refused at the expression naming the
+range; `k + 3 * 4`, `k + 1_0` and `k + 0x1FF_32` still pass. (The entry first named `5_u8`, which is not
+writable: decimal `_i`/`_u` suffixes lex as `integer_lit_explicit` and no parser rule accepts that token.
+A suffixed hex literal carries its own type, and 511 beside a byte shows the fold leaves it alone.)
+
+---
+
+### BUG-678: `%` over two constants has no type, so `n + 100 % 7` is refused as "cannot infer" -- FIXED 2026-11-05
+
+**Fixed 2026-11-05** with BUG-675: an `on BinaryOp.mod` arm beside `div` in inferExpr's
+binary branch (arithOperandCheck with "%", then the numeric operand's type). `n + 100 % 7`
+compiles and prints 1002 for n = 1000 (bug675_const_expr_fit_test, line 13).
+
+
+**Found 2026-11-04** while probing BUG-675. With `n: int`, `var e: int = n + 100 % 7` is
+refused at `-c` with "cannot infer the type of this expression, an operand of `+`", and
+so is `k + (100 % 7)` on a byte. `n - 100 % 7` and `n * (9 % 4)` pass. Cause: inferExpr's
+binary branch has arms for `+ - * /` and none for `%`, so two literals (numericJoin
+returns unknown for a constant pair) fall to `else -> unknown_`; codegen's `+` operand
+guard (the §28a refusal) then refuses, while `-` and `*` have no such guard. Predates
+BUG-674 (the pre-674 compiler refuses the same lines). `var c: int = 100 % 7` is fine.
+
+**Fix shape:** an `on BinaryOp.mod` arm beside `div` (arithOperandCheck with "%", then the
+numeric operand's type). Lands with BUG-675, which reads the same constant expressions.
+
+**Control when fixing:** `n + 100 % 7` prints 1002 for n = 1000; `"x" % 5` is refused in
+the front end, as `"x" / 5` is.
+
+---
+
+### BUG-674: `& | ^` on two integer types of different width are typed as the LEFT one, while zig peers them to the wider -- FIXED 2026-11-04
+
+**Fixed 2026-11-04.** `& | ^` now join their operand types exactly as `+` does
+(`bitwiseResultType`, TypeChecker.zbr: `numericJoin`, with `mixedSignRefusal` refusing a
+`uint` beside an `int` in the same words), and BUG-673's narrowing arm counts them
+(`isJoinedArithOp`). So `var c: byte = b & n` is refused at its line naming `.toByte()`,
+`var x = b ^ n` is an int, and `byte & int8` is an `int16`. Codegen converts both operands
+to the join (`mixedNumericTarget` / `emitAsNum` in `genBinary`, as for `+`): zig refuses
+`u8 & i8` outright, so the checker's type alone would have been a lie. A literal on either
+side adapts to the other operand, and `isNumLit` now counts `& | ^` over constants
+(`b & (0xF0 | 0x0F)` stays a byte). NOT shifts: `1 << 3` lowers to the runtime's
+`_zbr_shl`, an i64 at run time, so `var d: byte = b & (1 << 3)` is refused naming
+`.toByte()` -- it passed `-c` and failed inside zig before.
+
+Measured before landing: `-c` over 3,177 files (this repo 1,283, zebra-ide 29, the
+GameEngine 1,865), before and after: 5,496 error lines each, no line in either direction.
+Positive control for the sweep pipeline: the same per-file command over the fail fixture
+gives 0 lines before and 4 after. Fixtures: `test/bug674_bitwise_join_test.zbr` (every value
+printed beside arithmetic only the joined type can hold: `x + 1000`, `y - 300`) and
+`test/fail_fixtures/bug674_bitwise_join_fail.zbr` (byte slots, a `uint ^ int`, a shift).
+Red-checked with the pre-fix compiler: the positive fixture fails with "1000 does not fit in
+'byte'" (`b ^ n` typed a byte) and the fail fixture passes `-c`.
+
+
+**Found 2026-11-03** while fixing BUG-672/673. `var b: byte`, `var n: int`, then
+`var c: byte = b & n`: `zebra -c` exits 0 and the build fails with `expected type 'u8',
+found 'i64'`. `bitwiseResultType` (TypeChecker.zbr) returns the left operand's type
+whatever the right one is, so the checker calls `b & n` a byte; zig resolves the peer types
+to `i64`. The mirror case, `var m: int = b | n`, compiles because the slot is wide enough
+either way. Shifts are not this bug: their result IS the left operand's type in zig too.
+
+**Fix shape:** type `& | ^` by the same join `+` uses (numericJoin, with mixedSignRefusal),
+and let BUG-673's narrowing arm see them. Like BUG-673 it can refuse code that builds today
+only because zig folded two never-mutated locals, so it needs the same `-c` sweep over this
+repo, zebra-ide and the GameEngine first.
+
+**Control when fixing:** `var c: byte = b & n` refused at its line naming `.toByte()`;
+`var c: byte = b & 0x0F` (a literal adapts) and `var m: int = b | n` still pass.
+
+---
+
+### BUG-676: a panic inside the census's lock hangs the program with nothing printed -- FIXED 2026-11-04
+
+**Found and fixed 2026-11-04** while red-checking the census kept column. `_zebra_panic` (the
+runtime's panic handler) asked `_sys_getenv("ZEBRA_PANIC_TRACE")`, which on Windows allocates
+through `_allocator`. Under `--census` that is the counting wrapper, so a panic raised while
+the census held its lock -- an accounting underflow, i.e. a bug in the census itself --
+re-entered the lock and deadlocked before the message was written: 0% CPU, no output, until a
+timeout. Found because a deliberately broken census (an entry left stale after a resize) hung
+the gate for ten minutes instead of failing it.
+
+**Fix:** the handler reads the variable through the page allocator on Windows (POSIX's
+`_sys_getenv` does not allocate). Verified with the real attacker: the same mutated runtime
+hung (rc=124 under a 20 s timeout) with the old handler and printed `thread N panic: integer
+overflow`, exit 1, with the new one. `tools/census_check.sh` leg 4 is the regression test (`# pins: BUG-676`):
+it plants a panic on the 50th allocation in a scratch copy of the emitted runtime and requires
+the message and a non-zero exit under a 30 s timeout -- red with the old handler ("HUNG"),
+green with the new. It has teeth on Windows only. Every other run in the gate has a timeout too.
+
+Not covered: a panic under the lock in a program that is NOT built with `--census` cannot
+reach this (no wrapper), and no other runtime lock is taken around an allocation.
+
+---
+
+### BUG-673: `x = x + n` with a wider operand passes the front end and fails inside zig -- FIXED 2026-11-03
+
+**Fixed 2026-11-03.** `+ - * / %` give the JOIN of their operand types (BUG-445), and the
+two narrowing checks that refuse an int stored into a smaller slot (`narrowsIntToByte`,
+`intNarrowHint` in TypeChecker.zbr) now count such a result as they already counted a
+named value: `h = h + n` (int16, int) is refused at its line naming `.toInt16()`, and
+`b = b + n` (byte, int) naming `.toByte()`, as `+=` already was. The same holds for a `var`
+initialiser, a `return` and an argument, which share the checks. A constant (`3 * 4`, or
+`k + 3 * 4` where the constant adapts like a literal) is left to zig, which folds it. A
+refused mixed-sign `+` (`uint64 + int`) is now typed `unknown_`, so the slot check does not
+repeat it as a second error at the same column.
+
+The "not looked into" note in the entry is answered: `var c: byte = b + n` printed 253
+because `b` and `n` were never mutated, so they emitted as `const` and zig folded the sum
+(it fails as `260` overflows, and as `expected 'u8', found 'i64'` once `b` is mutated). Such
+a program is refused now -- the price, and the same rule `+=` already applied.
+
+Measured before landing: `-c` over 3,160 files (this repo 1,280, zebra-ide 29, the
+GameEngine 1,851), before and after. No new refusal outside the new fixtures (12 lines, the
+positive control); one extra line, the `uint64 + int` cascade above, removed. Fixtures:
+`test/fail_fixtures/bug673_join_narrow_fail.zbr` (five shapes: assignment into int16 and
+byte, `var` init, argument, return), with `test/bug672_673_join_fits_test.zbr` as the
+must-pass control. Red-checked: with the pre-fix compiler the fixture passes `-c` and fails
+inside zig with `expected type 'i16', found 'i64'`. Found alongside: BUG-674 (`& | ^`).
+
+**Found 2026-11-03** while making the wrapping and saturating operators join like `+`.
+
+---
+
+### BUG-672: an int literal that does not fit a narrow operand passes the front end and fails inside zig -- FIXED 2026-11-03
+
+**Fixed 2026-11-03 (the plain-operator half; the wrap/sat half landed with the operators).**
+A literal beside a sized integer adapts to that operand's type, so it must fit there:
+`literalOperandFitCheck` (TypeChecker.zbr) runs `litFitsType` on the literal side of
+`+ - * / %` and `& | ^`, and the compound-assignment check does the same for
+`+= -= *= /= %= &= |= ^=`. `k + 300` on a byte is refused at the literal, naming the range
+(`300 does not fit in 'byte' (0..255), the type of the other operand of '+'`); `k + -1` and
+`k & 0x1FF` likewise. Before, zig reported `type 'u8' cannot represent integer value '300'`
+-- for `%`, at a line inside `zebra_rt.zig`.
+
+**The entry's claim about comparisons was wrong, and they are deliberately left out.**
+Probed: `k < 300` compiles and prints `true`, `k == 300` and `k >= 300` print `false` --
+zig compares a sized integer with an out-of-range constant correctly. Refusing them would
+refuse working code; the control fixture pins `k < 300` and `k == 300` as passing. Shifts
+are left out too: a shift amount is not coerced to the operand type.
+
+**Residual, filed as BUG-675:** only a plain literal is checked -- `k + 100 * 3` and
+`k + 1_000` still reach zig.
+
+Measured with BUG-673: no new refusal over the 3,160 files. Fixture
+`test/fail_fixtures/bug672_literal_fit_fail.zbr` (seven shapes); red-checked the same way.
+
+**Found 2026-11-02** while adding the wrapping and saturating operators.
+
+---
+
+### BUG-671: a front-end refusal under `--emit-zig --output-dir` still writes the full emit, so the refused program looks emitted -- FIXED 2026-11-02
+
+**Fixed 2026-11-02 (Sean chose the contract: a refused compile leaves no `.zig`).**
+`MultiCompiler` records every file it writes under `--output-dir` (each module's emit,
+the runtime when it actually writes it, a C header's translated bindings; never a copied
+native `.zig` dep, which can be the user's own file). `exitWith(code, keep)` now carries a
+rule: a non-zero exit WITHOUT `keep` is a front-end refusal and removes those files,
+printing `note: the compile was refused, so the N file(s) it wrote to DIR were removed:
+...`; a file that will not delete is named, never silently kept. A non-zero exit WITH
+`keep` is a zig failure, and its `.zig` stays as evidence (BUG-324). The one site that
+broke the rule (N-API headers missing, an environment failure with a good emit) now
+passes `keep`. A RAISED refusal (a parse error in a later dependency) went straight to
+`main`'s catch and skipped `exitWith`; the root compile now goes through
+`compileRoot`, which routes it there, so an earlier dependency's emit is taken back too.
+
+Measured before the fix, three shapes, each rc=1 with files left behind: a throws call
+without `?` (the reported one: `r2.zig`, `zebra_rt.zig`), a parse error in the second of
+two deps (`a.zig`, `zebra_rt.zig`), a type error in the root after a dep was written
+(`a.zig`, `zebra_rt.zig`). After: all three leave the directory empty; a good compile
+keeps all three files. Gate: `cli-surface`, legs "a refusal AFTER emission..." and "a
+RAISED refusal in a later dep...", with the BUG-324 legs as the control (a zig failure
+keeps its `.zig`); the two new legs were watched red on the N-1 anchor.
+
+**Found 2026-11-01 by Fable**, reported first as "`List.pop()` as a statement passes the
+checker and fails in zig". It does not: the refusal fires. What happened is that the
+GameEngine's regen (`tools/regen_zbra.py`) runs
+
+```
+zebra.exe --emit-zig --source-root <engine> --library-mode --module-path <engine>/zbra \
+          --output-dir <tmp> <engine>/zbra/pathfinding.zbr
+```
+
+and judges success by whether a `.zig` came out. The compiler printed
+`pathfinding.zbr:132: error: throws call needs '?'` and exited **1**, and still wrote
+`pathfinding.zig` (carrying the refused `_ = try _zbr_list_pop(openSet);` under its
+`// zbr:` marker), `math.zig` and `zebra_rt.zig` into `--output-dir`. zig then failed on
+that file, so the user saw a Zig type error about code the front end had already refused.
+
+**Reproduced, Debug, on both the engine's pin (`9a332a4`) and HEAD (`96d9b62`)**: same
+rc=1, same diagnostic, same three files, with and without `--library-mode`. `-c` and
+`--check-full` refuse the same file and write nothing a caller would mistake for output.
+
+**Why it matters beyond one regen script.** An exit code is the only thing separating a
+refused emit from a good one in that directory, and a file that exists reads as an
+answer. BUG-324 settled the binary half (a failed build leaves no `.exe`) but kept the
+`.zig` on purpose, as evidence of a ZIG failure. A front-end refusal is not that case:
+the `.zig` is the compiler's output for a program it rejected.
+
+**Expected (my default; the contract is worth a second reading before changing it):** on a
+front-end refusal, `--output-dir` holds no `.zig` for the refused module, or holds it
+under a name nothing will build (e.g. `pathfinding.zig.refused`), and the note on stderr
+says which. **Check first** what reads that directory after a failure: `full_sweep` and
+`evidence_digest` keep emit evidence (`.emit.err` is the compiler's stderr, not the
+`.zig`), and BUG-516's note about unemitted deps assumes the directory's contents mean
+something.
+
+**Engine side (Fable's, not ours):** the regen should treat rc != 0 as failure whatever
+files exist. With that alone, this report would have been the right one-line diagnostic.
+
+### BUG-670: a method call on an optional receiver passes `-c` and fails inside zig (BUG-557 covered `str?` only) -- FIXED 2026-11-01
+
+**Found 2026-11-01 by Fable** in the GameEngine (`zbra/ecs_test.zbr`, engine commit
+`0b64435`): `nw.components.get(a1).count()`, where `components` is
+`HashMap(int, List(Component))` and so `.get()` is `List(Component)?`. The front end
+accepted it; zig refused the emitted `nw.components.get(a1).items.len` with
+"type '?*array_list.Aligned(...)' does not support field access". The engine works around
+it by unwrapping with `if ... as cs`.
+
+**Reproduced on HEAD (`f4ae809`), Debug, three receiver kinds, each a different zig
+error and each `-c` rc=0:**
+
+| receiver | Zebra | zig's message |
+|---|---|---|
+| `List(T)?` from `HashMap.get` | `w.components.get(1).count()` | `type '?List(*Comp)' does not support field access` |
+| `List(int)?` local | `var x = find(); x.count()` | `type '?List(int)' does not support field access` |
+| user class `Foo?` | `var f = find(); f.get()` | `no field or member function named 'get' in '?*Foo'` |
+| `int?` from `HashMap.get` | `m.get("a").toString()` | `cannot print optional without a specifier` (std.fmt) |
+
+**Cause.** `checkCallsInExpr` (selfhost/TypeChecker.zbr, the BUG-557 block) refuses a
+method on an optional receiver only when the payload is `Type_.string_`. Every other
+payload falls through to codegen, which emits the call as though the value were present.
+
+**Expected.** One check-time refusal for any `Type_.optional` receiver, naming the value
+and the three fixes the `str?` message already offers (check it first / unwrap `x!` /
+`if ... as`), with `x?.m()` left alone (a different expression) and the `if x != nil`
+narrowed form still accepted.
+
+**Control when fixing.** Measure `-c` error counts before and after over this repo,
+zebra-ide and the GameEngine first, as for BUG-659: a method that codegen genuinely
+auto-unwraps on some optional kind would turn into a false refusal, and only a corpus
+sweep would show it. The fixture has to cover all four rows above plus the narrowed and
+`?.` forms as must-pass controls.
+
+**FIXED 2026-11-01.** `refuseOptionalReceiver` (selfhost/TypeChecker.zbr) refuses a method
+call OR a field read on any `Type_.optional` receiver, at the receiver's column, naming the
+value and three fixes: `if x != nil`, `x!`, and `if x as v` (`x orelse ""` stays the third
+for `str?`, so BUG-557's message is unchanged). The call arm and the member arm of
+`checkCallsInExpr` both call it. FIELD READS were found while fixing (`f.n` on a `Foo?`
+reached zig as "type '?*Foo' does not support field access") and are covered too.
+
+**Measured before landing, as the entry asked:** `-c` over every tracked `.zbr` in this repo,
+zebra-ide and the GameEngine (3,148 files, a frozen copy so concurrent engine commits could
+not move it), once with the pre-fix binary and once with the fix. **665 new error lines, 0
+gone, ALL in `GameEngine/ported_scripts/`** (62 machine-translated scripts, mostly the
+translator's `var script = nil` followed by `script.Parent...`). 33 of those files go from
+`-c`-clean to refused; **all 33 already failed the full build** under the pre-fix compiler
+(15 on the BUG-670 shape itself), so nothing that built stops building. Nothing in this
+repo, zebra-ide, or the engine's `zbra/` and `game/` moved.
+
+**Instrument note.** The first run of the "did zig refuse it before?" check reported 33/33
+refused -- every one a `File.read error` panic, because the copied pre-fix binary found no
+runtime beside it or in the cwd (BUG-543's resolution order). The control (a good file)
+passed only because it was run from the repo root. Re-run with the checkout as cwd: 0
+panics, 33 real zig errors.
+
+**Fixtures:** `test/fail_fixtures/bug670_opt_{list_get_method,class_method,int_tostring,
+field_read}_test.zbr` (`smoke_tc_fail`, each pinned to its column), and
+`test/bug670_opt_receiver_unwrapped_test.zbr` (`smoke_run`): the narrowed `if f != nil`
+(method and field), `if find() as g`, `f!`, `f?.get()`, `if m.get(1) as cs`, a narrowed
+`str?` -- all must still compile and print `bug670: [3,3][3][3][3][2][a]`. Red-checked: the
+four fail fixtures pass `-c` on the pre-fix binary.
+
+### BUG-667: integer overflow is undefined behaviour in a `--release` build -- Debug traps it, release prints a wrong number -- FIXED 2026-10-31
+
+- **Severity:** High -- gate G1 ("safety holds at run time; there is no switch to turn it
+  off"), and the failure is the quiet kind: a plausible wrong value, exit 0.
+- **Status:** FIXED 2026-10-31 (below).
+
+```zebra
+def main()
+    var n: int = sys.args().count()       # 1
+    var x: int = 9223372036854775807
+    var y: int = x + n
+    print("y=${y}")
+```
+
+Debug: `panic: integer overflow`. `zebra --release`: `y=9223372036854775807` -- neither
+the trap nor the wrapped value (`-9223372036854775808`): `--release` passes `-OReleaseFast`,
+where Zig treats `+` overflowing as undefined behaviour, so the optimiser may assume it
+never happens. The emit is a plain `const y: i64 = (x + n);` -- no Zebra helper is in the
+path, so the wrong value is Zig's UB and not our runtime's. Measured with `n` printed
+(`n=1`), so the addend is not a constant fold.
+
+The same class as BUG-313 (raw indexing unchecked under ReleaseFast), which was answered
+for indexing only; BUG-534 answered it for the `toInt8..toUint64` conversions. Arithmetic
+was never decided -- no ledger entry, design note or finding mentions it.
+
+**Options, for Sean:** (a) checked arithmetic emitted explicitly (`std.math.add` or `+%`
+with a trap), as BUG-313 did for indexing -- the release keeps the trap and pays per
+operation; (b) `--release` uses ReleaseSafe -- every Zig safety check back, at its cost;
+(c) wrapping as the defined semantics -- a language decision, and the one V makes. Whatever
+is chosen is also what a V backend must emit. Measured on V ee6d62a (the engine's pin),
+not assumed: the same program through `--target v` WRAPS, `got=-9223372036854775808`,
+under tcc and under clang `-prod` alike -- no trap on either. So (a) or (c) there too.
+
+The G1 matrix that found this and BUG-668 (2026-10-29; five probes, each with a
+run-time operand): divide by zero and index past the end trap in all four builds (Zig
+Debug, Zig `--release`, V tcc, V clang `-prod`); `300.toUint8()` traps on Zig and is not
+mapped by the V emitter; a nil unwrap traps in all but Zig `--release` (BUG-668); integer
+overflow traps only in Zig Debug.
+
+**ReleaseSafe measured on the engine (Fable, 2026-10-29; PROVISIONAL -- a busy host, so
+the ratios are a bound, not a number).** Same tree, mm autoplay 60 s under `--profile`, two
+uncontended pairs of three: whole frame 1.42-1.51x ReleaseFast (15.0 -> 21.3 ms at a fixed
+High tier); by section the EMITTED Zebra scripts 1.4-1.7x (about one millisecond a frame),
+the host's hand-written Zig far more (gui 3.4-4.2x, render 1.8-2.3x).
+
+**A per-MODULE optimize mode does NOT split safety -- measured, and the first reading said
+otherwise.** It was proposed the same day that a host could build the emitted modules
+ReleaseSafe and itself ReleaseFast. Fable's toy (a ReleaseSafe dependency of a ReleaseFast
+root, a run-time nil and a u8 overflow behind a volatile read) says no: the dependency
+reports `builtin.mode == .ReleaseSafe` and still carries on (`x.?` on nil printed 7, the
+add wrapped to 255); with both modules ReleaseSafe it panics. The engine agreed: its build
+with the emitted modules marked ReleaseSafe had a `.text` byte-identical to plain
+ReleaseFast. Runtime safety follows the COMPILATION's mode; the module field changes only
+what `builtin.mode` reports. So the option was reverted on the engine side.
+
+**What does split it is per-FUNCTION:** codegen emitting `@setRuntimeSafety(true);` as the
+first statement of every emitted function puts the checks in the Zebra code alone under a
+ReleaseFast build -- a one-line codegen change, at about the scripts section's 1.4-1.7x
+(~1 ms a frame on the engine; to be re-measured on a quiet machine with process CPU time
+over a fixed-dt replay). That is option (a)'s cheapest form: Zig's own checks, switched on
+where Zebra's code is, rather than hand-emitted ones.
+
+**Re-measured the same evening by CPU time (Fable; the replay of one 60 s autoplay, 2,843
+identical frames, process CPU via GetProcessTimes, a sampler naming the noise).** Whole
+build ReleaseSafe against ReleaseFast: min of three full runs 1.16x and 1.19x over two
+batches (22.5 / 21.3 s against 26.1 / 25.3 s); per frame with startup removed 1.24x (6.85
+-> 8.47 ms CPU). By section, the least-contended run of each build: the EMITTED Zebra
+scripts 1.13x (0.98 -> 1.10 ms), gui 3.3x, render 1.7x, whole frame 1.10x. So the
+autoplay pairs' 1.4-1.7x for the scripts was the busy host; under identical frames the
+Zebra code's checks cost about a tenth of a millisecond a frame, and the per-function
+route is the cheap one. The noise source this time was named: a webview process took 2.4
+cores for twenty seconds mid-batch.
+
+**Control when fixing:** the program above, both modes, and `release-mode`'s gate gaining
+an overflow leg as it gained the bounds and conversion legs.
+
+**Decision (Sean, 2026-10-30): TRAP**, in release too, on both backends, with explicit
+wrapping operations for code that means to wrap (their spelling is not yet decided). Trap
+on the V side means emitting checked arithmetic, whose cost there is not measured.
+
+**FIXED 2026-10-31.** Every function the compiler emits into a user module opens with
+`@setRuntimeSafety(true);` (`safetyStmt()` in CodeGen; 24 emit sites, plus the forwarding mains, the vtable thunks
+and the reflection slice), so Zig's own checks -- overflow, a nil `.?`, an out-of-range
+`@intCast`, `unreachable` -- run in Zebra's code under a ReleaseFast build and nowhere else.
+The site map is DERIVED from the output, not from reading codegen: `runtime-safety`
+(tools/runtime_safety_check.py, FAST) requires the line in every function of the committed
+selfhost/*.zig and six corpus files emitted fresh; on the pre-change emit no function had
+the line. `release-mode` builds one program in `--release` and runs it per operation.
+On the pre-change compiler all nine probes carried on: add printed 9223372036854775808,
+which no i64 holds, and `byte` printed 255. Now each one traps. The compiler itself ships
+ReleaseSafe, so it costs the compiler nothing; the gate's `--release` probe binary stays 865 KB.
+The V backend (V's operators wrap) routes `int` + - * / %, unary minus and the compound
+forms through checked helpers in zebra_rt.v (`zadd` .. `zmod`, computed in u64 so a C
+compiler cannot fold the check away). A byte operation, or one on a type the emitter does
+not know, is COUNTED on `--target v`'s report rather than left unchecked silently.
+`v_check`'s overflow row checks both backends. Explicit wrapping operations are still to
+come, and their spelling is Sean's call.
+
+### BUG-668: a nil unwrap (`x!`) is unchecked in a `--release` build -- it reads garbage and carries on -- FIXED 2026-10-31
+
+- **Severity:** High -- gate G1, the quiet kind.
+- **Status:** FIXED 2026-10-31 (below).
+
+```zebra
+def main()
+    var s: str? = nil
+    if sys.args().count() > 5
+        s = "x"
+    var t: str = s!
+    print("got=${t.len}")
+```
+
+Debug: `panic` at the unwrap. `zebra --release`: `got=0`, exit 0. The emit is
+`const t: []const u8 = s.?;` -- Zig checks `.?` in Debug and ReleaseSafe and not in
+ReleaseFast, which `--release` passes: BUG-313's class again, for the non-nil assertion.
+The V backend's release lane TRAPS here (`V panic: nil unwrapped at g1_nil.zbr:5`, clang
+`-prod`), because CodeGenV routes every narrowed read through `zunwrap_at` -- the shape the
+Zig side's fix can copy: an explicit check that names the place, as BUG-313 did for `.at()`.
+
+**Control when fixing:** the program above in both modes; `release-mode` gains the leg.
+
+---
+
+**FIXED 2026-10-31.** Every function the compiler emits into a user module opens with
+`@setRuntimeSafety(true);` (`safetyStmt()` in CodeGen; 24 emit sites, plus the forwarding mains, the vtable thunks
+and the reflection slice), so Zig's own checks -- overflow, a nil `.?`, an out-of-range
+`@intCast`, `unreachable` -- run in Zebra's code under a ReleaseFast build and nowhere else.
+The site map is DERIVED from the output, not from reading codegen: `runtime-safety`
+(tools/runtime_safety_check.py, FAST) requires the line in every function of the committed
+selfhost/*.zig and six corpus files emitted fresh; on the pre-change emit no function had
+the line. `release-mode` builds one program in `--release` and runs it per operation.
+On the pre-change compiler all nine probes carried on: add printed 9223372036854775808,
+which no i64 holds, and `byte` printed 255. Now each one traps. The compiler itself ships
+ReleaseSafe, so it costs the compiler nothing; the gate's `--release` probe binary stays 865 KB.
+
+### BUG-669: `min % -1` kills the program with NO message, in Debug too -- FIXED 2026-10-31
+
+- **Severity:** Medium -- gate G1's loud-failure half: the program dies, but says nothing
+  (exit 127 under Git Bash, empty stdout and stderr), so it reads as a launcher problem.
+- **Status:** FIXED 2026-10-31 (below).
+
+```zebra
+def main()
+    var n: int = sys.args().count()       # 1
+    var x: int = -9223372036854775807 - n # the minimum
+    var y: int = x % (0 - n)
+    print("y=${y}")
+```
+
+`%` emits `@rem` (BUG-236), and `@rem(minInt, -1)` is the one remainder Zig's safety does
+not check: x86's `idiv` faults on it, and the fault is not reported. `minInt / -1` traps
+with `integer overflow` in Debug. The emitted `@rem(x, (0 - n))` was confirmed by building
+the kept scratch file by hand: it builds, and the binary dies printing nothing.
+
+**FIXED 2026-10-31.** `%` goes through the runtime's `_zbr_rem` (stdlib_preamble.zig), which
+traps with `integer overflow` on exactly that pair and is `@rem` otherwise (inline, so a
+constant remainder still folds); the V runtime's `zmod` matches. Fixture
+`test/bug669_min_rem_neg1_test.zbr` (smoke_run_fail): it printed `before` and died silently
+on the pre-change compiler, and now prints `before` and the panic. `release-mode` carries
+the `--release` leg.
+
+### BUG-295: a module import CYCLE built silently, and at compiler scale produced a compiler that stack-overflowed -- CLOSED 2026-10-29 (diagnostic, singleton semantics, first-use initialisation; the overflow not reproduced)
+
+> **THE "NO DIAGNOSTIC" HALF IS CLOSED.** A cycle is now REPORTED, with its full path
+> and the rule spelled out, and the corresponding `smoke_warn` fixture pins the message:
+>
+> ```
+> warning: import cycle: t_a -> t_b -> t_c -> t_a
+>   a module in a cycle is compiled ONCE and the first import wins, so
+>   the second module sees a PARTIAL view of the first. That is well
+>   defined for functions and types and UNDEFINED for module-level state:
+>   no initialisation order satisfies both directions.
+>   fix: move the names they share into a third module that both import.
+> ```
+>
+> **THE MECHANISM IS SEAN'S, AND IT IS A REFINEMENT RATHER THAN A REPLACEMENT.** His
+> framing: keep a set of imported modules and ignore later imports — *"first import
+> wins"*, made explicit. `compileDep`'s `visited` set ALREADY did exactly that, which
+> is why the compiler never hung; the missing piece is that one set conflates two very
+> different skips — a module already FINISHED (a diamond dependency, benign, the common
+> case) and a module still IN PROGRESS (the cycle). An in-progress stack separates them
+> and carries the path for free, because the stack IS the chain. The dedup was not
+> touched.
+>
+> **It WARNS rather than refuses** (Sean's call): a cycle is undefined rather than
+> wrong, so the honest move is to say so and decide after watching it fire on real
+> code. `MultiCompiler.cycle_is_error` flips it in one line — **both directions were
+> verified before shipping**, because an untested switch is exactly the kind of
+> affordance that is wrong when someone reaches for it: error mode exits 1 on a cycle
+> and does NOT refuse a diamond.
+>
+> **THE NEGATIVE CONTROL IS THE LOAD-BEARING FIXTURE.** `bug295_diamond_test` imports a
+> leaf from two parents, so it is skipped on its second visit by the same code path a
+> cycle re-enters. It must compile SILENTLY; a detector that fires on the most ordinary
+> shape in a dependency graph gets suppressed wholesale rather than read.
+>
+> **PART (b) LANDED 2026-08-18 — the DIAMOND note, and the measurement changed it.**
+> Sean asked for two things: that a shared leaf be imported once, and an
+> end-of-compilation warning naming shared modules with their side-effect risk.
+>
+> **(a) needed no change, which is the more useful answer.** The leaf is already
+> compiled once (`visited`) AND its initialiser runs exactly once before `main` — the
+> root emits one `_initModuleVars()` per entry of a DEDUPLICATED transitive list.
+> Measured with a leaf whose initialiser prints: one line, not two.
+>
+> **(b) says something different from what it would have said unmeasured.** The
+> plausible warning is *"a shared module may be initialised more than once"*. That is
+> FALSE, per the above, and shipping it would have put a confident wrong claim in the
+> compiler's own voice and sent a reader hunting a bug that does not exist. What is
+> TRUE is the sharing: a probe bumped a leaf's counter twice through one importer and
+> read **2** through the other. One instance, shared — the direct consequence of
+> "first import wins".
+>
+> ```
+> note: 1 module(s) imported by more than one module AND declaring module-level state:
+>   p_leaf — imported by p_left, p_right
+>   their state is ONE instance shared by every importer, not a copy per
+>   importer: a mutation through one is visible through the others. Each is
+>   initialised exactly once, before main.
+> ```
+>
+> **SCOPED TO STATEFUL MODULES, or it would be a wall.** Most modules in a healthy
+> graph are shared; `Ast` is imported eight times by the selfhost. A module with no
+> top-level `var` has no instance to share, and the set is DERIVED from the AST rather
+> than guessed. Real-world check: **the selfhost compiling ITSELF is silent** — and
+> silent for the right reason, which was verified rather than assumed, since "correctly
+> scoped" and "detection is broken" look identical from outside: `CodeGen` has 14
+> top-level vars and exactly one importer per compilation (`codegen_test` and
+> `pipeline_test` are separate programs).
+>
+> **One edge case that had to be right:** import edges are counted at the RESOLUTION
+> site, before `compileDep`'s already-visited early return. The imports that get
+> SKIPPED are precisely the ones that make a module shared, so counting only first
+> visits would have reported no diamonds ever.
+>
+> ---
+>
+> ### DECISION 2026-08-18: HOLD AT WARNING. Do not promote to a refusal yet.
+>
+> Sean's call, after walking the user experience of both modes. The analysis below is
+> recorded in full so the question does not have to be re-derived.
+>
+> **THE VENDORED-DEPENDENCY CASE IS WHY.** A refusal has to be actionable, and
+> *"move the names they share into a third module"* is not advice a user can take about
+> code they do not own. Measured — the two dependency routes behave oppositely:
+>
+> | vendoring style | route | cycle detected? |
+> |---|---|---|
+> | `--module-path lib` | `scanDepForTypes` → **returns before `compileDep`** | **NO** — 0 reports |
+> | copied into the tree (adjacent files) | `compileDep` | **yes** |
+>
+> **THE `--module-path` EXEMPTION IS ACCIDENTAL, NOT DESIGNED**, and that is the part
+> most worth remembering. Those deps escape because they are parsed for TYPES ONLY and
+> never compiled — not because anyone decided vendored code should be unjudged. It
+> reverses silently the day module-path deps are made to compile properly. Both new
+> diagnostics are blind there: a vendored stateful shared module gets no diamond note
+> either.
+>
+> **THE DANGEROUS CASE IS VENDORING BY COPYING INTO THE TREE**, which is how people
+> vendor in a language with no package manager. Those files are adjacent, so they are
+> compiled, so a cycle among them IS detected — and under refusal that is a wall the
+> user cannot climb without forking someone else's library and losing the patch on the
+> next update.
+>
+> **PRECONDITIONS FOR PROMOTING TO A REFUSAL** — all three, not any one:
+>
+> 1. **An escape hatch that prices the workaround.** `--allow-import-cycles`, modelled
+>    directly on `--allow-implicit-try`: §28b made implicit error propagation a hard
+>    error and shipped exactly that flag ("accepts the old implicit form for one
+>    release"). This repo has already solved this shape once; copy it.
+> 2. **A DIFFERENT MESSAGE when the user does not own the cycle.** If every module in
+>    the cycle sits under `--module-path` or a vendor directory, the actionable advice
+>    is *report upstream, or pin around it*, plus the flag — not "extract a module".
+> 3. **Close or deliberately document the `--module-path` blind spot.** Preferably make
+>    it WARN (so you learn your dependency has a cycle) and never error. Leaving it as a
+>    side effect of type-scanning is the kind of unchosen behaviour that becomes a
+>    surprise later.
+>
+> **UX, captured from real runs so it need not be re-run:**
+>
+> | mode | what the user gets |
+> |---|---|
+> | **warning** (ships) | both diagnostics print; the program **builds and runs** |
+> | **refusal** (`cycle_is_error = true`) | same text with `error:`, stops there, **exit 1** |
+> | after taking the advice | extracting the shared name into an import-free third module **clears it** — verified by doing it, still in refusal mode, program ran |
+>
+> **One asymmetry worth knowing:** in refusal mode the DIAMOND note never prints,
+> because the compile aborts at the cycle before reaching end-of-compilation. The two
+> diagnostics are not both visible on a failing build.
+>
+> **And the warning is doing real work right now**, which is the honest argument for
+> holding: the `config ↔ logger` transcript used to evaluate this is a program that
+> compiles and runs correctly today. Refusing it would break a working build over
+> something Zebra cannot yet say what is wrong with. Promote when module-level state in
+> a cycle gets a defined answer — or gets forbidden — not before.
+>
+> **WHAT REMAINS OPEN:** (0) the `--module-path` blind spot — a cycle wholly inside a
+> vendored tree is invisible to BOTH new diagnostics, and closing it at WARNING level
+> is small, decoupled from the refuse/allow decision, and was offered but not done.
+> (1) the stack overflow itself is still unexplained — see the
+> refuted hypothesis and three failed reproductions below — and this diagnostic makes
+> the cycle VISIBLE without making it SAFE; if the overflow's cause also affects acyclic
+> code, the warning hides nothing but fixes nothing either. (2) whether to promote the
+> warning to a refusal, which is a language-semantics decision. (3) the adjacent finding
+> that a cycle carrying a class type mis-boxes (`expected 'Ctx', found '*Ctx'`).
+
+- **Severity:** Medium — no wrong answers, but the failure mode is a silent crash with
+  no message naming the cause, and the construct is accepted all the way through the
+  build.
+- **Status:** OPEN. Not pinned by a fixture — see "why there is no fixture" below.
+
+**Found 2026-08-17** while placing `collectOldNodes` for BUG-292. The TypeChecker
+needed a traversal that lives in `CgHelpers`, and `CgHelpers` already imports
+`TypeChecker` (`InferCtx`, `Type_`, `inferExpr`), so the import would close a cycle.
+
+**A two-module cycle works.** Probed first, deliberately:
+
+```zebra
+# a.zbr                          # b.zbr
+use b exposing helperB           use a exposing helperA
+def helperA(n: int): int         def helperB(n: int): int
+    return n + 1                     return helperA(n) + 10
+def main()
+    print("a=${helperB(1)}")
+```
+
+prints `a=12`. So cycles are not rejected, and nothing warns.
+
+**At compiler scale the same construct produces a broken binary.** Adding
+`use CgHelpers exposing collectOldNodes` to `selfhost/TypeChecker.zbr` regenerates and
+builds with no error, and the resulting `zebra.exe` dies on hello-world:
+
+```
+Stack overflow (no address available)
+```
+
+**ISOLATED, not inferred.** The first attempt carried a new check as well, so the
+obvious suspect was my own code. Adding the bare `use` line **with zero call sites**
+reproduces it exactly. The import alone is sufficient.
+
+**MECHANISM UNKNOWN, AND THE FIRST HYPOTHESIS IS NOW REFUTED.** This entry originally
+guessed module-init: emitted modules call each other's `_initModuleVars()`, and a cycle
+there would recurse forever — which would also explain why the toy passed, since
+neither toy module had module-level state. **Tested 2026-08-18; it does not hold.**
+
+Three minimal cycles were probed and NONE reproduces the stack overflow:
+
+| probe | shape | result |
+|---|---|---|
+| functions only | mutual `def` calls | prints `a=12` |
+| **+ module-level state on both sides** | the module-init hypothesis, directly | prints `a=12` |
+| carrying a TYPE across the cycle | `use ... exposing Ctx, helperA` | a DIFFERENT error: `expected type 'Ctx', found '*Ctx'` (class auto-box across the cycle) |
+
+So whatever produces the overflow needs something the toys lack — scale, or a specific
+construct in the TypeChecker/CgHelpers pair. The third probe is its own small finding:
+a cycle carrying a class type mis-boxes, which is not this bug but is adjacent.
+
+**Recorded as unknown on purpose.** A tidy cause this has not earned would be worse
+than none, and the reproduction attempts are the useful inheritance: do not re-run
+these three.
+
+**What IS established:** the compiler's own traversal does not hang — `compileDep`
+guards on a `visited` list, so each module is compiled once. The failure is entirely in
+the PRODUCT: the built `zebra.exe` was fine to produce and crashed when run.
+
+**Why there is no fixture.** Any fixture would be two `.zbr` files that build a
+compiler-scale cycle, and the failure is a stack overflow in a BUILT BINARY rather
+than a compile error — nothing in the corpus harness runs that shape. The cheap
+version (the toy above) PASSES, so it would pin the wrong thing. The honest pin is a
+refusal: see below.
+
+**Suggested fix — refuse, don't repair.** The front end knows the module graph after
+`use` resolution, so a cycle is a 62 ms check. `error: import cycle: TypeChecker ->
+CgHelpers -> TypeChecker` naming the path is worth far more than making cycles work,
+and it is the UNGIT-shaped answer: the system knows, so it should say. If cycles are
+later wanted deliberately, the refusal is the place to relax.
+
+**Workaround, and it is what BUG-292 shipped:** put the shared code in a module both
+sides can import without closing a loop — `selfhost/AstWalk.zbr`, which imports `Ast`
+and nothing else.
+
+**REPRODUCTION ATTEMPTED 2026-08-30 — REPRODUCES, BUT NOT AS FILED, AND NOT SILENTLY.**
+Two three-module cycles built and run:
+
+| cycle contents | result |
+|---|---|
+| functions only | warns `import cycle: zz_a -> zz_b -> zz_c -> zz_a`, **builds and runs correctly** (printed `6`, the right answer) |
+| carrying MODULE-LEVEL STATE | warns, then **FAILS to compile**: `zz_c.zig:13:12: error: unable to resolve comptime value` |
+
+That matches the warning's own text — well defined for functions, undefined for
+module-level state — so the diagnostic is accurate about its own scope.
+
+**The title's claim is now wrong in the useful direction.** It does not "build cleanly and
+produce a compiler that stack-overflows": it warns, and then fails loudly. **Reclassified:
+not a silent-wrong-answer bug.** What is left is a LEAKED ZIG DIAGNOSTIC — `unable to
+resolve comptime value` is Zig's message about our emitted code, with no Zebra-level
+explanation and no source position in the user's `.zbr`. That is a real defect and a much
+smaller one.
+
+**Found alongside, and filed separately as BUG-324:** the failed compile still leaves a
+runnable `.exe` that segfaults with no output.
+
+**RE-PROBED 2026-10-28 -- BOTH LEAKS ARE GONE; neither reproduces on `a549b29`.** Five
+probes, every one warning about the cycle and then building and printing the right answer:
+
+| cycle (zz_a -> zz_b -> zz_c -> zz_a unless noted) | printed | expected |
+|---|---|---|
+| module-level state on all three sides, read locally | 112 | 2 + 10 + 100 |
+| `zz_c` reads `zz_a.count` across the cycle | 114 | 2 + 10 + 100 + 2 |
+| `zz_c`'s INITIALISER reads `zz_a.count` | 113 | 2 + 10 + (1 + 100) |
+| two-module cycle carrying a class (`exposing Ctx, helperP`) | 11 | 5 * 2 + 1 |
+| ... the other module constructs, rebinds and returns the class | 22, 9 | 12 + 10; 9 |
+
+So the 2026-08-30 `unable to resolve comptime value` and the 2026-08-17 `expected 'Ctx',
+found '*Ctx'` were fixed in passing by later work; which commit fixed them is not
+established (none names them), and the probes here may not match the originals byte for
+byte -- those files were not kept. The third row
+is the shape the warning calls undefined, and it came out right only because the read ran
+in the direction that happened to work. **That sentence originally said "defined in
+practice", and it was wrong:** the other direction -- the DEPENDENCY's initialiser reading
+the importer's computed var -- printed -6148914691236517205 (2026-10-28, `zz_b.bval =
+zz_a.count + 1`). Dependencies initialise first, so a cycle has no eager order that works.
+
+**THE MODULE-STATE HALF FIXED 2026-10-29 -- a cycle is a singleton (Sean's framing).** Each
+module stays one instance, initialised once, and every module-level variable is set before
+its first read: a computed one (`isDeferredModuleVar`) in a module on a cycle gets an
+accessor, `_zbr_mvref_<name>()`, which runs its initialiser on first use, and every
+reference -- the module's own, `mod.x`, an exposed `x`, reads and writes alike -- goes
+through it as `_zbr_mvref_<name>().*`. The module's own init sweep forces the accessors
+rather than re-assigning, so a write made by a partner's initialiser survives. An
+initialiser that needs its own value is a genuine cycle: a frame list in the runtime names
+the chain (`error: module initialisation cycle: b.y -> a.x -> b.y`, exit 1). With
+`--no-runtime-module` each module has its own frame list, so the message names only the
+variable and says the chain is unavailable. Cycle members are marked by the cycle report
+(`$cyc:` in dep_types), which runs while every member is still in progress, so no member
+is generated before it is known to be on a cycle. Modules not on a cycle emit exactly as
+before; the compiler's own source has no cycle and only the edited modules' `.zig` moved.
+Fixtures: `test/bug295_lazy_init_test.zbr` (every reference spelling, two writes that must
+survive; the pre-fix compiler panicked "integer overflow") and
+`test/bug295_init_cycle_test.zbr` (`smoke_run_fail`; the pre-fix compiler printed
+-6148914691236517204). **Warn-or-refuse is decided: warn** (Sean, 2026-10-29), and the
+warning now states the rule instead of calling module state undefined.
+Also probed (not a fixture): a three-module cycle a -> b -> c -> a whose initialisers read
+across it, plus a module OUTSIDE the cycle (imported by a and b) whose initialiser reads a
+cycle member's computed var -- `30 33 64` as expected; HEAD panicked "integer overflow".
+A static scan of the `use` graphs of this repo, zebra-ide and the GameEngine (10,662 files)
+found no cycle outside the bug295 fixtures, so no existing program's emit moves. FULL tier
+48/48 in one invocation.
+
+**(0) FIXED 2026-10-29:** a cycle wholly inside `--module-path` deps is WARNED, once,
+and never refused even with `cycle_is_error` -- `scanDepForTypes` keeps its own stack and
+the advice is "report it upstream", per the preconditions above. Both reporters share a
+canonical cycle key, so a cycle reached twice (two `use` lines of one module, or compileDep
+and the type scan) prints once; the duplicate warning was visible in
+`bug664_cycle_static_test`. Pinned by two `cli-surface` legs, red before the fix (0
+warnings; 2 warnings).
+
+**(1) NOT REPRODUCED 2026-10-29, on two compilers.** The August setup -- the bare
+`use CgHelpers exposing <fn>` in `TypeChecker.zbr`, zero call sites, closing the
+TypeChecker <-> CgHelpers cycle -- was re-run. On today's tree it did not overflow: it did
+not BUILD, because closing the cycle hit BUG-666 (an `else` zig refused). With BUG-666's
+one-line guard, the cycle compiler builds and runs hello-world on `f28218a` (first-use
+initialisation everywhere) AND on `249e246` (before any first-use initialisation), and on
+`f28218a` it passes the full `rebuild.sh` round-trip -- a compiler whose own source holds
+an import cycle regenerates itself byte-identically. So first-use initialisation is not
+what removed the overflow; whatever caused it in August (Zig 0.16, the bootstrap as regen
+authority) is no longer present, and nothing here says what it was.
+
+**What remains open:** (1) the compiler-scale stack
+overflow, never reproduced below compiler scale; (3) a class's deferred `static var`
+(BUG-649) in a cycle module was still assigned eagerly by its module's sweep, so a cycle
+partner's initialiser that read it read garbage -- the cross-module form of BUG-664.
+**FIXED 2026-10-29 with BUG-664**: every computed static initialises on first use;
+`test/bug664_cycle_static_test.zbr` reads two across a cycle; (4) `--single-file` could not build ANY cycle -- zig:
+`use of undeclared identifier '_mod_<root>'`: a dependency's `use` of the root named a
+namespace struct only dependencies get. **FIXED 2026-10-29:** on a cycle the root is also
+named `_mod_<root>` (`const _mod_<root> = _Mod;`); acyclic output is unchanged. Pinned by
+`smoke_run_flag ... --single-file` on the lazy-init fixture, beside a `--no-runtime-module`
+registration for the inline shape. Not covered: a dependency that reaches the root through
+a DOTTED `use` path would name `_mod_<a_b_root>`, which still does not exist.
+
+**CLOSED 2026-10-29 (Sean).** Every item is resolved or decided: the cycle is REPORTED
+(2026-08-18) and stays a warning (decided 2026-10-29); a cycle is a singleton whose
+computed variables initialise on first use (27b6116, then every module under BUG-664);
+(0) `--module-path` cycles are warned (f28218a); (3) statics across a cycle (BUG-664);
+(4) `--single-file` builds a cycle (3a4fdfe); (1) the compiler-scale stack overflow does
+not reproduce on today's compiler, with or without first-use initialisation, once BUG-666
+(found re-probing it) is fixed -- recorded as NOT REPRODUCED, cause unknown.
+
+### BUG-666: closing an import cycle re-registered already-compiled modules' unions, so an exhaustive `branch` kept an `else` zig refused -- FIXED 2026-10-29 (found the same day)
+
+When `compileDep` re-enters a module still in progress (a cycle), it type-scans that
+module (`scanDepForTypes`, so the importer's uses of it are typed), and the scan recursed
+into the module's own adjacent `use`s -- including modules compileDep had ALREADY compiled
+and registered. Each was populated into `dep_types` again, so a union's variant list
+doubled; `branchCoversAllVariants` then compared the arms against twice the real count,
+judged an exhaustive branch partial, kept its `else`, and zig refused it ("unreachable else
+prong; all cases already handled") -- a message about code the user did not write.
+
+**Found by re-running BUG-295 (1)'s August setup**: closing the TypeChecker <-> CgHelpers
+cycle in the compiler's own source no longer built at all. The scan now skips an adjacent
+module that compileDep already visited -- its types are in `dep_types` already. Fixture
+`test/bug666_cycle_rescan_test.zbr` (root, a union module compiled first, and a lib that
+imports the root): red on `f28218a` at line 17 with the zig error, `bug666: 9 4 9` after.
+With the guard the compiler containing that cycle builds, runs, and passes the full
+round-trip. Not checked: whether other per-module registrations (class fields, ref fields)
+were also doubled and harmless -- the guard removes the second registration for all of
+them.
+
+### BUG-665: an instance method that reads only STATIC members failed inside zig -- "unused function parameter" -- FIXED 2026-10-29 (found the same day)
+
+```zebra
+class Reg
+    static var n: int = 5
+    def inst(): int
+        return n          # zig: unused function parameter (self)
+```
+
+Found writing BUG-664's probes; the N-1 anchor fails the same way, so it predates that
+work. The decision to emit `_ = self;` asks whether the body uses `this`, a field or a
+method (`bodyUsesAnyField` / `bodyUsesAnyMethod`), and both counted STATIC members --
+which are emitted through their type (`_zbr_ty_Reg.n`), never through `self`. So `self`
+was judged used, was not discarded, and was in fact unused. Both now skip statics.
+Fixture `test/bug665_static_only_method_test.zbr`: a plain static, a computed static, a
+bare static-method call, and the control `mixed`, which reads an instance field too and
+must not be discarded. Red on HEAD `3ca3094` at line 12.
+
+### BUG-664: a computed module var or `static var` that read one initialised LATER read uninitialised memory -- no cycle needed -- FIXED 2026-10-29 (found the same day)
+
+- **Severity:** High -- a segfault (or a garbage value) at start-up from a program the
+  front end accepts, in a single module, in the most ordinary shapes.
+- **Found:** 2026-10-29, scoping BUG-295 item (3).
+
+A module's computed module vars (`isDeferredModuleVar`) and computed statics
+(`isDeferredStaticField`, BUG-649) are declared `= undefined` and assigned in
+`_initModuleVars()`: module vars in SOURCE ORDER, then every static. Any initialiser that
+reads something later in that sweep reads `undefined`. Each of these segfaults
+(`0xffffffffffffffff`) on the compiler of 2026-10-29, Debug:
+
+```zebra
+# (a) a module var reading a later module var
+var a: int = b.len + 1
+var b: List(int) = [1, 2]
+
+# (b) a module var reading a static -- through a function, which no syntactic
+#     ordering can see
+class Reg
+    static var items: List(int) = [1, 2, 3]
+def count(): int
+    return Reg.items.len
+var n: int = count() + 10
+
+# (c) a static reading the static of a class declared later
+class A
+    static var xs: List(int) = [B.ys.len]
+class B
+    static var ys: List(int) = [1, 2]
+```
+
+And the direct form, `var n: int = Reg.items.len + 10` with `Reg` in the same module. The
+REVERSE direction works (`static var tag: str = "t" + base` reading a module var `base`),
+because module vars are swept first -- so neither fixed order of the two passes is right.
+
+**Why it is the same defect as BUG-295's module-state half, and wider.** BUG-295 fixed the
+cross-module form for modules on an import cycle with first-use accessors
+(`_zbr_mvref_<name>()`). The same accessor answers all of (a)-(c), but only if it applies
+to every computed module var and static in every module, which changes the emit of almost
+every program, the compiler's own included. That is a cost (a call and a branch per read
+of a computed module var or static; binary size) to be MEASURED and decided, not slipped
+in. A compile-time topological order of the sweep would cost nothing at run time and would
+fix (a) and (c) but not (b): the dependency hides inside a function body.
+
+**Control when fixing:** the three programs above, plus `zz_one_b`'s reverse direction,
+which must keep working.
+
+**FIXED 2026-10-29 -- every computed module var and static initialises on first use**
+(Sean: "initialize at first use"). BUG-295's accessor, `_zbr_mvref_<name>()`, now covers
+every `isDeferredModuleVar` in every module, not only modules on a cycle, and a computed
+static gets the same shape inside its class struct, `<Type>._zbr_sfref_<field>()`. Every
+reference goes through them -- `Reg.f`, `lib.Reg.f`, an exposed `Reg.f`, a bare `f` in a
+method -- and the init sweep forces them instead of assigning, so all are set before main
+and the order of declarations no longer matters. Fixtures:
+`test/bug664_init_order_test.zbr` (all four shapes above plus the reverse control,
+default and `--no-runtime-module`) and `test/bug664_cycle_static_test.zbr` (statics read
+across an import cycle -- BUG-295 item 3). Both segfaulted on HEAD `3ca3094`.
+
+**The cost, measured, `--release`:** an accessor is an `inline` fast path (load, compare,
+return) over a cold out-of-line initialiser. As one plain function it was ~8x slower in a
+hot loop (min 1772 ms vs 215 ms for 400M reads, hand-split; 269 ms through the compiler).
+The rest cannot be removed this way: the optimiser can no longer hoist such a read out of
+a loop, and in a loop reading only `table.len` and `Reg.items.len` it had deleted the loop
+entirely (0 ms). In a loop doing real work with them (`table.at(i % 4) +
+Reg.items.at(i % 3)`, 200M iterations), `tools/bench_ab.sh` REFUSED to report a ratio:
+4172 ms vs 4346 ms of work (+4%) against a 5892 ms noise floor on a loaded host -- not
+distinguishable there; to be re-measured on a quiet one. A user program with one computed module var grew 3 KB (839,168 ->
+842,240 B). **The DEBUG compiler grew 115.6 -> 145.3 MB (deterministic, rebuilt twice),
+and the leading hypothesis -- NOT established -- is the linker rather than code:**
+virtual section sizes are identical and only `.text`'s raw allocation moved (51.3 ->
+75.0 MB); replacing the calls to `_zbr_init_cycle` with a panic restores 115.6 exactly,
+yet each of four bisected pieces of its body costs zero on its own, which is the shape of
+a capacity threshold in Zig's self-hosted linker but does not prove one. The `--release`
+compiler's size (the one that ships) is what would settle it, and was not measured here.
+The first explanation tried -- `_zbr_exit`'s census flush -- was tested and FAILED (the
+size did not move with `std.process.exit` in its place).
+
+### BUG-564: a statement-body lambda inside a multi-line call or literal must indent its body past the STATEMENT; indenting past the continuation line gives "unexpected end of input" at an unrelated line -- FIXED 2026-10-27
+- **Found by:** writing BUG-561's fixture; the same with PARENTHESES on the N-1 anchor, so it
+  predates BUG-561.
+- **Repro:**
+  ```
+  def main()
+      var t = add(applyTo2(def(x: int) = x + 1),
+          applyTo2(def(x: int): int
+              var y: int = x * 3
+              return y
+          ))
+      print(t)
+  ```
+  `9:1: error: unexpected end of input while parsing an expression`. Written with the body one
+  level past the STATEMENT (8 spaces) and `))` back at the statement's level, it prints 9.
+- **Cause:** inside a continuation the lexer does not process indentation, so the
+  continuation line (`applyTo2(` at 8 spaces) never sets the depth; the lambda's body is
+  measured against the statement (depth 1), and a body at 12 spaces is two indents. Its
+  dedent then never returns to the lambda's start depth, the lambda stack is never popped, and
+  the rest of the file is read as one expression.
+- **Expected:** measure the body against the line the lambda STARTS on -- record that line's
+  indentation when `def(` is seen inside a continuation -- or at the least refuse the extra
+  indent with a message naming the lambda, not end-of-input on the line after.
+- **Fix:** the lexer records the indentation level of every physical line, continuation lines
+  included (`curLineLevel`), and a lambda pushed on a continuation line remembers it. On the
+  lambda's first body line, a body deeper than that header line is measured from it: the
+  depth moves to the header's level without a token and returns to the statement's level the
+  same way when the body ends (`lambdaRestore`). A body one level past the STATEMENT -- the
+  form that always worked -- is still measured from the statement. A closer on the body's own
+  last line (`return y))`) never worked in either form; it is now refused by name
+  ("`)` closes the call or literal around a statement-body lambda on the lambda's own body
+  line -- put it on a line of its own ...") instead of "unexpected expression token". Fixtures
+  `test/bug564_lambda_continuation_indent_test.zbr` (both forms, a list literal, a nested
+  lambda; `bug564: 9 11 101 13`) and
+  `test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr`; the N-1 anchor fails the
+  first with "unexpected end of input" at 16:1 and gives the bare token error on the second.
+
+### BUG-663: a statement-form `zig"…"` ending in a block got a `;` appended, and zig refused it -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+zig"if (n > 2) { hits += 10; }"     # emitted `if (n > 2) { hits += 10; };`
+```
+
+zig: `expected statement, found ';'` -- a message about code the user did not write, and
+no spelling of the escape avoided it, since the `;` was added to whatever the text ended
+with unless that was already a `;` (BUG-006). Found writing BUG-267's fixture. A `}` is
+ambiguous -- `p = .{ .x = 1 }` closes a literal and needs its `;` -- so
+`zigStmtNeedsSemicolon` (AstWalk.zbr) finds the `{` the final `}` matches and looks at what
+precedes it: `)`, `|`, `:`, `else` or nothing is a block (`if`/`while`/`for`/`switch`,
+a capture, a label, a bare block) and gets no `;`; `.`, a name or `]` is a literal and
+keeps it. Braces inside zig strings are not skipped, like the rest of the zig-literal
+scans. Fixture `test/bug663_ziglit_block_stmt_test.zbr`: an `if`, an `if`/`else`, a
+`while` with a continue expression and a labelled block, plus `_ = .{ .a = n }` as the
+control that still needs its `;`.
+
+### BUG-267: `zig"…"` literals do not participate in MUTATION analysis -- FIXED 2026-10-28 (usage half 2026-08-06)
+
+**Found 2026-08-05** probing a real third-party DLL. Same root class as BUG-260 (a
+parameter used only inside a query bind list), and worse-placed: `zig"…"` is the only way
+to touch a C pointer, so the escape hatch reserved for FFI is exactly the construct the
+analysis cannot see into.
+
+    var p = Py_GetVersion()                       # read ONLY inside the escape
+    zig"const _c: [*:0]const u8 = @ptrFromInt(p); out = std.mem.span(_c);"
+
+    error: pointless discard of local constant   ->  _ = p;   emitted alongside the use
+    error: cannot assign to constant             ->  `out` emitted const; escape assigns it
+
+Both walks stop at the literal: a variable **read** only inside it is treated as unused,
+and one **assigned** only inside it is treated as never mutated. Working around it needs
+two unrelated dummy statements (a fake comparison to use `p`, a dead branch to make `out`
+a var) — see `docs/extern_ffi_design.md` §9 for the full repro.
+
+**Control when fixing:** a var read only inside a `zig"…"` must NOT get a discard, and one
+assigned only inside it must be emitted `var`; a genuinely unused var must still get its
+discard, and a genuinely non-mutated one must still be `const`. Both directions.
+
+**READ HALF FIXED 2026-08-06.** `mightUseNameInExpr` now carries the `zig_lit` case its
+sibling walker has had since B3, so a local read only inside an escape is no longer
+discarded. Pinned by `test/bug267_ziglit_local_use_test.zbr`, which asserts BOTH
+directions — the escape case compiles, AND a genuinely unused local still gets its
+`_ =`, so a fix that simply stopped discarding anything fails there rather than passing.
+**What remains open is the WRITE half only** (see the last section below).
+
+**Re-scoped 2026-08-06 — the earlier scoping below was WRONG about the read half, and
+wrong in the expensive direction: it argued for new language syntax to solve a problem
+this codebase had already solved one walker over.**
+
+**The read half is an INCONSISTENCY, not a missing capability.** `zigLitMentionsWord()`
+already exists in `selfhost/CgHelpers.zbr`, and its own comment states why: *"A param
+referenced from a `zig"…"` literal is used, so it must not be discarded."* There are two
+usage walkers, and only one of them learned that lesson:
+
+| walker | `zig_lit` case | used by |
+|---|---|---|
+| `nameUsedInExpr` | scans the text | parameter discards |
+| `mightUseNameInExpr` | falls into "no user idents" -> false | **local** discards |
+
+Measured, same construct both ways:
+
+    param used only in zig"…"  ->  no discard    (correct, long-standing)
+    local used only in zig"…"  ->  `_ = q;`      -> pointless discard of local constant
+
+So the fix is to give `mightUseNameInExpr` the same `zig_lit` case the sibling walker
+already has. No new syntax; it makes locals behave like parameters, which is what a reader
+would assume already happens.
+
+**The scan does not skip Zig strings or comments**, so a name appearing only inside one
+counts as a use, the discard is suppressed, and Zig reports `unused local variable`. That
+is a real limit and it is stated here rather than hidden — but it is **already accepted for
+parameters**, has not bitten, and its failure direction is a compile error rather than a
+silent miscompile.
+
+**Two designs considered and NOT pursued, recorded so they are not re-derived:**
+
+- **`zig"…" reads a, b`** (an explicit read list). Exact rather than heuristic, and it was
+  the recommendation until `zigLitMentionsWord` turned up. Rejected because it adds
+  language surface to answer a question the compiler already answers elsewhere, and would
+  leave TWO mechanisms for "what does this escape touch" — the more likely long-term
+  hazard than the false-positive it prevents. Revisit only if the string/comment
+  false-positive is actually hit.
+- **A `zig` BLOCK form with `reads` / `writes` clauses** (mirroring `capture`). The more
+  complete design, and the only one that addresses the write half for multi-statement
+  escapes. Not pursued because **the need was never demonstrated**: every real case so far
+  is a value flowing OUT of C, which expression form already handles. Revisit when someone
+  hits a genuine multi-statement escape that must mutate an existing local.
+
+**The write half is separate and remains open.** No mutation walker scans `zig"…"` at all,
+so a local assigned only inside a statement-form escape is still emitted `const` and Zig
+rejects the assignment. Expression form (`var out = zig"…"`) avoids it entirely and is the
+recommended shape, so this is a documented limit rather than a blocker.
+
+**Related:** BUG-260 is the same walker question in a different construct (a parameter used
+only inside a query bind list). It is NOT fixed by this — that construct is a list literal,
+not a `zig_lit` — but it is worth checking against whatever fix lands here.
+
+**WRITE HALF FIXED 2026-10-28.** The mutation scan (`scanMutationsInExpr`) now has a
+`zig_lit` arm: `zigLitWrittenWords` (AstWalk.zbr) lists the names the escape ASSIGNS --
+`name = …`, a compound `name += …` / `<<=` / `+%=` …, or through a field, `name.f = …` -- and
+the names whose address it takes, `&name`, and each is marked mutated, so the local is
+emitted `var`. Excluded on purpose: comparisons (`==`, `<=`, `!=`), a field of something
+else (`self.x = …` names the field), a binary `a&b`, and an index write (`name[i] = …`: a
+List or map writes through its reference, and `var` there is zig's "never mutated"). The
+same textual limit as the read half: zig strings and comments are not skipped. Neither
+proposed syntax (a `writes` clause, a `zig` block) was needed. The `zig_lit` waiver on the
+walker's `expr-walker` marker is gone, since the variant is now handled.
+
+Fixture `test/bug267_ziglit_write_test.zbr`, both directions: `out = 42`, `acc += 9` and
+`&cell` make their locals `var`; `seen`, only read and compared, stays `const` -- a fix that
+marked every mentioned local `var` would fail there with zig's "never mutated".
+Red-checked against HEAD's compiler (built in a worktree): `bug267_ziglit_write_test.zbr:8:
+error: cannot assign to constant`, the original symptom.
+
+### BUG-662: the regex compiler built wrong NFAs for nested quantifiers, `(?:a|b)?`, `{0,m}`, `{m,n}?` and repeated groups -- FIXED 2026-10-28 (found the same day)
+
+Found by the oracle written for BUG-014 (below), and present in the engine before it:
+
+- `*` and `+` closed their loop with `patch`, which set `out1` even for a dangling exit
+  that was a split's `out2` -- so a quantifier around a group ending in a quantifier
+  rewired the INNER loop. `(?:.*|a)+c{1,3}a(?:[ac])` did not match "bcccaa".
+- `x?` kept only the first exit of `x`: `(?:a|b)?c` could not take the `b` branch (a
+  capturing group has one exit, so `(a|b)?c` happened to work).
+- `x{0,m}` made the first copy mandatory, and `x{0}` / `x{0,0}` matched one `x`.
+- `x{m,n}?` read the `?` as a literal character.
+- `(a){2}` re-parsed the group for its second copy and gave it a NEW group number, so
+  `groups()` reported two groups. Copies now rewind the group counter; the count comes
+  from the compiler (`Regex.n_caps`) rather than from counting save nodes.
+- `()` matched but never recorded its end: `groups()` said nil where Python says "".
+
+The quantifiers are now built by four combinators (`concat`, `optional`, `loop`, `empty`)
+that keep every exit. `{m,n}` is m copies then n-m optional ones (`x*` when unbounded).
+Fixture `test/bug014_regex_priority_test.zbr` carries one row per item above.
+
+### BUG-014: regex laziness was global -- one `*?` made every quantifier lazy -- FIXED 2026-10-28 (found 2026-04)
+
+`<.*?>.*>` on "<a>b>c>" found "<a>b>": parsing any `*?`/`+?`/`??` set a flag on the whole
+regex, and the matcher then stopped at the SHORTEST match. Filed as "architectural,
+post-1.0" because the engine is a Thompson NFA, not a backtracker. It is not architectural:
+a Pike VM already carries priority. Threads are kept in priority order (a greedy split
+prefers the loop, a lazy one the exit, `|` its left side), and once a thread reaches the
+match every lower-priority thread is dropped -- leftmost-first, the semantics of Python,
+Perl and JavaScript, with each quantifier's greediness its own. `re.match(s)` (whole
+input) drops nothing and asks whether any path consumes all of `s`, as Python's
+`fullmatch` does: `a|ab` finds "a" in "ab" and also matches "ab".
+
+**This changes one documented-by-nobody behaviour:** alternation used to pick the LONGEST
+alternative (`a|ab` found "ab"); it now picks the first that leads to a match. Measured
+before landing: no pattern in this repo, zebra-ide, the GameEngine or the book's 803
+examples depends on it -- see below.
+
+A loop iteration that consumed nothing ENDS the loop, as in Python: a Pike VM drops a path
+that comes back to a visited node, which let a lower-priority alternative win
+(`(a|b??)+` on "aab" found "aab", Python "aa"). Reaching a loop's split a second time in
+one closure now continues at that loop's exit, and a `save` node is never treated as
+visited (the empty iteration of `(.?)+` returns through the group's close).
+
+**The instrument.** A harness built the old and new engines from the runtime's own source
+and compared both with Python's `re` (`search` span, `fullmatch`, group spans) on random
+patterns over {a,b,c} with groups, alternation, classes, `.`, every quantifier and its lazy
+form. Five seeds of 3,000 cases each (one all-greedy, four with lazy forms): the OLD engine
+disagreed with Python on 141-328 `find` results, 26-37 `match` results and 146-186 group
+results per seed; the new one on 0 `find`, 0 `match` and 1-6 group results. Every remaining
+group difference is a loop whose body can match empty nested inside another such loop, where
+Python records one more empty iteration of the inner group; following that would mean
+revisiting splits along every path, which is exponential, and RE2 and Go's regexp differ
+from Python on the same shape. Documented in QUICKSTART's Regex section.
+
+**What changed for existing code, measured:** the book's 37 examples that use `Regex`
+print identically under the old and the new runtime (the instrument's control: the same
+setup prints 10 differing rows of this fixture). zebra-ide uses no regex; the GameEngine's
+one use translates Lua patterns, which have no `|`. Red-checked: the fixture under the old
+runtime prints `<a>b> | <a>,<a> | ab true | c | ...` -- 10 of its 14 rows wrong.
+
+### BUG-661: a module-level `const` could be assigned to -- the front end let it through to zig -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+const LIMIT: int = 5          # in k.zbr
+...
+LIMIT = 7                     # in k.zbr itself: passed -c
+k.LIMIT = 7                   # through the module: passed -c
+LIMIT = 7                     # after `use k exposing LIMIT`: passed -c
+```
+
+All three reached zig as `cannot assign to constant`, a message about generated code.
+Function-local consts, parameters (BUG-354) and loop variables were already refused; a
+MODULE const was not, in any spelling. A module's consts are now recorded by module
+(`$mc:<module>.<name>` in ModuleTypes, beside BUG-660's `$mv:`), and an assignment -- plain
+or compound -- to one is refused at `-c` naming the owning module and the fix (`declare it
+var there`). A local that shadows the name is not the const and is untouched. Found while
+writing BUG-660's probe. Fixture `test/fail_fixtures/bug661_module_const_assign_fail.zbr`
+(+ `bug661_const_lib.zbr`): the three refusals at their columns, and a `var` of the same
+module written through it in the same file, not refused.
+
+### BUG-660: a used module's top-level `var` read or written as `lib.count` failed inside zig -- FIXED 2026-10-28 (found the same day)
+
+`use geom` then `geom.made`: zig said `root source file struct 'geom' has no member named
+'made'`. A module var is declared `_zbr_mv_made` (BUG-137's prefix); the `exposing` spelling
+was rewritten to it (BUG-158) and the qualified one never was -- the same half-done shape as
+BUG-483's qualified `m.f()`. The member now emits `<module>._zbr_mv_<name>` when the object
+is a used module and `$mv:<module>.<name>` says that module declares the var, so a field or
+type of the same name is untouched; reads and writes both, compound assignment included.
+The checker types it from the module's own `$fns:<module>` facts (BUG-604's table), so
+`geom.made + 10` is an int and not "cannot infer the type". Found while writing the
+subdirectory-modules fixture. Pinned in `test/subdir_modules_test.zbr`: a constructor in the
+dep bumps the var, the root adds 10 to it through the module and doubles the result.
+
+### BUG-449: `HttpRequest` cannot be constructed from Zebra — FIXED 2026-10-28 (found 2026-09-25)
+
+`var r = HttpRequest()` -> "undefined name: 'HttpRequest'". A clean refusal, but it means a
+router written as `def route(req: HttpRequest): HttpResponse` (the book's Project 2) cannot be
+unit-tested without starting a server. A limitation, not a leak.
+
+**Fixed 2026-10-28** (Sean: the surface may change, we are its only users).
+`HttpRequest(method, path, content: "", query: "")` builds the request a handler receives,
+and `HttpRequest.new(...)` is the same constructor -- the `HttpResponse` / `HttpResponse.new`
+pair, so neither type has a spelling the other lacks. `method` and `path` are required; the
+named form takes the four field names in any order after the positional ones. The checker
+holds it like a call with a signature: too few, too many, an unknown name (`body:` names the
+four that exist), a field given twice, a positional after a named one, and a non-`str` value
+are each refused at `-c` at the constructor's column; codegen is a struct literal in field
+order, with `""` for an omitted field. `HttpRequest` joined the stdlib-namespace set (so the
+resolver knows the name as a value) and the checker's closed-namespace table (`|new|`; a
+`HttpRequest.make` is refused naming `new`). Fixture `test/bug449_httprequest_ctor_test.zbr`
+routes four requests through a handler with no server: positional, `query:` named, the `.new`
+spelling, and an all-named request printed with its two defaults.
+
+### BUG-659: a `cue init` had no arity check -- a missing argument was silently zero -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+class Pt
+    cue init(x: int, y: int)
+var a = Pt(1)          # passed -c and RAN: y = 0
+var b = Pt(1, 2, 3)    # passed -c; zig "expected 2 argument(s), found 3"
+```
+
+`checkArgCount` returned early for any class name ("a constructor -- different arity
+rules"), and codegen pads a missing argument with `std.mem.zeroes`, so a missing required
+argument became a fabricated zero -- or, for a pointer parameter, a zig error about
+`std.mem.zeroes` that names nothing the user wrote (that is how `typechecker_test` failed,
+BUG-657). BUG-142's rule (Sean, 2026-07-31: too few and too many are errors, BECAUSE of the
+zero padding) now covers a class's `cue init`, unqualified and `lib.Pt(...)`; the message
+names the class, `too few arguments to 'Pt' (its cue init)`. A struct with no `cue init`
+keeps its field rules. The check applies to classes this file declares or exposes -- the
+first version also judged a FUNCTION `Widget` by an unrelated module's class `Widget`
+(test/bug502_mod_b, BUG-502's shape), and fell through into the runtime-factory refusal for
+a user class named `Random` (bug489); the corpus sweep caught both before commit. Measured
+over 3,110 files of this repo, zebra-ide and the GameEngine: the only new refusals were the
+compiler's own stale unit tests. Fixture `test/fail_fixtures/bug659_ctor_arity_fail.zbr`.
+
+### BUG-658: a dependency's enum or union VALUE named through its module failed inside zig -- FIXED 2026-10-28 (found the same day)
+
+`lib.Color.blue` emitted `lib.Color.blue`, but `lib` declares the enum as `_zbr_ty_Color`
+(BUG-281 B), so zig found no member `Color`. The qualified-type rewrite consulted only the
+names this module knows (its own and exposed types); an enum or union of the used module
+that is not exposed lives in `dep_types`. `is lib.Shape.dot` worked (BUG-237) and the
+exposed spelling always did. Found by `selfhost/ast_test.zbr`'s `Ast.IntBase.decimal`
+(BUG-657). Fixture `test/bug658_qualified_enum_value_test.zbr` (+ `_lib`).
+
+### BUG-657: the compiler's own unit tests (`selfhost/*_test.zbr`) are run by nothing -- 5 of 9 fail, 4 of them inside zig — FIXED 2026-10-28 (found the same day)
+
+`registration_check` covers `test/*.zbr` only, so these nine files sit outside every gate.
+Run on 2026-10-28 (the same result on HEAD's compiler, so none of it is new):
+
+| file | result |
+|---|---|
+| `astbuilder_test`, `cg_helpers_test` | pass |
+| `parser_test`, `resolver_test` | exit 0 but print `FAILED:` lines -- test sources in pre-`print()` / `try`-block syntax |
+| `pipeline_test` | its own assert fails (`pub const Foo` -- types emit as `_zbr_ty_Foo` since BUG-281 B). Its three stale `generateEntryPoint(m)` calls were fixed with BUG-656 |
+| `ast_test` | **zig refuses**: `struct 'Ast' has no member named 'IntBase'` |
+| `codegen_test` | **zig refuses**: `use of undeclared identifier 'Expr'` |
+| `lexer_test` | **zig refuses**: `duplicate struct member name 'main'` |
+| `typechecker_test` | **zig refuses**: `std.mem.zeroes` of a non-nullable pointer |
+
+The four zig refusals are leaks -- `-c` accepts each file -- and each is its own
+defect to reduce to a repro. Then: register the passing ones (`smoke_run`), and widen
+`registration_check` to `selfhost/*_test.zbr` so the set cannot drift out of view again.
+
+**Fixed the same day.** All nine run, pass and are `smoke_run`-registered, and
+`registration_check` now requires every `selfhost/*_test.zbr` to be registered (absolute,
+no baseline; red-checked by deleting one registration). Each of the four zig refusals was a
+different thing:
+
+| file | cause | fix |
+|---|---|---|
+| `lexer_test` | a class `static main` beside a top-level `def main()` became TWO file-scope `pub fn main` | the top-level `main` is the entry; no thunk for the class (`test/bug657_two_mains_test.zbr`) |
+| `ast_test` | `Ast.IntBase.decimal` -- a dep enum value through its module | **BUG-658** |
+| `codegen_test`, `typechecker_test` | stale constructor calls (`Generator`, `DeclStruct`, `DeclClass`, `DeclInit` gained parameters) that `-c` let through and codegen padded with `std.mem.zeroes` | **BUG-659**, then the calls brought up to date |
+
+The rest were stale expectations, each updated to the CURRENT design rather than to pasted
+output: type names are `_zbr_ty_X` (BUG-281 B), fields carry `= undefined`, the entry thunk
+is `main(_zinit: std.process.Init)` with `_allocator = _prog_alloc()` and one
+`_zbr_uncaught` path (BUG-466), an unknown name infers `unresolved` (BUG-099), `print` is a
+call and `try` blocks are gone. Two assertions were tightened rather than loosened: a field
+check `"x: i64,"` had been passing by matching inside `init(x: i64, ...)`. And four of the
+files could not fail: `parser_test`, `resolver_test` and `pipeline_test` printed `FAILED`
+and exited 0, `typechecker_test` and `lexer_test` only PRINTED their failures. All five now
+exit 1 (red-checked: a planted failure in each counter path).
+
+### BUG-656: a dependency class built through its MODULE name took its arguments in written order -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+use lib
+var a = lib.Pt(1)               # cue init(x: int, y: int = 7): zig "expected 2 argument(s), found 1"
+var b = lib.Pt(y: 20, x: 1)     # built x=20, y=1 -- valid Zig, wrong values
+```
+
+The module-qualified constructor path wrote the call's arguments one by one; the exposed
+`Pt(...)` path fills declared defaults and matches named arguments (`genArgListFull`). It
+now takes the same path when an argument is named or fewer are given than declared. The
+named case was the worse half: no error anywhere, the fields swapped. Found by running
+`selfhost/pipeline_test.zbr` (BUG-657), whose `Resolver.Resolver("<test>")` relies on
+`source: str = ""`. Fixture `test/bug656_dep_ctor_defaults_test.zbr` (+ `_lib`); HEAD refuses
+it inside zig.
+
+### BUG-655: positions after a multi-line `"""` string were short by its newlines -- FIXED 2026-10-28 (found the same day)
+
+A `"""` string whose text starts on its opening line was scanned to its closing quotes
+without counting the newlines in between, so every diagnostic after it -- and every
+`// zbr:` source marker the debugger and coverage read -- pointed too early. In
+`selfhost/main.zbr` the offset was 35 lines from line ~3620 on. Found because the strict
+diagnostics sweep named `bad_flag` at line 4453 when it is on 4488. Fixture
+`test/fail_fixtures/bug655_triple_quote_lines_fail.zbr` (11:18; HEAD says 8:18). The
+compiler's own emit moved only in its markers.
+
+### BUG-654: an error with no position vanished from `zebra diagnostics` and the LSP -- FIXED 2026-10-28 (found the same day)
+
+`tcCheckSide` caught a raised error as `error: <message>`, which `parseDiagLine` cannot
+place, so it was DROPPED: `m is nil` (refused by the AST builder) showed as `[]` -- a file
+that does not compile reported clean. Three changes: the builder's two user-reachable `is`
+refusals carry `file:line:col` and say what to write (`x == nil`); a raised message that
+already has a position is kept as is; and anything still position-less is shown on line 1
+saying so, never dropped. A `use`d module that does not parse is reported on THIS file's
+`use` line, naming the module and its own location (raised as is, `dep.zbr:4:14` landed on
+line 4 of the file being edited). Fixture `test/fail_fixtures/bug654_is_nil_fail.zbr`;
+`cli_check` legs for both diagnostics paths.
+
+### BUG-653: `zebra diagnostics` and the LSP knew no type from a `use`d module -- FIXED 2026-10-28 (found the same day)
+
+```zebra
+use zzlib exposing Pt
+var p: Pt = Pt(3)     # diagnostics: "unknown type 'Pt'" -- `-c` accepts it
+```
+
+The side-check built its checker with an empty dependency table, so every imported class
+was an unknown type and every value read through one an inference gap: two false errors
+per use in the editor, and real errors through an imported type were missed. It now reads
+the dependencies' types the way the compile route does (`scanDepForTypes`, beside the
+file). zebra-ide's `ide.zbr` went from a page of false errors to `[]`. `cli_check` legs: a
+clean two-module program is `[]`, and an int-into-str through the imported class is still
+reported at 5:20. (`zebra types`, the expression-type dumper, has the same empty table and
+was not changed.)
+
+### BUG-252: BUG-099's check is present but disabled by default — CLOSED 2026-10-28 (the inference gaps it measured are closed; arming it in `-c` is a separate decision)
+
+> **Heading corrected 2026-08-05.** It read *"BUG-099's check is missing from the selfhost,
+> same class as BUG-106/248"*. That was wrong on both counts — the check exists, and it is
+> not that class. The original text is kept below because the reasoning that produced the
+> wrong conclusion is the useful part; the correction is at the end of the entry.
+
+**Found 2026-08-04** by auditing the `check_mode_check` witness set against a new criterion
+(Sean): a witness must show a genuine LIMIT of front-end checking, not a check the selfhost
+happens to lack. Two of the three failed that test.
+
+    test/bug099_unresolved_test.zbr
+      bootstrap  -> error: use of undeclared identifier 'Math'
+      selfhost   -> `-c` exits 0
+
+**Third instance of the pattern** (BUG-248 = BUG-108, BUG-106, now BUG-099): a check shipped
+in the bootstrap in May 2026 and never ported to the compiler that ships. All three were
+found the same way — by asking what the *reference implementation* does with a file the
+selfhost accepts.
+
+**It is currently load-bearing as a witness**, which is why it is filed rather than fixed on
+the spot: retiring it drops the set to two. `witness_zig_backend_literal` was added first so
+the set never falls below that. Port the check, then remove this file from `WITNESSES` in
+`tools/check_mode_check.sh` and from the note in `selfhost/main.zbr`.
+
+**Worth a sweep, not just a fix.** Three confirmed instances suggests the right question is
+not "port this one" but *"which other bootstrap diagnostics never reached the selfhost?"* —
+enumerable by diffing the two compilers' error strings.
+
+### Correction 2026-08-05 — the check is NOT missing. It is present and switched off.
+
+**The title above is wrong and the classification with it.** `selfhost/TypeChecker.zbr`
+has this check. It lives in `checkVarDecl`, it is guarded by `ctx.strict`, and `strict` is
+set by exactly one caller: `selfhost/main.zbr:651`, the **LSP diagnostics** seam. Normal
+compilation constructs `InferCtx` with `.strict = false`, so `zebra -c` never runs it.
+
+    if ctx.strict and inferred is Type_.unresolved
+        ctx.addErr(…, "unresolved type for init expr of '" + dv.name + "' (TC gap)")
+
+This is why `diagnostic_parity.py` counted it absent: the tool matches error *strings*, and
+the selfhost's wording (`unresolved type for init expr of 'x' (TC gap)`) shares no phrase
+with the bootstrap's (`cannot determine type for value assigned to 'x: int'`). A fuzzy
+string matcher cannot distinguish "never ported" from "ported, reworded, and disabled" —
+worth remembering before reading its remaining candidates as a defect count.
+
+**So this is not a port. It is a decision about a default, and the measurement says no.**
+
+Flipping `.strict = true`, regenerating, and compiling all 487 tracked `test/` +
+`examples/` + `selfhost/*.zbr` files:
+
+| | files newly rejected |
+|---|---|
+| `test/` | 9 |
+| `examples/` | 6 |
+| **`selfhost/`** | **13** |
+| **total** | **28** |
+
+The selfhost 13 include `CodeGen.zbr`, `Resolver.zbr`, `TypeChecker.zbr`, `AstBuilder.zbr`
+and `main.zbr` — **the compiler could not compile itself.** The examples include
+`lisp.zbr`, `pratt_calc.zbr` and `kv_store.zbr`, which are working programs.
+
+Not one of those 28 is a bug in the program. Each is a place where selfhost inference
+returns `unresolved` for something it ought to have derived — §28a, the same gap that makes
+every diagnostic ported this week deliberately narrower than its bootstrap original. The
+flag is off for a reason, and the comment above it (*"alarm bell for TC gaps"*) is accurate:
+it is an instrument for finding inference gaps, not a user-facing check.
+
+**Reframed, therefore:** BUG-252 is not "port BUG-099's check". It is **"close enough of
+§28a that the alarm bell can be armed by default"**, and the 28-file list is a ready-made
+worklist for that, ordered by how much it would embarrass us (`selfhost/` first — a
+compiler that cannot compile itself under its own strictest setting is the honest measure
+of the gap). Until then the LSP-only default is correct, not an oversight.
+
+**Consequence for the witness set:** `test/bug099_unresolved_test.zbr` stays a valid
+`check_mode_check` witness, and for a *better* reason than it was filed under. It does not
+demonstrate a check the selfhost happens to lack; it demonstrates a genuine limit — the
+front end declines to assert a type it could not derive. That is the criterion Sean asked
+for. Nothing needs retiring.
+
+*Measured with a positive control: with strict on, the bug099 fixture MUST be rejected, and
+was; with the flip reverted it MUST be accepted again, and was. The tree was restored to
+byte-identical `.zbr` and generated `.zig` before this note was written.*
+
+### Closed 2026-10-28 -- re-measured, and the gap that blocked it is closed
+
+**Where the alarm bell is already armed.** `strict` is not only an LSP setting: `zebra lsp`
+and `zebra diagnostics` both check through `tcCheckSide`, which enables it. So every "TC
+gap" was a false ERROR in the editor -- nine of them in zebra-ide's own `ide.zbr`.
+
+**Measured** with `.strict = true` built into a scratch compiler, over every tracked `.zbr`
+of this repo, zebra-ide and the GameEngine (3,110 files; positive control: this entry's own
+`bug099` fixture must be refused, and was): 35 distinct sites in 12 files, against 28 files
+in August. The real gaps were five shapes, all fixed:
+
+| shape | fix |
+|---|---|
+| `x is T` / `x is U.v` had no type (fell to `else`) | inferred `bool` |
+| a field of an `if ... is U.v as n` capture -- the CHECK pass bound every such capture as `context_dependent`, and never bound an `else if` capture at all | one `ifCaptureType` for the walk and the check pass |
+| Gui getters (`takeKey`, `tabSelected`, `tableActivatedRow`, ...) | their return types, which the stub, tui and libui_ng `GuiContext` all declare alike |
+| `xs.reduce(init, f)` | the init's type when it equals the element type (the runtime types a fold by `f`'s result) |
+| `Base64.*`, `sys.exec_inherit`, `ArgResult.unknownFlag` | their runtime return types |
+
+After: 11 sites, none an inference gap -- `Math` as a value (the fixture), a union variant
+into `int` (refused by BUG-650 anyway), foreign C/Zig functions (no Zebra signature exists),
+a fail fixture, and annotated `zig"..."` literals, which are now exempt (a raw literal's
+annotation IS its type). The same `-c` error sweep before and after: 2,819 error lines,
+byte-identical -- the inference changes refused nothing new. The compiler's own emit moved
+only where an unannotated `var x = y is U.v` now gets `: bool`.
+
+`zebra diagnostics` over the compiler's own `selfhost/*.zbr` then found what the `-c`
+sweep could not: BUG-653 (no imported type known), BUG-654 (errors without a position
+dropped) and BUG-655 (positions 35 lines off in `main.zbr`). With those fixed it is clean,
+and `cli_check` keeps it so (a leg runs it over every compiler module; its control is that
+`var x: int = Math` is still reported).
+
+**What is NOT done, and is a decision rather than a bug:** arming the check in `-c`. It
+would refuse only genuine errors today, but every future inference gap would then refuse a
+correct program whose annotation zig would have accepted. Recommendation: do not arm it;
+the editor view plus the ratchet catch a regrowing gap without making users pay for one.
+
+### BUG-652: a static method of an IMPORTED class named like a str builtin took the string lowering -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+use ulib exposing Util
+var b = Util.trim(5)            # emitted std.mem.trim(u8, Util, " \t\n\r")
+var a = ulib.Util.isNumeric(5)  # "struct 'ulib.Util' has no member named 'len'"
+```
+
+`inferExpr` named a class only when THIS module declared it, so an exposed or
+module-qualified class from a dependency was `unresolved`. Codegen's user-method dispatch keys
+on a named receiver, missed, and the call fell to the name-based str-method fallback for any
+static method called `trim`, `upper`, `isNumeric`, `contains`, `split`... The checker had typed
+the call's RESULT correctly all along (`const b: i64`), which is why it passed `-c`. An exposed
+dependency class (`exposedOwner`, this file's own list -- not `dep_types`, which holds classes of
+modules this one never uses, BUG-502's shape) and `mod.Class` with `mod` a used module now infer
+as the class. The compiler's own source is full of exposed classes and its regenerated `.zig`
+moved in no module but the two edited. Same on the N-1 anchor. Found by running the BUG-243
+`tc_*` files, which a 12-week-old note had guessed were a stale experiment: all four pass now.
+Fixture `test/bug652_dep_static_strname_test.zbr` (+ `bug652_dep_static_lib.zbr`). The one
+other change it made anywhere in the three corpora: `selfhost/parser_test.zbr` called
+`Parser.Parser.parse(...)` -- a `throws` method -- without `?`, which §28b refuses and which an
+unresolved receiver had hidden; the call now has its `?`.
+
+### BUG-651: `use pkg.mod` was refused as "no pkg.mod.zbr" -- the refusal now names the real limit -- FIXED 2026-10-27 (found the same day)
+
+> **SUPERSEDED 2026-10-28: subdirectory modules exist** (Sean asked for them). `use pkg.mod`
+> is the file `pkg/mod.zbr` beside the importing file (or on `--module-path`), and the module
+> is called `mod` -- the last segment, as Go and Python's `from pkg import mod` bind it. A
+> module's own `use` resolves beside it. Every stage after the parser knows a module by that
+> name only (the AST's `DeclUse.path`, the emitted `mod.zig`, `$fns:mod`), so the change is at
+> the two ends: `useFilePath` where a file is looked for (the driver, the checker's dep loader,
+> the module-path type scan, the LSP side-check, a native C / library / `.zig` dep -- whose
+> `lib` prefix goes on the file name, `pkg/libmod.a`) and `useBindName` where the name is bound
+> (the resolver's scope, the AST builder). Because a module is known by its stem, two files
+> with one stem in a program would silently replace one another; that is refused at the second
+> `use`, at its line, naming the first file. The refusal below is gone; `expose_dotted_test`
+> moved from `smoke_tc_fail` to `smoke_run`, and `test/subdir_modules_test.zbr` covers two
+> levels, a sibling `use` inside a subdirectory, qualified types and an enum.
+
+The retired bootstrap mapped a dotted `use` to a subdirectory (`pkg/mod.zbr`). The selfhost
+never had subdirectory modules; since 2026-09-16 an unresolved `use` is refused, and for a
+dotted path the refusal named a file `pkg.mod.zbr` -- true, and no help to someone who wrote a
+directory path. It now says a dotted module path is not supported and names the two ways to
+reach the module. Whether Zebra SHOULD have subdirectory modules is a language decision, left
+open. Found by running `test/expose_dotted_test.zbr` (BUG-243), now a `smoke_tc_fail` pin on the
+refusal -- it flips the day the feature lands.
+
+### BUG-650: an enum, union or class value into a primitive slot passed `-c` -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+var c: int = Color.red     # zig: expected type 'i64', found 'Color'
+x = Color.red              # the same through assignment, an argument, a return
+var f: bool = Pt(3)
+```
+
+BUG-105 (May) made the bootstrap refuse `var c: int = Color.red`; the selfhost never did, and
+its two fixtures were never run (BUG-243), so nothing noticed. Every primitive-slot check
+returned early on a non-primitive value. `namedIntoPrimitive` names a user enum, union or
+this-module class/struct; a type alias is exempt (transparent, QUICKSTART §36). Var decls,
+`=` assignments and `checkExpr` (arguments, returns) refuse it, naming the type ("found Color
+(an enum value)"). A bare payload-less variant (`Wrap.unit`) is not named by inference, so it is
+recognised by shape (`bareUnionVariant`) rather than by changing what inference returns, which
+codegen also reads. A dependency's CLASS is not refused (the dep table holds unrelated modules'
+classes: test/bug502_mod_b's FUNCTION `Widget` inferred as one) -- zig still catches that case.
+Measured before committing: every error line `-c` prints over the 3,103 tracked `.zbr` of this
+repo, zebra-ide and the GameEngine (`--module-path zbra`), HEAD's compiler against this one, with
+BUG-651/652 in the same build. Three lines differ: the two BUG-105 fixtures (this refusal), the
+dotted-`use` message (BUG-651), and `selfhost/parser_test.zbr`'s missing `?` (BUG-652). The
+`bug502` false positive above was found by the first sweep and fixed before this one.
+Fixtures `test/fail_fixtures/bug650_{enum_arg,enum_return,enum_assign,class_into_bool}_fail.zbr`
+(each accepted by the N-1 anchor), the two `bug105_*` files, and the negative control
+`test/bug650_primitive_slot_ok_test.zbr` (an alias, an enum and a bare variant into their own
+types).
+
+### BUG-243: fifteen corpus files have never compiled, and no gate could say so -- CLOSED 2026-10-27
+
+**Found 2026-08-02**, working §2 of `docs/INSTRUMENT_PASS_PLAN.md`. An umbrella ticket:
+these are not one defect, they are fifteen — but they were found by one method, they share
+one cause of invisibility, and the inventory is more useful in one place than scattered.
+
+**How they hid.** `full_sweep` gates against a **baseline** (337 of 421 files). A file
+that has *never* passed is not in the baseline, so it cannot make the gate red however
+broken it is. And none of these carries a `smoke*` registration, so nothing asserts they
+should fail either. **A permanently-broken file is indistinguishable from an intentionally
+negative one**, and both look like a green board.
+
+Every one was verified by running `zebra <file>` directly — not inferred from the sweep.
+
+| file | error | class |
+|---|---|---|
+| `expose_dotted_test` | emitted Zig: `expected ';' after declaration` | **codegen emits invalid Zig** |
+| `typechecker_test` | emitted Zig: `unused function parameter` | **codegen** |
+| `tc_check_test` | emitted Zig: `expected type '*tc_infer.TcExpr'` | **codegen** |
+| `tc_infer_test` | emitted Zig: `struct 'tc_types.TcTypes' has no member` | **codegen** |
+| `zebra_ide` | emitted Zig: `use of undeclared identifier 'Lis…'` | **codegen** |
+| `progress_test` | `zebra_rt.zig:3617: expected 2 argument(s), found 1` | **BUG-241** (filed) |
+| `gui_test` | `local variable is never mutated` | the BUG-230 const/var family |
+| `csv_test` | `use of undeclared identifier 'CsvWriter'` | **BUG-242** (filed) |
+| `bug106_heterogeneous_list_test` | `expected type 'i64'` | **regression fixture that does not run** |
+| `bug108_this_outside_class_test` | `use of undeclared identifier` | **regression fixture that does not run** |
+| `crossmod_expose_test` | `type 'array_list.Aligned(…)'` | cross-module expose |
+| `generic_pair_test` | `expected type 'T', found '*T'` | generics |
+| `json_parse_typed_test` | `no field or member function named …` | stdlib/typing |
+| `raise_details_test` | `error union is ignored` | error model |
+| `tc_types_test` | `struct 'tc_types.TcTypes' has no member` | (tc_* family) |
+
+**The two rows that matter most are the regression fixtures.** `bug106_*` and `bug108_*`
+exist to prove BUG-106 and BUG-108 stay fixed. Neither has ever run. **Those two fixes are
+unverified**, and have been for as long as the fixtures have existed.
+
+**Second-most: five files fail inside EMITTED Zig**, not at the Zebra source. Those are
+codegen defects — the compiler producing invalid or ill-typed Zig — which is the class
+`compile_check` exists to catch, and it does not sweep these because they are not in its
+smoke-derived worklist.
+
+**The `tc_*` / `typechecker_test` / `zebra_ide` group** looks like an earlier
+self-hosting/IDE experiment. They may be legitimately stale rather than defects — decide
+per file, and if stale, **delete or quarantine explicitly** rather than leaving them to
+look like coverage.
+
+**Disposition:** triage each into runs-but-sweep-shape (register), broken (fix), or stale
+(delete/quarantine). Then close the class — see `tools/registration_check.py`, which makes
+an unregistered, unexplained `test/*.zbr` a gate failure instead of a silence.
+
+**Closed 2026-10-27 -- every row now has a status something asserts.** The table was 12
+weeks old; `registration_check` said 11 files were still unasserted, and each was run:
+
+| file(s) | disposition |
+|---|---|
+| `progress_test`, `csv_test`, `json_parse_typed_test`, `crossmod_expose_test`, `bug106_heterogeneous_list_test`, `bug108_this_outside_class_test`, `gui_test` | already fixed and registered or baselined in the meantime |
+| `generic_pair_test`, `raise_details_test` | run correctly; registered `smoke_run` (generic_pair gained a summary line that also checks the swap's first half) |
+| `tc_types_test`, `tc_check_test`, `tc_infer_test`, `typechecker_test` | failed inside zig on **BUG-652** (a dependency class's static `isNumeric`/`trim` took the str lowering) -- a real codegen bug the "stale experiment" guess would have deleted. All four pass now and are registered |
+| `bug105_enum_member_test`, `bug105_union_variant_test` | the BUG-105 refusal never reached the selfhost -- **BUG-650**; registered `smoke_tc_fail` |
+| `expose_dotted_test` | dotted `use` has no selfhost resolution -- **BUG-651**; registered `smoke_tc_fail` on the refusal |
+| `bug099_unresolved_test` | a `check_mode_check` WITNESS (passes `-c`, fails `--check-full` by design); exempt with that reason |
+| `bug106_cast_test` | documentation only, no `main()`; exempt |
+
+`registration_baseline.txt` is empty after this. The lesson the table's own text drew
+("decide per file, and if stale, delete") would have deleted four fixtures that were
+pointing at a live bug: run the file before calling it stale.
+
+### BUG-306: `inferExpr` cannot see MODULE-SCOPE declarations, so every type-based dispatch guard needs a bespoke oracle — FIXED 2026-10-27
+
+**Fixed 2026-10-27 -- and the "correction" first written that morning was wrong in both
+directions, so it is replaced rather than kept.** It said a module var initialised by a CALL
+was still untyped and an annotated one was typed exactly. Measured by deleting both oracles:
+the call form was already typed (the BUG-496 pass in `populateModuleTypes` infers untyped
+initialisers, calls included), and the ANNOTATED `StrSet` was the hole -- `typeFromName`
+maps the name to `Type_.str_set`, not `Type_.named`, and the `.add` guard tested only
+`named`. The compiler's own `var _c_with_header_uses: StrSet = StrSet()` then emitted
+`.append` and the next regeneration did not build. The guard now also accepts
+`Type_.str_set`; `isModuleGlobalStrSet` and `isModuleGlobalAtomic` are deleted (an annotated
+or bare `Atomic(int)` is `named`). The entry's other claim, that no fixture can express it,
+was also wrong: the checker special-cases the NAME, so a user `class StrSet` takes the same
+path. `test/bug306_module_strset_test.zbr` -- bare, annotated and optional StrSet, annotated
+and bare Atomic, a List, and a local List shadowing a module StrSet -- fails exactly that way
+against a compiler with the oracles removed and the str_set test absent. The original entry
+follows.
+
+**Two bugs from one gap, and the patches sit TEN LINES APART in the same function.**
+
+`inferExpr` is documented in `selfhost/CodeGen.zbr` as seeing "only locals/params". Every
+guard that decides a method lowering by asking the receiver's TYPE therefore misses a
+module-scope variable, silently, and falls through to whatever the default branch is. In
+`genMemberCall` that default is "treat `.add` as a `List` append".
+
+| bug | type | patch |
+|---|---|---|
+| BUG-153 | a module-global `Atomic` | `isModuleGlobalAtomic` |
+| BUG-264 | a module-scope `StrSet` | `isModuleGlobalStrSet` |
+
+Both oracles do the same thing — walk `module_decls` looking for a `Decl.var_` with a
+matching name and the right `TypeRef` — and both exist only because the general question
+cannot be asked. **A third type will need a third.**
+
+**WHY IT STAYS INVISIBLE.** The wrong branch is the RIGHT ANSWER for the common case:
+every module-scope collection in the compiler's own source was a `List(str)` until someone
+declared a `StrSet`. So the guard is not merely missing a case, it is confidently correct
+until the moment it is confidently wrong, and nothing distinguishes those two states from
+inside.
+
+**THE STRUCTURAL FIX** is to let `inferExpr` resolve a module-scope declaration, at which
+point the existing `Type_.named` test in each guard starts working and both bespoke
+oracles can be deleted. That is a change to inference rather than to a lowering, which is
+why BUG-264 was fixed with the cheap precedented patch instead — recorded here so the
+third instance does not get a third one-off.
+
+**Not made a gate.** What would catch this class is the ROUND-TRIP, and only because the
+compiler's own source happens to use the constructs; there is no general instrument. See
+BUG-264 for why no `test/*.zbr` fixture can express it: `StrSet` is not a user-facing type.
+
+### BUG-649: a `static var` of a container type did not compile, or was left undefined -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+class Reg
+    static var seen: List(int) = []       # unable to resolve comptime value
+    static var names: List(str)           # compiled; first .add wrote through garbage
+```
+
+A static field is a file-lifetime global declared inside its class's struct, initialised at
+comptime. Since containers became references (BUG-501 1d, 2026-10-06) every container
+constructor allocates, so a static with a `[]`, `List(T)()`, `HashMap(...)()` or user-class
+initializer stopped compiling; the N-1 anchor still built the first shape. A container static
+with NO initializer -- the form QUICKSTART documents (`static var instances: List(Registry)`)
+-- was emitted `= undefined` and stayed so. Statics now take the module var's answer
+(BUG-153/496): `isDeferredStaticField` -- a container type, or an initializer that is not a
+comptime literal -- declares the field `= undefined` and `_initModuleVars()` assigns it
+(`_zbr_new(T)` when there is no initializer). Generic classes are not covered (their statics
+are per instantiation). Nothing in the corpus, the examples or the GameEngine has a static
+container, which is why no gate saw it. Fixture `test/bug649_static_container_field_test.zbr`
+(+ `bug649_static_container_lib.zbr`, the documented form read across a module): red on N-1.
+
+### BUG-648: an empty `[]` default for a `List(T)` field or module var built a `List(str)` -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+class Holder
+    var vals: List(int) = []      # expected '*ArrayList(i64)', found '*ArrayList([]const u8)'
+```
+
+An empty literal has no element to infer from, so its expression-position emit used the
+`[]const u8` fallback; only `genLocalVar` and a `List(T)` parameter (BUG-463) passed the
+declared type down. A field default (`genFieldInitExpr`) and a deferred module var
+(`genModuleVarInit`, which now takes the declared type) use the BUG-463 helper. Found
+probing BUG-017. Class fields, a nested `List(List(int))`, a struct's `List(float)` and a
+module var; red on the N-1 anchor. Fixture `test/bug648_empty_list_field_default_test.zbr`.
+
+### BUG-017: `len` on unknown-TC-type emits `.items.len` heuristic — imprecise -- FIXED 2026-10-27
+- **Severity:** Low
+- **Status:** Open — known imprecision; deferred until ModuleInterface preserves return types
+- **Symptom:** When a local variable's TC type is `.unknown` and `.len` is accessed on it, CodeGen emits `.items.len` as a last-resort fallback. Correct for `ArrayList`-backed `List(T)` values but wrong for user-defined structs with a field named `len`.
+- **Proper fix:** Add a `.list { elem_type }` variant to `TypeChecker.Type`, store it in `ModuleInterface.methods` for list-returning methods, propagate through `inferCall` for cross-module calls.
+
+**Fixed 2026-10-27.** The entry described the bootstrap's fallback (any unknown receiver ->
+`.items.len`). The selfhost had already replaced that with the §28a refusal ("cannot infer the
+type of `x`, so `.len` cannot be resolved -- annotate it"), and cross-module returns are typed
+(BUG-641) -- the "proper fix" the entry asked for. What was left was a hole in front of the
+refusal: for an untyped BARE IDENT, `.len` first asked four NAME oracles -- the current class's
+fields, any class's List field of that name (`fieldIsList`), and `isKnownListField`, a
+hardcoded list of the compiler's own AST field names (`args`, `message`, `params`, `value`,
+`start`...). A local `vals` beside any class with a `vals: List(int)`, or a local named `args`
+in a program with no classes at all, emitted `.items.len` and the user read a zig error about
+`items` instead of the refusal. A declared local is now decided by its own type, as
+`fieldAwareIsList` (BUG-141) already ruled for indexing; the name oracles stay for receivers
+that are not locals. Fixtures `test/fail_fixtures/bug017_len_field_name_fail.zbr` and
+`bug017_len_ast_name_fail.zbr`, both red (a zig error) on the N-1 anchor.
+
+### BUG-647: `list.at(i).append(s)` on a StringBuilder element, as a statement, emitted a raw `.append(s)` -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+var sbs = [StringBuilder()]
+sbs.at(0).append("x")     # zig: member function expected 2 argument(s), found 1
+```
+
+The statement-position chain hoist (BUG-027) moved the receiver into `var _mc_N = ...` and
+called `_mc_N.append("x")` raw. It skipped the hoist with a DENY list of container types
+(`isBuiltinTypedRecv`) that had no StringBuilder; the var-init and assignment hoists had already
+switched to an ALLOW list for exactly this reason (BUG-531: a new runtime type should default to
+dispatch, not to a raw call). The statement hoist uses that rule now (`chainRecvNeedsHoist`).
+Same on the N-1 anchor. Fixture `test/bug646_sb_len_and_chain_test.zbr`. The change moves the
+compiler's own emit; a second `rebuild.sh` pass was byte-identical.
+
+### BUG-646: `sb.len` on a StringBuilder passed the checker and failed inside zig -- FIXED 2026-10-27 (found the same day)
+
+`len` is in the StringBuilder method set and the checker types `sb.len` as an int, but codegen's
+`.len` lowering had arms for List, HashMap and Set and none for StringBuilder, so it took the str
+spelling: `.len` on the `List(u8)` underneath ("no field named 'len'"). `sb.len()` worked. An arm
+now emits `.items.len`. A local, a field and a list element; red on the N-1 anchor.
+Fixture `test/bug646_sb_len_and_chain_test.zbr`.
+
+### BUG-645: docs/SURFACE.md listed `StringBuilder.add`, which the checker refuses -- FIXED 2026-10-27 (found the same day)
+
+`stringBuilderMethodKnown` -- the predicate SURFACE.md is derived from -- still admitted `add`
+after BUG-341 decided StringBuilder has no `add` and refused it four lines later. So the
+document behind the 1.0 stability promise listed a method no program could call. `add` is out of
+the predicate, the two refusals are one (BUG-341's message and its "did you mean 'append'?"
+hint), and SURFACE.md is re-derived (`StringBuilder: -add`). Found probing BUG-306. The refusal
+is pinned by `bug341_sb_unknown_method_fail`; `test/bug645_sb_method_set_test.zbr` calls every
+method SURFACE.md now lists.
+
+### BUG-026: `instance_method_return_types` gaps for exposed-type method chains -- CLOSED 2026-10-27 (does not reproduce in the selfhost; fixture added)
+- **Severity:** Medium
+- **Status:** Open
+- **Target:** Phase 7b / post-audit
+- **Symptom:** `var b = a.someMethod()` may still produce `const b` in generated Zig if `someMethod` isn't in `instance_method_return_types`.
+- **Root cause:** `instance_method_return_types` is populated by `buildModuleInterface`. It only captures methods whose return type resolves to a `.named` symbol with a non-primitive type.
+- **Fix direction:** Populate `instance_method_return_types` more comprehensively, including methods returning `Self` or generic types.
+
+**Closed 2026-10-27.** `instance_method_return_types` was the bootstrap's table
+(`src/`, deleted 2026-09-16); the selfhost has no such table (grep: 0). The symptom was probed
+directly on the selfhost: `var b = a.m()` on an exposed type, then `b` mutated, for a class
+result, the receiver itself (`return this`), a returned `List`, and a generic `T` holding a
+struct (a copy) and a class (a reference). Every case compiles and prints the values the
+semantics predict, worked out before the run. Fixture
+`test/bug026_method_result_mutation_test.zbr` (+ `bug026_method_result_lib.zbr`) pins it.
+
+### BUG-101: AstBuilder uses `std.debug.panic` instead of diagnostics for parse-tree shape violations -- CLOSED 2026-10-27 (the panicking code was deleted with the bootstrap)
+- **Severity:** Low today (only the parser produces trees and it's well-tested) / Critical for VCS-merge-oracle future (operation-patches could synthesize trees)
+- **Status:** Open
+- **Symptom:** ~20 sites in `src/AstBuilder.zig` use `std.debug.panic` to assert parse-tree shapes (e.g., `:159, 551, 869, 896, 924, 941, 1086, 1589, 1650, 1908, 1928, 2052, 2131, 2169, 2277, 2430` — partial list). Failure mode is hard panic with terse message and no source span.
+- **Reproducer:** None today from any well-formed source (they're invariant assertions). But under a future operation-patch VCS where structural edits synthesize trees, every site is a live hazard.
+- **Root cause:** AstBuilder predates the Diagnostic infrastructure; these sites were the historical fail-fast paths.
+- **Fix sketch:** Long-horizon refactor — fold each panic into the `Diagnostic` system with a "synthesized AST violated invariant X" error class, including the offending parse-tree NT. Short-term: leave alone but document the assumption that only the parser produces trees.
+- **Source:** Robustness audit 2026-05-01 (`C:/tmp/zebra-tc-audit.md` entry [P0-2]).
+
+**Closed 2026-10-27.** Every site this entry lists is in `src/AstBuilder.zig`, deleted with the
+bootstrap on 2026-09-16. The selfhost's `selfhost/AstBuilder.zbr` has no `panic` (grep: 0): a
+shape it does not expect `raise`s a message naming the builder (`buildExpr: unexpected PNode
+variant`) that propagates through `ASTBuilder.build(...)?` to the driver, so the failure is an
+error, not a crash. What remains of the fix sketch is a SOURCE SPAN on those ten messages, and
+nothing synthesizes trees today; that belongs to the VCS-oracle work if it is ever built, not
+to this ledger.
+
+### BUG-641: an un-annotated `var x = lib.f()` -- a qualified call to a used module's top-level def -- was untyped -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+use seglib                     # seglib.zbr: def mkList(): List(int)
+def main()
+    var xs = seglib.mkList()   # -c: "cannot infer the type of `xs`, so `.add()` cannot be resolved"
+    xs.add(4)
+```
+
+Found closing BUG-017: the `.items.len` guess that entry describes is a refusal today, and the
+receiver it refused on was this. `use seglib exposing mkList` + `mkList()` was typed, and so was
+the qualified constructor `seglib.Seg(4)`; the qualified CALL was not, so `.len`, `.add()` and
+str methods on its result were refused, as was everything downstream that dispatches on a type.
+Same on the N-1 anchor.
+
+**FIXED.** `inferExpr`'s member-call arm reads the used module's own `$fns:<mod>` facts (BUG-604)
+when the receiver is a `use`d module that is not a local or a class. Not the shared `""` table:
+two used modules declaring the same name would type one of them from the other.
+Fixture `test/bug641_qualified_fn_infer_test.zbr` (+ two helper modules, each with a `pick()` of
+a different type); every leg is refused on the pre-fix binary.
+
+### BUG-642: `x ?? y` (nil-coalescing in C#/Kotlin/Swift/JS) passed `-c` and failed inside zig -- FIXED 2026-10-27 (found the same day)
+
+QUICKSTART says there is no `??` in Zebra, and nothing enforced it: `??` lexed as two postfix `?`
+(explicit `try`), so `o ?? "none"` emitted `try (try o)` on an optional ("expected error union
+type") and the `"none"` became a statement of its own (BUG-643). Found writing a BUG-641 probe in
+exactly that spelling.
+
+**FIXED in the parser**, not the lexer: a postfix `?` immediately followed by another `?` on the
+same line is refused, naming `x orelse fallback` and `x!`. The lexer raises on its first error,
+which would have cost `multi_parse_error_test` its second recovered error (it uses `???`).
+Fixture `test/bug642_double_question_fail.zbr`.
+
+Left alone, deliberately: a single `x?` on a LOCAL that cannot fail still reaches zig. BUG-546
+refuses it on a call whose emit it decides and leaves locals out, because a wrong "cannot fail"
+would refuse a program zig accepts.
+
+### BUG-643: two statements on one line were accepted -- `var x = 5 6` bound 5 and ran `6` on its own -- FIXED 2026-10-27 (found the same day)
+
+Every simple statement ended with `.skipEol()`, which takes an end-of-line if one is there and
+does not require it, so whatever followed on the same line was read as the next statement.
+`var x = 5 6` printed 5; `return 5 6` failed inside zig; `f() f()` ran twice. Same on the N-1
+anchor.
+
+**FIXED.** `refuseSameLineStmt()`, called by the three loops that read a statement list
+(`parseBlock` and the two statement-lambda bodies): a token left on the line the last statement
+ended on is refused, unless the token just consumed was an EOL or a DEDENT (a DEDENT carries the
+NEXT line's position). The legitimate one-line forms -- `if c: a else: b`, an inline branch arm,
+`header: stmt` -- are consumed inside their own statement and never reach the check.
+Fixtures `test/bug643_same_line_statements_fail.zbr` and `test/bug643_one_line_forms_test.zbr`
+(the positive control: those forms, a multi-line call, a trailing comma and a statement-body
+lambda argument, identical output on the old and new binaries).
+
+**Measured before landing**, with BUG-642 and BUG-644: `-c` on all 3,086 tracked `.zbr` in this
+repo, zebra-ide and the GameEngine, old binary against new. No file that passed `-c` fails now.
+13 files gained one of the three refusals: 11 machine-ported GameEngine `ported_scripts/` that
+already failed (Lua left in them), and two fixtures here -- `to_bang_removed_test` still passes
+(its expectation is `'to'`), and BUG-419's arrow-lambda refusal was pre-empted by BUG-644's until
+the comma check deferred to it.
+
+**The FULL tier found two more, both in documentation** (`doc-example`): STYLE_GUIDE §8.2 taught
+`config.name ?? "anonymous"` as an ESTABLISHED idiom (now `orelse`), and QUICKSTART §9's branch
+example ends `else                 pass`. That one was never accepted: an `on` arm takes its
+statement on the same line, `else` took one only after a comma (`else, stmt`), and without the
+comma the statement was left for the enclosing block, which misparsed whatever followed (the
+next `branch` was reported as being at the top level). `else  stmt` on one line is now read the
+way `on Pattern  stmt` is; the positive-control fixture carries it and is red on the old binary.
+
+### BUG-644: call arguments needed no comma -- `add(5 6)` was `add(5, 6)` -- FIXED 2026-10-27 (found the same day)
+
+`parseCallArgs` took a comma when there was one and went on to the next argument when there was
+not. A list literal already refused the same mistake ("expected ']'"). Same on the N-1 anchor.
+
+**FIXED.** After an argument, a token on the same line that is neither `,` nor `)` is refused
+("expected `,` or `)` after an argument"). Same-line only: a statement-body lambda's `)` comes
+after an end-of-line and is left to the closing check. `x => ...` defers to BUG-419's message.
+Fixture `test/bug644_call_args_comma_fail.zbr`.
+
+### BUG-201: nested-container dispatch on call-result / mutable-loop receivers -- FIXED (found probing BUG-196; closed in the ledger 2026-10-27)
+Two distinct facets surfaced when probing BUG-196, each its own mechanism:
+- **(b1) `.add`/`.at`/`.len` on a `.at()` CALL-RESULT** — `m.at(0).add(99)` on
+  `List(List(int))` → "no member function named 'add' in ArrayList". genMemberCall's
+  `recv_t = inferExpr(m.object)` dispatch (CodeGen ~10630) *should* fire the `Type_.list_`
+  arm, but `inferExpr(m.at(0))` isn't resolving to `list_` at the codegen call site even
+  though the standalone `.at` inferExpr handler (TypeChecker ~1844 returns the element
+  type) and the outer `inferExpr(m)` both work. Likely a codegen-`infer_ctx` population
+  gap for chained call receivers. A chained-dispatch/inference fix.
+- **(b2) mutating a `for`-binding element** — `for r in m: r.add(5)` now *dispatches*
+  correctly (post-BUG-196) but hits "expected '*T', found '*const T'": Zig loop bindings
+  are `const` (`for (m.items) |r|`), so mutating the element needs the by-pointer form
+  `for (m.items) |*r|` + deref. A separate mutation-aware loop-lowering feature (detect a
+  mutating method on the loop var → emit `|*r|`). Matrix-in-place-build pattern.
+
+**FIXED by `408aa38` (2026-09, "Nested containers have reference semantics", BUG-314's other
+half), and the entry stayed open until 2026-10-27.** Found by probing it before working on it:
+both facets compile and mutate in place on the rc4 build (`c9c383c`) and on HEAD, and both
+fail exactly as written above on the 2026-09-01 build (`8cfdc6a`), as does a third shape,
+`for k, v in map` then `v.add(1)` ("no field named 'items' in struct 'hash_map...'").
+Fixture `test/bug201_nested_container_dispatch_test.zbr` (`smoke_run`) covers all three, plus
+the same through a method returning the field; it is red on `8cfdc6a`.
+
+
+### BUG-640: `x is Mod.Class` (a module-qualified CLASS check) passes `-c` and fails inside zig -- FIXED 2026-10-27 (found the same day)
+
+```zebra
+use C                      # C.zbr declares `class Foo`
+def main()
+    var f = C.Foo()
+    if f is C.Foo          # -c: clean. Build: "incompatible types: 'C.Foo' and '@EnumLiteral()'"
+        print("foo")
+```
+
+The AST builder reads every two-part `is` right-hand side as `Union.variant`, so `C.Foo`
+becomes "variant `Foo` of a union named `C`" and codegen emits a tag comparison against a
+class value. The builder has no symbol information to tell a module alias from a union; the
+checker does (`isUsedModule`, BUG-638). Either the checker refuses it by name, or `is` on a
+module-qualified class lowers like the bare form. Same result on the N-1 anchor, so not a
+regression. Found probing BUG-237, whose fix covers the THREE-part `Mod.Union.variant` form.
+
+**FIXED -- refused, by name.** `checkCallsInExpr`'s `type_check` arm refuses a two-part
+`is Mod.Name` when `Mod` is a `use`d module and not a union or local of that name, and the
+message gives both spellings that work: `use Mod exposing Name` + `is Name` for a class,
+`is Mod.<Union>.Name` for a variant. Making the qualified class form LOWER instead would touch
+every consumer of an `is` (capture, narrowing, three codegen sites) for a spelling `exposing`
+already covers; a refusal that names the fix is the smaller promise. Fixture
+`test/bug640_is_module_class_test.zbr` (`smoke_tc_fail`); the N-1 anchor passes it at `-c`
+and fails inside zig with the message above.
+
+
+### BUG-237: a union used WITHOUT being `exposing`-imported silently mis-emits `^T` payloads -- FIXED 2026-10-27
+
+> **Triaged 2026-08-17 — still OPEN; `lint_stale_bugs` scores this a false positive.**
+> The commit it counts as "claiming a fix" is the **BUG-232 unblock** noted at the bottom
+> of this entry — adding `StringPart` to an exposing list, which is the WORKAROUND this
+> ticket exists to remove, not a fix for it. Same false-positive class as BUG-106, and
+> that tool ranks suspicion rather than closing anything, exactly so this stays a
+> judgement call. Recorded so the next triage pass does not re-derive it.
+
+**ROOT CAUSE FOUND 2026-07-31** — it is not about union payloads in general. It is that
+**referencing a union that is not in the module's `use X exposing ...` list silently
+skips its boxed-variant registration.**
+
+```zebra
+use Ast exposing Expr              # StringPart NOT exposed
+if part is StringPart.expr_ as e   # still RESOLVES and compiles the front end
+    someFn(e)                      # emits `someFn(e)` -- a raw *Expr. Zig rejects it.
+
+use Ast exposing StringPart, Expr  # exposed
+if part is StringPart.expr_ as e   # emits `const e_ptr = ...; const e = e_ptr.*;`
+    someFn(e)                      # correct
+```
+
+`selfhost/CodeGen.zbr:6917` gates the deref on
+`boxed_variants.contains_(union + "." + variant)`, and `boxed_variants` is populated
+from same-module unions plus `populateBoxedVariants(..., deps_mt)` on each `use` — which
+evidently follows the **exposed** names. So an unexposed union is still *referenceable*
+(the front end resolves `StringPart.expr_` fine) but codegen has no record that its
+payload is boxed.
+
+**That combination — resolves, compiles the front end, emits wrong Zig — is the defect.**
+Either the reference should be rejected ("StringPart is not exposed in this module"), or
+the registration should follow reachability rather than the exposing list. The current
+behaviour fails in the worst available way: a Zig type error naming `Ast.Expr` vs
+`*Ast.Expr`, in generated code, for a mistake that is really a missing import clause.
+
+**Cost of the ambiguity, measured:** six spellings tried before the import list was
+suspected — bare binding, renamed binding, annotated local, pointer-typed parameter,
+direct payload access, and a call in condition position. Every one emitted the pointer,
+because none of them was the actual variable. `CgHelpers.zbr` "mysteriously" worked for
+exactly one reason: it exposes `StringPart` and `TypeChecker` did not.
+
+**Severity:** medium (silent mis-emit; the diagnostic points at generated types, and the
+real fix is a missing name in an import list).
+**Found:** 2026-07-31 while fixing BUG-232, which it blocked until the cause was found.
+
+```zebra
+union StringPart
+    literal: String
+    expr_: ^Expr
+
+# inside a walker taking `Expr`:
+if part is StringPart.expr_ as e
+    someFn(e)          # emits `someFn(e)` where e is *Expr
+                       # -> error: expected type 'Ast.Expr', found '*Ast.Expr'
+```
+
+A `^T` **struct field** derefs correctly — `cm.object` two lines away emits
+`cm.object.*`, and `sx.start` (a `^Expr?`) emits `sx.start.?.*`. The gap is specific to
+a `^T` reached through a **union payload binding**.
+
+**Six spellings were tried, all emitting the bare pointer:**
+
+1. bare binding as an argument — `someFn(e)`
+2. renamed binding (matching a working precedent's names exactly) — `someFn(se)`
+3. annotated local — `var pex: Expr = pe` emitted `const pex: Expr = pe;`, no deref
+4. pointer-typed parameter — a `def f(be: ^Expr)` wrapper, which passed it on unchanged
+5. direct payload access without a binding — `someFn(part.expr_)`
+6. call in CONDITION position — `if boolReturningWrapper(e)`
+
+**What makes it genuinely odd:** `selfhost/CgHelpers.zbr:268-269` does *the same thing*
+and emits the deref (`const e_ptr = part.expr_; const e = e_ptr.*;`) — verified against a
+FRESH emit from today's bootstrap, so it is not a stale artefact. The two source sites
+are structurally identical down to the loop shape. Reduced probes of the same shape (bare
+argument, void statement call, interpolated call, over a `union Part { expr_: ^Node }`)
+all compile fine, so the trigger is not the construct alone and was not isolated.
+
+Whatever the discriminator is, it is worth finding: it means the same source line emits
+different code in two places, which is the kind of thing that makes a codegen bug look
+like a user error.
+
+**BUG-232 is no longer blocked** — adding `StringPart` to the exposing list fixed it, and
+`bv_arity_interp_unchecked.zbr` now asserts the warning instead of pinning the silence.
+This entry remains open on its own merits: the next person to reference an unexposed
+union will lose the same hours, and a compiler that silently emits wrong code for a
+missing import clause is a poor trade for the convenience of not writing the name.
+
+**REPRODUCTION ATTEMPTED 2026-08-30 — THE STATED MECHANISM DOES NOT REPRODUCE.**
+Tested against the compiler's own code, not a synthetic case: `selfhost/AstWalk.zbr:27`
+exposes `StringPart` and `:118` uses `if part is StringPart.expr_ as ex`, i.e. the
+workaround this entry exists to remove is currently in place. Removed it on a COPY and
+emitted with `zebra.exe`:
+
+| | result |
+|---|---|
+| control (StringPart exposed) | **emits**; only error is `unable to load 'Ast.zig': FileNotFound`, the expected DEPMISS for a library module emitted standalone |
+| StringPart removed from `exposing` | **`zz_walk_nox.zbr:118:28: error: undefined name: 'StringPart'`** — front end REFUSES, nothing emitted |
+
+The entry's mechanism requires that the reference *"still RESOLVES and compiles the front
+end"* and then emits a raw `*Expr`. It does not: the resolver refuses, with a correct
+line and column. Two synthetic constructions (union unreachable, union reachable through
+an exposed struct field) refuse the same way.
+
+**So the SILENT half — the G1 property — is closed.** What remains is at most a usability
+question (a union must be `exposing`-imported to be named), which is a defensible rule and
+not a 0.9 blocker. **Reclassified: not a silent-wrong-answer bug.** Whoever picks this up
+should decide whether the refusal IS the intended resolution and close it, rather than
+implementing the boxed-variant registration the entry proposes.
+
+**FIXED 2026-10-27 -- in the form it still had.** The BARE form in the entry (`StringPart`
+named without being exposed) is refused today, "undefined name: 'StringPart'", so it can no
+longer reach codegen. What remained was the MODULE-QUALIFIED form, `on Ast.StringPart.expr_ as
+e`, and that one still mis-emitted: `getVariantKey` built the boxed-variant key only from a
+two-part `Union.variant`, so a three-part arm never found its `^T` flag and bound the raw
+pointer ("expected type 'T', found '*T'"). It now yields the same module-local key
+(`StringPart.expr_`) for both spellings. Two more failures of the same form went with it:
+a branch naming every variant through the qualified form kept its `else` prong
+(`branchCoversAllVariants` reads the same key), which zig refuses as unreachable; and
+`if x is Mod.Union.v as e` stopped in the AST builder with "`is` member object must be a
+plain identifier", no location (`qualifiedUnionName`).
+
+Fixture `test/bug237_qualified_union_test.zbr` (+ `bug237_qualified_union_lib.zbr`); each of
+the three legs was run separately on the N-1 anchor and fails there with the message above.
+Found beside it: BUG-640, the two-part `x is Mod.Class`.
+
+
+### BUG-263: `use foo exposing bar` emits no aliases when `foo` is a native dep -- FIXED 2026-10-27
+
+**Found 2026-08-05** while fixing BUG-261, by reading the bootstrap branch being
+ported rather than by hitting it.
+
+Both compilers attach the exposed-name aliasing to the **Zebra-dep** branch of
+`genUse` only (`src/CodeGen.zig:4899-4930`, `selfhost/CodeGen.zbr` genUse). So on
+a dep that resolved to `.c` or `.zig`:
+
+    use CUtils exposing c_add          # c_add is never bound to anything
+
+The `use` itself still works — `CUtils.c_add(...)` resolves — so this is a missing
+convenience, not a miscompile. It fails at the Zig stage with an undefined
+identifier rather than silently, which is why it has gone unnoticed.
+
+**It is a SHARED hole, and that is the point.** Fixing it in the selfhost alone
+would open a selfhost gap in `divergence_check`, which is currently 0 and is the
+property the port exists to preserve. Either fix both compilers together or
+neither. Filed rather than fixed for that reason.
+
+**FIXED 2026-10-27.** The "shared hole" reason for leaving it retired with the bootstrap
+(2026-09-16), and it was wider than filed: a hand-written `.zig` dep was broken too. Measured
+first, with the shipping compiler: `use CUtils exposing c_add` then `c_add(2, 3)` passed `-c`
+and failed in zig ("use of undeclared identifier '_zbr_fn_c_add'"); `use ZigMath exposing
+square` emitted `const _zbr_fn_square = ZigMath._zbr_fn_square;` ("no member named
+'_zbr_fn_square'"), because a native file exports its names unprefixed. A headerless C file
+and a prebuilt library were already fine -- their symbols come from `extern def`.
+
+The fix: the driver records a native `.zig` dep (`addNativeZigUse`, beside the C and library
+registries), the header-C branch of `genUse` now emits the exposed aliases, and both go
+through one `genExposedAliases`: the LOCAL binding keeps this module's prefix (BUG-220 /
+BUG-281 B), and the DEP side is spelled as written when the dep is native. Regenerating the
+compiler moved only CodeGen.zig and main.zig -- every Zebra-module `exposing` emits as before.
+
+Fixtures `test/bug263_zig_exposing_test.zbr` and `test/bug263_c_exposing_test.zbr` (exposed
+and qualified calls side by side); both fail on the N-1 anchor with the two messages above.
+The C fixture joins `c_interop_test` on positive_set.sh's skip list: the standalone emit the
+sweeps compile does not carry the `.c`.
+
+### BUG-638: an unknown member of a NAMESPACE (`Random.seeded`, `Csv.writer`) passes `-c` and fails inside zig, sometimes as "unreachable code" -- FIXED 2026-10-27 (found the same day)
+- **Severity:** Medium (a leak, and the worst-worded one: `Random.seeded(3)` reaches zig as
+  `@compileError("selfhost: unknown Random.seeded")`, and zig reported `unreachable code` at
+  the user's line, so the one sentence that names the problem never reaches them).
+- **Found** probing BUG-637 with two API names that do not exist (`Random.seeded`,
+  `Csv.writer`); `zebra -c` exited 0 on both.
+- **Measured:** 33 such `@compileError("selfhost: unknown <NS>...")` fallbacks in
+  selfhost/CodeGen.zbr across 31 namespaces -- every generator's last arm. The receivers had
+  the same gap until BUG-369, closed by a `*MethodKnown` predicate per type in the checker;
+  the namespaces never got one. `surface-freeze` already DERIVES each namespace's members from
+  these dispatch arms (docs/SURFACE.md), so the oracle exists.
+- **Fix direction:** the BUG-369 recipe -- a checker predicate per namespace (or one table
+  keyed by namespace), refusing an unknown member at the call with the known list, and
+  `surface-freeze` asserting the predicate equals the derived member set so the two cannot
+  drift. `Math` is OPEN (members pass through to `std.math`) and must stay exempt.
+- **Repro:** `def main()` / `    var r = Random.seeded(3)` -- `-c` exits 0.
+- **FIXED -- the BUG-369 recipe, with the table generated rather than written.**
+  `namespaceMembers(ns)` in TypeChecker.zbr holds every CLOSED namespace's members; it is
+  produced by `python tools/surface_inventory.py --print-checker-table` from the same
+  derivation that writes docs/SURFACE.md, and `surface-freeze` (`--check`) now fails when the
+  two differ, so a member added to a generator and not to the table cannot reach a user as a
+  false refusal. `checkNamespaceMember` runs from `checkCallExpr` -- every call, statement
+  position included, which `inferExpr` alone never reached (`Terminal.clearScreen()` on its
+  own line) -- and BUG-398's hand-written DateTime and Crypto refusals now call it too, so a
+  site both paths visit produces one identical message and addErr's duplicate filter reports
+  it once. The message lists the members that exist. A local, parameter, class, enum, union,
+  module variable or `use`d module of the same name is the user's and is left alone
+  (`ModuleTypes.use_stems`, filled beside `exposed_from`). `Math` stays OPEN and exempt.
+- **Found on the way:** surface_inventory's dispatch and generator patterns were
+  `[A-Za-z]+`, so `Base64` (a digit) was missing from docs/SURFACE.md entirely -- 4 members.
+  Both patterns take digits now; the surface is 32 namespaces / 179 members. And QUICKSTART
+  documented three members that never existed (`Log.defaultLevel()`, `Mime.lookup`,
+  `Terminal.clearScreen`); each now shows a real call.
+- **False-refusal sweep:** `-c` with the new compiler over every `.zbr` in this repo,
+  zebra-ide and the GameEngine (10,605 files): the refusal fired in 4, all intended -- the two
+  new fixtures and `bug398_datetime_static_fail` (twice: once in a stale `.claude` worktree).
+  The static scan's GameEngine candidates (`sys.delay`, `Path.computeAsync` in
+  `ported_scripts/`) never reach the checker: those files already fail earlier.
+- **Fixtures:** `test/fail_fixtures/bug638_namespace_stmt_fail.zbr` (statement position) and
+  `bug638_namespace_init_fail.zbr` (initialiser), both passing `-c` on the N-1 anchor;
+  `test/bug638_namespace_shadow_test.zbr` (a local, a parameter and a class named like a
+  namespace) -- red-checked by deleting the guard: three refusals, one per leg.
+
+### BUG-639: `sys.selfExe()` had no type, so `var e = sys.selfExe()` then `e.len()` failed inside zig -- FIXED 2026-10-27 (found the same day)
+- **Found** by BUG-637's corpus census: the only list literal whose element 0 the checker
+  could not type began with `sys.selfExe()`. A probe then showed the leak: `e.len()` on the
+  un-annotated local lowered as a List length, "no member named 'items' in 'str'".
+- **Fix:** the checker types `sys.selfExe()` as `str`, beside `sys.cwd` (BUG-392 typed the
+  rest of that table). Fixture `test/bug639_sys_selfexe_str_test.zbr` (`e.len()`,
+  `File.exists(e)`, a literal starting with it); the probe of the same shape failed on the
+  pre-fix compiler.
+
+### BUG-637: a list literal of runtime VALUES (`[t1, t2]` of CsvTable, SysRunResult, ...) emits an element type zig cannot resolve -- FIXED 2026-10-27 (found the same day)
+- **Severity:** Medium (a leak: `-c` passes, zig refuses, and the message names a type the
+  user never wrote -- `CsvTable` undeclared, or `expected type 'str'`).
+- **Found:** writing BUG-636's positive fixture, `for r in [r1, r2, r3]` over `sys.run`
+  results. Two shapes, one cause -- the list-literal emit in `genExpr` (`Expr.list_lit`)
+  does not go through the runtime-type table `genType` uses:
+  - an element the checker types as a RUNTIME named type (`Csv.parse` -> `CsvTable`)
+    goes through `typeZigName`, which knows user types, and comes out as the bare Zebra
+    name: `_ZbrList(CsvTable)` -> "use of undeclared identifier 'CsvTable'" (genType spells
+    it `_CsvTable`);
+  - an element the checker cannot type at all (`sys.run(...)` has no result type in the
+    checker) takes the documented fallback, `[]const u8` -- "wrong for non-str, but at
+    least the resulting Zig error points here": a fabricated default (UNGIT), and the
+    error does not point at the literal, it says `expected type 'str', found SysRunResult`.
+- **Repro:** `var a = Csv.parse("x,y")`, `var b = Csv.parse("z,w")`, `for t in [a, b]`.
+- **Fix directions:** (1) one function for "runtime type name -> Zig spelling", used by
+  genType's table and by every Type_-driven emitter (the list literal is one; check the
+  others with the same probe); (2) give `sys.run` a result type in the checker; (3) the
+  fallback should become a refusal naming the element -- an element type nobody inferred
+  is not `str` (§28a inference-or-error). (3) alone would turn both leaks into honest
+  refusals and is the endstate; (1) and (2) make the common cases work.
+- **MEASURED BEFORE FIXING:** eight runtime value types in a two-element literal --
+  `DateTime`, `Timer`, `Regex`, `SysProcess`, `StringBuilder`, `SysRunResult`, `MemStats`,
+  `CsvTable` -- every one passed `-c` and failed in zig; only `HttpResponse` worked.
+- **FIXED, directions (1) and (3) -- not (2).** A named runtime type now goes through
+  `zigTypeText` (genType's own table, captured as a string) instead of `typeZigName`, which
+  knows user types only. And an element type the checker cannot name no longer becomes
+  `[]const u8`: element 0 is bound to a `const` inside the literal's block and the list is
+  `_ZbrList(@TypeOf(that))` -- zig's answer, not a guess, evaluated once and in the same order.
+  A string-shaped element 0 (`isStringExpr`) keeps the old `[]const u8`: an unknown-typed
+  string whose Zig type is narrower (`[]u8`, a sentinel slice) would otherwise give the list a
+  type later string appends cannot meet. A per-type table for (2) was not needed.
+- **Blast radius, measured:** the corpus (test/ + examples/, 958 files; 57 emit a list
+  literal) was emitted with the new compiler and every binding counted: ONE file takes the
+  new path, `bug636_sys_argv_ok_test`, element 0 `sys.selfExe()` -- which is what found
+  BUG-639.
+- **Fixture:** `test/bug637_runtime_value_list_test.zbr` -- CsvTable, sys.run results (names
+  and direct calls), Regex, DateTime, MemStats, each literal's elements USED (`r.stdout`,
+  `re.test`, `m.arenaBytes`). Red-checked with HEAD's CodeGen.zbr swapped in: "use of
+  undeclared identifier 'CsvTable'"; the eight-type probe was red on the same compiler.
+
+### BUG-636: `sys.run("git status")` passed the front end and failed inside zig, in runtime code the user never wrote -- FIXED 2026-10-27 (found the same day)
+- **Severity:** Medium (a leak: `-c` passes, and zig's error names `argv.items` in
+  `zebra_rt.zig` with no line of the user's). One string as the command is the shape every
+  shell API teaches, so it is the first thing a newcomer writes.
+- **Found** writing BUG-542's abrupt-disconnect repro. The argv family -- `sys.run`,
+  `sys.spawn`, `sys.spawnPiped`, `sys.spawnPipedIn`, `sys.exec_inherit` -- hands its first
+  argument to a runtime helper taking `anytype`, and the checker typed only their RESULTS,
+  never their arguments. `sys.run()` with no argument emitted `_sys_run(undefined)`.
+- **The wider class, measured:** ten wrongly typed namespace calls (`sys.sleep("x")`,
+  `File.exists(3)`, `Path.join(1, 2)`, `Math.sqrt("x")`, ...) all pass `-c`. Where the runtime
+  parameter has a concrete type, zig's error is remapped onto the user's line, in Zig's
+  vocabulary (`expected type 'str', found 'comptime_int'`); only the `anytype` ones land in
+  the runtime. This fix covers the argv family, the worst shape; the rest is open (no
+  namespace call's argument types are checked in the front end).
+- **Fix:** `checkSysArgv` (selfhost/TypeChecker.zbr), called for any `sys.<member>(...)`
+  when `sys` is not a local: the argument count, a first argument that inference KNOWS is a
+  primitive or a list of non-strings (an argument it cannot type is not refused -- the #5a
+  rule, so an inference gap cannot refuse valid code), and `spawnPipedIn`'s cwd as `str`.
+  The message gives the right shape: `sys.run(["git", "status"])`.
+- **Fixtures:** `test/fail_fixtures/bug636_sys_argv_fail.zbr` (four refusals, each
+  registered with its coordinate; every one passed `-c` on the pre-fix compiler) and
+  `test/bug636_sys_argv_ok_test.zbr` (five legitimate argv shapes -- a literal, an
+  annotated local, a built list, a function's result, calls as elements -- each spawning the
+  program itself as a child; 5 of 5 ran before and after). False-refusal sweep: every file
+  calling an argv function in this repo, zebra-ide and the GameEngine (14) checked with the
+  new compiler -- the only refusals were the fail fixture's.
+
+### BUG-542: on Windows, a WebSocket whose peer has already gone prints a Zig "unexpected NTSTATUS" error trace when the runtime answers its close frame -- FIXED 2026-10-27 (found 2026-10-08)
+- **Severity:** Low-Medium (the program is correct and continues; but a user sees a
+  40-line Zig trace about runtime code they never wrote -- UNGIT "nothing fabricated" in
+  reverse: a normal end reported as a failure).
+- **Reported by:** Fable, GameEngine (`net_host_test`, Zig 0.16, Debug). NOT yet reproduced
+  here, and not yet checked under Zig 0.17, whose std may map these statuses.
+- **Path:** the peer closes; `_ws_recv` sees opcode 8 and calls `_ws_send_close_frame`;
+  `conn.writeAll(&frame) catch {}` flushes into std's `netWriteWindows`, which maps only the
+  NTSTATUS values it knows and returns `windows.unexpectedStatus(status)` for
+  CONNECTION_RESET (0xc000020d) / CONNECTION_ABORTED (0xc0000241) -- and that function
+  PRINTS the trace itself in Debug (`std.options.unexpected_error_tracing`), before the
+  runtime's `catch {}` sees `error.Unexpected`. A second trace comes from the read side
+  (`netReadWindows` -> `readExact` -> `_ws_recv`).
+- **Fix directions (pick with a repro in hand):** (a) do not write the close reply when the
+  read that delivered the close already showed the peer gone, and treat a reset on the
+  read side as end-of-stream in the runtime; (b) set `unexpected_error_tracing = false` in
+  the emitted root's `std_options` -- broader: it silences every such std trace in Zebra
+  programs, which the runtime already handles as errors, but it also hides genuinely
+  unexpected statuses from anyone debugging the runtime. Prefer (a) for the close path;
+  decide (b) separately. Fixture: a Ws server whose client disconnects abruptly; the
+  output must hold no `NTSTATUS` line (Windows-only leg).
+- **REPRODUCED AND FIXED 2026-10-27, and the path was not the one written above.** The
+  repro (a host looping on `recv()` until nil, then `ws.close()`; a client that sends two
+  messages and closes) printed `error.Unexpected NTSTATUS=0xc000013b (LOCAL_DISCONNECT)` on
+  8 of 8 runs under Zig 0.17. Markers on every read and write named the line: the close
+  reply in `_ws_recv` SUCCEEDED; it was the handler's `ws.close()` that wrote a SECOND close
+  frame, because `_ws_recv` answered the peer's close without recording it. `Ws.serve`'s
+  fallback had the same shape.
+- **The fix (direction (a)):** `_WsConn.close_sent`. `_ws_send_close_frame` sends at most
+  once, and every failed read in `_ws_recv` sets the flag, so nothing is written into a
+  socket the peer has dropped. `closed` keeps meaning "the stream was closed" -- the stream
+  is still closed by `ws.close()` and by the fallback. 0 of 8 runs after, same generated
+  source, only the runtime differing. Direction (b) was not taken: no std trace is silenced.
+- **The ABRUPT case (no close frame; the peer's process exits) is already quiet under Zig
+  0.17**, which maps `CONNECTION_RESET` on reads. Under the shared 0.16 it still printed one
+  `CONNECTION_RESET` trace per disconnect, from std's read path, with the fix in place --
+  measured, and first mistaken for a failure of the fix until the binary turned out to have
+  been built by the 0.16 on PATH rather than the repo's pin. The tree builds with 0.17.
+- **Fixture:** `test/bug542_ws_close_once_test.zbr`, registered `smoke_run_bounded` with a
+  new optional fourth argument -- a string that must NOT appear in the output (`NTSTATUS`).
+  The expected line comes from main after the host reports over a channel, so it proves the
+  close path ran. Red-checked by putting back the pre-fix preamble: the registration fails
+  on the forbidden string 3 of 3, `ws_echo_test` beside it unaffected.
+- **Not covered:** an unmapped status (`CONNECTION_ABORTED`) on the FIRST close reply, if the
+  peer resets between our read of its close and our answer. That write still goes out and
+  std would still print. Not observed.
+
+### BUG-543: the N-1 anchor emits against the CURRENT tree's runtime, not its own -- `divergence` is blind to runtime regressions, and deleting a runtime helper the anchor still calls would make it vacuous -- FIXED 2026-10-27 (found 2026-10-08; gate half 2026-10-10)
+- **Severity:** Medium (a gate that can stop seeing a whole class without going red).
+- **Mechanism:** `defaultPreamblePath()` (selfhost/main.zbr) tries
+  `selfhost/stdlib_preamble.zig` RELATIVE TO THE CWD first and only then the copy beside the
+  exe. `divergence_check.sh` runs the anchor from the repo root, so the anchor's emit is
+  "N-1 codegen + today's runtime".
+- **Measured (the discriminating probe):** the 2026-10-03 anchor's own preamble says
+  `_zbr_ref_containers = false`, the tree's says `true`. The anchor emitting hello-world
+  from the repo root wrote `true` into its `zebra_rt.zig`; from a scratch cwd, `false`.
+- **Consequences:** (1) a regression in the runtime is invisible -- both sides compile
+  against the same preamble; (2) removing a runtime helper that the anchor's codegen still
+  calls (the BUG-501 shims: `_zbr_ref`, `_ZbrRefOf`, `_zbr_unboxed`, `_zbr_cderef`) makes
+  EVERY anchor-side file fail to compile, so every file scores as an ADVANCE and the
+  REGRESSION count reads 0 forever -- green, and measuring nothing. This is why the BUG-501
+  runtime-shim deletion is held (see container_reference_semantics.md §9).
+- **Also ambient for users:** any `zebra` run from a directory holding
+  `selfhost/stdlib_preamble.zig` (a clone of this repo) takes that runtime instead of its
+  own -- the UNGIT "nothing ambient" test, failed by a fallback order.
+- **Fix directions:** the anchor reads its own runtime (run it from its cache dir with
+  absolute input paths, or an explicit `--runtime-dir` / env the gate passes -- explicit
+  intent over cwd), and the gate asserts it: the anchor's emitted `zebra_rt.zig` must match
+  the preamble in its own cache, or the run REFUSES. Moving the anchor tag past a deletion
+  only postpones the vacuity to the next one.
+- **Reproduced by accident, 2026-10-10** (closing BUG-501): the anchor binary
+  (`/c/Projects/zebra-n1-cache/f5afd86a49fd/zebra.exe`) run with this repo as the cwd printed
+  the post-switch answers for a container program; the same binary run from its own cache
+  directory printed the pre-switch answers. Same binary, same source, two behaviours,
+  decided by the working directory -- the UNGIT "nothing ambient" failure, in the gate meant
+  to compare versions.
+- **GATE HALF FIXED 2026-10-10:** `divergence_check` runs the anchor from its own cache
+  directory (every path it passes is absolute), and `tools/n1_runtime_check.sh` runs before
+  the sweep: lines only in the anchor's preamble must reach its emitted `zebra_rt.zig`, lines
+  only in the tree's must not, or the run refuses (exit 2). Derived each run, so it does not
+  rot with the next runtime change. Red-checked with the old invocation (the anchor run from
+  the repo root): 0/9 anchor-only lines, 20/20 tree-only, REFUSED. Still open: the compiler
+  half -- `defaultPreamblePath()` still tries the CWD first, so a user's `zebra` run inside a
+  clone of this repo takes the clone's runtime.
+- **COMPILER HALF FIXED 2026-10-27.** Every runtime file the compiler reads at codegen time
+  (the preamble, the GUI sections, `napi_preamble.zig`, the V runtime and section) goes
+  through one resolver, `runtimeFilePath` (selfhost/main.zbr), which looks from the BINARY:
+  first the checkout it was built in (an exe in `<checkout>/zig-out/bin` reads
+  `<checkout>/selfhost/NAME`), then beside the exe (an installed zebra, the N-1 anchor's
+  cache dir), and only then `./selfhost/NAME` -- kept as the last resort for a compiler built
+  into a scratch directory and run from a checkout (`regen_recover.sh`). The node-addon path
+  was a hard-coded `selfhost/napi_preamble.zig` and the V runtime had its own copy of the old
+  order; both use the resolver now.
+- **Gate:** `cli-surface`, three legs run inside a planted clone whose `selfhost/` preamble
+  carries a marker: this checkout's zebra must not take it, an installed copy must take the
+  marked preamble beside it, and a bare copy with nothing beside it must take the clone's --
+  the control proving the marker reaches an emit at all. Red-checked with the pre-fix binary
+  swapped into `zig-out/bin`: the two absence legs fail with `markers=[ZZ543_CLONE ]`, the
+  control passes.
+- **What changed for a developer:** the dev binary run OUTSIDE the repo used to read the copy
+  `zig build` installs in `zig-out/bin`; it now reads the checkout's `selfhost/` directly, so
+  a preamble edit is seen from any directory without a build. From the repo root nothing
+  changed (same file).
+
+### BUG-635: on Windows, a program printing more than 64 KiB into a pipe panicked "reached unreachable code" and delivered nothing -- FIXED 2026-10-27 (found the same day)
+- **Found by:** BUG-596's before/after emit sweep, which hashed `zebra --emit-zig f.zbr | md5sum`
+  over ~3,000 files: four GameEngine files with 67-105 KB of emitted Zig read as empty on
+  some runs and not others. Redirected to a FILE they were whole and identical. The compiler
+  was panicking -- its `--emit-zig` ends in an ordinary `print`.
+- **Repro:** any program whose single `print` is 65,537 bytes or more, run as `prog | wc -c`
+  from Git Bash: `thread N panic: reached unreachable code`, exit 1, 0 bytes. 65,536 bytes
+  passes; a file or the console takes any size. Measured threshold, not a guess.
+- **Cause:** Zig's `File.stdout()` builds a File flagged `nonblocking = false`, i.e. it assumes
+  a synchronous handle. Git Bash hands a child an OVERLAPPED pipe. A write that cannot finish
+  at once (the 64 KiB pipe buffer is full) returns STATUS_PENDING, and std's blocking path has
+  `.PENDING => unreachable, // unrecoverable: wrong File nonblocking flag`
+  (lib/std/Io/Threaded.zig, fileWriteStreamingWindows). Chunking the writes was tried first
+  and is NOT a fix: it turned the panic into a silent truncation at 65,536 bytes (the panic
+  went to stderr, which the probe had discarded) -- the worse failure, caught by measuring.
+- **Fix:** the runtime asks Windows how stdout and stderr were opened, once
+  (`NtQueryInformationFile`, FileModeInformation, read as a raw ULONG so 0.16 and 0.17 both
+  build), and flags an asynchronous handle `nonblocking`, so std takes its path that waits for
+  the write to complete. Every runtime use of `File.stdout()` / `File.stderr()` goes through
+  `_zbr_stdout()` / `_zbr_stderr()`. `sys.errln` was never affected (`std.debug.print` writes in
+  pieces). Measured after: 65,536 / 70,000 / 1,000,000 bytes arrive whole through a pipe, with a
+  reader that sleeps 2 s first, and a reader that closes early still ends cleanly.
+- **Gate:** `stream-sep` leg 8 -- a 200,001-byte print through a slow pipe must arrive whole
+  with nothing on stderr; the fixture's `big` mode, count derived from its own loop.
+  Red-checked by making the mode query report every handle synchronous: leg 8 fails with
+  0 bytes and the panic.
+
+### BUG-596: a method read as a VALUE (`var f: IntFn = c.bump`) passed `zebra -c` and failed inside zig "no field named 'bump'" -- FIXED 2026-10-27 (class receivers 2026-10-16, struct receivers 2026-10-27)
+- **Decision (Sean, 2026-10-16):** SUPPORT it -- "refusing would not be good for any
+  functional approaches". A bound method is a closure over its receiver; for a STRUCT receiver
+  it refers to the VARIABLE, not a copy (chosen over C#'s copy semantics), consistent with
+  BUG-569's by-reference capture.
+- **Class receivers, FIXED:** `c.bump` read as a value emits `_zbr_bind(c, "bump")` -- a runtime
+  helper that reads the method's signature by reflection and returns a struct holding the
+  receiver with a `call` of the method's arity, which a sig slot's `.from` and an untyped
+  local's `_zbr_invoke` already take. Nothing about the method is spelled at the bind, so a
+  used module's class binds the same way. A callee is not a value: codegen marks callee
+  position (`genCalleeExpr`) so `c.bump()` is untouched. The checker types the value as a
+  callable returning the method's type (`f()` then types), and codegen's string-shape name
+  list no longer takes a bound `n.name` for a str. The list helpers (`map`, `filter`,
+  `reduce`, `any`, `all`, `find`) took only bare functions; they apply a function OR a value
+  with `call` now (`_zbr_apply1` / `_zbr_apply2`, the spelling `Result.map` already used).
+  Fixture `test/bug596_bound_method_test.zbr` (+ `_lib`).
+- **Struct receivers, FIXED 2026-10-27:** a struct `var` whose method is read as a value lives
+  in a heap cell (BUG-569 step 4's `_zbr_cell`) whatever else happens to it, and the bind
+  receives the cell's POINTER (`boxPtrSpelling`), so `_zbr_bind` binds the variable exactly as
+  it binds a class instance -- struct methods already take `self` by pointer. CodeGen's
+  `computeBoxCandidates` finds such receivers with a new walker pair (`exprsInStmts`, a
+  statement walker; `structBindsInExpr`, an expression walker that types a lambda body's own
+  locals the way `checkLambdaBody` does), both marked exhaustive for `lint_expr_walkers`.
+  The receiver must be a `var` local of the function -- the set CodeGen can box. The checker
+  keeps that set (`var_locals`, marked wherever a `var` or destructured name is bound, a
+  lambda's parameters taken out while its body is checked) and refuses every other receiver
+  by name in `checkCallsInExpr`'s member arm (`checkStructBind`): `this`, a parameter, a
+  field, a temporary, a loop variable, a lambda parameter. It reports there and not in
+  inference, because the pass that reports for a lambda body runs before its parameters are
+  typed and the typed pass infers quietly -- the first version refused nothing inside
+  lambdas. A struct VALUE reaching `_zbr_bind` would bind a copy that compiles and prints
+  stale numbers; `_ZbrBindRecv` refuses it at comptime ("internal: ... would bind a copy"),
+  red-checked by forcing the value path.
+  Fixtures `test/bug596_struct_bound_method_test.zbr` (aliasing both ways, a sig slot, a
+  closure, a bound value returned out of its function, a struct `var` in a lambda and in a
+  loop, `map`; `bug596s: 3 11 11 16 12 12 102 41 6 [13, 14, 15]` -- the N-1 anchor fails it
+  "mutable 'p' not accessible") and `test/fail_fixtures/bug596_struct_bind_receiver_test.zbr`
+  (the six refused receivers).
+### BUG-634: inside an open statement-body lambda, a multi-line call or literal in the body ended its statement at the first newline -- FIXED 2026-10-27 (found the same day)
+- **Found by:** BUG-564's fixture (a nested lambda whose body calls `add(x,` over two lines).
+  Same on the N-1 anchor in the older indentation form, so it predates BUG-564's fix.
+- **Repro:**
+  ```
+  var n = add(1, applyTo2(def(x: int): int
+      return add(x,
+          7)
+  ))
+  ```
+  `9:22: error: unexpected expression token: '\n'`.
+- **Cause:** the lexer emitted end-of-line and processed indentation inside brackets whenever
+  ANY lambda body was open (`lambdaStack.len > 0`), so the body's own continuation lines were
+  read as statements.
+- **Fix:** each lambda records `parenDepth + bracketDepth` when its body opens
+  (`lambdaNest`); only a line at exactly that depth is a body line (`inLambdaBody()`). Pinned
+  by the nested case in `test/bug564_lambda_continuation_indent_test.zbr`.
+
+### BUG-633: `in` compared a list of COLLECTIONS by element pointer, so `[1, 2] in [[1, 2], [3]]` was false -- FIXED 2026-10-27 (found the same day)
+- **Found by:** BUG-565's positive fixture. On the N-1 anchor (`f5afd86`) the same program did
+  not compile at all ("expected type '*T', found 'T'"); on HEAD it compiled and answered
+  `false` -- for a literal, a List variable, and `outer.contains(inner)` alike.
+- **Cause:** `_zebra_in`'s List branch compared elements with `==`; a list of lists holds
+  boxed headers, so that compared pointers. `==` on two collections compares contents
+  (BUG-506), and `in` disagreed with it.
+- **Fix:** the branch compares collection elements with `_zbr_cont_eql`, the comparison `==`
+  uses; other elements are unchanged. Pinned by `test/bug565_in_list_literal_test.zbr`
+  (`... true` for the nested case).
+
+### BUG-565: an `@[...]` array literal works only inline after `in` with strings -- bound to a variable, indexed, iterated or holding ints, it leaks a zig error; QUICKSTART's own example does not compile -- FIXED 2026-10-27 (`@[...]` REMOVED)
+- **Found by:** writing BUG-561's fixture; reproduced on the N-1 anchor (`f5afd86`) and on HEAD.
+- **Repro (QUICKSTART's own example, "Array literal"):**
+  ```
+  def main()
+      var nums = @[3, 1, 4, 1, 5]
+      if 3 in nums
+          print("three is present")
+  ```
+  `error: expected type 'str', found 'struct { comptime T = 3, ... }'` (zig's). Also:
+  `var arr = @[9, 10, 11]` then `arr[2]` -> std.meta "Expected pointer, slice, array or vector
+  type, found 'struct { comptime comptime_int = 9, ... }'"; `for v in arr` -> "no field named
+  'items' in tuple".
+- **What works:** `if name in @["match", "find"]` -- a string literal tested inline
+  (`test/array_in_test.zbr`, the only fixture). The literal is emitted as an anonymous Zig
+  tuple, and `_zebra_in` takes strings.
+- **Why no gate saw it:** `doc_example_check` runs the front end only (`zebra -c`), and the
+  front end accepts the example.
+- **Expected:** either `@[...]` is a real fixed array (indexable, iterable, any element type,
+  bindable), or it is documented as the inline membership form only and the front end refuses
+  the other uses by name. Today the reference documents a use that cannot compile.
+- **Decision (Sean, 2026-10-27):** remove `@[...]` rather than make it a real array. It was a
+  second spelling of the list literal, useful only right after `in`, where it avoided building
+  a List. Zebra has no array type, so a "real" `@[...]` would have been a value with no type
+  a user could write.
+- **Fix:** `x in [a, b]` with a non-empty literal of primitives (int, uint, float, bool, char,
+  str) emits the tuple `@[...]` used to -- `_zebra_in(x, .{a, b})`, checked inline, no List and
+  no allocation (`inLitAsTuple`, CodeGen.zbr). Any other literal keeps the List. The parser
+  refuses `@[` naming `[...]`. Eight corpus files migrated; QUICKSTART's example is now
+  `if 3 in [3, 1, 4, 1, 5]`. The lexer still has the token, so the refusal can name it.
+  Fixtures `test/fail_fixtures/bug565_at_bracket_removed_test.zbr` and
+  `test/bug565_in_list_literal_test.zbr` (run, plus an emit check that the loop's test is a
+  tuple). Writing that fixture found BUG-633.
+
+### BUG-547: emitted code spells source locations exactly as the path was given, so an absolute path puts the build machine's disk into checked-in generated `.zig` -- FIXED 2026-10-27
+- **Severity:** Low-Medium (not wrong at runtime; but generated code that is committed --
+  the GameEngine checks in every `.zig` -- differs per machine, and leaks a home directory).
+- **Reported by:** Fable, GameEngine, the day 0ad017b put a location into every failure
+  message: the engine's regen passes absolute paths, so its asserts read
+  `assert failed at C:/Projects/GameEngine/zbra/x.zbr:12`. The `// zbr:<file>:<line>`
+  markers have carried the absolute path since they were introduced. The engine strips its
+  root after emission; nothing in the compiler does.
+- **Fix direction:** an explicit `--source-root <dir>`: every location (markers, failure
+  messages, `_error_ctx.at`) is spelled relative to it when the source lies under it. NOT
+  "relative to the cwd" -- that makes the emitted bytes depend on where the command was
+  run, the UNGIT "nothing ambient" failure. `zebra debug` maps markers back to files, so it
+  must resolve a relative marker against the same root (debug-map's gate covers the map).
+  Fixture: the same source emitted from two different cwds with `--source-root` gives
+  byte-identical files.
+- **Fix:** `--source-root DIR` (main.zbr; refused when DIR is missing or not a directory).
+  CodeGen spells every emitted source path through one helper, `emitLoc` -- the 15 sites that
+  were `fwdSlashes(file)` / `fwdSlashes(source_file)`: the `// Source:` header, the `// zbr:`
+  markers, assert / contract / raise locations (`failAt`, `raiseAt`, `_error_ctx.at`), the
+  coverage record. With a root set, a path under it is written relative to it; both sides are
+  compared absolute (a relative one resolved against the cwd), so the OUTPUT does not depend on
+  where the command ran. A source outside the root keeps its path as given; diagnostics the
+  compiler prints are unchanged. Gate: three `cli-surface` legs -- the same source emitted
+  from two cwds is byte-identical and spelled `sub/a.zbr`, the control that without the flag
+  the two emits differ, and a missing root refused by name. The N-1 anchor refuses the flag.
+- **Not covered:** `zebra debug` builds its own emit and is not handed a root, so its markers
+  stay absolute (its map needs them to find files); a coverage JSON written under a root
+  carries relative paths, which a reader must resolve against the same root.
+
+### BUG-630: a lambda with a DIFFERENT signature assigned into a function-typed slot passes `-c` and fails inside the runtime -- FIXED 2026-10-26
+- **Found by:** an advisor review of BUG-629, probing reassignment with a mismatched signature.
+  Reproduced on the compiler before BUG-629's fix, with the ANNOTATED form, so it is not that
+  fix's doing.
+- **Repro:**
+  ```
+  def main()
+      var h: def(int): int = def(x: int): int = x + 1
+      h = def(x: int): float = 1.5
+      print(h(1))
+  ```
+  zig, inside `zebra_rt.zig`'s `_ZbrFn.from`: `expected type 'i64', found 'f64'`. With
+  `h = def(): int = 1` (a different arity), `expected 0 argument(s), found 1`. The same through
+  a `sig` (`var h: Op = ...`). The user is shown a runtime line they never wrote.
+- **Why the front end cannot see it today:** `Type_.fn_type_` carries the RETURN type only, so
+  the checker cannot compare a lambda's parameters against the slot's. A return-type mismatch
+  is visible to it already and is not compared either.
+- **Expected:** refused at the assignment (and at a call argument, a return, a field store --
+  every place a value flows into a sig slot), naming both signatures.
+- **Control when fixing:** the two repros above must be refused with a coordinate; a matching
+  signature, a function reference (`h = twice`) and `nil` into an optional slot must still pass.
+- **Fix:** `Type_.fn_type_` carries an `FnType_` now -- the return TypeRef it always carried,
+  plus the parameter types (`unknown_` where one is not written) and the arity (-1 when the
+  list is not known, a bound method). A `sig` registers its parameter list beside its return
+  type. `fnValueMismatch` (TypeChecker.zbr) compares a function value against an inline
+  `def(P): R` or a `sig` slot -- arity, then each parameter, then the return -- by BUG-626's
+  definite-difference rule (`elemsDiffer`), so an unwritten or unknown type is never refused.
+  Wired into `checkExpr` (returns, field inits; before the named-type branch, which returned
+  first for a sig), the typed-`var` check, plain assignment, and the call-argument loop, which
+  reads the callee's Param list because a function-typed parameter has no decodable tag.
+  BUG-626's messages spelled `float` as the internal `flt`; `userTypeName` fixes both.
+  Fixtures `test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr` (five refusals; the N-1
+  anchor reports none) and `test/bug630_fn_signature_ok_test.zbr` (matching signatures with
+  different parameter names, a function reference, an optional sig slot, a lambda argument).
+- **Measured before landing, 0 refusals outside the controls:** `-c` over 3,004 files (this
+  repo, zebra-ide, the GameEngine with `--module-path zbra` for its game files) produced the
+  new message only in a planted control, at all five positions.
+- **Not covered:** a lambda with no written return type infers no function type, so it is not
+  compared, arity included.
+
+### BUG-632: a list literal passed as an ARGUMENT does not take the parameter's element type -- `f([1, 2])` into a `List(float)` fails inside zig -- FIXED 2026-10-26
+- **Found by:** writing BUG-626's positive fixture. The same literal in a typed `var` works.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'List(float)', found 'List(int)'".
+  ```
+  def f(xs: List(float)): int
+      return xs.len
+
+  def main()
+      print(f([1, 2]))          # var xs: List(float) = [1, 2] is fine; f([1.5, 2.0]) is fine
+  ```
+  Reproduced on the N-1 anchor (`f5afd86`) too, so it predates BUG-626.
+- **Expected:** a literal argument takes the parameter's element type, as a literal initialiser
+  does; or, if that is not wanted, a refusal at the literal naming both types.
+- **Control when fixing:** the repro must run and print 2; `f([1.5, 2.0])` and a `List(int)`
+  variable passed to `List(int)` must keep working.
+- **Fix:** `emitListLitForParam` (CodeGen.zbr) emits a non-empty untyped literal handed to a
+  `List(X)` parameter as BUG-230's labelled block built with the PARAMETER's type, beside
+  BUG-463's empty-literal case. Reached from `genCallWithTypeHint` (free functions, named and
+  defaulted calls), the user-method positional loop and the owner-call loop. Only a primitive
+  element or an optional one: a generic parameter's `T` means nothing at the call site, and the
+  general path already spells a class element. Fixture `test/bug632_list_literal_arg_test.zbr`
+  (`bug632: 3.0 3.5 3 2 3 2`); the N-1 anchor fails it inside zig at the free-function call.
+  Two rebuilds gave the same `CodeGen.zig`; the round-trip is byte-identical.
+
+### BUG-626: a container whose ELEMENT type differs from the slot's passes `-c` and fails inside zig -- FIXED 2026-10-26
+- **Found by:** probing BUG-531's fixture: `Regex.groups` returns `List(str?)`, and binding
+  it to a `List(str)` passed the front end.
+- **Repro:** all three pass `zebra -c`; zig refuses each.
+  ```
+  def f(xs: List(str)): int
+      return xs.len
+
+  def main()
+      var a = [1, 2]
+      print(f(a))                    # expected type 'List(str)', found 'List(int)'
+      var b: List(str) = a           # the same, for a typed var
+      var c: List(int) = List(int?)()   # found 'List(?i64)'
+  ```
+- **Mechanism:** `typesCompatible` answers `true` whenever either side is not a primitive,
+  so no container slot -- argument, typed var, assignment, return -- compares element types.
+  The zig message already names the Zebra types, so the user is told what is wrong, but in
+  zig's words and after the build.
+- **Why it was not fixed with BUG-531:** the check would run on every container assignment
+  in every program; it needs the §28a treatment (measure the refusals across the corpus,
+  zebra-ide and the engine at 0 before landing), and a rule for `unknown` element types
+  (an empty literal, a generic) that must stay compatible.
+- **Fix:** `containerMismatch` (TypeChecker.zbr) compares element types and refuses only a
+  DEFINITE difference: both elements primitives (int/uint/float/bool/char/str) with different
+  tags, an optional against a plain primitive or container, or containers of those,
+  recursively (List, Set, Chan, HashMap key and value). A class, a generic parameter, a sized
+  integer, a tuple or an `unknown` element is never refused, so an inference gap cannot become
+  a refusal; a list, set or dict LITERAL is never checked, because its elements take the slot's
+  type. Wired into `checkExpr` (call arguments, returns, field inits), the typed-`var` check
+  (in its non-primitive branch, which returned before) and plain assignment, including a
+  field store. Call arguments needed the parameter's container type to survive
+  `paramTypeFromTag`, which decoded only primitives: it now decodes `list(..)`, `set(..)`,
+  `chan(..)` and `hmap(k,v)` tags, an undecodable element (`opt` carries no payload) becoming
+  `unknown`. The message spells types as a user writes them (`List(int?)`,
+  `HashMap(str, int)`). Fixtures `test/fail_fixtures/bug626_container_elem_mismatch_test.zbr`
+  (nine refusals, each at its column; the N-1 anchor reports none) and
+  `test/bug626_container_elem_ok_test.zbr` (literals, an empty literal, optional elements on
+  both sides, nested containers).
+- **Measured before landing, 0 refusals outside the control:** `-c` over 3,002 files (this
+  repo's corpus and examples, zebra-ide, the GameEngine's `zbra`, `ported_scripts`, and its
+  `game`/`bbat_port`/`tools` with `--module-path zbra`) produced the new message only in a
+  planted control file, where it named all ten positions. The compiler's own source: the
+  round-trip is byte-identical.
+- **Not covered:** a class-element mismatch (`List(Dog)` for `List(Animal)`) and sized integers
+  are left to zig. A list LITERAL as an argument was BUG-632, fixed the same day.
+
+### BUG-628: a method that throws only by INFERENCE (a `raise`, no `throws`), called without `?`, is not refused and fails inside zig -- FIXED 2026-10-26
+- **Found by:** probing the seam behind BUG-546's fix. Two throw rules disagree: genMethod
+  (and `declMayFail`, `isTopLevelMethodThrows`) treat a body with a `raise` or `?` as
+  throwing and emit `anyerror!`; `throws_methods`, behind `isClassMethodThrows` /
+  `isOwnerMethodThrows`, records only a DECLARED `throws`.
+- **Repro:** `zebra -c` exits 0; zig: "expected type 'i64', found 'anyerror!i64'".
+  ```
+  class Box
+      var n: int = 1
+      def inferred(): int
+          if .n > 0
+              raise "inferred"
+          return .n
+
+  def main()
+      var b = Box()
+      var x = b.inferred()     # no `?`: the §28b implicit-try refusal does not fire
+  ```
+  The same through a bare owner call inside another method (`return inferred()`).
+- **Knock-on (BUG-546):** in that owner-call shape the CALLER (`caller(): int` holding
+  `return inferred()`) has no `raise` or `?` of its own, so `b.caller() catch 9` is refused
+  as "cannot fail" -- on a program that is invalid anyway, but naming the wrong line. With
+  the `?` written (`return inferred()?`) it compiles and nothing is refused.
+- **Fix direction:** populate `throws_methods` (and `isOwnerMethodThrows`) by the same rule
+  as genMethod -- one predicate, `declMayFail` -- then measure: methods in the corpus that
+  throw by inference and are called bare become implicit-try refusals.
+- **Fix:** one predicate, `methodEmitsErrorUnion` (CodeGen.zbr): declared `throws`, or a
+  `raise` or `?` in the body -- the rule genMethod already used for `anyerror!`. The
+  `throws_methods` registry (class, class-namespace and struct methods), `isOwnerMethodThrows`,
+  `isTopLevelMethodThrows`, `declMayFail` and the single-file `main` shim all ask it now, so a
+  method that throws by inference is a throws callee everywhere a call is classified. The
+  knock-on goes with it: the bare owner call is refused at its own line, before BUG-546's
+  "cannot fail" can name the caller. Fixtures `test/fail_fixtures/bug628_inferred_throws_call_test.zbr`
+  (a class method, a bare owner call, a struct method, each refused at its line; the N-1 anchor
+  passes `-c` on it) and `test/bug628_inferred_throws_ok_test.zbr` (the same calls with `?` /
+  `catch`, `bug628: 9 5 8`).
+- **Measured before landing, 0 new refusals:** `-c` over 3,002 files -- this repo's tracked
+  corpus and examples, zebra-ide, and the GameEngine's `zbra`, `game`, `bbat_port`, `tools` and
+  `ported_scripts` -- found "throws call needs" only in the four existing must-fail fixtures.
+  The engine's game files need `--module-path zbra` to reach codegen at all (without it 5 of 5
+  `game/mm` samples stopped at `use instance`); re-run that way, 164 of 172 reached codegen
+  and none was refused, with the new compiler or the anchor. The compiler's own source: the
+  round-trip is byte-identical.
+
+### BUG-631: zero-padding a negative number puts the zeros before the sign -- FIXED 2026-10-26
+- **Found by:** writing the rounding fixture for the exact-binary formatter; measured against
+  Python on the way. Pre-existing: the N-1 compiler prints the same.
+- **Repro:**
+  ```
+  def main()
+      var n = -5
+      var d = -2.5
+      print("[${n:04d}] [${d:06.1f}]")
+  ```
+  Zebra prints `[00-5] [00-2.5]`; Python, C and the spec this syntax follows print
+  `[-005] [-002.5]`. The `0` flag is mapped to fill `0` with right alignment (CodeGen
+  `zigFmtSpec`), and Zig's padding puts the fill before the whole text, sign included.
+- **Expected:** with the `0` flag the sign comes first and the zeros go between it and the
+  digits, for ints and floats, with and without a precision. An explicit fill and alignment
+  (`${n:0>4}`) keeps today's meaning: that is a fill, not the `0` flag.
+- **Control when fixing:** the two repros above print `[-005] [-002.5]`; `${5:04d}` stays
+  `0005`; `${n:0>4}` stays `00-5`; a float with a precision through `_zbr_ffmt` and one
+  without both get the sign-aware form.
+- **Fix:** CodeGen's `parseFmtSpec` reads the `0` flag as the sign-aware align `=` (Python's
+  name for it). A number hole with a precision goes through `_zbr_ffmt`, whose padding now
+  writes the sign before the fill for `=`; one without a precision goes through the new
+  runtime `_zbr_zpad(x, width)` (`zeroPadArgs`), which formats with Zig's own `{d}` and moves
+  only the zeros. Hex, octal, binary and `:c` print unsigned bits or a byte, so `=` maps back
+  to `>` there and they are unchanged. Fixture `test/bug631_zero_pad_sign_test.zbr`, eight
+  holes, every value Python's `format()`; the N-1 anchor prints `[00-5] ... [00-2.5]` on it.
+
 ### BUG-629: reassigning an unannotated lambda local passed the front end and failed inside zig -- FIXED 2026-10-26
 - **Found by:** writing a by-hand probe of closure sinks while teaching leakgen to generate
   capturing lambdas (BUG-569's step-5 tail). Filed and fixed the same day.

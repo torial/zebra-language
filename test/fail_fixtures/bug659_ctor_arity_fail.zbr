@@ -1,0 +1,13 @@
+# BUG-659: a `cue init` had no arity check. Too few arguments were padded with
+# std.mem.zeroes (`Pt(1)` built y=0 -- a fabricated value); too many failed inside zig.
+class Pt
+    var x: int
+    var y: int
+    cue init(x: int, y: int)
+        .x = x
+        .y = y
+
+def main()
+    var a = Pt(1)
+    var b = Pt(1, 2, 3)
+    print(a.y + b.y)

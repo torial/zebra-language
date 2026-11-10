@@ -1,0 +1,15 @@
+# BUG-267 (write half): a local assigned only inside a statement-form `zig"…"` was emitted
+# `const`, and zig refused the assignment. The read half is pinned by
+# bug267_ziglit_local_use_test.zbr. Both directions here: written locals become `var`,
+# and a local the escape only READS (or compares) stays `const` -- making it `var` would
+# be zig's "local variable is never mutated".
+def main()
+    var out: int = 0
+    zig"out = 42;"
+    var acc: int = 1
+    zig"acc += 9;"
+    var cell: int = 3
+    zig"const pp = &cell; pp.* = pp.* * 7;"
+    var seen: int = 5
+    zig"out += if (seen <= 5 and seen != 4) seen else 0;"
+    print("bug267: ${out} ${acc} ${cell} ${seen}")

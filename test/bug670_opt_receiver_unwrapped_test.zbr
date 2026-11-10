@@ -1,0 +1,32 @@
+# BUG-670 control: every way of getting a plain value out of an optional before calling a
+# method or reading a field stays legal -- the narrowed `if x != nil`, `if x as v` (on a call
+# too), `x!`, `x?.m()`, and the BUG-557 `str?` forms.
+
+class Foo
+    var n: int = 3
+    def get(): int
+        return this.n
+
+def find(): Foo?
+    return Foo()
+
+def main()
+    var out = StringBuilder()
+    var f = find()
+    if f != nil
+        out.append("[" + f.get().toString() + "," + f.n.toString() + "]")
+    if find() as g
+        out.append("[" + g.get().toString() + "]")
+    out.append("[" + f!.get().toString() + "]")
+    out.append("[" + (f?.get() orelse 0).toString() + "]")
+    var m = HashMap(int, List(int))()
+    var l = List(int)()
+    l.add(7)
+    l.add(8)
+    m.set(1, l)
+    if m.get(1) as cs
+        out.append("[" + cs.count().toString() + "]")
+    var s: str? = " a "
+    if s != nil
+        out.append("[" + s.trim() + "]")
+    print("bug670: " + out.toString())

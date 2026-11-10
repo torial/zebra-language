@@ -1,0 +1,12 @@
+# BUG-655: a """ string whose text starts on its opening line was scanned to its close
+# without counting the newlines inside it, so every position after it was short by
+# that many lines (35 lines in selfhost/main.zbr).
+def banner(): str
+    return """first
+second
+third
+fourth"""
+
+def main()
+    var n: int = "not an int"
+    print(banner())

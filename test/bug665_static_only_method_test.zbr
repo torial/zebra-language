@@ -1,0 +1,27 @@
+# BUG-665: an instance method whose body reads only STATIC members left `self` unused and
+# undiscarded, and zig refused it ("unused function parameter") -- the field/method usage
+# check counted statics, which are emitted through their type, not through `self`.
+class Reg
+    static var n: int = 5
+    static var items: List(int) = [1, 2]
+    var own: int = 7
+
+    static def twice(x: int): int
+        return x * 2
+
+    def readStatic(): int
+        return n
+
+    def readComputedStatic(): int
+        return items.len
+
+    def callStatic(): int
+        return twice(3)
+
+    # control: an instance field as well, so `self` IS used and must not be discarded
+    def mixed(): int
+        return n + own
+
+def main()
+    var r = Reg()
+    print("bug665: ${r.readStatic()} ${r.readComputedStatic()} ${r.callStatic()} ${r.mixed()}")

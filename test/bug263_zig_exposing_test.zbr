@@ -1,0 +1,12 @@
+# BUG-263: `use foo exposing bar` on a NATIVE dep. A hand-written `.zig` exports its names
+# as written, so the exposed alias must name `ZigMath.square`, not the `_zbr_fn_square` a
+# Zebra module would export ("ZigMath has no member named '_zbr_fn_square'"). The qualified
+# call must keep working beside it.
+
+use ZigMath exposing square, clamp
+
+def main()
+    var a: int = square(7)
+    var b: int = clamp(15, 0, 10)
+    var c: int = ZigMath.abs(-42)
+    print("bug263 zig: square=${a} clamp=${b} abs=${c}")

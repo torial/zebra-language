@@ -1,0 +1,17 @@
+# BUG-641: an un-annotated `var x = lib.f()` -- a qualified call to a used module's top-level
+# def -- was untyped, so `.len`, `.add()` and str methods on it were refused ("cannot infer
+# the type of `x`") while the exposed spelling `f()` was typed. Two modules declare `pick()`
+# with different types; each qualified call must be typed from its own module.
+
+use bug641_qualified_fn_lib
+use bug641_qualified_fn_lib2
+
+def main()
+    var s = bug641_qualified_fn_lib.mkSeg(4)
+    var xs = bug641_qualified_fn_lib.mkList()
+    xs.add(4)
+    var n = bug641_qualified_fn_lib.name()
+    var p1 = bug641_qualified_fn_lib.pick()
+    var p2 = bug641_qualified_fn_lib2.pick()
+    p1.add("z")
+    print("bug641: ${s.len} ${xs.len} ${n.len} ${n.upper()} ${p1.len} ${p2.len} ${p2.upper()}")

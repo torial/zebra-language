@@ -1,0 +1,11 @@
+# The dependency half of bug664_same_name_test: a `Reg` whose statics are the OPPOSITE of
+# the root's -- `n` a constant here and computed there, `xs` computed here only.
+class Reg
+    static var n: int = 40
+    static var xs: List(int) = [1, 2, 3]
+
+class Tally
+    static var marks: List(int) = [9, 9]
+
+def total(): int
+    return Reg.n + Reg.xs.len

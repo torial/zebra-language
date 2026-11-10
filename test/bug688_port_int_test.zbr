@@ -1,0 +1,29 @@
+# BUG-688: the networking runtime took `port: u16`, so a port held in an `int` variable
+# (a parameter, a computed value -- anything but a literal) passed -c and failed inside
+# zig: "expected type 'u16', found 'i64'". The runtime takes Zebra's int now and checks
+# the range: an out-of-range port is reported by the call and refused, never wrapped into
+# a different valid port. No network is needed -- every port here is out of range, so
+# each call returns at once (the servers do not start, connect does not dial).
+
+def portAbove(base: int): int
+    return base + 1
+
+def handleTcp(conn: TcpConn)
+    conn.close()
+
+def handleWs(ws: WsConn)
+    ws.close()
+
+def handleHttp(req: HttpRequest): HttpResponse
+    return HttpResponse.ok("x")
+
+def main()
+    var p = portAbove(65535)
+    var c = Tcp.connect("127.0.0.1", p)
+    assert c == nil, "an out-of-range port connects to nothing"
+    Tcp.serve(p, handleTcp)
+    Ws.serve(p, handleWs)
+    Http.serve(-1, handleHttp)
+    var u = Udp.socket()
+    u.send("127.0.0.1", p, "x")
+    print("bug688: every networking call takes an int port")

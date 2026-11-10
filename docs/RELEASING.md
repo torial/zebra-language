@@ -32,9 +32,9 @@ Written 2026-09-10 for the first public release, `0.9.0_zig0.16` (public 0.9 = i
 
 - ~~No LICENSE file in the repo.~~ **MIT, added 2026-09-10 (Sean's call)**; `LICENSE` is
   copied into every release zip.
-- The Zig checksums for all three platforms are pinned in `release.yml` (the 0.17.0
-  values from `ziglang.org/download/index.json`, read 2026-09-10; Windows
-  `68659eb5…`, Linux `70e49664…`, macOS-aarch64 `b23d70de…`). A new platform may
+- The Zig checksums for all three platforms are pinned in `release.yml` (the 0.17.1
+  values from `ziglang.org/download/index.json`, read 2026-11-05; Windows
+  `b03f477a…`, Linux `3581863e…`, macOS-aarch64 `75f1bc7a…`). A new platform may
   start as `sha: index` (verified against the index at run time) until its value has
   been seen once; then pin it. Bumping the Zig version means re-pinning all three.
 - macOS has never built Zebra; its job is `continue-on-error` until a smoke is green there.

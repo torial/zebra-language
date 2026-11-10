@@ -17,7 +17,19 @@
 # The markers are deliberately distinct strings rather than the same text on both streams,
 # so a harness that captured one stream twice would fail rather than pass.
 
+# `big` (BUG-635, leg 8): one print well past 64 KiB. On Windows a parent can hand over an
+# OVERLAPPED pipe (Git Bash does), and a write that had to wait for the reader panicked
+# inside Zig's std ("reached unreachable code") with nothing delivered.
 def main()
+    if sys.args().len > 1 and sys.args().at(1) == "big"
+        var sb = StringBuilder()
+        var i = 0
+        while i < 199993
+            sb.append("x")
+            i += 1
+        sb.append("BIG-END")
+        print(sb.toString())
+        return
     print("STDOUT-MARKER-9f3a")
     sys.errln("STDERR-MARKER-4c7b")
     print("second stdout line")

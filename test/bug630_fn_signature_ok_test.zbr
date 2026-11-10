@@ -1,0 +1,19 @@
+# BUG-630's positive half: matching signatures (parameter names may differ), a function
+# reference into a sig slot, an optional sig slot taking nil and then a value, and a
+# lambda argument -- none refused by the function-shape check.
+sig Op(x: int): int
+
+def twice(x: int): int
+    return x * 2
+
+def apply(f: Op, v: int): int
+    return f(v)
+
+def main()
+    var h: def(int): int = def(x: int): int = x + 1
+    h = def(y: int): int = y * 10
+    var o: Op = def(x: int): int = x - 1
+    var k: Op? = nil
+    k = o
+    h = twice
+    print("bug630: ${h(2)} ${o(5)} ${apply(def(z: int): int = z + 100, 1)} ${apply(twice, 4)} ${k != nil}")

@@ -1,0 +1,9 @@
+# BUG-675: a constant expression's VALUE must fit the operand it adapts to.
+def f(k: byte): int
+    var a: int = k + 100 * 3
+    var b: int = k + 1_000
+    var c: int = k +| 2 * 200
+    var d: int = k - (0 - 1)
+    var x: byte = k
+    x += 16 * 16
+    return a + b + c + d + x

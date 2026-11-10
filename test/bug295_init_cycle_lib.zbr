@@ -1,0 +1,4 @@
+# BUG-295 -- the other half of the genuine cycle in bug295_init_cycle_test.zbr.
+use bug295_init_cycle_test
+
+var y: int = bug295_init_cycle_test.x + 1

@@ -1,0 +1,12 @@
+# Mixed operand types join as `+` joins them (QUICKSTART §3), so what is refused here is
+# what `+` refuses too: a uint64 beside a signed int, and a joined int stored into a byte.
+# A literal adapts to the other operand only if it fits.
+def main()
+    var u: uint64 = 5
+    var n: int = 10
+    print(u +% n)
+    var b: byte = 250
+    print(b +| 300)
+    var s: int8 = 1
+    print(-200 -| s)
+    b +%= n

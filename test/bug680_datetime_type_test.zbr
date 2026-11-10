@@ -1,0 +1,42 @@
+# BUG-680: DateTime is a type a program can name -- a class field, a parameter, a return
+# type, a List element, an optional -- and its fields and methods dispatch on all of them.
+# Before the fix every annotation below was refused ("unknown type 'DateTime'"), and a field
+# or parameter holding one emitted `.year` on the raw runtime struct (codegen recognised a
+# DateTime only by a local's initialiser). The member refusal is pinned separately
+# (test/fail_fixtures/bug680_datetime_unknown_member_test.zbr).
+#
+# Values derived by hand: 2024-03-15 is a Friday (ISO weekday 5); 1970-01-01 a Thursday (4).
+# The smoke registration expects the last line, printed only if every assert held.
+
+class Event
+    var name: str = ""
+    var when: DateTime = DateTime.fromEpoch(0)
+
+    cue init(name: str, when: DateTime)
+        .name = name
+        .when = when
+
+def nextDay(d: DateTime): DateTime
+    return d.addDays(1)
+
+def yearOf(d: DateTime): int
+    return d.year
+
+def main()
+    var e = Event("launch", DateTime.of(2024, 3, 15, 14, 30, 45))
+    assert e.when.year == 2024
+    assert e.when.month == 3
+    assert e.when.weekday == 5
+    assert e.when.hour == 14
+    assert nextDay(e.when).day == 16
+    assert yearOf(DateTime.fromEpoch(0)) == 1970
+    assert e.when.after(DateTime.fromEpoch(0))
+    assert e.when.toIso8601() == "2024-03-15T14:30:45Z"   # UTC, so ISO 8601 says Z
+    var stamps: List(DateTime) = [DateTime.fromEpoch(0), DateTime.fromEpoch(86400000)]
+    assert stamps.at(1).day == 2
+    var maybe: DateTime? = nil
+    assert maybe == nil
+    maybe = e.when
+    if maybe as m
+        assert m.minute == 30
+    print("bug680: ok")

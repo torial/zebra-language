@@ -1,4 +1,6 @@
 #!/bin/bash
+# pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
+# pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -82,6 +84,73 @@ printf 'def main()\n    var x: int? = nil\n    if sys.args().count() > 100\n    
 if [ "$zrc" = 0 ] || [ "$vrc" = 0 ]; then echo "nil_at: FAILED -- a nil unwrapped must die on both backends (zig exit $zrc, v exit $vrc)"; fail=1
 elif grep -q 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt"; then echo "nil_at: ok -- V says: $(grep -m1 -o 'nil unwrapped at nil_at.zbr:5' "$OUT/nil_at_v_err.txt") (zig exit $zrc, v exit $vrc)"
 else echo "nil_at: FAILED -- V died without naming the place:"; head -3 "$OUT/nil_at_v_err.txt" | cut -c1-160; fail=1; fi
+echo "── integer overflow TRAPS on both backends (BUG-667, Sean 2026-10-30: trap, not wrap; V's operators wrap) ──"
+rows=$((rows + 1))
+# every operand from sys.args().count() (1), so nothing folds at compile time; each must die
+# with Zig's message on BOTH backends and never print its SURVIVED line; the in-range control
+# must print the same on both, and its emit must report no unchecked integer operation.
+ov_body() {   # <name> -> the statements after `var n`
+  case $1 in
+    add)    printf '    var x: int = 9223372036854775807\n    var y: int = x + n\n' ;;
+    sub)    printf '    var x: int = 0 - 9223372036854775807\n    var y: int = x - n - n\n' ;;
+    mul)    printf '    var x: int = 5000000000000000000\n    var y: int = x * (n + 1)\n' ;;
+    neg)    printf '    var x: int = 0 - 9223372036854775807 - n\n    var y: int = -x\n' ;;
+    pluseq) printf '    var y: int = 9223372036854775807\n    y += n\n' ;;
+    div)    printf '    var x: int = 0 - 9223372036854775807 - n\n    var y: int = x / (0 - n)\n' ;;
+    mod)    printf '    var x: int = 0 - 9223372036854775807 - n\n    var y: int = x %% (0 - n)\n' ;;
+  esac
+}
+ov_bad=""
+for p in add sub mul neg pluseq div mod; do
+  { printf 'def main()\n    var n: int = sys.args().count()\n'; ov_body $p; printf '    print("SURVIVED %s: " + y.toString())\n' $p; } > "$OUT/ov_$p.zbr"
+  (cd "$OUT" && "$ZEBRA" ov_$p.zbr > "$OUT/ov_${p}_zig_out.txt" 2> "$OUT/ov_${p}_zig_err.txt"); zrc=$?
+  (cd "$OUT" && "$ZEBRA" --target v ov_$p.zbr > "$OUT/ov_${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ov_$p.v" > "$OUT/ov_${p}_v_out.txt" 2> "$OUT/ov_${p}_v_err.txt"); vrc=$?
+  if [ "$zrc" = 0 ] || ! grep -q 'integer overflow' "$OUT/ov_${p}_zig_err.txt"; then ov_bad="$ov_bad $p(zig exit $zrc, no trap)"
+  elif [ "$vrc" = 0 ] || grep -q SURVIVED "$OUT/ov_${p}_v_out.txt" || ! grep -q 'integer overflow' "$OUT/ov_${p}_v_err.txt"; then ov_bad="$ov_bad $p(v exit $vrc: $(head -c 80 "$OUT/ov_${p}_v_out.txt" "$OUT/ov_${p}_v_err.txt" | tr '\n' ' '))"; fi
+done
+printf 'def main()\n    var n: int = sys.args().count()\n    var x: int = 9223372036854775806 + n\n    var y: int = 0 - x\n    y -= n\n    print(x.toString() + " " + y.toString() + " " + (x * n).toString() + " " + (x / (0 - n)).toString() + " " + (x %% 7).toString() + " " + (y + x).toString())\n' > "$OUT/ov_ok.zbr"
+(cd "$OUT" && "$ZEBRA" ov_ok.zbr > "$OUT/ov_ok_zig_out.txt" 2> "$OUT/ov_ok_zig_err.txt")   # stdout only: the compiler's progress goes to stderr
+(cd "$OUT" && "$ZEBRA" --target v ov_ok.zbr > "$OUT/ov_ok_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ov_ok.v" > "$OUT/ov_ok_v_out.txt" 2> "$OUT/ov_ok_v_err.txt")   # stdout only: V prints notices on stderr
+if [ -n "$ov_bad" ]; then echo "overflow: FAILED -- did not trap on both backends:$ov_bad"; fail=1
+elif [ ! -s "$OUT/ov_ok_zig_out.txt" ]; then echo "overflow: FAILED -- the in-range control printed nothing on Zig (NO CONTROL)"; fail=1
+elif ! diff -q "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" > /dev/null; then echo "overflow: FAILED -- the in-range control differs:"; diff "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" | head -4; fail=1
+elif ! grep -q 'not overflow-checked' "$OUT/ov_ok_emit.txt"; then echo "overflow: FAILED -- the V report printed no overflow count for the control (the line is printed at zero too, so its absence means the report is not being read)"; fail=1
+elif ! grep -qE '^  0 integer operation' "$OUT/ov_ok_emit.txt"; then echo "overflow: FAILED -- the control's emit left an integer operation unchecked: $(grep 'not overflow-checked' "$OUT/ov_ok_emit.txt")"; fail=1
+else echo "overflow: ok -- + - * neg += / % trap on both backends with Zig's message; the in-range control agrees ($(cat "$OUT/ov_ok_zig_out.txt"))"; fi
+echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
+rows=$((rows + 1))
+# three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v
+# does not declare, a Zebra method passed through onto a V string; and a control that
+# is fully mapped and must stay clean (a refusal there is a false positive)
+printf 'def main()\n    var r = Regex.compile("a+")\n    var xs = [1, 2, 3]\n    print(xs.any(def(x) = x > 2).toString())\n    print("abc".tokenize(",").count().toString())\n' > "$OUT/rt_names.zbr"
+printf 'def main()\n    var xs = [1, 2, 3]\n    print(xs.count().toString() + " " + "banana".count("na").toString())\n' > "$OUT/rt_names_ok.zbr"
+(cd "$OUT" && "$ZEBRA" --target v rt_names.zbr > "$OUT/rt_names_emit.txt" 2>&1)
+(cd "$OUT" && "$ZEBRA" --target v rt_names_ok.zbr > "$OUT/rt_names_ok_emit.txt" 2>&1)
+missing=""
+grep -q 'Regex.compile (the V runtime has no Regex' "$OUT/rt_names_emit.txt" || missing="$missing Regex"
+grep -q '`ZList.any_` (the emitter writes it; zebra_rt.v declares no such method)' "$OUT/rt_names_emit.txt" || missing="$missing ZList.any"
+grep -q 'string.tokenize (no mapping' "$OUT/rt_names_emit.txt" || missing="$missing str.tokenize"
+if [ -n "$missing" ]; then echo "rt_names: FAILED -- not refused:$missing"; grep -E '^  |^    ' "$OUT/rt_names_emit.txt" | head -5 | cut -c1-160; fail=1
+elif ! grep -q 'nothing refused' "$OUT/rt_names_ok_emit.txt"; then echo "rt_names: FAILED -- the mapped control was refused (a false positive):"; grep -E '^    ' "$OUT/rt_names_ok_emit.txt" | head -3 | cut -c1-160; fail=1
+else echo "rt_names: ok -- the three unmapped names refused by name, the mapped control clean"; fi
+echo "── free-at-sweep on V (the GameEngine's release paths): the three runtime calls mapped, a list rebuilt mid-walk walked to the end (BUG-681), an unknown zig literal still refused ──"
+rows=$((rows + 1))
+# The walk reassigns the MODULE list it is walking (release(5) at x == 2): Zig evaluates the
+# for header once and sums the old list (45); V's C re-read the global's .items every
+# iteration and summed the new one (40) until the header was bound to a temporary.
+printf 'var _xs = List(int)()\n\ndef release(k: int)\n    var keep = List(int)()\n    for x in _xs\n        if x != k\n            keep.add(x)\n    var old = _xs\n    zig"_zbr_free_at_sweep(old)"\n    _xs = keep\n\nclass Holder\n    var ys: List(int) = List(int)()\n    def fill()\n        var i = 0\n        while i < 6\n            .ys.add(i)\n            i = i + 1\n    def walk(): int\n        var t = 0\n        for y in .ys\n            if y == 1\n                .ys = List(int)()\n            t = t + y\n        return t\n\ndef main()\n    var i = 0\n    while i < 10\n        _xs.add(i)\n        i = i + 1\n    var s = 0\n    for x in _xs\n        if x == 2\n            release(5)\n        s = s + x\n    zig"_zbr_sweep()"\n    var n: int = zig"@as(i64, @intCast(_zbr_sweep_pending()))"\n    var h = Holder()\n    h.fill()\n    print(s.toString() + " " + _xs.count().toString() + " " + n.toString() + " " + h.walk().toString())\n' > "$OUT/sweep_v.zbr"
+printf 'def main()\n    zig"_zbr_not_a_runtime_call()"\n' > "$OUT/sweep_v_bad.zbr"
+(cd "$OUT" && "$ZEBRA" sweep_v.zbr > "$OUT/sweep_v_zig_out.txt" 2> "$OUT/sweep_v_zig_err.txt")
+(cd "$OUT" && "$ZEBRA" --target v sweep_v.zbr > "$OUT/sweep_v_emit.txt" 2>&1)
+(cd "$OUT" && "$ZEBRA" --target v sweep_v_bad.zbr > "$OUT/sweep_v_bad_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/sweep_v.v" > "$OUT/sweep_v_v_out.txt" 2> "$OUT/sweep_v_v_err.txt")   # stdout only: V prints notices on stderr
+if ! grep -qx '45 9 0 15' "$OUT/sweep_v_zig_out.txt"; then echo "sweep_v: NO CONTROL -- the Zig run did not print '45 9 0 15': $(head -c 120 "$OUT/sweep_v_zig_out.txt" "$OUT/sweep_v_zig_err.txt" | tr '\n' ' ')"; fail=1
+elif grep -qE '^    ' "$OUT/sweep_v_emit.txt"; then echo "sweep_v: FAILED -- the V emit refused something:"; grep -E '^    ' "$OUT/sweep_v_emit.txt" | head -3 | cut -c1-160; fail=1
+elif ! diff -q "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" > /dev/null; then echo "sweep_v: DIFFERS (V vs Zig):"; diff "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" | head -4 | cut -c1-160; fail=1
+elif ! grep -q 'a zig literal (Zig-backend code; no V for it)' "$OUT/sweep_v_bad_emit.txt"; then echo "sweep_v: FAILED -- an unknown zig literal was not refused (the mapping is too wide)"; fail=1
+else echo "sweep_v: ok -- the free-at-sweep calls map, a rebuilt module list and field are walked to the end on both backends ($(cat "$OUT/sweep_v_zig_out.txt")), an unknown zig literal is still refused"; fi
 echo "── stdin polled without blocking (the debugger bridge's readStdinAvailable / stdinClosed): the same bytes and the same hang-up on both backends ──"
 rows=$((rows + 1))
 printf 'def main()\n    var got: str = ""\n    var spins = 0\n    while true\n        var a = sys.readStdinAvailable()\n        if a != ""\n            got = got + a\n        else if sys.stdinClosed()\n            break\n        else\n            spins = spins + 1\n            sys.sleep(5)\n            if spins > 400\n                print("gave up")\n                break\n    print("got [" + got + "] closed " + sys.stdinClosed().toString())\n' > "$OUT/poll_in.zbr"

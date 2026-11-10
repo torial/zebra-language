@@ -1,0 +1,9 @@
+# BUG-295 -- a GENUINE initialisation cycle: `x` needs `y` and `y` needs `x`, so no
+# order can run either first. First-use initialisation cannot answer it either; what
+# it can do is refuse at run time naming the chain, where it used to read garbage.
+use bug295_init_cycle_lib
+
+var x: int = bug295_init_cycle_lib.y + 1
+
+def main()
+    print("bug295-init-cycle: unreachable ${x}")

@@ -103,9 +103,23 @@ else
     chk "\`--emit-zig > file\` captures the emitted source (${emit_bytes:-0} bytes)" 1
 fi
 
+# LEG 8 — BUG-635. One print of 200,001 bytes through a pipe whose reader is SLOW, so the
+# write must wait for it. Zig's File.stdout() assumes a synchronous handle; Git Bash hands
+# over an overlapped pipe, the waiting write came back PENDING, and std's blocking path
+# panicked ("reached unreachable code") with nothing delivered -- every `prog | x` of more
+# than 64 KiB. Small outputs (legs 1-7) never fill the pipe, so they could not see it. The
+# expected count is derived from the fixture's own loop (199,993 x + BIG-END + newline).
+big_bytes=$("$EXE" big 2>"$OUT/big.err" | (sleep 1; wc -c) | tr -d ' ')
+big_err=$(wc -c < "$OUT/big.err" | tr -d ' ')
+if [ "${big_bytes:-0}" = "200001" ] && [ "$big_err" = "0" ]; then
+    chk "a 200,001-byte print through a slow pipe arrives whole" 0
+else
+    chk "a 200,001-byte print through a slow pipe arrives whole (got ${big_bytes:-0} bytes, stderr $big_err: $(head -c 120 "$OUT/big.err"))" 1
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "stream-check: PASS — 7/7"
+    echo "stream-check: PASS — 8/8"
     exit 0
 fi
-echo "stream-check: $fail of 7 FAILED" >&2
+echo "stream-check: $fail of 8 FAILED" >&2
 exit 1

@@ -905,6 +905,116 @@ pub fn zunwrap_at[T](zr_x ?T, zr_at string) T {
 	return zr_x or { zbr_panic('nil unwrapped at ' + zr_at) }
 }
 
+// BUG-667: integer overflow TRAPS on both backends (Sean, 2026-10-30), as a Zig build with
+// its safety on does; V's operators wrap. Each helper computes in u64, where wrapping is
+// defined in the C V emits (a signed overflow there is undefined, so a check written on the
+// signed result could be optimised away), and refuses a result that is not the true one.
+// The message is Zig's, so the two backends fail the same way.
+const zmin_i64 = i64(-9223372036854775807) - 1
+
+@[inline]
+pub fn zadd(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) + u64(zr_b))
+	if ((zr_a ^ zr_r) & (zr_b ^ zr_r)) < 0 {
+		zbr_panic('integer overflow')
+	}
+	return zr_r
+}
+
+@[inline]
+pub fn zsub(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) - u64(zr_b))
+	if ((zr_a ^ zr_b) & (zr_a ^ zr_r)) < 0 {
+		zbr_panic('integer overflow')
+	}
+	return zr_r
+}
+
+@[inline]
+pub fn zmul(zr_a i64, zr_b i64) i64 {
+	if zr_a >= -2147483648 && zr_a <= 2147483647 && zr_b >= -2147483648 && zr_b <= 2147483647 {
+		return zr_a * zr_b // both fit in 32 bits: the product fits in 64
+	}
+	if zr_a == 0 || zr_b == 0 {
+		return 0
+	}
+	if (zr_a == -1 && zr_b == zmin_i64) || (zr_b == -1 && zr_a == zmin_i64) {
+		zbr_panic('integer overflow')
+	}
+	zr_r := i64(u64(zr_a) * u64(zr_b))
+	if zr_r / zr_b != zr_a {
+		zbr_panic('integer overflow')
+	}
+	return zr_r
+}
+
+@[inline]
+pub fn zneg(zr_a i64) i64 {
+	if zr_a == zmin_i64 {
+		zbr_panic('integer overflow')
+	}
+	return -zr_a
+}
+
+// Saturating `+| -| *|` on int: the result clamps at the type's bounds instead of
+// trapping. Overflow is detected exactly as the checked helpers above detect it.
+const zmax_i64 = i64(9223372036854775807)
+
+@[inline]
+pub fn zsadd(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) + u64(zr_b))
+	if ((zr_a ^ zr_r) & (zr_b ^ zr_r)) < 0 {
+		return if zr_a < 0 { zmin_i64 } else { zmax_i64 }
+	}
+	return zr_r
+}
+
+@[inline]
+pub fn zssub(zr_a i64, zr_b i64) i64 {
+	zr_r := i64(u64(zr_a) - u64(zr_b))
+	if ((zr_a ^ zr_b) & (zr_a ^ zr_r)) < 0 {
+		return if zr_a < 0 { zmin_i64 } else { zmax_i64 }
+	}
+	return zr_r
+}
+
+pub fn zsmul(zr_a i64, zr_b i64) i64 {
+	if zr_a >= -2147483648 && zr_a <= 2147483647 && zr_b >= -2147483648 && zr_b <= 2147483647 {
+		return zr_a * zr_b // both fit in 32 bits: the product fits in 64
+	}
+	if zr_a == 0 || zr_b == 0 {
+		return 0
+	}
+	zr_neg := (zr_a < 0) != (zr_b < 0)
+	if (zr_a == -1 && zr_b == zmin_i64) || (zr_b == -1 && zr_a == zmin_i64) {
+		return zmax_i64
+	}
+	zr_r := i64(u64(zr_a) * u64(zr_b))
+	if zr_r / zr_b != zr_a {
+		return if zr_neg { zmin_i64 } else { zmax_i64 }
+	}
+	return zr_r
+}
+
+// the one quotient that does not fit (V checks a zero divisor itself)
+@[inline]
+pub fn zdiv(zr_a i64, zr_b i64) i64 {
+	if zr_b == -1 && zr_a == zmin_i64 {
+		zbr_panic('integer overflow')
+	}
+	return zr_a / zr_b
+}
+
+// min % -1 traps, as min / -1 does (Rust panics on it in every mode); any other
+// remainder by -1 is 0, which the C `%` gives (it faults only on min)
+@[inline]
+pub fn zmod(zr_a i64, zr_b i64) i64 {
+	if zr_b == -1 && zr_a == zmin_i64 {
+		zbr_panic('integer overflow')
+	}
+	return zr_a % zr_b
+}
+
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
 // Zebra's DateTime: the epoch milliseconds (the Zig backend's _DateTime)
 pub struct ZDateTime {
@@ -2199,49 +2309,6 @@ fn zfmt_lit(zf_t &u8, zf_s string) int {
 		}
 	}
 	return zf_s.len
-}
-
-// the digits t[0..n0) rounded up by one in the last place, the sign kept, a carry out of the
-// first digit prepending a 1; a trailing '.' (precision 0) dropped first; returns the new length
-fn zfmt_round_up(zf_t &u8, zf_n0 int) int {
-	mut zf_n := zf_n0
-	if zf_n > 0 && unsafe { zf_t[zf_n - 1] } == `.` {
-		zf_n--
-	}
-	mut zf_k := zf_n - 1
-	for zf_k >= 0 {
-		zf_c := unsafe { zf_t[zf_k] }
-		if zf_c == `.` {
-			zf_k--
-			continue
-		}
-		if zf_c == `-` {
-			break
-		}
-		if zf_c == `9` {
-			unsafe {
-				zf_t[zf_k] = `0`
-			}
-			zf_k--
-			continue
-		}
-		unsafe {
-			zf_t[zf_k] = zf_c + 1
-		}
-		return zf_n
-	}
-	zf_at := zf_k + 1
-	mut zf_j := zf_n
-	for zf_j > zf_at {
-		unsafe {
-			zf_t[zf_j] = zf_t[zf_j - 1]
-		}
-		zf_j--
-	}
-	unsafe {
-		zf_t[zf_at] = `1`
-	}
-	return zf_n + 1
 }
 
 // one value at a precision into out at pos, in Zig's spelling (see above); returns the new pos

@@ -1,0 +1,13 @@
+# BUG-295 -- the other half of the cycle in bug295_lazy_init_test.zbr. Every
+# initialiser here reads or writes a computed var of the module that imports this one.
+use bug295_lazy_init_test exposing names
+
+var bval: int = bug295_lazy_init_test.count + 1
+var viaFn: int = bug295_lazy_init_test.getCount() * 10
+var firstName: str = names.at(0)
+var touched: bool = touch()
+
+def touch(): bool
+    bug295_lazy_init_test.bump()
+    bug295_lazy_init_test.addName("b")
+    return true

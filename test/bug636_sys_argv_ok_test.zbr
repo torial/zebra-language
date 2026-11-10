@@ -1,0 +1,37 @@
+# BUG-636's other half: every way of passing a real argv must still be ACCEPTED -- a list
+# literal, an annotated local, a list built element by element, a list returned by a
+# function, and one whose elements come from calls. The check refuses only a type it KNOWS
+# is wrong, so none of these may trip it. The command is this program run as a child
+# (`child` as its argument), so it exists wherever the test runs and cannot recurse.
+
+def childArgv(): List(str)
+    var v: List(str) = [sys.selfExe(), "child"]
+    return v
+
+def main()
+    var args = sys.args()
+    if args.count() > 1 and args[1] == "child"
+        print("child ran")
+        return
+    var exe: str = sys.selfExe()
+    var annotated: List(str) = [exe, "child"]
+    var built = List(str)()
+    built.add(exe)
+    built.add("child")
+    var r1 = sys.run([exe, "child"])
+    var r2 = sys.run(annotated)
+    var r3 = sys.run(built)
+    var r4 = sys.run(childArgv())
+    var r5 = sys.run([sys.selfExe(), "child"])
+    var ran: int = 0
+    if r1.stdout.contains("child ran")
+        ran += 1
+    if r2.stdout.contains("child ran")
+        ran += 1
+    if r3.stdout.contains("child ran")
+        ran += 1
+    if r4.stdout.contains("child ran")
+        ran += 1
+    if r5.stdout.contains("child ran")
+        ran += 1
+    print("bug636 ok: ${ran} of 5 children ran")

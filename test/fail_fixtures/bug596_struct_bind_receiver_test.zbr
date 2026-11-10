@@ -1,0 +1,31 @@
+# BUG-596: a struct method used as a value binds the VARIABLE it is read from, so the
+# receiver must be a `var` local of the function. Every other receiver is refused by name:
+# `this`, a parameter, a field, a temporary, a loop variable, a lambda parameter.
+struct P
+    var x: int
+    def move(): int
+        .x += 1
+        return .x
+    def selfBind(): int
+        var f = this.move
+        return f()
+
+struct Holder
+    var p: P
+
+def fromParam(q: P): int
+    var f = q.move
+    return f()
+
+def main()
+    var h = Holder(p: P(x: 1))
+    var f1 = h.p.move
+    var f2 = P(x: 2).move
+    var ps = [P(x: 1)]
+    for e in ps
+        var f3 = e.move
+    var p = P(x: 5)
+    var lam = def(p: P): int
+        var f4 = p.move
+        return f4()
+    print(fromParam(p))

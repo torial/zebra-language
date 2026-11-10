@@ -4,7 +4,7 @@
 # Three distinct codegen paths share the `in` keyword:
 #   1. Substring test:    "needle" in "haystack"  → std.mem.indexOf
 #   2. List membership:   x in list               → linear scan
-#   3. Array literal:     x in @[1, 2, 3]         → comptime check
+#   3. List literal:      x in [1, 2, 3]          → comptime tuple check, no List built (BUG-565)
 #   4. HashMap key:       k in hm                 → hm.contains(k)
 #
 # Wrong dispatch silently compiles but produces wrong boolean values.
@@ -35,11 +35,11 @@ def main()
     assert not ("cherry" in fruits), "List str not-in: expected false"
 
     # 4. Array literal membership — int
-    assert 3 in @[1, 2, 3, 4, 5], "array literal in: expected true"
-    assert not (7 in @[1, 2, 3]), "array literal not-in: expected false"
+    assert 3 in [1, 2, 3, 4, 5], "array literal in: expected true"
+    assert not (7 in [1, 2, 3]), "array literal not-in: expected false"
 
     # 5. Array literal membership — str
-    assert "cat" in @["dog", "cat", "bird"], "array str in: expected true"
-    assert not ("fish" in @["dog", "cat"]), "array str not-in: expected false"
+    assert "cat" in ["dog", "cat", "bird"], "array str in: expected true"
+    assert not ("fish" in ["dog", "cat"]), "array str not-in: expected false"
 
     print("in_operator: OK")

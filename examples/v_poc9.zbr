@@ -1,0 +1,18 @@
+# v_poc9.zbr -- the V backend's entry through a class `static def main`
+# (2026-10-30). A root with no top-level `def main` whose entry is a class's
+# static main is a program on the Zig backend (BUG-539); on the V target the
+# emitter wrote the method and no `fn main`, so V built an exe that ran
+# nothing and exited 0. Thirteen corpus programs printed nothing that way in
+# the V census of 2026-10-30. A module var makes the entry also run the
+# module-level initialisers first. Runs on the Zig backend too; the outputs
+# are diffed (tools/v_check.sh).
+
+var greeting: str = "static main ran"
+
+class Entry
+    static def twice(n: int): int
+        return n * 2
+
+    static def main
+        print(greeting)
+        print("twice 21 = ${Entry.twice(21)}")

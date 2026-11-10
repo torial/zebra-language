@@ -1,0 +1,34 @@
+# BUG-664: a computed module var or static that reads one initialised LATER read
+# uninitialised memory -- the init sweep assigned module vars in source order, then every
+# static. Each is now initialised on first use. Every shape below segfaulted at start-up.
+
+class Reg
+    static var items: List(int) = [1, 2, 3]
+    # a static reading a module var declared after it (worked before: module vars went first)
+    static var tag: str = "t" + base.upper()
+    static def count(): int
+        items.add(4)
+        return items.len
+
+# a static reading the static of a class declared later
+class A
+    static var xs: List(int) = [B.ys.len]
+
+class B
+    static var ys: List(int) = [1, 2]
+
+def size(): int
+    return Reg.items.len
+
+# a module var reading a later module var
+var a: int = b.len + 1
+var b: List(int) = [1, 2]
+# a module var reading a static through a function -- no ordering can see this one
+var n: int = size() + 10
+# ...and directly
+var direct: int = Reg.items.len + 100
+var base: str = "x" + "y"
+
+def main()
+    Reg.items.add(5)
+    print("bug664: ${a} ${n} ${direct} ${A.xs.at(0)} ${Reg.tag} ${Reg.count()} ${Reg.items.len}")

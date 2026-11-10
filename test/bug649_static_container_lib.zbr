@@ -1,0 +1,7 @@
+class Registry
+    static var instances: List(str)
+    static var count: int = 0
+
+    def register(name: str)
+        Registry.instances.add(name)
+        Registry.count += 1

@@ -1,0 +1,54 @@
+# BUG-637: a list literal of RUNTIME values. Each pair below passed `-c` and failed in zig:
+# a value the checker types as a runtime NAMED type (`Csv.parse` -> CsvTable) came out under
+# its bare Zebra name ("use of undeclared identifier 'CsvTable'"), and a value the checker
+# cannot type at all fell back to `[]const u8` ("expected type 'str', found ..."). The
+# elements are USED, not just counted: a list of the right type must still hand back values
+# that work.
+
+def main()
+    var args = sys.args()
+    if args.count() > 1 and args[1] == "child"
+        print("child ran")
+        return
+
+    var t1 = Csv.parse("a,b\n1,2")
+    var t2 = Csv.parse("c\n3")
+    var tables: int = 0
+    for t in [t1, t2]
+        tables += 1
+
+    var r1 = sys.run([sys.selfExe(), "child"])
+    var r2 = sys.run([sys.selfExe(), "child"])
+    var ran: int = 0
+    for r in [r1, r2]
+        if r.stdout.contains("child ran")
+            ran += 1
+
+    var re1 = Regex.compile("a+")
+    var re2 = Regex.compile("b+")
+    var matched: int = 0
+    for re in [re1, re2]
+        if re.test("xaabb")
+            matched += 1
+
+    var d1 = DateTime.now()
+    var d2 = DateTime.now()
+    var dates: int = 0
+    for d in [d1, d2]
+        dates += 1
+
+    var m1 = sys.memStats()
+    var m2 = sys.memStats()
+    var stats: int = 0
+    for m in [m1, m2]
+        if m.arenaBytes >= 0
+            stats += 1
+
+    # The elements are CALLS, not names: element 0 is bound once, inside the literal, and
+    # the list takes zig's type for it.
+    var direct: int = 0
+    for r in [sys.run([sys.selfExe(), "child"]), sys.run([sys.selfExe(), "child"])]
+        if r.stdout.contains("child ran")
+            direct += 1
+
+    print("bug637: tables=${tables} ran=${ran} matched=${matched} dates=${dates} stats=${stats} direct=${direct}")

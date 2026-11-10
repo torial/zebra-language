@@ -1,0 +1,7 @@
+# BUG-670: `.toString()` on the `int?` that HashMap.get returns passed `zebra -c` and failed
+# inside zig's std.fmt ("cannot print optional without a specifier").
+
+def main()
+    var m = HashMap(str, int)()
+    m.set("a", 1)
+    print(m.get("a").toString())

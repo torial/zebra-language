@@ -1,0 +1,32 @@
+# BUG-650 negative control: what the new refusal must NOT touch -- a transparent
+# type alias into its base, an enum into its own type, a union value into its own
+# type, and a function that shares its name with nothing.
+type Meters = int
+
+enum Color
+    red
+    green
+
+union Wrap
+    unit
+    item: int
+
+def mk(): Meters
+    return 5
+
+def pick(c: Color): int
+    if c == Color.green
+        return 2
+    return 1
+
+def main()
+    var d: int = mk()
+    var c: Color = Color.green
+    var w: Wrap = Wrap.unit
+    var n: int = pick(Color.red) + pick(c)
+    branch w
+        on Wrap.unit
+            n = n + 10
+        on Wrap.item as v
+            n = n + v
+    print("bug650: ${d} ${n}")

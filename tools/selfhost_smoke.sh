@@ -392,7 +392,7 @@ smoke test/generic_iface_test.zbr
 # call the method directly, not fall back to std.fmt.allocPrint("{}", .{obj}).
 smoke test/generic_tostring_test.zbr
 
-# @[...] array literal in expression + `in @[...]` membership test.
+# `in [...]` membership test on a literal (BUG-565: once spelled `@[...]`).
 smoke test/array_in_test.zbr
 
 # Float suffix literals: 1.5_f32, 2.5_f64, 0.5f32, 3.0f64 → @as(fNN, val).
@@ -712,7 +712,9 @@ smoke_run_flag() {
     fi
 }
 
-# smoke_run_bounded <zbr> <expected> [secs] — smoke_run with a HARD wall-clock ceiling.
+# smoke_run_bounded <zbr> <expected> [secs] [forbidden] — smoke_run with a HARD wall-clock
+# ceiling. `forbidden`, when given, must NOT appear anywhere in the output (BUG-542: a std
+# trace printed on the way to a correct answer is still a failure the user sees).
 #
 # WHY THIS EXISTS: no other helper here has a timeout, so a fixture that fails to
 # terminate hangs the entire tier rather than failing it. That is not hypothetical --
@@ -729,6 +731,7 @@ smoke_run_bounded() {
     local zbr="$1"
     local expected="$2"
     local secs="${3:-30}"
+    local forbidden="${4:-}"
     local label
     label="$(basename "$zbr" .zbr)_run"
     local got rc
@@ -743,6 +746,10 @@ smoke_run_bounded() {
     elif [[ $rc -ne 0 ]]; then
         echo "  FAIL: $label (non-zero exit $rc)" >&2
         echo "$got" >&2
+        FAIL=$((FAIL + 1))
+    elif [[ -n "$forbidden" ]] && echo "$got" | grep -qF -- "$forbidden"; then
+        echo "  FAIL: $label ('$forbidden' must not appear in output)" >&2
+        echo "    got: $got" >&2
         FAIL=$((FAIL + 1))
     elif echo "$got" | grep -qF -- "$expected"; then
         echo "  PASS: $label"
@@ -845,6 +852,9 @@ smoke_tc_fail test/fail_fixtures/generic_iface_twice_test.zbr \
     "implements 'Conv' twice with different type arguments"
 smoke_run test/generic_class_default_init_test.zbr "gen-init: OK"
 smoke_run test/bug427_param_shadows_fn_test.zbr "bug427: ok"
+# BUG-683: DateTime.fromEpoch(...) as a receiver/argument and `not dt.before(x)` reached zig as
+# invalid code; 8 hand-derived asserts, the sentinel prints only if all hold.
+smoke_run test/bug683_datetime_literal_receiver_test.zbr "bug683: ok"
 
 # SIMD §32, the 1.0 slice (2026-09-18): comparison masks (boolxN), select/any/all/count,
 # lane-wise min/max, casts, a splat that narrows an `int` into u8 lanes (BUG-431's
@@ -910,6 +920,113 @@ smoke_warn test/bug295_cycle_test.zbr "import cycle: bug295_cycle_test -> bug295
 # re-entry. It must compile SILENTLY -- a detector that fires on the most ordinary
 # shape in any dependency graph gets suppressed wholesale rather than read.
 smoke_run test/bug295_diamond_test.zbr "bug295-diamond=17"
+# A cycle is a SINGLETON (Sean, 2026-10-29): each module one instance, initialised once,
+# and every computed module var set before its first read. The dep's initialisers run
+# first and read the root's computed vars -- through `mod.x`, a function of the root, and
+# an exposed name -- and WRITE two of them; the writes survive the root's own sweep. On
+# the pre-fix compiler this panicked with integer overflow (garbage arithmetic).
+smoke_run test/bug295_lazy_init_test.zbr "bug295-lazy: 14 15 140 a 141 2 true"
+# Initialisers that need each other's values: no order exists, so the program stops at
+# start-up naming the chain. The pre-fix compiler printed -6148914691236517204.
+smoke_run_fail test/bug295_init_cycle_test.zbr "module initialisation cycle: bug295_init_cycle_lib.y -> bug295_init_cycle_test.x -> bug295_init_cycle_lib.y"
+smoke_run_fail test/bug669_min_rem_neg1_test.zbr "integer overflow"
+# Wrapping (`+% -% *%`) and saturating (`+| -| *| <<|`) arithmetic, 2026-11-02. The values
+# are pinned by test/boundary/wrap_sat_probe; these pin what is around them: plain `+`
+# still traps (after the wrapping line printed 4), SIMD lanes, and the refusals --
+# integers only, one operand type, a literal that fits, no saturating negation.
+smoke_run_fail test/wrap_sat_plain_traps_test.zbr "integer overflow"
+smoke_run test/wrap_sat_simd_test.zbr "wrap_sat_simd: OK"
+smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:5:11: error: wrapping '+%' requires integer operands, got 'float'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:7:5: error: saturating '+|' requires integer operands, got 'float'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_float_fail.zbr "wrap_sat_float_fail.zbr:10:11: error: wrapping '*%' requires integer operands, got 'str'"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:7:11: error: cannot mix 'uint64' and 'int' in arithmetic"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:9:16: error: 300 does not fit in 'byte' (0..255)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:11:12: error: -200 does not fit in 'int8' (-128..127)"
+smoke_tc_fail test/fail_fixtures/wrap_sat_mixed_fail.zbr "wrap_sat_mixed_fail.zbr:12:5: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/wrap_sat_unary_sat_fail.zbr "wrap_sat_unary_sat_fail.zbr:5:11: error: there is no saturating negation"
+# BUG-672: a literal beside a sized integer must fit its type (+ - * / % & | ^ and the compound
+# forms; NOT the comparisons, which zig answers correctly). BUG-673: `+ - * / %` join their
+# operands, and the join does not narrow into a smaller slot on its own.
+smoke_run test/bug672_673_join_fits_test.zbr "bug672_673: OK"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:5:15: error: 300 does not fit in 'byte' (0..255), the type of the other operand of '+'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:6:11: error: 300 does not fit in 'byte' (0..255), the type of the other operand of '-'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:7:15: error: 300 does not fit in 'byte' (0..255), the type of the other operand of '%'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:8:15: error: 0x1FF does not fit in 'byte' (0..255), the type of the other operand of '&'"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:9:14: error: -1 does not fit in 'byte' (0..255)"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:10:10: error: 300 does not fit in 'byte' (0..255), the type of the variable it combines with"
+smoke_tc_fail test/fail_fixtures/bug672_literal_fit_fail.zbr "bug672_literal_fit_fail.zbr:11:13: error: 40000 does not fit in 'int16' (-32768..32767)"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:7:5: error: type mismatch: expected int16, found int -- convert it with"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:9:5: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:10:19: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:11:13: error: type mismatch: expected byte, got int"
+smoke_tc_fail test/fail_fixtures/bug673_join_narrow_fail.zbr "bug673_join_narrow_fail.zbr:14:12: error: type mismatch: expected byte, got int"
+smoke_run test/bug674_bitwise_join_test.zbr "bug674: OK"
+smoke_run test/bug674_bitwise_join_test.zbr "-108"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:4:19: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:5:19: error: type mismatch: expected byte, found int"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:6:11: error: cannot mix 'uint' and 'int' in arithmetic"
+smoke_tc_fail test/fail_fixtures/bug674_bitwise_join_fail.zbr "bug674_bitwise_join_fail.zbr:7:19: error: type mismatch: expected byte, found int"
+# BUG-675: a constant expression (or a `1_000`) beside a narrow operand must fit it, by VALUE;
+# BUG-678: `n + 100 % 7` has a type. The test half must keep compiling and print these values.
+smoke_run test/bug675_const_expr_fit_test.zbr "bug675: OK"
+smoke_run test/bug675_const_expr_fit_test.zbr "1758"
+# BUG-679: a class's own cue init wins over a mixin's (red on 26d7838, the rc9 release commit)
+smoke_run test/bug679_mixin_cue_init_test.zbr "bug679: OK"
+smoke_run test/bug679_mixin_cue_init_test.zbr "Hello body 0"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:3:22: error: 300 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:4:22: error: 1_000 does not fit in 'byte' (0..255), the type of the other operand of '+'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:5:23: error: 400 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '+|'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:6:23: error: -1 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the other operand of '-'"
+smoke_tc_fail test/fail_fixtures/bug675_const_expr_fit_fail.zbr "bug675_const_expr_fit_fail.zbr:8:10: error: 256 (the value of this constant expression) does not fit in 'byte' (0..255), the type of the variable it combines with"
+# Literal suffixes (2026-11-05): a suffix types the literal AND the variable; the literal must
+# fit its type; a width with no type is refused by name; a constant expression over a suffixed
+# literal must fit its type (Zig computes it at compile time). test/boundary/int_suffix_* pin
+# the language-level rule; these pin the bounds and every refusal's position.
+smoke_run test/int_suffix_bounds_test.zbr "int_suffix_bounds: OK"
+smoke_run test/int_suffix_bounds_test.zbr "18446744073709551615"
+smoke_run test/int_suffix_bounds_test.zbr "-9223372036854775808"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:3:13: error: 300_u8 does not fit in 'byte' (0..255), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:4:13: error: 128_i8 does not fit in 'int8' (-128..127), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:5:14: error: -5_u8 does not fit in 'byte' (0..255), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:6:13: error: '5_i7' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:7:13: error: '5_uint8' has no type: an integer suffix is _i or _u, alone or with 8, 16, 32, 64 or 128 bits"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:8:13: error: '1.5_f16' has no type: a float suffix is _f32 or _f64"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:9:14: error: -1_u does not fit in 'uint' (0..18446744073709551615), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_fail.zbr "int_suffix_fail.zbr:10:13: error: '0xFF_7' has no type: a hex suffix is _u alone or with 8, 16, 32, 64 or 128 bits, or a bare size for the signed type"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:3:11: error: 256 (the value of this constant expression) does not fit in 'byte' (0..255), the type of its operands"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:4:12: error: -9223372036854775809_i64 does not fit in 'int64' (-9223372036854775808..9223372036854775807), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:5:11: error: 0x10000000000000000_u does not fit in 'uint' (0..18446744073709551615), the type its suffix gives it"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:6:11: error: '1.5_': a digit separator"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:7:11: error: 200 (the value of this constant expression) does not fit in 'int8' (-128..127), the type of its operands"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:8:12: error: 200 (the value of this constant expression) does not fit in 'int8' (-128..127), the type of its operands"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:9:11: error: '5_': a digit separator"
+smoke_tc_fail test/fail_fixtures/int_suffix_const_fail.zbr "int_suffix_const_fail.zbr:10:11: error: 99999999999999999999_i64 does not fit in 'int64'"
+# The other two emit shapes. --single-file failed to build ANY cycle until 2026-10-29
+# (`use of undeclared identifier '_mod_<root>'`: the dependency's `use` of the root named
+# a struct only deps get); --no-runtime-module gives each module its own accessor state
+# and frame list, so it is a separate path through the same accessors.
+smoke_run_flag test/bug295_lazy_init_test.zbr --single-file "bug295-lazy: 14 15 140 a 141 2 true"
+smoke_run_flag test/bug295_lazy_init_test.zbr --no-runtime-module "bug295-lazy: 14 15 140 a 141 2 true"
+# BUG-664: every computed module var and static initialises on first use, not only on a
+# cycle. Each line of the first fixture segfaulted at start-up on HEAD 3ca3094: a module
+# var reading a later one, a module var reading a static (directly and through a
+# function), a static reading a later class's static. The second reads statics across an
+# import cycle through `mod.Reg.f` and an exposed `Reg.f` (BUG-295 item 3).
+smoke_run test/bug664_init_order_test.zbr "bug664: 3 13 103 2 tXY 5 5"
+smoke_run_flag test/bug664_init_order_test.zbr --no-runtime-module "bug664: 3 13 103 2 tXY 5 5"
+smoke_run test/bug664_cycle_static_test.zbr "bug664-cycle: 13 rEG! 3"
+# The program's own `Reg` and a dependency's `Reg`, a same-named static computed in one
+# and constant in the other: the accessor fact is per module. Keyed by class name alone,
+# zig refused this ("no member named '_zbr_sfref_n'"), red before the fix.
+smoke_run test/bug664_same_name_test.zbr "bug664-same: 4 1 40 3 43 2"
+# BUG-665: an instance method reading only static members left `self` undiscarded; zig
+# refused it at line 12 on HEAD 3ca3094. `mixed` is the control: it reads an instance
+# field too, so `self` is used and a discard would be "pointless discard".
+smoke_run test/bug665_static_only_method_test.zbr "bug665: 5 2 6 12"
+# BUG-666: closing an import cycle type-scans the closing module, and that scan re-walked
+# already-compiled modules, registering their unions twice -- an exhaustive branch kept
+# its `else` and zig refused it ("unreachable else prong"), red at line 17 before the fix.
+smoke_run test/bug666_cycle_rescan_test.zbr "bug666: 9 4 9"
 
 # ── BUG-274 / BUG-296: `_ = self;` and `_ = p;` vs what the walker can SEE ──────
 # exprMentionsThis defaults to FALSE and its answer drives `_ = self;`, so a variant it
@@ -1203,6 +1320,8 @@ smoke_run test/http_serve_test.zbr "http_serve_test OK"
 
 # SQLite — open/exec/query/close + transactions on :memory: database.
 smoke_run test/sqlite_test.zbr "sqlite_test OK"
+# BUG-686: FTS5 and RTREE are compiled into the bundled sqlite3.c (JSON is the control).
+smoke_run test/bug686_sqlite_features_test.zbr "bug686: fts5 rtree json OK"
 
 # GUI widgets: progressBar(label,f64) + combobox(label,List(str),int) + spinbox(label,int,int,int).
 smoke examples/widget_smoke.zbr
@@ -1337,8 +1456,10 @@ smoke_tc_fail test/fail_fixtures/cue_begin_shape_test.zbr \
     "cue_begin_shape_test.zbr:5:8: error: \`cue begin\` takes no parameters and returns nothing"
 smoke_run test/cue_using_test.zbr "cue_using: <a>x<b>y</b></a>"
 smoke_run test/bug530_regex_groups_nil_test.zbr "bug530: <a>,-,<b>"
+smoke_run test/bug014_regex_priority_test.zbr "bug014: <a>b>c> | <a>,<aaa> | a true | bc | y true | <a> | a aaa | true | aa | <> | <> | <x>,<yy> | X X | p/ q/r"
 smoke_run test/bug556_json_parse_arena_test.zbr "bug556: parsed into the arena, 200 items"
 smoke_run test/bug561_multiline_literals_test.zbr "bug561: 4 7 3 [3, 6, 5]"
+smoke_run test/bug564_lambda_continuation_indent_test.zbr "bug564: 9 11 101 13"
 smoke_run test/bug562_subscript_write_const_test.zbr "bug562: [101, 5] [1, 1, 2] 15 [2, 3] 9"
 smoke_run test/bug559_chain_on_value_result_test.zbr "bug559: 13 2 4 1024 8.0 12.0 4.0"
 smoke_run test/bug560_imported_field_len_test.zbr "bug560: 5 2 5"
@@ -1386,7 +1507,8 @@ smoke_tc_fail test/fail_fixtures/bug595_mixin_field_private_test.zbr "bug595_mix
 smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixin_body_checked_test.zbr:6:18: error: 'str' has no method 'toUpperX'"
 smoke_tc_fail test/fail_fixtures/bug597_mixin_body_checked_test.zbr "bug597_mixin_body_checked_test.zbr:9:22: error: type mismatch: expected int, found str"
 smoke_run test/bug596_bound_method_test.zbr "bug596: 1113 12 112 1112 1113 [false, false, false] [5000, 9999] 6678 hi, zebra 9"
-smoke_tc_fail test/fail_fixtures/bug596_struct_bound_method_test.zbr "bug596_struct_bound_method_test.zbr:12:15: error: a method of a STRUCT cannot be used as a value yet"
+smoke_run test/bug596_struct_bound_method_test.zbr "bug596s: 3 11 11 16 12 12 102 41 6 [13, 14, 15]"
+smoke_tc_fail test/fail_fixtures/bug596_struct_bind_receiver_test.zbr "bug596_struct_bind_receiver_test.zbr:29:20: error: a method of a STRUCT used as a value"
 smoke_run test/bug599_600_601_test.zbr "bug599_600: 41 seven 2 10 12 15 12 3"
 smoke_run test/bug598_generic_mixin_test.zbr "bug598: [g][h] 2 4 [k] 1 x [z] 1 1"
 smoke_run test/bug592_field_default_expr_test.zbr "bug592: 42 2 5 80 true k1 3.0"
@@ -1400,6 +1522,11 @@ smoke_tc_fail test/fail_fixtures/bug558_pipe_field_test.zbr "bug558_pipe_field_t
 smoke_run test/bug605_split_len_call_test.zbr "bug605: 3 2 3"
 smoke_tc_fail test/fail_fixtures/bug557_str_opt_method_test.zbr "bug557_str_opt_method_test.zbr:9:11: error: 'x' may be nil here"
 smoke_run test/bug557_str_opt_unwrapped_test.zbr "bug557: [a][a][a][a]"
+smoke_tc_fail test/fail_fixtures/bug670_opt_list_get_method_test.zbr "bug670_opt_list_get_method_test.zbr:11:13: error: the value may be nil here, so \`.count()\` cannot be called on it"
+smoke_tc_fail test/fail_fixtures/bug670_opt_class_method_test.zbr "bug670_opt_class_method_test.zbr:14:11: error: 'f' may be nil here, so \`.get()\` cannot be called on it"
+smoke_tc_fail test/fail_fixtures/bug670_opt_int_tostring_test.zbr "bug670_opt_int_tostring_test.zbr:7:13: error: the value may be nil here, so \`.toString()\`"
+smoke_tc_fail test/fail_fixtures/bug670_opt_field_read_test.zbr "bug670_opt_field_read_test.zbr:12:11: error: 'f' may be nil here, so \`.n\` cannot be read from it"
+smoke_run test/bug670_opt_receiver_unwrapped_test.zbr "bug670: [3,3][3][3][3][2][a]"
 smoke_tc_fail test/fail_fixtures/bug555_index_user_type_test.zbr "bug555_index_user_type_test.zbr:12:11: error: 'V' has no index operator"
 smoke_run test/bug553_struct_literal_equals_test.zbr "bug553: true true true"
 smoke_tc_fail test/fail_fixtures/bug552_def_next_not_iterable_test.zbr "bug552_def_next_not_iterable_test.zbr:17:5: error: 'Ticker' is not iterable"
@@ -1451,6 +1578,59 @@ smoke_run test/hashmap_clear_test.zbr "hashmap_clear: 0 1 3 1 seven none"
 smoke_run test/float_round_rule_test.zbr "float_round: 2.67 0.12 2 -2 1.4 2.67 2.67e0"
 smoke_run test/float_round_rule_test.zbr "float_round_halves: 0 2 -0.00 10.00 1.00e1"
 smoke_run test/float_round_rule_test.zbr "float_round_pad: [    2.67] [2.67    ] [**2.67***]"
+# BUG-631: the `0` flag pads after the sign; an explicit `0>` fill does not.
+smoke_run test/bug631_zero_pad_sign_test.zbr "bug631: [-005] [0005] [-005] [00-5] [-002.5] [-002.5] [-123456] [000.50]"
+# BUG-628: a method that throws by inference (a `raise`, no `throws`) is a throws callee --
+# a class method, a bare owner call and a struct method, each refused at its line.
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:12: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25: error: throws call needs '?'"
+# BUG-680: DateTime is a checked type -- an unknown member is refused naming the real one, and
+# the type can be named as a field, parameter, return, List element and optional.
+smoke_tc_fail test/fail_fixtures/bug680_datetime_unknown_member_test.zbr "bug680_datetime_unknown_member_test.zbr:7:13: error: 'DateTime' has no field 'epochMs'; the milliseconds since the epoch are toEpoch()"
+smoke_run test/bug680_datetime_type_test.zbr "bug680: ok"
+# BUG-680: CsvTable / CsvWriter / HttpResponse refuse a member they do not have (t.rows compiled before).
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:8:13: error: 'CsvTable' has no method 'rowCnt'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:9:13: error: 'CsvTable.rows' is a method -- call it: rows()"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:11:13: error: 'CsvWriter' has no method 'bild'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:13:13: error: 'HttpResponse' has no field 'body'; the response body is .text"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:14:13: error: 'HttpResponse' has no method 'withHeadr'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:16:14: error: 'CalendarView' has no field 'yeer'"
+smoke_tc_fail test/fail_fixtures/bug680_runtime_obj_members_test.zbr "bug680_runtime_obj_members_test.zbr:18:10: error: 'ThreadPool' has no method 'wiat'"
+# BUG-685: Http.serve's handler shape -- one parameter, returns HttpResponse -- is checked at -c.
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:16:10: error: Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes 2"
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:19:10: error: Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes 2"
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:20:10: error: Http.serve's handler must return an HttpResponse; this one declares no return type"
+smoke_tc_fail test/fail_fixtures/bug685_http_serve_handler_shape_test.zbr "bug685_http_serve_handler_shape_test.zbr:21:10: error: Http.serve's handler must return an HttpResponse, not 'str'"
+smoke_run test/bug628_inferred_throws_ok_test.zbr "bug628: 9 5 8"
+# BUG-626: a container whose element type differs from the slot's -- a return, a field store,
+# a call argument, typed vars (List, optional element, HashMap, Set, nested) and an assignment.
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:9:12: error: type mismatch: expected List(int), got List(str)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:14:18: error: type mismatch: expected List(int), found List(str)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:18:13: error: type mismatch: expected List(str), got List(int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:19:24: error: type mismatch: expected List(str), found List(int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:20:24: error: type mismatch: expected List(int), found List(int?)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:22:33: error: type mismatch: expected HashMap(str, str), found HashMap(str, int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:24:24: error: type mismatch: expected Set(str), found Set(int)"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:26:31: error: type mismatch: expected List(List(str)), found List(List(int))"
+smoke_tc_fail test/fail_fixtures/bug626_container_elem_mismatch_test.zbr "bug626_container_elem_mismatch_test.zbr:28:9: error: type mismatch: expected List(str), found List(int)"
+smoke_run test/bug626_container_elem_ok_test.zbr "bug626: 2 0 6 2 1 1 1"
+# BUG-632: a list literal ARGUMENT takes the parameter's element type (free fn, method, owner call).
+smoke_run test/bug632_list_literal_arg_test.zbr "bug632: 3.0 3.5 3 2 3 2"
+# BUG-630: a function value with a different signature than its function-typed slot -- a return,
+# an assignment (return type, arity), a typed `sig` var and a call argument.
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:11:5: error: a function cannot go into this function-typed slot: it returns float where int is expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:15:5: error: a function cannot go into this function-typed slot: it returns float where int is expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:16:5: error: a function cannot go into this function-typed slot: it takes 0 argument(s) where 1 are expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:17:5: error: a function cannot go into 'o': its parameter 1 is str where int is expected"
+smoke_tc_fail test/fail_fixtures/bug630_fn_signature_mismatch_test.zbr "bug630_fn_signature_mismatch_test.zbr:18:11: error: a function cannot go into parameter 'f': it takes 2 argument(s) where 1 are expected"
+smoke_run test/bug630_fn_signature_ok_test.zbr "bug630: 4 4 101 8 true"
+# BUG-565: `@[...]` removed, refused naming `[...]`; `x in [a, b]` of primitives is the inline
+# tuple test (no List built) -- and BUG-633: a list of collections compares by contents.
+smoke_tc_fail test/fail_fixtures/bug564_closer_on_lambda_body_line_test.zbr "bug564_closer_on_lambda_body_line_test.zbr:8:22: error: \`)\` closes the call or literal around a statement-body lambda"
+smoke_tc_fail test/fail_fixtures/bug565_at_bracket_removed_test.zbr "bug565_at_bracket_removed_test.zbr:4:16: error: \`@[...]\` was removed: write \`[...]\`"
+smoke_run test/bug565_in_list_literal_test.zbr "bug565: 3 true true false true"
+smoke_emit_contains test/bug565_in_list_literal_test.zbr "_zebra_in(i, .{3, 500, 999})"
 smoke_run test/bug620_raw_string_dquote_test.zbr "bug620: 16 4 1 5 4 true true"
 smoke_run test/bug621_indexed_for_iterators_test.zbr "bug621: 3 0a1b2c0x1y 3 1 20 02 9 k7 80"
 smoke_run test/bug622_nested_try_in_catch_test.zbr "bug622: x!! caught y!!"
@@ -1739,9 +1919,111 @@ smoke_run test/bug242_csv_roundtrip_test.zbr "bug242: OK"
 # the QUICK tier is worse than an uncovered namespace: it teaches people to re-run gates
 # until they pass, which costs the whole tier its meaning.
 smoke_run_bounded test/shell_test.zbr    "shell_test: OK" 90
-smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90
+smoke_run_bounded test/ws_echo_test.zbr  "ws_test: OK"    90 "NTSTATUS"
 # BUG-611: the handshake's accept value against RFC 6455's own sample key, read back over raw TCP
 smoke_run_bounded test/bug611_ws_accept_test.zbr "bug611_ws_accept: OK" 90
+# BUG-542: a close frame goes out once -- recv() answers the peer's close, and the handler's
+# ws.close() must not write a second one into the dropped socket (on Windows std printed an
+# "unexpected NTSTATUS" trace for it). The expected line proves the close path ran.
+smoke_run_bounded test/bug542_ws_close_once_test.zbr "bug542: host saw 2 messages, then the close" 90 "NTSTATUS"
+# BUG-682: ws.close() on one thread while another is in ws.recv() on the same connection must
+# not close the socket under the read (old runtime: an NTSTATUS trace 11 of 12 runs, a panic
+# on the cancelled read 1 of 12 -- the panic loses the sentinel, the trace hits the forbid).
+smoke_run_bounded test/bug682_ws_close_under_recv_test.zbr "bug682: reader ended cleanly after the close" 90 "NTSTATUS"
+# BUG-684: no WebSocket data after the close handshake, read as raw TCP (old runtime: 24 bytes = the close + two data frames).
+smoke_run_bounded test/bug684_no_data_after_close_test.zbr "bug684: nothing after the close" 90 "NTSTATUS"
+# BUG-687: Tcp/Ws/Http.serve detach each connection's thread -- the process handle count,
+# read through ntdll, must not grow by one per connection (old runtime: +30 over 30).
+smoke_run_bounded test/bug687_server_thread_handles_test.zbr "bug687: no handle per connection" 120 "NTSTATUS"
+# BUG-688: a port in an int variable reaches every networking call (old runtime: zig
+# refused `expected type 'u16', found 'i64'`); out-of-range ports are refused by name.
+smoke_run test/bug688_port_int_test.zbr "bug688: every networking call takes an int port"
+# querySegments (from zebra-sprocket): on the vanilla SQLite beside the compiler it must
+# REFUSE by name and return no rows -- without the up-front check a plain SELECT came back
+# as 1 row whose _segment came from the weak fallback. The fork's positive path is
+# witnessed by zebra-sprocket (check_atlas, gen_check, probe_transport), not here.
+smoke_run test/sqlite_query_segments_test.zbr "segments: OK"
+smoke_run test/sqlite_query_segments_test.zbr "this SQLite has no stored procedures -- querySegments needs one built with them"
+# BUG-689: Http.get/post results are typed HttpResponse?, so their members are checked.
+smoke_tc_fail test/fail_fixtures/bug689_http_client_untyped_test.zbr "bug689_http_client_untyped_test.zbr:8:20: error: 'HttpResponse' has no field 'body'; the response body is .text"
+smoke_tc_fail test/fail_fixtures/bug689_http_client_untyped_test.zbr "bug689_http_client_untyped_test.zbr:10:14: error: 'HttpResponse' has no field 'statusCode'"
+# BUG-636: the argv family of sys is checked in the front end -- a str command, a List(int),
+# a missing argument and a non-str cwd were each accepted by -c and failed inside zig, in
+# runtime code. The ok fixture runs every legitimate argv shape (bounded: it spawns itself).
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:7:17: error: sys.run takes the command as a List(str), one element per argument, found str"
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:8:17: error: sys.spawn takes the command as a List(str), one element per argument, found List(int)"
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:9:17: error: sys.run takes 1 argument(s), found 0"
+smoke_tc_fail test/fail_fixtures/bug636_sys_argv_fail.zbr "bug636_sys_argv_fail.zbr:10:38: error: type mismatch: expected str, got int"
+smoke_run_bounded test/bug636_sys_argv_ok_test.zbr "bug636 ok: 5 of 5 children ran" 120
+# BUG-637: list literals of runtime values (named runtime types, and element 0 the checker
+# cannot type -> @TypeOf of a binding); bounded because it spawns itself.
+smoke_run_bounded test/bug637_runtime_value_list_test.zbr "bug637: tables=2 ran=2 matched=2 dates=2 stats=2 direct=2" 120
+# BUG-639: sys.selfExe() is a str.
+smoke_run test/bug639_sys_selfexe_str_test.zbr "bug639: len>0=true exists=true argv=2"
+# BUG-638: an unknown member of a closed builtin namespace is refused (statement position and
+# a var initialiser), and a user's local / parameter / class of the same name is left alone.
+smoke_tc_fail test/fail_fixtures/bug638_namespace_stmt_fail.zbr "bug638_namespace_stmt_fail.zbr:5:14: error: 'Terminal' has no static function 'clearScreen' (it has: height, isTty, width, write, writeln)"
+smoke_tc_fail test/fail_fixtures/bug638_namespace_init_fail.zbr "bug638_namespace_init_fail.zbr:4:20: error: 'Random' has no static function 'seeded'"
+smoke_run test/bug638_namespace_shadow_test.zbr "bug638: local=4 param=11 class=3 base64=aGk="
+# BUG-263: `exposing` on a native dep -- a hand-written .zig and a C source with a header.
+smoke_run test/bug263_zig_exposing_test.zbr "bug263 zig: square=49 clamp=10 abs=42"
+smoke_run test/bug263_c_exposing_test.zbr "bug263 c: add=5 mul=42 qualified=9"
+# BUG-237: a union reached as `lib.Union.variant` -- boxed payload, covered branch + else, `is`.
+smoke_run test/bug237_qualified_union_test.zbr "bug237: expr -5 | lit hi | is=-5 | lit=true"
+# BUG-640: `x is Mod.Class` -- the two-part form names a module, not a union.
+smoke_tc_fail test/bug640_is_module_class_test.zbr "'bug235_use_lib' is a module, not a union. For a class, expose it"
+# BUG-201: a container reached through a call result / loop binding / map value mutates in place.
+smoke_run test/bug201_nested_container_dispatch_test.zbr "bug201: [[99]] [[5, 10], [3, 5, 11]] [1] [7, 1] [[4, 6]]"
+# BUG-641: `var x = lib.f()` is typed from that module's own defs.
+smoke_run test/bug641_qualified_fn_infer_test.zbr "bug641: 4 4 3 ABC 3 5 HELLO"
+# BUG-026: mutating the result of a cross-module method (class, Self, List, generic T).
+smoke_run test/bug026_method_result_mutation_test.zbr "bug026: 11 2 2 9 7 1 2 2"
+# BUG-645: every StringBuilder method SURFACE.md lists is callable (its refusal of `add` is bug341).
+smoke_run test/bug645_sb_method_set_test.zbr "bug645: abc 3 z 1"
+# BUG-646/647: `sb.len` (local, field, list element) and `list.at(i).append(s)` on a StringBuilder.
+smoke_run test/bug646_sb_len_and_chain_test.zbr "bug646: 4 2 1 4 qrs!"
+# BUG-648: an empty `[]` default takes T from the declared List(T) (field, nested, struct, module var).
+smoke_run test/bug648_empty_list_field_default_test.zbr "bug648: 2 5 x 1 6 11 1.5"
+# BUG-649: static container fields (with/without initializer, user-class, map, across a module).
+smoke_run test/bug649_static_container_field_test.zbr "bug649: 2 ab 3 2 7 2 2"
+# BUG-306: module-scope `.add` receivers typed by inference (annotated StrSet = Type_.str_set), no oracles.
+smoke_run test/bug306_module_strset_test.zbr "bug306: 2 1 1 7 11 1 2 0"
+# BUG-652: an imported class's static methods named like str builtins (exposed + qualified).
+smoke_run test/bug652_dep_static_strname_test.zbr "bug652: true 4 10 true 9"
+# BUG-252: is / if-captures (incl. else-if, ^Union field) / reduce / Base64 inferred (the strict half: cli_check).
+smoke_run test/bug252_inference_gaps_test.zbr "bug252: true false true 9 6 16 aGk= aGV5 hey pair 7 leaf z"
+# BUG-656: a dep class built through its module name fills defaults and honours named args.
+smoke_run test/bug656_dep_ctor_defaults_test.zbr "bug656: 1 7 1 20 3 4 5 7"
+# BUG-657: a top-level main beside a class static main is the entry (one `pub fn main`).
+smoke_run test/bug657_two_mains_test.zbr "bug657: App.main"
+# BUG-658: a dep enum / union VALUE named through its module.
+smoke_run test/bug658_qualified_enum_value_test.zbr "bug658: blue true true"
+# BUG-657: the compiler's own unit tests. Run by nothing until 2026-10-28 -- 4 of 9 failed inside
+# zig (two front-end bugs, BUG-658/659, plus stale constructor calls), the rest on stale
+# expectations; each now exits non-zero on a failure.
+smoke_run selfhost/ast_test.zbr "ast_test: all assertions passed"
+smoke_run selfhost/astbuilder_test.zbr "astbuilder_test: all assertions passed"
+smoke_run selfhost/cg_helpers_test.zbr "cg_helpers_test: all OK"
+smoke_run selfhost/codegen_test.zbr "codegen_test: all OK"
+smoke_run selfhost/lexer_test.zbr "lexer_test: all OK"
+smoke_run selfhost/parser_test.zbr "parser_test: all assertions passed"
+smoke_run selfhost/pipeline_test.zbr "pipeline_test: all OK"
+smoke_run selfhost/resolver_test.zbr "resolver_test: all assertions passed"
+smoke_run selfhost/typechecker_test.zbr "typechecker_test: all OK"
+# BUG-650 negative control: alias / enum / bare variant into their own types stay accepted.
+smoke_run test/bug650_primitive_slot_ok_test.zbr "bug650: 5 13"
+# BUG-243: files that had never been asserted by anything.
+smoke_run test/generic_pair_test.zbr "generic_pair_test: 42 100 true 1 one 1"
+smoke_run test/raise_details_test.zbr "FileInfo(data.txt)"
+smoke_run test/tc_types_test.zbr "tc_types_test: all OK"
+smoke_run test/tc_check_test.zbr "tc_check_test: all OK"
+smoke_run test/tc_infer_test.zbr "tc_infer_test: all OK"
+smoke_run test/typechecker_test.zbr "typechecker_test: all OK"
+# BUG-642..644: `??`, two statements on one line, a missing comma between call arguments.
+smoke_tc_fail test/bug642_double_question_fail.zbr "operator in Zebra -- write"
+smoke_tc_fail test/bug643_same_line_statements_fail.zbr "follows a complete statement on the same line"
+smoke_tc_fail test/bug644_call_args_comma_fail.zbr "after an argument, got '6'"
+smoke_run test/bug643_one_line_forms_test.zbr "one-line: 6 6 [2, 4, 6] 5 3 4 round other"
 smoke_run_bounded test/bug245_shell_process_run_test.zbr "bug245: OK" 90
 # sys.spawnPiped: a stdio conversation with `zebra lsp` itself (also a BUG-334 control).
 smoke_run_bounded test/sys_spawn_piped_test.zbr "sys_spawn_piped_test: ok" 60
@@ -1915,6 +2197,8 @@ smoke_run     test/bug268_branch_int_test.zbr "bug268: OK"
 # local that must still get its `_ =`, so an over-broad fix (one that stopped
 # discarding anything) fails here rather than passing.
 smoke_run     test/bug267_ziglit_local_use_test.zbr "bug267: OK"
+smoke_run     test/bug267_ziglit_write_test.zbr "bug267: 47 10 21 5"
+smoke_run     test/bug663_ziglit_block_stmt_test.zbr "bug663: 1015 4"
 
 # BUG-260 (reported from zebra-sprocket): a PARAMETER referenced only inside a `[...]`
 # bind list must not be discarded. Same walker family as BUG-267, opposite walker: the
@@ -2130,6 +2414,8 @@ smoke_run test/bug246_unannotated_generic_ctor_test.zbr "bug246: OK"
 # string comparison passes against the broken compiler, because the {any} defect is in the
 # formatter. The first draft of this fixture did exactly that and tested only half 1.
 smoke_run  test/bug212_code_editor_const_test.zbr "bug212: OK"
+smoke_run  test/bug693_code_editor_sci_stub_test.zbr "bug693: OK"
+smoke_run  test/bug692_split_arg_test.zbr "bug692: OK"
 # The debug source-map fixture (tools/debug_map_check.sh). Registered here so something
 # RUNS it; the gate asserts its provenance markers, this asserts it still works.
 smoke_run test/bug329_print_sourcemap_test.zbr "bug329: OK"
@@ -2409,6 +2695,34 @@ smoke_run test/bug515_iface_field_assign_test.zbr "bug515: OK"
 smoke_tc_fail test/fail_fixtures/infer_guess_add_fail.zbr "infer_guess_add_fail.zbr:6:11: error: cannot infer the type of \`x\`, an operand of \`+\`"
 smoke_tc_fail test/fail_fixtures/infer_guess_len_fail.zbr "infer_guess_len_fail.zbr:5:11: error: cannot infer the type of \`xs\`, so \`.len\` cannot be resolved"
 smoke_tc_fail test/fail_fixtures/infer_guess_list_fail.zbr "infer_guess_list_fail.zbr:5:5: error: cannot infer the type of \`xs\`, so \`.add()\` cannot be resolved"
+# BUG-017: an untyped LOCAL is not typed by a same-named field elsewhere (user class / compiler AST list).
+smoke_tc_fail test/fail_fixtures/bug017_len_field_name_fail.zbr "bug017_len_field_name_fail.zbr:10:14: error: cannot infer the type of \`vals\`, so \`.len\` cannot be resolved"
+smoke_tc_fail test/fail_fixtures/bug017_len_ast_name_fail.zbr "bug017_len_ast_name_fail.zbr:5:14: error: cannot infer the type of \`args\`, so \`.len\` cannot be resolved"
+# BUG-650: an enum / union / class value into a primitive slot, on every path.
+smoke_tc_fail test/fail_fixtures/bug650_enum_arg_fail.zbr "bug650_enum_arg_fail.zbr:11:23: error: type mismatch: expected int, got Color (an enum value)"
+smoke_tc_fail test/fail_fixtures/bug650_enum_return_fail.zbr "bug650_enum_return_fail.zbr:7:18: error: type mismatch: expected int, got Color (an enum value)"
+smoke_tc_fail test/fail_fixtures/bug650_enum_assign_fail.zbr "bug650_enum_assign_fail.zbr:8:15: error: type mismatch: expected int, found Color (an enum value)"
+smoke_tc_fail test/fail_fixtures/bug650_class_into_bool_fail.zbr "bug650_class_into_bool_fail.zbr:8:19: error: type mismatch: expected bool, found Pt"
+smoke_tc_fail test/bug105_enum_member_test.zbr "bug105_enum_member_test.zbr:19:24: error: type mismatch: expected int, found Color (an enum value)"
+smoke_tc_fail test/bug105_union_variant_test.zbr "bug105_union_variant_test.zbr:13:23: error: type mismatch: expected int, found Wrap (a union value)"
+# Subdirectory modules (2026-10-28; BUG-651's pin flipped): `use pkg.mod` is pkg/mod.zbr and
+# binds `mod`; a used module's own `use` resolves beside it; two files with one stem refused.
+smoke_run test/expose_dotted_test.zbr "expose_dotted_test: all OK"
+smoke_run test/subdir_modules_test.zbr "subdir: 12 10 9 12 24 inner inner true"
+smoke_tc_fail test/fail_fixtures/subdir_stem_clash_fail.zbr "subdir_stem_clash_fail.zbr:4:1: error: \`use clash_b.util\`: this program already has a module named \`util\` (test/fail_fixtures/clash_a/util.zbr)"
+# BUG-449: an HttpRequest built by hand -- positional, named, and the .new spelling.
+smoke_run test/bug449_httprequest_ctor_test.zbr "bug449: 200 hi name=zebra | 200 payload | 404 no DELETE /x | PUT /p [] []"
+# BUG-661: a module const assigned to -- own module, exposed, qualified -- is refused at -c.
+smoke_tc_fail test/fail_fixtures/bug661_module_const_assign_fail.zbr "bug661_module_const_assign_fail.zbr:8:5: error: cannot assign to 'OWN' -- it is a \`const\` of module bug661_module_const_assign_fail"
+smoke_tc_fail test/fail_fixtures/bug661_module_const_assign_fail.zbr "bug661_module_const_assign_fail.zbr:9:5: error: cannot assign to 'LIMIT' -- it is a \`const\` of module bug661_const_lib"
+smoke_tc_fail test/fail_fixtures/bug661_module_const_assign_fail.zbr "bug661_module_const_assign_fail.zbr:10:5: error: cannot assign to 'bug661_const_lib.LIMIT'"
+# BUG-654: the `is` refusal says where (it had no position, so the LSP showed the file clean).
+smoke_tc_fail test/fail_fixtures/bug654_is_nil_fail.zbr "bug654_is_nil_fail.zbr:5:24: error: \`is\` takes a type or a union variant on its right"
+# BUG-655: positions after a multi-line """ string whose text starts on its opening line.
+smoke_tc_fail test/fail_fixtures/bug655_triple_quote_lines_fail.zbr "bug655_triple_quote_lines_fail.zbr:11:18: error: type mismatch: expected int, found str"
+# BUG-659: a cue init takes the call arity rule -- too few (was zero-padded) and too many.
+smoke_tc_fail test/fail_fixtures/bug659_ctor_arity_fail.zbr "bug659_ctor_arity_fail.zbr:11:13: error: too few arguments to 'Pt' (its cue init): expected 2, found 1"
+smoke_tc_fail test/fail_fixtures/bug659_ctor_arity_fail.zbr "bug659_ctor_arity_fail.zbr:12:13: error: too many arguments to 'Pt' (its cue init): expected at most 2, found 3"
 # ...and --allow-inference-guess (one release) guesses as before, with a warning.
 smoke_run_flag test/infer_guess_hatch_test.zbr --allow-inference-guess "infer_hatch: 6"
 # ...and WITHOUT the hatch the same file is refused (this also declares it must-reject,
@@ -2475,6 +2789,9 @@ smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmark
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:16: error: 'str' has no method 'trimm'"
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:30: error: 'List' has no method 'sizee'"
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:43: error: 'Timer' has no method 'elapsedMs'"
+# BUG-691: JsonValue values()/entries() were known-but-unimplemented (a zig failure, `KV`); refused now
+smoke_tc_fail test/fail_fixtures/bug691_json_values_entries_fail.zbr "bug691_json_values_entries_fail.zbr:7:38: error: 'JsonValue' has no method 'values': an array's elements are"
+smoke_tc_fail test/fail_fixtures/bug691_json_values_entries_fail.zbr "bug691_json_values_entries_fail.zbr:8:19: error: 'JsonValue' has no method 'entries'"
 # Failure locations (GameEngine, 2026-10-08): ` at <file>:<line>:` in every failure kind.
 smoke_run_fail test/fail_fixtures/assert_msg_location_fail.zbr "assert failed at test/fail_fixtures/assert_msg_location_fail.zbr:4: x must be positive"
 smoke_run_fail test/fail_fixtures/require_location_fail.zbr "require failed at test/fail_fixtures/require_location_fail.zbr:4: in 'half'"

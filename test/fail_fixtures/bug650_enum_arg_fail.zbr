@@ -1,0 +1,11 @@
+# BUG-650: an enum value passed where an int parameter is declared passed -c and
+# zig refused it. Refused at the argument now.
+enum Color
+    red
+    green
+
+def takes(n: int): int
+    return n
+
+def main()
+    print(takes(Color.red))

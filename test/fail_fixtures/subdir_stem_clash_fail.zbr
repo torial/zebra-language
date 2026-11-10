@@ -1,0 +1,7 @@
+# Two modules whose files share a name cannot both be in a program: each is known by
+# its file name (`util`), so the second would silently take the first one's place.
+use clash_a.util
+use clash_b.util
+
+def main()
+    print(util.which())

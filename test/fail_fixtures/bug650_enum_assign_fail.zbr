@@ -1,0 +1,9 @@
+# BUG-650: assigning an enum value to an int variable.
+enum Color
+    red
+    green
+
+def main()
+    var x: int = 0
+    x = Color.red
+    print(x)

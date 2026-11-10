@@ -1,5 +1,5 @@
 <!-- doc-status: design -->
-<!-- Status: proof of concept (2026-10-13); the result sections carry what the run said -->
+<!-- Status: proof of concept (2026-10-13), on main since; the result sections carry what the run said; the strategy toward V as the backend is a RECOMMENDATION (2026-10-29), not a decision -->
 # A V backend for Zebra — proof of concept (`zebra --target v`)
 
 *Written 2026-10-13 on branch `v-backend-poc` (worktree `C:/Projects/zebra-vbackend`),
@@ -2390,6 +2390,258 @@ In the order they pay, each with the witness that says it is done:
    `call()->items.data[i]`; master evaluates it once); an `rl.Font{}`
    literal names the binding's misspelled fields. #30999's name clashes
    stand until V fixes them.
+
+## V as THE backend: where it stands, and a road to a release (2026-10-29)
+
+Sean asked (2026-10-29) for the feasibility of V replacing Zig, and a strategy from here
+to a release, coordinated with Fable. This is the Zebra session's recommendation, with
+Fable's alternative stated as Fable's. Nothing below is decided.
+
+### Where it stands, measured
+
+| witness | result | source |
+|---|---|---|
+| the compiler through the V route | builds; its emit byte-identical to the Zig-built compiler's; 2 refusals (its two `zig` literals) | 10-20, above |
+| the engine's Zebra roots | 92 identical, 2 refused, 1 differs (hash order) of 95 | 10-20, above |
+| the engine's HOST | ported to V (`host_v/`), headless and windowed; every V row green on V master ee6d62a; the last unported pieces (quality tiers with the Auto benchmark, thumbnail, scene hot reload, gamepad) in since engine eef259a, four witness rows and four controls identical -- only the Zig host's sandbox scene stays out, by design. **Every V-host frame time before 2026-10-30 was an UNOPTIMISED build**: the rows build without `-prod`, and V without `-prod` passes the C compiler no `-O` flag (`-prod` is `-O3 -flto`). A `-prod` host build refused 35 sites the debug build only warns about; fixed, `VEXTRA=-prod` builds any row optimised (the window row still identical). Optimised, two alternating pairs at High, uncapped, 40 s: V host **11.4 / 11.1 ms a frame** against the Zig ReleaseFast host's 7.7 / 7.0 -- **1.48x / 1.58x**, both holding 60 fps (the debug V host 1.3x / 1.9x; the Auto reading of 22.1 ms at Medium was the debug build's). By section: emitted scripts 1.2-1.3x, physics and collision at parity or under, render 1.1-1.2x, gui 1.9-2.2x (a `split('|')` and field parse per GUI command per frame). **The gui section split (engine 1c2709f):** at `-prod` it was 1.46 ms against 0.62, of which the emitted GUI tree's flush was 0.57 against 0.30 and the HOST's parse and draw 0.89 against 0.32 -- the larger half V host code, not emitted code. The V host now reads the fields in place (self-checked against strconv at startup): host share 0.46 against 0.29, whole frame **10.5 against 7.5 ms (1.40x, from 1.49x)**. What is left on the EMITTED side is the flush (0.50 against 0.29, 1.7x) and scripts (0.80 against 0.64, 1.26x), about 0.4 ms a frame; depth plus render is the rest. Quote the whole frame: the GPU's time lands in whichever pass waits for it (the depth pass reads 1.6 ms debug, 6.1 `-prod`, against the Zig's 3-4, while render moves the other way, with identical entity and draw counts) | Fable, V_HOST_PORT.md, 10-27 / 10-30 |
+| **the test corpus** (new) | of smoke's 598-file positive set: 436 emit with nothing refused, 156 refuse something, 6 fail to emit (FFI / native-Zig deps). **Built and run, of the 436: 237 print exactly what the Zig build prints (clang lane; 235 tcc) -- 40 % of the positive set**; 152 do not build under V; 34 differ | phase 1 10-29, phase 2 10-30 (below) |
+| the G1 matrix (new) | see below | 2026-10-29 |
+| the release-mode compile of the compiler | V clang `-prod -prealloc` 1.1x the Zig ReleaseFast emit, time and memory | 10-20, above |
+
+**What the corpus refuses, ranked by files blocked** (phase 1, emit only): a call on a
+call's result 27; user generics (generic classes and interfaces, type arguments) ~36;
+destructure / `allocate` / copy-out / **contracts** / `yield` 17; stream, error-union and
+fn types 13; dict literals 12; untyped `.map` / `.filter` / `.reduce` / `.sort` 21; `is` on
+a class 9; then mixins, namespaces, `extend`, set literals, and members of Hash, Random,
+Path, DateTime, `toUint8`. The compiler's own source avoids all of these, which is why the
+route went through. Contracts are the one to name: `require` / `ensure` are a language
+commitment with no V spelling yet. Side finding: `--target v` ignores `--output-dir`.
+
+**The G1 matrix** -- five probes, each with a run-time operand, so nothing folds:
+
+| probe | Zig Debug | Zig `--release` | V tcc | V clang `-prod` |
+|---|---|---|---|---|
+| divide by zero | trap | trap | trap | trap |
+| index past end | trap | trap | trap | trap |
+| `300.toUint8()` | trap | trap | not mapped | not mapped |
+| nil unwrap | trap | **carries on** (`got=0`, BUG-668) | trap | trap, naming `file.zbr:5` |
+| int overflow | trap | **carries on** (UB, BUG-667) | **wraps** | **wraps** |
+
+V's release lane is SAFER than Zig's on nil (CodeGenV's `zunwrap_at`); overflow is
+unchecked in BOTH release lanes. Both gaps were filed against the Zig backend the same day.
+The comparison is V's CHECKED release with Zig's UNCHECKED one: V `-prod` keeps bounds
+checks unless `-no-bounds-checking` (Fable), while `--release` is ReleaseFast. And V's
+`+` wrapping is a defined result, but a silent one, so for overflow the choice is between
+a trap and a wrap, not a trap and undefined behaviour. **The engine SHIPS in the
+"carries on" column** (ReleaseFast, F21: Debug is a third of the frame rate). Zig's third
+mode, ReleaseSafe -- optimised with the checks kept, trapping on both probes -- has never
+been timed on the engine; Fable measured it the same day, provisionally (a busy host):
+1.4-1.5x a frame, but the EMITTED Zebra share only 1.4-1.7x (about a millisecond) -- the
+cost lands in the host's own Zig. A per-MODULE optimize mode does not split it (measured:
+runtime safety follows the compilation's mode); a per-FUNCTION `@setRuntimeSafety(true)`
+emitted by codegen does, so the Zebra code can trap under a ReleaseFast build. Re-measured
+by CPU time over identical replayed frames: whole-build ReleaseSafe 1.16-1.24x, the
+emitted Zebra's own share 1.13x -- about a tenth of a millisecond a frame on the engine
+(BUG-667 has the numbers and the toy). V has no such switch: `-prod` keeps bounds checks
+and nothing checks overflow.
+
+**Fable's measurements, the engine's side** (2026-10-29, numbers measured unless marked):
+Boehm holds memory flat at 60 fps but stops the world every 1-2 s for 31-93 ms (one
+297 ms in 40 s); `-gc none` drifts 43 MB/s against the Zig host's 8; with a client attached
+the V server showed 35 fps to the Zig's 45-47 -- a DEBUG V build, as every V-host frame time before 10-30 (see the host row); under `-prod` the V server holds 60 fps in every window of its own fixed-dt log (47 as the client reads it, against the Zig's 52-53, an instrument that reads under for both), servers identical as a prefix, clients 4 of 4 (Fable, 10-30). The duo row's NOT COMPARABLE guard had never fired 10-26..10-30: its awk program carried a literal newline and awk refused it, so the reading was empty (mended in engine 1c2709f); V has no allocator
+hook, so the profiler's memory column reads "unmeasured"; Windows DWARF arrives only past
+the pin (#31373); master moves ~50 commits a day and a pin move costs hours; warm builds
+5-7x slower on master than 0.5.2; master's platform-width `int` breaks users' C bindings
+that spell `int *` as `&int`; 0.5.2 is still the latest release, so a release must VENDOR a
+master commit (the vc C sources and thirdparty/sqlite).
+
+**The corpus, built and run (phase 2, 2026-10-30).** Every one of the 436 files that emit
+with nothing refused, built under V ee6d62a9c8 in two lanes -- tcc (`-gc none
+-enable-globals`) and clang (llvm-mingw 23.1.3, the same plus `-cflags
+-Wno-error=incompatible-pointer-types`), debug, no `-prod` (Fable's two conditions) -- run
+with stdin closed, and its stdout and exit code diffed against the Zig build of the same
+file run then. A positive control (`examples/v_poc.zbr`) had to come out identical in both
+lanes, or the harness refused to report; it did, and it caught the harness's own parsing
+bug on the first trial. Emitter: zebra.exe at 6e8527f.
+
+| over the 436 | tcc | clang |
+|---|---|---|
+| identical | 235 | 237 |
+| differ only in digit runs (timings, addresses -- triaged, not passed) | 8 | 9 |
+| differ | 33 | 34 |
+| V refuses to build the emitted code | 156 | 152 |
+| crash (bug339: invalid memory access in a class field's ctor init; bug326: sys.exit range) | 2 | 2 |
+| no control (the Zig run itself failed or timed out) | 2 | 2 |
+
+The lanes agree on 431 of 436; the four disagreements are tcc's C front end ("too many
+arguments to function", and a `notice` it treats as fatal), not the emitted code.
+
+**What it found, three things worth more than the counts:**
+
+1. **Thirteen of the 33 "differ" rows printed NOTHING and exited 0.** A root whose entry is
+   a class `static def main` (the Zig backend's BUG-539 entry) got its method emitted and no
+   V `fn main`, so V built a program that ran nothing -- the icons_test shape of
+   2026-10-15 again, in a second form. FIXED the same night: CodeGenV emits `fn main` ->
+   `zglobals_init()` -> `<cls>_main()`. Of the thirteen, twelve are now identical; the
+   thirteenth (ctor_arg_ref_test) now reaches tcc's arity error, hidden until now by the
+   silence. `examples/v_poc9.zbr` pins it in
+   `tools/v_check.sh`; red-checked against the pre-fix compiler (no `fn main`, no output,
+   exit 0).
+2. **"Nothing refused" does not mean "builds": 152 of the 436 do not.** The largest causes
+   are runtime surface the emitter WRITES and `zebra_rt.v` does not DEFINE: stdlib
+   namespaces (Regex 5, ThreadPool 5, Build 3, Csv / Base64 / Progress 2 each; Uri, Udp,
+   Net, Crypto, Compress, Reflect, Mime 1 each), `List.contains` 5, Map members 4,
+   `char.isAlpha` 3, `str.tokenize` / `padLeft` / `isEmpty` / `codePointCount`,
+   `List.any`. Then typing the emitter gets wrong for V: a closure's copy of a captured
+   local is immutable (8), Option / Result propagation (~12), return and argument type
+   mismatches (12). The emitter's report says "the whole file is in the subset" for every
+   one of them, which is a green from an instrument that never saw red. **DONE the same day
+   (Sean: yes): the emitter refuses a call into a runtime name `zebra_rt.v` does not
+   define, the list DERIVED from the runtime file** (`noteRuntime` reads its `fn`,
+   `struct` / `type` / `enum` / `interface` and per-receiver method declarations, with a
+   floor and two controls that turn into a refusal if the parse collapses). Three shapes are
+   refused, each at its `.zbr` line: a Zebra stdlib namespace the emitter does not map
+   (from the checker's own `namespaceMembers` table, not a hand list), a call the emitter
+   writes into the runtime that it does not define (`zname(...)`, `ZList.m(...)`), and a
+   Zebra method name passed through unmapped onto a V `string` / `u8` / `i64` / `f64` /
+   `bool`, which is a guess at V's spelling. Re-emitting the 436: **62 of the 152 that did
+   not build are now refused by name; 0 of the 284 that built are refused** (one was, on
+   the first run -- `str.count(sub)`, where the guess happened to be V's name; it is mapped
+   now). The other 90 are typing the emitter gets wrong (closures, Option / Result, type
+   mismatches), which no name table can see. A call on a receiver whose type the emitter
+   does not know cannot be checked: the report counts them (318 across the 436) instead of
+   saying "the whole file is in the subset" about them. `v_check`'s `rt_names` row pins all
+   three shapes and a mapped control that must stay clean.
+3. **The V route had stopped building, unnoticed.** Since 9bc1796 (BUG-565) the parser's
+   `@[...]` arm kept its old body after the new `raise`; Zebra and the Zig backend accept
+   that, and V refuses it as unreachable code, so the V-built compiler, the selfhost dumps that
+   share the parser and the LSP leg all failed. `tools/v_check.sh` would have said so on
+   any run, and it is in no tier. FIXED: CodeGenV stops a statement list at a `return` or
+   `raise`; v_check is 20 / 20 again.
+
+**The real output differences that remain** (each one file unless counted): an optional
+printed as `Option(x)` where Zig prints `x` (3); a list or struct printed as V's own dump
+(`&ZList[f64]{`, `&Pt(3)`) where Zig prints `[2.0, 2.5]` / `Pt(3)` (5); a tuple as
+`&(3, 4)`; format specs (`+`, zero padding with a sign); float rounding (0.13 against 0.12,
+3 against 2 -- V and Zig round a tie differently; Fable notes the engine prints positions
+on a grid where exact ties occur, so a tie test on both backends is owed, with the Zig
+backend's answer as the rule); `for ... else` (-1 against 0); indexing a `str` (`e`
+against 101); struct field defaults read as zero (bug603); a char in an interpolation (char_literal_test,
+an assert, exit 1); a method value printed as
+`fn () i64`; percent-decoding; `tryDelete` on an absent path.
+
+The harness hung once: `ws_smoke_test`'s Zig control outlived its timeout as a grandchild
+holding the output pipe, and only the parent was killed. The census script now kills the
+process tree, checked with the real shape (a `zebra` run whose program outlives it: the
+old code waited the program's whole 42 s, the new one returned at its 20 s timeout).
+
+**Owed: `File.modtime` and `File.size` (asked by Fable, 2026-11-01).** CodeGenV maps neither,
+so both are refused by name. The engine's `game/mm/map_library.zbr` called `File.modtime`,
+which put a `not on the V backend: parts_of: File.modtime` panic into `parts_of` and failed
+the `--window` / `--duo` rows at startup; the engine was rewritten without it, so nothing
+blocks. The engine would use modtime as a cache stamp again once it exists. **Do not map
+them straight onto `os.file_last_mod_unix` / `os.file_size`:** read in the pinned V (0.5.2,
+`vlib/os/os.c.v`), both return **0** for a missing file, and `file_size` also prints to
+stderr. The Zig side answers `nil` (modtime: `int?`) and `-1` (size), so a direct mapping
+would turn "no such file" into a plausible value. Go through `os.stat(path)`, which returns
+`!Stat`: a runtime `zfile_modtime(p) ?i64` (`or { return none }`, else `mtime * 1000`) and
+`zfile_size(p) i64` (`or { return -1 }`). One difference stays, and the doc must say so
+where it is mapped: `os.Stat.mtime` is in **whole seconds**, so V gives Zig's units
+(milliseconds) without its resolution. Two writes inside one second share a stamp on V and
+not on Zig, and a cache keyed on it can miss the second write. Witness: a v_poc pair
+(present / missing file, plus a write-then-rewrite in one second) diffed against its Zig
+control, with the resolution difference declared rather than hidden.
+
+### What decides it, by PRINCIPLES.md (gates first, then the axes in order)
+
+- **G1, safety.** Not a V-specific blocker: V traps what Zig's release lane drops on nil,
+  and both drop overflow. It IS a blocker for shipping either until BUG-667 and BUG-668 are
+  answered -- and Sean's answer to BUG-667 (2026-10-30: TRAP, with explicit wrapping
+  operations) is what BOTH emitters must now spell.
+- **Axis 1, predictability of cost -- the real wall.** PRINCIPLES names GC pauses among the
+  things the axes reject, and Boehm's are measured at tens of milliseconds. `-gc none`
+  never frees; `-prealloc` never frees. So V as the ONLY backend needs Zebra to emit its
+  own memory management -- reference counting for classes (memory_model.md §6.3, decided)
+  and arenas -- over `-gc none`. That work is backend-independent: it improves the Zig
+  side too, and it is the long pole either way.
+- **Axis 2, legibility.** The instruments that make cost legible (`--census`, `--coverage`,
+  `memStats`, the debugger's source maps, every Debug-built gate) are Zig-shaped today; V
+  has no allocator hook. Re-homing them is a project, not a flag.
+- **Axis 3, surface area.** `zig"..."` literals are syntax whose meaning is "Zig". Under V
+  they need a successor (a `c"..."` that lands in a generated header is feasible, per
+  Fable) or retirement -- a surface decision under the grammar freeze.
+- **Outside the axes: the toolchain a stranger installs.** Zig brings its own toolchain
+  and cross-compiles; V's optimised builds need clang, gcc or MSVC on the user's machine,
+  and its release must be a vendored master commit.
+
+### Recommendation
+
+**Ship the next release on Zig. Make "V is the default backend" a milestone with measured
+exit criteria, each with a witness, and flip when they are green -- not on a date.** In
+the order they pay:
+
+1. **Safety parity (days).** BUG-667 and BUG-668 decided and fixed on the Zig side; the
+   same semantics in CodeGenV (overflow; `toUint8` and its family mapped). Witness: the G1
+   matrix as a gate over both backends.
+2. **Corpus parity (weeks; mapping work, per the earlier estimate).** Phase 2 of the census
+   is done (above): 237 of 598 identical. First make "nothing refused" mean "builds" (the
+   emitter refuses what the runtime does not define, derived from `zebra_rt.v`), then burn
+   down the refusals in the order above and the 34 output differences. Witness: a V corpus
+   ladder in the tiers -- and `tools/v_check.sh` in one now, since it caught a broken route
+   that nothing else saw; exit at the positive set identical bar the documented harness
+   skips.
+3. **Memory without pauses (the long pole; a design, not a mapping).** memory_model.md §6
+   (RC for classes, arenas) emitted by CodeGenV over `-gc none`. Witness: the engine's
+   autoplay at 60 fps with bounded memory and a frame-pause bound the budget guard checks
+   per frame, not over thirty.
+4. **A toolchain a stranger can install (about a week).** The vendored V pin, an installer
+   that brings or finds a C compiler, CI on Linux and macOS. Witness: a stranger's build
+   from a clean machine, as `libui-pin-build` does for the GUI pin.
+5. **The instruments re-homed (weeks).** The heavy gates parameterised by backend; census,
+   coverage and the debugger's map on V. Witness: the tiers green on the V backend.
+6. **The surface decided.** The successor to `zig"..."`; what becomes of `--target
+   node-addon`, the libui-ng backend, DynLib and `--library-mode` with a non-V host.
+
+Then flip the default, keep Zig as the second backend for one release, and retire it.
+
+**Fable's alternative, as Fable put it:** technically, Zig through 1.0 with V second; if
+Sean's reasons are openness and the relationship with V's maintainers rather than a
+technical bet, then "V as default with Zig kept" is the smallest honest step -- and "sole"
+is unavailable until the memory question is answered by measurement. This recommendation
+differs only in WHEN V becomes the default: after items 1-3, because a default backend
+should not regress safety or cost predictability for anyone who did not choose it.
+
+### Decisions that are Sean's
+
+Answered 2026-10-30 (Sean):
+
+1. **BUG-667's semantics** -- DECIDED: integer overflow TRAPS by default, in release too,
+   on both backends; wrapping is available as explicit operations for code that means it.
+   So the Zig `--release` emit owes a checked form (per-function `@setRuntimeSafety(true)`
+   is the candidate; the emitted share's checks cost ~0.1 ms/frame on the engine under
+   ReleaseSafe, and the per-function form itself is not yet timed), and CodeGenV owes
+   checked arithmetic, since V wraps. BUILT 2026-10-31: every emitted function opens with
+   `@setRuntimeSafety(true)` (gate `runtime-safety`), CodeGenV routes `int` arithmetic
+   through `zadd`..`zmod` and counts what it cannot check, and `min % -1` traps on both
+   (BUG-669). The wrapping operations are SPELLED (2026-11-02, Sean: Zig's operators):
+   `+% -% *% -%x` wrap and `+| -| *| <<|` saturate. CodeGenV computes wrapping in u64 and
+   casts back (`int`, `byte`), saturates `int` through `zsadd` / `zssub` / `zsmul`, and
+   refuses the rest by name; `examples/v_poc10.zbr` diffs the two backends.
+2. **The release question** -- DECIDED: the next release does NOT wait for V.
+3. **`zig"..."`'s successor** -- DECIDED: `v"..."`, the same escape with V as its
+   language. How the two coexist while both backends ship (each refused by the other
+   backend, by name, is the obvious rule) is not yet designed.
+4. **The memory model's priority** -- DECIDED: reference counting for classes and arenas
+   are on the critical path to V, not a later refinement (Sean: "necessary to maintain an
+   approximate consistency of experience" between the backends). Not started.
+5. **The platforms 1.0 promises** -- DECIDED: Windows, macOS, Linux and Vinix (V's own
+   operating system, which runs Alpine Linux packages); AMD64 and ARM64 ideally; RISC-V
+   nice to have, very low priority. Today's coverage (`.github/workflows/release.yml`, the
+   release builds and smoke-runs three): windows-x86_64, linux-x86_64, macos-aarch64.
+   macOS x86_64 is analysed by `cross-sema` and never run; Windows and Linux on ARM64,
+   Vinix and RISC-V have no witness. The V backend's own coverage is Windows alone.
+6. **`tools/v_check.sh` in a tier** -- DECIDED: yes, in a tier with a V focus.
+7. **The emitter refuses a runtime name `zebra_rt.v` does not define** -- DECIDED: yes.
 
 6. **`zebra_rt.v` prefixed throughout** -- DONE the same day (2026-10-26,
    the commit after 2519e52): `tools/prefix_rt_locals.py` put `zr_` on

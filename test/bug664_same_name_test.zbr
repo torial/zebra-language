@@ -1,0 +1,13 @@
+# BUG-664: whether a static is read through its first-use accessor is a fact about the
+# class's OWN module. Two modules may each declare a `Reg` with a same-named static, one
+# computed and one constant; keying the fact by class name alone emitted
+# `_zbr_sfref_n()` against the struct that has none, and zig refused the program.
+use bug664_same_name_lib
+use bug664_same_name_lib exposing Tally
+
+class Reg
+    static var n: int = "abcd".len
+    static var xs: List(int) = [5]
+
+def main()
+    print("bug664-same: ${Reg.n} ${Reg.xs.len} ${bug664_same_name_lib.Reg.n} ${bug664_same_name_lib.Reg.xs.len} ${bug664_same_name_lib.total()} ${Tally.marks.len}")

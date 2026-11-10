@@ -1,0 +1,12 @@
+# BUG-263: `use foo exposing bar` on a C dep with a header. The header branch of genUse
+# emitted the @import and returned, so `c_add` was bound to nothing and the call failed in
+# zig ("use of undeclared identifier '_zbr_fn_c_add'"). The qualified call must keep
+# working beside it.
+
+use CUtils exposing c_add, c_mul
+
+def main()
+    var a: int = c_add(2, 3)
+    var b: int = c_mul(6, 7)
+    var c: int = CUtils.c_add(4, 5)
+    print("bug263 c: add=${a} mul=${b} qualified=${c}")

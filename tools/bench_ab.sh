@@ -22,6 +22,14 @@
 #   DIFFERENT ANSWERS -> two builds that compute different things are not comparable. Their
 #   stdout must match exactly, or the comparison is meaningless.
 #
+#   LAUNCH ORDER -> on this machine the position in a sequence has its own effect, of
+#   EITHER sign (2026-11-07, Fable's runtime-safety A/B on the GameEngine: with the GPU in
+#   the frame the FIRST launch of a pair was slow; without it the SECOND was, 4 of 4 pairs,
+#   by 8%). An interleave that always runs A before B carries that effect into A/B and reads
+#   it as a build difference -- the published "1.04-1.10x" was exactly that. So the rounds
+#   alternate A B / B A, each build's minimum is kept per POSITION, and the ORDER effect is
+#   reported beside the build effect; when it is the larger, the tool refuses.
+#
 #   A MUTANT THAT DIFFERS IN TWO WAYS -> cannot be checked here, and is the one failure this
 #   tool cannot see for you. The first BUG-313 mutant removed a bounds check AND changed
 #   `@intCast` to `@bitCast`; the "unchecked" build came out 3.6x SLOWER, a backwards result
@@ -52,10 +60,21 @@ fi
 ms() { local s e; s=$(date +%s%N); "$1" >/dev/null 2>&1; e=$(date +%s%N); echo $(( (e-s)/1000000 )); }
 
 bmin=999999999; bmax=0; amin=999999999; amax=0; cmin=999999999; cmax=0
+# per-position minima: a1/a2 = A run first/second in its round, c1/c2 likewise for B
+a1=999999999; a2=999999999; c1=999999999; c2=999999999
+runA() { t=$(ms "$A"); [ "$t" -lt "$amin" ] && amin=$t; [ "$t" -gt "$amax" ] && amax=$t; }
+runB() { t=$(ms "$B"); [ "$t" -lt "$cmin" ] && cmin=$t; [ "$t" -gt "$cmax" ] && cmax=$t; }
+r=0
 for _ in $(seq 1 "$ROUNDS"); do
+    r=$((r + 1))
     t=$(ms "$BASE"); [ "$t" -lt "$bmin" ] && bmin=$t; [ "$t" -gt "$bmax" ] && bmax=$t
-    t=$(ms "$A");    [ "$t" -lt "$amin" ] && amin=$t; [ "$t" -gt "$amax" ] && amax=$t
-    t=$(ms "$B");    [ "$t" -lt "$cmin" ] && cmin=$t; [ "$t" -gt "$cmax" ] && cmax=$t
+    if [ $((r % 2)) = 1 ]; then
+        runA; [ "$t" -lt "$a1" ] && a1=$t
+        runB; [ "$t" -lt "$c2" ] && c2=$t
+    else
+        runB; [ "$t" -lt "$c1" ] && c1=$t
+        runA; [ "$t" -lt "$a2" ] && a2=$t
+    fi
 done
 
 # THE NOISE FLOOR IS THE WORST SPREAD OBSERVED, not the baseline's. A first version compared
@@ -74,6 +93,15 @@ printf '  baseline (zero work) : %6s ms   spread %s ms\n' "$bmin" "$bspread"
 printf '  %-20s : %6s ms   work = %-5s ms   spread %s ms\n' "$LA" "$amin" "$la" "$aspread"
 printf '  %-20s : %6s ms   work = %-5s ms   spread %s ms\n' "$LB" "$cmin" "$lb" "$cspread"
 printf '  noise floor (worst spread seen)  : %s ms\n' "$spread"
+# ORDER effect: the same build first vs second, averaged over both builds (ms, signed:
+# positive = the second position is slower). Needs both orders, so at least two rounds.
+if [ "$ROUNDS" -lt 2 ]; then
+    echo "  REFUSING: one round runs only one order, so the launch-order effect cannot be seen." >&2
+    echo "  Use at least 2 rounds (the order alternates A B / B A)." >&2
+    exit 2
+fi
+order=$(( ((a2 - a1) + (c2 - c1)) / 2 ))
+printf '  order effect (second - first, both builds) : %s ms   (%s: %s/%s, %s: %s/%s first/second)\n' "$order" "$LA" "$a1" "$a2" "$LB" "$c1" "$c2"
 
 # ── the work must dominate the fixed overhead ───────────────────────────────────────────
 if [ "$la" -le 0 ] || [ "$lb" -le 0 ]; then
@@ -97,6 +125,14 @@ if [ "$diff" -le "$spread" ]; then
     exit 1
 fi
 
+aorder=$order; [ "$aorder" -lt 0 ] && aorder=$(( -aorder ))
+if [ "$aorder" -ge "$diff" ]; then
+    echo
+    echo "  REFUSING TO REPORT A RATIO: the launch-ORDER effect ($order ms) is at least as large" >&2
+    echo "  as the difference between the builds ($diff ms). Which build ran first would decide" >&2
+    echo "  the answer. Raise the round count, or measure in separate processes far apart." >&2
+    exit 1
+fi
 pct=$(( (la - lb) * 100 / lb ))
 echo
 printf '  %s is %s%% %s than %s  (%s ms vs %s ms of work)\n' \

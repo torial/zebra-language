@@ -1,0 +1,11 @@
+# BUG-642: `x ?? y` (nil-coalescing in C#/Kotlin/Swift/JS) does not exist in Zebra. It
+# read as two postfix `?` -- zig then refused `try` on an optional -- and the fallback
+# became a statement of its own. Refused, naming `orelse`.
+
+def find(): str?
+    return nil
+
+def main()
+    var name = find()
+    var shown = name ?? "nobody"
+    print(shown)

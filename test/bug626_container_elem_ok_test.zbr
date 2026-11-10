@@ -1,0 +1,27 @@
+# BUG-626's positive half: slots whose element types agree, literals whose elements take the
+# slot's type, an empty literal, optional elements on both sides, and nested containers --
+# none of them refused by the container element check.
+def total(xs: List(int)): int
+    var t = 0
+    for x in xs
+        t += x
+    return t
+
+def keys(m: HashMap(str, int)): int
+    return m.len
+
+def main()
+    var fl: List(float) = [1, 2]
+    var empty: List(str) = []
+    var a = [1, 2, 3]
+    var b: List(int) = a
+    var m: HashMap(str, int) = {"a": 1, "b": 2}
+    var opt: List(int?) = List(int?)()
+    opt.add(nil)
+    var opt2: List(int?) = opt
+    var nest = List(List(int))()
+    nest.add(b)
+    var nest2: List(List(int)) = nest
+    var s: Set(str) = Set(str)()
+    s.add("x")
+    print("bug626: ${fl.len} ${empty.len} ${total(b)} ${keys(m)} ${opt2.len} ${nest2.len} ${s.len}")

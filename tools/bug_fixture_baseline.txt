@@ -79,7 +79,6 @@
 100	✅ FIXED (side-effect of BUG-099, 2026-05-05)
 102	Selfhost typechecker `to!` force-unwrap audit — FIXED 2026-05-06
 103	TC `extractFromDecls`/`extractFromMembers` silently skip unknown decla
-105	`Color.red` infers to `.unknown` instead of `.named(Color)` — FIXED 20
 107	✅ VERIFIED 2026-05-18 — codegen never runs on a diagnosed tree
 109	✅ FIXED 2026-05-05 — `.reuse_address` flipped to `false`
 110	✅ FIXED 2026-05-05 — bind error prints clean message instead of panic
@@ -139,3 +138,5 @@
 451	--release ignored for GUI builds -- a build-flag property; PINNED BY GATE release-mode GUI leg (tui app with vs without --release)
 333	UI_QUICKSTART contradicted itself -- a documentation defect; no program can express it (the doc now matches gui_libui_ng_section.zig)
 524	Apple-silicon fast path / build.zig fast-backend -- a comptime HOST-ARCH property no gate here can flip; witness is .github/workflows/macos-native.yml on real hardware
+101	CLOSED BY DELETION -- the panicking sites were src/AstBuilder.zig, removed 2026-09-16; the selfhost raises, nothing to pin
+289	harness capture disagreement, NOT REPRODUCED (2,820 runs, 2026-11-07) -- no .zbr can express it; WATCHED BY output_sweep's confirmation round + printed transient counter

@@ -1,0 +1,28 @@
+# BUG-626: a container whose ELEMENT type differs from the slot's is refused at the value,
+# in every position a value flows into a typed slot -- before, each one passed `zebra -c`
+# and zig refused "expected type 'List(str)', found 'List(int)'".
+def f(xs: List(str)): int
+    return xs.len
+
+def g(): List(int)
+    var s = List(str)()
+    return s
+
+class Holder
+    var items: List(int)
+    cue init(xs: List(str))
+        .items = xs
+
+def main()
+    var a = [1, 2]
+    print(f(a))
+    var b: List(str) = a
+    var c: List(int) = List(int?)()
+    var m = HashMap(str, int)()
+    var m2: HashMap(str, str) = m
+    var s1 = Set(int)()
+    var s2: Set(str) = s1
+    var nest = List(List(int))()
+    var n2: List(List(str)) = nest
+    var d: List(str) = List(str)()
+    d = a

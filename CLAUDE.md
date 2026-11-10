@@ -78,6 +78,7 @@ bash tools/gates.sh            # QUICK (~14 min): + smoke + round-trip. After an
 bash tools/gates.sh --full     # FULL (~40 min): + the heavy corpus witnesses
 bash tools/gates.sh --daily    # DAILY: + gramgen, leakgen, gui-scaffold(+panel), node-addon. Once a day
 bash tools/gates.sh --list     # what each tier runs and what it cannot see
+bash tools/gates.sh --v        # THE V BACKEND alone: a focus set, OFF the ladder (needs a V install)
 ```
 
 `rebuild.sh` exists because the regen sequence has four footguns that have each
@@ -99,7 +100,8 @@ preamble edit was invisible until the bootstrap was rebuilt — observed 2026-07
 on 2026-08-26 a `src/*.zig` edit failed the same way with a type error naming the very
 feature being added. `rebuild.sh` pre-built the bootstrap when an input was newer, and
 `rebuild_guard_check.sh` falsified that guard. The selfhost reads the preamble FROM DISK
-at codegen time, repo-relative first, so there is no embedding binary to be stale against;
+at codegen time -- from the checkout the binary was built in, then beside it, then the cwd
+(`runtimeFilePath`, BUG-543) -- so there is no embedding binary to be stale against;
 the guard and its check went to `tools/attic/` with the bootstrap, sunset Step 3.)
 
 **`--module NAME` is the inner loop, and it is ~10 s against several minutes.** The full
@@ -130,6 +132,15 @@ process running from *this* tree, so path-scoping loses nothing — and the tool
 what it is leaving alone, because silence is what made the old behaviour look like an
 unrelated failure.
 
+**To FIND a stuck process machine-wide, `bash tools/stuck_procs.sh [--hours N]`** (report
+only, kills nothing). It flags shell/tool processes that are ORPHANED (their launcher is
+gone, e.g. a timed-out tool call's grep or compiler) or OLDER than N hours, with CPU
+share and OWNER (the claude.exe session or terminal above the shells). Windows' parent PID
+is wrong for Git Bash children (fork+exec leaves an exited intermediate as the parent), so
+parentage of an MSYS process comes from `ps -l`; the first draft trusted Windows and
+called an active grep in another session an orphan. Red-checked with a planted orphan
+`sleep`.
+
 **The round-trip's scratch is per-checkout too (BUG-521, 2026-10-03).** `/tmp/bs-zig`,
 `/tmp/bs-pre`, `/tmp/bs-A`... were one set for every checkout, so a `rebuild.sh` in the main
 tree cleared a worktree's regen mid-run, and the worktree's failure path RESTORED its
@@ -146,8 +157,13 @@ which has bitten us: **stale generated `.zig`** (you would be testing the OLD co
 `zig build update-selfhost` silently skips regeneration, BUG-210, and this made a real
 BUG-219 fix appear not to work), orphaned compiler processes holding a lock on
 `zig-out/bin` (→ `AccessDenied`), stale `/tmp/bs-*` scratch from a killed run causing
-unrelated failures, a compiler that cannot run a hello-world, and low RAM before a
-RAM-bound gate. It exits **1** only for states that make results *lie*; everything else
+unrelated failures, a compiler that cannot run a hello-world, low RAM before a
+RAM-bound gate, and (Windows) **leaked kernel tokens**: every process an older Git Bash
+starts leaks one kernel Token until reboot (git-for-windows/git#6471; ~0.7-1 per start on
+MSYS 3.6.5, none measured on 3.6.10 / Git 2.56.0.windows.4), and on 2026-11-02, 7 days
+up, 2.29M of them held ~6 GB of paged pool that no process showed and smoke ran ~5x slow.
+`tools/kernel_tokens.ps1` reads the count without admin; doctor warns past 500,000 and says
+"unmeasured" rather than passing when it cannot read it. Update Git for Windows, then reboot to reclaim what already leaked. It exits **1** only for states that make results *lie*; everything else
 is a warning. **`gates.sh` runs it as a preflight and refuses to report on an
 untrustworthy tree** — a green gate that measured the wrong compiler is worse than no
 gate at all.
@@ -226,10 +242,33 @@ per-tier counts, computed from the registrations rather than written down.
 | tier | gates | cost (measured range) | run it when |
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
-| `--fast` | 37 <!-- doc-gen: 37 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 40 <!-- doc-gen: 40 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 48 <!-- doc-gen: 48 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 59 <!-- doc-gen: 59 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| `--fast` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
+| (default) | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 49 <!-- doc-gen: 49 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 60 <!-- doc-gen: 60 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+
+**`--v` IS A FOCUS SET, NOT A RUNG (2026-10-30, Sean: "a tier with a V-specific focus").**
+It runs only the gates registered `run_v` -- today one, `v-check`
+<!-- doc-gen: 1 = grep -cE '^[[:space:]]*(run|pin)_v "' tools/gates.sh --> -- and no ladder
+tier runs or counts them, because they need a V toolchain the ladder does not and answer a
+different question. `v-check` is `tools/v_check.sh` under the V the engine pins (master b399a50
+since 2026-11-08, was ee6d62a; `V=<v.exe>` overrides): the v_poc examples and the five selfhost dumps emitted to V, built
+and run, each diffed against a FRESH Zig run; the route's modules (CodeGen, Checker, main)
+within their refusal baseline and `v -check` clean; a nil unwrap naming its place; stdin
+polled without blocking; the V-built compiler answering the LSP; a runtime name
+`zebra_rt.v` does not define refused by name, with a mapped control that must stay clean;
+integer overflow (+ - * neg += / %) trapping on both backends with Zig's message, beside an
+in-range control diffed against the Zig run (BUG-667: V's operators wrap); the free-at-sweep
+calls mapped and a module list / field rebuilt mid-walk walked to the end (BUG-681: V's C
+re-read a global's `.items` each iteration). It
+REFUSES (exit 2) when
+that V is not installed, and a Zig control that printed nothing is a failure, never a pass.
+Eleven to sixteen minutes on a loaded afternoon: twice standalone at 20 rows (V 0.5.2 and
+ee6d62a), then 964 s as the tier's first run, at 21. WHY IT EXISTS: it sat in no tier from 2026-10-20, and the V route was broken from
+9bc1796 until the corpus census happened to build it -- `v_check` would have said so on any
+run. CANNOT SEE: the corpus (the census in `docs/design/v_backend_poc.md` is not a gate),
+any `-prod` build, and every OS but Windows. Run it after a `CodeGenV.zbr` or
+`zebra_rt.v` edit.
 
 **The gate counts carry `doc-gen` oracles as of 2026-08-22.** They did not before, and four
 of the five went stale the moment one gate was registered (`bug302-control`) — silently,
@@ -912,6 +951,13 @@ bash tools/release_mode_check.sh   # THE ONLY GATE THAT BUILDS WITH `--release` 
                                 #   compiler alone: the preamble is read from disk, so an old
                                 #   binary run in this repo inherits the new handler in the
                                 #   inline shape.
+                                #   AN OVERFLOW + NIL LEG SINCE 2026-10-31 (BUG-667/668/669):
+                                #   ONE --release build of a program whose argument names the
+                                #   operation (+ - * neg += byte / % and `s!` on nil), run once
+                                #   per probe; each must print Zig's panic text and never its
+                                #   SURVIVED line, and an `ok` run must print the right values.
+                                #   On the pre-fix compiler every probe, run as its own
+                                #   program, carried on (`sub` printed a value no i64 holds).
                                 #   Runs a full LLVM build → FULL tier, not QUICK.
 bash tools/contract_mode_check.sh  # THE CONTRACT-STRIPPING CONTRACT (FULL tier, ~55s):
                                 #   the ONLY gate that passes `--turbo`, and the only one
@@ -988,6 +1034,13 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   diff, naming the member (`str: -trimLeft`); `--write`
                                 #   re-derives. After 1.0 a change here is a promise
                                 #   change and gets a CHANGELOG line in the same commit.
+                                #   IT ALSO GENERATES AND CHECKS THE CHECKER'S NAMESPACE
+                                #   TABLE (BUG-638, 2026-10-27): TypeChecker's
+                                #   `namespaceMembers` refuses an unknown member of a closed
+                                #   namespace at -c, and is emitted by `--print-checker-table`;
+                                #   `--check` fails, naming the member, when the two differ.
+                                #   Writing it found `Base64` missing from SURFACE.md -- the
+                                #   dispatch pattern was letters-only.
                                 #   IT SAYS WHICH NAMESPACES ARE OPEN. A generator that
                                 #   emits `mname` verbatim outside a @compileError arm
                                 #   passes unlisted members through to Zig -- Math is the
@@ -1001,21 +1054,24 @@ python tools/surface_inventory.py --check  # THE SURFACE-FREEZE GATE, registered
                                 #   smaller file -- verified by renaming genMimeCall.
                                 #   Red-checked three ways: a doc edit, a compiler table
                                 #   edit (`str: -trimLeft`), an extractor break.
-                                #   CANNOT SEE: instance methods on the runtime object
-                                #   types WITHOUT a Type_ variant (DateTime, File handles,
-                                #   HttpResponse, the GUI widget structs -- per-type
-                                #   generators with no shared shape), arities, argument
-                                #   types, or semantics. The 16 that HAVE a variant (Timer,
+                                #   CANNOT SEE: arities, argument types, or semantics.
+                                #   (The runtime object types with no Type_ variant --
+                                #   DateTime, CsvTable, CsvWriter, HttpResponse,
+                                #   CalendarView, ThreadPool, DynLib -- refuse unknown
+                                #   members since 2026-11-07, BUG-680, and are derived from
+                                #   their predicates / tables; File was always a static
+                                #   namespace.) The 16 that HAVE a variant (Timer,
                                 #   StringBuilder, SysProcess, Build/BuildTarget, Ws/Tcp/Udp
                                 #   conns, Sqlite*, CodeEditor, Gui, HttpRequest, Chan,
                                 #   Regex) were closed 2026-09-15 by the BUG-369 recipe --
                                 #   a *MethodKnown predicate per type, derived from the
                                 #   dispatch arms, refusing unknown names in the front end
                                 #   -- and are derived here since. The counts print every
-                                #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 31 namespaces / 171 members,
-                                #   23 receivers / 289 methods by SURFACE.md's section counts (5 / 120
+                                #   run. 69 keywords (`yield` added 2026-09-16; 68 after `has`; 81 until defer/errdefer were freed, 79 until guard/arena/readonly/abstract/vari, 74 until the assert_* four, 70 until same, 69 until has), 32 namespaces / 179 members,
+                                #   32 receivers / 362 members by SURFACE.md's section counts (5 / 120
                                 #   on the day it was written; the SIMD vector/mask table and the
-                                #   Random instance joined 2026-09-18).
+                                #   Random instance joined 2026-09-18; 23 / 315 until BUG-680's
+                                #   runtime-object tables joined 2026-11-07).
 python tools/doc_example_check.py  # THE DOC-EXAMPLE GATE — the only gate pointed at what a
                                 #   READER is told, rather than at what the compiler does.
                                 #   224 fenced `zebra` blocks existed and NOTHING verified
@@ -1126,6 +1182,14 @@ bash tools/stream_check.sh      # THE STREAM-SEPARATION GATE, registered as `str
                                 #   The markers on the two streams are DIFFERENT strings, so a
                                 #   harness that captured one stream twice fails rather than
                                 #   passes. 0 failures = clean.
+                                #   LEG 8 (2026-10-27, BUG-635): one 200,001-byte print through
+                                #   a pipe whose reader sleeps first must arrive whole. Git Bash
+                                #   hands a child an OVERLAPPED pipe, Zig's File.stdout() assumes
+                                #   a synchronous one, and a write that had to wait hit
+                                #   `.PENDING => unreachable` in std: a panic and 0 bytes for any
+                                #   `prog | x` over 64 KiB. Legs 1-7 print a few lines and can
+                                #   never fill a pipe. Red-checked by making the runtime's mode
+                                #   query answer "synchronous": 0 bytes, the panic.
                                 #   (`selfhost_divergence_check.sh`, the COMPILER-SOURCES
                                 #   AGREEMENT GATE `selfhost-div`, sat here 2026-09-05 ..
                                 #   2026-09-15: both compilers read the modules the compiler
@@ -1268,9 +1332,51 @@ bash tools/census_check.sh      # THE ALLOCATION-CENSUS GATE, registered as `cen
                                 #   Leg 2: no flag -> no report, no file, and memStats' census
                                 #   fields read -1 (unmeasured), never 0. REFUSES under 15
                                 #   labelled lines or on zero allocations.
+                                #   THE KEPT COLUMN (2026-11-04, Fable's request): each wrapper
+                                #   keeps a pointer map, so every site also reports the bytes
+                                #   still live that it allocated or last RESIZED (a resize moves
+                                #   the whole block), plus a ranking by bytes kept; JSON v2.
+                                #   Controls: `kept=0` (an alloc/free loop through a zig"..."
+                                #   literal, the scoped block), `keptall=` (constructors and
+                                #   concats nothing frees), `kept1=` (a List grown 3 times keeps
+                                #   ONE buffer), and per-site kept bytes summing to the live total
+                                #   EXACTLY with 0 unseen frees/resizes and 0 length mismatches.
+                                #   Red-checked with six mutations of the runtime (no map insert,
+                                #   a free or a release that credits nothing, a resize that does
+                                #   not move the block, an in-place entry left stale, an in-place
+                                #   move to the wrong row): each fails. Cost, measured as process
+                                #   CPU time over 800k allocations in Debug: 1.37 -> 3.44 us per
+                                #   allocation (none: 0.39), and ~54 B of page memory per LIVE
+                                #   block (43 MB of tables for 800k never-freed strings, 5 MB).
+                                #   LEG 4 (BUG-676): the runtime's panic handler allocated through
+                                #   `_allocator`, so a census that panicked inside its own lock
+                                #   deadlocked with nothing printed, and the gate HUNG. The leg
+                                #   plants a panic on the 50th allocation in a scratch copy of the
+                                #   emitted runtime and requires the message and a non-zero exit
+                                #   under a 30 s timeout; red with the old handler ("HUNG"). It has
+                                #   teeth on Windows only (POSIX getenv never allocated). Every
+                                #   run has a timeout, and a probe panic is named in the refusal.
+                                #   LEGS 5-7 (BUG-677, 2026-11-05): `--census=host` counts only
+                                #   what follows the program's own `_zbr_cens_install()` (a
+                                #   labelled line before it must have no site); a second install
+                                #   prints one note naming the entry prologue, counts unchanged;
+                                #   a host build never installed says "never installed" and
+                                #   writes no JSON. Red on the pre-fix tree, which accepted
+                                #   `--census=host` and built with no census at all.
+                                #   LEG 8 (2026-11-07): free-at-sweep's counts -- two lists
+                                #   queued and swept, a third queued and never swept -- must read
+                                #   1 pending / 2 freed / 1 sweep in the report and the JSON (the
+                                #   engine's witness reads "queued, never swept" there). Red-checked
+                                #   with the freed counter stuck at zero.
                                 #   CANNOT SEE: the runtime's page-allocator escape hatches
                                 #   (the report names them as uncounted), kinds in a --release
-                                #   build (printed as ?0x<address>), a host's own allocations.
+                                #   build (printed as ?0x<address>), a host's own allocations,
+                                #   the unseen-block counts under a census installed mid-run
+                                #   (the GameEngine's --census-at; nothing here does), and a
+                                #   persistent `allocate Page()/Smp()/C()` block: its wrapper is a
+                                #   stack local never released, so its pointer map outlives it and
+                                #   a block freed later through another allocator counts as unseen
+                                #   (6 uses, all in test/ and examples/; none in the GameEngine).
 bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-read` (FAST,
                                 #   ~5 s, 2026-10-23, BUG-619). sys.readLine / sys.readBytes
                                 #   took one byte per `readSliceShort`, which on an empty buffer
@@ -1283,6 +1389,26 @@ bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-re
                                 #   3 4 MB in under 1.5 s, min of two -- 3.84 s on the old
                                 #   runtime (red-checked with it), 0.42 s fixed. CANNOT SEE:
                                 #   File reads, or stdin from a console rather than a pipe.
+python tools/runtime_safety_check.py --gate  # THE RELEASE-SAFETY SITE MAP, registered as
+                                #   `runtime-safety` (FAST, 2026-10-31, BUG-667/668). Every
+                                #   function emitted into a user module must open with
+                                #   `@setRuntimeSafety(true)`: `--release` builds ReleaseFast,
+                                #   where Zig drops its checks and overflow / a nil `.?` /
+                                #   `unreachable` are undefined behaviour (a wrong number, exit
+                                #   0), and a per-MODULE mode does not split safety (measured).
+                                #   NO DEBUG GATE CAN SEE A MISSED SITE -- Debug is safe either
+                                #   way -- so the map is DERIVED from the output: the committed
+                                #   selfhost/*.zig plus six corpus files emitted now, one per
+                                #   construct (extend/derive/interface/generic via trip.zbr, a
+                                #   generator, an invariant, an @export factory, lambdas,
+                                #   module vars). Reading codegen found 3 sites (the census
+                                #   prologue's); emitting found 24. Generated helpers with no
+                                #   user expression are exempt BY NAME with a reason, and a
+                                #   type-returning fn (comptime only) is skipped. Selftest on
+                                #   synthetic Zig first (a fn in a string, a fn type, an extern,
+                                #   `error{..}!T`, `@branchHint` first); REFUSES under 1500
+                                #   functions. CANNOT SEE: whether the checks fire --
+                                #   `release-mode`'s overflow leg runs that.
 bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-mode` (FAST
                                 #   tier, ~15 s, 2026-09-30, BUG-485). A `--library-mode`
                                 #   program is linked into a HOST, which installs its own
@@ -1302,7 +1428,17 @@ bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-m
                                 #   Run in BOTH representations before the switch landed; under
                                 #   references the real attacker -- `.deinit` alone, what the
                                 #   GameEngine host did -- leaks the 24-byte header and is reported.
-                                #   CANNOT SEE: frees the host performs on paths it does not test.
+                                #   LEG 3 (2026-11-07, free-at-sweep): a release fired from INSIDE a
+                                #   walk of the list it replaces queues the old list with
+                                #   `_zbr_free_at_sweep`; the walk must finish over it (sum 190) and
+                                #   the host's `_zbr_sweep()` must leave no leak; no sweep must leak
+                                #   (the control); one list queued twice is freed once; a queueing
+                                #   inside `allocate` is refused by name. Red-checked with the two
+                                #   real attackers: freeing at once (the walk read garbage, integer
+                                #   overflow) and the dedupe removed (a segfault in the second free).
+                                #   CANNOT SEE: frees the host performs on paths it does not test, or
+                                #   an alias of a queued container that outlives the sweep (a UAF
+                                #   by contract; nothing detects it).
 python tools/lsp_server_smoke.py   # THE LSP PROTOCOL GATE, registered as `lsp-smoke`
                                 #   (FAST tier, ~2s). Drives `zebra lsp` through a real
                                 #   JSON-RPC conversation over stdio -- Content-Length
@@ -1393,7 +1529,7 @@ bash tools/cli_check.sh         # THE CLI-SURFACE GATE, registered as `cli-surfa
                                 #   properties and each measures what it claims.
                                 #   CANNOT SEE: whether usage TEXT is accurate, whether a
                                 #   flag does what it says, or any interactive behaviour
-                                #   past `repl` starting. 57 assertions, 0 pins (2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
+                                #   past `repl` starting. 81 assertions, 0 pins (2026-11-05: BUG-677 -- `--census=VALUE` other than `host` is refused by name, and a `--census=host` run that never installs says so; 2026-11-02: BUG-671 -- a front-end refusal under --output-dir leaves no .zig, from a post-emit refusal and from a parse error in a later dep, while a zig failure keeps its .zig; 2026-10-29: BUG-295 (0) -- an import cycle wholly inside --module-path deps is WARNED once and never refused, and a cycle reached through two `use` lines of one module is reported once; 2026-10-28: `-c --strict` reports the strict gap at its line while plain `-c` stays fast and a clean file passes; `zebra diagnostics` -- the strict view the LSP shares -- is clean on the compiler's own selfhost/*.zbr (the ratchet) and on BUG-252's gap shapes, knows `use`d types (BUG-653), shows a refused `is` and a broken dep at a real line (BUG-654), with the control that `var x: int = Math` is still reported; 2026-10-27: BUG-543 -- a planted clone's `selfhost/` runtime must not reach this checkout's emit or an installed copy's, and must reach a bare copy's (the control); BUG-547 -- `--source-root` emits byte-identical code from two cwds, a control that the two DIFFER without it, and a missing directory refused by name; 2026-10-03: `--gui-backend=tui` refused by name naming zigzag and libui_ng, and the GUI-args leg moved to libui_ng and requires BOTH run-arg spellings (`b.args` / 0.17 `addPassthruArgs`); 2026-10-01: BUG-516 -- a --module-path dep left unemitted is named in a note, silent under --library-mode; 2026-09-26: `--allow-implicit-try` retired and refused BY NAME; `--target` other than node-addon and `--out` outside `zebra diagnostics` are refused -- both were accepted and IGNORED -- and --help must list the six flags it had omitted; 2026-09-24: three warning-tier legs -- a deprecation warns and `-c` exits 0, `--warnings-as-errors` fails naming the flag, and passes on a clean file; 2026-09-15: `--zig-backend` and
                                 #   `--gui-backend=glfw` refused by name, retired with the bootstrap;
                                 #   `b.requires("^99.0")` refused through the real `zebra build`; 2026-09-14: `zebra up`
                                 #   refuses by name, OFFLINE, outside an install layout; 2026-09-10: BUG-317/324/325
@@ -1531,8 +1667,8 @@ python tools/lint_bug_numbers.py   # THE BUG-NUMBER COLLISION GATE (static, inst
                                 #   good entry has a "Control when fixing" section, which
                                 #   scored 30 of 53 — a noise ratio that gets a gate
                                 #   ignored. A part-done bug is legitimate and says so with
-                                #   `<!-- bug-open-ok: reason -->` (BUG-267 has one: usage
-                                #   half fixed, mutation half open).
+                                #   `<!-- bug-open-ok: reason -->` (BUG-267 had one until
+                                #   2026-10-28: usage half fixed, mutation half open).
                                 #   Refuses to report if <150 headings parse or if a planted
                                 #   duplicate is not detected. Reconfigures stdout to UTF-8:
                                 #   printing a heading containing an em-dash or a tick
@@ -2045,6 +2181,11 @@ python tools/registration_check.py # THE UNASSERTED-FILE GATE (BUG-243, static, 
                                 #   those fixes were unverified. Baselined like bug-fixture:
                                 #   fails only on NEW debt (24 known). Shrink it, never grow it.
                                 #   QUICK tier.
+                                #   AND EVERY selfhost/*_test.zbr MUST BE REGISTERED (2026-10-28,
+                                #   BUG-657, absolute -- no baseline): the compiler's own unit
+                                #   tests sat outside test/ and so outside this gate; nothing ran
+                                #   the nine of them, four failed INSIDE ZIG, and that led to
+                                #   BUG-658/659. Red-checked by deleting one registration.
                                 #   (`lint_decl_exhaustive.py`, THE Ast.Decl EXHAUSTIVENESS
                                 #   GATE `decl-exhaustive`, sat here 2026-08-26 .. 2026-09-16:
                                 #   BUG-103's pin -- no `else => {}` in the bootstrap's
@@ -2075,7 +2216,8 @@ python tools/gui_surface_drift.py  # THE GUI-SURFACE DRIFT GATE, registered as `
                                 #   GuiContext's verbs, the _GuiBackend table, the `_gui_*`
                                 #   helpers CodeGen emits calls to, and TypeChecker's
                                 #   guiMethodKnown are FOUR hand-kept copies of one surface.
-                                #   Four checks: verbs identical stub/tui/libui; table fields
+                                #   Five checks (the fifth, BUG-693: every `_code_editor_*` CodeGen emits is defined in
+                                #   all three regions): verbs identical stub/tui/libui; table fields
                                 #   identical tui/libui (the stub may print instead of
                                 #   dispatch); helpers identical and covering every `_gui_*(`
                                 #   in CodeGen.zbr; guiMethodKnown == the verb set (a verb
@@ -2347,6 +2489,20 @@ a stub `zig` emitting the verbatim error, failing once then succeeding. Four leg
 retry masks breakage and triples runtime. It sources the SHIPPED predicate, so it cannot
 pass against logic the gates do not have.
 
+**Its real-output leg is pinned to the mechanism now, not to a known gap (2026-10-28).** It
+demanded >= 5 genuine zig errors in `full_sweep`'s kept evidence -- a set every fixed leak
+shrinks. BUG-650 moved two files from zig-refused to front-end-refused, the set fell to 4,
+and the FULL tier went red on a correct tree (it was also skipped where the directory did
+not exist). Real zig now refuses five programs with five different genuine errors every
+run, and each must classify as genuine; the evidence count is printed, not gated.
+Red-checked with an always-infra predicate: 0 genuine, 5 misread. **And it retries a refusal
+classified as infra (the same evening):** the closing daily went red with "4 genuine, 1
+misread" on a tree two FULL tiers had passed -- most likely zig really failed to read its own
+std on one control, which the predicate was right to call infra. A genuine error repeats on
+all three tries, a transient one does not; the misread file and its error line now print.
+Red-checked with a stub zig that fails once (the pre-fix leg prints the daily's exact line;
+the fixed one passes, `infra-retries=1`) and one that fails every time (still FAIL, named).
+
 **The smoke suite retries it too (2026-10-20)**, through `zbr_run_retrying` in the same
 library: every compiler run that builds through zig goes through it (15 sites; the one under
 `timeout` cannot), it retries only a FAILED run carrying the signature, and smoke's terminal
@@ -2366,6 +2522,17 @@ only on the shared predicate, and its PASS line ends `(infra-retries=N)`. Red-ch
 `ZEBRA_ZIG_DIR` stub that fails the first two builds with the verbatim error (the pre-fix script
 fails exactly as the daily did, the fixed one passes with 1 retry), and with a persistent genuine
 error (one try, two builds, rc=1).
+
+**And `runtime-module` (2026-11-01)**: its five `zig build-exe` calls sent zig's stderr to
+`/dev/null`, so a FULL went red on "BUG-221 fixture does not compile with
+--no-runtime-module" with nothing to say why (green standalone at once; the same tier's
+`release-mode` red was BUG-302 on `std/crypto/blake2.zig`). They go through `zbx`, a
+wrapper over `zbr_run_retrying` now: an infra failure is retried, zig's output is kept beside
+the program, its first error line rides on the FAIL message, and the terminal line ends
+`(infra-retries=N)`. Red-checked with a `ZEBRA_ZIG_DIR` stub that fails once with the
+verbatim error (the pre-fix gate fails "emitted hello-world does not compile"; the fixed one
+passes it, `infra-retries=1`) and one that always fails genuinely (5 calls for 5 legs, each
+FAIL naming the error).
 
 ### The daily is CACHED where the answer cannot have changed (2026-09-26)
 
@@ -2488,16 +2655,16 @@ than "what do we know":
 | emitted Zig compiles | `compile_check`, `full_sweep`, `divergence` | 335 |
 | compiler is self-consistent | `bootstrap_check` (round-trip) | selfhost only |
 | **program prints the right thing** | `smoke_run`/`smoke_test`, **`output_sweep`** | **358** |
-| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 39 probes / 406 assertions | <!-- doc-gen: 39 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 406 = cat test/boundary/*.expected | grep -c . -->
+| **…and it is the RIGHT thing, per the reference** | **`boundary_check`** (intent-authored, not recorded) | 45 probes / 471 assertions | <!-- doc-gen: 45 = bash tools/corpus_ls.sh test/boundary | wc -l | tr -d ' ' --> <!-- doc-gen: 471 = cat test/boundary/*.expected | grep -c . -->
 | **a foreign symbol actually LINKS and returns** | **`ffi_lib_check`** (builds its own library + negative control) | 1 prebuilt lib |
-| **an Expr walker descends into every variant that holds exprs** (and a PNode walker into every expression-bearing parse node) | **`lint_expr_walkers`** (oracles = `Ast.zbr`'s `Expr`, `Parser.zbr`'s `PNode`) | 15 opted in; the gate prints the ratio | <!-- doc-gen: 15 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
+| **an Expr walker descends into every variant that holds exprs** (and a PNode walker into every expression-bearing parse node) | **`lint_expr_walkers`** (oracles = `Ast.zbr`'s `Expr`, `Parser.zbr`'s `PNode`) | 16 opted in; the gate prints the ratio | <!-- doc-gen: 16 = grep -rho 'expr-walker: exhaustive' selfhost/*.zbr | wc -l | tr -d ' ' -->
 | parser survives hostile input | `fuzz/gramgen.py` | 960 derived programs |
 | static hazard classes | `lint_fallthrough` (`lint_interp_escape` retired 2026-09-15 with the bootstrap) | all `.zbr` |
 | generated docs match the compiler | `str_ownership_extract --check` | 28 operations |
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 121 scripts | <!-- doc-gen: 121 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 123 scripts | <!-- doc-gen: 123 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 45 tracked documents <!-- doc-gen: 45 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -2532,6 +2699,50 @@ fine: clearing that directory made the build produce an app, which then refused 
 console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo's ONLY
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
+
+**DAILY tier 2026-11-09 (the 0.9.0 release, tagged `v0.9.0_zig0.17` on `5e41a35`): 60/60 PASS
+in ONE invocation at JOBS=2, ~1h44m, nothing pinned.** smoke 1058/1058 (infra-retries=0),
+round-trip byte-identical, `boundary` 45/0, `cli-surface` 81, `release-mode` all checks,
+`output_sweep` 466 identical (all cache misses: the version string moves every emitted
+runtime), `full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover` from
+`5e41a35`, `gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`. Run at
+BelowNormal priority beside another heavy workload on the host. The daily on the bug-fix commit
+before it (`ac60e15`, BUG-692/693) was ASSEMBLED: four reds under an afternoon when the host ran
+5-10x slow at low CPU (smoke killed at the 5400 s ceiling, stdin-read 1.63 s against 1.5,
+release-mode's GUI build producing no app, and a corpus count I had not bumped), each green
+standalone.
+
+**DAILY tier 2026-11-05 (the rc9 release, tagged `v0.9.0-rc9_zig0.17` on `dc39c0c`): 59/60 in
+ONE invocation at JOBS=2, then `output_sweep` green standalone -- ASSEMBLED.** smoke 1031/1031,
+round-trip byte-identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
+`regen-recover`, `release-mode`, `gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`;
+re-run alone, `output_sweep` 466 identical (342 cache hits left by the killed run). The red was
+`output_sweep` KILLED at its 5400 s ceiling: the version bump moves every emitted runtime, so all
+three sweeps ran cold, on a host with 510k leaked kernel tokens and another session's jest suite
+at ~2.7 cores -- `full_sweep` took 4848 s against 813 s cold that morning. **The method note: validate
+the BOOK against a release commit before tagging it.** The first rc9 commit (26d7838) carried a
+regression no gate saw -- BUG-679, a mixin's `cue init` replacing the class's, from BUG-659 --
+and the book's 803 examples found it in one run; the tag moved to the fixed tree. And a 10-minute
+foreground wait that the harness moves to the background keeps looping: twenty such waiters were
+polling at once before `stuck_procs.sh` showed them. Bound every wait loop inside the tool limit.
+
+**DAILY tier 2026-10-29 (closing BUG-014/662 regex `1b10f49`, BUG-267/663 zig escapes `a549b29`,
+BUG-295 re-probe `e6cd7fd`): 58/59 in ONE invocation at JOBS=2 on `e6cd7fd`, then the 59th
+fixed and green in a FAST tier -- ASSEMBLED.** smoke 958/958, round-trip byte-identical,
+`output_sweep` 466 identical, `full_sweep` / `divergence` 0 regressions, `regen-recover`,
+`gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`. The red was `bug302-control`'s real-zig leg,
+"4 genuine, 1 misread as infra": the leg had no retry for a genuine BUG-302 event on one of its
+own controls (see the BUG-302 section). The FULL before the regex commit was ASSEMBLED too:
+smoke killed at the 5400 s ceiling on a loaded host (2 days up, RAM 78%), 956/956 standalone.
+
+**DAILY tier 2026-10-28 (closing BUG-252 and BUG-650..659, `7c4d803`; FULL 48/48 before it):
+59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke **949/949**
+(infra-retries=0; 919 s, against ~700 before the nine `selfhost/*_test.zbr` unit tests were
+registered), round-trip byte-identical, `registration` 933 tracked / 0 unasserted, `boundary`
+39/0, `cli-surface` 71, `output_sweep` 466 identical, `full_sweep` / `divergence` 0 regressions,
+`regen-recover` from `7c4d803`, `gramgen` 0/0, `leakgen` 100/0. The BUG-659 constructor-arity
+refusal was measured over 3,110 files of this repo, zebra-ide and the GameEngine before it
+landed. The only new refusals were the compiler's own stale unit tests.
 
 **DAILY tier 2026-10-26, second run (closing BUG-629 / BUG-569 `4056ecd`; FULL 48/48 before it):
 59/59 PASS in ONE invocation at JOBS=2 on the committed tree.** smoke 858/858 (infra-retries=0),
@@ -3523,7 +3734,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **890** <!-- doc-gen: 890 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **970** <!-- doc-gen: 970 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
@@ -3538,10 +3749,12 @@ The size of that gap is now **measured rather than estimated**, which it was not
 paragraph was first written (it said "57 are in no known category" against a corpus of 421).
 `registration_check` is the instrument: every tracked `test/*.zbr` must have its status
 asserted by *something* — a smoke registration, the full_sweep pass baseline, or an entry in
-`tools/registration_exempt.txt` **with a reason**. As of 2026-08-26 that leaves **11**
-<!-- doc-gen: 11 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
-unasserted, against 37 exempt-with-reason. Down from 57, and from 18 on 2026-08-26 when
-reading full_sweep's newly-kept evidence named the last three. Shrink it, never grow it — and note
+`tools/registration_exempt.txt` **with a reason**. As of 2026-10-27 that leaves **0**
+<!-- doc-gen: 0 = python tools/registration_check.py 2>/dev/null | grep -oE '[0-9]+ unasserted' | grep -oE '^[0-9]+' -->
+unasserted. Down from 57, from 18 on 2026-08-26, and from 11 when BUG-243 was closed by
+running each remaining file: four of them were a live codegen bug (BUG-652) that a note had
+guessed was a stale experiment, two a refusal the selfhost never ported (BUG-650). Keep it at
+zero — and note
 the number now carries an oracle, so this paragraph cannot quietly go stale the way the last
 version did.
 

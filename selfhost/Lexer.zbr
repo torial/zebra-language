@@ -89,6 +89,18 @@ class Lexer
     var lambdaParamDepth : int
     var afterLambdaParams: bool
     var lambdaStack      : List(int)   # one entry per active lambda body (its start indent depth)
+    # BUG-564: a lambda opened on a CONTINUATION line (inside a multi-line call or literal)
+    # may indent its body past that line rather than past the statement. Continuation lines
+    # never set indentDepth, so the header line's level is recorded here and decided on the
+    # first body line; lambdaRestore is the depth to return to, without a token, when the
+    # body ends.
+    var lambdaHeader     : List(int)   # header line's level, or -1 once the first body line decided
+    var lambdaRestore    : List(int)
+    # BUG-634: parenDepth + bracketDepth when the body opened. Only a line at exactly that
+    # depth is a body line; a deeper one is a continuation of a call or literal INSIDE the
+    # body and must not end a statement or move the indentation.
+    var lambdaNest       : List(int)
+    var curLineLevel     : int         # indentation level of the current physical line
     # Ensure-block context-sensitive keyword tracking
     var afterEnsureEol  : bool
     var ensureBaseDepth : int
@@ -107,6 +119,10 @@ class Lexer
         lambdaParamDepth  = 0
         afterLambdaParams = false
         lambdaStack       = List()
+        lambdaHeader      = List()
+        lambdaRestore     = List()
+        lambdaNest        = List()
+        curLineLevel      = 0
         afterEnsureEol    = false
         ensureBaseDepth   = 0
 
@@ -243,10 +259,25 @@ class Lexer
         else
             level = tabs
         var oldDepth = indentDepth
+        if lambdaStack.len > 0
+            var k = lambdaStack.len - 1
+            var hdr = lambdaHeader.at(k)
+            if hdr >= 0
+                lambdaHeader.set(k, -1)
+                # The first body line is deeper than the continuation line the lambda opened
+                # on: measure the body from that line. The level between was never emitted, so
+                # it is entered without a token and left the same way (lambdaRestore).
+                if hdr > indentDepth and level > hdr
+                    indentDepth = hdr
+                    oldDepth = hdr
+                    lambdaStack.set(k, hdr)
         while level > indentDepth
             emit(TokenKind.indent(), "", ln, 1)
             indentDepth = indentDepth + 1
         while level < indentDepth
+            if lambdaStack.len > 0 and indentDepth <= lambdaStack.at(lambdaStack.len - 1)
+                popLambda()
+                continue
             emit(TokenKind.dedent(), "", ln, 1)
             indentDepth = indentDepth - 1
         if afterEnsureEol
@@ -256,7 +287,49 @@ class Lexer
         if ensureBaseDepth > 0 and level < ensureBaseDepth
             ensureBaseDepth = 0
         while lambdaStack.len > 0 and indentDepth <= lambdaStack.at(lambdaStack.len - 1)
-            lambdaStack.remove(lambdaStack.len - 1)
+            popLambda()
+
+    def popLambda()
+        var k = lambdaStack.len - 1
+        indentDepth = lambdaRestore.at(k)
+        lambdaStack.remove(k)
+        lambdaHeader.remove(k)
+        lambdaRestore.remove(k)
+        lambdaNest.remove(k)
+
+    def pushLambda()
+        lambdaStack.add(indentDepth)
+        lambdaHeader.add(curLineLevel)
+        lambdaRestore.add(indentDepth)
+        lambdaNest.add(parenDepth + bracketDepth)
+
+    # A closer that takes the depth BELOW where an open lambda body started can only be on
+    # a body line -- a closer on its own line at the call's level pops the lambda first, in
+    # processIndentation. The parser would report "unexpected ')'" there; say what to do.
+    def checkLambdaCloser(ch: str, ln: int, cl: int) throws
+        if lambdaStack.len > 0 and parenDepth + bracketDepth <= lambdaNest.at(lambdaNest.len - 1)
+            raise ln.toString() + ":" + cl.toString() + ": error: `" + ch + "` closes the call or literal around a statement-body lambda on the lambda's own body line -- put it on a line of its own, back at the level of the line the lambda's `def(` is on"
+
+    # A line is a lambda BODY line only at the bracket depth its body opened at.
+    def inLambdaBody(): bool
+        return lambdaStack.len > 0 and parenDepth + bracketDepth == lambdaNest.at(lambdaNest.len - 1)
+
+    # The indentation level of the line at pos, without consuming it: a continuation line
+    # (no processIndentation) still needs its level known for BUG-564. Alignment inside a
+    # continuation need not be a multiple of 4, so this rounds down rather than refusing.
+    def peekLineLevel(): int
+        var i = pos
+        var tabs = 0
+        var spaces = 0
+        while i < src.len and (src[i] == c' ' or src[i] == c'\t')
+            if src[i] == c'\t'
+                tabs = tabs + 1
+            else
+                spaces = spaces + 1
+            i = i + 1
+        if spaces > 0
+            return spaces / 4
+        return tabs
 
     # -- Block comment  /# ... #/ --------------------------------------------
 
@@ -596,7 +669,12 @@ class Lexer
                     pos = pos + 3
                     emit(TokenKind.doc_string_line(), src[start..pos], ln, cl)
                     return
-                pos = pos + 1
+                # BUG-655: a string whose text starts on the opening line may still span
+                # lines; uncounted, every position after it was off by its newlines.
+                if src[pos] == c'\n'
+                    advanceNewline()
+                else
+                    pos = pos + 1
             raise line.toString() + ":1: error: string literal is never closed on this line"
 
         if pos < src.len and src[pos] == c'\n'
@@ -673,12 +751,13 @@ class Lexer
             emit(TokenKind.number_lit(), src[start..pos], ln, cl)
             return
 
+        # A suffix runs to the end of the word, so `5_uint8` or `1.5_f16` is ONE token the
+        # checker refuses by name -- not `5_u` followed by an identifier `int8`.
         if (sc == c'_' and sc1 == c'f') or sc == c'f'
             if sc == c'_'
                 pos = pos + 1
             pos = pos + 1
-            if (peek() == c'3' and peekAt(1) == c'2') or (peek() == c'6' and peekAt(1) == c'4')
-                pos = pos + 2
+            scanWhile(isIdentContinue)
             emit(TokenKind.float_lit(), src[start..pos], ln, cl)
             return
 
@@ -686,7 +765,7 @@ class Lexer
             if sc == c'_'
                 pos = pos + 1
             pos = pos + 1
-            scanWhile(isDigit)
+            scanWhile(isIdentContinue)
             emit(TokenKind.integer_lit_explicit(), src[start..pos], ln, cl)
             return
 
@@ -697,13 +776,55 @@ class Lexer
 
     # -- Operators and punctuation -------------------------------------------
 
+    # The token kind of a wrapping (`%`) or saturating (`|`) operator on `+ - *`.
+    def wrapSatKind(c: char, c1: char, assign: bool): TokenKind
+        if c1 == c'%'
+            if c == c'+'
+                if assign
+                    return TokenKind.plus_percent_equals()
+                return TokenKind.plus_percent()
+            if c == c'-'
+                if assign
+                    return TokenKind.minus_percent_equals()
+                return TokenKind.minus_percent()
+            if assign
+                return TokenKind.star_percent_equals()
+            return TokenKind.star_percent()
+        if c == c'+'
+            if assign
+                return TokenKind.plus_bar_equals()
+            return TokenKind.plus_bar()
+        if c == c'-'
+            if assign
+                return TokenKind.minus_bar_equals()
+            return TokenKind.minus_bar()
+        if assign
+            return TokenKind.star_bar_equals()
+        return TokenKind.star_bar()
+
     def scanOperator(ln: int, cl: int) throws
         var c  = peek()
         var c1 = peek1()
 
+        # `<<|=` (saturating shift-assign) is the only four-character operator.
+        if pos + 3 < src.len and c == c'<' and c1 == c'<' and src[pos + 2] == c'|' and src[pos + 3] == c'='
+            pos = pos + 4
+            emit(TokenKind.double_lt_bar_equals(), "<<|=", ln, cl)
+            return
+
         # Three-character compound operators
         if pos + 2 < src.len
             var c2 = src[pos + 2]
+            # Wrapping / saturating compound assignment and `<<|`: before every two-character
+            # operator, so `+%=` is not read as `+%` `=` and `<<|` is not `<<` `|`.
+            if (c == c'+' or c == c'-' or c == c'*') and (c1 == c'%' or c1 == c'|') and c2 == c'='
+                pos = pos + 3
+                emit(wrapSatKind(c, c1, true), src[pos - 3..pos], ln, cl)
+                return
+            if c == c'<' and c1 == c'<' and c2 == c'|'
+                pos = pos + 3
+                emit(TokenKind.double_lt_bar(), "<<|", ln, cl)
+                return
             if c == c'/' and c1 == c'/' and c2 == c'='
                 pos = pos + 3
                 emit(TokenKind.slashslash_equals(), "//=", ln, cl)
@@ -728,6 +849,12 @@ class Lexer
                 return
 
         # Two-character compound operators
+        # `+% -% *%` wrap, `+| -| *|` saturate. No existing operator starts with these
+        # pairs (`%` and `|` are not prefix operators), measured over ~10,700 files.
+        if (c == c'+' or c == c'-' or c == c'*') and (c1 == c'%' or c1 == c'|')
+            pos = pos + 2
+            emit(wrapSatKind(c, c1, false), src[pos - 2..pos], ln, cl)
+            return
         if c == c'+' and c1 == c'+'
             pos = pos + 2
             emit(TokenKind.plusplus(), "++", ln, cl)
@@ -900,6 +1027,7 @@ class Lexer
             emit(TokenKind.lparen(), "(", ln, cl)
             return
         if c == c')'
+            checkLambdaCloser(")", ln, cl)?
             if inLambdaParams and parenDepth == lambdaParamDepth
                 inLambdaParams    = false
                 afterLambdaParams = true
@@ -911,6 +1039,7 @@ class Lexer
             emit(TokenKind.lbracket(), "[", ln, cl)
             return
         if c == c']'
+            checkLambdaCloser("]", ln, cl)?
             if bracketDepth > 0
                 bracketDepth = bracketDepth - 1
             emit(TokenKind.rbracket(), "]", ln, cl)
@@ -920,6 +1049,7 @@ class Lexer
             emit(TokenKind.lcurly(), "{", ln, cl)
             return
         if c == c'}'
+            checkLambdaCloser("}", ln, cl)?
             if bracketDepth > 0
                 bracketDepth = bracketDepth - 1
             emit(TokenKind.rcurly(), "}", ln, cl)
@@ -963,11 +1093,11 @@ class Lexer
                         var ln = line
                         var cl = col()
                         advanceNewline()
-                        if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or lambdaStack.len > 0
+                        if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or inLambdaBody()
                             emit(TokenKind.eol(), "\n", ln, cl)
                             if afterLambdaParams
                                 afterLambdaParams = false
-                                lambdaStack.add(indentDepth)
+                                pushLambda()
                         atLineStart = true
                         continue
                     on LineKind.whitespace_only
@@ -998,7 +1128,8 @@ class Lexer
                         atLineStart = true
                         continue
                     on LineKind.has_content
-                        if (parenDepth == 0 and bracketDepth == 0) or lambdaStack.len > 0
+                        curLineLevel = peekLineLevel()
+                        if (parenDepth == 0 and bracketDepth == 0) or inLambdaBody()
                             processIndentation()?
 
             var c = src[pos]
@@ -1011,11 +1142,11 @@ class Lexer
                 var ln = line
                 var cl = col()
                 advanceNewline()
-                if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or lambdaStack.len > 0
+                if (parenDepth == 0 and bracketDepth == 0) or afterLambdaParams or inLambdaBody()
                     emit(TokenKind.eol(), "\n", ln, cl)
                     if afterLambdaParams
                         afterLambdaParams = false
-                        lambdaStack.add(indentDepth)
+                        pushLambda()
                 atLineStart = true
                 continue
 

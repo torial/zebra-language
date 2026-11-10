@@ -1,0 +1,29 @@
+# BUG-649: a static container field -- with an initializer, without one, or built by a call --
+# is assigned at run time in _initModuleVars (since containers are references, its constructor
+# allocates and cannot run at comptime; one with no initializer was left undefined).
+use bug649_static_container_lib exposing Registry
+
+class Counter
+    var n: int = 0
+    def bump()
+        .n += 1
+
+class Tally
+    static var marks: List(int) = [7]
+
+class Box
+    static var shared = Counter()
+    static var log: StringBuilder = StringBuilder()
+    static var limit: int = 3
+    static var names: HashMap(str, int)
+
+def main()
+    Box.shared.bump()
+    Box.shared.bump()
+    Box.log.append("ab")
+    Box.names.set("k", Box.limit)
+    Tally.marks.add(8)
+    var r = Registry()
+    r.register("a")
+    r.register("b")
+    print("bug649: ${Box.shared.n} ${Box.log.toString()} ${Box.names.get("k")!} ${Tally.marks.len} ${Tally.marks.at(0)} ${Registry.instances.len} ${Registry.count}")

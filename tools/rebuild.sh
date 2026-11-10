@@ -238,7 +238,10 @@ if [[ -x "$ZEXE" ]]; then
         # finished build from an interrupted one. CONTENT, not mtime: bootstrap_check
         # restores selfhost/*.zig byte-identically, so any timestamp-based check false-
         # positives after every round-trip gate (it did, twice, and blocked the tier).
-        cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1 > zig-out/.selfhost-stamp 2>/dev/null || true
+        # LC_ALL=C pins the GLOB ORDER, which follows the collation: a stamp written
+        # under en_US.UTF-8 and checked with LANG unset hashed the same bytes in a
+        # different order and doctor called a current build stale (2026-11-03).
+        (LC_ALL=C; cat selfhost/*.zig 2>/dev/null | sha1sum | cut -d' ' -f1) > zig-out/.selfhost-stamp 2>/dev/null || true
     else
         fail "zebra.exe was built but cannot run a hello-world — something is badly wrong"
     fi

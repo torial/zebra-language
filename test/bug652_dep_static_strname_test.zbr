@@ -1,0 +1,14 @@
+# BUG-652: a static method of a class from another module, named like a str
+# builtin (isNumeric, trim, upper, contains), took the STRING lowering --
+# `std.mem.trim(u8, Util, ...)` -- because the class name was untyped there.
+# Both spellings: the exposed name and the module-qualified one.
+use bug652_dep_static_lib exposing Util
+
+def main()
+    var a = Util.isNumeric(5)
+    var b = Util.trim(5)
+    var c = Util.upper(5)
+    var d = Util.contains(7)
+    var e = bug652_dep_static_lib.Util.trim(10)
+    assert Util.isNumeric(9)
+    print("bug652: ${a} ${b} ${c} ${d} ${e}")

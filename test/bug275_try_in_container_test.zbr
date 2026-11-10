@@ -35,7 +35,7 @@ def viaListLit(): int
     return a.len
 
 def viaArrayLit(): int
-    var a = @[risky()?, 2]
+    var a = [risky()?, 2]
     return a.len
 
 # the opposite direction: no `?` anywhere, must NOT become an error union

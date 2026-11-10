@@ -1,0 +1,13 @@
+# Literal suffixes (2026-11-05): the values at each bound compile and print exactly.
+def main()
+    print(250_u8 + 5)
+    print(0xFFFFFFFFFFFFFFFF_u)
+    print(-9223372036854775808_i64)
+    print(9223372036854775807_i64)
+    print(1_000.5)
+    print(100_i8 * 1_i8)
+    print(-128_i8)
+    print(65535_u16)
+    print(-32768_i16 + 0_i16)
+    print(1_i128 + 2)
+    print("int_suffix_bounds: OK")

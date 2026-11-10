@@ -1,0 +1,7 @@
+# @boundary rejects 300_u8 does not fit in 'byte' (0..255), the type its suffix gives it
+#
+# A suffixed literal must fit its OWN type. Zig refuses `@as(u8, 300)`; Zebra refuses it
+# first, at the literal. Written before the feature was built (2026-11-05).
+def main()
+    var b = 300_u8
+    print(b)

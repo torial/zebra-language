@@ -1,0 +1,7 @@
+# BUG-680: a member DateTime does not have is refused in the front end, naming the real one.
+# Before the fix this passed `-c` and failed inside zig: "no field named 'epochMs' in struct
+# 'zebra_rt._DateTime'" (the book's 09_multiple_mixins, found validating it against rc9).
+
+def main()
+    var t = DateTime.now()
+    print(t.epochMs)

@@ -1,0 +1,6 @@
+# BUG-643: a statement ends at the end of its line. `var x = 5 6` bound 5 and then ran
+# `6` as a statement of its own -- accepted, and the 6 silently discarded.
+
+def main()
+    var x = 5 6
+    print(x)

@@ -1,0 +1,5 @@
+# BUG-017: the same through the compiler's own hardcoded AST field names
+# (isKnownListField: `args`, `message`, `params`...) -- no class in the program at all.
+def main()
+    var args = zig"@as([]const u8, &[_]u8{97, 98})"
+    print("${args.len}")

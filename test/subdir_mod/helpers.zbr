@@ -1,0 +1,3 @@
+# A sibling of geom.zbr, reached by a plain `use helpers` from inside test/subdir_mod/.
+def mul(a: int, b: int): int
+    return a * b

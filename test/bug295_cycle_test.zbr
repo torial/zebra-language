@@ -8,7 +8,10 @@
 # THE RULE IS NOW EXPLICIT (Sean's framing, 2026-08-18): a module is compiled ONCE
 # and the FIRST IMPORT WINS, so the second module in a cycle sees a PARTIAL view of
 # the first. That is fine for functions and types and UNDEFINED for module-level
-# state, since no initialisation order satisfies both directions.
+# state, since no initialisation order satisfies both directions. (Answered 2026-10-29:
+# a computed module var in a cycle is initialised on first use --
+# bug295_lazy_init_test.zbr -- and initialisers that need each other stop the program
+# naming the chain -- bug295_init_cycle_test.zbr.)
 #
 # It is a WARNING, not a refusal: a cycle is currently undefined rather than wrong,
 # and `MultiCompiler.cycle_is_error` flips it to a hard error in one line. Both

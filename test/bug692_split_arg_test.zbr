@@ -1,0 +1,91 @@
+# BUG-692: `s.split(sep)` / `s.lines()` lower to a LAZY Zig SplitIterator. Where a
+# `List(str)` is wanted it must be collected. The var-init (BUG-092) and return (BUG-350)
+# positions did that; an inline split handed to a constructor, a function or a method
+# argument, assigned to a List(str) local, field or container element, or added to a
+# List(List(str)), reached zig as
+# "expected type 'List(str)', found 'mem.SplitIterator(u8,.sequence)'".
+# Each position below failed that way on the compiler before the fix (2026-11-09).
+# A `for` over a split must stay lazy -- it never builds a list.
+
+class Rec
+    var name: str
+    var tags: List(str)
+
+    cue init(name: str, tags: List(str))
+        this.name = name
+        this.tags = tags
+
+    def addAll(xs: List(str)): int
+        for x in xs
+            this.tags.add(x)
+        return this.tags.len()
+
+    def reset(s: str)
+        this.tags = s.split(",")
+
+class Index
+    var by: HashMap(str, List(str))
+
+    cue init()
+        this.by = HashMap(str, List(str))()
+
+    def put(k: str, s: str)
+        this.by[k] = s.split(",")
+
+def count(xs: List(str)): int
+    return xs.len()
+
+def named(label: str, xs: List(str)): str
+    return label + ":" + xs.len().toString()
+
+def main()
+    var fails: int = 0
+
+    var r = Rec("warm", "a*b*c".upper().split("*"))     # constructor argument
+    if r.tags.len() <> 3 or r.tags[2] <> "C"
+        fails += 1
+        print("FAIL ctor arg")
+    if count("a,b".split(",")) <> 2                     # function argument
+        fails += 1
+        print("FAIL fn arg")
+    if r.addAll("x y".split(" ")) <> 5                  # method argument
+        fails += 1
+        print("FAIL method arg")
+    if named(xs: "p\nq\nr".lines(), label: "L") <> "L:3"   # named argument, lines()
+        fails += 1
+        print("FAIL named arg")
+
+    var xs: List(str) = "a b".split(" ")
+    xs = "p q r".split(" ")                             # assignment to a local
+    if xs.len() <> 3
+        fails += 1
+        print("FAIL local assign")
+    r.reset("1,2")                                      # assignment to this.field
+    if r.tags.len() <> 2
+        fails += 1
+        print("FAIL this.field assign")
+    r.tags = "u v w x".split(" ")                       # assignment to obj.field
+    if r.tags.len() <> 4 or r.tags[3] <> "x"
+        fails += 1
+        print("FAIL obj.field assign")
+
+    var m = HashMap(str, List(str))()
+    m["k"] = "a,b,c".split(",")                         # map element
+    var ll = List(List(str))()
+    ll.add("x y".split(" "))                            # List.add
+    ll[0] = "p q r s".split(" ")                        # list element
+    var ix = Index()
+    ix.put("z", "1,2")                                  # a field map's element
+    if m["k"].len() <> 3 or ll[0].len() <> 4 or ix.by["z"].len() <> 2
+        fails += 1
+        print("FAIL element store")
+
+    var n: int = 0
+    for t in "u,v,w".split(",")                         # stays lazy
+        n += 1
+    if n <> 3
+        fails += 1
+        print("FAIL lazy for")
+
+    if fails == 0
+        print("bug692: OK")

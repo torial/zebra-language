@@ -1,0 +1,16 @@
+# BUG-237 helper: unions imported by bug237_qualified_union_test and NOT exposed there,
+# so every reference to them is module-qualified.
+
+union Expr
+    num: int
+    neg: ^Expr
+
+union Part
+    lit: str
+    expr_: ^Expr
+
+def mkExpr(): Part
+    return Part.expr_(Expr.neg(Expr.num(5)))
+
+def mkLit(): Part
+    return Part.lit("hi")
