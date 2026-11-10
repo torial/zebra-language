@@ -2700,6 +2700,18 @@ console (rc=3), the documented healthy outcome. Since `gui-scaffold` is the repo
 automated GUI coverage, half of it silently not running takes that number back to zero —
 read its leg 2 line rather than its exit code until BUG-298 is fixed.
 
+**DAILY tier 2026-11-09 (the 0.9.0 release, tagged `v0.9.0_zig0.17` on `5e41a35`): 60/60 PASS
+in ONE invocation at JOBS=2, ~1h44m, nothing pinned.** smoke 1058/1058 (infra-retries=0),
+round-trip byte-identical, `boundary` 45/0, `cli-surface` 81, `release-mode` all checks,
+`output_sweep` 466 identical (all cache misses: the version string moves every emitted
+runtime), `full_sweep` / `examples_sweep` / `divergence` 0 regressions, `regen-recover` from
+`5e41a35`, `gramgen` 0/0, `leakgen` 100/0, `libui-pin-build`, `node-addon`. Run at
+BelowNormal priority beside another heavy workload on the host. The daily on the bug-fix commit
+before it (`ac60e15`, BUG-692/693) was ASSEMBLED: four reds under an afternoon when the host ran
+5-10x slow at low CPU (smoke killed at the 5400 s ceiling, stdin-read 1.63 s against 1.5,
+release-mode's GUI build producing no app, and a corpus count I had not bumped), each green
+standalone.
+
 **DAILY tier 2026-11-05 (the rc9 release, tagged `v0.9.0-rc9_zig0.17` on `dc39c0c`): 59/60 in
 ONE invocation at JOBS=2, then `output_sweep` green standalone -- ASSEMBLED.** smoke 1031/1031,
 round-trip byte-identical, `full_sweep` / `examples_sweep` / `divergence` 0 regressions,
