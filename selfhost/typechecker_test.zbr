@@ -4,7 +4,7 @@
 # Phase 16b adds typeFromRef, buildModuleTypes, and inferExpr tests — AST is
 # hand-constructed (no Parser dependency) to keep the test file self-contained.
 
-use TypeChecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue
+use TypeChecker exposing Type_, ClassTypes, ModuleTypes, CrossModuleType, typeFromName, typeFromRef, buildModuleTypes, InferCtx, inferExpr, narrowPayloadFromOnValue, semverOrder
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, Modifiers, ParamMode, TypeRef, NamedTypeRef, Expr, ExprIdent, ExprIntLit, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprStringLit, ExprBinary, ExprCall, ExprMember, Arg, BinaryOp, IntBase, StringKind, Span
 
 # BUG-657: FAILs are counted -- a run that only PRINTED them exited 0.
@@ -520,6 +520,17 @@ def testInferDepModuleFuncCall()
     # Since BUG-099 an unknown callee is `unresolved` (the alarm-bell type), not unknown_.
     check(inferExpr(call, ctx_nodep) is Type_.unresolved, "inferExpr(helper()) without dep_types → unresolved")
 
+# BUG-695: `zebra up` orders versions; a prefix test called 1.0.1 up to date against 1.0.10.
+def testSemverOrder()
+    check(semverOrder("1.0.1", "1.0.10_zig0.17") == -1, "semverOrder 1.0.1 < 1.0.10 (the prefix case)")
+    check(semverOrder("1.0.10", "1.0.10_zig0.17") == 0, "semverOrder equal across the _zig suffix")
+    check(semverOrder("1.0.0-dev", "0.9.0_zig0.17") == 1, "semverOrder 1.0.0-dev is newer than 0.9.0")
+    check(semverOrder("0.9.0-rc9", "0.9.0_zig0.17") == -1, "semverOrder a prerelease before its release")
+    check(semverOrder("0.9.0", "0.9.0-rc9_zig0.17") == 1, "semverOrder a release after its prerelease")
+    check(semverOrder("0.9.0-rc9", "0.9.0-rc10") == -1, "semverOrder rc9 < rc10 (numeric tail)")
+    check(semverOrder("1.0.0-dev", "1.0.0-rc1") == -1, "semverOrder dev < rc1")
+    check(semverOrder("2.0.0", "1.9.9") == 1, "semverOrder major wins")
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main()
@@ -545,6 +556,7 @@ def main()
     testNarrowPayloadFromOnValue()
     testInferModuleFuncCall()
     testInferDepModuleFuncCall()
+    testSemverOrder()
     if check_fails > 0
         print("typechecker_test: " + check_fails.toString() + " FAILED")
         sys.exit(1)

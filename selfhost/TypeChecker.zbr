@@ -2522,6 +2522,69 @@ def semverCmp(a: List(int), b: List(int)): int
         i = i + 1
     return 0
 
+# BUG-695: the ORDER of two versions, for `zebra up` -- -1 / 0 / 1. Unlike
+# semverSatisfies, a prerelease sorts BEFORE its release (1.0.0-dev < 1.0.0, 0.9.0-rc9 <
+# 0.9.0), so a development build is never offered an older release as an update. Two
+# prereleases of one release compare by tag, a trailing number as a number (rc9 < rc10).
+# A release tag's toolchain part (`0.9.0_zig0.17`) is ignored.
+def semverOrder(a: str, b: str): int
+    var x: str = semverStripZig(a)
+    var y: str = semverStripZig(b)
+    var c: int = semverCmp(semverParts(x), semverParts(y))
+    if c != 0
+        return c
+    var ta: str = semverPre(x)
+    var tb: str = semverPre(y)
+    if ta == tb
+        return 0
+    if ta == ""
+        return 1
+    if tb == ""
+        return -1
+    return semverPreCmp(ta, tb)
+
+def semverStripZig(v: str): str
+    var z: int = v.indexOf("_zig")
+    if z >= 0
+        return v.substring(0, z).trim()
+    return v.trim()
+
+def semverPre(v: str): str
+    var dash: int = v.indexOf("-")
+    if dash >= 0
+        return v.substring(dash + 1, v.len)
+    return ""
+
+# "rc9" vs "rc10": the alphabetic stem as text, then the trailing digits as a number.
+def semverPreCmp(a: str, b: str): int
+    var ka: int = semverDigitsStart(a)
+    var kb: int = semverDigitsStart(b)
+    var sa: str = a.substring(0, ka)
+    var sb: str = b.substring(0, kb)
+    if sa != sb
+        if sa < sb
+            return -1
+        return 1
+    var na: int = 0
+    var nb: int = 0
+    var pa: int? = a.substring(ka, a.len).tryInt()
+    if pa as v
+        na = v
+    var pb: int? = b.substring(kb, b.len).tryInt()
+    if pb as v
+        nb = v
+    if na < nb
+        return -1
+    if na > nb
+        return 1
+    return 0
+
+def semverDigitsStart(s: str): int
+    var k: int = s.len
+    while k > 0 and "0123456789".contains(s.substring(k - 1, k))
+        k = k - 1
+    return k
+
 # true when the installed version is inside the range (the spec is assumed well-formed;
 # semverSpecOk gates it).
 def semverSatisfies(installed: str, spec: str): bool
@@ -5410,6 +5473,19 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                     targ_names.add("")
                             checkGenericConstraints(ctx, gcname, targ_names, gid.span)
                             return Type_.named(gcname)
+                        if gcname == "HashMap" and gc.args.len != 2
+                            # BUG-694: `HashMap(int)()` emitted `_ZbrAutoMap(i64)` and zig refused
+                            # it ("local variable is never mutated", at the declaration). The
+                            # constructor takes the key AND value types; an annotated
+                            # `var m: HashMap(K, V) = HashMap()` is a different form (no call of
+                            # a call) and is not reached here.
+                            var hm_v: str = "V"
+                            if gc.args.len == 1
+                                if gc.args.at(0).value is Expr.ident as hm_vid
+                                    hm_v = hm_vid.name
+                            ctx.addErr(ctx.file, gid.span.line, gid.span.col,
+                                       "HashMap(...)() takes two type arguments, the key and the value: write `HashMap(str, " + hm_v + ")()` (got " + gc.args.len.toString() + ")")
+                            return Type_.unknown_
                         if gcname == "HashMap" and gc.args.len == 2
                             # a nested value type (`HashMap(str, List(int))()`) goes through
                             # typeArgToType like List's does (2026-09-24; it was ident-only)

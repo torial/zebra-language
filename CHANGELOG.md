@@ -29,6 +29,12 @@ confirmed via `tools/bootstrap_check.sh`.
   the record of what the runtime made while it was open, freed at the block's exit -- and `<<-`
   copies a value out of it; `sys.memStats()` is mapped (arenaBytes is the collector's heap).
   Surface: one flag added (`--no-gc`), none removed. docs/design/memory_model.md §6c.
+- **`zebra up` orders versions** (BUG-695). It decided "up to date" by a prefix test, so an
+  installed 1.0.1 was up to date against 1.0.10, and a 1.0.0-dev build was offered 0.9.0 as an
+  update. A prerelease now sorts before its release, `rc9` before `rc10`, and a build newer
+  than the latest release says so and changes nothing.
+- **A one-argument `HashMap(V)()` is refused at `-c`** (BUG-694), naming `HashMap(str, V)()`;
+  it passed the front end and failed inside zig.
 
 ---
 

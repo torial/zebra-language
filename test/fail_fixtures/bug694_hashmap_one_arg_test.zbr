@@ -1,0 +1,6 @@
+# BUG-694: a one-argument `HashMap(V)()` passed the front end and failed inside zig
+# ("local variable is never mutated"). It is refused at -c, naming the two-argument form.
+def main()
+    var m = HashMap(int)()
+    m["k"] = 3
+    print(m["k"])

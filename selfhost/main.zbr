@@ -45,7 +45,7 @@ use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt,
 use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, addNativeZigUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, setCensusHost, censusOn, setSourceRoot
 use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
-use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef
+use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef, semverOrder
 use Checker exposing runCheck
 use Lexer
 use Token exposing TokenKind
@@ -3555,8 +3555,16 @@ def runUp(check_only: bool, want: str) throws
     # zebra-<ver>-<os>-<arch>.<ext>  ->  <ver>
     var latest: str = asset.substring(6, asset.len - suffix.len)
     var installed: str = zig"_zbr_version"
-    var uptodate: bool = latest.startsWith(installed)
-    print("zebra up: installed " + installed + ", latest " + latest + (if(uptodate, " -- up to date", " -- update available")))
+    # BUG-695: an ORDER, not a prefix test -- `startsWith` called 1.0.1 up to date against
+    # 1.0.10, and offered a 1.0.0-dev build the older 0.9.0 as an update.
+    var order: int = semverOrder(installed, latest)
+    var uptodate: bool = order >= 0
+    var verdict: str = " -- update available"
+    if order == 0
+        verdict = " -- up to date"
+    else if order > 0
+        verdict = " -- newer than the latest release (a development build?); nothing to update"
+    print("zebra up: installed " + installed + ", latest " + latest + verdict)
     if check_only or (uptodate and want == "")
         return
 

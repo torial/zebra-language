@@ -775,6 +775,10 @@ smoke_run test/build_declarative_test.zbr "build declarative: ok"
 smoke_run test/build_requires_test.zbr "build requires: ok"
 smoke_tc_fail test/fail_fixtures/build_requires_rejected_test.zbr \
     "requires Zebra ^99.0 but this compiler is"
+# BUG-694: a one-argument HashMap(V)() is refused at -c, with its column, naming the
+# two-argument form -- it used to pass the front end and fail inside zig.
+smoke_tc_fail test/fail_fixtures/bug694_hashmap_one_arg_test.zbr \
+    "bug694_hashmap_one_arg_test.zbr:4:13: error: HashMap(...)() takes two type arguments, the key and the value"
 
 # List(^T).add(val) auto-boxing: struct values heap-boxed when stored in List(^T).
 smoke test/list_ref_autobox_test.zbr

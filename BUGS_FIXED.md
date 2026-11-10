@@ -6,6 +6,50 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-695: `zebra up` compared versions by prefix, so 1.0.1 was "up to date" against 1.0.10 -- FIXED 2026-11-10
+- `runUp` in `selfhost/main.zbr` decides "up to date" with `latest.startsWith(installed)`,
+  where `latest` is the asset's `<ver>_zig0.17` and `installed` is `_zbr_version`. A prefix is
+  not a version comparison: an installed `1.0.1` against a latest `1.0.10_zig0.17` reports
+  "up to date"; an installed `0.9.0` against `0.9.0-rc9_zig0.17` would too; and a source build
+  of `1.0.0-dev` (main since 2026-11-09) is told the older `0.9.0` is "update available" -- an
+  offer to downgrade. Only `--check` reaches the comparison outside an install layout (a real
+  `zebra up` refuses unless the binary sits in `.../current`), so today nobody is downgraded;
+  the 1.0.x patch case is the one that will bite.
+- Fix: strip the `_zig...` suffix and compare with the semver helpers `b.requires` already
+  uses (`semverParts` / `semverCmp`, TypeChecker.zbr), with a prerelease ordered BEFORE its
+  release (`1.0.0-dev` < `1.0.0`, unlike `requires`, which deliberately lets a prerelease
+  satisfy its release). Say "newer than latest" when installed > latest, rather than offering
+  the older one. Factor the comparison into a pure function a fixture can call without the
+  network.
+- Control: 1.0.1 vs 1.0.10 -> update available; 1.0.10 vs 1.0.10 -> up to date; 1.0.0-dev
+  vs 0.9.0 -> newer than latest; 0.9.0-rc9 vs 0.9.0 -> update available.
+- **Fixed 2026-11-10:** `semverOrder` (TypeChecker.zbr, beside the `requires` helpers) orders two
+  versions, a prerelease before its release, `rc9 < rc10` numerically, the `_zig...` tag part
+  ignored; `runUp` prints "up to date", "update available" or "newer than the latest release"
+  and never offers an older release without `--to`. Pinned by eight assertions in
+  `selfhost/typechecker_test.zbr` (smoke); red-checked by making the prerelease tag invisible
+  (four of them fail).
+
+---
+
+### BUG-694: a one-argument `HashMap(V)()` passed the front end and failed inside zig -- FIXED 2026-11-10
+- Found while probing BUG-692. `var m = HashMap(int)(); m["k"] = 3` emits
+  `var m = _zbr_new(_ZbrAutoMap(i64))` and zig refuses: `local variable is never mutated`
+  (reported at the declaration). The documented spelling is `HashMap(K, V)()` (QUICKSTART
+  "HashMap -- construct with HashMap(K,V)()"), and it works; no corpus file uses one argument.
+- Fix: refuse a one-argument `HashMap(...)()` at `-c`, naming `HashMap(str, V)()` (the
+  annotated `var m: HashMap(...) = HashMap()` form is separate and fine). Measure the corpus,
+  zebra-ide and the GameEngine first.
+- Control: the refusal fires with a column; `HashMap(str, int)()` and `HashMap()` under an
+  annotation still build.
+- **Fixed 2026-11-10:** refused at `-c` in inferExpr's generic-constructor arm, at the type's
+  column, naming `HashMap(str, V)()` with the user's V. Measured first: no one-argument form in
+  this repo, zebra-ide or the GameEngine (one hit, a comment). Fixture
+  `test/fail_fixtures/bug694_hashmap_one_arg_test.zbr` (`smoke_tc_fail`); the pre-fix compiler
+  passes it at `-c` (rc 0). Controls: `HashMap(str, int)()` and an annotated `HashMap()` build.
+
+---
+
 ### BUG-693: `CodeEditor.sci` / `sciStr` did not build on the default (stub) backend -- FIXED 2026-11-09
 
 - **Found by:** reading zebra-ide's CI, 2026-11-09: its `check` workflow had been red against
