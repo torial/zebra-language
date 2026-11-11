@@ -1578,6 +1578,10 @@ smoke_run test/bug613_bindings_ok_test.zbr "bug613b: 2 3 6 1 3 106 4 10"
 smoke_run test/bug616_sortby_keys_test.zbr "bug616: cab bac abc abc"
 smoke_run test/bug618_intern_program_arena_test.zbr "bug618: tick 1999 | made-inside-2000 | made-inside-2000"
 smoke_run test/bug617_scoped_arena_frees_test.zbr "bug617: OK"
+# BUG-696: a scoped block is backed by smp_allocator, not one OS call per chunk; under
+# --single-threaded (where SmpAllocator does not compile) it keeps the page allocator.
+smoke_run test/bug696_scoped_backing_test.zbr "bug696: OK smp"
+smoke_run_flag test/bug696_scoped_backing_test.zbr --single-threaded "bug696: OK page"
 smoke_run test/hashmap_clear_test.zbr "hashmap_clear: 0 1 3 1 seven none"
 smoke_run test/float_round_rule_test.zbr "float_round: 2.67 0.12 2 -2 1.4 2.67 2.67e0"
 smoke_run test/float_round_rule_test.zbr "float_round_halves: 0 2 -0.00 10.00 1.00e1"

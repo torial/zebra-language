@@ -59,8 +59,12 @@ zig build test                               # run the test suite
 zbuild.bat                                   # convenience wrapper (Windows)
 ```
 
-Module resolution: `use module_name` is looked up relative to the input file,
-then in `selfhost/`, `test/`, and stdlib paths.
+Module resolution: `use module_name` is looked up beside the importing file (`.zbr`, then
+`.c`, a prebuilt library, `.zig`), and a `.zbr` also on `--module-path`. Nothing else:
+there is no `selfhost/` or `test/` search, so a `test/` file cannot `use` a compiler module
+(BUG-695's pin lives on `selfhost/typechecker_test.zbr` for that reason). Names are
+case-sensitive on every OS (BUG-450); a file differing only in case does not stop the
+search, and is named in the "module not found" message only after every place has failed.
 
 ## Rebuild + gate runners (start here)
 
@@ -3734,7 +3738,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **970** <!-- doc-gen: 970 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **971** <!-- doc-gen: 971 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

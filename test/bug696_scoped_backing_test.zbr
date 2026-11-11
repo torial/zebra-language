@@ -1,0 +1,37 @@
+# BUG-696: a scoped `allocate Arena()` / `allocate Debug()` block got its chunks straight from
+# the page allocator -- one VirtualAlloc and one VirtualFree (mmap / munmap) per chunk -- so
+# the documented way to bound a loop's memory cost about ten times the loop's own work
+# (Fable's 2026-11-10 measurement: 9.9 -> 1.1 ms a frame once the backing was malloc-shaped).
+# It is backed by std.heap.smp_allocator now, which keeps small freed blocks on per-thread
+# freelists and still hands blocks of 64 KiB and up back to the OS. Under `--single-threaded`
+# SmpAllocator refuses to compile, so that build keeps the page allocator.
+#
+# Registered twice: plain (must say smp) and with --single-threaded (must say page). The
+# check names the allocator by its vtable, because timing is not a witness on a shared host;
+# the time and peak-memory measurement is recorded in BUGS_FIXED.md.
+
+def work(k: int): int
+    var s = "abcdefghij".repeat(50).upper()
+    var parts = s.split("E")
+    return parts.len + k % 3
+
+def main()
+    var single: bool = zig"builtin.single_threaded"
+    var is_smp: bool = zig"(if (builtin.single_threaded) false else _zbr_rt._zbr_scoped_backing().vtable == std.heap.smp_allocator.vtable)"
+    var is_page: bool = zig"(_zbr_rt._zbr_scoped_backing().vtable == std.heap.page_allocator.vtable)"
+    var total = 0
+    var tag = ""
+    var k = 0
+    while k < 2000
+        allocate Arena()
+            total += work(k)
+            tag <<- "t${k}"
+        k += 1
+    assert total == 2000 * 51 + 1999, "same work in every block (${total})"
+    assert tag == "t1999", "the copy-out survived its block (${tag})"
+    if single
+        assert is_page, "--single-threaded: a scoped block must stay on the page allocator"
+        print("bug696: OK page")
+    else
+        assert is_smp, "a scoped block must be backed by smp_allocator, not the page allocator"
+        print("bug696: OK smp")

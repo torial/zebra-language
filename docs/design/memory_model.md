@@ -102,6 +102,9 @@ measured.
    allocator (the page or smp allocator), not with `_allocator`; red-check with variant C
    above, which must go flat. Same for `Debug()`. Without this the language's only tool for
    bounded memory does not work.
+   **The backing moved to smp_allocator 2026-11-10 (BUG-696):** the page allocator made one OS
+   call per chunk, ~15x the work of a block per small item; smp keeps the bound (twenty ~20 MB
+   blocks peak at 34 MB either way). `--single-threaded` keeps the page allocator.
 2. **A field store must not intern (BUG-618, found by Fable).** Codegen wraps every `str`
    stored into a class field in `_intern(...)` -- `_self.name = _intern(name)`,
    `guiProps().text = _intern(text)`, `attributes.put(_intern(key), _intern(value))`: 89 + 19
@@ -115,6 +118,19 @@ measured.
    literals only. Under counting the rule disappears (the field holds a count). Engine witness:
    the plain run's intern-pool count flat over 60 s. This is the live leak in every Roblox port.
    **(a) DONE 2026-10-22:** 50,000 field stores 202 MB -> 5.2 MB; (b) remains.
+   **A container add interns too (measured 2026-11-10):** `xs.add(s)` on a `List(str)` emits
+   `_intern(s)`, so a block-local list of dynamic strings escapes the block: twenty
+   `allocate Arena()` blocks each adding 400,000 distinct strings peaked at 998 MB with either
+   scoped backing, where the same blocks holding ints peak at 34 MB. A scoped block bounds
+   nothing the pool takes.
+   **Decided 2026-11-10 (Sean): the pool is bounded through the collector, as a WEAK intern
+   table** -- an entry dies when nothing else references its string -- and later work builds
+   from that. An LRU with a size knob was considered and rejected for the pool as it stands:
+   the pool OWNS the bytes every field and list element points at, so evicting by recency frees
+   live strings (dangling slices; silent garbage under `--release`), and the program arena
+   cannot free one string anyway. Recency is not liveness. An LRU stays possible later as a
+   SHARING policy over counted strings (eviction drops one count, never the bytes).
+   Per-`allocate`-block pools (escape analysis) were also offered and not chosen.
    **(b) does not bound anything on its own (Opus, 2026-11-07, answering Fable's F64 server
    soak: 2,987 to 11,274 interned strings an hour).** On the arena path a copy-at-store frees
    nothing unless the OLD field value is freed on overwrite, and that needs to know no local,

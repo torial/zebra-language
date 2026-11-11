@@ -86,9 +86,17 @@ pub fn _initAllocator(a: std.mem.Allocator) void {
 // Not `_allocator` for a nested block either: inside an outer block that is the outer scoped
 // arena. A host that installed its own allocator (`--library-mode`) gets that one back: the
 // host owns the accounting, and it frees.
+// BUG-696: and not the page allocator either, which it was until 2026-11-10 -- that is a
+// VirtualAlloc and a VirtualFree (mmap / munmap) per arena chunk, so a block per item cost
+// several times the item's own work. smp_allocator keeps small freed blocks on per-thread
+// freelists for reuse and still maps blocks of 64 KiB and up straight from the OS and hands
+// them back on free, so a block still bounds memory. SmpAllocator asserts at comptime that
+// the build is multi-threaded, so `--single-threaded` keeps the page allocator (the
+// `comptime` keeps the other branch from being analysed at all).
 pub fn _zbr_scoped_backing() std.mem.Allocator {
     if (_host_alloc_set) return _host_alloc;
-    return std.heap.page_allocator;
+    if (comptime @import("builtin").single_threaded) return std.heap.page_allocator;
+    return std.heap.smp_allocator;
 }
 // BUG-356: a shared library (`zebra --shared`) has no main() to hand it an Io, so `_io`
 // stayed `undefined` and the first File/print/sleep inside the library faulted. The

@@ -35,6 +35,11 @@ confirmed via `tools/bootstrap_check.sh`.
   than the latest release says so and changes nothing.
 - **A one-argument `HashMap(V)()` is refused at `-c`** (BUG-694), naming `HashMap(str, V)()`;
   it passed the front end and failed inside zig.
+- **`allocate Arena()` / `allocate Debug()` blocks are much cheaper** (BUG-696). Their chunks
+  came from the OS one call at a time; they come from a thread-safe general allocator now,
+  which still returns large blocks to the OS. One block per item with small temporaries:
+  9.8 s -> 0.66 s over 200,000 items, same peak memory. `--single-threaded` builds are
+  unchanged.
 
 ---
 

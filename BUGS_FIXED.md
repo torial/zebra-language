@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-696: a scoped `allocate Arena()` block made one OS call per chunk -- a block per item cost ~15x the item's work -- FIXED 2026-11-10 (found 2026-11-10 by Fable)
+- `_zbr_scoped_backing()` returned `std.heap.page_allocator` (BUG-617 chose it because it
+  FREES), so every arena chunk of a scoped `allocate Arena()` / `allocate Debug()` block was a
+  VirtualAlloc and a VirtualFree (mmap / munmap). Fable's Boehm spike found it by accident:
+  with the collector behind the runtime, `allocate Arena()` per item fell from 9.9 to 1.1 ms a
+  frame, and the collector was not why -- the backing had stopped being the page allocator.
+- **Fixed:** the backing is `std.heap.smp_allocator` (no libc, so the fast `-fno-llvm` path
+  still links nothing; thread-safe). It keeps blocks under 64 KiB on per-thread freelists for
+  reuse and maps larger ones from the OS and unmaps them on free, so a block still bounds
+  memory. `--single-threaded` keeps the page allocator: SmpAllocator asserts at comptime that
+  the build is multi-threaded. A host's allocator (`--library-mode`) still wins.
+- **Measured** (ReleaseFast, emitted Zig built twice with only the backing line differing,
+  interleaved, order alternated, on a host at 50-86% CPU from other work): one block per item
+  with a few small temporaries, 200,000 items -- median 9.83 s -> 0.66 s, peak working set
+  5.1 MB both; a heavier item (a 2 KB string split and rebuilt), 20,000 items -- 4.28 -> 3.15 s,
+  4.4 MB both. Bounding: twenty blocks each growing a block-local `List(int)` to 2.5M -- peak
+  34 MB with either backing. Every variant printed the same output.
+- **Not fixed by this, and measured the same afternoon:** a `List(str).add` inside a block
+  interns its argument, and the intern pool copies into the PROGRAM arena, so twenty blocks
+  each adding 400,000 distinct strings to a block-local list peaked at 998 MB with either
+  backing. That is BUG-618 (b) (docs/design/memory_model.md §3 item 2), whose bound is to come
+  from the collector (a weak intern table, decided 2026-11-10), not from the scoped backing.
+- **One golden output moved, on purpose:** `allocate_debug_stats_test` now reports 5
+  allocations / 1057 bytes requested where it reported 6 / 1193 (peak live unchanged, 1032).
+  SmpAllocator can resize an arena chunk in place where the page allocator could not. The same
+  binary run with `--single-threaded` (page backing) prints the old 6 / 1193, so this is the
+  backing and nothing else. The output baseline was re-recorded for it (3 samples); no other
+  record moved.
+- Fixture `test/bug696_scoped_backing_test.zbr`, registered twice: plain must report the smp
+  allocator (by vtable -- timing is not a witness on a shared host) and `--single-threaded` the
+  page allocator. Red-checked: on the pre-fix runtime the plain leg fails its assert and the
+  single-threaded leg passes. `bug617` still passes (the program arena does not grow).
+
+---
+
 ### BUG-695: `zebra up` compared versions by prefix, so 1.0.1 was "up to date" against 1.0.10 -- FIXED 2026-11-10
 - `runUp` in `selfhost/main.zbr` decides "up to date" with `latest.startsWith(installed)`,
   where `latest` is the asset's `<ver>_zig0.17` and `installed` is `_zbr_version`. A prefix is
