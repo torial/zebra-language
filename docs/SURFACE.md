@@ -150,9 +150,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `area` `beginForm` `beginHBox` `beginMenu` `beginPanel` `beginTabPage` `beginTable` `beginTabs` `beginToolbar` `beginTree` `beginVBox` `button` `canvas` `canvasHeight` `canvasWidth` `circle` `combobox` `comboboxEditable` `drawText` `endForm` `endHBox` `endMenu` `endPanel` `endTabPage` `endTable` `endTabs` `endToolbar` `endTree` `endVBox` `every` `field` `fillCircle` `fillRect` `getDpi` `hbox` `hotkey` `indent` `inputMultiline` `line` `menuItem` `menuQuit` `menuSeparator` `minSize` `msgBox` `msgBoxError` `openFile` `openFolder` `password` `progressBar` `radio` `rect` `sameLine` `saveFile` `scaleAllSizes` `scope` `search` `selectTab` `send` `separator` `setColor` `setColorsDark` `setStyleFloat` `setVec2` `slider` `spacing` `spinbox` `tabSelected` `tableActivatedRow` `tableCheck` `tableHeadersRow` `tableNextColumn` `tableNextRow` `tableSelectedRow` `tableSetupButtonColumn` `tableSetupCheckColumn` `tableSetupColumn` `tableSetupEditColumn` `takeKey` `text` `textColored` `toggle` `tool` `toolEnabled` `toolIcon` `toolSeparator` `tooltip` `treeLeaf` `treeLeafIcon` `treeNode` `treeNodeIcon` `treePop` `unindent` `vbox`
 
-### HttpRequest (no methods; fields) (0)
+### HttpRequest (1)
 
-
+`header`
 
 ### Chan(T) (5)
 
@@ -202,7 +202,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `submit` `wait`
 
-## Namespaces (33) and static members (180; 1 namespace(s) OPEN: Math)
+## Namespaces (33) and static members (181; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
@@ -248,9 +248,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `blake3` `crc32` `fnv64` `hmac256` `hmac512` `md5` `sha256` `sha512` `xxHash64`
 
-### Http (5) <!-- genHttpCall -->
+### Http (6) <!-- genHttpCall -->
 
-`get` `json` `post` `postJson` `serve`
+`get` `json` `post` `postJson` `request` `serve`
 
 ### HttpRequest (1) <!-- genHttpRequestCall -->
 

@@ -1,0 +1,80 @@
+# Http.request -- every method, headers in both directions, a real round trip.
+#
+# The client sends; the in-process server reports what ARRIVED, through req.header(), so
+# each assertion is about the wire and not about what the client meant to send. Bounded the
+# way http_echo_test.zbr is: the server is reached by retry before anything is asserted.
+#
+# What it pins:
+#   - each of GET POST PUT DELETE PATCH HEAD OPTIONS reaches the server as itself;
+#   - a custom header arrives, and req.header() finds it in any letter case;
+#   - Authorization, Host and User-Agent are OVERRIDES of the client's own defaults --
+#     sent as extra headers they would go out twice, and the server would see the default;
+#   - `body:` without `headers:` (the common POST) and a body on PUT/PATCH/DELETE;
+#   - req.header() is nil for an absent header, and on a request built by hand.
+def describe(h: str?): str
+    if h as v
+        return v
+    return "<nil>"
+
+def handle(req: HttpRequest): HttpResponse
+    var out: str = "m=" + req.method
+    out = out + " probe=" + describe(req.header("X-Probe"))
+    out = out + " probe_lc=" + describe(req.header("x-probe"))
+    out = out + " auth=" + describe(req.header("Authorization"))
+    out = out + " host=" + describe(req.header("Host"))
+    out = out + " ua=" + describe(req.header("User-Agent"))
+    out = out + " absent=" + describe(req.header("X-Not-Sent"))
+    out = out + " body=" + req.content
+    return HttpResponse.ok(out)
+
+def main()
+    sys.go(def()
+        Http.serve(19961, handle)
+    )
+    var base: str = "http://127.0.0.1:19961/echo"
+
+    var reached: bool = false
+    var attempts: int = 0
+    while attempts < 40 and not reached
+        if Http.request("GET", base) as _r0
+            reached = true
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+    assert reached, "client reached the in-process server"
+
+    var hdrs = {"X-Probe": "p1", "Authorization": "Bearer t0ken", "Host": "p8800.api.example", "User-Agent": "zebra-probe"}
+    var g = Http.request("GET", base, headers: hdrs)
+    assert g != nil
+    print("GET: " + g!.text)
+    assert g!.status == 200
+    assert g!.text.contains("m=GET probe=p1 probe_lc=p1 auth=Bearer t0ken host=p8800.api.example ua=zebra-probe absent=<nil> body=")
+
+    var p = Http.request("POST", base, body: "hello")
+    print("POST: " + p!.text)
+    assert p!.text.contains("m=POST probe=<nil>")
+    assert p!.text.contains("auth=<nil>")
+    assert p!.text.endsWith("body=hello")
+
+    for m in ["PUT", "PATCH", "DELETE"]
+        var r = Http.request(m, base, headers: {"X-Probe": m}, body: "b-" + m)
+        print(m + ": " + r!.text)
+        assert r!.text.startsWith("m=" + m + " probe=" + m)
+        assert r!.text.endsWith("body=b-" + m)
+
+    var o = Http.request("OPTIONS", base)
+    print("OPTIONS: " + o!.text)
+    assert o!.text.startsWith("m=OPTIONS ")
+
+    # HEAD: the response has no body by definition; the status is the evidence.
+    var hd = Http.request("HEAD", base)
+    assert hd != nil
+    print("HEAD: status " + hd!.status.toString() + " text-len " + hd!.text.len.toString())
+    assert hd!.status == 200
+    assert hd!.text.len == 0
+
+    # A request built by hand has no headers at all.
+    var built = HttpRequest("GET", "/x")
+    assert built.header("Host") == nil
+
+    print("http_request: OK")

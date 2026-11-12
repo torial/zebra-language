@@ -2105,6 +2105,18 @@ smoke_run_bounded test/http_echo_test.zbr "http_test: OK" 120
 # correspondence Entry 24; the split is falsifiable (taking the wrong half of the split
 # fails the '&' assertion behaviourally, watched before landing).
 smoke_run_bounded test/query_string_test.zbr "query_string: OK" 120
+# Http.request -- every method, and headers checked as they ARRIVE (req.header on the
+# server side). Bounded like the two above. Its HEAD leg pins a 200 with an empty body
+# against Zebra's own server, which now sends a HEAD response no body.
+smoke_run_bounded test/http_request_test.zbr "http_request: OK" 120
+smoke_tc_fail test/http_request_bad_args_test.zbr "Http.request's argument 3 must be named"
+smoke_tc_fail test/http_request_bad_args_test.zbr "Http.request has no parameter 'bdy'"
+smoke_tc_fail test/http_request_bad_args_test.zbr "method \"FETCH\" is not one of"
+smoke_tc_fail test/http_request_bad_args_test.zbr "a GET request cannot carry a body"
+smoke_tc_fail test/http_request_bad_args_test.zbr "headers must be a HashMap(str, str), got HashMap(str, int)"
+smoke_tc_fail test/http_request_bad_args_test.zbr "req.header takes one argument"
+# BUG-697: Http.json / Http.postJson are typed JsonValue? -- the getters pass -c and run.
+smoke_run_bounded test/bug697_http_json_type_test.zbr "bug697: OK" 120
 # BUG-262: a native `.zig` dep must be MATERIALISED beside the emitted output -- the
 # selfhost emits to a temp dir and copied nothing there, while the bootstrap (emitting
 # beside the source) worked. The ORDERING half of the fix (a prebuilt library beats a

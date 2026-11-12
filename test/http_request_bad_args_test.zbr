@@ -1,0 +1,17 @@
+# Http.request refuses at -c what it would otherwise drop or panic on: an unnamed argument
+# past the URL, a misspelt name, a literal method outside the seven, a body on GET, a header
+# map that is not HashMap(str, str), and req.header with no name. The smoke suite greps for
+# each message.
+def h(req: HttpRequest): HttpResponse
+    var x = req.header()
+    return HttpResponse.ok("")
+
+def main()
+    var u: str = "http://127.0.0.1:9/"
+    var a = Http.request("GET", u, {"X": "1"})
+    var b = Http.request("POST", u, bdy: "x")
+    var c = Http.request("FETCH", u)
+    var d = Http.request("GET", u, body: "x")
+    var e = Http.request("get", u)
+    var f = Http.request("POST", u, headers: {"X": 1})
+    print("unreachable")

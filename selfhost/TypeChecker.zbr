@@ -2163,7 +2163,7 @@ def namespaceMembers(ns: str): str
     if ns == "Hash"
         return "|blake3|crc32|fnv64|hmac256|hmac512|md5|sha256|sha512|xxHash64|"
     if ns == "Http"
-        return "|get|json|post|postJson|serve|"
+        return "|get|json|post|postJson|request|serve|"
     if ns == "Json"
         return "|array|object|parse|parseStrict|stringify|"
     if ns == "Log"
@@ -2406,7 +2406,7 @@ def guiMethodKnown(name: str): bool
     return name == "send" or name == "text" or name == "separator" or name == "sameLine" or name == "spacing" or name == "indent" or name == "unindent" or name == "button" or name == "slider" or name == "inputMultiline" or name == "textColored" or name == "beginTable" or name == "tableSetupColumn" or name == "tableHeadersRow" or name == "tableNextRow" or name == "tableNextColumn" or name == "endTable" or name == "treeNode" or name == "treePop" or name == "setColor" or name == "setColorsDark" or name == "setStyleFloat" or name == "setVec2" or name == "scaleAllSizes" or name == "getDpi" or name == "beginHBox" or name == "endHBox" or name == "beginVBox" or name == "endVBox" or name == "beginTabs" or name == "beginTabPage" or name == "endTabPage" or name == "endTabs" or name == "tabSelected" or name == "selectTab" or name == "minSize" or name == "hotkey" or name == "takeKey" or name == "every" or name == "scope" or name == "beginPanel" or name == "toggle" or name == "field" or name == "beginMenu" or name == "menuItem" or name == "menuSeparator" or name == "menuQuit" or name == "endMenu" or name == "endPanel" or name == "tableSelectedRow" or name == "tableActivatedRow" or name == "vbox" or name == "hbox" or name == "progressBar" or name == "combobox" or name == "spinbox" or name == "radio" or name == "password" or name == "search" or name == "tableSetupCheckColumn" or name == "tableCheck" or name == "tableSetupEditColumn" or name == "tableSetupButtonColumn" or name == "beginForm" or name == "endForm" or name == "comboboxEditable" or name == "area" or name == "canvas" or name == "canvasWidth" or name == "canvasHeight" or name == "line" or name == "rect" or name == "fillRect" or name == "circle" or name == "fillCircle" or name == "drawText" or name == "beginTree" or name == "treeLeaf" or name == "endTree" or name == "treeNodeIcon" or name == "treeLeafIcon" or name == "tooltip" or name == "openFile" or name == "saveFile" or name == "openFolder" or name == "msgBox" or name == "msgBoxError" or name == "beginToolbar" or name == "tool" or name == "toolIcon" or name == "toolSeparator" or name == "toolEnabled" or name == "endToolbar"
 
 def httpRequestMethodKnown(name: str): bool
-    return false   # no methods: method/path/content/query are FIELDS
+    return name == "header"   # method/path/content/query are FIELDS
 
 def chanMethodKnown(name: str): bool
     return name == "send" or name == "recv" or name == "tryRecv" or name == "recvTimeout" or name == "close"
@@ -4679,8 +4679,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         # bound an unknown and `r!.body` (the field is `text`) passed -c and
                         # failed inside zig. Annotated `HttpResponse?` was already checked.
                         if bname == "Http" and not ctx.hasClassAny("Http") and not ctx.hasClassAny("HttpResponse")
-                            if mem.member == "get" or mem.member == "post" or mem.member == "json" or mem.member == "postJson"
+                            if mem.member == "get" or mem.member == "post" or mem.member == "request"
                                 return Type_.optional(Type_.named("HttpResponse"))
+                            # BUG-697: json/postJson return the PARSED body (the runtime's
+                            # `?JsonValue`), not a response. Typed HttpResponse?, `j!.getStr(k)`
+                            # was refused at -c and `j!.text` passed -c and failed inside zig.
+                            if mem.member == "json" or mem.member == "postJson"
+                                return Type_.optional(Type_.json_value)
                             if mem.member == "serve"
                                 return Type_.void_
                         if bname == "Ws"
@@ -5278,8 +5283,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         on Type_.http_request
                             if not httpRequestMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'HttpRequest' has no method '" + mem.member + "' (it has no methods; method/path/content/query are fields)")
+                                           "'HttpRequest' has no method '" + mem.member + "' (its one method is header(name); method/path/content/query are fields)")
                                 return Type_.unknown_
+                            if mem.member == "header"
+                                return Type_.optional(Type_.string_)
                         on Type_.list_ as list_elem
                             var lmname: str = mem.member
                             # BUG-314: mutating a COPY of a nested container was silently lost
@@ -7339,6 +7346,107 @@ def checkSqliteOpenArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
         if not (wt is Type_.bool_) and not (wt is Type_.unknown_)
             ctx.addErr(file, cl, mem.span.col, "Sqlite.open's writeAhead must be a bool, got " + userTypeName(wt) + usage)
 
+# `Http.request(method, url, headers: HashMap(str, str), body: str)` and `req.header(name)`.
+# Past the URL every argument must be NAMED -- codegen finds `headers` and `body` by name, so
+# `body:` can come without `headers:` -- and checkNamedArgs cannot see a builtin's parameters.
+# A literal method outside the seven is refused here (the runtime would panic on it), as is a
+# literal GET/HEAD with a body: HTTP gives that body no meaning.
+def checkHttpRequestArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var mem_opt: ExprMember? = nil
+    if call.callee is Expr.member as m0
+        mem_opt = m0
+    if mem_opt == nil
+        return
+    var mem: ExprMember = mem_opt!
+    var cl: int = line
+    if mem.span.line > 0
+        cl = mem.span.line
+    if mem.member == "header"
+        var rt: Type_ = inferExpr(mem.object, ctx)
+        branch rt
+            on Type_.optional as rto
+                rt = rto
+            else
+                pass
+        if not (rt is Type_.http_request)
+            return
+        if call.args.len != 1 or call.args.at(0).name != nil
+            ctx.addErr(file, cl, mem.span.col, "req.header takes one argument, the header name -- `req.header(\"Authorization\")`")
+            return
+        var ht: Type_ = inferExpr(call.args.at(0).value, ctx)
+        if not isString(ht) and not (ht is Type_.unknown_)
+            ctx.addErr(file, cl, mem.span.col, "req.header's name must be a str, got " + userTypeName(ht))
+        return
+    if mem.member != "request"
+        return
+    var ns: str = ""
+    if mem.object is Expr.ident as oid
+        ns = oid.name
+    if ns != "Http" or ctx.hasLocal(ns) or ctx.hasClassAny(ns)
+        return
+    var usage: str = " -- it is `Http.request(method, url)`, with optional `headers: {...}` and `body: s`"
+    if call.args.len < 2
+        ctx.addErr(file, cl, mem.span.col, "Http.request needs a method and a URL" + usage)
+        return
+    var i: int = 0
+    var seen_h: bool = false
+    var seen_b: bool = false
+    var body_i: int = -1
+    while i < call.args.len
+        var a: Arg = call.args.at(i)
+        if i < 2
+            if a.name != nil
+                ctx.addErr(file, cl, mem.span.col, "Http.request's method and URL are positional; '" + a.name! + ":' is not a parameter there" + usage)
+                return
+            var pt: Type_ = inferExpr(a.value, ctx)
+            if not isString(pt) and not (pt is Type_.unknown_)
+                var which: str = "method"
+                if i == 1
+                    which = "URL"
+                ctx.addErr(file, cl, mem.span.col, "Http.request's " + which + " must be a str, got " + userTypeName(pt) + usage)
+                return
+        else
+            if a.name == nil
+                ctx.addErr(file, cl, mem.span.col, "Http.request's argument " + (i + 1).toString() + " must be named `headers:` or `body:`" + usage)
+                return
+            var an: str = a.name!
+            if an == "headers"
+                if seen_h
+                    ctx.addErr(file, cl, mem.span.col, "Http.request is given `headers:` twice" + usage)
+                    return
+                seen_h = true
+                var hmt: Type_ = inferExpr(a.value, ctx)
+                var ok: bool = hmt is Type_.unknown_
+                branch hmt
+                    on Type_.hashmap_ as hm
+                        ok = (isString(hm.key_t) or hm.key_t is Type_.unknown_) and (isString(hm.val_t) or hm.val_t is Type_.unknown_)
+                    else
+                        pass
+                if not ok
+                    ctx.addErr(file, cl, mem.span.col, "Http.request's headers must be a HashMap(str, str), got " + userTypeName(hmt) + usage)
+                    return
+            else if an == "body"
+                if seen_b
+                    ctx.addErr(file, cl, mem.span.col, "Http.request is given `body:` twice" + usage)
+                    return
+                seen_b = true
+                body_i = i
+                var bt: Type_ = inferExpr(a.value, ctx)
+                if not isString(bt) and not (bt is Type_.unknown_)
+                    ctx.addErr(file, cl, mem.span.col, "Http.request's body must be a str, got " + userTypeName(bt) + usage)
+                    return
+            else
+                ctx.addErr(file, cl, mem.span.col, "Http.request has no parameter '" + an + "'" + usage)
+                return
+        i = i + 1
+    if call.args.at(0).value is Expr.string_lit as ml
+        var mv: str = ml.text
+        if not (mv == "GET" or mv == "POST" or mv == "PUT" or mv == "DELETE" or mv == "PATCH" or mv == "HEAD" or mv == "OPTIONS")
+            ctx.addErr(file, cl, mem.span.col, "Http.request: method \"" + mv + "\" is not one of GET POST PUT DELETE PATCH HEAD OPTIONS (upper case)")
+            return
+        if body_i >= 0 and (mv == "GET" or mv == "HEAD")
+            ctx.addErr(file, cl, mem.span.col, "Http.request: a " + mv + " request cannot carry a body")
+
 # BUG-540: a call with NAMED arguments. Codegen fills each parameter from the argument that
 # names it, else from the next positional one, else from its default -- else from a
 # `std.mem.zeroes` it makes up. So an argument whose name matches no parameter was DROPPED,
@@ -8106,6 +8214,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             checkArgCount(c, file, line, ctx)
             checkNamedArgs(c, file, line, ctx)    # BUG-540
             checkSqliteOpenArgs(c, file, line, ctx)
+            checkHttpRequestArgs(c, file, line, ctx)
             checkStructCtorFields(c, file, line, ctx)   # BUG-591
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
             checkDeprecatedCall(c, ctx)

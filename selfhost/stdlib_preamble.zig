@@ -2664,18 +2664,73 @@ pub fn _json_try_bool(v: anytype, key: anytype) ?bool { return _json_as_bool(_js
 pub fn _json_try_obj(v: anytype, key: anytype) ?JsonValue { return _json_as_obj(_json_get_opt(v, key) orelse return null); }
 pub fn _json_try_list(v: anytype, key: anytype) ?_ZbrList(JsonValue) { return _json_as_list(_json_get_opt(v, key) orelse return null); }
 pub const HttpResponse = struct { status: u16, text: []const u8, headers: []const [2][]const u8 = &.{} };
-pub fn _http_request(method: std.http.Method, url: []const u8, payload: ?[]const u8) ?HttpResponse {
+/// The one HTTP client path. `headers` is a Zebra `HashMap(str, str)` (or null). The six
+/// headers Zig's client writes by itself (Host, Authorization, User-Agent, Connection,
+/// Accept-Encoding, Content-Type) go to its OVERRIDES, matched case-insensitively -- sent as
+/// extra headers they would go out twice; every other name goes out as given. Zig ASSERTS
+/// that a header name is non-empty with no ':' and that no name or value holds CR/LF, and a
+/// `--release` build compiles those asserts out, so the text is checked HERE and a bad header
+/// panics naming itself. That is also what keeps a value read from input from smuggling a
+/// second header in.
+pub fn _http_request(method: std.http.Method, url: []const u8, headers: ?_ZbrMap([]const u8), payload: ?[]const u8) ?HttpResponse {
+    var _std: std.http.Client.Request.Headers = .{};
+    var _extra: std.ArrayList(std.http.Header) = .empty;
+    defer _extra.deinit(_allocator);
+    if (headers) |_hm| {
+        var _it = _hm.iterator();
+        while (_it.next()) |_e| {
+            const _n = _e.key_ptr.*;
+            const _v = _e.value_ptr.*;
+            if (_n.len == 0 or std.mem.indexOfAny(u8, _n, ":\r\n") != null)
+                std.debug.panic("Http.request: header name '{s}' is not a valid header name (empty, or holds ':' or a line break)", .{_n});
+            if (std.mem.indexOfAny(u8, _v, "\r\n") != null)
+                std.debug.panic("Http.request: the value of header '{s}' holds a line break", .{_n});
+            if (std.ascii.eqlIgnoreCase(_n, "host")) { _std.host = .{ .override = _v }; }
+            else if (std.ascii.eqlIgnoreCase(_n, "authorization")) { _std.authorization = .{ .override = _v }; }
+            else if (std.ascii.eqlIgnoreCase(_n, "user-agent")) { _std.user_agent = .{ .override = _v }; }
+            else if (std.ascii.eqlIgnoreCase(_n, "connection")) { _std.connection = .{ .override = _v }; }
+            else if (std.ascii.eqlIgnoreCase(_n, "accept-encoding")) { _std.accept_encoding = .{ .override = _v }; }
+            else if (std.ascii.eqlIgnoreCase(_n, "content-type")) { _std.content_type = .{ .override = _v }; }
+            else _extra.append(_allocator, .{ .name = _n, .value = _v }) catch @panic("OOM");
+        }
+    }
     var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
+    // HEAD, measured against Zig 0.17.1 (2026-11-12): `fetch` WITH a response writer reads
+    // through `readerDecompressing`, which -- unlike `Response.reader` -- does not know a HEAD
+    // response has no body, so it waits for Content-Length bytes a correct server never
+    // sends; `fetch` WITHOUT one takes `Response.reader`, whose HEAD case hands back a reader
+    // that `discardRemaining` then writes through -- a segfault. So HEAD keeps the writer and
+    // asks for `Connection: close`: the server closes after the headers and the read ends.
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
-    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload, .response_writer = &out_aw.writer }) catch return null;
+    const _hr = _hc.fetch(.{ .location = .{ .url = url }, .method = method, .payload = payload,
+        .headers = _std, .extra_headers = _extra.items, .keep_alive = method != .HEAD,
+        .response_writer = &out_aw.writer }) catch return null;
     out_list = out_aw.toArrayList();
     return .{ .status = @intFromEnum(_hr.status), .text = out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM") };
 }
-pub fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null); }
-pub fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, payload); }
-pub fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null) orelse return null; return _json_parse(_r.text); }
+/// `Http.request(method, url, headers:, body:)`. The method is checked against the seven
+/// Zebra accepts (std.http.Method also has QUERY/CONNECT/TRACE, which are not offered), and
+/// GET/HEAD refuse a body: HTTP gives one no meaning there, and Zig would send it anyway.
+/// Both are programming errors, so they panic -- never nil, which reads as "unreachable".
+pub fn _http_request_call(method_s: []const u8, url: []const u8, headers: ?_ZbrMap([]const u8), body: ?[]const u8) ?HttpResponse {
+    const _m: std.http.Method =
+        if (std.mem.eql(u8, method_s, "GET")) .GET
+        else if (std.mem.eql(u8, method_s, "POST")) .POST
+        else if (std.mem.eql(u8, method_s, "PUT")) .PUT
+        else if (std.mem.eql(u8, method_s, "DELETE")) .DELETE
+        else if (std.mem.eql(u8, method_s, "PATCH")) .PATCH
+        else if (std.mem.eql(u8, method_s, "HEAD")) .HEAD
+        else if (std.mem.eql(u8, method_s, "OPTIONS")) .OPTIONS
+        else std.debug.panic("Http.request: method '{s}' is not one of GET POST PUT DELETE PATCH HEAD OPTIONS (upper case)", .{method_s});
+    if (body != null and (_m == .GET or _m == .HEAD))
+        std.debug.panic("Http.request: a {s} request cannot carry a body", .{method_s});
+    return _http_request(_m, url, headers, body);
+}
+pub fn _http_get(url: []const u8) ?HttpResponse { return _http_request(.GET, url, null, null); }
+pub fn _http_post(url: []const u8, payload: []const u8) ?HttpResponse { return _http_request(.POST, url, null, payload); }
+pub fn _http_json_get(url: []const u8) ?JsonValue { const _r = _http_request(.GET, url, null, null) orelse return null; return _json_parse(_r.text); }
 pub fn _http_json_post(url: []const u8, body: []const u8) ?JsonValue {
     var _hc = std.http.Client{ .allocator = _allocator, .io = _io };
     defer _hc.deinit();
@@ -2696,7 +2751,21 @@ pub fn _http_with_header(resp: HttpResponse, key: []const u8, val: []const u8) H
 // `query` is the RAW text after the first '?', empty when there is none. It is not
 // decoded here: percent-decoding is the caller's business, and doing it in the parser
 // would make `a=1&b=%26` ambiguous by turning an escaped separator into a real one.
-pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8, query: []const u8 = "" };
+// `_raw_headers` is the header block after the request line ("Name: value\r\n" lines), a
+// heap copy that outlives the handler call; `req.header(name)` reads it. A request built
+// with `HttpRequest(...)` has none, so every `header()` on it is nil.
+pub const HttpRequest = struct { method: []const u8, path: []const u8, content: []const u8, query: []const u8 = "", _raw_headers: []const u8 = "" };
+/// `req.header(name)`: the first header with that name, case-insensitively, value trimmed;
+/// nil when the request has no such header.
+pub fn _http_req_header(req: HttpRequest, name: []const u8) ?[]const u8 {
+    var _it = std.mem.splitSequence(u8, req._raw_headers, "\r\n");
+    while (_it.next()) |_ln| {
+        const _cp = std.mem.indexOfScalar(u8, _ln, ':') orelse continue;
+        if (std.ascii.eqlIgnoreCase(std.mem.trim(u8, _ln[0.._cp], " \t"), name))
+            return std.mem.trim(u8, _ln[_cp + 1 ..], " \t");
+    }
+    return null;
+}
 /// BUG-688: a port arrives as Zebra's `int` (i64); a u16 parameter could not take a runtime
 /// one, so zig refused the emit. The range is checked here, once, and an out-of-range port is
 /// reported by the call that received it -- never wrapped into a different, valid port.
@@ -2764,7 +2833,10 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
                 }
                 _body = _bb[0.._bi];
             }
-            const _req = HttpRequest{ .method = _method, .path = _path, .content = _body, .query = _query };
+            // The header lines, copied out of the stack buffer so `req.header()` stays valid.
+            const _hdr_start = @min(_rl_end + 2, _hl);
+            const _raw_hdrs = _alloc.dupe(u8, _head[_hdr_start.._hl]) catch @panic("OOM");
+            const _req = HttpRequest{ .method = _method, .path = _path, .content = _body, .query = _query, ._raw_headers = _raw_hdrs };
             const _resp = ctx.handler_fn(_req);
             const _st: []const u8 = switch (_resp.status) {
                 200 => "OK", 201 => "Created", 204 => "No Content",
@@ -2776,9 +2848,13 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
             };
             var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
+            // A response to HEAD carries the headers a GET would get (Content-Length
+            // included) and NO body: a client that reads one would take it as the start of
+            // the next response.
+            const _resp_body: []const u8 = if (std.mem.eql(u8, _method, "HEAD")) "" else _resp.text;
             const _out = std.fmt.allocPrint(_alloc,
                 "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
-                .{ _resp.status, _st, _resp.text.len, _xh.items, _resp.text }) catch @panic("OOM");
+                .{ _resp.status, _st, _resp.text.len, _xh.items, _resp_body }) catch @panic("OOM");
             var _srv_wbuf: [4096]u8 = undefined;
             var _srv_wr = ctx.conn.writer(_io, &_srv_wbuf);
             _srv_wr.interface.writeAll(_out) catch {};

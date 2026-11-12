@@ -6,6 +6,24 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-697: `Http.json` / `Http.postJson` were typed `HttpResponse?` -- the JSON getters were refused and `.text` failed inside zig -- FIXED 2026-11-12
+
+- **Found by:** reading TypeChecker's Http return types while adding `Http.request`
+  (2026-11-12). The runtime's `_http_json_get` / `_http_json_post` return `?JsonValue`;
+  BUG-689 typed all four client calls `HttpResponse?`.
+- **Symptom:** `Http.json(url)!.tryStr("k")` -- the intended use -- was refused at `-c`
+  ("'HttpResponse' has no method 'getStr'"), and `Http.json(url)!.text` passed `-c` and failed
+  inside zig: `no field named 'text' in union 'json.dynamic.Value'`, at a line with no column.
+  QUICKSTART's table carried the same wrong type, and the wrong signature `Http.json(url, json)`.
+- **Fix:** `json` / `postJson` return `JsonValue?` in inferExpr; QUICKSTART corrected. Measured
+  first: no use of either call in this repo (outside QUICKSTART), zebra-ide, the GameEngine
+  trees, the book, bugbook, zebra-sprocket or zebra-taocp, so nothing newly refused.
+- **Fixture:** `test/bug697_http_json_type_test.zbr` (`smoke_run_bounded`): a real round trip
+  through an in-process `Http.serve`, reading the parsed body with `tryStr` / `tryInt` /
+  `tryObj`. Refused at `-c` by the pre-fix compiler.
+
+---
+
 ### BUG-696: a scoped `allocate Arena()` block made one OS call per chunk -- a block per item cost ~15x the item's work -- FIXED 2026-11-10 (found 2026-11-10 by Fable)
 - `_zbr_scoped_backing()` returned `std.heap.page_allocator` (BUG-617 chose it because it
   FREES), so every arena chunk of a scoped `allocate Arena()` / `allocate Debug()` block was a

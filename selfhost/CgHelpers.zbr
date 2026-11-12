@@ -1703,6 +1703,10 @@ def receiverNeedsVar(obj: Expr, method: str, ic: InferCtx?): bool
         if rt is Type_.named as cw_n
             if cw_n == "CsvWriter"
                 return false
+        # An HttpRequest's one method, `header`, emits `_http_req_header(req, name)` and takes
+        # the request BY VALUE -- the local is never mutated (found by http_request_test).
+        if rt is Type_.http_request
+            return false
         # By-value handle → `var` only for an explicit in-place mutator.
         if isByValueHandleType(rt)
             return isMutatingMethod(method)

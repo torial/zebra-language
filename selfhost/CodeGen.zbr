@@ -18119,6 +18119,17 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".close_()")
                         return
+                on Type_.http_request
+                    if mname == "header"
+                        w.emit("_http_req_header(")
+                        genExpr(m.object)
+                        w.emit(", ")
+                        if args.len > 0
+                            genExpr(args.at(0).value)
+                        else
+                            w.emit("\"\"")
+                        w.emit(")")
+                        return
                 on Type_.sqlite_db
                     if mname == "exec"
                         if args.len >= 2
@@ -22772,6 +22783,42 @@ struct Generator
                 genExpr(args.at(1).value)
             else
                 w.emit("\"\"")
+            w.emit(")")
+            return
+        if mname == "request"
+            # `Http.request(method, url, headers: m, body: s)`. checkHttpRequestArgs has
+            # refused anything past the URL that is not NAMED `headers` or `body`, so each is
+            # found by its name and an absent one is null -- `body:` alone is the common POST.
+            w.emit("_http_request_call(")
+            if args.len > 0
+                genExpr(args.at(0).value)
+            else
+                w.emit("\"GET\"")
+            w.emit(", ")
+            if args.len > 1
+                genExpr(args.at(1).value)
+            else
+                w.emit("\"\"")
+            var hdr_i: int = -1
+            var body_i: int = -1
+            var ai: int = 2
+            while ai < args.len
+                var an: str? = args.at(ai).name
+                if an != nil and an! == "headers"
+                    hdr_i = ai
+                if an != nil and an! == "body"
+                    body_i = ai
+                ai = ai + 1
+            w.emit(", ")
+            if hdr_i >= 0
+                genExpr(args.at(hdr_i).value)
+            else
+                w.emit("null")
+            w.emit(", ")
+            if body_i >= 0
+                genExpr(args.at(body_i).value)
+            else
+                w.emit("null")
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Http.")

@@ -179,7 +179,7 @@ RECEIVERS = [("str", "strMethodKnown"), ("List(T)", "listMethodKnown"),
              ("UdpSocket", "udpSocketMethodKnown"), ("SqliteDb", "sqliteDbMethodKnown"),
              ("SqliteRow", "sqliteRowMethodKnown"), ("SqliteRowList", "sqliteRowListMethodKnown"),
              ("CodeEditor", "codeEditorMethodKnown"), ("Gui", "guiMethodKnown"),
-             ("HttpRequest (no methods; fields)", "httpRequestMethodKnown"), ("Chan(T)", "chanMethodKnown"),
+             ("HttpRequest", "httpRequestMethodKnown"), ("Chan(T)", "chanMethodKnown"),
              ("SIMD vector / boolxN mask (QUICKSTART §32)", "simdMethodKnown"),
              # 2026-09-18: a Random INSTANCE (BUG-434 made it a named type; BUG-433's
              # `randBool` typo is refused here).

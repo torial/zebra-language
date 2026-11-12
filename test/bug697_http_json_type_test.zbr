@@ -1,0 +1,36 @@
+# BUG-697: Http.json / Http.postJson return the PARSED body, a `JsonValue?`.
+#
+# They were typed `HttpResponse?`, so the documented use -- `Http.json(url)!.tryStr(k)` --
+# was refused at -c ("'HttpResponse' has no method ..."), and `j!.text` passed -c and failed
+# inside zig ("no field named 'text' in union 'json.dynamic.Value'"). A real round trip, so
+# the type the checker gives is the type the runtime returns.
+def handle(req: HttpRequest): HttpResponse
+    if req.method == "POST"
+        return HttpResponse.ok("{\"echo\": " + req.content + "}")
+    return HttpResponse.ok("{\"name\": \"zebra\", \"n\": 7}")
+
+def main()
+    sys.go(def()
+        Http.serve(19962, handle)
+    )
+    var url: str = "http://127.0.0.1:19962/j"
+    var j: JsonValue? = nil
+    var attempts: int = 0
+    while attempts < 40 and j == nil
+        j = Http.json(url)
+        if j == nil
+            sys.sleep(50)
+        attempts = attempts + 1
+    assert j != nil, "client reached the in-process server"
+
+    var k = Http.json(url)
+    assert k!.tryStr("name") == "zebra"
+    assert k!.tryInt("n") == 7
+    print("json: name=" + k!.tryStr("name")! + " n=" + k!.tryInt("n")!.toString())
+
+    var pj = Http.postJson(url, "{\"a\": 1}")
+    var inner = pj!.tryObj("echo")
+    assert inner!.tryInt("a") == 1
+    print("postJson: a=" + inner!.tryInt("a")!.toString())
+
+    print("bug697: OK")

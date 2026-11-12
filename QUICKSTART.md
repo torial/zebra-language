@@ -4478,13 +4478,48 @@ Representative zones (≈ 75 total):
 |-----------------------------------------------|-----------------|
 | `Http.get(url)`                               | `HttpResponse?` |
 | `Http.post(url, body)`                        | `HttpResponse?` |
-| `Http.json(url, json)`                        | `HttpResponse?` |
-| `Http.postJson(url, json)`                    | `HttpResponse?` |
+| `Http.request(method, url, headers: {...}, body: s)` | `HttpResponse?` |
+| `Http.json(url)` — GET, body parsed           | `JsonValue?`    |
+| `Http.postJson(url, json)` — POST, reply parsed | `JsonValue?`  |
 | `HttpResponse.ok(body)` / `.notFound(body)` / `.err(body)` | `HttpResponse` |
 | `HttpResponse.new(status, body)` — **any status code** | `HttpResponse` |
 | `r.status / r.text / r.headers`               | mixed           |
 | `req.method / req.path / req.content / req.query` (handler arg) | `str` |
+| `req.header(name)` (handler arg)              | `str?`          |
 | `HttpRequest(method, path, content: "", query: "")` / `HttpRequest.new(...)` | `HttpRequest` |
+
+Every client call returns nil when the request never completed (no connection, DNS,
+TLS). An HTTP error status is not nil: a 404 is a response with `status == 404`.
+On a client response `r.headers` is **not captured** -- it is always empty, whatever
+the server sent; only the status and the body come back.
+
+`Http.request` is the general call: any method, any headers, an optional body.
+
+```zebra
+var key = "..."
+var r = Http.request("GET", "http://openai.api.tiiny/v1/models",
+                     headers: {"Authorization": "Bearer " + key})
+var s = Http.request("POST", "http://example.test/items", body: "{\"n\": 1}",
+                     headers: {"Content-Type": "application/json"})
+if r as resp
+    print(resp.status)
+```
+
+- `method` is one of `GET POST PUT DELETE PATCH HEAD OPTIONS`, upper case. A literal
+  outside that set is refused at `-c`; a computed one panics naming the method.
+- After the URL every argument is named: `headers:` (a `HashMap(str, str)`, usually a
+  dict literal) and `body:` (a `str`), either one without the other.
+- A body on `GET` or `HEAD` is refused at `-c` for a literal method, and panics otherwise.
+- `Host`, `Authorization`, `User-Agent`, `Content-Type`, `Connection` and
+  `Accept-Encoding` REPLACE the values the client would send by itself (names match
+  case-insensitively); every other header is added. A header name that is empty or holds
+  `:` or a line break, or a value that holds a line break, panics naming the header --
+  so text read from input cannot add a header of its own.
+- A `HEAD` response has no body: `text` is `""`.
+
+On the server side, `req.header(name)` returns the first header with that name
+(case-insensitively), or nil. A request built with `HttpRequest(...)` has no headers,
+so `header()` on it is always nil.
 
 `HttpResponse.new(status, body)` is how you build a response with a status the
 named factories do not cover — a 405, a 302, a 422:

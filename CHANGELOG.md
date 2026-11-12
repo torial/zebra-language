@@ -23,6 +23,20 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Http.request(method, url, headers: {...}, body: s)` and `req.header(name)`.** The HTTP
+  client could not set a header, so no authenticated API was reachable, and it had only GET and
+  POST. `Http.request` takes any of GET POST PUT DELETE PATCH HEAD OPTIONS, a `HashMap(str, str)`
+  of headers (Host, Authorization, User-Agent, Content-Type, Connection and Accept-Encoding
+  replace the client's own) and an optional body; it returns `HttpResponse?` like `Http.get`.
+  A bad literal method, a body on GET/HEAD, an unnamed or misspelt argument after the URL and a
+  header map of the wrong type are refused at `-c`; a header holding a line break panics. On the
+  server, `req.header(name)` returns a request header (case-insensitive) or nil. `Http.serve` no
+  longer sends a body in a HEAD response. Surface: `Http` gains `request`, `HttpRequest` gains
+  `header`. The V route refuses `Http.request` by name. Asked for by the Pocket Lab manager.
+- **BUG-697: `Http.json` / `Http.postJson` return `JsonValue?`** (the parsed body), as the
+  runtime always did. They were typed `HttpResponse?`, so the JSON getters were refused at `-c`
+  and `.text` failed inside zig. No existing program used either call.
+
 - **`Sqlite.open` uses write-ahead logging by default.** It sets `journal_mode=WAL` +
   `synchronous=NORMAL`, so a commit no longer waits for the disk: a crash loses nothing, and a
   power cut may lose the last commits but never the file. `Sqlite.open(path, writeAhead: false)`
