@@ -1,0 +1,7 @@
+# Sqlite.open takes `path` and `writeAhead: bool` and nothing else. A misspelt name was
+# dropped before the check existed, so the database opened in WAL -- the opposite of what
+# the program said. Each line below must be refused at -c; the smoke suite greps for two.
+def main()
+    var a: SqliteDb? = Sqlite.open("zz_x.db", writeAhed: false)
+    var b: SqliteDb? = Sqlite.open("zz_x.db", writeAhead: "no")
+    print("unreachable")

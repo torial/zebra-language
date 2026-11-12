@@ -1,0 +1,6 @@
+# Helper module for sqlite_wal_default_test: opens a database with the ONE-argument
+# `Sqlite.open(path)` from a module that is not the program's main one. Fable asked for
+# this: the engine opens its datastore from another module, and a default that only the
+# main module filled in would leave it in the rollback journal without a word.
+def openDefault(path: str): SqliteDb?
+    return Sqlite.open(path)

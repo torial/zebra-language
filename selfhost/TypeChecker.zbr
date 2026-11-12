@@ -2394,7 +2394,7 @@ def udpSocketMethodKnown(name: str): bool
     return name == "send" or name == "recv" or name == "close"
 
 def sqliteDbMethodKnown(name: str): bool
-    return name == "exec" or name == "query" or name == "querySegments" or name == "begin" or name == "commit" or name == "rollback" or name == "close"
+    return name == "exec" or name == "query" or name == "querySegments" or name == "begin" or name == "commit" or name == "rollback" or name == "close" or name == "journalMode"
 
 def sqliteRowMethodKnown(name: str): bool
     return name == "asInt" or name == "asStr" or name == "asFloat" or name == "asBool"
@@ -5219,11 +5219,13 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         on Type_.sqlite_db
                             if not sqliteDbMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/querySegments/begin/commit/rollback/close)")
+                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/querySegments/begin/commit/rollback/close/journalMode)")
                                 return Type_.unknown_
                             var sqmname: str = mem.member
                             if sqmname == "query" or sqmname == "querySegments"
                                 return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
+                            if sqmname == "journalMode"
+                                return Type_.string_
                             return Type_.void_  # exec, begin, commit, rollback, close
                         on Type_.sqlite_row
                             if not sqliteRowMethodKnown(mem.member)
@@ -7293,6 +7295,50 @@ def runtimeFactoryHint(name: str): str
         return "an allocator comes from `allocate Arena()` (or another named wrapper) -- it is not constructed"
     return ""
 
+# `Sqlite.open(path, writeAhead: bool = true)` -- the one builtin namespace call that takes a
+# named argument. checkNamedArgs knows only declared parameter lists, so without this a
+# misspelt `writeAhed: false` was dropped and the database opened in WAL -- the opposite of
+# what was written, silently. Refuses: no path, more than two arguments, a name other than
+# `path` / `writeAhead` in its own position, and a non-bool write-ahead choice.
+def checkSqliteOpenArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var mem_opt: ExprMember? = nil
+    if call.callee is Expr.member as m0
+        mem_opt = m0
+    if mem_opt == nil
+        return
+    var mem: ExprMember = mem_opt!
+    if mem.member != "open"
+        return
+    if not (mem.object is Expr.ident)
+        return
+    var ns: str = ""
+    if mem.object is Expr.ident as oid
+        ns = oid.name
+    if ns != "Sqlite" or ctx.hasLocal(ns) or ctx.hasClassAny(ns)
+        return
+    var cl: int = line
+    if mem.span.line > 0
+        cl = mem.span.line
+    var usage: str = " -- it is `Sqlite.open(path)` or `Sqlite.open(path, writeAhead: false)`"
+    if call.args.len == 0
+        ctx.addErr(file, cl, mem.span.col, "Sqlite.open needs a path" + usage)
+        return
+    if call.args.len > 2
+        ctx.addErr(file, cl, mem.span.col, "Sqlite.open takes at most 2 arguments, got " + call.args.len.toString() + usage)
+        return
+    var a0: Arg = call.args.at(0)
+    if a0.name != nil and a0.name! != "path"
+        ctx.addErr(file, cl, mem.span.col, "Sqlite.open has no parameter '" + a0.name! + "' in first position" + usage)
+        return
+    if call.args.len == 2
+        var a1: Arg = call.args.at(1)
+        if a1.name != nil and a1.name! != "writeAhead"
+            ctx.addErr(file, cl, mem.span.col, "Sqlite.open has no parameter '" + a1.name! + "' in second position" + usage)
+            return
+        var wt: Type_ = inferExpr(a1.value, ctx)
+        if not (wt is Type_.bool_) and not (wt is Type_.unknown_)
+            ctx.addErr(file, cl, mem.span.col, "Sqlite.open's writeAhead must be a bool, got " + userTypeName(wt) + usage)
+
 # BUG-540: a call with NAMED arguments. Codegen fills each parameter from the argument that
 # names it, else from the next positional one, else from its default -- else from a
 # `std.mem.zeroes` it makes up. So an argument whose name matches no parameter was DROPPED,
@@ -8059,6 +8105,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
         on Expr.call as c
             checkArgCount(c, file, line, ctx)
             checkNamedArgs(c, file, line, ctx)    # BUG-540
+            checkSqliteOpenArgs(c, file, line, ctx)
             checkStructCtorFields(c, file, line, ctx)   # BUG-591
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls
             checkDeprecatedCall(c, ctx)

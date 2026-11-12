@@ -18170,6 +18170,10 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".close_()")
                         return
+                    if mname == "journalMode"
+                        genExpr(m.object)
+                        w.emit(".journalMode_()")
+                        return
                     # bugbook BUG-2 (Fable, from zebra-sprocket): a DEFERRED method on a
                     # SqliteDb — one the resolver hands to Zig because the preamble was
                     # extended — must build its bind list the SAME WAY the known paths do.
@@ -23532,11 +23536,19 @@ struct Generator
     # ── genSqliteCall + genSqliteParams ─────────────────────────────────────
     def genSqliteCall(mname: str, args: List(Arg))
         if mname == "open"
+            # `Sqlite.open(path, writeAhead: bool = true)`: the checker refuses any other
+            # argument (checkSqliteOpenArgs), so the second argument -- named or not -- is
+            # the write-ahead choice, and its absence is the default, WAL.
             w.emit("_sqlite_open(")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
+            w.emit(", ")
+            if args.len > 1
+                genExpr(args.at(1).value)
+            else
+                w.emit("true")
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Sqlite.")

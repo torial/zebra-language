@@ -1,0 +1,55 @@
+# Sqlite.open uses write-ahead logging by default (WAL + synchronous=NORMAL), and
+# `writeAhead: false` sets the rollback journal (DELETE + FULL). db.journalMode() reports
+# SQLite's own answer, read live. The mode is stored in the FILE, so the override must
+# switch a file an earlier open left in WAL back to DELETE -- leg 2 is the one that
+# would pass by accident if the override merely skipped the WAL pragma.
+use sqlite_wal_dep_lib exposing openDefault
+
+def clean(p: str)
+    File.delete(p)
+    File.delete(p + "-wal")
+    File.delete(p + "-shm")
+
+def syncLevel(d: SqliteDb): int
+    var r = d.query("PRAGMA synchronous")
+    assert r.count() == 1, "PRAGMA synchronous answers one row"
+    return r.at(0).asInt("synchronous")
+
+def main()
+    var path: str = "zz_sqlite_wal_default_test.db"
+    clean(path)
+
+    # 1. the default, opened from ANOTHER module with the one-argument form
+    var d1: SqliteDb = openDefault(path)!
+    assert d1.journalMode() == "wal", "default open is WAL; got " + d1.journalMode()
+    assert syncLevel(d1) == 1, "default open is synchronous=NORMAL (1); got " + syncLevel(d1).toString()
+    d1.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+    d1.exec("INSERT INTO t VALUES (?, ?)", [1, "kept"])
+    d1.close()
+
+    # 2. the override, NAMED, on a file left in WAL: switched back, data intact
+    var d2: SqliteDb = Sqlite.open(path, writeAhead: false)!
+    assert d2.journalMode() == "delete", "writeAhead: false sets DELETE on a WAL file; got " + d2.journalMode()
+    assert syncLevel(d2) == 2, "writeAhead: false is synchronous=FULL (2); got " + syncLevel(d2).toString()
+    var rows = d2.query("SELECT name FROM t WHERE id = 1")
+    assert rows.count() == 1 and rows.at(0).asStr("name") == "kept", "the row survives the mode switch"
+    d2.close()
+
+    # 3. the override POSITIONAL, then the default again on the same file
+    var d3: SqliteDb = Sqlite.open(path, false)!
+    assert d3.journalMode() == "delete", "positional false is DELETE; got " + d3.journalMode()
+    d3.close()
+    var d4: SqliteDb = Sqlite.open(path)!
+    assert d4.journalMode() == "wal", "the default turns WAL back on; got " + d4.journalMode()
+    d4.close()
+
+    # 4. an in-memory database answers "memory" whichever was asked
+    var m1: SqliteDb = Sqlite.open(":memory:")!
+    assert m1.journalMode() == "memory", ":memory: reports memory; got " + m1.journalMode()
+    m1.close()
+    var m2: SqliteDb = Sqlite.open(":memory:", writeAhead: false)!
+    assert m2.journalMode() == "memory", ":memory: with writeAhead: false reports memory; got " + m2.journalMode()
+    m2.close()
+
+    clean(path)
+    print("sqlite_wal: OK")

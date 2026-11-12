@@ -4612,12 +4612,36 @@ pub const _SqliteDbInner = struct {
     pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
     pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
     pub fn close_(self: *_SqliteDbInner) void    { _ = sqlite3_close_v2(self.db); }
+    // The first column of the first row a statement answers, or null when it answers no row.
+    // A `PRAGMA journal_mode=...` answers a row, so it goes through here, not through `_run`.
+    fn _answer(self: *_SqliteDbInner, sql: [:0]const u8) ?[]const u8 {
+        var stmt: *_sqlite3_stmt = undefined;
+        if (sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != _SQLITE_OK) return null;
+        defer _ = sqlite3_finalize(stmt);
+        if (sqlite3_step(stmt) != _SQLITE_ROW) return null;
+        const raw = sqlite3_column_text(stmt, 0) orelse return null;
+        return _allocator.dupe(u8, std.mem.sliceTo(raw, 0)) catch null;
+    }
+    // Write-ahead is the default (Sqlite.open): WAL + synchronous=NORMAL -- a crash loses no
+    // commit, a power cut may lose the last few, never the file. `writeAhead: false` SETS the
+    // rollback journal (DELETE + FULL) rather than leaving the mode alone, because WAL is
+    // stored in the file: a file an earlier open put in WAL would otherwise stay there.
+    // Whatever SQLite answered is what journalMode() reports; nothing is assumed.
+    pub fn _setWriteAhead(self: *_SqliteDbInner, on_: bool) void {
+        _ = self._answer(if (on_) "PRAGMA journal_mode=WAL" else "PRAGMA journal_mode=DELETE");
+        self._run(if (on_) "PRAGMA synchronous=NORMAL" else "PRAGMA synchronous=FULL", &.{});
+    }
+    // SQLite's own answer, read live: "wal", "delete", "memory" (a :memory: db), ... --
+    // "unknown" when it answered no row. Never the mode that was asked for.
+    pub fn journalMode_(self: *_SqliteDbInner) []const u8 {
+        return self._answer("PRAGMA journal_mode") orelse "unknown";
+    }
 };
 
 pub const SqliteDb  = *_SqliteDbInner;
 pub const SqliteRow = _SqliteRow;
 
-pub fn _sqlite_open(path: []const u8) ?SqliteDb {
+pub fn _sqlite_open(path: []const u8, write_ahead: bool) ?SqliteDb {
     const cpath = _allocator.dupeSentinel(u8, path, 0) catch return null;
     defer _allocator.free(cpath);
     var db_raw: *_sqlite3 = undefined;
@@ -4631,6 +4655,7 @@ pub fn _sqlite_open(path: []const u8) ?SqliteDb {
         return null;
     };
     s.* = .{ .db = db_raw };
+    s._setWriteAhead(write_ahead);
     return s;
 }
 

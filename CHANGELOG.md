@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Sqlite.open` uses write-ahead logging by default.** It sets `journal_mode=WAL` +
+  `synchronous=NORMAL`, so a commit no longer waits for the disk: a crash loses nothing, and a
+  power cut may lose the last commits but never the file. `Sqlite.open(path, writeAhead: false)`
+  sets the rollback journal (DELETE + FULL), switching back a file an earlier open left in WAL.
+  New `db.journalMode()` returns SQLite's own answer (`"wal"`, `"delete"`, `"memory"`,
+  `"unknown"`). Any other argument to `Sqlite.open` is refused at `-c`; a misspelt name would
+  otherwise have been dropped. Found by the GameEngine: its 30 s save was a 56 ms frame in the
+  rollback journal. Surface: `Sqlite.open` gains `writeAhead`, `SqliteDb` gains `journalMode`.
+  The V route follows separately.
+
 - **The V target: the collector is the default; `allocate` and `<<-` are in the subset; `--no-gc`
   added.** `zebra --target v` says its run line with `-gc boehm` (was `-gc none`), and `--no-gc`
   asks for none; `--gc` is still accepted and now unneeded. An `allocate` block is a region --

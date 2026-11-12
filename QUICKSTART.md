@@ -5620,6 +5620,34 @@ var mem: SqliteDb? = Sqlite.open(":memory:")   # in-memory database
 
 `Sqlite.open` returns `SqliteDb?` — always check for nil before use.
 
+**Write-ahead logging is the default.** `Sqlite.open(path)` sets `journal_mode=WAL` and
+`synchronous=NORMAL`. A commit no longer waits for the disk, so a program that saves often
+does not stall each time. A crash loses nothing. A power cut can lose the last few commits,
+but never corrupts the file. While the database is open, SQLite keeps two files beside it,
+`<path>-wal` and `<path>-shm`. A clean `close()` removes them; they stay if the database is
+never closed.
+
+To use the rollback journal instead, pass `writeAhead: false`. This sets `journal_mode=DELETE`
+and `synchronous=FULL`, so every commit is on disk before it returns. It *sets* the mode rather
+than leaving it alone, because WAL is stored in the database file, so a file an earlier open put
+in WAL is switched back:
+
+```zebra
+var safe: SqliteDb? = Sqlite.open("ledger.db", writeAhead: false)
+```
+
+`db.journalMode()` returns the mode SQLite actually reports: `"wal"`, `"delete"`, `"memory"`
+(an in-memory database reports this whatever was asked for), or `"unknown"` if it reported no
+mode. SQLite cannot always honour the request: WAL needs shared memory, which some network
+filesystems lack, and leaving WAL fails while another connection holds the file. Check it if
+you depend on the mode:
+
+```zebra
+var d: SqliteDb = Sqlite.open("app.db")!
+if d.journalMode() != "wal"
+    print("note: running in " + d.journalMode() + " mode")
+```
+
 ### Executing statements
 
 ```zebra
