@@ -4327,7 +4327,7 @@ for elem in j.tryList("tags") orelse List(JsonValue)()
 | `Hash.sha512(s)`                  | `str`   |                                     |
 | `Hash.md5(s)`                     | `str`   |                                     |
 | `Hash.blake3(s)`                  | `str`   |                                     |
-| `Hash.hmac256(msg, key)`          | `str`   | HMAC-SHA256 hex                     |
+| `Hash.hmac256(key, msg)`          | `str`   | HMAC-SHA256 hex. KEY FIRST (pinned to RFC 4231 in test/hash_test.zbr) |
 
 ### `Random` — random numbers
 
