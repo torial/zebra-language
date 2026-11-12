@@ -1948,6 +1948,8 @@ class VGen
                             return "?&ZSqliteDb"
                         if ot == "&ZSqliteDb" and cm.member == "query"
                             return "&ZList[&ZSqliteRow]"
+                        if ot == "&ZSqliteDb" and cm.member == "journalMode"
+                            return "string"
                         if jowner == "Dir" and (cm.member == "list" or cm.member == "walk")
                             return "&ZList[string]"
                         if jowner == "File" and (cm.member == "listDir" or cm.member == "readLines")
@@ -3827,6 +3829,32 @@ class VGen
                 et = "bool"
         return et
 
+    # a SQLite bind list: the runtime binds text (V's db.sqlite takes []string and the
+    # column's affinity converts), and a Zebra bind list is mixed by nature
+    # (`[1, "alice"]`), which no ZList[T] holds -- so a literal is rendered element by
+    # element as its text. Anything else is taken as the List(str) it must then be.
+    def sqliteParamsStr(e: Expr): str
+        branch e
+            on Expr.list_lit as ll
+                if ll.elems.count() == 0
+                    return "new_zlist[string]()"
+                var out: str = "zlist_of[string](["
+                var first: bool = true
+                for el in ll.elems
+                    if not first
+                        out = out + ", "
+                    first = false
+                    var t: str = .vTypeOf(el)
+                    if t == "string" or isStringLit(el)
+                        out = out + .exprStr(el)
+                    else if t == "f64" or isFloatLit(el)
+                        out = out + "zshow_f(" + .exprStr(el) + ")"
+                    else
+                        out = out + "(" + .exprStr(el) + ").str()"
+                return out + "])"
+            else
+                return .exprStr(e)
+
     def listLitStr(ll: ExprListLit): str
         var et: str = .listLitElemType(ll)
         if et == ""
@@ -4239,6 +4267,10 @@ class VGen
             return obj + "." + vSafe(name) + "(" + .argsStr(args, okey) + ")"
         if rtype == "u8" and name == "toString" and args.count() == 0
             return obj + ".ascii_str()"   # a char's toString is the character (a byte's would be its number)
+        if rtype == "&ZSqliteDb" and name == "journalMode" and args.count() == 0
+            return obj + ".journal_mode()"
+        if rtype == "&ZSqliteDb" and (name == "exec" or name == "query") and args.count() == 2
+            return obj + "." + name + "(" + .exprStr(args.at(0).value) + ", " + .sqliteParamsStr(args.at(1).value) + ")"
         if rtype == "&ZSqliteDb" and (name == "exec" or name == "query") and args.count() == 1
             return obj + "." + name + "(" + .argsStr(args) + ", new_zlist[string]())"   # without parameters
         if rtype == "string" and name == "toInt" and args.count() == 0
@@ -4318,6 +4350,15 @@ class VGen
                 .refuse(ns + "." + m.member + " (the V runtime has no " + ns + " yet)", span)
             return ""   # (before the arguments are rendered: rendering binds temporaries, and a second rendering bound them twice)
         var name = m.member
+        # Sqlite.open(path, writeAhead: bool = true): the checker refuses any other
+        # argument, so a second one -- named or not -- is the write-ahead choice and its
+        # absence the default (CodeGen's genSqliteCall, zebra-language 11b4404). Before the
+        # arguments are rendered together: argsStr refuses a named argument to a callee it
+        # has no signature for, and this one is the runtime's.
+        if ns == "Sqlite" and name == "open" and args.count() > 0
+            if args.count() > 1
+                return "zsqlite_open(" + .exprStr(args.at(0).value) + ", " + .exprStr(args.at(1).value) + ")"
+            return "zsqlite_open(" + .exprStr(args.at(0).value) + ", true)"
         var a = .argsStr(args)
         if ns == "File"
             if name == "exists": return "zfile_exists(" + a + ")"
@@ -4398,7 +4439,7 @@ class VGen
             .refuse("Json." + name, span)
             return "zjson_" + snakeCase(name) + "(" + a + ")"
         if ns == "Sqlite"
-            if name == "open": return "zsqlite_open(" + a + ")"
+            if name == "open": return "zsqlite_open(\"\", true)"   # no path at all: the Zig route opens ""
             .refuse("Sqlite." + name, span)
             return "zsqlite_" + snakeCase(name) + "(" + a + ")"
         if ns == "DateTime"
