@@ -17,6 +17,36 @@
 #   bash tools/gates.sh --daily      # 37-85m — ONCE A DAY: full + the excluded set
 #   bash tools/gates.sh --v          # THE V BACKEND, alone -- a FOCUS set, not a rung
 #   bash tools/gates.sh --list       # what each tier runs, and what it cannot see
+#   bash tools/gates.sh --full --resume  # re-run a tier, SKIPPING gates that already
+#                                    #   passed on this EXACT tree (see RESUME below)
+#
+# RESUME (2026-11-11, Sean: "a restart doesn't repeat sweeps")
+# ------------------------------------------------------------
+# Every PASS is recorded under a key for the exact state of the tree: HEAD, the diff
+# against HEAD (staged + unstaged), every untracked file's content, the built compiler,
+# `zig version`, the resolved n1-anchor commit, and the env vars that change verdicts
+# (ZBR_VCACHE, ZBR_OCACHE, V, ZEBRA_LIBUI_PATH, LIBUI_BINDINGS). Each record also carries
+# its gate's own registration (tier, label, expectation, argv), so editing one gate's line
+# invalidates that gate alone. `--resume` skips a gate whose record matches BOTH; nothing
+# else is ever skipped. It is EXPLICIT on purpose -- never inferred from what is on disk.
+#
+#   - Only a PASS is recorded. A FAIL, a gate KILLED at its ceiling, and a pinned gate
+#     (XFAIL or not) always run again.
+#   - A resumed gate prints RESUMED with the time and duration of the run that passed it,
+#     and the terminal line says how many: `gates: N/M PASS (full, K resumed)`. A board
+#     assembled from several runs is weaker evidence than one clean run, and it says so.
+#   - The key is RE-CHECKED during the run (at most once a minute, after a gate passes)
+#     and once more at the end. If the tree moved, every record THIS run wrote is
+#     discarded and the board says which component moved: a pass measured on a tree that
+#     changed under it is not a pass for either tree.
+#   - The doctor preflight always runs; it is not a gate and is never skipped.
+#   - Records live in ${ZBR_BS}-gates-resume/<key>/ (per checkout, BUG-521), pruned
+#     after 7 days. GATES_RESUME_DIR overrides. GATES_RESUME_KEY_FILE is a TEST HOOK
+#     (tools/tier_selfcheck.sh): the key is read from that file instead of the tree, and
+#     the run says so loudly. No tier uses it.
+#   - --v (the focus set) neither records nor resumes.
+#   - QUICK, FULL and DAILY always record. --static and --fast record only with --resume:
+#     the key cost ~75 s on a ~110 s --static (measured), for a tier nobody restarts.
 #
 # --v IS NOT ON THE LADDER (2026-10-30, Sean: "a tier with a V-specific focus"). Its gates
 # need a V toolchain the ladder does not, and they answer a different question -- does the
@@ -114,12 +144,16 @@ _level() {
 _count_tier() { grep -cE "^[[:space:]]*(run|pin)_$1 \"" "$0"; }
 
 MODE="quick"
-case "${1:-}" in
-    --static) MODE="static" ;;
-    --fast)   MODE="fast" ;;
-    --full)   MODE="full" ;;
-    --daily)  MODE="daily" ;;
-    --v)      MODE="v" ;;
+RESUME=0
+_mode_arg=""
+for _arg in "$@"; do
+case "$_arg" in
+    --resume) RESUME=1 ;;
+    --static|--fast|--full|--daily|--v)
+        if [[ -n "$_mode_arg" ]]; then
+            echo "gates.sh: two tiers named ($_mode_arg and $_arg) -- name one" >&2; exit 2
+        fi
+        _mode_arg="$_arg"; MODE="${_arg#--}" ;;
     --list)
         # Print the whole leading comment block, however long it grows — a fixed
         # line range silently truncated the header (and then leaked shell code
@@ -140,9 +174,13 @@ case "${1:-}" in
         done
         printf '  %-8s %5d %11s\n' "v" "$(_count_tier v)" "(focus set: --v alone)"
         exit 0 ;;
-    "" ) ;;
-    * ) echo "gates.sh: unknown option '$1' (try --static, --fast, --full, --daily, --v or --list)" >&2; exit 2 ;;
+    * ) echo "gates.sh: unknown option '$_arg' (try --static, --fast, --full, --daily, --v, --resume or --list)" >&2; exit 2 ;;
 esac
+done
+if [[ $RESUME -eq 1 && "$MODE" == "v" ]]; then
+    echo "gates.sh: --resume is not supported with --v (the focus set records nothing); run --v alone" >&2
+    exit 2
+fi
 
 MODE_LEVEL=$(_level "$MODE")
 # --v runs its own set and nothing from the ladder: level 0 puts every ladder gate above it.
@@ -152,6 +190,65 @@ JOBS="${JOBS:-2}"
 FAILED=()
 PASSED=0
 PINNED=0
+
+# -- RESUME: pass records keyed to the exact tree (see the header) ---------------------
+RESUMED=0
+# Recording costs a tree-key computation at start, about once a minute, and at the end:
+# measured 2026-11-11 on a loaded host as ~75 s added to a ~110 s --static (old 125/91 s,
+# new 155/211 s, run alternately). Nobody restarts a two-minute tier, so --static and
+# --fast record only when --resume is given; the tiers a restart is expensive for always do.
+RECORDING=0
+case "$MODE" in quick|full|daily) RECORDING=1 ;; esac
+[[ $RESUME -eq 1 ]] && RECORDING=1
+RESUME_ROOT="${GATES_RESUME_DIR:-${ZBR_BS}-gates-resume}"
+TREE_KEY=""; KEY_DIR=""; _KEY_PARTS0=""; _last_keycheck=0; _RES_EARLIEST=""; TREE_MOVED=""
+_REC_WRITTEN=()
+_bin_stat=""; _bin_sha=""
+# One "<component> <value>" line per thing a gate verdict can depend on. A component is a
+# LINE, so a mismatch can be explained by name rather than as one opaque hash.
+_key_parts() {
+    if [[ -n "${GATES_RESUME_KEY_FILE:-}" ]]; then
+        echo "test-hook $(cat "$GATES_RESUME_KEY_FILE" 2>/dev/null)"
+        return
+    fi
+    echo "head $(git rev-parse HEAD 2>/dev/null)"
+    echo "diff $(git diff HEAD --binary 2>/dev/null | sha1sum | cut -c1-40)"
+    echo "untracked $(git ls-files --others --exclude-standard -z 2>/dev/null | xargs -0 -r sha1sum 2>/dev/null | sha1sum | cut -c1-40)"
+    # The compiler binary is ~20 MB; hash it again only when its size or mtime moved.
+    local b="" st=""
+    for b in zig-out/bin/zebra.exe zig-out/bin/zebra; do [[ -f "$b" ]] && break; b=""; done
+    if [[ -n "$b" ]]; then
+        st="$(stat -c '%s %Y' "$b" 2>/dev/null)"
+        if [[ "$st" != "$_bin_stat" ]]; then _bin_stat="$st"; _bin_sha="$(sha1sum "$b" | cut -c1-40)"; fi
+        echo "compiler $_bin_sha"
+    else
+        echo "compiler none"
+    fi
+    echo "zig $(zig version 2>/dev/null)"
+    local t; t="$(git tag -l 'n1-anchor-*' --sort=-creatordate 2>/dev/null | head -1)"
+    echo "n1-anchor ${t:+$(git rev-parse "$t^{commit}" 2>/dev/null)}"
+    echo "env ZBR_VCACHE=${ZBR_VCACHE-} ZBR_OCACHE=${ZBR_OCACHE-} V=${V-} ZEBRA_LIBUI_PATH=${ZEBRA_LIBUI_PATH-} LIBUI_BINDINGS=${LIBUI_BINDINGS-}"
+}
+# Re-derive the key; if the tree moved, stop recording and DISCARD this run's records.
+_key_recheck() {
+    [[ $RECORDING -eq 1 ]] || return 1
+    local now; now="$(_key_parts)"; _last_keycheck=$SECONDS
+    [[ "$now" == "$_KEY_PARTS0" ]] && return 0
+    RECORDING=0
+    TREE_MOVED="$(diff <(echo "$_KEY_PARTS0") <(echo "$now") | grep '^>' | awk '{print $2}' | sort -u | tr '\n' ' ')"
+    local l
+    for l in "${_REC_WRITTEN[@]}"; do rm -f "$KEY_DIR/$l.pass"; done
+    printf '  \033[33m!!\033[0m    the tree CHANGED during this run (%s) -- %d pass record(s) from this run discarded; nothing more is recorded\n' \
+           "${TREE_MOVED% }" "${#_REC_WRITTEN[@]}" >&2
+    return 1
+}
+# _rec_pass <label> <gate-key> <seconds> <summary>
+_rec_pass() {
+    [[ $RECORDING -eq 1 ]] || return 0
+    if (( SECONDS - _last_keycheck >= 60 )); then _key_recheck || return 0; fi
+    printf '%s\n%s\n%s\n%s\n' "$2" "$(date '+%Y-%m-%d %H:%M')" "$3" "$4" > "$KEY_DIR/$1.pass" \
+        && _REC_WRITTEN+=("$1")
+}
 
 # _run <tier> <label> <expected-substring-on-success> <command...>
 #
@@ -177,6 +274,22 @@ _run() {
         [[ "$gate_tier" != "v" ]] && return 0
     else
         [[ $(_level "$gate_tier") -gt $MODE_LEVEL ]] && return 0
+    fi
+    # RESUME. A pinned gate is never recorded or resumed: its whole point is to be run.
+    local gkey=""
+    if [[ -n "$KEY_DIR" && -z "${_PIN_TICKET:-}" ]]; then
+        gkey="$(printf '%s\0' "$gate_tier" "$label" "$expect" "$@" | sha1sum | cut -c1-16)"
+        local rec="$KEY_DIR/$label.pass"
+        if [[ $RESUME -eq 1 && -f "$rec" && "$(sed -n 1p "$rec")" == "$gkey" ]]; then
+            local r_when r_secs r_last
+            r_when="$(sed -n 2p "$rec")"; r_secs="$(sed -n 3p "$rec")"; r_last="$(sed -n 4p "$rec")"
+            printf '  %-16s ...' "$label" >&2
+            printf '\r  %-16s ' "$label" >&2
+            printf '\033[36mRESUMED\033[0m %-55s %ss\n' "${r_last:0:55}" "(${r_secs}s at $r_when)"
+            [[ -z "$_RES_EARLIEST" || "$r_when" < "$_RES_EARLIEST" ]] && _RES_EARLIEST="$r_when"
+            PASSED=$((PASSED + 1)); RESUMED=$((RESUMED + 1))
+            return
+        fi
     fi
     local out rc log t0 t1
     log="$(mktemp -t gate-XXXXXX)"
@@ -218,6 +331,7 @@ _run() {
         printf '\033[31mKILLED\033[0m at the %ss ceiling - SLOW or hung, this cannot tell which.\n' "${GATE_TIMEOUT:-5400}"
         printf '                   re-run it alone: a hang stays stuck, a slow gate finishes.\n'
         FAILED+=("$label(killed-at-ceiling)")
+        [[ -n "$KEY_DIR" ]] && rm -f "$KEY_DIR/$label.pass"
         return
     fi
     local last
@@ -266,9 +380,11 @@ _run() {
     if [[ $ok -eq 1 ]]; then
         printf '\033[32mPASS\033[0m  %-58s %ss\n' "${shown:0:58}" "$t1"
         PASSED=$((PASSED + 1))
+        [[ -n "$gkey" ]] && _rec_pass "$label" "$gkey" "$t1" "$last"
     else
         printf '\033[31mFAIL\033[0m  %-58s %ss\n' "${shown:0:58}" "$t1"
         FAILED+=("$label")
+        [[ -n "$KEY_DIR" ]] && rm -f "$KEY_DIR/$label.pass"
         # THE FAILING LINES FIRST, then the tail. `tail -12` alone reliably HIDES the
         # answer for any gate whose output is long: smoke prints 335 PASS lines, so a
         # single failure scrolls past and the board shows twelve PASSes underneath the
@@ -365,6 +481,34 @@ fi
 
 echo "gates: $MODE (JOBS=$JOBS)"
 bash "$SCRIPT_DIR/sysload.sh" 2>/dev/null | sed 's/^/  /'
+if [[ $RECORDING -eq 1 ]]; then
+    mkdir -p "$RESUME_ROOT"
+    find "$RESUME_ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + 2>/dev/null
+    _KEY_PARTS0="$(_key_parts)"; _last_keycheck=$SECONDS
+    TREE_KEY="$(echo "$_KEY_PARTS0" | sha1sum | cut -c1-16)"
+    KEY_DIR="$RESUME_ROOT/$TREE_KEY"
+    mkdir -p "$KEY_DIR" && echo "$_KEY_PARTS0" > "$KEY_DIR/MANIFEST"
+    [[ -n "${GATES_RESUME_KEY_FILE:-}" ]] && \
+        echo "  !! TEST HOOK: the tree key is read from GATES_RESUME_KEY_FILE, not from the tree" >&2
+    if [[ $RESUME -eq 1 ]]; then
+        _nrec=$(find "$KEY_DIR" -maxdepth 1 -name '*.pass' 2>/dev/null | wc -l | tr -d ' ')
+        echo "  resume: tree key $TREE_KEY has $_nrec recorded pass(es); matching gates are skipped"
+        if [[ "$_nrec" -eq 0 ]]; then
+            # Say WHY nothing matched: name what differs from the newest record set.
+            _prev="$(ls -dt "$RESUME_ROOT"/*/ 2>/dev/null | while read -r d; do
+                       [[ "${d%/}" == "$KEY_DIR" ]] && continue
+                       ls "$d"*.pass >/dev/null 2>&1 && { echo "${d%/}"; break; }; done)"
+            if [[ -n "$_prev" && -f "$_prev/MANIFEST" ]]; then
+                echo "  resume: the newest record set ($(basename "$_prev")) was for a tree that differs in:" \
+                     "$(diff "$_prev/MANIFEST" "$KEY_DIR/MANIFEST" | grep '^>' | awk '{print $2}' | sort -u | tr '\n' ' ')"
+            else
+                echo "  resume: no records exist for any tree yet -- every gate runs"
+            fi
+        fi
+    else
+        echo "  (passes are recorded under tree key $TREE_KEY; after a red run, --resume re-runs only the rest)"
+    fi
+fi
 echo
 
 run_static "fallthrough"    "0 hazard"  python tools/lint_fallthrough.py
@@ -761,6 +905,9 @@ if [[ "$_expected" -lt "$_floor" ]]; then
     printf '  gates it should have run must not report a result.\n' >&2
     exit 2
 fi
+# RESUME: the end-of-run key check. A pass is recorded only for a tree that held still
+# for the whole run; a mid-run edit discards this run's records (and says which part).
+[[ $RECORDING -eq 1 ]] && _key_recheck
 # Pinned gates RAN -- they are neither passes nor tier failures, but they must be counted
 # here or the RAN-N-OF-M check would report them as gates that never executed.
 _actual=$(( PASSED + ${#FAILED[@]} + PINNED ))
@@ -785,8 +932,17 @@ if [[ "$MODE" == "daily" && -d .zig-cache ]]; then
 fi
 
 echo
+_rnote=""
+if [[ $RESUME -eq 1 ]]; then
+    _rnote=", $RESUMED resumed"
+    if [[ $RESUMED -gt 0 ]]; then
+        echo "  ASSEMBLED: $RESUMED pass(es) above were recorded by earlier run(s) on this exact tree"
+        echo "  (earliest $_RES_EARLIEST); $(( PASSED - RESUMED )) gate(s) passed in this run."
+    fi
+fi
+[[ -n "$TREE_MOVED" ]] && echo "  !! the tree changed DURING this run (${TREE_MOVED% }): its gates measured more than one tree"
 if [[ ${#FAILED[@]} -eq 0 ]]; then
-    printf '\033[32mgates: %d/%d PASS (%s)\033[0m\n' "$PASSED" "$_expected" "$MODE"
+    printf '\033[32mgates: %d/%d PASS (%s%s)\033[0m\n' "$PASSED" "$_expected" "$MODE" "$_rnote"
     [[ $PINNED -gt 0 ]] && printf '  %d pinned gate(s) XFAILed as expected - see the ticket(s) above.\n' "$PINNED"
     # NAME WHAT THIS TIER DID NOT LOOK AT. A green board is a claim about what was FOUND,
     # and on a lower tier the more important fact is what was never examined -- otherwise
@@ -803,7 +959,7 @@ if [[ ${#FAILED[@]} -eq 0 ]]; then
                 echo "   about the Zig backend, and nothing about the corpus beyond the v_poc examples.)" ;;
         daily)  echo "  (daily tier — GUI rendering, input, layout, resize and colours are STILL uncovered:" ;
                 echo "   only a human running the app proves those.)" ;
-                echo "  Record it in CLAUDE.md: DAILY tier $(date +%Y-%m-%d): $PASSED/$_expected PASS, $PINNED pinned." ;;
+                echo "  Record it in CLAUDE.md: DAILY tier $(date +%Y-%m-%d): $PASSED/$_expected PASS, $PINNED pinned${_rnote:+ (ASSEMBLED$_rnote)}." ;;
     esac
     exit 0
 else

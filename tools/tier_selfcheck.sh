@@ -32,7 +32,11 @@ source "$REPO/tools/zig_toolchain.sh"   # the PINNED zig (.zig-version), not the
 
 PROBE=tools/zz_gates_probe
 PASS=0; FAIL=0
-trap 'rm -f "$PROBE"' EXIT
+# Every probe run records its passes in a PRIVATE store (gates.sh --resume, 2026-11-11):
+# a probe must never write into, or resume from, the real ${ZBR_BS}-gates-resume.
+RDIR="$(mktemp -d)"; KF="$RDIR/key"; MARK=tools/zz_resume_probe_marker
+export GATES_RESUME_DIR="$RDIR/store"
+trap 'rm -f "$PROBE" "$MARK"; rm -rf "$RDIR"' EXIT
 
 fresh() { cp tools/gates.sh "$PROBE"; }
 
@@ -99,6 +103,97 @@ fresh
 sed -i 's|^run_daily()  { _PIN_TICKET=""; _run daily  "\$@"; }|&\npin_static() { local l="$1" t="$2"; shift 2; _PIN_TICKET="$t"; _run static "$l" "$@"; _PIN_TICKET=""; }|' "$PROBE"
 sed -i 's|^run_static "hazard-lint"    "0 hazard"  python tools/hazard_lint.py|pin_static "hazard-lint" "BUG-000" "0 hazard" python tools/hazard_lint.py|' "$PROBE"
 expect "M5 pinned gate that now passes" 1 "retire the pin"
+
+# -- RESUME (2026-11-11) -------------------------------------------------------------
+# `--resume` SKIPS gates, which makes it the most direct way yet for this runner to print
+# green without checking anything. Each leg below is the attack it exists to stop. The
+# probe is trimmed to two instant static gates so a leg costs one doctor run, and every
+# leg writes its records into a private directory: probe runs must not resume each other,
+# and must never touch the real ${ZBR_BS}-gates-resume store.
+trim() {  # keep two instant static gates; the expectation is derived from the probe itself
+    sed -i -E '/^run_static "(fallthrough|fn-twins)"/!{/^[[:space:]]*(run|pin)_static "/d}' "$PROBE"
+    # The vacuity floor (10) guards the REAL tier; M3 tests it on an untrimmed copy.
+    sed -i 's/^_floor=10;/_floor=2;/' "$PROBE"
+}
+trimq() { trim; sed -i -E '/^[[:space:]]*(run|pin)_(fast|quick|full|daily) "/d' "$PROBE"; }  # default tier = the same two gates
+rexpect() {  # <name> <want-rc> <want-substring> <gates.sh args...>  (hooked key unless NOHOOK=1)
+    local name="$1" want_rc="$2" want="$3" out rc; shift 3
+    if [[ "${NOHOOK:-0}" == 1 ]]; then
+        out=$(GATES_RESUME_DIR="$RDIR/store" bash "$PROBE" "$@" 2>&1); rc=$?
+    else
+        out=$(GATES_RESUME_DIR="$RDIR/store" GATES_RESUME_KEY_FILE="$KF" bash "$PROBE" "$@" 2>&1); rc=$?
+    fi
+    if [[ "$rc" == "$want_rc" ]] && echo "$out" | grep -qF "$want"; then
+        printf '  ok    %-34s rc=%s, said "%s"\n' "$name" "$rc" "$want"
+        PASS=$((PASS+1))
+    else
+        printf '  FAIL  %-34s rc=%s (wanted %s), looking for "%s"\n' "$name" "$rc" "$want_rc" "$want"
+        echo "$out" | tail -8 | sed 's/^/          /'
+        FAIL=$((FAIL+1))
+    fi
+}
+
+# R0 CONTROL -- a clean run records, and --resume on the same key skips both gates.
+fresh; trim; echo k1 > "$KF"
+rexpect "R0 control: clean run records"     0 "2/2 PASS (static, 0 resumed)"            --static --resume
+rexpect "R0 control: --resume skips both"   0 "2/2 PASS (static, 2 resumed)" --static --resume
+
+# R1 -- a record for ANOTHER tree must not resume, and the run must say what differs.
+echo k2 > "$KF"
+rexpect "R1 stale key resumes nothing"      0 "(static, 0 resumed)"          --static --resume
+
+# R2 -- a gate that FAILS after it once passed must lose its record. The failure is forced
+# inside _run, so the registration (and hence the gate's own key) is unchanged: the record
+# can only disappear because the failure removed it. It runs on the DEFAULT tier, which
+# records without --resume: a forced failure under --resume would be skipped, not run.
+fresh; trimq; echo k3 > "$KF"
+rexpect "R2 setup: clean run records"       0 "2/2 PASS (quick)"
+sed -i 's|^    local ok=0$|    local ok=0; [[ "$label" == "fallthrough" ]] \&\& rc=1|' "$PROBE"
+rexpect "R2 setup: forced failure"          1 "FAILED"
+fresh; trimq
+rexpect "R2 failed gate is not resumed"     0 "2/2 PASS (quick, 1 resumed)"  --resume
+# R3 -- a resumed gate must be COUNTED; a skip that is not counted is a gate that silently
+# did not run, and RAN N OF M must catch it.
+sed -i 's|PASSED=\$((PASSED + 1)); RESUMED=\$((RESUMED + 1))|RESUMED=$((RESUMED + 1))|' "$PROBE"
+echo k1 > "$KF"
+rexpect "R3 uncounted resume -> RAN N OF M" 1 "RAN 0 OF 2"                   --static --resume
+
+# R4 -- the tree moves DURING the run: every record that run wrote is discarded, under the
+# old key and the new one alike.
+fresh; trim; echo k5 > "$KF"
+sed -i 's|^run_static "fallthrough".*|&\necho k5b > "$GATES_RESUME_KEY_FILE"|' "$PROBE"
+rexpect "R4 mid-run move is reported"       0 "tree CHANGED during this run" --static --resume
+fresh; trim; echo k5b > "$KF"
+rexpect "R4 no record under the new key"    0 "(static, 0 resumed)"          --static --resume
+echo k5 > "$KF"
+rexpect "R4 no record under the old key"    0 "(static, 0 resumed)"          --static --resume
+
+# R5 -- a PINNED gate is never recorded: it must run on every resume.
+fresh; trim; echo k6 > "$KF"
+sed -i 's|^run_daily()  { _PIN_TICKET=""; _run daily  "\$@"; }|&\npin_static() { local l="$1" t="$2"; shift 2; _PIN_TICKET="$t"; _run static "$l" "$@"; _PIN_TICKET=""; }|' "$PROBE"
+sed -i 's|^run_static "fallthrough".*|pin_static "fallthrough" "BUG-000" "zz_never_printed" python tools/lint_fallthrough.py|' "$PROBE"
+rexpect "R5 setup: pin XFAILs"              0 "1/2 PASS (static, 0 resumed)"            --static --resume
+rexpect "R5 pinned gate runs again"         0 "1/2 PASS (static, 1 resumed)" --static --resume
+
+# R6 -- THE REAL KEY, no hook: an untracked file appearing is a different tree. Without this
+# leg every check above could pass while _key_parts ignored the tree entirely.
+fresh; trim; rm -f "$MARK"
+NOHOOK=1 rexpect "R6 real key: clean run records"   0 "2/2 PASS (static, 0 resumed)"            --static --resume
+echo "a different tree" > "$MARK"
+NOHOOK=1 rexpect "R6 real key: untracked file moves it" 0 "differs in: untracked"    --static --resume
+rm -f "$MARK"
+NOHOOK=1 rexpect "R6 real key: same tree resumes"   0 "2/2 PASS (static, 2 resumed)" --static --resume
+
+# R7 -- WHICH tiers record. --static without --resume must NOT record (the key costs more
+# than the tier is worth restarting); the default tier must record without being asked, or
+# the first red FULL leaves nothing to resume from. The probe's higher tiers are emptied so
+# the default tier is the same two static gates.
+fresh; trim; echo k7 > "$KF"
+rexpect "R7 plain --static records nothing" 0 "2/2 PASS (static)"            --static
+rexpect "R7 ...so --resume finds nothing"   0 "(static, 0 resumed)"          --static --resume
+fresh; trimq; echo k8 > "$KF"
+rexpect "R7 default tier records unasked"   0 "2/2 PASS (quick)"
+rexpect "R7 ...and resumes"                 0 "2/2 PASS (quick, 2 resumed)"  --resume
 
 echo
 echo "tier self-check: $PASS ok, $FAIL FAILED"

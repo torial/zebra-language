@@ -222,7 +222,7 @@ colours still require Sean running it.
 
 ## The tier ladder — and why it is cut on BUILD-DEPENDENCE, not on seconds
 
-`bash tools/tier_selfcheck.sh` (~2 min, NOT a gate) asks whether the ladder can still
+`bash tools/tier_selfcheck.sh` (~25 min at nice 19 on a loaded host, NOT a gate) asks whether the ladder can still
 fail. `gate_selfcheck.sh` falsifies the individual gates; this falsifies the thing that
 decides WHICH gates run, because a selector is a new way to print green — filter wrongly
 and the board shows fewer PASSes and no failures, which reads exactly like success. Six
@@ -230,6 +230,27 @@ mutations on a COPY of `gates.sh`, each of which must be caught: an impure gate 
 static, a purity detector that stopped matching, a collapsed per-tier count, a gate that
 silently did not run, a pin that started passing — plus an unmutated control, without
 which every "detection" could be an unrelated breakage. Run it after touching `gates.sh`.
+
+**`--resume` (2026-11-11, Sean: "a mechanism for full tier to bypass already succeeded
+gates, so a restart doesn't repeat sweeps"; keyed on the EXACT tree, his call).** A QUICK, FULL or DAILY run
+records each PASS under a key over the whole tree: HEAD, `git diff HEAD --binary`, the
+untracked files' contents, the compiler binary's sha, `zig version`, the resolved N-1
+anchor, and the env vars that change a gate's answer (`ZBR_VCACHE`, `ZBR_OCACHE`, `V`,
+`ZEBRA_LIBUI_PATH`, `LIBUI_BINDINGS`). Each gate's record also carries its own key
+(tier, label, expect string, argv), so editing a registration invalidates that gate's record.
+`gates.sh --full --resume` skips a gate whose record matches, prints it `RESUMED` with the
+original time and line, counts it as passed, and ends `gates: N/M PASS (full, K resumed)`
+after an `ASSEMBLED:` note. That is still a stitched result, said on the terminal line
+where it cannot be missed. Rules, each an attack `tier_selfcheck.sh` writes (legs R0-R7): --static and --fast record only with `--resume` (the key added ~75 s to a ~110 s --static, measured alternately); a
+FAIL or KILLED removes the gate's record; a PINNED gate is never recorded; the key is
+rechecked at most once a minute and at the end, and if the tree MOVED during the run every
+record that run wrote is discarded and the components that moved are named; a resume that
+finds no records names how the newest record set differs (`differs in: untracked`).
+Records: `${ZBR_BS}-gates-resume/<key>/`, with a MANIFEST of the key's parts; sets older
+than 7 days are pruned. `--resume --v` is refused. Test hook `GATES_RESUME_KEY_FILE`
+(used by no tier) replaces the key with a file's contents, and the run says so.
+A runner that SKIPS gates is the most direct way it can print green while checking
+nothing, which is why a skip is counted (R3: an uncounted resume fails as `RAN 0 OF 2`).
 
 **Its control caught two real things on its first two runs**, both of them the harness's
 fault rather than the ladder's, and both worth knowing: a probe file named `*.sh` turned
