@@ -1818,12 +1818,34 @@ pub mut:
 	cols map[string]string
 }
 
-pub fn zsqlite_open(zr_path string) ?&ZSqliteDb {
+// Sqlite.open(path, writeAhead: bool = true), as the Zig runtime's _sqlite_open (zebra-language
+// 11b4404): write-ahead with synchronous NORMAL by default (a commit does not wait for the
+// disk); false sets the rollback journal with synchronous FULL ACTIVELY, since the mode lives
+// in the file and an earlier open may have left it in WAL. The emitter passes `true` when the
+// source gives no second argument.
+pub fn zsqlite_open(zr_path string, zr_write_ahead bool) ?&ZSqliteDb {
 	zr_db := sqlite.connect(zr_path) or { return none }
-	return &ZSqliteDb{
+	mut zr_d := &ZSqliteDb{
 		path: zr_path
 		db:   zr_db
 	}
+	zr_mode := if zr_write_ahead { 'WAL' } else { 'DELETE' }
+	zr_level := if zr_write_ahead { 'NORMAL' } else { 'FULL' }
+	// journal_mode answers a row; a refusal leaves the mode as it was, and journal_mode()
+	// says what it is
+	zr_d.db.exec('PRAGMA journal_mode=' + zr_mode) or {}
+	zr_d.db.exec('PRAGMA synchronous=' + zr_level) or {}
+	return zr_d
+}
+
+// db.journalMode(): SQLite's own answer, asked live -- "wal", "delete", "memory", or
+// "unknown" when it answers nothing
+pub fn (mut zr_d ZSqliteDb) journal_mode() string {
+	zr_rows := zr_d.db.exec('PRAGMA journal_mode') or { return 'unknown' }
+	if zr_rows.len == 0 || zr_rows[0].vals.len == 0 {
+		return 'unknown'
+	}
+	return zr_rows[0].vals[0].to_lower()
 }
 
 fn zsqlite_params(zr_params &ZList[string]) []string {
@@ -1856,6 +1878,19 @@ pub fn (mut zr_d ZSqliteDb) query(zr_sql_text string, zr_params &ZList[string]) 
 		})
 	}
 	return zr_out
+}
+
+// begin / commit / rollback: a transaction's statements, as the Zig runtime's
+pub fn (mut zr_d ZSqliteDb) begin() {
+	zr_d.db.exec('BEGIN') or { zbr_panic('sqlite begin: ' + err.msg()) }
+}
+
+pub fn (mut zr_d ZSqliteDb) commit() {
+	zr_d.db.exec('COMMIT') or { zbr_panic('sqlite commit: ' + err.msg()) }
+}
+
+pub fn (mut zr_d ZSqliteDb) rollback() {
+	zr_d.db.exec('ROLLBACK') or { zbr_panic('sqlite rollback: ' + err.msg()) }
 }
 
 pub fn (mut zr_d ZSqliteDb) close() {
