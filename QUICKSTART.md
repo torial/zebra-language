@@ -4339,7 +4339,7 @@ Process-global statics (backed by a thread-local PRNG, so concurrent
 | `Random.randInt(low, high)`       | int     | `[low, high]`, inclusive            |
 | `Random.randFloat()`              | float   | `[0.0, 1.0)`                        |
 | `Random.randBool()`               | bool    |                                     |
-| `Random.bytes(n)`                 | List(byte) | Random bytes                     |
+| `Random.bytes(n)`                 | `str`   | n PRNG bytes as 2n hex chars. NOT for secrets: the same PRNG `Random.seed` resets, so a seeded program repeats it exactly |
 | `Random.seed(s)`                  | void    | Seed the PRNG                       |
 
 Instance form — `Random.new(seed)` returns an **independent**, seedable PRNG
@@ -4815,6 +4815,12 @@ def main()
 The handler takes the request and RETURNS the response (`-c` refuses any other shape,
 BUG-685): `HttpResponse.ok(body)`,
 `HttpResponse.notFound(body)`, or `HttpResponse.new(status, body)` for any other status.
+`resp.withHeader(name, value)` returns a NEW response with one more header line (the
+response is a value; the original is unchanged), e.g.
+`return HttpResponse.ok(body).withHeader("Set-Cookie", "sid=" + token)`. One exception
+(BUG-698, open): the server always sends `Content-Type: text/html; charset=utf-8`, so a
+`withHeader("Content-Type", ...)` goes out as a SECOND Content-Type line. A posted body is
+not capped (BUG-699, open). Read a request header with `req.header(name)`.
 (Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
 which does not build.)
 

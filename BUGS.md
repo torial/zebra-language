@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-697. Next new bug: BUG-698.**
+**Last bug number generated: BUG-699. Next new bug: BUG-700.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,35 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-698: `Http.serve` always sends `Content-Type: text/html`; a handler cannot set its own
+- **Status:** OPEN (filed 2026-11-12; reported by Fable reading the HTTP surface for Graze)
+- **Where:** `selfhost/stdlib_preamble.zig`, `_http_serve`'s response `allocPrint`: the format
+  string hard-codes `Content-Type: text/html; charset=utf-8`, then appends the handler's
+  `withHeader` headers after it. A handler serving JSON or a download that calls
+  `resp.withHeader("Content-Type", "application/json")` sends the header TWICE; which one a
+  client honours is client-defined.
+- **Fix shape:** emit the default only when the handler's headers carry no `Content-Type`
+  (case-insensitive); same for any other fixed line the handler may need to own.
+- **Control when fixing:** an in-process `Http.serve` + `Http.request` fixture whose handler
+  sets `application/json`; the raw response (read over `Tcp`, since client responses do not
+  capture headers) must carry exactly one `Content-Type` line, and a handler that sets none
+  must still get `text/html`.
+
+---
+
+### BUG-699: `Http.serve` allocates whatever `Content-Length` a client claims, with no cap or header timeout
+- **Status:** OPEN (filed 2026-11-12; Graze's charter, `C:\Projects\graze\docs\ZEBRA_WEB_ARCHITECTURE.md` §4.3/4.5, wants a 1 MB default and a header timeout)
+- **Where:** `_http_serve` parses `Content-Length` and does `_alloc.alloc(u8, _cl) catch @panic("OOM")`.
+  One request claiming a multi-GB body panics the server (or exhausts RAM) before a byte of
+  body arrives; there is no limit and no read deadline, so a slow client also holds the
+  (single-threaded) accept loop indefinitely.
+- **Fix shape:** a body limit (default 1 MB, settable on `Http.serve`) answered with `413`
+  without reading the body; a header-read deadline answered by closing the connection.
+- **Control when fixing:** a raw `Tcp` client sending `Content-Length: 10000000000` must get a
+  `413` and the server must answer the NEXT request; a body at the limit must still arrive.
 
 ---
 
