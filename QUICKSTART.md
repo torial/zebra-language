@@ -1617,9 +1617,8 @@ var result = sb.build()              # str (drains the builder)
 > documentation used to describe `:c` as "Unicode scalar as character", which is the
 > codepoint reading and is wrong for an `int`.
 >
-> **Known limit (BUG-301):** the byte form works for a compile-time constant. A
-> **runtime** `int` currently fails to compile — `expected type 'u8', found 'i64'` — so a
-> decoder computing its byte from hex digits cannot use it yet.
+> A **runtime** `int` works too (BUG-301, closed 2026-08-23), so a decoder can build its
+> byte from hex digits: with `var n = 65`, `"${n:c}"` is `A`.
 
 - `in` operator: `if "needle" in haystack` — substring test.
 - Inside `${…}`, non-string values get an implicit `.toString()` call.
@@ -4817,7 +4816,10 @@ BUG-685): `HttpResponse.ok(body)`,
 `HttpResponse.notFound(body)`, or `HttpResponse.new(status, body)` for any other status.
 `resp.withHeader(name, value)` returns a NEW response with one more header line (the
 response is a value; the original is unchanged), e.g.
-`return HttpResponse.ok(body).withHeader("Set-Cookie", "sid=" + token)`. One exception
+`var r = HttpResponse.ok(body)` then `return r.withHeader("Set-Cookie", "sid=" + token)`.
+Call it on a local: chained straight onto the constructor
+(`HttpResponse.ok(body).withHeader(...)`) passes `-c` and fails inside zig (BUG-700, open).
+One exception
 (BUG-698, open): the server always sends `Content-Type: text/html; charset=utf-8`, so a
 `withHeader("Content-Type", ...)` goes out as a SECOND Content-Type line. A posted body is
 not capped (BUG-699, open). Read a request header with `req.header(name)`.
