@@ -1,0 +1,65 @@
+# BUG-715 / BUG-704: a TCP peer that leaves must not be able to end the program.
+#
+# BUG-715 (server side): `conn.write` panicked on a failed write, and `Tcp.serve` runs every
+# handler inside the server process, so a client that connected, sent a request and left
+# before the reply ended the whole server with `panic: WriteFailed`. Now a failed write is
+# dropped; the next client is served.
+#
+# BUG-704 (client side): `conn.readAll()` panicked `ReadFailed` when the peer RESET instead of
+# closing, which any server does when it closes with input it never read. Now a reset ends the
+# drain like a close, and readAll returns what arrived.
+#
+# Both are BUG-701 option A: a panic a remote peer can trigger without any bug in the program.
+# Bounded by its registration, like every socket fixture.
+
+def slowHandler(conn: TcpConn)
+    var req = conn.read()
+    sys.sleep(300)
+    var big = "y".repeat(65536)
+    var i = 0
+    while i < 40
+        conn.write(big)          # for the leaver, these fail: dropped, not a panic
+        i = i + 1
+    conn.close()
+
+def resetHandler(conn: TcpConn)
+    var first = conn.read()      # one chunk of a large request; the rest is never read
+    conn.write("reply")
+    conn.close()                 # closing with unread input sends a reset
+
+def main()
+    sys.go(def()
+        Tcp.serve(19961, slowHandler)
+    )
+    sys.go(def()
+        Tcp.serve(19962, resetHandler)
+    )
+    sys.sleep(400)
+
+    # ── BUG-715: a client leaves before the reply ───────────────────────────
+    var c = Tcp.connect("127.0.0.1", 19961)
+    if c as leaver
+        leaver.write("leaver")
+        leaver.close()
+    sys.sleep(1500)              # the handler's writes fail during this
+    var got: str = ""
+    var c2 = Tcp.connect("127.0.0.1", 19961)
+    if c2 as stayer
+        stayer.write("stayer")
+        got = stayer.readAll()   # drain, so the handler finishes before main returns
+        stayer.close()
+    assert got.len == 40 * 65536, "the server outlived a client that left, and served the next one whole"
+    print("bug715: server still serving, ${got.len} bytes to the next client")
+
+    # ── BUG-704: the server resets the client's connection ─────────────────
+    var rounds = 0
+    while rounds < 5
+        var c3 = Tcp.connect("127.0.0.1", 19962)
+        if c3 as client
+            client.write("q".repeat(262144))     # far more than the handler reads
+            var reply = client.readAll()         # the reset must end this, not panic
+            assert "reply".startsWith(reply), "readAll returns what arrived (a prefix of the reply), got [" + reply + "]"
+            client.close()
+        rounds = rounds + 1
+    print("bug704: readAll survived ${rounds} resets")
+    print("bug704_715: OK")

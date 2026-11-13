@@ -6,6 +6,45 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-715: a `Tcp.serve` server ended when a client left before the reply -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed and fixed 2026-11-13; found looking for BUG-701 option A's
+  sites beside BUG-704)
+- **Repro:** a handler that reads, waits 300 ms and writes 40 x 64 KB; a client connects, sends
+  one word and closes. The server process died with `panic: WriteFailed`, and the next client
+  was refused. Any client could end any `Tcp.serve` server this way, with no bug in the program.
+- **Cause:** `_tcp_write` ended `writeAll(..) catch |e| @panic(@errorName(e))` (and the same on
+  `flush`), and `Tcp.serve` runs every handler in the server process. `Http.serve` was never
+  exposed: its writes have always been `catch {}`.
+- **Fix:** a failed write is dropped; the caller learns the peer is gone the way it learns of a
+  close, from the next `read()` returning `""`. QUICKSTART's `conn.write` row says so.
+- **Pinned by:** `test/bug704_715_tcp_peer_leaves_test.zbr`: after the leaver, the next client
+  must be served all 2,621,440 bytes. Red on the old runtime (`panic: WriteFailed`), green after.
+- **Not done:** `write` cannot report the failure to its caller (it returns nothing). A `bool`
+  result or a `conn.isOpen()` would; neither was added in a fix whose job was to remove a panic.
+
+---
+
+### BUG-704: `conn.readAll()` panicked when the peer reset the connection -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed 2026-11-12; found by the BUG-699 red-check)
+- **Where:** `_tcp_read_all` ends `streamRemaining(..) catch |e| @panic(@errorName(e))`. A peer that
+  resets instead of closing -- which any server does when it closes with unread input -- turns
+  into `panic: ReadFailed` in the CLIENT: a remote peer can crash a program by misbehaving.
+  Seen 8 of 8 runs against `Http.serve` with its lingering close removed.
+- **Fix shape:** return what arrived. `read()` already treats an error as end of stream; whether
+  `readAll` should also distinguish "reset" from "closed" is the decision to make (QUICKSTART
+  says `""` at EOF for `read`, nothing for `readAll`).
+- **Control when fixing:** a `Tcp.serve` handler that writes a reply and closes with unread input;
+  the client's `readAll()` returns the reply (or what arrived) and the program exits 0.
+- **Fix:** a reset ends the drain like a close does; `readAll` returns what arrived (`catch {}` on
+  `streamRemaining`). The decision the entry named: it does NOT distinguish reset from close,
+  the same as `read()` -- a caller that needs to know has no way to ask yet, which is recorded
+  rather than invented here.
+- **Pinned by:** `test/bug704_715_tcp_peer_leaves_test.zbr` (smoke_run_bounded): five rounds of a
+  262,144-byte request to a handler that reads one chunk, replies and closes. Red on the old
+  runtime 3 of 3 (`panic: ReadFailed`), green after.
+
+---
+
 ### BUG-710: `SqliteDb.querySegments` read every column of a depth-2 nested procedure one place off -- FIXED 2026-11-13
 - **Status:** FIXED 2026-11-13 (filed 2026-11-13; Fable, diagnosed from Mosaic through Graze, on 8ac485e)
 - **Symptom:** Mosaic's `CALL witnesses_full() RETURNING *` -- `wid, label, claims TABLE(subject,

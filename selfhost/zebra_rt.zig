@@ -3753,11 +3753,16 @@ pub fn _tcp_connect(host: []const u8, port_in: i64) ?TcpConn {
     };
     return .{ .stream = stream };
 }
+// BUG-715: a failed write is DROPPED, never a panic. The peer decides when a write fails
+// (it left, or reset), and `Tcp.serve` runs every handler inside the server process, so the
+// old `@panic` let any client end a server by connecting, sending, and leaving before the
+// reply. The caller learns the connection is gone the way it learns of a close: the next
+// `read()` returns "". Http.serve's own writes have always been `catch {}` for this reason.
 pub fn _tcp_write(conn: TcpConn, data: []const u8) void {
     var _wb: [4096]u8 = undefined;
     var _wt = conn.stream.writer(_io, &_wb);
-    _wt.interface.writeAll(data) catch |e| @panic(@errorName(e));
-    _wt.interface.flush() catch |e| @panic(@errorName(e));
+    _wt.interface.writeAll(data) catch return;
+    _wt.interface.flush() catch return;
 }
 // BUG-251. `read` returns the NEXT AVAILABLE CHUNK; `readAll` drains to EOF. This is Go's
 // split (`Conn.Read` vs `io.ReadAll`) and Sean's call, 2026-08-21.
@@ -3781,12 +3786,16 @@ pub fn _tcp_read(conn: TcpConn) []const u8 {
 }
 // The previous `read`: drain until the peer closes. Correct when the sender hangs up to
 // signal the end of a message, wrong for request/response -- see above.
+//
+// BUG-704: a peer that RESETS instead of closing (any server that closes with unread input
+// does) ends the drain like a close does, and `readAll` returns what arrived -- as `read`
+// already does. It used to `@panic(ReadFailed)`, so a remote peer could crash a client.
 pub fn _tcp_read_all(conn: TcpConn) []const u8 {
     var _rb: [65536]u8 = undefined;
     var _rd = conn.stream.reader(_io, &_rb);
     var out_list: std.ArrayList(u8) = .empty;
     var out_aw = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &out_list);
-    _ = _rd.interface.streamRemaining(&out_aw.writer) catch |e| @panic(@errorName(e));
+    _ = _rd.interface.streamRemaining(&out_aw.writer) catch {};
     out_list = out_aw.toArrayList();
     return out_list.toOwnedSlice(std.heap.page_allocator) catch @panic("OOM");
 }

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-714. Next new bug: BUG-715.**
+**Last bug number generated: BUG-715. Next new bug: BUG-716.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -104,20 +104,6 @@
 - **Proposal:** `docs/design/str_invalid_utf8.md` (2026-11-13), for agreement with Fable.
 - **Control when fixing:** the repro iterates three items (or the chosen spelling's count) and
   exits 0, in Debug AND `--release`; a valid string's `chars()` is unchanged.
-
----
-
-### BUG-704: `conn.readAll()` panics when the peer resets the connection
-- **Status:** OPEN (filed 2026-11-12; found by the BUG-699 red-check)
-- **Where:** `_tcp_read_all` ends `streamRemaining(..) catch |e| @panic(@errorName(e))`. A peer that
-  resets instead of closing -- which any server does when it closes with unread input -- turns
-  into `panic: ReadFailed` in the CLIENT: a remote peer can crash a program by misbehaving.
-  Seen 8 of 8 runs against `Http.serve` with its lingering close removed.
-- **Fix shape:** return what arrived. `read()` already treats an error as end of stream; whether
-  `readAll` should also distinguish "reset" from "closed" is the decision to make (QUICKSTART
-  says `""` at EOF for `read`, nothing for `readAll`).
-- **Control when fixing:** a `Tcp.serve` handler that writes a reply and closes with unread input;
-  the client's `readAll()` returns the reply (or what arrived) and the program exits 0.
 
 ---
 

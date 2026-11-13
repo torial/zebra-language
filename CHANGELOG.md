@@ -37,6 +37,10 @@ confirmed via `tools/bootstrap_check.sh`.
   deadline yet.
 - **BUG-700: `HttpResponse.ok(..).withHeader(..)` builds**, as do `Csv.parse(s).rowCount()` and
   other chains onto a CsvTable / CsvWriter. They passed `-c` and failed inside zig.
+- **A TCP peer that leaves can no longer end the program (BUG-715, BUG-704).** A client that sent
+  a request and left before the reply ended a `Tcp.serve` server (`panic: WriteFailed`); a
+  failed `conn.write` is now dropped and the next `read()` returns `""`. A server that reset the
+  connection made the client's `conn.readAll()` panic `ReadFailed`; it now returns what arrived.
 - **BUG-706: `zebra prog.zbr` exits with the program's own code.** It exited 1 for any non-zero
   program exit, through both the fast path and `--release`; the note now says the program exited
   N. A build failure still exits 1.

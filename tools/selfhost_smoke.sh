@@ -2156,6 +2156,9 @@ smoke_run test/bug233_lambda_param_shadow_test.zbr "bug233: OK"
 # counted Tcp as covered on that basis. Bounded, because a socket fixture must never be
 # able to hang the tier (BUG-251's original fixture was withdrawn rather than registered).
 smoke_run_bounded test/tcp_echo_roundtrip_test.zbr "tcp_echo_roundtrip: OK" 120
+# BUG-715 / BUG-704: a TCP peer that leaves (client before the reply; server resetting a
+# client mid-request) must not end the program. Red: WriteFailed / ReadFailed panics.
+smoke_run_bounded test/bug704_715_tcp_peer_leaves_test.zbr "bug704_715: OK" 120
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

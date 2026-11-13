@@ -4611,9 +4611,9 @@ On a `TcpConn`:
 
 | Call                    | Returns | Notes                                                     |
 |-------------------------|---------|-----------------------------------------------------------|
-| `conn.write(s)`         | void    |                                                           |
+| `conn.write(s)`         | void    | A write the peer refuses (it left, or reset) is dropped; the next `read()` returns `""` |
 | `conn.read()`           | `str`   | Next available chunk; blocks until ≥1 byte, `""` at EOF    |
-| `conn.readAll()`        | `str`   | Drains until the peer closes                               |
+| `conn.readAll()`        | `str`   | Drains until the peer closes or resets; returns what arrived |
 | `conn.readLine()`       | `str`   | Up to `\n` (strips `\r\n`) — delimiter-framed protocols     |
 | `conn.readBytes(n)`     | `str`   | Exactly `n` bytes — length-framed protocols                |
 | `conn.close()`          | void    |                                                           |
