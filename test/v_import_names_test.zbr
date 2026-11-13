@@ -44,3 +44,10 @@ def main()
         print("journal ${d.journalMode()}")
         d.close()
     print("token ${Crypto.randomToken(4).len}")
+
+    # asserted as well as printed: the last line is what tools/selfhost_smoke.sh looks for
+    assert sync + time + os + math + strconv + rand + sha256 + json2 + bits + sqlite + http + hmac + argon2 + crand == 105, "locals"
+    assert add(sync, http, sqlite) == 22 and more(hmac, argon2, crand) == 39, "params"
+    assert Holder(sync, time).total() == 3, "fields"
+    assert Crypto.randomToken(4).len == 8, "token"
+    print("v_import_names: OK")
