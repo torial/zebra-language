@@ -87,7 +87,10 @@
   BUG-701 -- any client sending such bytes ends the server.
 - **Fix shape (a decision, not a patch):** yield U+FFFD for each invalid sequence (what most
   languages' lossy decoders do), or refuse at the call by returning nothing for the bad run.
-  Either way, never panic on input bytes; `isValidUtf8()` stays the way to tell.
+  Either way, never panic on input bytes; `isValidUtf8()` stays the way to tell. Fable's leaning
+  (2026-11-12, to be agreed in writing before building, since the V route needs the same answer):
+  REFUSE in anything whose result feeds a comparison or a store, because two U+FFFDs compare
+  equal (the reassuring-answer failure), and keep a separately named lossy conversion for display.
 - **Control when fixing:** the repro iterates three items (or the chosen spelling's count) and
   exits 0; a valid string's `chars()` is unchanged.
 

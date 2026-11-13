@@ -64,6 +64,17 @@ Sean, 2026-11-12: the recommendation below, with both halves required. A alone l
 one handler bug from going down; B alone restarts a server that any stranger can keep knocking
 over. A narrows who can crash it, B bounds what a crash costs, and neither replaces the other.
 
+### What B must say to app authors (Fable, 2026-11-12, from Graze)
+
+A restart resets every module-level `var` in the handler's program, so anything a handler
+accumulates there -- caches, counters, **rate limits** -- is lost. For a rate limit that is a
+security hole, not just a loss: anyone who can crash a child resets the attempt count. Graze's
+sign-in throttle (failure counts per name, in a process HashMap) is the receipt, and it moves
+to Sqlite before B lands. Everything else Graze holds is rebuilt at startup from its inputs
+(route table, the session key from its key file, the decoy password hash) or is stateless
+(signed session cookies, signed forgery tokens). B's documentation must state the reset rule
+and name the rate-limit case.
+
 ## Recommendation
 
 A now, as ordinary bug fixes (BUG-703 first). Then B, behind an opt-in such as
