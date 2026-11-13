@@ -140,3 +140,4 @@
 524	Apple-silicon fast path / build.zig fast-backend -- a comptime HOST-ARCH property no gate here can flip; witness is .github/workflows/macos-native.yml on real hardware
 101	CLOSED BY DELETION -- the panicking sites were src/AstBuilder.zig, removed 2026-09-16; the selfhost raises, nothing to pin
 289	harness capture disagreement, NOT REPRODUCED (2,820 runs, 2026-11-07) -- no .zbr can express it; WATCHED BY output_sweep's confirmation round + printed transient counter
+710	PINNED OUTSIDE THIS REPO by zebra-sprocket/probe_depth2.zbr: the positive path needs the sprocket fork's sqlite3.c, which no gate here links

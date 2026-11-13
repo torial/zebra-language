@@ -173,34 +173,6 @@
 
 ---
 
-### BUG-710: `SqliteDb.querySegments` reads every column of a depth-2 nested procedure one place off
-- **Status:** OPEN (filed 2026-11-13; Fable, diagnosed from Mosaic through Graze, on 8ac485e)
-- **Symptom:** Mosaic's `CALL witnesses_full() RETURNING *` -- `wid, label, claims TABLE(subject,
-  cid, property, confidences TABLE(cid, aspect, confidence))` -- reads `asStr("wid")` as `""`,
-  `asStr("label")` as the wid, and in segment 1 `cid` holds the subject and `property` the cid.
-  Nothing errors. Depth-1 procedures (two sibling tables, bugbook's `bug_show`) read correctly.
-  Graze's Mosaic viewer printed empty links from the day its clients moved to `querySegments`.
-- **Cause (Fable's reading, two errors in `stdlib_preamble.zig`):**
-  1. `_segInterleaved` starts its column bases at `var acc: usize = 2`, assuming two leading
-     columns (`_segment`, `_key`). A depth-2 `WITH INTERLEAVED` result leads with THREE
-     (`_segment|_k1|_k2|...`), one key column per nesting level.
-  2. `_segNames` skips a nested column (empty decltype in `PRAGMA proc_info`) only in the parent
-     (`idx == 0 and ...`). Segment 1 here has one too (`confidences`), so its arity is counted 4
-     instead of 3 and every later base is one too far. On this procedure the two errors cancel
-     for segment 2, which is why it looked right.
-- **Fix shape (Fable tested it in a scratch toolchain):** skip a nested column in every segment;
-  count the leading key columns from the column NAMES (`_segment`, then `_key` or `_kN`) instead
-  of assuming 2; and if the bases do not account for exactly every column, return null so the
-  walk transport serves the query rather than shifted columns. That last guard also covers a
-  procedure whose first real column happens to be named `_key` or `_k1`.
-- **Control when fixing:** a depth-2 procedure fixture reading every column of every segment
-  correctly, red against today's `_segInterleaved`; a depth-1 procedure (two sibling tables)
-  reading identically before and after. Repro database: `C:/Projects/mosaic/sprocket/job.db`
-  (work on a copy). The fixture taken from sprocket on 2026-11-08 has depth-1 shapes only,
-  which is why nothing caught this.
-
----
-
 ### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so
 - **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
 - **Repro:** `DateTime.now().inZone("America/Phoenix").format("HH:mm")` prints the UTC time.

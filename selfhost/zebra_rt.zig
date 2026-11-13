@@ -4601,8 +4601,9 @@ pub const _SqliteDbInner = struct {
     // ── querySegments: one row per result-set row of a stored procedure, each with a
     // leading "_segment" column (0 = the parent rows, k = the k-th nested table). Two
     // transports: the engine's own merge, "CALL p(...) WITH INTERLEAVED", renamed per
-    // segment from PRAGMA proc_info (DISJOINT layout: segment k's payload starts at
-    // 2 + the arities before it); and, when the engine refuses that (different-key
+    // segment from PRAGMA proc_info (DISJOINT layout: segment k's payload starts after
+    // `_segment` and one key column per nesting level, plus the arities before it --
+    // BUG-710); and, when the engine refuses that (different-key
     // siblings, several result sets), the walk over sqlite3_proc_next_resultset. Rows
     // arrive interleaved (parent, then its children) from the first and
     // segment-major from the second; parent rows carry fold columns only from the walk.
@@ -4655,7 +4656,10 @@ pub const _SqliteDbInner = struct {
             while (segs.items.len <= idx) segs.append(_allocator, std.ArrayList([]const u8).empty) catch return null;
             const raw = sqlite3_column_text(stmt, 2) orelse continue;
             const decl = sqlite3_column_text(stmt, 3);
-            if (idx == 0 and (decl == null or decl.?[0] == 0)) continue;
+            // BUG-710: a nested column is skipped in EVERY segment, not only the parent's: a
+            // depth-2 procedure's middle table has one too, and counting it shifted every
+            // later segment's columns by one.
+            if (decl == null or decl.?[0] == 0) continue;
             const nm = _allocator.dupe(u8, std.mem.sliceTo(raw, 0)) catch return null;
             segs.items[idx].append(_allocator, nm) catch return null;
         }
@@ -4674,8 +4678,21 @@ pub const _SqliteDbInner = struct {
         defer _ = sqlite3_finalize(stmt);
         _bind(stmt, params);
         const bases = _allocator.alloc(usize, names.len) catch return null;
-        var acc: usize = 2;
+        // BUG-710: the payload starts after `_segment` and ONE key column per nesting level
+        // (`_key` at depth 1; `_k1`, `_k2`... deeper), not always after two. They are counted
+        // from the column names. If the segment arities then do not account for exactly every
+        // column, the layout is not what this reader assumes: return null and let the walk
+        // serve the query, never read shifted columns.
+        const total: usize = @intCast(sqlite3_column_count(stmt));
+        var acc: usize = 1;
+        while (acc < total) : (acc += 1) {
+            const cn = std.mem.sliceTo(sqlite3_column_name(stmt, @intCast(acc)), 0);
+            const is_key = std.mem.eql(u8, cn, "_key") or
+                (cn.len >= 3 and cn[0] == '_' and cn[1] == 'k' and std.ascii.isDigit(cn[2]));
+            if (!is_key) break;
+        }
         for (names, 0..) |segn, k| { bases[k] = acc; acc += segn.len; }
+        if (acc != total) return null;
         var rows = _zbr_new(_ZbrList(_SqliteRow));
         while (sqlite3_step(stmt) == _SQLITE_ROW) {
             const seg64 = sqlite3_column_int64(stmt, 0);

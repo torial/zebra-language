@@ -6,6 +6,45 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-710: `SqliteDb.querySegments` read every column of a depth-2 nested procedure one place off -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed 2026-11-13; Fable, diagnosed from Mosaic through Graze, on 8ac485e)
+- **Symptom:** Mosaic's `CALL witnesses_full() RETURNING *` -- `wid, label, claims TABLE(subject,
+  cid, property, confidences TABLE(cid, aspect, confidence))` -- reads `asStr("wid")` as `""`,
+  `asStr("label")` as the wid, and in segment 1 `cid` holds the subject and `property` the cid.
+  Nothing errors. Depth-1 procedures (two sibling tables, bugbook's `bug_show`) read correctly.
+  Graze's Mosaic viewer printed empty links from the day its clients moved to `querySegments`.
+- **Cause (Fable's reading, two errors in `stdlib_preamble.zig`):**
+  1. `_segInterleaved` starts its column bases at `var acc: usize = 2`, assuming two leading
+     columns (`_segment`, `_key`). A depth-2 `WITH INTERLEAVED` result leads with THREE
+     (`_segment|_k1|_k2|...`), one key column per nesting level.
+  2. `_segNames` skips a nested column (empty decltype in `PRAGMA proc_info`) only in the parent
+     (`idx == 0 and ...`). Segment 1 here has one too (`confidences`), so its arity is counted 4
+     instead of 3 and every later base is one too far. On this procedure the two errors cancel
+     for segment 2, which is why it looked right.
+- **Fix shape (Fable tested it in a scratch toolchain):** skip a nested column in every segment;
+  count the leading key columns from the column NAMES (`_segment`, then `_key` or `_kN`) instead
+  of assuming 2; and if the bases do not account for exactly every column, return null so the
+  walk transport serves the query rather than shifted columns. That last guard also covers a
+  procedure whose first real column happens to be named `_key` or `_k1`.
+- **Control when fixing:** a depth-2 procedure fixture reading every column of every segment
+  correctly, red against today's `_segInterleaved`; a depth-1 procedure (two sibling tables)
+  reading identically before and after. Repro database: `C:/Projects/mosaic/sprocket/job.db`
+  (work on a copy). The fixture taken from sprocket on 2026-11-08 has depth-1 shapes only,
+  which is why nothing caught this.
+- **Fix (Fable's, as diagnosed):** `_segNames` skips a nested column in every segment;
+  `_segInterleaved` counts the leading key columns from their names (`_key`, `_kN`) after
+  `_segment`; and if the segment arities do not account for exactly every column it returns
+  null, so the walk transport serves the query instead of shifted columns.
+- **Pinned by:** `zebra-sprocket/probe_depth2.zbr` (outside this repo: the positive path needs the
+  sprocket fork's `sqlite3.c`, which no gate here links). Mosaic's `witnesses_full` shape rebuilt
+  in memory, every column of all three segments checked, plus a depth-1 procedure as the control.
+  Red on 9b407fe's runtime (`seg0 wid` read `""`, `label` read the wid; seg1 shifted the same
+  way), green with the fix; the depth-1 control and `probe_transport.zbr` (`inter: yes`, `walk:
+  yes`) unchanged. Recorded in `tools/bug_fixture_baseline.txt` with that reason.
+
+
+---
+
 ### BUG-707: an `Http.serve` 413 was lost to a reset when the client really sent the body -- FIXED 2026-11-13 (the read deadline is still open)
 - **Status:** FIXED 2026-11-13 (filed 2026-11-12; Fable, measured from Python on loopback against Graze on 8ac485e)
 - **Observed:** a Content-Length of 10 GB with nothing sent gets the 413 every time (the

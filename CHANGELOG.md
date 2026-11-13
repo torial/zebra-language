@@ -43,6 +43,9 @@ confirmed via `tools/bootstrap_check.sh`.
 - **BUG-707: a 413 reaches a client that sends its whole body.** The server read at most 1 MB of
   a refused body before closing, so a client that really sent 3 MB was reset before it read the
   answer. It now reads up to what the request claimed (16 MB at most, 10 s at most).
+- **BUG-710: `querySegments` reads a depth-2 nested procedure correctly.** Every column came
+  back one place off (the first `""`, the second holding the first's value), with no error.
+  A layout the reader does not account for now falls back to the walk instead.
 - **`Crypto.verifyPassword` reads a cost parameter as digits only**, as the V route does:
   `m=19_456` and `m=+19456` are refused where Zig's integer parser would accept them.
 
