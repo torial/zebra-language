@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-711. Next new bug: BUG-712.**
+**Last bug number generated: BUG-714. Next new bug: BUG-715.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -91,8 +91,19 @@
   (2026-11-12, to be agreed in writing before building, since the V route needs the same answer):
   REFUSE in anything whose result feeds a comparison or a store, because two U+FFFDs compare
   equal (the reassuring-answer failure), and keep a separately named lossy conversion for display.
+- **Release builds are worse (measured 2026-11-13):** the same repro under `--release` SEGFAULTS
+  (`Segmentation fault at address 0x11`) instead of panicking. The loop is
+  `std.unicode.Utf8View.initUnchecked(s).iterator().nextCodepoint()`, whose decode is
+  `catch unreachable` inside std -- compiled ReleaseFast, outside the user functions'
+  `@setRuntimeSafety(true)` (BUG-667/668), so it is undefined behaviour there. The fix must not
+  use std's unchecked iterator.
+- **Neighbours:** BUG-714 (`codePointCount()` returns 0 on the same input); BUG-712 (the V route
+  yields bytes, so its answer differs even on valid text). Read, not run: a `char`'s `toString()`
+  on a value `utf8Encode` rejects takes `catch 1` and returns one byte of an UNINITIALISED buffer
+  (CodeGen.zbr, `_cpbuf`).
+- **Proposal:** `docs/design/str_invalid_utf8.md` (2026-11-13), for agreement with Fable.
 - **Control when fixing:** the repro iterates three items (or the chosen spelling's count) and
-  exits 0; a valid string's `chars()` is unchanged.
+  exits 0, in Debug AND `--release`; a valid string's `chars()` is unchanged.
 
 ---
 
@@ -193,6 +204,52 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+
+---
+
+### BUG-712: on the V route `s.chars()` yields BYTES, not codepoints
+- **Status:** OPEN (filed 2026-11-13; found preparing the BUG-703 proposal)
+- **Repro:** `for c in "aéb".chars()` counting and printing each `c`. The Zig route iterates 3
+  times (`a`, `é`, `b`); the V route (`--target v`, V b399a50) iterates 4 times and prints
+  `97 195 169 98`. Valid input, different answers.
+- **Cause:** `CodeGenV.zbr` lowers `chars` to `zlist_of[u8](obj.bytes())` with the comment "Zebra's
+  char is a byte", and `docs/design/v_backend_poc.md` repeats it. QUICKSTART ("Bytes, codepoints,
+  and graphemes") says a `char` is a decoded codepoint (`u21`), and the Zig route does that.
+- **Why no gate saw it:** `v-check` compares the V and Zig runs of the `v_poc` examples and the
+  selfhost dumps; none of them iterates `chars()` over non-ASCII text.
+- **Fix shape:** decode on the V route too (V's `s.runes()`, or the runtime's own decoder so
+  invalid bytes get the same answer as BUG-703's on Zig). Settle BUG-703's spelling first: the V
+  route must give the same answer for invalid bytes, not only valid ones.
+- **Control when fixing:** the repro iterates 3 times on both routes with the same output; an
+  ASCII string unchanged.
+
+---
+
+### BUG-713: on the V route `"${n:c}"` with an `int` writes a codepoint, not one byte
+- **Status:** OPEN (filed 2026-11-13; found with BUG-712)
+- **Repro:** QUICKSTART's own percent-decoder example, `sb.append("${206:c}")`,
+  `sb.append("${184:c}")`, `print(sb.build())`. Zig prints `θ` (2 bytes); V prints `Î¸` (4 bytes).
+  A runtime `int` the same: `"${k:c}"` with `k = 206` is 1 byte on Zig, 2 on V.
+- **Why it matters:** QUICKSTART documents `:c` on an `int` as EXACTLY ONE BYTE, so a decoder can
+  assemble UTF-8 a byte at a time; on V every percent-decoded non-ASCII character is corrupted,
+  silently. Graze's `percent_decode` is this shape.
+- **Fix shape:** on an `int` argument, `:c` writes the low byte; on a `char`, the UTF-8 encoding.
+  The argument's type decides, as on the Zig route.
+- **Control when fixing:** the example prints `θ` with `len` 2 on both routes; `"${c:c}"` for a
+  `char` `é` stays 2 bytes.
+
+---
+
+### BUG-714: `s.codePointCount()` returns 0 for a string that is not valid UTF-8
+- **Status:** OPEN (filed 2026-11-13; part of BUG-701 option A's list)
+- **Repro:** `("a" + "${255:c}" + "b").codePointCount()` is `0`; the string has 3 bytes and is not
+  empty. The emit is `std.unicode.utf8CountCodepoints(s) catch 0` (CodeGen.zbr, two sites).
+- **Why it matters:** 0 is the count of the empty string, so it reads as an answer ("nothing
+  here") rather than as "could not count" -- a length check on input passes whatever it holds.
+- **Fix shape:** count by the same rule BUG-703 settles for `chars()`, so that `codePointCount()`
+  always equals the number of items `chars()` yields; never a constant on failure.
+- **Control when fixing:** the repro's count equals the `chars()` iteration count of the same
+  string; `"aéb".codePointCount()` stays 3.
 
 ---
 
