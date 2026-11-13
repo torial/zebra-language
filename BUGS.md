@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-707. Next new bug: BUG-708.**
+**Last bug number generated: BUG-709. Next new bug: BUG-710.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -158,6 +158,55 @@
   (BUG-699's open half), and the time bound wants that first.
 - **Control when fixing:** a raw client that sends a 3 MB body in full reads `413` in 10 of 10 runs,
   and the server answers the next request.
+
+---
+
+### BUG-708: `private` is not enforced from another module, and never on methods
+- **Status:** OPEN (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
+- **Repro:** `vault.zbr` declares `class Vault` with `private var secret: str`, `private var log:
+  StringBuilder` and `private def hidden(): str`. `other.zbr` does `use vault exposing Vault`, then
+  `v.secret = "w"`, `v.log.append("x")`, `print(v.hidden())`. `zebra -c other.zbr` exits 0 and the
+  program runs, printing the written value through both methods.
+- **Two defects, measured separately:**
+  1. **Fields, across modules.** In ONE file the field shapes are refused at their column
+     (`'secret' is private`, `'log' is private`, for a read, a write and a container mutation).
+     From another module none is. The check in `TypeChecker.zbr` (`'...' is private`, near the
+     BUG-680 runtime-object arms) asks only `ctx.module_types.isPrivateMember`; a dep's class
+     records its private keys in `dep_types`, which is never consulted (reading, not yet
+     measured: `populateModuleTypes` runs `addClassMembers` for deps, which records the key).
+  2. **Methods, everywhere.** `v.hidden()` is accepted even with the class and the call in the
+     same file. `addClassMembers` records a private method's key, but no call path reads it.
+- **Cost:** QUICKSTART §18 says `private` "restricts the member to the owning class". A type whose
+  point is an invariant -- Graze's `SafeHtml` keeps its text in a private `StringBuilder` so only
+  its methods can write it -- has no guarantee from the compiler. Graze covers it with a source
+  check of its own.
+- **Fix shape:** an `isPrivateMemberAny` beside `fieldTypeAny` (own module, dep table, bare-name
+  fallback), used by the field check; the same test on the member-call path for methods, with
+  the owning-class exemption. A refusal names the member and the class (`'hidden' is private to
+  Vault`). Before landing, measure: `-c` refusal counts over this repo, zebra-ide and the
+  GameEngine before and after, since a private method called from outside may exist today.
+- **Control when fixing:** each of the four repro lines refused at its column across modules, and
+  the method call refused in one file; the class's own methods still read and call every
+  private member; a public member of the same class still reachable from `other.zbr`.
+
+---
+
+### BUG-709: `zebra -c` accepts a `str` or `int` where a class is expected
+- **Status:** OPEN (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
+- **Repro:** `class SafeHtml` and `def html(body: SafeHtml)`; then `html("<p>")`, `return name`
+  from `def f(name: str): SafeHtml`, and `var h: SafeHtml = name`. `-c` exits 0 on all three.
+  `--check-full` and a build refuse at the `.zbr` line (`expected type '*SafeHtml', found
+  '*const [3:0]u8'`), so a build never ships it. `html(5)` and `html(Other())` with another
+  class pass `-c` too; `-c --strict` sees none of them.
+- **Cost:** `-c` is the fast check the IDE and the LSP run on every edit; a wrong argument type
+  shows up only at build, as a Zig type name. `--help` says `-c` can pass code a build refuses,
+  but plain argument types are the first thing a reader expects it to cover.
+- **Fix shape:** in the call-argument loop, the typed-`var` check and `return`, refuse a value
+  whose type is KNOWN (a literal, a `str`/`int`/`float`/`bool` local, another class) where the
+  slot is a user class, naming both types. An unknown type is not refused (the BUG-632 rule).
+  Measure `-c` counts over the three corpora first.
+- **Control when fixing:** the five shapes refused at their columns; a `SafeHtml` value, a
+  `SafeHtml?` slot given `nil`, and an interface slot given an implementing class still pass.
 
 ---
 

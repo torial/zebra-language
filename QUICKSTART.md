@@ -1593,7 +1593,7 @@ var byte = "${206:c}"               # an `int` value  -> ONE BYTE (see the note 
 var sb = StringBuilder()
 sb.append("hello")
 sb.append(" world")
-var result = sb.build()              # str (drains the builder)
+var result = sb.build()              # str; the builder keeps its text (clear() to reuse)
 ```
 
 > **`:c` depends on the ARGUMENT'S TYPE, and the difference matters.** On a `char`
