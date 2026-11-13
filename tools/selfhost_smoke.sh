@@ -2122,6 +2122,11 @@ smoke_run_bounded test/bug698_http_serve_hardening_test.zbr "bug698_http_serve_h
 # Crypto.randomToken / hashPassword / verifyPassword / equal (2026-11-12). Red-checked:
 # randomToken on the seedable PRNG, and verifyPassword without its memory ceiling.
 smoke_run_bounded test/crypto_password_test.zbr "crypto_password: OK" 120
+# The V route's two fixtures (tools/v_check.sh runs each on both routes and diffs them):
+# this is the Zig side of each row, so it has a gate in every tier. v_crypto asserts its
+# own verdicts over hashes made by OpenSSL, by this route and by the V route.
+smoke_run_bounded test/v_crypto_test.zbr "v_crypto: OK" 120
+smoke_run test/v_import_names_test.zbr "token 8"
 smoke_tc_fail test/http_request_bad_args_test.zbr "req.header takes one argument"
 # BUG-697: Http.json / Http.postJson are typed JsonValue? -- the getters pass -c and run.
 smoke_run_bounded test/bug697_http_json_type_test.zbr "bug697: OK" 120

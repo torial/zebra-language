@@ -9,6 +9,9 @@
 # the Zig route's Crypto.hashPassword (Zig's std argon2) and the V route's (V's
 # crypto.argon2) -- and each route must verify all three. The greedy string asks for
 # 2 GiB: refused by its parameters, before any hashing.
+#
+# The verdicts are also ASSERTED, so agreement between the routes cannot be two routes
+# wrong alike; the last line is what tools/selfhost_smoke.sh looks for on the Zig route.
 
 def isHex(s: str): bool
     for c in s.chars()
@@ -61,3 +64,15 @@ def main()
     var e3 = Crypto.equal("abc", "abcd")
     var e4 = Crypto.equal("", "")
     print("equal ${e1} ${e2} ${e3} ${e4}")
+
+    assert mac == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", "RFC 4231 case 2, key first"
+    assert t1.len == 32 and hex and differ, "randomToken"
+    assert prefixed and salted, "hashPassword"
+    assert own1 and own2 and not own_wrong, "a route verifies its own hashes"
+    assert ossl_ok and not ossl_wrong, "OpenSSL's hash"
+    assert zig_ok and not zig_wrong, "the Zig route's hash"
+    assert v_ok and not v_wrong, "the V route's hash"
+    assert not bad1 and not bad2 and not bad3, "malformed strings are false"
+    assert not greedy_ok, "over the memory ceiling is false"
+    assert e1 and not e2 and not e3 and e4, "equal"
+    print("v_crypto: OK")
