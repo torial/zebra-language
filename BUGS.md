@@ -175,10 +175,15 @@
 
 ### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so
 - **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
-- **Repro:** `DateTime.now().inZone("America/Phoenix").format("HH:mm")` prints the UTC time.
-  QUICKSTART says "Unknown zone names fall back to UTC (no crash)", and the table lists 10
-  zones. A program that labels the time with the zone it asked for prints a wrong time with a
-  right-looking label.
+- **Repro:** `DateTime.of(2026, 1, 15, 12, 0, 0).inZone("America/Phonix")` (a typo) and
+  `.inZone("America/Boise")` (a real IANA zone the runtime's table lacks) both format as `12:00`,
+  the UTC time; `"America/Phoenix"` correctly gives `05:00`. QUICKSTART says "Unknown zone names
+  fall back to UTC (no crash)". A program that labels the time with the zone it asked for prints
+  a wrong time with a right-looking label, and a one-letter typo is indistinguishable from UTC.
+- **Correction (2026-11-13, same day):** this entry first gave `America/Phoenix` as the repro and
+  said the table lists 10 zones. Both were wrong: QUICKSTART's 10 rows are "representative
+  (~75 total)", the runtime's table has Phoenix, and Phoenix formats correctly. Measured with
+  the probe above before correcting.
 - **Second half:** nothing reads the machine's own zone, so a program cannot print local time
   without the user naming an IANA zone; `DateTime.now()` is documented as "current wall-clock
   time", which reads as local.
@@ -186,8 +191,8 @@
   nil at run time for a computed one -- a default that reads as an answer is the UNGIT
   "fabricated" case; and add a local-zone read (`DateTime.local()`, or `inZone("local")`) from
   the OS. Say "UTC" in the `DateTime.now()` row.
-- **Control when fixing:** `inZone("America/Phoenix")` no longer prints UTC silently;
-  `inZone("America/Denver")` unchanged.
+- **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
+  `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
 
 ---
 
