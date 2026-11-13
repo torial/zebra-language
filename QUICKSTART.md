@@ -4338,7 +4338,7 @@ Process-global statics (backed by a thread-local PRNG, so concurrent
 | `Random.randInt(low, high)`       | int     | `[low, high]`, inclusive            |
 | `Random.randFloat()`              | float   | `[0.0, 1.0)`                        |
 | `Random.randBool()`               | bool    |                                     |
-| `Random.bytes(n)`                 | `str`   | n PRNG bytes as 2n hex chars. NOT for secrets: the same PRNG `Random.seed` resets, so a seeded program repeats it exactly |
+| `Random.bytes(n)`                 | `str`   | n PRNG bytes as 2n hex chars. NOT for secrets: the same PRNG `Random.seed` resets, so a seeded program repeats it exactly. For secrets use `Crypto.randomToken(n)` |
 | `Random.seed(s)`                  | void    | Seed the PRNG                       |
 
 Instance form — `Random.new(seed)` returns an **independent**, seedable PRNG
@@ -4716,6 +4716,21 @@ r.close()
 | `Crypto.encrypt(key, plaintext)`          | str     | AES-256-GCM; hex-encoded nonce+tag+ciphertext (key FIRST — test/crypto_test.zbr) |
 | `Crypto.decrypt(key, ciphertext)`         | `str?`  | Returns nil on auth failure        |
 | `Crypto.deriveKey(password, salt)`        | str     | HKDF-SHA256; 32-byte key as 64 hex chars (implemented 2026-09-10, BUG-398) |
+| `Crypto.randomToken(n)`                   | str     | n bytes from the OS's secure random source, as 2n hex chars. For session tokens and CSRF tokens; `Random.bytes` is NOT (a seeded program repeats it). n < 1 panics |
+| `Crypto.hashPassword(pw)`                 | str     | argon2id, OWASP parameters (19 MiB, 2 passes, 1 lane), as a PHC string `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>` carrying its own random salt. Store the whole string. ~35 ms in a `--release` build, ~10x that in Debug |
+| `Crypto.verifyPassword(pw, phc)`          | bool    | true when `phc` is that password's hash. Verifies standard argon2 PHC strings from other implementations too (pinned against OpenSSL). A malformed string, or one asking for over 1 GiB / 100 passes / 64 lanes, is `false` -- the same as a wrong password, and refused before any hashing |
+| `Crypto.equal(a, b)`                      | bool    | Compares in time that does not depend on WHERE two equal-length strings differ: use it for tokens and MACs, not `==`. Different lengths return false at once |
+
+```zebra
+var stored = Crypto.hashPassword(pw)            # at sign-up; keep `stored`
+if Crypto.verifyPassword(attempt, stored)      # at login
+    var sid = Crypto.randomToken(32)           # 64 hex chars, for the session cookie
+```
+
+The working memory of a password hash (~19 MiB) is freed after each call, so a server
+hashing on every login does not grow. One limit inherited from Zig 0.17's argon2: the
+final comparison inside `verifyPassword` is not constant-time (the salted hash it compares
+is not something an attacker can steer).
 
 ### `Atomic(T)` — lock-free atomic cells
 
@@ -4816,13 +4831,18 @@ BUG-685): `HttpResponse.ok(body)`,
 `HttpResponse.notFound(body)`, or `HttpResponse.new(status, body)` for any other status.
 `resp.withHeader(name, value)` returns a NEW response with one more header line (the
 response is a value; the original is unchanged), e.g.
-`var r = HttpResponse.ok(body)` then `return r.withHeader("Set-Cookie", "sid=" + token)`.
-Call it on a local: chained straight onto the constructor
-(`HttpResponse.ok(body).withHeader(...)`) passes `-c` and fails inside zig (BUG-700, open).
-One exception
-(BUG-698, open): the server always sends `Content-Type: text/html; charset=utf-8`, so a
-`withHeader("Content-Type", ...)` goes out as a SECOND Content-Type line. A posted body is
-not capped (BUG-699, open). Read a request header with `req.header(name)`.
+`return HttpResponse.new(303, "").withHeader("Location", "/tasks")`, on a local or chained
+onto the constructor (BUG-700, fixed 2026-11-12). The server sends
+`Content-Type: text/html; charset=utf-8` unless the handler sets its own Content-Type
+(BUG-698). Read a request header with `req.header(name)`.
+
+The server refuses two things itself, before the handler runs (BUG-699): a request
+claiming a body over **1 MB** gets `413 Content Too Large`, and a header block over 16 KB
+gets `431 Request Header Fields Too Large`. The 1 MB limit is fixed. There is no read
+deadline yet: each connection runs on its own thread, and a client that sends slowly
+holds that thread. A handler that panics ends the whole server (BUG-701, open), and so
+does `s.chars()` on bytes that are not UTF-8 (BUG-703, open): check `s.isValidUtf8()` on
+the path, query and body first and answer 400.
 (Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
 which does not build.)
 

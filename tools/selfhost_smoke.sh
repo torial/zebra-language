@@ -2114,6 +2114,14 @@ smoke_tc_fail test/http_request_bad_args_test.zbr "Http.request has no parameter
 smoke_tc_fail test/http_request_bad_args_test.zbr "method \"FETCH\" is not one of"
 smoke_tc_fail test/http_request_bad_args_test.zbr "a GET request cannot carry a body"
 smoke_tc_fail test/http_request_bad_args_test.zbr "headers must be a HashMap(str, str), got HashMap(str, int)"
+# BUG-698/699/700 -- Http.serve read off the wire: one Content-Type, the reason phrases,
+# 413 / 431 answered (and the NEXT request still answered), a 1 MB body whole, and the
+# chained-receiver shapes. Red-checked: each of four runtime mutants fails it (the missing
+# lingering close 8 of 8 runs as a built binary).
+smoke_run_bounded test/bug698_http_serve_hardening_test.zbr "bug698_http_serve_hardening: OK" 120
+# Crypto.randomToken / hashPassword / verifyPassword / equal (2026-11-12). Red-checked:
+# randomToken on the seedable PRNG, and verifyPassword without its memory ceiling.
+smoke_run_bounded test/crypto_password_test.zbr "crypto_password: OK" 120
 smoke_tc_fail test/http_request_bad_args_test.zbr "req.header takes one argument"
 # BUG-697: Http.json / Http.postJson are typed JsonValue? -- the getters pass -c and run.
 smoke_run_bounded test/bug697_http_json_type_test.zbr "bug697: OK" 120

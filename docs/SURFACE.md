@@ -202,7 +202,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `submit` `wait`
 
-## Namespaces (33) and static members (181; 1 namespace(s) OPEN: Math)
+## Namespaces (33) and static members (185; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
@@ -220,9 +220,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `gunzip` `gzip`
 
-### Crypto (3) <!-- genCryptoCall -->
+### Crypto (7) <!-- genCryptoCall -->
 
-`decrypt` `deriveKey` `encrypt`
+`decrypt` `deriveKey` `encrypt` `equal` `hashPassword` `randomToken` `verifyPassword`
 
 ### Csv (2) <!-- genCsvCall -->
 

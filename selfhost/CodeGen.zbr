@@ -9912,8 +9912,8 @@ struct Generator
         if t is Type_.ref_to as tr
             t = tr
         branch t
-            on Type_.named as _
-                return true
+            on Type_.named as hn
+                return not isNameDispatchedRuntime(hn)
             on Type_.cross_module as _
                 return true
             on Type_.unknown_
@@ -9924,6 +9924,17 @@ struct Generator
                 return true
             else
                 return false
+
+    # BUG-700: runtime types the checker reports as `Type_.named` whose methods genMemberCall
+    # lowers BY NAME to a helper taking the value (the `cw_nm == ...` arms: `_http_with_header`,
+    # `_csv_row_count`..., `_csv_write_row`). Hoisting such a receiver to `_mc_N` and calling
+    # `_mc_N.m(..)` raw reaches a struct with no such method -- `-c` passed and zig refused
+    # `HttpResponse.ok(b).withHeader(..)` and `Csv.parse(s).rowCount()`. A user class of the
+    # same name keeps the old (hoisting) behaviour. Keep in step with those arms.
+    def isNameDispatchedRuntime(n: str): bool
+        if class_names.contains_(n)
+            return false
+        return n == "HttpResponse" or n == "CsvTable" or n == "CsvWriter"
 
     def isDateTimeExpr(e: Expr): bool
         # BUG-680: the checker types DateTime values now, so a field (`c.when.year`), a
@@ -11280,6 +11291,9 @@ struct Generator
                     var recv_t: Type_ = inferExpr(chain.recv, .infer_ctx!)
                     if not (recv_t is Type_.named)
                         should_hoist = false
+                    else if recv_t is Type_.named as rhn
+                        if isNameDispatchedRuntime(rhn)   # BUG-700
+                            should_hoist = false
                 if should_hoist
                     var mc_recv = hoistCallChain(chain.recv)
                     writeIndent()
@@ -23079,6 +23093,35 @@ struct Generator
 
     # ── genCryptoCall ────────────────────────────────────────────────────────
     def genCryptoCall(mname: str, args: List(Arg))
+        # 2026-11-12 (Graze): randomToken(n), hashPassword(pw), verifyPassword(pw, phc),
+        # equal(a, b) -- one runtime helper each, arguments in the order written.
+        var ct_fn = ""
+        var ct_arity = 0
+        if mname == "randomToken"
+            ct_fn = "_crypto_random_token"
+            ct_arity = 1
+        else if mname == "hashPassword"
+            ct_fn = "_crypto_hash_password"
+            ct_arity = 1
+        else if mname == "verifyPassword"
+            ct_fn = "_crypto_verify_password"
+            ct_arity = 2
+        else if mname == "equal"
+            ct_fn = "_crypto_equal"
+            ct_arity = 2
+        if ct_fn != "" and args.len != ct_arity
+            w.emit("@compileError(\"Crypto.${mname} takes ${ct_arity.toString()} argument(s)\")")
+            return
+        if ct_fn != ""
+            w.emit(ct_fn + "(")
+            var ci = 0
+            while ci < ct_arity
+                if ci > 0
+                    w.emit(", ")
+                genExpr(args.at(ci).value)
+                ci += 1
+            w.emit(")")
+            return
         if mname == "deriveKey"
             w.emit("_crypto_derive_key(")
             if args.len >= 1

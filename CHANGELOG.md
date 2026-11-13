@@ -23,6 +23,21 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Crypto.randomToken(n)`, `Crypto.hashPassword(pw)`, `Crypto.verifyPassword(pw, phc)`,
+  `Crypto.equal(a, b)`.** Session tokens from the OS's secure random source (hex; `Random.bytes`
+  follows `Random.seed` and is not for secrets); argon2id password hashes with OWASP's parameters
+  as PHC strings, checked against RFC 9106 and OpenSSL, their ~19 MiB of working memory freed
+  after each call; `verifyPassword` refuses a stored string asking for over 1 GiB before hashing;
+  `equal` compares in time independent of where equal-length strings differ. Surface: `Crypto`
+  gains the four. Asked for by Graze.
+- **`Http.serve` hardening (BUG-698, BUG-699).** A handler's own `Content-Type` replaces the
+  default instead of going out as a second line; 13 more status codes have reason phrases (303,
+  422, 413...); a claimed body over 1 MB is answered 413 and an over-long header block 431
+  without reading them, so one request can no longer exhaust the server's memory. No read
+  deadline yet.
+- **BUG-700: `HttpResponse.ok(..).withHeader(..)` builds**, as do `Csv.parse(s).rowCount()` and
+  other chains onto a CsvTable / CsvWriter. They passed `-c` and failed inside zig.
+
 - **`Http.request(method, url, headers: {...}, body: s)` and `req.header(name)`.** The HTTP
   client could not set a header, so no authenticated API was reachable, and it had only GET and
   POST. `Http.request` takes any of GET POST PUT DELETE PATCH HEAD OPTIONS, a `HashMap(str, str)`

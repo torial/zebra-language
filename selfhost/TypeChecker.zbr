@@ -2149,7 +2149,7 @@ def namespaceMembers(ns: str): str
     if ns == "Compress"
         return "|gunzip|gzip|"
     if ns == "Crypto"
-        return "|decrypt|deriveKey|encrypt|"
+        return "|decrypt|deriveKey|encrypt|equal|hashPassword|randomToken|verifyPassword|"
     if ns == "Csv"
         return "|parse|parseFile|"
     if ns == "DateTime"
@@ -4732,8 +4732,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.list_(Type_.string_)
                             return Type_.void_  # write/append/delete/copy/rename
                         if bname == "Crypto"
-                            if mem.member == "encrypt" or mem.member == "deriveKey"
+                            if mem.member == "encrypt" or mem.member == "deriveKey" or mem.member == "randomToken" or mem.member == "hashPassword"
                                 return Type_.string_
+                            if mem.member == "verifyPassword" or mem.member == "equal"
+                                return Type_.bool_
                             if mem.member == "decrypt"
                                 return Type_.optional(Type_.string_)
                             # BUG-398: anything else was typed str? and then a

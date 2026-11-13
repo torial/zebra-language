@@ -1,0 +1,83 @@
+# BUG-698 / BUG-699 / BUG-700 -- Http.serve's response line-up and its refusals, read off the
+# WIRE with a raw Tcp client (an HttpResponse on the client side does not capture headers).
+#
+# What it pins:
+#   - BUG-698: a handler's own Content-Type is the ONLY Content-Type line; a handler that sets
+#     none still gets text/html; 303 / 422 go out with their reason phrases, not "Unknown".
+#   - BUG-699: a claimed Content-Length over 1 MB is answered 413 without reading the body, a
+#     header block over 16 KB is answered 431, and the server answers the NEXT request after
+#     each; a body of exactly 1 MB still arrives whole.
+#   - BUG-700: `HttpResponse.new(..).withHeader(..)` returned directly and as a var
+#     initialiser, and the same receiver shape for `Csv.parse(s).rowCount()` (the chain hoist
+#     reached a runtime struct with no such method, and zig refused it). The local-receiver
+#     form keeps working.
+def handle(req: HttpRequest): HttpResponse
+    if req.path == "/json"
+        var r = HttpResponse.ok("{}")
+        return r.withHeader("Content-Type", "application/json")
+    if req.path == "/redir"
+        return HttpResponse.new(303, "").withHeader("Location", "/x")
+    if req.path == "/bad"
+        return HttpResponse.new(422, "no")
+    if req.path == "/len"
+        return HttpResponse.ok(req.content.len.toString())
+    return HttpResponse.ok("plain")
+
+def raw(req: str): str
+    if Tcp.connect("127.0.0.1", 19962) as c
+        c.write(req)
+        var got = c.readAll()
+        c.close()
+        return got
+    return "<no connection>"
+
+def rows(s: str): int
+    return Csv.parse(s).rowCount()
+
+def main()
+    sys.go(def()
+        Http.serve(19962, handle)
+    )
+    var reached: bool = false
+    var attempts: int = 0
+    while attempts < 40 and not reached
+        if Http.get("http://127.0.0.1:19962/") as _r0
+            reached = true
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+    assert reached, "client reached the in-process server"
+
+    # BUG-698: one Content-Type, the handler's.
+    var j = raw("GET /json HTTP/1.1\r\nHost: t\r\n\r\n")
+    assert j.lower().count("content-type:") == 1, "one Content-Type line: " + j
+    assert j.contains("Content-Type: application/json")
+    var p = raw("GET / HTTP/1.1\r\nHost: t\r\n\r\n")
+    assert p.lower().count("content-type:") == 1
+    assert p.contains("Content-Type: text/html; charset=utf-8")
+    var rd = raw("GET /redir HTTP/1.1\r\nHost: t\r\n\r\n")
+    assert rd.startsWith("HTTP/1.1 303 See Other\r\n"), rd
+    assert rd.contains("Location: /x\r\n")
+    assert raw("GET /bad HTTP/1.1\r\nHost: t\r\n\r\n").startsWith("HTTP/1.1 422 Unprocessable Content\r\n")
+    print("bug698: content-type and reason phrases OK")
+
+    # BUG-699: refusals, each followed by a request that must still be answered.
+    var big = raw("POST /len HTTP/1.1\r\nHost: t\r\nContent-Length: 10000000000\r\n\r\n")
+    assert big.startsWith("HTTP/1.1 413 Content Too Large\r\n"), big
+    assert raw("GET / HTTP/1.1\r\nHost: t\r\n\r\n").endsWith("plain")
+    var hdr = raw("GET / HTTP/1.1\r\nX-Big: " + "x".repeat(17000) + "\r\n\r\n")
+    assert hdr.startsWith("HTTP/1.1 431 Request Header Fields Too Large\r\n"), hdr
+    assert raw("GET / HTTP/1.1\r\nHost: t\r\n\r\n").endsWith("plain")
+    var at_limit = Http.request("POST", "http://127.0.0.1:19962/len", body: "y".repeat(1048576))
+    assert at_limit != nil
+    assert at_limit!.text == "1048576", "a 1 MB body arrives whole"
+    print("bug699: 413, 431 and the 1 MB body OK")
+
+    # BUG-700: the chained receiver shapes, var-init and return.
+    var v = HttpResponse.ok("b").withHeader("X-A", "1")
+    assert v.headers.len == 1
+    var n = Csv.parse("a,b\n1,2\n").rowCount()
+    assert n == 2
+    assert rows("a\n1\n2\n") == 3
+    print("bug700: chained receivers OK")
+    print("bug698_http_serve_hardening: OK")

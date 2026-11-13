@@ -2775,6 +2775,9 @@ pub fn _zbr_port(p: i64, what: []const u8) ?u16 {
         return null;
     };
 }
+/// BUG-699: the largest request body `Http.serve` will read; a larger Content-Length is
+/// answered 413 without reading it. 1 MB, the figure Graze's charter asks for.
+pub const _HTTP_MAX_BODY: usize = 1024 * 1024;
 pub fn _http_serve(port_in: i64, handler: anytype) void {
     const port = _zbr_port(port_in, "Http.serve") orelse return;
     const _HFn = *const fn(HttpRequest) HttpResponse;
@@ -2782,6 +2785,19 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
     const _Ctx = struct {
         conn: std.Io.net.Stream,
         handler_fn: _HFn,
+        /// A refusal the server makes itself, before any handler runs (413, 431). The request
+        /// it refuses is UNREAD, and closing a socket with unread input sends a TCP reset that
+        /// can destroy the response before the client reads it. So: answer, half-close the
+        /// sending side (the client's read now ends), then drain what the client already sent
+        /// -- bounded, so a client streaming a huge body cannot hold the thread -- and close.
+        fn reject(ctx: *@This(), rd: *std.Io.Reader, status_line: []const u8) void {
+            var _wb: [512]u8 = undefined;
+            var _w = ctx.conn.writer(_io, &_wb);
+            _w.interface.print("HTTP/1.1 {s}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", .{status_line}) catch {};
+            _w.interface.flush() catch {};
+            ctx.conn.shutdown(_io, .send) catch {};
+            _ = rd.discard(.limited(_HTTP_MAX_BODY)) catch {};
+        }
         fn run(ctx: *@This()) void {
             defer std.heap.page_allocator.destroy(ctx);
             defer ctx.conn.close(_io);
@@ -2791,12 +2807,16 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
             // Read request headers byte-by-byte until \r\n\r\n.
             var _hd: [16384]u8 = undefined;
             var _hl: usize = 0;
+            var _hdr_done = false;
             while (_hl < _hd.len - 1) {
                 const _b = _srv_rd.interface.takeByte() catch break;
                 _hd[_hl] = _b;
                 _hl += 1;
-                if (_hl >= 4 and _hd[_hl-4] == '\r' and _hd[_hl-3] == '\n' and _hd[_hl-2] == '\r' and _hd[_hl-1] == '\n') break;
+                if (_hl >= 4 and _hd[_hl-4] == '\r' and _hd[_hl-3] == '\n' and _hd[_hl-2] == '\r' and _hd[_hl-1] == '\n') { _hdr_done = true; break; }
             }
+            // A header block that fills the buffer without ending used to be parsed AS IF it
+            // were complete -- a truncated last header handed to the handler as real.
+            if (!_hdr_done and _hl >= _hd.len - 1) { ctx.reject(&_srv_rd.interface, "431 Request Header Fields Too Large"); return; }
             const _head = _hd[0.._hl];
             // Parse request line: METHOD PATH VERSION
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
@@ -2821,6 +2841,10 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
                 if (std.ascii.eqlIgnoreCase(_hn, "content-length"))
                     _cl = std.fmt.parseInt(usize, _hv, 10) catch 0;
             }
+            // BUG-699: the claimed length was allocated as given, so one request claiming
+            // gigabytes panicked the process (OOM) before a byte of body arrived. Refused
+            // with 413 without reading the body. A fixed limit (_HTTP_MAX_BODY); not settable.
+            if (_cl > _HTTP_MAX_BODY) { ctx.reject(&_srv_rd.interface, "413 Content Too Large"); return; }
             var _body: []const u8 = "";
             if (_cl > 0) {
                 const _bb = _alloc.alloc(u8, _cl) catch @panic("OOM");
@@ -2839,22 +2863,32 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
             const _req = HttpRequest{ .method = _method, .path = _path, .content = _body, .query = _query, ._raw_headers = _raw_hdrs };
             const _resp = ctx.handler_fn(_req);
             const _st: []const u8 = switch (_resp.status) {
-                200 => "OK", 201 => "Created", 204 => "No Content",
-                301 => "Moved Permanently", 302 => "Found",
+                200 => "OK", 201 => "Created", 202 => "Accepted", 204 => "No Content",
+                301 => "Moved Permanently", 302 => "Found", 303 => "See Other",
+                304 => "Not Modified", 307 => "Temporary Redirect", 308 => "Permanent Redirect",
                 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden",
-                404 => "Not Found", 405 => "Method Not Allowed",
-                500 => "Internal Server Error",
+                404 => "Not Found", 405 => "Method Not Allowed", 409 => "Conflict",
+                410 => "Gone", 413 => "Content Too Large", 415 => "Unsupported Media Type",
+                422 => "Unprocessable Content", 429 => "Too Many Requests",
+                500 => "Internal Server Error", 501 => "Not Implemented", 503 => "Service Unavailable",
                 else => "Unknown",
             };
+            // BUG-698: the default Content-Type is sent only when the handler set none; a
+            // handler's own `withHeader("Content-Type", ..)` used to go out as a SECOND line.
+            var _has_ct = false;
             var _xh: std.ArrayList(u8) = .empty;
-            for (_resp.headers) |_kv| { _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {}; }
+            for (_resp.headers) |_kv| {
+                if (std.ascii.eqlIgnoreCase(_kv[0], "content-type")) _has_ct = true;
+                _xh.appendSlice(_alloc, _kv[0]) catch {}; _xh.appendSlice(_alloc, ": ") catch {}; _xh.appendSlice(_alloc, _kv[1]) catch {}; _xh.appendSlice(_alloc, "\r\n") catch {};
+            }
+            const _ct_line: []const u8 = if (_has_ct) "" else "Content-Type: text/html; charset=utf-8\r\n";
             // A response to HEAD carries the headers a GET would get (Content-Length
             // included) and NO body: a client that reads one would take it as the start of
             // the next response.
             const _resp_body: []const u8 = if (std.mem.eql(u8, _method, "HEAD")) "" else _resp.text;
             const _out = std.fmt.allocPrint(_alloc,
-                "HTTP/1.1 {d} {s}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
-                .{ _resp.status, _st, _resp.text.len, _xh.items, _resp_body }) catch @panic("OOM");
+                "HTTP/1.1 {d} {s}\r\n{s}Content-Length: {d}\r\nConnection: close\r\n{s}\r\n{s}",
+                .{ _resp.status, _st, _ct_line, _resp.text.len, _xh.items, _resp_body }) catch @panic("OOM");
             var _srv_wbuf: [4096]u8 = undefined;
             var _srv_wr = ctx.conn.writer(_io, &_srv_wbuf);
             _srv_wr.interface.writeAll(_out) catch {};
@@ -5493,6 +5527,71 @@ pub fn _crypto_decrypt(password: []const u8, hex_ciphertext: []const u8) ?[]cons
         return null;
     };
     return pt_buf;
+}
+// ── Crypto.randomToken / hashPassword / verifyPassword / equal (2026-11-12) ──────────────
+// For session tokens and stored passwords (Graze). `Random.bytes` is NOT a substitute: it is
+// the PRNG `Random.seed` resets, so a seeded program repeats it exactly.
+/// n bytes from the OS CSPRNG (`_io.randomSecure`), hex-encoded (2n chars). n < 1 is a
+/// programming error and panics rather than handing back an empty token.
+pub fn _crypto_random_token(n: i64) []const u8 {
+    if (n < 1) std.debug.panic("Crypto.randomToken: n must be at least 1 (got {d})", .{n});
+    const buf = _allocator.alloc(u8, @intCast(n)) catch @panic("OOM");
+    defer _allocator.free(buf);
+    _io.randomSecure(buf) catch @panic("entropy unavailable");
+    return _hex_encode(buf);
+}
+pub const _ARGON2 = std.crypto.pwhash.argon2;
+/// argon2id with OWASP's parameters (m=19 MiB, t=2, p=1), as a PHC string that carries its own
+/// salt and parameters. The ~19 MiB of working memory comes from an allocator that FREES
+/// (`_zbr_scoped_backing`): through the program arena, every login in a long-running server
+/// would keep 19 MiB for good. Checked against RFC 9106 and OpenSSL 3.5 before it was used.
+pub fn _crypto_hash_password(pw: []const u8) []const u8 {
+    var buf: [128]u8 = undefined;
+    const s = _ARGON2.strHash(pw, .{ .allocator = _zbr_scoped_backing(), .params = _ARGON2.Params.owasp_2id }, &buf, _io) catch |e|
+        std.debug.panic("Crypto.hashPassword: {s}", .{@errorName(e)});
+    return _allocator.dupe(u8, s) catch @panic("OOM");
+}
+/// The cost parameters are read out of the STORED string, so a corrupt one could ask for any
+/// amount of memory -- an OOM panic, which in an Http.serve handler ends the server (BUG-701).
+/// A string whose m, t or p is missing or above these ceilings is refused before any KDF runs.
+pub const _CRYPTO_PW_MAX_M: u64 = 1024 * 1024; // KiB, i.e. 1 GiB
+pub const _CRYPTO_PW_MAX_T: u64 = 100;
+pub const _CRYPTO_PW_MAX_P: u64 = 64;
+fn _crypto_phc_params_ok(phc: []const u8) bool {
+    var it = std.mem.splitScalar(u8, phc, '$');
+    while (it.next()) |seg| {
+        if (!std.mem.startsWith(u8, seg, "m=")) continue;
+        var m: ?u64 = null;
+        var t: ?u64 = null;
+        var p: ?u64 = null;
+        var kv = std.mem.splitScalar(u8, seg, ',');
+        while (kv.next()) |f| {
+            if (f.len < 3 or f[1] != '=') return false;
+            const v = std.fmt.parseInt(u64, f[2..], 10) catch return false;
+            switch (f[0]) { 'm' => m = v, 't' => t = v, 'p' => p = v, else => return false }
+        }
+        const mm = m orelse return false;
+        const tt = t orelse return false;
+        const pp = p orelse return false;
+        return mm <= _CRYPTO_PW_MAX_M and tt <= _CRYPTO_PW_MAX_T and pp <= _CRYPTO_PW_MAX_P;
+    }
+    return false;
+}
+/// true only when `phc` is a well-formed argon2 PHC string (within the ceilings above) for `pw`.
+/// A malformed string is false, and reads the same as a wrong password.
+pub fn _crypto_verify_password(pw: []const u8, phc: []const u8) bool {
+    if (!_crypto_phc_params_ok(phc)) return false;
+    _ARGON2.strVerify(phc, pw, .{ .allocator = _zbr_scoped_backing() }, _io) catch return false;
+    return true;
+}
+/// Constant-time over the bytes when the lengths match (std.crypto.timing_safe.eql's method,
+/// which takes only comptime-sized arrays); a length mismatch returns false at once.
+pub fn _crypto_equal(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var acc: u8 = 0;
+    for (a, b) |x, y| acc |= x ^ y;
+    std.mem.doNotOptimizeAway(acc);
+    return @as(u1, @truncate((@as(u9, acc) -% 1) >> 8)) == 1;
 }
 pub const ArgResult = struct {
     _raw: []const []const u8,

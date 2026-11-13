@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-701. Next new bug: BUG-702.**
+**Last bug number generated: BUG-704. Next new bug: BUG-705.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,49 +46,14 @@
 
 ---
 
-### BUG-698: `Http.serve` always sends `Content-Type: text/html`; a handler cannot set its own
-- **Status:** OPEN (filed 2026-11-12; reported by Fable reading the HTTP surface for Graze)
-- **Where:** `selfhost/stdlib_preamble.zig`, `_http_serve`'s response `allocPrint`: the format
-  string hard-codes `Content-Type: text/html; charset=utf-8`, then appends the handler's
-  `withHeader` headers after it. A handler serving JSON or a download that calls
-  `resp.withHeader("Content-Type", "application/json")` sends the header TWICE; which one a
-  client honours is client-defined.
-- **Fix shape:** emit the default only when the handler's headers carry no `Content-Type`
-  (case-insensitive); same for any other fixed line the handler may need to own.
-- **Control when fixing:** an in-process `Http.serve` + `Http.request` fixture whose handler
-  sets `application/json`; the raw response (read over `Tcp`, since client responses do not
-  capture headers) must carry exactly one `Content-Type` line, and a handler that sets none
-  must still get `text/html`.
-- **Same line, same fix site:** the reason-phrase table has no `303 See Other` or
-  `422 Unprocessable Content`; both go out as `Unknown` (Fable, 2026-11-12). A redirect after a
-  form POST is 303, so Graze sends one on every successful form.
-
----
-
-### BUG-700: `HttpResponse.ok(...).withHeader(...)` passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-12; found by Fable building Graze's forms, reproduced on `4639b2d`)
-- **Repro:** `return HttpResponse.new(303, "").withHeader("Location", "/x")` -- also as
-  `var r = HttpResponse.ok("b").withHeader(...)`. `-c` exits 0; the build fails with
-  `no field or member function named 'withHeader' in 'zebra_rt.HttpResponse'`.
-  `var r = HttpResponse.ok("b")` then `return r.withHeader(...)` works.
-- **Where:** `selfhost/CodeGen.zbr`, the `on Type_.named as cw_nm` / `cw_nm == "HttpResponse"`
-  arm that lowers `withHeader` to `_http_with_header(...)`: it fires only when the RECEIVER is
-  typed `HttpResponse` there, which a typed local is and a constructor-call receiver is not, so
-  the call falls through to a plain `.withHeader` method that the runtime struct does not have.
-  The leak class (`-c` accepts what zig refuses) is `leakgen`'s; gen.py does not generate
-  `HttpResponse`.
-- **Control when fixing:** the three shapes above in a `smoke_run` fixture, each printing the
-  built response's own `headers`; the local-receiver shape must keep working.
-
----
-
 ### BUG-701: a panic in an `Http.serve` handler ends the whole server process
 - **Status:** OPEN (filed 2026-11-12; Fable, measured through the sprocket toolchain of 2026-11-08)
 - **Observed:** `GET /task/\xff\xfe HTTP/1.1` (a path holding bytes that are not UTF-8) killed
   a Graze server: the next connection was refused. The handler walked the path as text
-  (`split` / `chars()` / compare); WHICH operation panics on invalid UTF-8 is not isolated, and
-  is worth knowing on its own -- a `str` operation that panics on bytes a peer controls is a
-  crash any client can trigger.
+  (`split` / `chars()` / compare). **The operation is `chars()`** (Fable, 2026-11-12: with the
+  guard removed, raw `\xff\xfe` went through `split`, `trim` and `==` and died in `for c in
+  s.chars()`), filed on its own as BUG-703 -- a `str` operation that panics on bytes a peer
+  controls is a crash any client can trigger.
 - **The general shape, true by construction:** the accept loop calls the handler in-process,
   and a Zig panic is a process exit, so ANY handler defect is a denial of service. Graze's
   charter (§4.3) wants per-request recovery that answers 500 and keeps serving; Zig has no
@@ -101,16 +66,42 @@
 
 ---
 
-### BUG-699: `Http.serve` allocates whatever `Content-Length` a client claims, with no cap or header timeout
-- **Status:** OPEN (filed 2026-11-12; Graze's charter, `C:\Projects\graze\docs\ZEBRA_WEB_ARCHITECTURE.md` §4.3/4.5, wants a 1 MB default and a header timeout)
-- **Where:** `_http_serve` parses `Content-Length` and does `_alloc.alloc(u8, _cl) catch @panic("OOM")`.
-  One request claiming a multi-GB body panics the server (or exhausts RAM) before a byte of
-  body arrives; there is no limit and no read deadline, so a slow client also holds the
-  (single-threaded) accept loop indefinitely.
-- **Fix shape:** a body limit (default 1 MB, settable on `Http.serve`) answered with `413`
-  without reading the body; a header-read deadline answered by closing the connection.
-- **Control when fixing:** a raw `Tcp` client sending `Content-Length: 10000000000` must get a
-  `413` and the server must answer the NEXT request; a body at the limit must still arrive.
+### BUG-702: `b.toInt()` on a byte from `s.bytes()` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-12; found by Fable in Graze's percent-decoder, reproduced on the
+  batch's compiler)
+- **Repro:** `for b in "AB".bytes()` then `var n: int = b.toInt()`. `-c` exits 0; the build fails
+  `error: expected float type, found 'u8'` -- the call is lowered as a float-to-int conversion.
+- **Workaround:** `var n: int = b` (a byte widens to int), which Graze uses.
+- **Fix shape:** the receiver's numeric kind decides the lowering: an integer receiver of any
+  width is `@as(i64, b)`, never `@intFromFloat`.
+- **Control when fixing:** the repro prints 65 and 66; `3.7.toInt()` keeps truncating.
+
+---
+
+### BUG-703: `s.chars()` panics on a string that is not valid UTF-8
+- **Status:** OPEN (filed 2026-11-12; reproduced)
+- **Repro:** `var s = "a" + "${255:c}" + "b"`; `s.isValidUtf8()` is false, and `for c in s.chars()`
+  panics: `attempt to unwrap error: Utf8InvalidStartByte`. In an `Http.serve` handler that is
+  BUG-701 -- any client sending such bytes ends the server.
+- **Fix shape (a decision, not a patch):** yield U+FFFD for each invalid sequence (what most
+  languages' lossy decoders do), or refuse at the call by returning nothing for the bad run.
+  Either way, never panic on input bytes; `isValidUtf8()` stays the way to tell.
+- **Control when fixing:** the repro iterates three items (or the chosen spelling's count) and
+  exits 0; a valid string's `chars()` is unchanged.
+
+---
+
+### BUG-704: `conn.readAll()` panics when the peer resets the connection
+- **Status:** OPEN (filed 2026-11-12; found by the BUG-699 red-check)
+- **Where:** `_tcp_read_all` ends `streamRemaining(..) catch |e| @panic(@errorName(e))`. A peer that
+  resets instead of closing -- which any server does when it closes with unread input -- turns
+  into `panic: ReadFailed` in the CLIENT: a remote peer can crash a program by misbehaving.
+  Seen 8 of 8 runs against `Http.serve` with its lingering close removed.
+- **Fix shape:** return what arrived. `read()` already treats an error as end of stream; whether
+  `readAll` should also distinguish "reset" from "closed" is the decision to make (QUICKSTART
+  says `""` at EOF for `read`, nothing for `readAll`).
+- **Control when fixing:** a `Tcp.serve` handler that writes a reply and closes with unread input;
+  the client's `readAll()` returns the reply (or what arrived) and the program exits 0.
 
 ---
 

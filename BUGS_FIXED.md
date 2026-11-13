@@ -6,6 +6,63 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-700: `HttpResponse.ok(..).withHeader(..)` -- and `Csv.parse(s).rowCount()`, `CsvWriter().writeRow(..)` -- passed `-c` and failed inside zig -- FIXED 2026-11-12
+
+- **Found by:** Fable building Graze's forms (2026-11-12); the Csv shapes found while fixing it.
+- **Cause:** the BUG-079 chain hoist (`var _mc_N = <call>; _mc_N.m(..)`) fires for any receiver
+  the checker types `Type_.named`. HttpResponse, CsvTable and CsvWriter are typed that way, but
+  their methods are lowered BY NAME to runtime helpers (`_http_with_header`, `_csv_row_count`,
+  `_csv_write_row`...), and the raw `.m(` on the hoisted temporary reached a struct with no
+  such method. A local receiver was fine because it never went through the hoist. Both hoist
+  decisions had the gap: `chainRecvNeedsHoist` (var-init, assignment, statement) and the
+  return path's own `Type_.named` rule.
+- **Fix:** `isNameDispatchedRuntime(n)` in CodeGen names the three, and both decisions skip the
+  hoist for them (a user class of the same name keeps the old behaviour). Safe: all three
+  helpers take the receiver by value (CsvWriter is a pointer type).
+- **Fixture:** `test/bug698_http_serve_hardening_test.zbr` (its last section): the var-init
+  and return shapes for `withHeader` and `rowCount`. Red on the pre-fix compiler, which
+  failed inside zig on `rowCount` and `writeRow` (probed on 4639b2d).
+
+---
+
+### BUG-699: `Http.serve` allocated whatever `Content-Length` a client claimed, and parsed a truncated header block as complete -- FIXED 2026-11-12 (the read deadline is still open)
+
+- **Found by:** Graze's charter (`C:\Projects\graze\docs\ZEBRA_WEB_ARCHITECTURE.md` §4.3/4.5).
+- **Was:** `_alloc.alloc(u8, _cl)` on the claimed length, unbounded: one request claiming a
+  multi-GB body could panic the process or exhaust RAM. And a header block that filled the
+  16 KB buffer without its blank line was parsed as if complete, so a truncated last header
+  reached the handler as real. (The OPEN entry said a slow client held "the single-threaded
+  accept loop"; wrong -- each connection runs on its own detached thread, so a slow client
+  holds a thread.)
+- **Fix:** a claimed body over `_HTTP_MAX_BODY` (1 MB, fixed, not settable -- no surface change)
+  is answered `413 Content Too Large` without reading it; an over-long header block is answered
+  `431 Request Header Fields Too Large`. Both refusals do a LINGERING CLOSE (answer, half-close
+  the send side, drain up to 1 MB of what the client already sent, close): closing with unread
+  input sends a TCP reset that destroyed the response before the client read it.
+- **Still open, deliberately:** a header-read DEADLINE. A slow client still holds its thread
+  for as long as it likes; Zig 0.17's `std.Io` reader offers no per-read timeout here.
+- **Fixture:** `test/bug698_http_serve_hardening_test.zbr` (`smoke_run_bounded`), read off the
+  wire with a raw `Tcp` client: a 10 GB claim gets 413, 17 KB of headers gets 431, the NEXT
+  request is answered after each, and a body of exactly 1 MB arrives whole. Red-checked with
+  three runtime mutants: no cap (the claim got `200 OK`), no 431 (a reset, `ReadFailed`), no
+  lingering close (`ReadFailed`, 8 of 8 runs as a built binary; the fixed build passed 6 of 6).
+
+---
+
+### BUG-698: `Http.serve` always sent `Content-Type: text/html`, and 303/422 went out as "Unknown" -- FIXED 2026-11-12
+
+- **Found by:** Fable reading the HTTP surface for Graze (2026-11-12).
+- **Was:** the response format hard-coded the html Content-Type and appended the handler's
+  `withHeader` headers after it, so a handler serving JSON sent the header TWICE. The
+  reason-phrase table had 11 codes; a 303 (every redirect after a form POST) said `Unknown`.
+- **Fix:** the default is sent only when the handler's headers carry no Content-Type
+  (case-insensitive). The table gained 202 303 304 307 308 409 410 413 415 422 429 501 503.
+- **Fixture:** `test/bug698_http_serve_hardening_test.zbr`: exactly one Content-Type line,
+  the handler's; the default when none; `303 See Other` with its Location; `422 Unprocessable
+  Content`. Red-checked with the default always sent.
+
+---
+
 ### BUG-697: `Http.json` / `Http.postJson` were typed `HttpResponse?` -- the JSON getters were refused and `.text` failed inside zig -- FIXED 2026-11-12
 
 - **Found by:** reading TypeChecker's Http return types while adding `Http.request`
