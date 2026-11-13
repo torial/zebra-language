@@ -69,8 +69,11 @@ over. A narrows who can crash it, B bounds what a crash costs, and neither repla
 A restart resets every module-level `var` in the handler's program, so anything a handler
 accumulates there -- caches, counters, **rate limits** -- is lost. For a rate limit that is a
 security hole, not just a loss: anyone who can crash a child resets the attempt count. Graze's
-sign-in throttle (failure counts per name, in a process HashMap) is the receipt, and it moves
-to Sqlite before B lands. Everything else Graze holds is rebuilt at startup from its inputs
+sign-in throttle (failure counts per name, in a process HashMap) is the receipt. It moved to
+Sqlite the same evening (graze aaf891a), and its check is the template for B's own fixture:
+`check_tasks.py` restarts the server mid-run, and a name locked under the first process signed
+straight in under the second while the counts lived in memory, and is refused with them in the
+database. Everything else Graze holds is rebuilt at startup from its inputs
 (route table, the session key from its key file, the decoy password hash) or is stateless
 (signed session cookies, signed forgery tokens). B's documentation must state the reset rule
 and name the rate-limit case.
