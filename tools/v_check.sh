@@ -5,7 +5,7 @@
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
 #
-#   tools/v_check.sh [--v <v.exe>]           (V 0.5.2 by default; V=<path> too)
+#   tools/v_check.sh [--v <v.exe>]           (the V pin by default; V=<path> too)
 #
 # What it does, each from the checkout's own zebra.exe:
 #   1. the seven examples/v_poc*.zbr: emitted to V, built and run under the
@@ -25,7 +25,9 @@ set -u
 source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 WT=$(cd "$(dirname "$0")/.." && pwd)
 ZEBRA="$WT/zig-out/bin/zebra.exe"
-V=${V:-/c/Projects/v-dist/v/v.exe}
+# the pin (vlang/v master b399a50 since 2026-11-08), as tools/gates.sh passes it: the
+# crypto row needs V's crypto.argon2, which 0.5.2 (the default here until 2026-11-12) lacks
+V=${V:-/c/Projects/v-b399a50/v.exe}
 [ "${1:-}" = "--v" ] && V=$2
 OUT=${OUT:-$WT/.zig-cache/v_check}
 ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-2}   # main.zbr's two zig literals (Zig-backend code by definition): more is a regression
@@ -56,6 +58,13 @@ echo "── the examples ──"
 for f in "$WT"/examples/v_poc*.zbr; do
   b=$(basename "$f" .zbr)
   compare "$b" "$WT" "examples/$b.zbr" "$OUT/control_$b.txt" "$WT/examples/$b.v"
+done
+echo "── import names a program may use, and Crypto / Hash.hmac256, on both routes (2026-11-12) ──"
+# v_import_names: locals, parameters and fields named after every symbol the emitted file's
+# imports bind (a local `sync` broke the engine's V game). v_crypto: lengths and verdicts
+# only, over hashes made by OpenSSL, by the Zig route and by the V route.
+for t in v_import_names_test v_crypto_test; do
+  compare "$t" "$WT" "test/$t.zbr" "$OUT/control_$t.txt" "$WT/test/${t}_prog.v"
 done
 echo "── the selfhost dumps ──"
 for d in lexer_dump parser_dump ast_dump resolver_dump codegen_dump; do

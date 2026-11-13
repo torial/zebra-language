@@ -1,0 +1,46 @@
+# Names a Zebra program may use freely and the V route must rename: every symbol the
+# emitted V file's imports bind (`duplicate of an import symbol` otherwise). A local `sync`
+# in the engine's datastore broke the V host's game on 2026-11-12. Run on both routes and
+# diffed (tools/v_check.sh). The database and the token are here to bring the conditional
+# imports (db.sqlite; crypto.hmac, crypto.argon2, crypto.rand as crand) into the file.
+
+class Holder
+    var sync: int
+    var time: int
+
+    cue init(sync: int, time: int)
+        this.sync = sync
+        this.time = time
+
+    def total(): int
+        return sync + time
+
+def add(sync: int, http: int, sqlite: int): int
+    return sync + http + sqlite
+
+def more(hmac: int, argon2: int, crand: int): int
+    return hmac + argon2 + crand
+
+def main()
+    var sync = 1
+    var time = 2
+    var os = 3
+    var math = 4
+    var strconv = 5
+    var rand = 6
+    var sha256 = 7
+    var json2 = 8
+    var bits = 9
+    var sqlite = 10
+    var http = 11
+    var hmac = 12
+    var argon2 = 13
+    var crand = 14
+    print("locals ${sync + time + os + math + strconv + rand + sha256 + json2 + bits + sqlite + http + hmac + argon2 + crand}")
+    print("params ${add(sync, http, sqlite)} ${more(hmac, argon2, crand)}")
+    print("fields ${Holder(sync, time).total()}")
+    var db = Sqlite.open(":memory:")
+    if db as d
+        print("journal ${d.journalMode()}")
+        d.close()
+    print("token ${Crypto.randomToken(4).len}")
