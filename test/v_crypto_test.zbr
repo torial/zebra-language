@@ -1,0 +1,78 @@
+# Hash.hmac256 and Crypto.randomToken / hashPassword / verifyPassword / equal on BOTH
+# routes (tools/v_check.sh runs this through the Zig backend and through --target v and
+# diffs the output), so everything printed is the same on any run: lengths and verdicts,
+# never a token or a hash.
+#
+# What makes it a test of agreement and not of two implementations each agreeing with
+# itself: the HMAC is RFC 4231's case 2, and the three stored hashes below were made by
+# three implementations -- OpenSSL 3.5 (the compiler's own crypto_password_test uses it),
+# the Zig route's Crypto.hashPassword (Zig's std argon2) and the V route's (V's
+# crypto.argon2) -- and each route must verify all three. The greedy string asks for
+# 2 GiB: refused by its parameters, before any hashing.
+#
+# The verdicts are also ASSERTED, so agreement between the routes cannot be two routes
+# wrong alike; the last line is what tools/selfhost_smoke.sh looks for on the Zig route.
+
+def isHex(s: str): bool
+    for c in s.chars()
+        if not ("0123456789abcdef".contains(c.toString()))
+            return false
+    return true
+
+def main()
+    var mac = Hash.hmac256("Jefe", "what do ya want for nothing?")
+    print("hmac ${mac}")
+
+    var t1 = Crypto.randomToken(16)
+    var t2 = Crypto.randomToken(16)
+    var hex = isHex(t1)
+    var differ = t1 != t2
+    print("token length ${t1.len}, hex ${hex}, two differ ${differ}")
+
+    var h1 = Crypto.hashPassword("hunter2")
+    var h2 = Crypto.hashPassword("hunter2")
+    var prefixed = h1.startsWith("$argon2id$v=19$m=19456,t=2,p=1$")
+    var salted = h1 != h2
+    print("hash prefix ${prefixed}, salted ${salted}")
+    var own1 = Crypto.verifyPassword("hunter2", h1)
+    var own2 = Crypto.verifyPassword("hunter2", h2)
+    var own_wrong = Crypto.verifyPassword("hunter3", h1)
+    print("verify own ${own1} ${own2}, wrong ${own_wrong}")
+
+    var openssl = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHRzb21lc2FsdA$K13EBUiG7JV+9ZxztmHFTdb7J0WQsnj2V8bZaqyPptE"
+    var ossl_ok = Crypto.verifyPassword("password", openssl)
+    var ossl_wrong = Crypto.verifyPassword("Password", openssl)
+    print("verify openssl ${ossl_ok}, wrong case ${ossl_wrong}")
+    var zigs = "$argon2id$v=19$m=19456,t=2,p=1$5SGcFp7zMM1etUBq6lcHT6O6fKDSrXZepNZA2ux+qzE$RqaBDvKdXxay1HXsdVJXgEnP1Pz15osgIE+PCUi0ZsQ"
+    var zig_ok = Crypto.verifyPassword("correct horse", zigs)
+    var zig_wrong = Crypto.verifyPassword("correct horses", zigs)
+    print("verify the zig route's ${zig_ok}, wrong ${zig_wrong}")
+    var vs = "$argon2id$v=19$m=19456,t=2,p=1$G253+ZwAbrq8XS7Jkvn6oQ$fIVhhwVAjaN/X1lQCRS5TlOpjHzytrKEtHlwWXWJjP4"
+    var v_ok = Crypto.verifyPassword("battery staple", vs)
+    var v_wrong = Crypto.verifyPassword("battery staples", vs)
+    print("verify the v route's ${v_ok}, wrong ${v_wrong}")
+    var bad1 = Crypto.verifyPassword("password", "not a hash")
+    var bad2 = Crypto.verifyPassword("password", "")
+    var bad3 = Crypto.verifyPassword("password", "$argon2id$v=19$m=19456,t=2$c29tZXNhbHRzb21lc2FsdA$K13EBUiG7JV+9ZxztmHFTdb7J0WQsnj2V8bZaqyPptE")
+    print("malformed ${bad1} ${bad2}, a string without p ${bad3}")
+    var greedy = "$argon2id$v=19$m=2097152,t=2,p=1$c29tZXNhbHRzb21lc2FsdA$K13EBUiG7JV+9ZxztmHFTdb7J0WQsnj2V8bZaqyPptE"
+    var greedy_ok = Crypto.verifyPassword("password", greedy)
+    print("greedy ${greedy_ok}")
+
+    var e1 = Crypto.equal("abc", "abc")
+    var e2 = Crypto.equal("abc", "abd")
+    var e3 = Crypto.equal("abc", "abcd")
+    var e4 = Crypto.equal("", "")
+    print("equal ${e1} ${e2} ${e3} ${e4}")
+
+    assert mac == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", "RFC 4231 case 2, key first"
+    assert t1.len == 32 and hex and differ, "randomToken"
+    assert prefixed and salted, "hashPassword"
+    assert own1 and own2 and not own_wrong, "a route verifies its own hashes"
+    assert ossl_ok and not ossl_wrong, "OpenSSL's hash"
+    assert zig_ok and not zig_wrong, "the Zig route's hash"
+    assert v_ok and not v_wrong, "the V route's hash"
+    assert not bad1 and not bad2 and not bad3, "malformed strings are false"
+    assert not greedy_ok, "over the memory ceiling is false"
+    assert e1 and not e2 and not e3 and e4, "equal"
+    print("v_crypto: OK")

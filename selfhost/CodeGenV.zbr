@@ -145,7 +145,9 @@ def vSafe(name: str): str
     if s == "map" or s == "string" or s == "array" or s == "chan" or s == "thread" or s == "any" or s == "voidptr" or s == "byte" or s == "rune" or s == "int" or s == "f32" or s == "f64" or s == "i8" or s == "i16" or s == "i32" or s == "i64" or s == "u8" or s == "u16" or s == "u32" or s == "u64" or s == "isize" or s == "usize" or s == "char"
         return s + "_"
     # the modules the emitted file imports: a parameter `time` was a duplicate of one
-    if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2" or s == "bits"
+    # every symbol the emitted file's imports bind (sync, sqlite and http were missing
+    # until 2026-11-12; generateV refuses an import whose symbol is not here)
+    if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2" or s == "bits" or s == "sync" or s == "sqlite" or s == "http" or s == "hmac" or s == "argon2" or s == "crand"
         return s + "_"
     return s
 
@@ -4453,8 +4455,18 @@ class VGen
             return "zrandom_" + snakeCase(name) + "(" + a + ")"
         if ns == "Hash"
             if name == "sha256": return "zhash_sha256(" + a + ")"
+            if name == "hmac256": return "zhash_hmac256(" + a + ")"
             .refuse("Hash." + name, span)
             return "zhash_" + snakeCase(name) + "(" + a + ")"
+        if ns == "Crypto"
+            # the runtime's crypto section (inlined with its imports only when a
+            # program names it): V's crypto.rand, crypto.argon2 and crypto.hmac
+            if name == "randomToken": return "zcrypto_random_token(" + a + ")"
+            if name == "hashPassword": return "zcrypto_hash_password(" + a + ")"
+            if name == "verifyPassword": return "zcrypto_verify_password(" + a + ")"
+            if name == "equal": return "zcrypto_equal(" + a + ")"
+            .refuse("Crypto." + name + " (randomToken, hashPassword, verifyPassword and equal are mapped; encrypt, decrypt and deriveKey are not)", span)
+            return "zcrypto_" + snakeCase(name) + "(" + a + ")"
         if ns == "Http"
             # V's net.http, through the runtime's http section (inlined with its
             # import only when a program names it); the bundled tcc builds it on
@@ -5217,7 +5229,7 @@ def rtBaseType(t: str): str
     return identPrefix(s)
 
 def isBuiltinNs(ns: str): bool
-    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp"
+    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp" or ns == "Crypto"
 
 def isFloatLit(e: Expr): bool
     branch e
@@ -5257,5 +5269,34 @@ def generateV(ms: List(Module), runtime: str): VResult
         var hb: int = rt_text.indexOf("// == http end ==")
         if ha >= 0 and hb > ha
             rt_text = rt_text.substring(0, ha) + "// (the http section is left out: the program makes no request)\n" + rt_text.substring(hb + "// == http end ==".len, rt_text.len)
+    # the runtime's crypto section (argon2 and its blake2b are a second of V compile)
+    # goes in, with its imports, only when the program names it
+    var needs_crypto: bool = body.contains("zcrypto_") or body.contains("zhash_hmac256(")
+    var crypto_imports: str = "import crypto.hmac\nimport crypto.argon2\nimport crypto.rand as crand\n"
+    if needs_crypto
+        head = head + crypto_imports
+    else
+        var ca: int = rt_text.indexOf("// == crypto begin ==")
+        var cb: int = rt_text.indexOf("// == crypto end ==")
+        if ca >= 0 and cb > ca
+            rt_text = rt_text.substring(0, ca) + "// (the crypto section is left out: the program names no Crypto call)\n" + rt_text.substring(cb + "// == crypto end ==".len, rt_text.len)
+    # Every module this header can import is a name V will not let a local shadow
+    # (`duplicate of an import symbol`), so vSafe must rename each one's symbol: the
+    # last path component, or the alias after ` as `. Checked HERE, where the imports
+    # are declared: one added without its vSafe entry refuses at once and names the
+    # fix. The conditional imports are checked whether or not this program has them.
+    var import_lines: str = head + "import db.sqlite\nimport net.http\n" + crypto_imports
+    for iline in import_lines.split("\n")
+        if iline.startsWith("import ")
+            var ipath: str = iline.substring(7, iline.len).trim()
+            var isym: str = ipath
+            var as_at: int = ipath.indexOf(" as ")
+            if as_at >= 0
+                isym = ipath.substring(as_at + 4, ipath.len).trim()
+            else
+                var iparts: List(str) = ipath.split(".")
+                isym = iparts.at(iparts.count() - 1)
+            if vSafe(isym) == isym
+                g.refused.add("internal: the V header imports `" + ipath + "` but vSafe does not rename a local named `" + isym + "` -- add it to the import list in vSafe (selfhost/CodeGenV.zbr)")
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
     return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)

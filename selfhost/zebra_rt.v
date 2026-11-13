@@ -1924,6 +1924,98 @@ pub fn zhash_sha256(zr_s string) string {
 	return sha256.hexhash(zr_s)
 }
 
+// == crypto begin ==
+// Hash.hmac256 and Crypto.randomToken / hashPassword / verifyPassword / equal, as the Zig
+// preamble has them (zebra-language 8ac485e). Inlined, with `import crypto.hmac`,
+// `import crypto.argon2` and `import crypto.rand as crand`, only when a program names one.
+// KEY FIRST, as on the Zig route (RFC 4231 case 2 pins it in test/v_crypto_test.zbr).
+pub fn zhash_hmac256(zr_key string, zr_msg string) string {
+	return hmac.new(zr_key.bytes(), zr_msg.bytes(), sha256.sum, sha256.block_size).hex()
+}
+
+// n bytes from the OS's secure source as 2n hex characters; NOT the seedable `rand`.
+pub fn zcrypto_random_token(zr_n i64) string {
+	if zr_n < 1 {
+		zbr_panic('Crypto.randomToken: n must be at least 1 (got ${zr_n})')
+	}
+	zr_b := crand.bytes(int(zr_n)) or { zbr_panic('Crypto.randomToken: entropy unavailable') }
+	return zr_b.hex()
+}
+
+// argon2id with OWASP's parameters (19 MiB, 2 passes, 1 lane) as a PHC string carrying its
+// own random salt: the same string shape the Zig route writes, and each route verifies the
+// other's.
+pub fn zcrypto_hash_password(zr_pw string) string {
+	return argon2.generate_from_password_with_params(zr_pw.bytes(), argon2.Params{
+		time:     2
+		memory:   19456
+		threads:  1
+		key_len:  32
+		salt_len: 16
+	}) or { zbr_panic('Crypto.hashPassword: ${err}') }
+}
+
+// The cost parameters are read out of the STORED string, so a corrupt one could ask for
+// any amount of memory. The Zig route's ceilings (1 GiB, 100 passes, 64 lanes) and its
+// rule: m, t and p must all be present in the `m=..,t=..,p=..` segment and within them,
+// or the string is refused before any hashing.
+fn zcrypto_phc_params_ok(zr_phc string) bool {
+	for zr_seg in zr_phc.split('$') {
+		if !zr_seg.starts_with('m=') {
+			continue
+		}
+		mut zr_mem := i64(-1)
+		mut zr_passes := i64(-1)
+		mut zr_lanes := i64(-1)
+		for zr_f in zr_seg.split(',') {
+			if zr_f.len < 3 || zr_f[1] != `=` {
+				return false
+			}
+			zr_digits := zr_f[2..]
+			if zr_digits.len > 18 {
+				return false
+			}
+			for zr_c in zr_digits {
+				if zr_c < `0` || zr_c > `9` {
+					return false
+				}
+			}
+			zr_v := zr_digits.i64()
+			match zr_f[0] {
+				`m` { zr_mem = zr_v }
+				`t` { zr_passes = zr_v }
+				`p` { zr_lanes = zr_v }
+				else { return false }
+			}
+		}
+		if zr_mem < 0 || zr_passes < 0 || zr_lanes < 0 {
+			return false
+		}
+		return zr_mem <= 1048576 && zr_passes <= 100 && zr_lanes <= 64
+	}
+	return false
+}
+
+// true only when `phc` is a well-formed argon2 PHC string, within the ceilings, for `pw`.
+// A malformed string reads the same as a wrong password: false, never a panic.
+pub fn zcrypto_verify_password(zr_pw string, zr_phc string) bool {
+	if !zcrypto_phc_params_ok(zr_phc) {
+		return false
+	}
+	argon2.compare_hash_and_password(zr_pw.bytes(), zr_phc.bytes()) or { return false }
+	return true
+}
+
+// Time that does not depend on WHERE two equal-length strings differ; a length mismatch
+// is false at once.
+pub fn zcrypto_equal(zr_a string, zr_b string) bool {
+	if zr_a.len != zr_b.len {
+		return false
+	}
+	return hmac.equal(zr_a.bytes(), zr_b.bytes())
+}
+// == crypto end ==
+
 // ── Arg: the builtin argument parser (the Zig preamble's ArgResult) ────────
 pub struct ZArgs {
 pub mut:

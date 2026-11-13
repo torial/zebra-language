@@ -96,4 +96,6 @@ tears_save.txt
 examples/*.v
 selfhost/*.v
 !selfhost/zebra_rt.v
+# a `_test.zbr` fixture emits <stem>_prog.v (V leaves *_test.v out of a program build)
+test/*_prog.v
 zig-out-fast/
