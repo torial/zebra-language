@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-706 the run mode passes the program's exit code through (fast and LLVM paths); a zig refusal stays 1
 # pins: BUG-671 a front-end refusal (post-emit, or raised by a later dep) leaves no .zig in --output-dir; a zig failure keeps its .zig
 # pins: BUG-653 `zebra diagnostics` (the LSP's view) knows a `use`d module's types; a real mismatch through one is still reported
 # pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
@@ -187,6 +188,24 @@ run --emit-zig --output-dir od_raised m671/main.zbr
 chk "a RAISED refusal in a later dep takes back an earlier dep's .zig (BUG-671)" \
     "$([ "$RC" = 1 ] && [ "$(ls "$W/od_raised" 2>/dev/null | grep -c '\.zig$')" = 0 ] && echo 0 || echo 1)" \
     "exit=$RC files=[$(ls "$W/od_raised" 2>/dev/null | tr '\n' ' ')]"
+
+# ---- BUG-706: the run mode passes the PROGRAM's exit code through ----------------------
+# Both run paths answered any non-zero program exit with 1, so a script wrapping
+# `zebra prog.zbr` could not tell a program's own `sys.exit(2)` from a build failure. The
+# fast path and the LLVM path (`--release`) are separate sites; a zig refusal (zigbad.zbr,
+# above) must stay exit 1 and must not be described as the program exiting.
+printf 'def main()\n    print("hi")\n    sys.exit(7)\n' > "$W/exit7.zbr"
+run exit7.zbr
+chk "a program's own exit code passes through \`zebra prog.zbr\`, and the note says the PROGRAM exited (BUG-706)" \
+    "$([ "$RC" = 7 ] && [ "$OUT" = hi ] && case "$ERR" in *"the program exited 7"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stdout=[$OUT] stderr=[$(echo "$ERR" | tail -1)]"
+run --release exit7.zbr
+chk "...and through the LLVM path (\`--release\`) (BUG-706)" \
+    "$([ "$RC" = 7 ] && echo 0 || echo 1)" "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
+run zigbad.zbr
+chk "...while a ZIG refusal still exits 1 and is not called the program's exit (control)" \
+    "$([ "$RC" = 1 ] && case "$ERR" in *"program exited"*) echo 1;; *) echo 0;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | tail -1)]"
 
 # ---- `zebra up` (2026-09-14): refuses, by name and OFFLINE, outside an install layout --
 # The compiler under test lives in zig-out/bin, not .../current, so `up` must refuse

@@ -356,6 +356,20 @@ class MultiCompiler
                 removeScratchDir(scratch_dir)
         sys.exit(code)
 
+    # BUG-706: the PROGRAM exited non-zero; the build was fine. Its code passes through, so a
+    # script wrapping `zebra prog.zbr` sees what the program said (it was always 1), and a
+    # note says it was the program, so a kept scratch dir does not read as a build failure.
+    # A code an 8-bit exit cannot carry -- -1 for a signal, or a Windows status such as
+    # 0xC0000005 that would truncate to 5 or, at 256, to 0 -- becomes 1, never 0.
+    def exitProgram(rc: int)
+        var code: int = rc
+        if code < 1 or code > 255
+            code = 1
+        # Its own line: "note: the scratch build is kept in DIR" stays byte-for-byte what
+        # every other kept build prints, because tools parse it (runtime_module_check does).
+        sys.errln("note: the program exited ${rc}")
+        .exitWith(code, true)
+
     # BUG-671: a refused compile leaves no .zig behind in --output-dir. The refusals that
     # run after emission (a throws call without `?`, a `catch` that cannot fire, a guessed
     # type) found every module already written, and a caller that judged success by
@@ -5516,7 +5530,7 @@ def main()
                 if rc == 0
                     deleteScratch(zig_path)
             if rc != 0
-                mc.exitWith(1, true)
+                mc.exitProgram(rc)
             mc.exitWith(0, false)
 
     var argv2 = List(str)()
@@ -5647,7 +5661,7 @@ def main()
             if rc2 == 0
                 deleteScratch(zig_path)
         if rc2 != 0
-            mc.exitWith(1, true)
+            mc.exitProgram(rc2)
     mc.exitWith(0, false)
 
 catch |e|

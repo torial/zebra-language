@@ -37,6 +37,14 @@ confirmed via `tools/bootstrap_check.sh`.
   deadline yet.
 - **BUG-700: `HttpResponse.ok(..).withHeader(..)` builds**, as do `Csv.parse(s).rowCount()` and
   other chains onto a CsvTable / CsvWriter. They passed `-c` and failed inside zig.
+- **BUG-706: `zebra prog.zbr` exits with the program's own code.** It exited 1 for any non-zero
+  program exit, through both the fast path and `--release`; the note now says the program exited
+  N. A build failure still exits 1.
+- **BUG-707: a 413 reaches a client that sends its whole body.** The server read at most 1 MB of
+  a refused body before closing, so a client that really sent 3 MB was reset before it read the
+  answer. It now reads up to what the request claimed (16 MB at most, 10 s at most).
+- **`Crypto.verifyPassword` reads a cost parameter as digits only**, as the V route does:
+  `m=19_456` and `m=+19456` are refused where Zig's integer parser would accept them.
 
 - **`Http.request(method, url, headers: {...}, body: s)` and `req.header(name)`.** The HTTP
   client could not set a header, so no authenticated API was reachable, and it had only GET and

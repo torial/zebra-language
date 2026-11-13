@@ -7,6 +7,7 @@
 #   - BUG-699: a claimed Content-Length over 1 MB is answered 413 without reading the body, a
 #     header block over 16 KB is answered 431, and the server answers the NEXT request after
 #     each; a body of exactly 1 MB still arrives whole.
+#   - BUG-707: a client that sends its whole over-limit body (1.5 MB, 3 MB) still reads the 413.
 #   - BUG-700: `HttpResponse.new(..).withHeader(..)` returned directly and as a var
 #     initialiser, and the same receiver shape for `Csv.parse(s).rowCount()` (the chain hoist
 #     reached a runtime struct with no such method, and zig refused it). The local-receiver
@@ -72,6 +73,18 @@ def main()
     assert at_limit != nil
     assert at_limit!.text == "1048576", "a 1 MB body arrives whole"
     print("bug699: 413, 431 and the 1 MB body OK")
+
+    # BUG-707: a client that REALLY SENDS a body over the limit must still read the 413. The
+    # server drained at most 1 MB, so it closed with input unread and the reset often destroyed
+    # the answer (3 MB: a reset every time). Five rounds each at 1.5 MB and 3 MB, sent whole.
+    var round: int = 0
+    while round < 5
+        for size in [1572864, 3145728]
+            var sent = raw("POST /len HTTP/1.1\r\nHost: t\r\nContent-Length: " + size.toString() + "\r\n\r\n" + "z".repeat(size))
+            assert sent.startsWith("HTTP/1.1 413 Content Too Large\r\n"), "round " + round.toString() + ", " + size.toString() + " bytes: " + sent
+        round = round + 1
+    assert raw("GET / HTTP/1.1\r\nHost: t\r\n\r\n").endsWith("plain")
+    print("bug707: a 413 survives a body sent whole OK")
 
     # BUG-700: the chained receiver shapes, var-init and return.
     var v = HttpResponse.ok("b").withHeader("X-A", "1")

@@ -2778,6 +2778,10 @@ pub fn _zbr_port(p: i64, what: []const u8) ?u16 {
 /// BUG-699: the largest request body `Http.serve` will read; a larger Content-Length is
 /// answered 413 without reading it. 1 MB, the figure Graze's charter asks for.
 pub const _HTTP_MAX_BODY: usize = 1024 * 1024;
+/// BUG-707: how much of a refused request `reject` will read and throw away so its answer is
+/// not lost to a reset, and for how long.
+pub const _HTTP_DRAIN_MAX: usize = 16 * 1024 * 1024;
+pub const _HTTP_DRAIN_NS: i128 = 10 * std.time.ns_per_s;
 pub fn _http_serve(port_in: i64, handler: anytype) void {
     const port = _zbr_port(port_in, "Http.serve") orelse return;
     const _HFn = *const fn(HttpRequest) HttpResponse;
@@ -2788,15 +2792,29 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
         /// A refusal the server makes itself, before any handler runs (413, 431). The request
         /// it refuses is UNREAD, and closing a socket with unread input sends a TCP reset that
         /// can destroy the response before the client reads it. So: answer, half-close the
-        /// sending side (the client's read now ends), then drain what the client already sent
-        /// -- bounded, so a client streaming a huge body cannot hold the thread -- and close.
-        fn reject(ctx: *@This(), rd: *std.Io.Reader, status_line: []const u8) void {
+        /// sending side (the client's read now ends), then drain what the client sends --
+        /// up to `drain_max` bytes and _HTTP_DRAIN_NS of wall clock, so a client streaming a
+        /// huge body, or trickling one, cannot hold the thread -- and close.
+        /// BUG-707: the drain was 1 MB, and every body a 413 refuses is larger than that, so a
+        /// client that really sent its body always left input unread at close: a reset, and
+        /// the 413 lost. A 413 now drains what the request CLAIMED, up to _HTTP_DRAIN_MAX.
+        /// A client that claims a length and then sends nothing still holds the thread until
+        /// it closes: there is no read deadline yet (BUG-699's open half).
+        fn reject(ctx: *@This(), rd: *std.Io.Reader, status_line: []const u8, drain_max: usize) void {
             var _wb: [512]u8 = undefined;
             var _w = ctx.conn.writer(_io, &_wb);
             _w.interface.print("HTTP/1.1 {s}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", .{status_line}) catch {};
             _w.interface.flush() catch {};
             ctx.conn.shutdown(_io, .send) catch {};
-            _ = rd.discard(.limited(_HTTP_MAX_BODY)) catch {};
+            const _t0: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+            var _left: usize = drain_max;
+            while (_left > 0) {
+                const _n = rd.discard(.limited(@min(_left, 64 * 1024))) catch break;
+                if (_n == 0) break;
+                _left -= @min(_n, _left);
+                const _t: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+                if (_t - _t0 > _HTTP_DRAIN_NS) break;
+            }
         }
         fn run(ctx: *@This()) void {
             defer std.heap.page_allocator.destroy(ctx);
@@ -2816,7 +2834,7 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
             }
             // A header block that fills the buffer without ending used to be parsed AS IF it
             // were complete -- a truncated last header handed to the handler as real.
-            if (!_hdr_done and _hl >= _hd.len - 1) { ctx.reject(&_srv_rd.interface, "431 Request Header Fields Too Large"); return; }
+            if (!_hdr_done and _hl >= _hd.len - 1) { ctx.reject(&_srv_rd.interface, "431 Request Header Fields Too Large", _HTTP_MAX_BODY); return; }
             const _head = _hd[0.._hl];
             // Parse request line: METHOD PATH VERSION
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
@@ -2844,7 +2862,7 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
             // BUG-699: the claimed length was allocated as given, so one request claiming
             // gigabytes panicked the process (OOM) before a byte of body arrived. Refused
             // with 413 without reading the body. A fixed limit (_HTTP_MAX_BODY); not settable.
-            if (_cl > _HTTP_MAX_BODY) { ctx.reject(&_srv_rd.interface, "413 Content Too Large"); return; }
+            if (_cl > _HTTP_MAX_BODY) { ctx.reject(&_srv_rd.interface, "413 Content Too Large", @min(_cl, _HTTP_DRAIN_MAX)); return; }
             var _body: []const u8 = "";
             if (_cl > 0) {
                 const _bb = _alloc.alloc(u8, _cl) catch @panic("OOM");
@@ -5537,7 +5555,7 @@ pub fn _crypto_random_token(n: i64) []const u8 {
     if (n < 1) std.debug.panic("Crypto.randomToken: n must be at least 1 (got {d})", .{n});
     const buf = _allocator.alloc(u8, @intCast(n)) catch @panic("OOM");
     defer _allocator.free(buf);
-    _io.randomSecure(buf) catch @panic("entropy unavailable");
+    _io.randomSecure(buf) catch @panic("Crypto.randomToken: entropy unavailable");
     return _hex_encode(buf);
 }
 pub const _ARGON2 = std.crypto.pwhash.argon2;
@@ -5567,6 +5585,9 @@ fn _crypto_phc_params_ok(phc: []const u8) bool {
         var kv = std.mem.splitScalar(u8, seg, ',');
         while (kv.next()) |f| {
             if (f.len < 3 or f[1] != '=') return false;
+            // Digits only, as the V route reads them: parseInt alone would also take
+            // `19_456` and `+19456`, so the two backends would disagree on what is well-formed.
+            for (f[2..]) |c| if (c < '0' or c > '9') return false;
             const v = std.fmt.parseInt(u64, f[2..], 10) catch return false;
             switch (f[0]) { 'm' => m = v, 't' => t = v, 'p' => p = v, else => return false }
         }

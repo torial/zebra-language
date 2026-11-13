@@ -6,6 +6,65 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-707: an `Http.serve` 413 was lost to a reset when the client really sent the body -- FIXED 2026-11-13 (the read deadline is still open)
+- **Status:** FIXED 2026-11-13 (filed 2026-11-12; Fable, measured from Python on loopback against Graze on 8ac485e)
+- **Observed:** a Content-Length of 10 GB with nothing sent gets the 413 every time (the
+  `bug698_http_serve_hardening_test` leg). A 1.5 MB form actually sent got the 413 once and a
+  reset twice in three runs; 3 MB was a reset every time, also from a client that polls for an
+  early answer between 16 KB chunks.
+- **Cause:** `reject` drains at most `_HTTP_MAX_BODY` (1 MB) after answering, and every body it
+  refuses is larger than that, so a client that sends its whole body always leaves unread input
+  at close: an RST, which can destroy the 413 before the client reads it.
+- **Not a safety issue:** nothing is created and the server keeps answering. A browser uploading
+  a large form shows "connection reset" instead of the 413.
+- **Fix shape (a decision):** drain up to min(Content-Length, a larger cap such as 16 MB) under a
+  time bound, so a slow or lying client cannot hold the thread. There is no read deadline yet
+  (BUG-699's open half), and the time bound wants that first.
+- **Control when fixing:** a raw client that sends a 3 MB body in full reads `413` in 10 of 10 runs,
+  and the server answers the next request.
+- **Fix:** `reject` takes how much to drain. A 413 drains what the request CLAIMED, up to
+  `_HTTP_DRAIN_MAX` (16 MB), and stops after `_HTTP_DRAIN_NS` (10 s) of wall clock, checked
+  between reads, so a trickling client cannot hold the thread for longer. A 431 keeps the 1 MB
+  drain. Still open: a client that claims a length and sends NOTHING holds the thread until it
+  closes, because there is no read deadline (BUG-699's open half); the time check runs only
+  between reads.
+- **Pinned by:** `test/bug698_http_serve_hardening_test.zbr` -- five rounds of a 1.5 MB and a
+  3 MB body sent whole over a raw Tcp client, each reading `413`, then a request that must still
+  be answered. Red-checked by putting the 1 MB drain back: the client is reset and `readAll()`
+  panics (`LOCAL_DISCONNECT`, which is BUG-704).
+
+
+---
+
+### BUG-706: `zebra prog.zbr` exited 1 whatever code the program exited with -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed 2026-11-12; Fable, reproduced on 8ac485e)
+- **Repro:** `def main()` printing `hi` then `sys.exit(7)`. `zebra exit7.zbr; echo $?` prints `1`, and
+  the driver adds `note: the scratch build is kept in ...`. The same program built with
+  `--output-dir` and run directly exits 7. Control: a program that exits 0 gives 0.
+- **Cost:** a program that uses exit codes (2 for bad usage, say) cannot be told from a compile
+  failure through the run mode -- any script wrapping `zebra prog.zbr` loses the information.
+- **Cause:** both run paths in `selfhost/main.zbr` answer a non-zero program exit with
+  `mc.exitWith(1, true)`
+  (the fast path near `deleteScratch(fast_exe)`, the LLVM path near `exec_inherit`).
+- **Fix shape:** `mc.exitWith(rc, true)` at both sites. Keeping the scratch on a failed PROGRAM is
+  BUG-513's deliberate rule; the note should then say the program exited N, so it does not read
+  as a build failure. A build failure stays exit 1 with its note.
+- **Control when fixing:** the repro exits 7 through `zebra exit7.zbr` and through the LLVM path
+  (`--release`); a zig refusal still exits 1; a panicking program keeps a non-zero code.
+- **Fix:** both run paths call `mc.exitProgram(rc)` (`selfhost/main.zbr`), which passes the
+  code through and prints `note: the program exited N` on a line of its own, before the usual
+  `note: the scratch build is kept in ...` (that line is unchanged: `runtime-module` parses it,
+  and went red on a first version that merged the two). A code
+  an 8-bit exit cannot carry (-1 for a signal, a Windows status such as 0xC0000005, or 256,
+  which would truncate to 0) becomes 1, never 0. Kept scratch on a failed program is BUG-513's
+  rule, unchanged.
+- **Pinned by:** `cli-surface` (three legs: `exit7.zbr` exits 7 with the note through the fast
+  path, exits 7 through `--release`, and a zig refusal still exits 1 without it). Measured
+  before the fix: exit 1 on the fast path (Fable's repro, and mine on 8ac485e).
+
+
+---
+
 ### BUG-700: `HttpResponse.ok(..).withHeader(..)` -- and `Csv.parse(s).rowCount()`, `CsvWriter().writeRow(..)` -- passed `-c` and failed inside zig -- FIXED 2026-11-12
 
 - **Found by:** Fable building Graze's forms (2026-11-12); the Csv shapes found while fixing it.

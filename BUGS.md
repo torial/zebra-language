@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-709. Next new bug: BUG-710.**
+**Last bug number generated: BUG-711. Next new bug: BUG-712.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -124,43 +124,6 @@
 
 ---
 
-### BUG-706: `zebra prog.zbr` exits 1 whatever code the program exited with
-- **Status:** OPEN (filed 2026-11-12; Fable, reproduced on 8ac485e)
-- **Repro:** `def main()` printing `hi` then `sys.exit(7)`. `zebra exit7.zbr; echo $?` prints `1`, and
-  the driver adds `note: the scratch build is kept in ...`. The same program built with
-  `--output-dir` and run directly exits 7. Control: a program that exits 0 gives 0.
-- **Cost:** a program that uses exit codes (2 for bad usage, say) cannot be told from a compile
-  failure through the run mode -- any script wrapping `zebra prog.zbr` loses the information.
-- **Cause:** both run paths in `selfhost/main.zbr` answer a non-zero program exit with
-  `mc.exitWith(1, true)`
-  (the fast path near `deleteScratch(fast_exe)`, the LLVM path near `exec_inherit`).
-- **Fix shape:** `mc.exitWith(rc, true)` at both sites. Keeping the scratch on a failed PROGRAM is
-  BUG-513's deliberate rule; the note should then say the program exited N, so it does not read
-  as a build failure. A build failure stays exit 1 with its note.
-- **Control when fixing:** the repro exits 7 through `zebra exit7.zbr` and through the LLVM path
-  (`--release`); a zig refusal still exits 1; a panicking program keeps a non-zero code.
-
----
-
-### BUG-707: an `Http.serve` 413 is lost to a reset when the client really sends the body
-- **Status:** OPEN (filed 2026-11-12; Fable, measured from Python on loopback against Graze on 8ac485e)
-- **Observed:** a Content-Length of 10 GB with nothing sent gets the 413 every time (the
-  `bug698_http_serve_hardening_test` leg). A 1.5 MB form actually sent got the 413 once and a
-  reset twice in three runs; 3 MB was a reset every time, also from a client that polls for an
-  early answer between 16 KB chunks.
-- **Cause:** `reject` drains at most `_HTTP_MAX_BODY` (1 MB) after answering, and every body it
-  refuses is larger than that, so a client that sends its whole body always leaves unread input
-  at close: an RST, which can destroy the 413 before the client reads it.
-- **Not a safety issue:** nothing is created and the server keeps answering. A browser uploading
-  a large form shows "connection reset" instead of the 413.
-- **Fix shape (a decision):** drain up to min(Content-Length, a larger cap such as 16 MB) under a
-  time bound, so a slow or lying client cannot hold the thread. There is no read deadline yet
-  (BUG-699's open half), and the time bound wants that first.
-- **Control when fixing:** a raw client that sends a 3 MB body in full reads `413` in 10 of 10 runs,
-  and the server answers the next request.
-
----
-
 ### BUG-708: `private` is not enforced from another module, and never on methods
 - **Status:** OPEN (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
 - **Repro:** `vault.zbr` declares `class Vault` with `private var secret: str`, `private var log:
@@ -207,6 +170,52 @@
   Measure `-c` counts over the three corpora first.
 - **Control when fixing:** the five shapes refused at their columns; a `SafeHtml` value, a
   `SafeHtml?` slot given `nil`, and an interface slot given an implementing class still pass.
+
+---
+
+### BUG-710: `SqliteDb.querySegments` reads every column of a depth-2 nested procedure one place off
+- **Status:** OPEN (filed 2026-11-13; Fable, diagnosed from Mosaic through Graze, on 8ac485e)
+- **Symptom:** Mosaic's `CALL witnesses_full() RETURNING *` -- `wid, label, claims TABLE(subject,
+  cid, property, confidences TABLE(cid, aspect, confidence))` -- reads `asStr("wid")` as `""`,
+  `asStr("label")` as the wid, and in segment 1 `cid` holds the subject and `property` the cid.
+  Nothing errors. Depth-1 procedures (two sibling tables, bugbook's `bug_show`) read correctly.
+  Graze's Mosaic viewer printed empty links from the day its clients moved to `querySegments`.
+- **Cause (Fable's reading, two errors in `stdlib_preamble.zig`):**
+  1. `_segInterleaved` starts its column bases at `var acc: usize = 2`, assuming two leading
+     columns (`_segment`, `_key`). A depth-2 `WITH INTERLEAVED` result leads with THREE
+     (`_segment|_k1|_k2|...`), one key column per nesting level.
+  2. `_segNames` skips a nested column (empty decltype in `PRAGMA proc_info`) only in the parent
+     (`idx == 0 and ...`). Segment 1 here has one too (`confidences`), so its arity is counted 4
+     instead of 3 and every later base is one too far. On this procedure the two errors cancel
+     for segment 2, which is why it looked right.
+- **Fix shape (Fable tested it in a scratch toolchain):** skip a nested column in every segment;
+  count the leading key columns from the column NAMES (`_segment`, then `_key` or `_kN`) instead
+  of assuming 2; and if the bases do not account for exactly every column, return null so the
+  walk transport serves the query rather than shifted columns. That last guard also covers a
+  procedure whose first real column happens to be named `_key` or `_k1`.
+- **Control when fixing:** a depth-2 procedure fixture reading every column of every segment
+  correctly, red against today's `_segInterleaved`; a depth-1 procedure (two sibling tables)
+  reading identically before and after. Repro database: `C:/Projects/mosaic/sprocket/job.db`
+  (work on a copy). The fixture taken from sprocket on 2026-11-08 has depth-1 shapes only,
+  which is why nothing caught this.
+
+---
+
+### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so
+- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
+- **Repro:** `DateTime.now().inZone("America/Phoenix").format("HH:mm")` prints the UTC time.
+  QUICKSTART says "Unknown zone names fall back to UTC (no crash)", and the table lists 10
+  zones. A program that labels the time with the zone it asked for prints a wrong time with a
+  right-looking label.
+- **Second half:** nothing reads the machine's own zone, so a program cannot print local time
+  without the user naming an IANA zone; `DateTime.now()` is documented as "current wall-clock
+  time", which reads as local.
+- **Fix shape (a decision):** refuse a literal zone outside the table at `-c` and panic or return
+  nil at run time for a computed one -- a default that reads as an answer is the UNGIT
+  "fabricated" case; and add a local-zone read (`DateTime.local()`, or `inZone("local")`) from
+  the OS. Say "UTC" in the `DateTime.now()` row.
+- **Control when fixing:** `inZone("America/Phoenix")` no longer prints UTC silently;
+  `inZone("America/Denver")` unchanged.
 
 ---
 
