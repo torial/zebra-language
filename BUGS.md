@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-704. Next new bug: BUG-705.**
+**Last bug number generated: BUG-705. Next new bug: BUG-706.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -58,7 +58,8 @@
   and a Zig panic is a process exit, so ANY handler defect is a denial of service. Graze's
   charter (§4.3) wants per-request recovery that answers 500 and keeps serving; Zig has no
   `recover`, so that needs a design (a worker process, or handlers that cannot panic on input),
-  not a patch.
+  not a patch. Options and a recommendation: `docs/design/http_serve_recovery.md` (decision
+  pending).
 - **Workaround today:** check `isValidUtf8()` on path, query and body first and answer 400
   (Graze does; witnessed red and green in `graze/tasks/check_tasks.py`).
 - **Control when fixing:** a raw `Tcp` client sends the non-UTF-8 path; the server must answer
@@ -102,6 +103,20 @@
   says `""` at EOF for `read`, nothing for `readAll`).
 - **Control when fixing:** a `Tcp.serve` handler that writes a reply and closes with unread input;
   the client's `readAll()` returns the reply (or what arrived) and the program exits 0.
+
+---
+
+### BUG-705: an unbraced `ë` in a string passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-12; found writing the Crypto batch's fixtures, reproduced on 8ac485e)
+- **Repro:** `print("cafë")` (the Python/JSON spelling). `zebra -c` exits 0; the build fails in
+  the emitted Zig with `error: expected '{', found '0'` -- the escape is passed through verbatim.
+- **Why it is a leak, not a typo:** the lexer already refuses an unknown escape at its column --
+  `"a\wb"` gives `unknown escape \w in a string -- the escapes are ... \u{N}` -- but it accepts
+  `\u` without checking that `{` follows.
+- **Fix shape:** refuse `\u` not followed by `{` at the escape's column, naming the braced form
+  (`\u{00eb}`); the same check for an unterminated `\u{`.
+- **Control when fixing:** the repro is refused by `-c` with a column; `print("caf\u{00eb}")` still
+  prints `cafë`. Write the fixture from Python or an editor: bash `printf` rewrites `\u` itself.
 
 ---
 
