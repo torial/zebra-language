@@ -1,7 +1,8 @@
 <!-- doc-status: design -->
 # Http.serve: surviving a handler that panics (BUG-701)
 
-Status: proposal, 2026-11-12. Nothing built. Decision needed from Sean before work starts.
+Status: DECIDED 2026-11-12 (Sean): A, then B, and both are required -- B is not optional once A
+lands. Nothing built yet.
 
 ## The problem
 
@@ -56,6 +57,12 @@ replaced, and the parent answers 500 for the request it was holding.
 
 Not available in Zig: a panic handler can run code, but cannot unwind the panicking thread and
 resume. Listed so nobody re-proposes it without new information.
+
+## Decision
+
+Sean, 2026-11-12: the recommendation below, with both halves required. A alone leaves the server
+one handler bug from going down; B alone restarts a server that any stranger can keep knocking
+over. A narrows who can crash it, B bounds what a crash costs, and neither replaces the other.
 
 ## Recommendation
 

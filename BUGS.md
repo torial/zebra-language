@@ -58,8 +58,9 @@
   and a Zig panic is a process exit, so ANY handler defect is a denial of service. Graze's
   charter (§4.3) wants per-request recovery that answers 500 and keeps serving; Zig has no
   `recover`, so that needs a design (a worker process, or handlers that cannot panic on input),
-  not a patch. Options and a recommendation: `docs/design/http_serve_recovery.md` (decision
-  pending).
+  not a patch. **Decided 2026-11-12 (Sean):** option A (remove the panics input can reach,
+  BUG-703 first), then option B (an opt-in supervising restart), and both are required;
+  `docs/design/http_serve_recovery.md`. This entry closes when B lands.
 - **Workaround today:** check `isValidUtf8()` on path, query and body first and answer 400
   (Graze does; witnessed red and green in `graze/tasks/check_tasks.py`).
 - **Control when fixing:** a raw `Tcp` client sends the non-UTF-8 path; the server must answer
