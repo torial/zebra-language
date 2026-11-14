@@ -3578,9 +3578,10 @@ message.
 executable at PATH without running it, with the same flags as a run (`--release` for an
 optimised one). On Windows `.exe` is added when PATH has no extension; the line `wrote PATH`
 names the file. A directory that does not exist, or a PATH that is a directory, is refused by
-name. The executable needs nothing beside it -- SQLite and the runtime are linked in. A
-`--release` build on Windows also writes a `.pdb` of the same name (debug symbols for a
-debugger) next to it; the program runs without it.
+name. The executable needs nothing beside it -- SQLite and the runtime are linked in. On
+Windows a build that goes through LLVM -- `--release`, or one that compiles C, such as a program
+using SQLite -- also writes a `.pdb` of the same name (debug symbols for a debugger) next to it;
+the program runs without it.
 
 **BuildTarget chain methods** all return `self`, so they can be chained:
 
