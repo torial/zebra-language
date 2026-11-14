@@ -2,10 +2,11 @@
 # `chars()` on bytes that are not UTF-8 (BUG-703, with 712 and 714)
 
 Status: AGREED 2026-11-13 by Opus and Fable, in writing: option C with the additions under
-"Decision". The Zig half is BUILT (2026-11-13, BUG-703 and BUG-714 fixed); the V half is
-Fable's (BUG-712/713). Opus built the Zig half and the shared `v_poc` fixture, whose Zig run
-is the expected output. Fable builds the V half against that fixture. Neither half counts as done
-until `v-check` passes on both. BUG-703 is the first step of BUG-701's option A
+"Decision". BOTH HALVES ARE BUILT (2026-11-13): the Zig half by Opus (BUG-703 and BUG-714), with
+the shared `v_poc` fixture whose Zig run is the expected output; the V half by Fable against that
+fixture (BUG-712 and BUG-713; `selfhost/zebra_rt.v`'s `zutf8_next` and its neighbours), and
+`v-check` passes on both. What the fixture cannot tell apart on the V route, and what covers it
+instead, is under "The V half" at the end. BUG-703 is the first step of BUG-701's option A
 (`http_serve_recovery.md`).
 
 ## What happens today (measured 2026-11-13)
@@ -210,3 +211,32 @@ The agreement adds Fable's five amendments to C. Two were rescoped after measuri
   the fixture pins the exit code and the stderr text, so the V route matches them word for word.
 - A `chars()` walk inside an `Http.serve` handler, fed `\xff\xfe` by a raw `Tcp` client, answers
   and keeps serving (BUG-701's control, A half).
+
+## The V half (Fable, 2026-11-13)
+
+Built against `examples/v_poc_utf8.zbr`; identical to the Zig run at the first run, and the
+selfhost dumps and the route's modules with it. What the building turned up that this note
+should carry:
+
+- **The V route had no char at all.** `char` was `u8`, so the change is a representation change
+  (a `rune`), not a decoder dropped in. The compiler's own lexer keeps bytes in `char`s
+  (`def peek(): char` returning `src[pos]`), which the Zig route widens silently; the V emitter
+  now says `rune(...)` at a return, a declared local, an argument and an assignment. A byte's
+  `toString()` printed the character on the V route for the same reason; it is the number now,
+  as on the Zig route.
+- **Width and case were diverging on VALID text**, not only invalid: V's `${s:8}` counts visible
+  characters and has no `>` or `^`; V's `to_upper()` changes `é` and goes through runes; V's
+  `reverse()` is by byte. None of the earlier `v_poc` examples used non-ASCII text with any of
+  them. All three go through the runtime now.
+- **What the shared fixture cannot see on the V route**, found by planting 22 faults one at a
+  time: a by-byte `reverse` (the fixture's reverse vector is all single-byte items, so the two
+  orders are the same bytes), which side takes an odd centre's spare byte (its `center(9)` over
+  five bytes pads evenly), a width that left-aligns where it should right-align, and the `:c`
+  trap. `tools/v_check.sh`'s `fmt_c` row carries a control program for exactly these (valid
+  multi-byte text reversed, an odd centre, each alignment, the case of a non-ASCII letter) beside
+  the trap fixture. A reverse of valid multi-byte text and an odd centre would be worth adding
+  to the shared fixture itself, so the Zig route's own output pins them too.
+- **No V mirror exists for** BUG-701's control (an `Http.serve` handler fed `\xff\xfe`): the V
+  route has no `Http.serve`, `Ws.serve` or `Tcp.serve`. Nor for `Json` over invalid bytes
+  (unmeasured on V), nor for the sized conversions (`toUint8` and its siblings), whose trap
+  text `:c` now uses there without the family being mapped.

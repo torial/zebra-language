@@ -2259,6 +2259,267 @@ pub fn zstr_index_of(zr_s string, zr_sub string) i64 {
 	return i64(zr_s.index(zr_sub) or { return -1 })
 }
 
+// ── BUG-703 / 712 / 713: a str that may not be UTF-8 (docs/design/str_invalid_utf8.md) ──
+//
+// The V half of the agreement (Opus and Fable, 2026-11-13); the Zig half is
+// `_zbr_utf8_next` and its neighbours in stdlib_preamble.zig, and examples/v_poc_utf8.zbr
+// diffs the two on every `gates.sh --v`. The rules, which must be the same on both routes:
+//
+//   - a char is a codepoint (a V rune), not a byte (until 2026-11-13 this route's chars()
+//     yielded BYTES: "aéb" was four items here and three on the Zig route, BUG-712);
+//   - a well-formed UTF-8 sequence (Unicode Table 3-7: no overlong, no encoded surrogate,
+//     nothing above U+10FFFF) is one char, its codepoint;
+//   - any other byte b is the ESCAPE CHAR U+DC00+b (U+DC80..U+DCFF), and decoding resumes
+//     at the very next byte -- only the first byte of a failure is escaped, never a
+//     maximal subpart (a truncated E2 82 is two escapes);
+//   - a char becomes text as its UTF-8, and an escape char as its original byte, so
+//     bytes -> chars -> bytes is the identity for EVERY byte string.
+//
+// Hand-written, not V's runes() / utf8 module: those are not known to reject overlongs and
+// encoded surrogates, and accepting ED B3 BF as U+DCFF would write the single byte FF back,
+// breaking the round trip and colliding with a literal FF. Nothing here panics on input.
+const zr_esc_base = u32(0xDC00)
+
+// One item of zr_s at byte zr_i (the caller keeps zr_i < zr_s.len): the char, and how many
+// bytes it took.
+fn zutf8_next(zr_s string, zr_i int) (rune, int) {
+	zr_b0 := zr_s[zr_i]
+	if zr_b0 < 0x80 {
+		return rune(zr_b0), 1
+	}
+	// (length, the second byte's allowed range) by lead byte, per Table 3-7
+	mut zr_n := 0
+	mut zr_lo := u8(0x80)
+	mut zr_hi := u8(0xBF)
+	if zr_b0 >= 0xC2 && zr_b0 <= 0xDF {
+		zr_n = 2
+	} else if zr_b0 == 0xE0 {
+		zr_n = 3
+		zr_lo = 0xA0
+	} else if (zr_b0 >= 0xE1 && zr_b0 <= 0xEC) || zr_b0 == 0xEE || zr_b0 == 0xEF {
+		zr_n = 3
+	} else if zr_b0 == 0xED {
+		zr_n = 3
+		zr_hi = 0x9F
+	} else if zr_b0 == 0xF0 {
+		zr_n = 4
+		zr_lo = 0x90
+	} else if zr_b0 >= 0xF1 && zr_b0 <= 0xF3 {
+		zr_n = 4
+	} else if zr_b0 == 0xF4 {
+		zr_n = 4
+		zr_hi = 0x8F
+	}
+	if zr_n == 0 || zr_i + zr_n > zr_s.len {
+		return rune(zr_esc_base + u32(zr_b0)), 1
+	}
+	zr_b1 := zr_s[zr_i + 1]
+	if zr_b1 < zr_lo || zr_b1 > zr_hi {
+		return rune(zr_esc_base + u32(zr_b0)), 1
+	}
+	mut zr_cp := u32(zr_b0) & u32(0x07)
+	if zr_n == 2 {
+		zr_cp = u32(zr_b0) & u32(0x1F)
+	} else if zr_n == 3 {
+		zr_cp = u32(zr_b0) & u32(0x0F)
+	}
+	zr_cp = (zr_cp << 6) | u32(zr_b1 & 0x3F)
+	for zr_k := 2; zr_k < zr_n; zr_k++ {
+		zr_bk := zr_s[zr_i + zr_k]
+		if zr_bk < 0x80 || zr_bk > 0xBF {
+			return rune(zr_esc_base + u32(zr_b0)), 1
+		}
+		zr_cp = (zr_cp << 6) | u32(zr_bk & 0x3F)
+	}
+	return rune(zr_cp), zr_n
+}
+
+// `s.chars()`: the items, as a list.
+pub fn zstr_chars(zr_s string) &ZList[rune] {
+	mut zr_items := []rune{cap: zr_s.len}
+	mut zr_i := 0
+	for zr_i < zr_s.len {
+		zr_c, zr_n := zutf8_next(zr_s, zr_i)
+		zr_items << zr_c
+		zr_i += zr_n
+	}
+	return zlist_of[rune](zr_items)
+}
+
+// The bytes a char stands for (at most four). TOTAL over every value a rune can hold: an
+// escape char is its original byte; a scalar is its UTF-8; any other surrogate, and
+// anything from 0x110000 up, gets the generalized three- or four-byte form (unreachable
+// from a program today: the lexer refuses those literals and there is no int-to-char
+// conversion). Never U+FFFD, never a panic.
+fn zchar_bytes(zr_c rune) []u8 {
+	zr_v := u32(zr_c)
+	if zr_v >= 0xDC80 && zr_v <= 0xDCFF {
+		return [u8(zr_v - zr_esc_base)]
+	}
+	if zr_v < 0x80 {
+		return [u8(zr_v)]
+	}
+	if zr_v < 0x800 {
+		return [u8(0xC0 | (zr_v >> 6)), u8(0x80 | (zr_v & 0x3F))]
+	}
+	if zr_v < 0x10000 {
+		return [u8(0xE0 | (zr_v >> 12)), u8(0x80 | ((zr_v >> 6) & 0x3F)), u8(0x80 | (zr_v & 0x3F))]
+	}
+	return [u8(0xF0 | ((zr_v >> 18) & 0x07)), u8(0x80 | ((zr_v >> 12) & 0x3F)), u8(0x80 | ((zr_v >> 6) & 0x3F)),
+		u8(0x80 | (zr_v & 0x3F))]
+}
+
+// `c.toString()`, `"${c}"`, `print(c)`: the char's text.
+pub fn zchar_str(zr_c rune) string {
+	return zchar_bytes(zr_c).bytestr()
+}
+
+// `c.escapedByte()`: the original byte for an escape char, nil for a real char.
+pub fn zchar_escaped_byte(zr_c rune) ?i64 {
+	zr_v := u32(zr_c)
+	if zr_v >= 0xDC80 && zr_v <= 0xDCFF {
+		return i64(zr_v - zr_esc_base)
+	}
+	return none
+}
+
+// `s.codePointCount()`: the number of items chars() yields.
+pub fn zstr_cp_count(zr_s string) i64 {
+	mut zr_count := i64(0)
+	mut zr_i := 0
+	for zr_i < zr_s.len {
+		_, zr_n := zutf8_next(zr_s, zr_i)
+		zr_i += zr_n
+		zr_count++
+	}
+	return zr_count
+}
+
+// `s.isValidUtf8()`: no item is an escape. (Not V's utf8.validate_str: the answer has to
+// be the decoder's own, or a string could be "valid" and still decode to escapes.)
+pub fn zstr_is_valid_utf8(zr_s string) bool {
+	mut zr_i := 0
+	for zr_i < zr_s.len {
+		if zr_s[zr_i] < 0x80 {
+			zr_i++
+			continue
+		}
+		zr_c, zr_n := zutf8_next(zr_s, zr_i)
+		if u32(zr_c) >= 0xDC80 && u32(zr_c) <= 0xDCFF {
+			return false
+		}
+		zr_i += zr_n
+	}
+	return true
+}
+
+// `s.toValidUtf8()`: the named lossy conversion, for display. One U+FFFD per ESCAPED
+// BYTE (not per maximal subpart, so it differs from a browser on a truncated sequence);
+// the result has as many items as the input. A valid string comes back as itself.
+pub fn zstr_to_valid_utf8(zr_s string) string {
+	if zstr_is_valid_utf8(zr_s) {
+		return zr_s
+	}
+	mut zr_out := []u8{cap: zr_s.len + 8}
+	mut zr_i := 0
+	for zr_i < zr_s.len {
+		zr_c, zr_n := zutf8_next(zr_s, zr_i)
+		if u32(zr_c) >= 0xDC80 && u32(zr_c) <= 0xDCFF {
+			zr_out << [u8(0xEF), 0xBF, 0xBD]
+		} else {
+			for zr_k := 0; zr_k < zr_n; zr_k++ {
+				zr_out << zr_s[zr_i + zr_k]
+			}
+		}
+		zr_i += zr_n
+	}
+	return zr_out.bytestr()
+}
+
+// `s.reverse()`: by item, each item's bytes kept in order (the Zig route's _str_reverse,
+// BUG-234). V's own string.reverse() reverses bytes, which shreds every multi-byte char.
+pub fn zstr_reverse(zr_s string) string {
+	if zr_s.len == 0 {
+		return ''
+	}
+	mut zr_out := []u8{len: zr_s.len}
+	mut zr_end := zr_s.len
+	mut zr_i := 0
+	for zr_i < zr_s.len {
+		_, zr_n := zutf8_next(zr_s, zr_i)
+		zr_end -= zr_n
+		for zr_k := 0; zr_k < zr_n; zr_k++ {
+			zr_out[zr_end + zr_k] = zr_s[zr_i + zr_k]
+		}
+		zr_i += zr_n
+	}
+	return zr_out.bytestr()
+}
+
+// `s.upper()` / `s.lower()`: ASCII letters only, byte by byte, as the Zig route's
+// std.ascii does. V's to_upper() goes through runes for a string that is not pure ASCII:
+// it would change "é" (the Zig route does not) and re-encode bytes that are not UTF-8.
+pub fn zstr_upper(zr_s string) string {
+	mut zr_out := zr_s.bytes()
+	for zr_i, zr_b in zr_out {
+		if zr_b >= `a` && zr_b <= `z` {
+			zr_out[zr_i] = zr_b - 32
+		}
+	}
+	return zr_out.bytestr()
+}
+
+pub fn zstr_lower(zr_s string) string {
+	mut zr_out := zr_s.bytes()
+	for zr_i, zr_b in zr_out {
+		if zr_b >= `A` && zr_b <= `Z` {
+			zr_out[zr_i] = zr_b + 32
+		}
+	}
+	return zr_out.bytestr()
+}
+
+// `s.center(width, pad)`: the Zig route's _pad_center -- widths count BYTES, the odd
+// byte of padding goes on the right.
+pub fn zstr_center(zr_s string, zr_width i64, zr_pad string) string {
+	if i64(zr_s.len) >= zr_width || zr_pad.len == 0 {
+		return zr_s
+	}
+	zr_total := int(zr_width) - zr_s.len
+	zr_left := zr_total / 2
+	return zr_pad[..1].repeat(zr_left) + zr_s + zr_pad[..1].repeat(zr_total - zr_left)
+}
+
+// A width in an interpolation over a str or a char -- `"${s:>8}"`, `"${c:^5}"`, `"${s:8}"`:
+// padded with spaces to zr_width BYTES, as the Zig route's {s:>8} is. zr_kind is `<`, `>` or
+// `^`. (V's own `${s:8}` counts visible characters and has no `>` / `^` spelling at all.)
+pub fn zstr_align(zr_s string, zr_width i64, zr_kind rune) string {
+	if i64(zr_s.len) >= zr_width {
+		return zr_s
+	}
+	zr_total := int(zr_width) - zr_s.len
+	if zr_kind == `<` {
+		return zr_s + ' '.repeat(zr_total)
+	}
+	if zr_kind == `^` {
+		zr_left := zr_total / 2
+		return ' '.repeat(zr_left) + zr_s + ' '.repeat(zr_total - zr_left)
+	}
+	return ' '.repeat(zr_total) + zr_s
+}
+
+// `"${n:c}"` on an int: ONE BYTE, the int as `n.toUint8()` would take it (BUG-713: this
+// route wrote the int as a codepoint, so 206 then 184 came out as "Î¸", four bytes, where
+// the Zig route wrote the two bytes of "θ"). Out of 0..255 it traps with the Zig route's
+// words. (The sized conversions themselves -- toUint8 and its siblings, BUG-534's family --
+// are still unmapped on this route: this is their message, not their presence.)
+pub fn zbyte_str(zr_n i64) string {
+	if zr_n < 0 || zr_n > 255 {
+		zbr_panic('integer conversion out of range: ${zr_n} does not fit in byte')
+	}
+	return [u8(zr_n)].bytestr()
+}
+
 // ── Math ───────────────────────────────────────────────────────────────────
 pub fn zmath_clamp(zr_x f64, zr_lo f64, zr_hi f64) f64 {
 	return math.min(math.max(zr_x, zr_lo), zr_hi)

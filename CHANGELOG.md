@@ -23,6 +23,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **V route: a `char` is a codepoint, `chars()` yields the Zig route's items, and `"${n:c}"` on an
+  int is one byte (BUG-712, BUG-713; the V half of BUG-703).** Until now the V route's `char` was a
+  byte: `"aéb".chars()` was four items there and three on the Zig route, and `"${206:c}${184:c}"`
+  came out as four bytes instead of the two of `θ`. `zebra_rt.v` carries the agreed decoder (an
+  invalid byte is the escape char U+DC00+b; rebuilt text is byte-identical), and `codePointCount`,
+  `isValidUtf8`, `toValidUtf8`, `escapedByte`, `reverse`, `upper` / `lower`, `center`, `padLeft` /
+  `padRight` with one argument and a width in an interpolation give the Zig route's answers,
+  including on valid non-ASCII text where V's own functions differ. `:c` on an int outside 0..255
+  traps with the same words on both routes. A byte's `toString()` on the V route is its number
+  (it printed the character). `examples/v_poc_utf8.zbr` and `v_check`'s `fmt_c` row are the
+  witnesses.
+
 - **`Crypto.randomToken(n)`, `Crypto.hashPassword(pw)`, `Crypto.verifyPassword(pw, phc)`,
   `Crypto.equal(a, b)`.** Session tokens from the OS's secure random source (hex; `Random.bytes`
   follows `Random.seed` and is not for secrets); argon2id password hashes with OWASP's parameters

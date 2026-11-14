@@ -408,8 +408,10 @@ New rows for the rules table:
 
 | Zebra | V | why |
 |---|---|---|
-| `c'A'` | `` u8(`A`) `` | a char is a byte; V's rune literal is a rune (i32) |
-| `on c'0'..c'9'` | `` u8(`0`)...u8(`9`) `` | V's match range arm is three dots, inclusive |
+| `c'A'` | `` rune(`A`) `` | a char is a codepoint (since 2026-11-13, BUG-712; until then `` u8(`A`) ``, "a char is a byte", which made `chars()` yield bytes) |
+| `on c'0'..c'9'` | `` rune(`0`)...rune(`9`) `` | V's match range arm is three dots, inclusive |
+| `s.chars()` | `zstr_chars(s)` | the runtime's own decoder: an invalid byte is the escape char U+DC00+b (docs/design/str_invalid_utf8.md) |
+| `"${n:c}"`, n an int | `${zbyte_str(n)}` | one byte, trapping outside 0..255 (BUG-713; V's own `:c` writes a codepoint) |
 | `peek()` inside a class | `self.peek()` | V has no implicit receiver |
 | `var k = U.v()` | `mut k := U(U_v{})` | V types a variable by the variant struct unless cast to the sum type |
 | `xs.len` on a List | `xs.count()` | the runtime's list is a struct; `.len` is the string's and the array's |

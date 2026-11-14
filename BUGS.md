@@ -169,39 +169,6 @@
 
 ---
 
-### BUG-712: on the V route `s.chars()` yields BYTES, not codepoints
-- **Status:** OPEN (filed 2026-11-13; found preparing the BUG-703 proposal)
-- **Repro:** `for c in "aéb".chars()` counting and printing each `c`. The Zig route iterates 3
-  times (`a`, `é`, `b`); the V route (`--target v`, V b399a50) iterates 4 times and prints
-  `97 195 169 98`. Valid input, different answers.
-- **Cause:** `CodeGenV.zbr` lowers `chars` to `zlist_of[u8](obj.bytes())` with the comment "Zebra's
-  char is a byte", and `docs/design/v_backend_poc.md` repeats it. QUICKSTART ("Bytes, codepoints,
-  and graphemes") says a `char` is a decoded codepoint (`u21`), and the Zig route does that.
-- **Why no gate saw it:** `v-check` compares the V and Zig runs of the `v_poc` examples and the
-  selfhost dumps; none of them iterates `chars()` over non-ASCII text.
-- **Fix shape:** decode on the V route too (V's `s.runes()`, or the runtime's own decoder so
-  invalid bytes get the same answer as BUG-703's on Zig). Settle BUG-703's spelling first: the V
-  route must give the same answer for invalid bytes, not only valid ones.
-- **Control when fixing:** the repro iterates 3 times on both routes with the same output; an
-  ASCII string unchanged.
-
----
-
-### BUG-713: on the V route `"${n:c}"` with an `int` writes a codepoint, not one byte
-- **Status:** OPEN (filed 2026-11-13; found with BUG-712)
-- **Repro:** QUICKSTART's own percent-decoder example, `sb.append("${206:c}")`,
-  `sb.append("${184:c}")`, `print(sb.build())`. Zig prints `θ` (2 bytes); V prints `Î¸` (4 bytes).
-  A runtime `int` the same: `"${k:c}"` with `k = 206` is 1 byte on Zig, 2 on V.
-- **Why it matters:** QUICKSTART documents `:c` on an `int` as EXACTLY ONE BYTE, so a decoder can
-  assemble UTF-8 a byte at a time; on V every percent-decoded non-ASCII character is corrupted,
-  silently. Graze's `percent_decode` is this shape.
-- **Fix shape:** on an `int` argument, `:c` writes the low byte; on a `char`, the UTF-8 encoding.
-  The argument's type decides, as on the Zig route.
-- **Control when fixing:** the example prints `θ` with `len` 2 on both routes; `"${c:c}"` for a
-  `char` `é` stays 2 bytes.
-
----
-
 ### BUG-716: a failed SQLite statement is silent, and a refused query reads as "no rows"
 - **Status:** OPEN (filed 2026-11-13; Fable, from a Graze cold-start, measured on Graze's task
   demo at 7d24f18; the code read confirmed here)

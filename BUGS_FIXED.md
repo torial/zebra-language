@@ -6,8 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-712: on the V route `s.chars()` yielded BYTES, not codepoints -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed the same day by Opus, preparing the BUG-703 proposal; the V half
+  of that agreement, Fable)
+- **Repro:** `for c in "aéb".chars()` iterated 3 times on the Zig route and 4 on the V route
+  (`97 195 169 98`). Valid input, different answers.
+- **Cause:** the V route had no char: `char` was `u8`, `c'A'` was `` u8(`A`) ``, and `chars()` was
+  `zlist_of[u8](s.bytes())`. A byte's `toString()` printed the CHARACTER there for the same reason
+  (`.ascii_str()`), where the Zig route prints its number.
+- **Fix:** a char is V's `rune` (`CodeGenV.zbr`: the type map, the literal, `chars()`, the loop and
+  list element types). `zebra_rt.v` has the agreed decoder, hand-written (`zutf8_next`: Table 3-7,
+  the first byte of any failure escaped as U+DC00+b and decoding resumed at the next byte), and
+  `zchar_str` writes a char's text -- an escape char as its original byte -- wherever a char
+  becomes text: `print(c)`, `"${c}"`, `"${c:c}"`, a width, `toString()`. `codePointCount`,
+  `isValidUtf8`, `toValidUtf8`, `escapedByte`, `reverse` (by item; V's own is by byte), `upper` /
+  `lower` (ASCII only, as the Zig route; V's own go through runes), `center`, one-argument
+  `padLeft` / `padRight`, and a width over a str or a char (bytes, as Zig's `{s:>8}`; V's own
+  counts visible characters and has no `>` or `^`) are mapped with it. A byte where a char is
+  wanted (`def peek(): char` returning `src[pos]`, the compiler's own lexer) is widened by the
+  emitter: `rune(...)`. A byte's `toString()` is its number now.
+- **Witness:** `examples/v_poc_utf8.zbr` IDENTICAL to its Zig run (24 lines: nine readable
+  vectors, all 256 one-byte and 65,536 two-byte strings, 2,800 three- and four-byte boundary
+  strings, each block a count and a hash; every str method that could decode). `tools/v_check.sh`
+  green over all 29 rows, the five selfhost dumps and the route's three modules among them --
+  the compiler's own lexer is the largest user of a byte kept in a `char`.
+- **Watched red:** 22 faults planted one at a time in `zebra_rt.v` (an encoded surrogate, each
+  overlong, above U+10FFFF and a maximal subpart accepted; the length check gone; an escape char
+  written as U+FFFD; `chars()` yielding bytes again; each helper given V's own behaviour), each
+  seen by the fixture or by the `fmt_c` row, after a control run with nothing planted. Five are
+  seen ONLY by the `fmt_c` row's control program: on this route the shared fixture cannot tell a
+  by-byte `reverse` from a by-item one (its vector's items are all single bytes), which side an
+  odd centre's spare byte goes, or a left-aligned width from a right-aligned one, and it does not
+  reach the trap. (The first sweep reported all 22 "seen by both" in a tenth of the time: its
+  runner started WSL's bash, which found no script. It has a control run now and refuses to
+  report without one.)
+- **A probe of every position** a char becomes text or meets a byte (31 small programs, both
+  routes, compared byte for byte: `print(c)`, each interpolation form, `toString()`, a
+  `StringBuilder`, a `List` / `Set` / `HashMap` of chars, comparisons, `branch`, a char field and
+  parameter, a byte kept in a char) found one more: `"${c:d}"` -- V refuses `:d` on a `u32`; a
+  char under `:x` / `:d` is formatted as an `i64`. 25 identical; 6 the Zig route itself refuses,
+  so there was nothing to compare -- three of them one construct, `var cs: List(char) =
+  s.chars()` (`chars()` as a VALUE, outside a `for`), which passes the front end and fails in
+  zig with `no field or member function named 'chars' in 'str'` (reported to Opus; the V route
+  maps it).
+- **Not mapped on the V route, refused by name:** any other method on a char (`rune.x (no
+  mapping...)`), and a format spec on a char other than none, `c`, `x`, `X`, `d` and a width.
+
+---
+
+### BUG-713: on the V route `"${n:c}"` with an `int` wrote a codepoint, not one byte -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed the same day, with BUG-712)
+- **Repro:** QUICKSTART's own percent-decoder shape, `sb.append("${206:c}")`, `sb.append("${184:c}")`:
+  `θ` (2 bytes) on the Zig route, `Î¸` (4 bytes) on the V route. Graze's `percent_decode` is this
+  shape: every percent-decoded non-ASCII character would have been corrupted there, silently.
+- **Fix:** the argument's type decides, as on the Zig route. An `int` under `:c` goes through
+  `zbyte_str`: one byte, and outside 0..255 it traps with the Zig route's words, `integer
+  conversion out of range: 300 does not fit in byte`, exit 1 (the agreement's 2: `:c` on an int
+  is `n.toUint8()`). A char under `:c` is its text. The sized conversions themselves (`toUint8`
+  and its siblings, BUG-534's family) are still unmapped on the V route: this is their message,
+  not their presence.
+- **Witness:** the `fmt_c` row of `tools/v_check.sh`: the Zig smoke's trap fixture
+  (`test/bug703_fmt_c_runtime_trap_test.zbr`) must die on both routes with those words and
+  never print its SURVIVED line; the in-range control prints `ce b8 len 2 items 1` on both.
+  With the range test removed the V run survives and the row fails; with the message reworded
+  it fails.
+
+---
+
 ### BUG-703: `s.chars()` panicked on a string that is not valid UTF-8 -- FIXED 2026-11-13
-- **Status:** FIXED 2026-11-13, Zig route (filed 2026-11-12); the V route is Fable's half (BUG-712/713)
+- **Status:** FIXED 2026-11-13 on both routes (filed 2026-11-12): the Zig half by Opus (94c05a4), the V half by Fable (BUG-712/713, above)
 - **Repro:** `var s = "a" + "${255:c}" + "b"`; `s.isValidUtf8()` is false, and `for c in s.chars()`
   panics: `attempt to unwrap error: Utf8InvalidStartByte`. In an `Http.serve` handler that is
   BUG-701 -- any client sending such bytes ends the server.

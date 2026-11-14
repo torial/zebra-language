@@ -1,6 +1,8 @@
 #!/bin/bash
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
+# pins: BUG-712 a char on the V route is a codepoint, and chars() yields the Zig route's items (examples/v_poc_utf8.zbr; the fmt_c row's text line)
+# pins: BUG-713 `${n:c}` on an int is one byte on the V route, and traps out of 0..255 with the Zig route's words (the fmt_c row)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -128,6 +130,49 @@ elif ! diff -q "$OUT/ov_ok_v_out.txt" "$OUT/ov_ok_zig_out.txt" > /dev/null; then
 elif ! grep -q 'not overflow-checked' "$OUT/ov_ok_emit.txt"; then echo "overflow: FAILED -- the V report printed no overflow count for the control (the line is printed at zero too, so its absence means the report is not being read)"; fail=1
 elif ! grep -qE '^  0 integer operation' "$OUT/ov_ok_emit.txt"; then echo "overflow: FAILED -- the control's emit left an integer operation unchecked: $(grep 'not overflow-checked' "$OUT/ov_ok_emit.txt")"; fail=1
 else echo "overflow: ok -- + - * neg += / % trap on both backends with Zig's message; the in-range control agrees ($(cat "$OUT/ov_ok_zig_out.txt"))"; fi
+echo "── \${n:c} on an int is ONE byte, and out of 0..255 it TRAPS with the same words on both backends (BUG-703 / 713) ──"
+rows=$((rows + 1))
+# The trap fixture is the Zig smoke's own (test/bug703_fmt_c_runtime_trap_test.zbr: 300 from
+# sys.args().count() + 299, so nothing folds). The control prints two in-range bytes that
+# are one character together -- the pair BUG-713 wrote as four bytes here -- as hex.
+FC_MSG='integer conversion out of range: 300 does not fit in byte'
+cp "$WT/test/bug703_fmt_c_runtime_trap_test.zbr" "$OUT/fmtc_trap.zbr"
+(cd "$OUT" && "$ZEBRA" fmtc_trap.zbr > "$OUT/fmtc_trap_zig_out.txt" 2> "$OUT/fmtc_trap_zig_err.txt"); fzrc=$?
+(cd "$OUT" && "$ZEBRA" --target v fmtc_trap.zbr > "$OUT/fmtc_trap_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/fmtc_trap.v" > "$OUT/fmtc_trap_v_out.txt" 2> "$OUT/fmtc_trap_v_err.txt"); fvrc=$?
+# Its later lines are what examples/v_poc_utf8.zbr cannot tell apart on this route, because
+# its vectors there are all single-byte items or symmetric: VALID multi-byte text reversed
+# (V's own reverse() is by byte), an ODD centre (which side takes the spare byte), a width
+# over a str in an interpolation (V counts visible characters), and the case of a
+# non-ASCII letter (V's to_upper changes it; the Zig route's is ASCII-only).
+cat > "$OUT/fmtc_ok.zbr" <<'ZBR'
+def hexOf(s: str): str
+    var sb = StringBuilder()
+    for b in s.bytes()
+        var k: int = b
+        sb.append("${k:x} ")
+    return sb.build()
+
+def main()
+    var n: int = sys.args().count()
+    var s = "${n + 205:c}${n + 183:c}"
+    print(hexOf(s) + "len ${s.len} items ${s.codePointCount()}")
+    var t = "aé世"
+    print("reverse " + hexOf(t.reverse()) + "| upper " + hexOf(t.upper()) + "| lower " + hexOf("AÉZ".lower()))
+    print("center [" + "abc".center(8) + "] [" + "é".center(5) + "] width [${t:>8}] [${t:<8}] [${t:^9}] [${t:2}]")
+    var items = 0
+    for c in t.chars()
+        items = items + 1
+    print("items ${items} of ${t.len} bytes")
+ZBR
+(cd "$OUT" && "$ZEBRA" fmtc_ok.zbr > "$OUT/fmtc_ok_zig_out.txt" 2> "$OUT/fmtc_ok_zig_err.txt")
+(cd "$OUT" && "$ZEBRA" --target v fmtc_ok.zbr > "$OUT/fmtc_ok_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/fmtc_ok.v" > "$OUT/fmtc_ok_v_out.txt" 2> "$OUT/fmtc_ok_v_err.txt")
+if [ "$fzrc" = 0 ] || grep -q SURVIVED "$OUT/fmtc_trap_zig_out.txt" || ! grep -qF "$FC_MSG" "$OUT/fmtc_trap_zig_err.txt"; then echo "fmt_c: FAILED -- the Zig run did not trap with the agreed words (exit $fzrc): NO CONTROL"; fail=1
+elif [ "$fvrc" = 0 ] || grep -q SURVIVED "$OUT/fmtc_trap_v_out.txt" || ! grep -qF "$FC_MSG" "$OUT/fmtc_trap_v_err.txt"; then echo "fmt_c: FAILED -- the V run did not trap with the Zig run's words (exit $fvrc): $(head -c 160 "$OUT/fmtc_trap_v_out.txt" "$OUT/fmtc_trap_v_err.txt" | tr '\n' ' ')"; fail=1
+elif [ "$(head -1 "$OUT/fmtc_ok_zig_out.txt")" != "ce b8 len 2 items 1" ] || [ "$(wc -l < "$OUT/fmtc_ok_zig_out.txt")" != 4 ]; then echo "fmt_c: FAILED -- the in-range control is not four lines beginning with two bytes and one item on Zig (NO CONTROL): $(head -c 200 "$OUT/fmtc_ok_zig_out.txt" "$OUT/fmtc_ok_zig_err.txt" | tr '\n' ' ')"; fail=1
+elif ! diff -q "$OUT/fmtc_ok_v_out.txt" "$OUT/fmtc_ok_zig_out.txt" > /dev/null; then echo "fmt_c: FAILED -- the in-range control differs (V, then Zig):"; diff "$OUT/fmtc_ok_v_out.txt" "$OUT/fmtc_ok_zig_out.txt" | head -6 | cut -c1-200; grep -E "error" "$OUT/fmtc_ok_v_err.txt" "$OUT/fmtc_ok_emit.txt" | head -3 | cut -c1-200; fail=1
+else echo "fmt_c: ok -- 300 under :c traps on both backends (zig exit $fzrc, v exit $fvrc: $FC_MSG); 206 and 184 are two bytes, one item; valid text reversed, centred, padded and cased alike ($(wc -l < "$OUT/fmtc_ok_zig_out.txt") lines)"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v
