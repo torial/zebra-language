@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-724. Next new bug: BUG-725.**
+**Last bug number generated: BUG-725. Next new bug: BUG-726.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -326,6 +326,24 @@
   make the spawn failure name argv[0].
 - **Control when fixing:** `ZEBRA_ZIG=/nonexistent/zig.exe zebra hello.zbr` says ZEBRA_ZIG and the
   path; a valid `ZEBRA_ZIG` unchanged.
+
+---
+
+### BUG-725: a runtime `int` formatted with a width prints a `+` sign
+- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's dialogue report)
+- **Repro:** `var n = sys.args().count()` (1), then
+  `print("[${n:>3}] [${n:3}] [${n:<3}] [${7:>3}] [${n:03}] [${-n:>3}]")` prints
+  `[ +1] [ +1] [+1 ] [  7] [001] [ -1]`. A width on a RUNTIME signed int adds a `+` the program
+  never asked for; the literal `7` and the zero-padded form are right. Python prints
+  `[  1] [  1] [1  ] [  7] [001] [ -1]` for the same specs, and QUICKSTART's format-spec section
+  describes Python's meaning.
+- **Likely cause:** the hole emits Zig's `{d:>3}` over an `i64`; Zig's integer formatting shows the
+  sign of a signed value when a width is given. A `comptime_int` (the literal) takes another path.
+- **Fix shape:** format a signed int with a width the way `_zbr_zpad` already does for the `0`
+  flag -- through a runtime helper that writes the sign only when negative (or when the spec has
+  `+`) -- and pin every alignment.
+- **Control when fixing:** the repro prints `[  1] [  1] [1  ] [  7] [001] [ -1]`; `${n:+>3}` and
+  `${n:+}` still show the sign where the spec asks for it.
 
 ---
 
