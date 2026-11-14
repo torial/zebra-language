@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-723. Next new bug: BUG-724.**
+**Last bug number generated: BUG-724. Next new bug: BUG-725.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -307,6 +307,25 @@
   first matches the V route and costs little now that the decoder is the runtime's own.
 - **Control when fixing:** the repro prints 3 on both routes, or is refused at `-c` naming
   `chars()`; `for c in s.chars()` unchanged.
+
+---
+
+### BUG-724: a zig the compiler cannot start is reported as "spawn failed", naming nothing
+- **Status:** OPEN (filed 2026-11-13; found running the Pocket Lab manager's tools)
+- **Repro (Git Bash):** `source tools/zig_toolchain.sh` (exports `ZEBRA_ZIG=/c/Users/.../zig.exe`,
+  a POSIX-style path), then `MSYS_NO_PATHCONV=1 zebra prog.zbr`. Git Bash normally rewrites that
+  path to Windows form for a native program; `MSYS_NO_PATHCONV=1` turns the rewrite off for the
+  environment too, so the compiler tries to start a zig at a path Windows cannot find. All it
+  prints is `spawn failed` -- not which program, not the path, not that the path came from
+  `ZEBRA_ZIG`. It took six runs to isolate, two of them misread (one success came from a shell
+  that had not sourced the toolchain, so `ZEBRA_ZIG` was unset).
+- **Where:** `_sys_run` turns `error.FileNotFound` into the bare text "spawn failed"; main's zig
+  resolution (`getenv("ZEBRA_ZIG")`) takes the variable without checking that it exists.
+- **Fix shape:** check `ZEBRA_ZIG` when it is resolved and refuse naming it ("ZEBRA_ZIG names
+  /c/... which does not exist"; on Windows add that a /c/... path is Git Bash's spelling); and
+  make the spawn failure name argv[0].
+- **Control when fixing:** `ZEBRA_ZIG=/nonexistent/zig.exe zebra hello.zbr` says ZEBRA_ZIG and the
+  path; a valid `ZEBRA_ZIG` unchanged.
 
 ---
 
