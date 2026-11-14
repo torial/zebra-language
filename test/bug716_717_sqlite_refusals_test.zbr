@@ -1,0 +1,82 @@
+# BUG-716: a refused SQLite statement was silent. `exec` discarded the step's answer, and the
+# readers stopped at the first non-ROW step and answered the rows read so far -- so a write
+# refused by a lock reported nothing, and a refused read looked like "no rows". Now every
+# refusal is printed (`sqlite: <what> failed: <message> (code N)`) and kept for the caller:
+# db.lastError(): str? (nil after a call that succeeded) and db.lastErrorCode(): int (SQLite's
+# primary code, 0 when nil). A refused query answers an EMPTY list, never a partial one.
+#
+# BUG-717: Sqlite.open set no busy timeout, so a second writer was refused at once. It is
+# `busyMs: 5000` by default, set before the open's own pragmas; `busyMs: 0` refuses at once.
+#
+# Controls: an empty SELECT answers [] with NO error; a refused call followed by one that
+# succeeds clears the error; `busyMs:` in second position is the timeout, not writeAhead.
+
+def clean(p: str)
+    File.delete(p)
+    File.delete(p + "-wal")
+    File.delete(p + "-shm")
+
+def main()
+    var path: str = "zz_bug716_717_test.db"
+    clean(path)
+    var a: SqliteDb = Sqlite.open(path)!
+    a.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)")
+    assert a.lastError() == nil and a.lastErrorCode() == 0, "a successful exec leaves no error"
+
+    # ── control: an empty answer is not a refusal ───────────────────────────
+    var none = a.query("SELECT v FROM t WHERE id = 99")
+    assert none.count() == 0, "no rows"
+    assert a.lastError() == nil, "an empty SELECT is not an error"
+
+    # ── a constraint refusal: printed, kept, then cleared by the next call ──
+    a.exec("INSERT INTO t (id, v) VALUES (1, NULL)")
+    assert a.lastError() != nil, "a NOT NULL refusal is reported"
+    assert a.lastErrorCode() == 19, "SQLITE_CONSTRAINT is 19; got " + a.lastErrorCode().toString()
+    print("constraint: " + (a.lastError() orelse "?"))
+    a.exec("INSERT INTO t (id, v) VALUES (1, 'one')")
+    assert a.lastError() == nil and a.lastErrorCode() == 0, "the next successful call clears it"
+
+    # ── a statement SQLite cannot read: the prepare refusal is kept too ────
+    var bad = a.query("SELEC v FROM t")
+    assert bad.count() == 0 and a.lastErrorCode() == 1, "a syntax error is SQLITE_ERROR (1)"
+
+    # ── busyMs: 0 -- named in SECOND position, so it is the timeout ────────
+    var b: SqliteDb = Sqlite.open(path, busyMs: 0)!
+    assert b.journalMode() == "wal", "busyMs: 0 in second position left write-ahead on; got " + b.journalMode()
+    a.exec("BEGIN IMMEDIATE")
+    b.exec("INSERT INTO t (id, v) VALUES (2, 'two')")
+    assert b.lastErrorCode() == 5, "a write under another's lock is SQLITE_BUSY (5) with busyMs: 0; got " + b.lastErrorCode().toString()
+    print("busy write: " + (b.lastError() orelse "?"))
+    # a refused READ answers an empty list WITH an error -- never "no rows" silently
+    var r = b.query("INSERT INTO t (id, v) VALUES (3, 'three') RETURNING id")
+    assert r.count() == 0 and b.lastErrorCode() == 5, "a refused query is empty and says why"
+    a.exec("COMMIT")
+
+    # ── the default busyMs (5000) waits for the lock and then succeeds ───────
+    var c: SqliteDb = Sqlite.open(path)!
+    a.exec("BEGIN IMMEDIATE")
+    a.exec("INSERT INTO t (id, v) VALUES (4, 'four')")
+    sys.go(def()
+        capture
+            var a: SqliteDb = a
+        sys.sleep(300)
+        a.exec("COMMIT")
+    )
+    var tm = Timer.start()
+    c.exec("INSERT INTO t (id, v) VALUES (5, 'five')")
+    var waited = tm.elapsed()
+    assert c.lastError() == nil, "the default busy timeout waited for the lock: " + (c.lastError() orelse "")
+    assert waited >= 100.0, "the write really waited for the other connection (" + waited.toString() + " ms)"
+    var n = c.query("SELECT COUNT(*) AS n FROM t").at(0).asInt("n")
+    assert n == 3, "rows 1, 4 and 5; got " + n.toString()
+
+    # ── a negative busyMs computed at run time: refused, open answers nil ──
+    var neg: int = 0 - path.len
+    var d: SqliteDb? = Sqlite.open(path, busyMs: neg)
+    assert d == nil, "a negative busyMs is refused"
+
+    a.close()
+    b.close()
+    c.close()
+    clean(path)
+    print("bug716_717: OK")

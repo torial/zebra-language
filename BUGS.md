@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-725. Next new bug: BUG-726.**
+**Last bug number generated: BUG-726. Next new bug: BUG-727.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -169,77 +169,18 @@
 
 ---
 
-### BUG-716: a failed SQLite statement is silent, and a refused query reads as "no rows"
-- **Status:** OPEN (filed 2026-11-13; Fable, from a Graze cold-start, measured on Graze's task
-  demo at 7d24f18; the code read confirmed here)
-- **Where:** `stdlib_preamble.zig`'s `_run` discards the step's result (`_ = sqlite3_step(stmt)`),
-  and the readers loop `while (sqlite3_step(stmt) == _SQLITE_ROW)`, returning what they have when
-  step answers BUSY, CONSTRAINT, IOERR or FULL (four loops). Only a failed PREPARE prints.
-- **Measured (Fable):** four signed-in browsers saving forty tasks each at once: 148 of 160 saves
-  answered "Added" and 101 rows were written -- 47 reported success and wrote nothing; 12 were
-  answered 403 because a refused account read looked like "signed out"; where a handler indexed
-  the answer (`.at(0)`) the server ended. The engine's DataStore has the same exposure for a full
-  disk.
-- **Fix shape (agreed in direction with Fable; V mirrors it):** print a step failure the way a
-  prepare failure is printed, and give `SqliteDb` an error surface the caller can ask, at minimum
-  `db.lastError(): str` -- `""` after a statement that succeeded, cleared at the start of each
-  `exec`/`query`/`querySegments`. Whether a refused statement should instead RAISE (exceptions are
-  the primary error model) is the decision to make first.
-- **Control when fixing:** a write refused by a held lock (a second connection inside
-  `BEGIN IMMEDIATE`) is reported -- printed, and visible to the caller -- while an empty SELECT
-  still answers an empty list with no error.
-
----
-
-### BUG-717: `Sqlite.open` sets no busy timeout, and its own pragmas run before one could be set
-- **Status:** OPEN (filed 2026-11-13; Fable, measured on Graze)
-- **Symptom:** with WAL, two writers at once is ordinary (each `Http.serve` request is its own
-  thread, and in Graze its own connection), and the second is refused at once (`database is
-  locked`). Graze now runs `PRAGMA busy_timeout=5000` after the open and reads it back, which took
-  the BUG-716 measurement to 160 of 160. But the open's own `PRAGMA journal_mode=WAL` still logs
-  "database is locked" under load, and when its `synchronous=NORMAL` is refused the connection
-  silently keeps FULL.
-- **Fix shape:** `sqlite3_busy_timeout(db, ms)` inside `_sqlite_open` BEFORE `_setWriteAhead`, as
-  an argument with a default: `Sqlite.open(path, writeAhead: true, busyMs: 5000)`, `0` meaning
-  "refuse at once" by name. A refused pragma in the open is reported, not kept silently.
-- **Control when fixing:** a second connection writing while the first holds a write transaction
-  for 200 ms succeeds after waiting; with `busyMs: 0` it is refused (and, with BUG-716, says so).
-
----
-
-### BUG-718: SQLite is linked only when the ROOT file calls `Sqlite.open`
-- **Status:** OPEN (filed 2026-11-13; Fable found it moving Graze's open into a module; reproduced
-  here with Fable's probe, C:/tmp/link_probe)
-- **Repro:** `dbmod.zbr` holds the program's only `Sqlite.open`; `main_a.zbr` uses it. The build
-  fails with 16 `lld-link: undefined symbol: sqlite3_...` errors naming nothing the author wrote.
-  The control `main_b.zbr` (the same program plus one `Sqlite.open` in the root) prints `n = 42`.
-- **Cause:** `selfhost/main.zbr` (~572-582) decides whether to link sqlite3.c by counting
-  `_sqlite_open` in the ROOT module's generated Zig only.
-- **Workaround:** call `Sqlite.open` in the root file.
-- **Fix shape:** decide from every emitted module (or from the checker's knowledge that any module
-  names `Sqlite`), so the root's spelling stops mattering.
-- **Control when fixing:** `main_a` prints `n = 42`; a program that never names Sqlite still links
-  without sqlite3.c (its build does not grow).
-
----
-
-### BUG-719: `Http.serve`, `Ws.serve` and `Tcp.serve` listen on every interface
-- **Status:** OPEN (filed 2026-11-13; Fable, from Graze)
-- **Where:** all three bind `0.0.0.0` (`stdlib_preamble.zig`, `_addr`/`_waddr`), with no way to
-  ask for another address. Every Graze app prints `http://127.0.0.1:port/`, so a demo started on a
-  laptop is reachable from every network the laptop is on, and nothing says so.
-- **DECIDED 2026-11-13 (Sean, first-hand): loopback by default for all three serve calls;
-  every other interface is asked for by name.** His reason: a broader default can reserve
-  network channels or ports a program was never meant to hold -- keep the default minimal.
-  Shape: an address argument, `Http.serve(port, handler, host: "127.0.0.1")`, the same on
-  `Ws.serve` and `Tcp.serve`, with `"0.0.0.0"` (all interfaces) stated by the program. The
-  GameEngine's `--server` (through `Ws.serve`) needs the LAN and will pass the address
-  explicitly (Fable, in the pin-move commit). An address the machine does not have is refused
-  by name, never a fallback. The V route has no serve calls yet, so nothing to mirror there.
-- **Confirmed (Fable, 2026-11-13):** a Graze app on port 8099 answered 200 on 127.0.0.1 and on both
-  of the machine's non-loopback addresses; netstat showed `0.0.0.0:8099 LISTENING`.
-- **Control when fixing:** with the default, a connection to the machine's LAN address is refused
-  and one to 127.0.0.1 is served; with `host: "0.0.0.0"` both are served.
+### BUG-726: `Net.resolve` answers an empty list when the lookup FAILS, and at most one address
+- **Status:** OPEN (filed 2026-11-14; found writing BUG-719's LAN fixture)
+- **Repro:** on torial, `Net.resolve("localhost")` and `Net.resolve(sys.getenv("COMPUTERNAME")!)`
+  both answer an empty list (measured). `ipconfig` lists two IPv4 addresses for the same machine.
+- **Where:** `_net_resolve` in the preamble: `IpAddress.resolve(...) catch return _result;` -- a
+  failure becomes "no addresses", the UNGIT fabricated case -- and it keeps ONE address, dropping
+  IPv6 by design (`.ip6 => {}`) and every further IPv4.
+- **Fix shape:** say why a lookup failed (nil, or a printed reason beside the empty list), return
+  every address the resolver gives, and decide whether IPv6 addresses are included (QUICKSTART's
+  `Udp.send` line already names `"::1"` as a literal). First find out why localhost fails here.
+- **Control when fixing:** `Net.resolve("localhost")` contains `127.0.0.1`; a name that does not
+  exist is distinguishable from one with no IPv4 address.
 
 ---
 
@@ -261,6 +202,12 @@
 - **Control when fixing:** the repro builds and the binary prints `n = 42`; a program without
   SQLite still builds without sqlite3.c; on Windows the output ends `.exe`.
 
+- **Not in the 716-719 batch (2026-11-14, Opus):** the build path is a second, smaller copy of the
+  run path's link step -- `zig build-exe <file> -femit-bin=...` with no `-lc`, no `use`d C sources,
+  no prebuilt libraries and no sqlite3.c. Adding sqlite3.c there would fix this repro and leave the
+  copy to drift again. The proposed shape: `zebra build` asks the compiler to compile-and-link
+  without running (one link decision, the run path's), and names the output `.exe` on Windows.
+  That is a CLI surface change, so it is agreed with Fable first.
 ---
 
 ### BUG-721: `HttpResponse.text` (and its other fields) have no type in the checker

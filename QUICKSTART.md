@@ -4593,7 +4593,7 @@ Ws.serve(8765, def(ws: WsConn)
 | Call                              | Returns      | Notes                                        |
 |-----------------------------------|--------------|-----------------------------------------------|
 | `Ws.connect(url)`                 | `WsConn?`    | `ws://` or `wss://`; nil on handshake failure |
-| `Ws.serve(port, handler)`         | void         | Accepts in a loop; calls `handler(WsConn)` per client |
+| `Ws.serve(port, handler)`         | void         | Accepts in a loop; calls `handler(WsConn)` per client. Listens on 127.0.0.1; `host: "0.0.0.0"` for every interface |
 | `ws.send(msg)`                    | void         | Send a UTF-8 text frame (RFC 6455)            |
 | `ws.recv()`                       | `str?`       | Block until a message arrives; nil on close/error |
 | `ws.close()`                      | void         | Send close frame and shut down the connection |
@@ -4615,7 +4615,22 @@ Ws.serve(8765, def(ws: WsConn)
 | Call                              | Returns         | Notes                              |
 |-----------------------------------|-----------------|-------------------------------------|
 | `Tcp.connect(host, port)`         | `TcpConn?`      |                                     |
-| `Tcp.serve(port, handler)`        | void            | Accepts in a loop; calls `handler(TcpConn)` per client |
+| `Tcp.serve(port, handler)`        | void            | Accepts in a loop; calls `handler(TcpConn)` per client. Listens on 127.0.0.1; `host: "0.0.0.0"` for every interface |
+
+**A server listens on this machine only, unless it names another address** (BUG-719). The
+three servers -- `Http.serve`, `Ws.serve`, `Tcp.serve` -- take an optional `host:` and listen on
+`127.0.0.1` without one, so a program started on a laptop is not reachable from the networks the
+laptop is on. To be reachable, say so:
+
+```zebra
+Http.serve(8080, handle, host: "0.0.0.0")      # every IPv4 interface
+Tcp.serve(9000, onConn, host: "192.168.1.20")  # one address of this machine
+```
+
+`host` is an IPv4 literal. A hostname is refused rather than resolved (a name can widen to
+addresses nobody read), and IPv6 is refused as not supported yet: a literal at `-c`, a value
+computed at run time when the server starts (it prints why and exits 1). An address this
+machine does not have is refused the same way, with the OS's reason.
 
 A port is an ordinary `int` in every networking call (`Tcp`, `Ws.serve`, `Http.serve`,
 `Udp`). One outside 0..65535 is refused by name and the call does nothing: `connect`
@@ -4838,8 +4853,11 @@ def handle(req: HttpRequest): HttpResponse
     return HttpResponse.notFound("not found")
 
 def main()
-    Http.serve(8080, handle)
+    Http.serve(8080, handle)      # http://127.0.0.1:8080/ -- this machine only
 ```
+
+`Http.serve` listens on 127.0.0.1 unless given `host:` -- `Http.serve(8080, handle, host:
+"0.0.0.0")` to answer on every interface (BUG-719; the rules are under "Networking" above).
 
 The handler takes the request and RETURNS the response (`-c` refuses any other shape,
 BUG-685): `HttpResponse.ok(body)`,
@@ -5727,6 +5745,22 @@ if d.journalMode() != "wal"
     print("note: running in " + d.journalMode() + " mode")
 ```
 
+**A statement waits up to 5 seconds for another connection's lock** (BUG-717). With WAL, two
+writers at once is ordinary (each `Http.serve` request runs on its own thread), so the open sets
+SQLite's busy timeout before anything else: a write that finds the database locked waits for
+the lock rather than being refused at once. `busyMs:` changes the wait, and `busyMs: 0`
+refuses at once. A negative constant is refused at `-c`; a negative value computed at run time
+makes `open` print why and return nil.
+
+```zebra
+var quick: SqliteDb? = Sqlite.open("app.db", busyMs: 0)             # never wait
+var both: SqliteDb? = Sqlite.open("app.db", writeAhead: false, busyMs: 20000)
+```
+
+The open's own pragmas are statements too. If one is refused, the connection stays open with
+`lastError()` set (below): ask `lastError()` straight after `open` if you need to know the mode
+took. `journalMode()` is the live answer either way.
+
 ### Executing statements
 
 ```zebra
@@ -5765,6 +5799,35 @@ d.begin()
 d.exec("INSERT INTO users VALUES (?, ?)", [3, "carol"])
 d.commit()      # or d.rollback() to discard
 ```
+
+### When SQLite refuses a statement
+
+A statement SQLite refuses -- a constraint, a lock held past the busy timeout, a full disk,
+SQL it cannot read -- is printed on stderr and kept for the program to ask (BUG-716):
+
+```text
+sqlite: exec failed: NOT NULL constraint failed: users.name (code 19)
+```
+
+| Call | Returns | Notes |
+|---|---|---|
+| `db.lastError()` | `str?` | SQLite's message for the last call's refusal; nil after a call that succeeded |
+| `db.lastErrorCode()` | `int` | SQLite's primary result code (`5` BUSY, `19` CONSTRAINT, `13` FULL, `1` ERROR, ...); 0 when `lastError()` is nil |
+
+Each of `exec`, `query`, `querySegments`, `begin`, `commit` and `rollback` clears both at its
+start. **A refused `query` answers an empty list** -- never the rows read before the refusal --
+so check `lastError()` when "no rows" and "refused" must be told apart:
+
+```zebra
+var rows = d.query("SELECT id FROM users WHERE name = ?", ["alice"])
+if d.lastError() as why
+    print("could not read users: " + why)
+else if rows.count() == 0
+    print("no such user")
+```
+
+A connection is one object: if two threads share one, each can see the other's refusal.
+Open a connection per thread (the busy timeout is what lets them share the file).
 
 ### Stored procedures: `querySegments`
 

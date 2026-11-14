@@ -2394,7 +2394,7 @@ def udpSocketMethodKnown(name: str): bool
     return name == "send" or name == "recv" or name == "close"
 
 def sqliteDbMethodKnown(name: str): bool
-    return name == "exec" or name == "query" or name == "querySegments" or name == "begin" or name == "commit" or name == "rollback" or name == "close" or name == "journalMode"
+    return name == "exec" or name == "query" or name == "querySegments" or name == "begin" or name == "commit" or name == "rollback" or name == "close" or name == "journalMode" or name == "lastError" or name == "lastErrorCode"
 
 def sqliteRowMethodKnown(name: str): bool
     return name == "asInt" or name == "asStr" or name == "asFloat" or name == "asBool"
@@ -5236,13 +5236,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                         on Type_.sqlite_db
                             if not sqliteDbMethodKnown(mem.member)
                                 ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/querySegments/begin/commit/rollback/close/journalMode)")
+                                           "'SqliteDb' has no method '" + mem.member + "' (exec/query/querySegments/begin/commit/rollback/close/journalMode/lastError/lastErrorCode)")
                                 return Type_.unknown_
                             var sqmname: str = mem.member
                             if sqmname == "query" or sqmname == "querySegments"
                                 return Type_.sqlite_row_list  # iterable; for-in yields sqlite_row
                             if sqmname == "journalMode"
                                 return Type_.string_
+                            # BUG-716: the last call's refusal -- nil after one that succeeded
+                            if sqmname == "lastError"
+                                return Type_.optional(Type_.string_)
+                            if sqmname == "lastErrorCode"
+                                return Type_.int_
                             return Type_.void_  # exec, begin, commit, rollback, close
                         on Type_.sqlite_row
                             if not sqliteRowMethodKnown(mem.member)
@@ -7314,11 +7319,12 @@ def runtimeFactoryHint(name: str): str
         return "an allocator comes from `allocate Arena()` (or another named wrapper) -- it is not constructed"
     return ""
 
-# `Sqlite.open(path, writeAhead: bool = true)` -- the one builtin namespace call that takes a
-# named argument. checkNamedArgs knows only declared parameter lists, so without this a
+# `Sqlite.open(path, writeAhead: bool = true, busyMs: int = 5000)` -- a builtin namespace call
+# that takes named arguments. checkNamedArgs knows only declared parameter lists, so without this a
 # misspelt `writeAhed: false` was dropped and the database opened in WAL -- the opposite of
-# what was written, silently. Refuses: no path, more than two arguments, a name other than
-# `path` / `writeAhead` in its own position, and a non-bool write-ahead choice.
+# what was written, silently. Refuses: no path, more than three arguments, a name other than
+# `path` first or `writeAhead` / `busyMs` after it, a parameter given twice, a non-bool
+# write-ahead choice, a non-int busyMs, and a constant busyMs below 0 (BUG-717).
 def checkSqliteOpenArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
     var mem_opt: ExprMember? = nil
     if call.callee is Expr.member as m0
@@ -7338,25 +7344,139 @@ def checkSqliteOpenArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
     var cl: int = line
     if mem.span.line > 0
         cl = mem.span.line
-    var usage: str = " -- it is `Sqlite.open(path)` or `Sqlite.open(path, writeAhead: false)`"
+    var usage: str = " -- it is `Sqlite.open(path)`, with `writeAhead: false` or `busyMs: 0` after the path if wanted"
     if call.args.len == 0
         ctx.addErr(file, cl, mem.span.col, "Sqlite.open needs a path" + usage)
         return
-    if call.args.len > 2
-        ctx.addErr(file, cl, mem.span.col, "Sqlite.open takes at most 2 arguments, got " + call.args.len.toString() + usage)
+    if call.args.len > 3
+        ctx.addErr(file, cl, mem.span.col, "Sqlite.open takes at most 3 arguments, got " + call.args.len.toString() + usage)
         return
     var a0: Arg = call.args.at(0)
     if a0.name != nil and a0.name! != "path"
         ctx.addErr(file, cl, mem.span.col, "Sqlite.open has no parameter '" + a0.name! + "' in first position" + usage)
         return
-    if call.args.len == 2
-        var a1: Arg = call.args.at(1)
-        if a1.name != nil and a1.name! != "writeAhead"
-            ctx.addErr(file, cl, mem.span.col, "Sqlite.open has no parameter '" + a1.name! + "' in second position" + usage)
+    var seen_wa: bool = false
+    var seen_busy: bool = false
+    var i: int = 1
+    while i < call.args.len
+        var a: Arg = call.args.at(i)
+        var pname: str = sqliteOpenParamName(a, i)
+        if pname == ""
+            if a.name != nil
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open has no parameter '" + a.name! + "'" + usage)
+            else
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open's argument " + (i + 1).toString() + " has no parameter to fill -- name it" + usage)
             return
-        var wt: Type_ = inferExpr(a1.value, ctx)
-        if not (wt is Type_.bool_) and not (wt is Type_.unknown_)
-            ctx.addErr(file, cl, mem.span.col, "Sqlite.open's writeAhead must be a bool, got " + userTypeName(wt) + usage)
+        if pname == "writeAhead"
+            if seen_wa
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open's writeAhead is given twice" + usage)
+                return
+            seen_wa = true
+            var wt: Type_ = inferExpr(a.value, ctx)
+            if not (wt is Type_.bool_) and not (wt is Type_.unknown_)
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open's writeAhead must be a bool, got " + userTypeName(wt) + usage)
+        else
+            if seen_busy
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open's busyMs is given twice" + usage)
+                return
+            seen_busy = true
+            var bt: Type_ = inferExpr(a.value, ctx)
+            if not (bt is Type_.int_) and not (bt is Type_.unknown_)
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open's busyMs must be an int (milliseconds), got " + userTypeName(bt) + usage)
+                return
+            var cv: ConstVal = constIntValue(a.value)
+            if cv.ok and cv.val < 0
+                ctx.addErr(file, cl, mem.span.col, "Sqlite.open's busyMs is " + cv.val.toString() + " -- it is the wait in milliseconds for another connection's lock, 0 to refuse at once")
+        i = i + 1
+
+# BUG-717: which parameter of `Sqlite.open` the argument at `pos` (>= 1, past the path) fills.
+# A name picks its parameter; an unnamed argument takes its position (1 = writeAhead,
+# 2 = busyMs). "" = none. checkSqliteOpenArgs and codegen's genSqliteCall both resolve through
+# here: codegen used to take the second argument as writeAhead by POSITION, so
+# `Sqlite.open(p, busyMs: 0)` would have opened with write-ahead = 0.
+def sqliteOpenParamName(a: Arg, pos: int): str
+    if a.name != nil
+        var n: str = a.name!
+        if n == "writeAhead" or n == "busyMs"
+            return n
+        return ""
+    if pos == 1
+        return "writeAhead"
+    if pos == 2
+        return "busyMs"
+    return ""
+
+# BUG-719: the index of the `host` argument of `Http.serve` / `Ws.serve` / `Tcp.serve`
+# (`serve(port, handler, host: "0.0.0.0")`), or -1 when the call gives none and the default,
+# loopback, applies. Shared by checkServeArgs and codegen.
+def serveHostArgIndex(args: List(Arg)): int
+    if args.len >= 3
+        var a: Arg = args.at(2)
+        if a.name == nil or a.name! == "host"
+            return 2
+    return -1
+
+# BUG-719: why a literal host is refused, or "" when it is a dotted-quad IPv4 address. The
+# runtime refuses the same three things (a hostname, IPv6, anything else) at run time for a
+# computed host; a literal is refused here, before anything runs.
+def serveHostLiteralProblem(h: str): str
+    var advice: str = " -- give an IPv4 literal: 127.0.0.1 (this machine only, the default) or 0.0.0.0 (every IPv4 interface)"
+    if h.contains(":")
+        return ": IPv6 is not supported yet" + advice
+    var parts: List(str) = h.split(".")
+    var ok: bool = parts.len == 4
+    if ok
+        for part in parts
+            if part.len == 0 or part.len > 3
+                ok = false
+            else
+                for ch in part.chars()
+                    if ch < '0' or ch > '9'
+                        ok = false
+                if ok and part.toInt() > 255
+                    ok = false
+    if not ok
+        return " is not an IPv4 address" + advice
+    return ""
+
+# BUG-719: `Http.serve(port, handler, host: "127.0.0.1")`, the same on Ws.serve and Tcp.serve.
+# Without this a misspelt `hots: "0.0.0.0"` was dropped and the server listened on loopback --
+# the safe direction, but still the opposite of what was written.
+def checkServeArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
+    var mem_opt: ExprMember? = nil
+    if call.callee is Expr.member as m0
+        mem_opt = m0
+    if mem_opt == nil
+        return
+    var mem: ExprMember = mem_opt!
+    if mem.member != "serve"
+        return
+    var ns: str = ""
+    if mem.object is Expr.ident as oid
+        ns = oid.name
+    if not (ns == "Http" or ns == "Ws" or ns == "Tcp") or ctx.hasLocal(ns) or ctx.hasClassAny(ns)
+        return
+    var cl: int = line
+    if mem.span.line > 0
+        cl = mem.span.line
+    var usage: str = " -- it is `" + ns + ".serve(port, handler)` (this machine only) or `" + ns + ".serve(port, handler, host: \"0.0.0.0\")`"
+    if call.args.len > 3
+        ctx.addErr(file, cl, mem.span.col, ns + ".serve takes at most 3 arguments, got " + call.args.len.toString() + usage)
+        return
+    if call.args.len < 3
+        return
+    var a: Arg = call.args.at(2)
+    if serveHostArgIndex(call.args) != 2
+        ctx.addErr(file, cl, mem.span.col, ns + ".serve has no parameter '" + a.name! + "'" + usage)
+        return
+    var ht: Type_ = inferExpr(a.value, ctx)
+    if not isString(ht) and not (ht is Type_.unknown_)
+        ctx.addErr(file, cl, mem.span.col, ns + ".serve's host must be a str, got " + userTypeName(ht) + usage)
+        return
+    if a.value is Expr.string_lit as hl
+        var why: str = serveHostLiteralProblem(hl.text)
+        if why != ""
+            ctx.addErr(file, cl, mem.span.col, ns + ".serve's host \"" + hl.text + "\"" + why)
 
 # `Http.request(method, url, headers: HashMap(str, str), body: str)` and `req.header(name)`.
 # Past the URL every argument must be NAMED -- codegen finds `headers` and `body` by name, so
@@ -8226,6 +8346,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             checkArgCount(c, file, line, ctx)
             checkNamedArgs(c, file, line, ctx)    # BUG-540
             checkSqliteOpenArgs(c, file, line, ctx)
+            checkServeArgs(c, file, line, ctx)      # BUG-719
             checkHttpRequestArgs(c, file, line, ctx)
             checkStructCtorFields(c, file, line, ctx)   # BUG-591
             checkCallExpr(c, file, line, ctx)  # audit #3: arg-type check reaches nested calls

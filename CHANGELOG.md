@@ -23,6 +23,32 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Servers listen on this machine only unless told otherwise (BUG-719).** `Http.serve`,
+  `Ws.serve` and `Tcp.serve` listened on every interface (0.0.0.0) with no way to ask for less, so
+  a program started on a laptop answered on every network the laptop was on. They now listen on
+  `127.0.0.1`; `host: "0.0.0.0"` (every IPv4 interface) or another IPv4 literal names the wider
+  address. A hostname is refused rather than resolved, IPv6 is refused as not yet supported, and an
+  address the machine does not have is refused with the OS's reason: a literal at `-c`, a value
+  computed at run time when the server starts (exit 1). **A program that served other machines
+  must now say `host: "0.0.0.0"`.** A host that calls the runtime directly passes the host as a
+  third argument: `_ws_serve(port, handler, host)` (likewise `_http_serve`, `_tcp_serve`).
+
+- **A refused SQLite statement is reported (BUG-716).** `exec` discarded the step's answer and a
+  `query` refused mid-way answered the rows read so far, so a write refused by a lock wrote nothing
+  and said nothing, and a refused read looked like "no rows". Every refusal now prints
+  `sqlite: <exec|query|...> failed: <message> (code N)` on stderr, and `db.lastError(): str?` /
+  `db.lastErrorCode(): int` (SQLite's primary code) answer for the last call. A refused query
+  answers an EMPTY list.
+
+- **`Sqlite.open(path, busyMs: 5000)` (BUG-717).** The open sets SQLite's busy timeout, 5 s by
+  default, before its own pragmas, so a second writer waits for the lock instead of being refused
+  at once; `busyMs: 0` refuses at once. `Sqlite.open`'s arguments after the path are matched by
+  name, then by position.
+
+- **SQLite links when a `use`d module is the one that opens the database (BUG-718).** The link
+  decision read only the root module, so a program whose `Sqlite.open` sat in a module failed with
+  16 undefined `sqlite3_*` symbols.
+
 - **V route: a `char` is a codepoint, `chars()` yields the Zig route's items, and `"${n:c}"` on an
   int is one byte (BUG-712, BUG-713; the V half of BUG-703).** Until now the V route's `char` was a
   byte: `"aéb".chars()` was four items there and three on the Zig route, and `"${206:c}${184:c}"`

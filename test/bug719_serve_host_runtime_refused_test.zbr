@@ -1,0 +1,10 @@
+# BUG-719: a host computed at run time is checked when the server starts. A hostname is
+# refused (exit 1, naming it), never resolved -- a name can widen to addresses nobody read.
+# (A literal is refused earlier, at -c: fail_fixtures/bug719_serve_host_args_test.)
+def t(conn: TcpConn)
+    conn.close()
+
+def main()
+    var host: str = "local" + "host"
+    Tcp.serve(19969, t, host: host)
+    print("bug719: unreachable -- serve returned")

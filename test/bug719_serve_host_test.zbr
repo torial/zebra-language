@@ -1,0 +1,68 @@
+# BUG-719: Http.serve, Ws.serve and Tcp.serve listened on EVERY interface (0.0.0.0), with no
+# way to ask for another, so a demo started on a laptop was reachable from every network the
+# laptop was on. Decided (Sean, 2026-11-13): loopback by default; every interface is asked for
+# by name, `host: "0.0.0.0"`.
+#
+# The LAN legs connect to this machine's own non-loopback IPv4 address, found at run time.
+# Where there is none they print SKIPPED -- never a pass they did not run.
+# Bounded by its registration, like every socket fixture.
+
+def tcpH(conn: TcpConn)
+    conn.write("hi")
+    conn.close()
+
+def httpH(req: HttpRequest): HttpResponse
+    return HttpResponse(200, "http-hi")
+
+# This machine's first non-loopback IPv4 address, or "". Read from the OS's own tool
+# (`ipconfig` on Windows, `hostname -I` elsewhere): Net.resolve answers nothing here (BUG-726).
+def lanAddress(): str
+    var text: str = ""
+    if (sys.getenv("OS") orelse "") == "Windows_NT"
+        text = sys.run(["ipconfig"]).stdout
+    else
+        text = sys.run(["hostname", "-I"]).stdout
+    for line in text.split("\n")
+        var t: str = line.trim()
+        if t.contains("IPv4") and t.contains(":")
+            var parts: List(str) = t.split(":")
+            t = parts.at(parts.len - 1).trim()
+        for w in t.split(" ")
+            var a: str = w.trim()
+            if a.len >= 7 and not a.startsWith("127.") and not a.contains(":") and a.split(".").len == 4 and a[0] >= 48 and a[0] <= 57
+                return a
+    return ""
+
+def reach(host: str, port: int): str
+    var c = Tcp.connect(host, port)
+    if c as conn
+        var got: str = conn.readAll()
+        conn.close()
+        return got
+    return "refused"
+
+def main()
+    sys.go(def()
+        Tcp.serve(19966, tcpH)
+    )
+    sys.go(def()
+        Tcp.serve(19967, tcpH, host: "0.0.0.0")
+    )
+    sys.go(def()
+        Http.serve(19968, httpH)
+    )
+    sys.sleep(400)
+    assert reach("127.0.0.1", 19966) == "hi", "the default serves loopback"
+    assert reach("127.0.0.1", 19967) == "hi", "0.0.0.0 serves loopback too"
+    var r = Http.get("http://127.0.0.1:19968/")
+    assert r != nil and r!.text == "http-hi", "Http.serve's default serves loopback"
+    var lan: str = lanAddress()
+    if lan == ""
+        print("bug719: LAN legs SKIPPED -- no non-loopback IPv4 address found")
+    else
+        assert reach(lan, 19966) == "refused", "the default does NOT answer on the LAN address"
+        assert reach(lan, 19967) == "hi", "host: \"0.0.0.0\" answers on the LAN address"
+        assert reach(lan, 19968) == "refused", "Http.serve's default does NOT answer on the LAN address"
+        print("bug719: LAN legs ran")
+    print("bug719: OK")
+    sys.exit(0)

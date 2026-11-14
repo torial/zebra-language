@@ -1,0 +1,17 @@
+# BUG-719: Http/Ws/Tcp.serve(port, handler, host: "127.0.0.1"). A literal host must be an IPv4
+# address; each serve below must be refused at -c (the smoke suite greps for each message).
+def h(req: HttpRequest): HttpResponse
+    return HttpResponse(200, "ok")
+
+def t(conn: TcpConn)
+    conn.close()
+
+def w(ws: WsConn)
+    ws.close()
+
+def main()
+    Http.serve(8080, h, host: "localhost")
+    Tcp.serve(8081, t, host: "::1")
+    Ws.serve(8082, w, host: "10.0.0.300")
+    Http.serve(8083, h, hots: "0.0.0.0")
+    Tcp.serve(8084, t, host: 7)

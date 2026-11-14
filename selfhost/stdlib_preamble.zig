@@ -2912,6 +2912,38 @@ pub fn _zbr_port(p: i64, what: []const u8) ?u16 {
         return null;
     };
 }
+/// BUG-719: the address a server listens on. Loopback unless the program names another (Sean,
+/// 2026-11-13: a broader default can reserve network channels a program was never meant to
+/// hold). An IPv4 literal only; "0.0.0.0" is every IPv4 interface. A hostname is refused, not
+/// resolved -- a name can widen to addresses nobody read -- and IPv6 is refused as not yet
+/// supported. Both exit 1: a server that cannot listen where it was told has nothing to serve.
+/// A literal is refused earlier, at -c.
+pub fn _zbr_listen_addr(host: []const u8, port: u16, what: []const u8) std.Io.net.IpAddress {
+    if (std.mem.indexOfScalar(u8, host, ':') != null) {
+        std.debug.print("{s}: host \"{s}\": IPv6 is not supported yet -- give an IPv4 literal: 127.0.0.1 or 0.0.0.0\n", .{ what, host });
+        _zbr_exit(1);
+    }
+    return std.Io.net.IpAddress.parseIp4(host, port) catch {
+        std.debug.print("{s}: host \"{s}\" is not an IPv4 address -- give an IPv4 literal: 127.0.0.1 or 0.0.0.0\n", .{ what, host });
+        _zbr_exit(1);
+    };
+}
+/// A listen that failed. An address this machine does not have is a refusal of the HOST
+/// (exit 1, as above); any other failure (the port is taken, ...) keeps the old contract --
+/// printed, and serve returns. Windows answers such an address with an NTSTATUS Zig does
+/// not map (INVALID_ADDRESS_COMPONENT), so there it arrives as `Unexpected`: the message
+/// then ASKS rather than asserts, because Unexpected is any unmapped OS error.
+pub fn _zbr_listen_failed(what: []const u8, host: []const u8, port: u16, e: anyerror) void {
+    std.debug.print("{s}: cannot listen on {s}:{d}: {s}\n", .{ what, host, port, @errorName(e) });
+    if (e == error.AddressUnavailable) {
+        std.debug.print("{s}: {s} is not an address of this machine -- 127.0.0.1 is loopback, 0.0.0.0 every IPv4 interface\n", .{ what, host });
+        _zbr_exit(1);
+    }
+    if (e == error.Unexpected) {
+        std.debug.print("{s}: is {s} an address of this machine? 127.0.0.1 is loopback, 0.0.0.0 every IPv4 interface\n", .{ what, host });
+        _zbr_exit(1);
+    }
+}
 /// BUG-699: the largest request body `Http.serve` will read; a larger Content-Length is
 /// answered 413 without reading it. 1 MB, the figure Graze's charter asks for.
 pub const _HTTP_MAX_BODY: usize = 1024 * 1024;
@@ -2919,7 +2951,7 @@ pub const _HTTP_MAX_BODY: usize = 1024 * 1024;
 /// not lost to a reset, and for how long.
 pub const _HTTP_DRAIN_MAX: usize = 16 * 1024 * 1024;
 pub const _HTTP_DRAIN_NS: i128 = 10 * std.time.ns_per_s;
-pub fn _http_serve(port_in: i64, handler: anytype) void {
+pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
     const port = _zbr_port(port_in, "Http.serve") orelse return;
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
@@ -3051,9 +3083,9 @@ pub fn _http_serve(port_in: i64, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _addr = _zbr_listen_addr(host, port, "Http.serve");
     var _srv = _addr.listen(_io, .{}) catch |e| {
-        std.debug.print("Http.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        _zbr_listen_failed("Http.serve", host, port, e);
         return;
     };
     defer _srv.deinit(_io);
@@ -3494,8 +3526,9 @@ pub inline fn _ws_invoke(h: anytype, ws: *_WsConn) void {
     _Wrap.call(h, ws) catch |e| std.debug.print("Ws.serve: handler error: {s}\n", .{@errorName(e)});
 }
 
-// Ws.serve(port, handler) — plain TCP; use a reverse proxy for wss://.
-pub fn _ws_serve(port_in: i64, handler: anytype) void {
+// Ws.serve(port, handler, host: "127.0.0.1") — plain TCP; use a reverse proxy for wss://.
+// BUG-719: `host` is the third parameter (hosts that call this directly pass it).
+pub fn _ws_serve(port_in: i64, handler: anytype, host: []const u8) void {
     const port = _zbr_port(port_in, "Ws.serve") orelse return;
     const _HFn = *const fn(*_WsConn) void;
     const _fn: _HFn = handler;
@@ -3558,9 +3591,9 @@ pub fn _ws_serve(port_in: i64, handler: anytype) void {
         }
     };
     const _pa = std.heap.page_allocator;
-    var _waddr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _waddr = _zbr_listen_addr(host, port, "Ws.serve");
     var _srv = _waddr.listen(_io, .{}) catch |e| {
-        std.debug.print("Ws.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        _zbr_listen_failed("Ws.serve", host, port, e);
         return;
     };
     defer _srv.deinit(_io);
@@ -3961,7 +3994,7 @@ pub fn _tcp_read_bytes(conn: TcpConn, n: usize) []const u8 {
     return _buf[0.._total];
 }
 pub fn _tcp_close(conn: TcpConn) void { conn.stream.close(_io); }
-pub fn _tcp_serve(port_in: i64, handler: anytype) void {
+pub fn _tcp_serve(port_in: i64, handler: anytype, host: []const u8) void {
     const port = _zbr_port(port_in, "Tcp.serve") orelse return;
     const _HFn = *const fn(TcpConn) void;
     const _fn: _HFn = handler;
@@ -3974,9 +4007,9 @@ pub fn _tcp_serve(port_in: i64, handler: anytype) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _addr = std.Io.net.IpAddress{ .ip4 = .{ .bytes = .{ 0, 0, 0, 0 }, .port = port } };
+    var _addr = _zbr_listen_addr(host, port, "Tcp.serve");
     var _srv = _addr.listen(_io, .{}) catch |e| {
-        std.debug.print("Tcp.serve: cannot bind port {d}: {s}\n", .{ port, @errorName(e) });
+        _zbr_listen_failed("Tcp.serve", host, port, e);
         return;
     };
     defer _srv.deinit(_io);
@@ -4585,6 +4618,7 @@ pub const _SQLITE_TRANSIENT: ?*anyopaque = @ptrFromInt(@as(usize, @bitCast(@as(i
 extern fn sqlite3_open(filename: [*:0]const u8, ppDb: **_sqlite3) c_int;
 extern fn sqlite3_close_v2(db: *_sqlite3) c_int;
 extern fn sqlite3_errmsg(db: *_sqlite3) [*:0]const u8;
+extern fn sqlite3_busy_timeout(db: *_sqlite3, ms: c_int) c_int;
 extern fn sqlite3_prepare_v2(db: *_sqlite3, sql: [*:0]const u8, nByte: c_int, ppStmt: **_sqlite3_stmt, pzTail: ?*?[*:0]const u8) c_int;
 extern fn sqlite3_step(stmt: *_sqlite3_stmt) c_int;
 extern fn sqlite3_finalize(stmt: *_sqlite3_stmt) c_int;
@@ -4677,6 +4711,27 @@ const _SqliteProcs = struct {
 
 pub const _SqliteDbInner = struct {
     db: *_sqlite3,
+    // BUG-716: the last call's refusal, asked with db.lastError() / db.lastErrorCode() --
+    // null and 0 after a call that succeeded. Cleared at the start of each PUBLIC call
+    // (exec, query, querySegments, begin, commit, rollback), never inside the shared runners:
+    // the open runs two pragmas through them, and a clear there would erase the first one's
+    // refusal. The code is SQLite's primary result code (SQLITE_BUSY = 5, ...).
+    last_err: ?[]const u8 = null,
+    last_code: i64 = 0,
+
+    fn _clearErr(self: *_SqliteDbInner) void {
+        self.last_err = null;
+        self.last_code = 0;
+    }
+    // Record a refusal and print it the one way every refusal is printed:
+    // `sqlite: <what> failed: <SQLite's message> (code N)`.
+    fn _fail(self: *_SqliteDbInner, what: []const u8, rc: c_int) void {
+        const msg = std.mem.sliceTo(sqlite3_errmsg(self.db), 0);
+        const code: i64 = @as(i64, rc) & 0xFF;
+        self.last_err = _allocator.dupe(u8, msg) catch "(the message was lost: out of memory)";
+        self.last_code = code;
+        std.debug.print("sqlite: {s} failed: {s} (code {d})\n", .{ what, msg, code });
+    }
 
     pub fn _bind(stmt: *_sqlite3_stmt, params: []const _SqliteParam) void {
         for (params, 0..) |p, i| {
@@ -4693,31 +4748,40 @@ pub const _SqliteDbInner = struct {
             }
         }
     }
-    pub fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void {
+    // BUG-716: the step's answer was discarded, so a write refused by a lock, a constraint
+    // or a full disk reported nothing at all.
+    pub fn _run(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam, what: []const u8) void {
         const csql = _allocator.dupeSentinel(u8, sql, 0) catch return;
         defer _allocator.free(csql);
         var stmt: *_sqlite3_stmt = undefined;
-        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
-            std.debug.print("SQLite exec error: {s}\n", .{sqlite3_errmsg(self.db)});
+        const prc = sqlite3_prepare_v2(self.db, csql, -1, &stmt, null);
+        if (prc != _SQLITE_OK) {
+            self._fail(what, prc);
             return;
         }
         defer _ = sqlite3_finalize(stmt);
         _bind(stmt, params);
-        _ = sqlite3_step(stmt);
+        const rc = sqlite3_step(stmt);
+        if (rc != _SQLITE_DONE and rc != _SQLITE_ROW) self._fail(what, rc);
     }
+    // BUG-716: a step refused mid-way (BUSY, IOERR, ...) answered the rows read so far, so a
+    // refused read was indistinguishable from "no rows". It now answers an EMPTY list -- never
+    // a partial one -- with the refusal printed and kept for lastError().
     pub fn _fetch(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
         var rows = _zbr_new(_ZbrList(_SqliteRow));
         const csql = _allocator.dupeSentinel(u8, sql, 0) catch return rows;
         defer _allocator.free(csql);
         var stmt: *_sqlite3_stmt = undefined;
-        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
-            std.debug.print("SQLite query error: {s}\n", .{sqlite3_errmsg(self.db)});
+        const prc = sqlite3_prepare_v2(self.db, csql, -1, &stmt, null);
+        if (prc != _SQLITE_OK) {
+            self._fail("query", prc);
             return rows;
         }
         defer _ = sqlite3_finalize(stmt);
         _bind(stmt, params);
         const ncols = sqlite3_column_count(stmt);
-        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+        var rc = sqlite3_step(stmt);
+        while (rc == _SQLITE_ROW) : (rc = sqlite3_step(stmt)) {
             var names = std.ArrayList([]const u8).empty;
             var vals  = std.ArrayList(_SqliteVal).empty;
             var ci: c_int = 0;
@@ -4738,12 +4802,18 @@ pub const _SqliteDbInner = struct {
             }
             rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
         }
+        if (rc != _SQLITE_DONE) {
+            self._fail("query", rc);
+            return _zbr_new(_ZbrList(_SqliteRow));
+        }
         return rows;
     }
-    pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._run(sql, &.{}); }
-    pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._run(sql, params); }
-    pub fn query_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetch(sql, &.{}); }
-    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetch(sql, params); }
+    pub fn exec_(self: *_SqliteDbInner, sql: []const u8) void { self._clearErr(); self._run(sql, &.{}, "exec"); }
+    pub fn exec_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) void { self._clearErr(); self._run(sql, params, "exec"); }
+    pub fn query_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { self._clearErr(); return self._fetch(sql, &.{}); }
+    pub fn query_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { self._clearErr(); return self._fetch(sql, params); }
+    pub fn lastError_(self: *_SqliteDbInner) ?[]const u8 { return self.last_err; }
+    pub fn lastErrorCode_(self: *_SqliteDbInner) i64 { return self.last_code; }
     // ── querySegments: one row per result-set row of a stored procedure, each with a
     // leading "_segment" column (0 = the parent rows, k = the k-th nested table). Two
     // transports: the engine's own merge, "CALL p(...) WITH INTERLEAVED", renamed per
@@ -4840,7 +4910,8 @@ pub const _SqliteDbInner = struct {
         for (names, 0..) |segn, k| { bases[k] = acc; acc += segn.len; }
         if (acc != total) return null;
         var rows = _zbr_new(_ZbrList(_SqliteRow));
-        while (sqlite3_step(stmt) == _SQLITE_ROW) {
+        var rc = sqlite3_step(stmt);
+        while (rc == _SQLITE_ROW) : (rc = sqlite3_step(stmt)) {
             const seg64 = sqlite3_column_int64(stmt, 0);
             if (seg64 < 0 or seg64 >= names.len) return null;   // shape drift: the walk serves it
             const seg: usize = @intCast(seg64);
@@ -4854,6 +4925,12 @@ pub const _SqliteDbInner = struct {
             }
             rows.append(_allocator, .{ .names = rnames.items, .vals = vals.items }) catch return null;
         }
+        // BUG-716: a refusal here is the query's answer. Returning null would hand the query to
+        // the walk, which would run it again and could hide this refusal behind its own result.
+        if (rc != _SQLITE_DONE) {
+            self._fail("querySegments", rc);
+            return _zbr_new(_ZbrList(_SqliteRow));
+        }
         return rows;
     }
     fn _segWalk(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) {
@@ -4861,15 +4938,17 @@ pub const _SqliteDbInner = struct {
         const csql = _allocator.dupeSentinel(u8, sql, 0) catch return rows;
         defer _allocator.free(csql);
         var stmt: *_sqlite3_stmt = undefined;
-        if (sqlite3_prepare_v2(self.db, csql, -1, &stmt, null) != _SQLITE_OK) {
-            std.debug.print("SQLite querySegments error: {s}\n", .{sqlite3_errmsg(self.db)});
+        const prc = sqlite3_prepare_v2(self.db, csql, -1, &stmt, null);
+        if (prc != _SQLITE_OK) {
+            self._fail("querySegments", prc);
             return rows;
         }
         defer _ = sqlite3_finalize(stmt);
         _bind(stmt, params);
         while (true) {
             const ncols = sqlite3_column_count(stmt);   // re-read: each segment has its own shape
-            while (sqlite3_step(stmt) == _SQLITE_ROW) {
+            var rc = sqlite3_step(stmt);
+            while (rc == _SQLITE_ROW) : (rc = sqlite3_step(stmt)) {
                 const seg = _SqliteProcs.sqlite3_proc_current_segment(stmt);
                 var names = std.ArrayList([]const u8).empty;
                 var vals = std.ArrayList(_SqliteVal).empty;
@@ -4883,6 +4962,10 @@ pub const _SqliteDbInner = struct {
                 }
                 rows.append(_allocator, .{ .names = names.items, .vals = vals.items }) catch {};
             }
+            if (rc != _SQLITE_DONE) {
+                self._fail("querySegments", rc);
+                return _zbr_new(_ZbrList(_SqliteRow));
+            }
             if (_SqliteProcs.sqlite3_proc_next_resultset(stmt) != _SQLITE_OK) break;
         }
         return rows;
@@ -4892,24 +4975,36 @@ pub const _SqliteDbInner = struct {
             std.debug.print("SQLite querySegments error: this SQLite has no stored procedures -- " ++
                 "querySegments needs one built with them (zebra-sprocket's sqlite3.c beside the compiler, " ++
                 "in vendor/sqlite/); use query() for an ordinary statement\n", .{});
+            self.last_err = "this SQLite has no stored procedures (querySegments needs zebra-sprocket's sqlite3.c)";
+            self.last_code = 1; // SQLITE_ERROR
             return _zbr_new(_ZbrList(_SqliteRow));
         }
         if (self._segInterleaved(sql, params)) |r| return r;
         return self._segWalk(sql, params);
     }
-    pub fn querySegments_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { return self._fetchSegments(sql, &.{}); }
-    pub fn querySegments_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { return self._fetchSegments(sql, params); }
-    pub fn begin_(self: *_SqliteDbInner) void    { self._run("BEGIN",    &.{}); }
-    pub fn commit_(self: *_SqliteDbInner) void   { self._run("COMMIT",   &.{}); }
-    pub fn rollback_(self: *_SqliteDbInner) void { self._run("ROLLBACK", &.{}); }
+    pub fn querySegments_(self: *_SqliteDbInner, sql: []const u8) _ZbrList(_SqliteRow) { self._clearErr(); return self._fetchSegments(sql, &.{}); }
+    pub fn querySegments_p_(self: *_SqliteDbInner, sql: []const u8, params: []const _SqliteParam) _ZbrList(_SqliteRow) { self._clearErr(); return self._fetchSegments(sql, params); }
+    pub fn begin_(self: *_SqliteDbInner) void    { self._clearErr(); self._run("BEGIN",    &.{}, "begin"); }
+    pub fn commit_(self: *_SqliteDbInner) void   { self._clearErr(); self._run("COMMIT",   &.{}, "commit"); }
+    pub fn rollback_(self: *_SqliteDbInner) void { self._clearErr(); self._run("ROLLBACK", &.{}, "rollback"); }
     pub fn close_(self: *_SqliteDbInner) void    { _ = sqlite3_close_v2(self.db); }
     // The first column of the first row a statement answers, or null when it answers no row.
     // A `PRAGMA journal_mode=...` answers a row, so it goes through here, not through `_run`.
-    fn _answer(self: *_SqliteDbInner, sql: [:0]const u8) ?[]const u8 {
+    // `record`: a refusal is printed and kept for lastError() (the open's own pragma);
+    // journalMode() passes null -- it answers "unknown" and leaves the last error alone.
+    fn _answer(self: *_SqliteDbInner, sql: [:0]const u8, record: ?[]const u8) ?[]const u8 {
         var stmt: *_sqlite3_stmt = undefined;
-        if (sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != _SQLITE_OK) return null;
+        const prc = sqlite3_prepare_v2(self.db, sql, -1, &stmt, null);
+        if (prc != _SQLITE_OK) {
+            if (record) |what| self._fail(what, prc);
+            return null;
+        }
         defer _ = sqlite3_finalize(stmt);
-        if (sqlite3_step(stmt) != _SQLITE_ROW) return null;
+        const rc = sqlite3_step(stmt);
+        if (rc != _SQLITE_ROW) {
+            if (rc != _SQLITE_DONE) if (record) |what| self._fail(what, rc);
+            return null;
+        }
         const raw = sqlite3_column_text(stmt, 0) orelse return null;
         return _allocator.dupe(u8, std.mem.sliceTo(raw, 0)) catch null;
     }
@@ -4919,20 +5014,32 @@ pub const _SqliteDbInner = struct {
     // stored in the file: a file an earlier open put in WAL would otherwise stay there.
     // Whatever SQLite answered is what journalMode() reports; nothing is assumed.
     pub fn _setWriteAhead(self: *_SqliteDbInner, on_: bool) void {
-        _ = self._answer(if (on_) "PRAGMA journal_mode=WAL" else "PRAGMA journal_mode=DELETE");
-        self._run(if (on_) "PRAGMA synchronous=NORMAL" else "PRAGMA synchronous=FULL", &.{});
+        _ = self._answer(if (on_) "PRAGMA journal_mode=WAL" else "PRAGMA journal_mode=DELETE", "open");
+        self._run(if (on_) "PRAGMA synchronous=NORMAL" else "PRAGMA synchronous=FULL", &.{}, "open");
     }
     // SQLite's own answer, read live: "wal", "delete", "memory" (a :memory: db), ... --
     // "unknown" when it answered no row. Never the mode that was asked for.
     pub fn journalMode_(self: *_SqliteDbInner) []const u8 {
-        return self._answer("PRAGMA journal_mode") orelse "unknown";
+        return self._answer("PRAGMA journal_mode", null) orelse "unknown";
     }
 };
 
 pub const SqliteDb  = *_SqliteDbInner;
 pub const SqliteRow = _SqliteRow;
 
-pub fn _sqlite_open(path: []const u8, write_ahead: bool) ?SqliteDb {
+// BUG-717: `busy_ms` is how long a statement waits for another connection's lock before it is
+// refused (SQLite's busy timeout); 0 refuses at once. It is set BEFORE the open's own pragmas,
+// which are statements too and were refused under load ("database is locked") when it came
+// after. A refused pragma leaves the connection open with lastError() set.
+pub fn _sqlite_open(path: []const u8, write_ahead: bool, busy_ms_in: i64) ?SqliteDb {
+    if (busy_ms_in < 0) {
+        std.debug.print("Sqlite.open: busyMs {d} is negative -- it is the wait in milliseconds, 0 to refuse at once\n", .{busy_ms_in});
+        return null;
+    }
+    const busy_ms = std.math.cast(c_int, busy_ms_in) orelse {
+        std.debug.print("Sqlite.open: busyMs {d} is too large (at most {d})\n", .{ busy_ms_in, std.math.maxInt(c_int) });
+        return null;
+    };
     const cpath = _allocator.dupeSentinel(u8, path, 0) catch return null;
     defer _allocator.free(cpath);
     var db_raw: *_sqlite3 = undefined;
@@ -4946,6 +5053,7 @@ pub fn _sqlite_open(path: []const u8, write_ahead: bool) ?SqliteDb {
         return null;
     };
     s.* = .{ .db = db_raw };
+    _ = sqlite3_busy_timeout(db_raw, busy_ms);
     s._setWriteAhead(write_ahead);
     return s;
 }

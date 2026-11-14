@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -18253,6 +18253,10 @@ struct Generator
                         genExpr(m.object)
                         w.emit(".journalMode_()")
                         return
+                    if mname == "lastError" or mname == "lastErrorCode"   # BUG-716
+                        genExpr(m.object)
+                        w.emit("." + mname + "_()")
+                        return
                     # bugbook BUG-2 (Fable, from zebra-sprocket): a DEFERRED method on a
                     # SqliteDb — one the resolver hands to Zig because the preamble was
                     # extended — must build its bind list the SAME WAY the known paths do.
@@ -22848,6 +22852,8 @@ struct Generator
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
+            w.emit(", ")
+            genServeHost(args)
             w.emit(")")
             return
         if mname == "json"
@@ -23018,6 +23024,8 @@ struct Generator
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
+            w.emit(", ")
+            genServeHost(args)
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Ws.")
@@ -23672,6 +23680,8 @@ struct Generator
                 genExpr(args.at(1).value)
             else
                 w.emit("undefined")
+            w.emit(", ")
+            genServeHost(args)
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Tcp.")
@@ -23695,22 +23705,47 @@ struct Generator
         w.emit(mname)
         w.emit("\")")
 
+    # BUG-719: a server's listen address -- the program's `host:` argument, or loopback.
+    # Every interface is asked for by name (`host: "0.0.0.0"`), never the default.
+    def genServeHost(args: List(Arg))
+        var hi: int = serveHostArgIndex(args)
+        if hi >= 0
+            genExpr(args.at(hi).value)
+        else
+            w.emit("\"127.0.0.1\"")
+
     # ── genSqliteCall + genSqliteParams ─────────────────────────────────────
     def genSqliteCall(mname: str, args: List(Arg))
         if mname == "open"
-            # `Sqlite.open(path, writeAhead: bool = true)`: the checker refuses any other
-            # argument (checkSqliteOpenArgs), so the second argument -- named or not -- is
-            # the write-ahead choice, and its absence is the default, WAL.
+            # `Sqlite.open(path, writeAhead: bool = true, busyMs: int = 5000)`: the checker
+            # refuses any other argument (checkSqliteOpenArgs). Each argument past the path is
+            # placed by sqliteOpenParamName -- the checker's own resolution -- so a named
+            # `busyMs:` in second position is the busy timeout, never the write-ahead choice.
+            var wa_i: int = -1
+            var busy_i: int = -1
+            var ai: int = 1
+            while ai < args.len
+                var pn: str = sqliteOpenParamName(args.at(ai), ai)
+                if pn == "writeAhead"
+                    wa_i = ai
+                else if pn == "busyMs"
+                    busy_i = ai
+                ai = ai + 1
             w.emit("_sqlite_open(")
             if args.len > 0
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
             w.emit(", ")
-            if args.len > 1
-                genExpr(args.at(1).value)
+            if wa_i >= 0
+                genExpr(args.at(wa_i).value)
             else
                 w.emit("true")
+            w.emit(", ")
+            if busy_i >= 0
+                genExpr(args.at(busy_i).value)
+            else
+                w.emit("5000")
             w.emit(")")
             return
         w.emit("@compileError(\"selfhost: unknown Sqlite.")

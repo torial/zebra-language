@@ -1,0 +1,9 @@
+# BUG-717: Sqlite.open(path, writeAhead: bool = true, busyMs: int = 5000). Each open below must
+# be refused at -c; the smoke suite greps for each message.
+def main()
+    var a: SqliteDb? = Sqlite.open("zz_x.db", busyMs: -1)
+    var b: SqliteDb? = Sqlite.open("zz_x.db", busyMs: 10, busyMs: 20)
+    var c: SqliteDb? = Sqlite.open("zz_x.db", busyMs: "soon")
+    var d: SqliteDb? = Sqlite.open("zz_x.db", busyMS: 10)
+    var e: SqliteDb? = Sqlite.open("zz_x.db", true, 10, 20)
+    print("unreachable")

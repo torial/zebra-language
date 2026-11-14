@@ -1,0 +1,18 @@
+# BUG-718: SQLite was linked only when the ROOT file called Sqlite.open. Here the root never
+# names Sqlite.open; its one call is in a used module. Before the fix the build failed with
+# 16 `lld-link: undefined symbol: sqlite3_...` errors naming nothing the author wrote.
+# (Fable's probe, C:/tmp/link_probe main_a.) The control -- a program that never names
+# Sqlite still builds without sqlite3.c -- is every other program in the corpus: BUG-209's
+# fast path.
+use bug718_sqlite_dep_lib exposing opened
+
+def main()
+    var db: SqliteDb? = opened(":memory:")
+    if db == nil
+        print("no db")
+        return
+    var d: SqliteDb = db!
+    for row in d.query("SELECT 41 + 1 AS n")
+        print("n = ${row.asInt("n")}")
+    d.close()
+    print("bug718: OK")

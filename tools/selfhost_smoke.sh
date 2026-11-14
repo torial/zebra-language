@@ -1330,7 +1330,7 @@ smoke_run test/bug686_sqlite_features_test.zbr "bug686: fts5 rtree json OK"
 # a file an earlier open left in WAL; db.journalMode() is SQLite's answer. The dep module opens
 # with the one-argument form (Fable: the engine opens its datastore from another module).
 smoke_run test/sqlite_wal_default_test.zbr "sqlite_wal: OK"
-smoke_tc_fail test/sqlite_open_bad_args_test.zbr "Sqlite.open has no parameter 'writeAhed' in second position"
+smoke_tc_fail test/sqlite_open_bad_args_test.zbr "Sqlite.open has no parameter 'writeAhed'"
 smoke_tc_fail test/sqlite_open_bad_args_test.zbr "Sqlite.open's writeAhead must be a bool, got str"
 
 # GUI widgets: progressBar(label,f64) + combobox(label,List(str),int) + spinbox(label,int,int,int).
@@ -2171,6 +2171,27 @@ smoke_tc_fail test/fail_fixtures/bug703_surrogate_char_literal_test.zbr "is a su
 smoke_tc_fail test/fail_fixtures/bug703_char_from_int_test.zbr "expected char, found int"
 smoke_tc_fail test/fail_fixtures/bug703_fmt_c_literal_range_test.zbr "on an int writes one byte (0..255)"
 smoke_run_fail test/bug703_fmt_c_runtime_trap_test.zbr "integer conversion out of range: 300 does not fit in byte"
+# BUG-716/717: a refused SQLite statement is printed and kept (lastError / lastErrorCode); a
+# refused query answers an EMPTY list; the busy timeout (busyMs, default 5000) waits for
+# another connection's lock, `busyMs: 0` refuses at once.
+smoke_run_bounded test/bug716_717_sqlite_refusals_test.zbr "bug716_717: OK" 120
+smoke_run test/bug716_717_sqlite_refusals_test.zbr "sqlite: exec failed: database is locked (code 5)"
+smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs is -1 -- it is the wait in milliseconds"
+smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs is given twice"
+smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs must be an int (milliseconds), got str"
+smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open has no parameter 'busyMS'"
+smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open takes at most 3 arguments, got 4"
+# BUG-718: SQLite is linked when a USED module is the one that calls Sqlite.open.
+smoke_run test/bug718_sqlite_in_dep_test.zbr "bug718: OK"
+# BUG-719: Http/Ws/Tcp.serve listen on loopback unless `host:` names another address.
+smoke_run_bounded test/bug719_serve_host_test.zbr "bug719: OK" 120
+smoke_run_fail test/bug719_serve_host_runtime_refused_test.zbr "Tcp.serve: host \"localhost\" is not an IPv4 address"
+smoke_run_fail test/bug719_serve_host_unbindable_test.zbr "Tcp.serve: cannot listen on 192.0.2.1:19970"
+smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Http.serve's host \"localhost\" is not an IPv4 address"
+smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Tcp.serve's host \"::1\": IPv6 is not supported yet"
+smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Ws.serve's host \"10.0.0.300\" is not an IPv4 address"
+smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Http.serve has no parameter 'hots'"
+smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Tcp.serve's host must be a str, got int"
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

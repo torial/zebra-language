@@ -1,0 +1,4 @@
+# Helper module for bug718_sqlite_in_dep_test: the program's ONLY Sqlite.open lives here,
+# in a `use`d module. The link decision read the root module alone, so this failed to link.
+def opened(path: str): SqliteDb?
+    return Sqlite.open(path)

@@ -1,0 +1,9 @@
+# BUG-719: an IPv4 address this machine does not have is refused by name with the OS's reason
+# (exit 1) -- never a fallback to another address. 192.0.2.1 is TEST-NET-1 (RFC 5737),
+# assigned to no machine.
+def t(conn: TcpConn)
+    conn.close()
+
+def main()
+    Tcp.serve(19970, t, host: "192.0.2.1")
+    print("bug719: unreachable -- serve returned")
