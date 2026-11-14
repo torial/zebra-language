@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-726. Next new bug: BUG-727.**
+**Last bug number generated: BUG-727. Next new bug: BUG-728.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -166,6 +166,37 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+
+---
+
+### BUG-727: on Windows a second server listens on a port another server holds, and neither says so
+- **Status:** OPEN (filed 2026-11-14; found by Fable in a cold-start run of the Graze README, where
+  an agent restarted a rebuilt app and was answered by the old one)
+- **Repro:** start any `Http.serve` program built with 237f2e0 on 127.0.0.1:8146, then a second copy
+  on the same port. Both print their startup line and stay up; `netstat -ano` shows two LISTENING
+  rows for 127.0.0.1:8146 with two PIDs; requests go to the first (Fable, verified). Expected: the
+  second exits 1 with BUG-719's "cannot listen on ..." words.
+- **Cause, measured:** Zig 0.17's own Windows listen. A plain Zig program calling
+  `IpAddress.listen(io, .{})` twice on one address in ONE process gets two successful listens
+  (`first listen ok`, `SECOND listen ok`; 2026-11-14, zig 0.17.1). `reuse_address` defaults to false
+  and is not set; `netListenIpWindows` binds through AFD with `BIND_INFO.Mode = .Passive`, value 1.
+  Unverified reading: in AFD's own numbering 1 is the SHARE/REUSE mode (ReactOS headers:
+  UNIQUE 0, REUSE 1, WILDCARD 2, EXCLUSIVE 3), so every listen is a shared one. POSIX does not set
+  SO_REUSEADDR unless asked, so Linux should refuse the second bind -- not run.
+- **Where:** all three serve functions open their listener with default options:
+  `_addr.listen(_io, .{})` in the preamble's Http, Ws and Tcp serve paths.
+- **Why it matters:** a stale server left running after a rebuild keeps answering, with no word from
+  either process; and any local process can bind a port a Zebra server already holds.
+- **Fix shape:** the mode is hard-coded inside std, so options sit in our runtime: (a) on Windows,
+  open the listening socket ourselves with an exclusive bind (winsock `SO_EXCLUSIVEADDRUSE`, or the
+  AFD bind with the exclusive mode) and hand std the handle, if std accepts one it did not open;
+  (b) a connect probe before listening, which catches the stale-server case and is not race-free
+  -- name that in the code if chosen. Measure first which handles std's accept takes. No Zig bug
+  report (standing rule).
+- **Control when fixing:** two listens on one address: the second refused with "cannot listen on
+  ..." and exit 1, on all three serve functions; one listen still serves; a port freed by a closed
+  server can be listened on again at once (the property SO_REUSEADDR exists for -- an exclusive bind
+  must not cost it).
 
 ---
 
