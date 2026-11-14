@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-722. Next new bug: BUG-723.**
+**Last bug number generated: BUG-723. Next new bug: BUG-724.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -290,6 +290,23 @@
   The first is the useful one.
 - **Control when fixing:** the repro stringifies to `[{"role":"user"}]`, or is refused at `-c`
   by name; scalar `append`/`put` unchanged.
+
+---
+
+### BUG-723: `s.chars()` as a value passes `-c` and fails inside zig (the V route builds it)
+- **Status:** OPEN (filed 2026-11-13; Fable, from a probe of every char-to-text position for
+  BUG-712; reproduced here)
+- **Repro:** `var cs: List(char) = "aéb".chars()` then `print(cs.count())`. `-c` exits 0; the
+  build fails `no field or member function named 'chars' in 'str'`. Three of Fable's 31 probe
+  programs died on it (keeping the list, printing it, joining it).
+- **Why it matters:** QUICKSTART says `chars()` is `for`-only and that binding it "does not
+  compile" -- but the refusal is zig's, about code the user never wrote, and the V route maps
+  it (`zstr_chars`), so the two routes disagree on whether the program builds at all.
+- **Fix shape (a decision):** support it on the Zig route (a `List(char)` built by the BUG-703
+  decoder, the same items the loop yields), or refuse it at `-c` by name on both routes. The
+  first matches the V route and costs little now that the decoder is the runtime's own.
+- **Control when fixing:** the repro prints 3 on both routes, or is refused at `-c` naming
+  `chars()`; `for c in s.chars()` unchanged.
 
 ---
 
