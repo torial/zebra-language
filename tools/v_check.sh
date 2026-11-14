@@ -3,6 +3,8 @@
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
 # pins: BUG-712 a char on the V route is a codepoint, and chars() yields the Zig route's items (examples/v_poc_utf8.zbr; the fmt_c row's text line)
 # pins: BUG-713 `${n:c}` on an int is one byte on the V route, and traps out of 0..255 with the Zig route's words (the fmt_c row)
+# pins: BUG-716 a refused SQLite statement is printed and kept on the V route as on the Zig route, where it panicked (the sqlite row)
+# pins: BUG-717 busyMs on the V route, placed by name before position (the sqlite row: `Sqlite.open(p, busyMs: 0)` leaves write-ahead on)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -173,6 +175,100 @@ elif [ "$fvrc" = 0 ] || grep -q SURVIVED "$OUT/fmtc_trap_v_out.txt" || ! grep -q
 elif [ "$(head -1 "$OUT/fmtc_ok_zig_out.txt")" != "ce b8 len 2 items 1" ] || [ "$(wc -l < "$OUT/fmtc_ok_zig_out.txt")" != 4 ]; then echo "fmt_c: FAILED -- the in-range control is not four lines beginning with two bytes and one item on Zig (NO CONTROL): $(head -c 200 "$OUT/fmtc_ok_zig_out.txt" "$OUT/fmtc_ok_zig_err.txt" | tr '\n' ' ')"; fail=1
 elif ! diff -q "$OUT/fmtc_ok_v_out.txt" "$OUT/fmtc_ok_zig_out.txt" > /dev/null; then echo "fmt_c: FAILED -- the in-range control differs (V, then Zig):"; diff "$OUT/fmtc_ok_v_out.txt" "$OUT/fmtc_ok_zig_out.txt" | head -6 | cut -c1-200; grep -E "error" "$OUT/fmtc_ok_v_err.txt" "$OUT/fmtc_ok_emit.txt" | head -3 | cut -c1-200; fail=1
 else echo "fmt_c: ok -- 300 under :c traps on both backends (zig exit $fzrc, v exit $fvrc: $FC_MSG); 206 and 184 are two bytes, one item; valid text reversed, centred, padded and cased alike ($(wc -l < "$OUT/fmtc_ok_zig_out.txt") lines)"; fi
+echo "── a refused SQLite statement is reported the same way on both backends, and busyMs is the busy timeout wherever it is named (BUG-716 / 717) ──"
+rows=$((rows + 1))
+# Two programs, each run on both routes. The first is the Zig smoke's own fixture
+# (test/bug716_717_sqlite_refusals_test.zbr): a constraint, a statement SQLite cannot read,
+# a write and a read under another connection's lock with busyMs: 0, the default wait, a
+# negative busyMs. The second is what that fixture does not reach: begin / commit /
+# rollback refused by name, a query refused on its SECOND row (no rows, not one), a refusal
+# with bound parameters, the open's own pragma refused under a lock (the connection comes
+# back carrying it), and writeAhead / busyMs given by position and by name in both orders.
+# Compared: stdout whole, and stderr's `sqlite: ...` and `Sqlite.open: ...` lines -- the
+# agreed words, which stdout alone does not carry.
+cp "$WT/test/bug716_717_sqlite_refusals_test.zbr" "$OUT/sq_fix.zbr"
+cat > "$OUT/sq_more.zbr" <<'ZBR'
+def clean(p: str)
+    File.delete(p)
+    File.delete(p + "-wal")
+    File.delete(p + "-shm")
+
+def say(what: str, db: SqliteDb)
+    print(what + ": code " + db.lastErrorCode().toString() + " " + (db.lastError() orelse "nil"))
+
+def main()
+    var path: str = "zz_v_sqlite_more.db"
+    clean(path)
+    var a: SqliteDb = Sqlite.open(path, false, 0)!
+    print("positional false, 0: " + a.journalMode())
+    a.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)")
+    a.exec("INSERT INTO t (id, v) VALUES (1, 'one')")
+    a.exec("INSERT INTO t (id, v) VALUES (?, ?)", [2, "two"])
+    say("three good statements", a)
+    a.exec("INSERT INTO t (id, v) VALUES (?, ?)", [2, "again"])
+    say("a duplicate key, with parameters", a)
+    a.exec("SELEC (1)")
+    say("an exec SQLite cannot read", a)
+    a.commit()
+    say("commit with none open", a)
+    a.begin()
+    say("begin", a)
+    a.begin()
+    say("begin inside one", a)
+    a.rollback()
+    say("rollback", a)
+    a.rollback()
+    say("rollback with none open", a)
+    var part = a.query("SELECT CASE WHEN id = 2 THEN abs(-9223372036854775807 - 1) ELSE id END AS n FROM t ORDER BY id")
+    print("rows ${part.count()}")
+    say("a query refused on its second row", a)
+    var whole = a.query("SELECT id FROM t ORDER BY id")
+    print("rows ${whole.count()}")
+    say("the next query", a)
+    a.exec("BEGIN EXCLUSIVE")
+    var tm = Timer.start()
+    var b: SqliteDb = Sqlite.open(path, writeAhead: false, busyMs: 0)!
+    say("an open under another's lock", b)
+    b.exec("INSERT INTO t (id, v) VALUES (9, 'nine')")
+    say("a write under it", b)
+    # a busyMs ignored for the default would refuse just the same, five seconds later each
+    print("busyMs: 0 refused at once: ${tm.elapsed() < 2500.0}")
+    a.exec("COMMIT")
+    b.exec("INSERT INTO t (id, v) VALUES (3, 'three')")
+    say("its first statement after the lock went", b)
+    a.close()
+    b.close()
+    var c: SqliteDb = Sqlite.open(path, busyMs: 0, writeAhead: true)!
+    print("named, busyMs first: " + c.journalMode())
+    say("a clean open", c)
+    c.close()
+    var d: SqliteDb = Sqlite.open(path, writeAhead: false)!
+    print("named false: " + d.journalMode() + ", rows ${d.query("SELECT id FROM t").count()}")
+    d.close()
+    var neg: int = 0 - sys.args().count() - 6
+    var e: SqliteDb? = Sqlite.open(path, busyMs: neg)
+    print("negative busyMs answers nil: ${e == nil}")
+    clean(path)
+    print("sq_more: OK")
+ZBR
+sq_bad=""
+for p in sq_fix sq_more; do
+  (cd "$OUT" && "$ZEBRA" $p.zbr > "$OUT/${p}_zig_out.txt" 2> "$OUT/${p}_zig_err.txt"); zrc=$?
+  (cd "$OUT" && "$ZEBRA" --target v $p.zbr > "$OUT/${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$p.v" > "$OUT/${p}_v_out.txt" 2> "$OUT/${p}_v_err.txt"); vrc=$?
+  grep -E '^(sqlite: |Sqlite\.open: )' "$OUT/${p}_zig_err.txt" > "$OUT/${p}_zig_said.txt"
+  grep -E '^(sqlite: |Sqlite\.open: )' "$OUT/${p}_v_err.txt" > "$OUT/${p}_v_said.txt"
+  if [ "$zrc" != 0 ] || ! tail -1 "$OUT/${p}_zig_out.txt" | grep -q ': OK$'; then sq_bad="$sq_bad $p(NO CONTROL: the Zig run exited $zrc: $(tail -c 160 "$OUT/${p}_zig_err.txt" | tr '\n' ' '))"
+  elif [ "$(grep -cE '^    ' "$OUT/${p}_emit.txt")" != 0 ]; then sq_bad="$sq_bad $p(REFUSED: $(grep -m1 -E '^    ' "$OUT/${p}_emit.txt" | cut -c1-140))"
+  elif [ "$vrc" != 0 ]; then sq_bad="$sq_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
+  elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then sq_bad="$sq_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"
+  elif ! diff -q "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" > /dev/null; then sq_bad="$sq_bad $p(the refusal lines differ, V then Zig: $(diff "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
+done
+# the controls of the comparison itself: the Zig run must have SAID refusals (an empty list
+# equals an empty list), a lock refusal and the negative-busyMs words among them
+if [ -n "$sq_bad" ]; then echo "sqlite: FAILED --$sq_bad"; fail=1
+elif ! grep -qF 'sqlite: exec failed: database is locked (code 5)' "$OUT/sq_fix_zig_said.txt" || ! grep -qF 'sqlite: open failed: ' "$OUT/sq_more_zig_said.txt" || ! grep -qF 'is negative -- it is the wait in milliseconds, 0 to refuse at once' "$OUT/sq_more_zig_said.txt"; then echo "sqlite: FAILED -- the Zig run did not say the refusals the comparison rests on (NO CONTROL): $(cat "$OUT/sq_fix_zig_said.txt" "$OUT/sq_more_zig_said.txt" | head -4 | cut -c1-120 | tr '\n' ' ')"; fail=1
+else echo "sqlite: ok -- both programs alike on both backends: stdout ($(wc -l < "$OUT/sq_fix_zig_out.txt") + $(wc -l < "$OUT/sq_more_zig_out.txt") lines) and the refusal lines on stderr ($(wc -l < "$OUT/sq_fix_zig_said.txt") + $(wc -l < "$OUT/sq_more_zig_said.txt"))"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v

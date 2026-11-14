@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **V route: a refused SQLite statement is reported, not a panic, and `Sqlite.open` takes `busyMs`
+  (the V half of BUG-716 / BUG-717).** `db.lastError()`, `db.lastErrorCode()`, the one printed line
+  (`sqlite: <what> failed: <message> (code N)` on stderr) and an empty list from a refused query, as
+  on the Zig route; until now a refused statement ended a V-route program. `Sqlite.open(path,
+  writeAhead:, busyMs:)` places its arguments by name before position there too. `tools/v_check.sh`
+  gains a `sqlite` row that runs the Zig smoke's fixture and a second program on both routes.
+
 - **Servers listen on this machine only unless told otherwise (BUG-719).** `Http.serve`,
   `Ws.serve` and `Tcp.serve` listened on every interface (0.0.0.0) with no way to ask for less, so
   a program started on a laptop answered on every network the laptop was on. They now listen on

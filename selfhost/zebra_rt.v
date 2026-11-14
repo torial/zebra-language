@@ -1810,6 +1810,13 @@ pub struct ZSqliteDb {
 pub mut:
 	path string
 	db   sqlite.DB
+	// BUG-716: the last call's refusal, as the Zig runtime's last_err / last_code -- asked with
+	// db.lastError() / db.lastErrorCode(); nothing and 0 after a call that succeeded. Cleared at
+	// the start of each PUBLIC call (exec, query, begin, commit, rollback), never by the open's
+	// own pragmas, whose refusal the caller reads from the connection the open answered.
+	has_err   bool
+	last_err  string
+	last_code i64
 }
 
 @[heap]
@@ -1818,23 +1825,80 @@ pub mut:
 	cols map[string]string
 }
 
-// Sqlite.open(path, writeAhead: bool = true), as the Zig runtime's _sqlite_open (zebra-language
-// 11b4404): write-ahead with synchronous NORMAL by default (a commit does not wait for the
-// disk); false sets the rollback journal with synchronous FULL ACTIVELY, since the mode lives
-// in the file and an earlier open may have left it in WAL. The emitter passes `true` when the
-// source gives no second argument.
-pub fn zsqlite_open(zr_path string, zr_write_ahead bool) ?&ZSqliteDb {
-	zr_db := sqlite.connect(zr_path) or { return none }
+// A refusal recorded and printed the one way the Zig runtime prints every refusal (its
+// _fail): `sqlite: <what> failed: <SQLite's message> (code N)` on stderr, N SQLite's primary
+// result code (SQLITE_BUSY = 5, ...). V's db.sqlite hands back the step's or the prepare's
+// code and a message of the shape `<errmsg> (<code>) (<query>)`; the tail is taken off again
+// so the line and lastError() carry SQLite's own words and nothing of V's.
+fn (mut zr_d ZSqliteDb) zr_fail(zr_what string, zr_e IError, zr_sql_text string) {
+	zr_raw := zr_e.code()
+	zr_tail := ' (${zr_raw}) (${zr_sql_text})'
+	mut zr_msg := zr_e.msg()
+	if zr_msg.ends_with(zr_tail) {
+		zr_msg = zr_msg[..zr_msg.len - zr_tail.len]
+	}
+	zr_d.has_err = true
+	zr_d.last_err = zr_msg
+	zr_d.last_code = i64(zr_raw) & 0xFF
+	eprintln('sqlite: ${zr_what} failed: ${zr_msg} (code ${zr_d.last_code})')
+}
+
+fn (mut zr_d ZSqliteDb) zr_clear_err() {
+	zr_d.has_err = false
+	zr_d.last_err = ''
+	zr_d.last_code = 0
+}
+
+// One statement without rows wanted: the shared runner (the Zig runtime's _run). It never
+// clears the last error -- the public calls do, the open's pragmas must not.
+fn (mut zr_d ZSqliteDb) zr_run(zr_what string, zr_sql_text string, zr_params []string) {
+	zr_d.db.exec_param_many(zr_sql_text, zr_params) or { zr_d.zr_fail(zr_what, err, zr_sql_text) }
+}
+
+// db.lastError(): str? -- nil after a call that succeeded; db.lastErrorCode(): int -- 0 then
+pub fn (zr_d &ZSqliteDb) last_error() ?string {
+	if !zr_d.has_err {
+		return none
+	}
+	return zr_d.last_err
+}
+
+pub fn (zr_d &ZSqliteDb) last_error_code() i64 {
+	return zr_d.last_code
+}
+
+// Sqlite.open(path, writeAhead: bool = true, busyMs: int = 5000), as the Zig runtime's
+// _sqlite_open (zebra-language 11b4404, e0ebc42): write-ahead with synchronous NORMAL by
+// default (a commit does not wait for the disk); false sets the rollback journal with
+// synchronous FULL ACTIVELY, since the mode lives in the file and an earlier open may have
+// left it in WAL. busyMs is how long a statement waits for another connection's lock before
+// it is refused (BUG-717); 0 refuses at once. It is set BEFORE the two pragmas, which are
+// statements too. A refused pragma leaves the connection open with lastError() set. The
+// emitter passes `true` and `5000` when the source names neither.
+pub fn zsqlite_open(zr_path string, zr_write_ahead bool, zr_busy_ms i64) ?&ZSqliteDb {
+	if zr_busy_ms < 0 {
+		eprintln('Sqlite.open: busyMs ${zr_busy_ms} is negative -- it is the wait in milliseconds, 0 to refuse at once')
+		return none
+	}
+	if zr_busy_ms > 2147483647 {
+		eprintln('Sqlite.open: busyMs ${zr_busy_ms} is too large (at most 2147483647)')
+		return none
+	}
+	zr_db := sqlite.connect(zr_path) or {
+		eprintln('Sqlite.open error: ${err.msg()}')
+		return none
+	}
 	mut zr_d := &ZSqliteDb{
 		path: zr_path
 		db:   zr_db
 	}
+	zr_d.db.busy_timeout(int(zr_busy_ms))
 	zr_mode := if zr_write_ahead { 'WAL' } else { 'DELETE' }
 	zr_level := if zr_write_ahead { 'NORMAL' } else { 'FULL' }
 	// journal_mode answers a row; a refusal leaves the mode as it was, and journal_mode()
 	// says what it is
-	zr_d.db.exec('PRAGMA journal_mode=' + zr_mode) or {}
-	zr_d.db.exec('PRAGMA synchronous=' + zr_level) or {}
+	zr_d.zr_run('open', 'PRAGMA journal_mode=' + zr_mode, []string{})
+	zr_d.zr_run('open', 'PRAGMA synchronous=' + zr_level, []string{})
 	return zr_d
 }
 
@@ -1856,16 +1920,23 @@ fn zsqlite_params(zr_params &ZList[string]) []string {
 	return zr_out
 }
 
-// exec(sql, params): the statement run with its `?` parameters; a failure
-// is the program's fault and says the statement
+// exec(sql, params): the statement run with its `?` parameters. A refusal (a lock, a
+// constraint, a statement SQLite cannot read) is printed and kept for lastError() -- until
+// BUG-716 this route PANICKED on one where the Zig route said nothing at all; both report now.
 pub fn (mut zr_d ZSqliteDb) exec(zr_sql_text string, zr_params &ZList[string]) {
-	zr_d.db.exec_param_many(zr_sql_text, zsqlite_params(zr_params)) or { zbr_panic('sqlite exec: ' + err.msg() + ' -- ' + zr_sql_text) }
+	zr_d.zr_clear_err()
+	zr_d.zr_run('exec', zr_sql_text, zsqlite_params(zr_params))
 }
 
-// query(sql, params): the rows, each its columns by name
+// query(sql, params): the rows, each its columns by name. A refused query answers an EMPTY
+// list, never the rows read before the refusal, with the refusal kept for lastError().
 pub fn (mut zr_d ZSqliteDb) query(zr_sql_text string, zr_params &ZList[string]) &ZList[&ZSqliteRow] {
+	zr_d.zr_clear_err()
 	mut zr_out := new_zlist[&ZSqliteRow]()
-	zr_rows := zr_d.db.exec_param_many(zr_sql_text, zsqlite_params(zr_params)) or { zbr_panic('sqlite query: ' + err.msg() + ' -- ' + zr_sql_text) }
+	zr_rows := zr_d.db.exec_param_many(zr_sql_text, zsqlite_params(zr_params)) or {
+		zr_d.zr_fail('query', err, zr_sql_text)
+		return zr_out
+	}
 	for zr_r in zr_rows {
 		mut zr_cols := map[string]string{}
 		for zr_i, zr_name in zr_r.names {
@@ -1882,15 +1953,18 @@ pub fn (mut zr_d ZSqliteDb) query(zr_sql_text string, zr_params &ZList[string]) 
 
 // begin / commit / rollback: a transaction's statements, as the Zig runtime's
 pub fn (mut zr_d ZSqliteDb) begin() {
-	zr_d.db.exec('BEGIN') or { zbr_panic('sqlite begin: ' + err.msg()) }
+	zr_d.zr_clear_err()
+	zr_d.zr_run('begin', 'BEGIN', []string{})
 }
 
 pub fn (mut zr_d ZSqliteDb) commit() {
-	zr_d.db.exec('COMMIT') or { zbr_panic('sqlite commit: ' + err.msg()) }
+	zr_d.zr_clear_err()
+	zr_d.zr_run('commit', 'COMMIT', []string{})
 }
 
 pub fn (mut zr_d ZSqliteDb) rollback() {
-	zr_d.db.exec('ROLLBACK') or { zbr_panic('sqlite rollback: ' + err.msg()) }
+	zr_d.zr_clear_err()
+	zr_d.zr_run('rollback', 'ROLLBACK', []string{})
 }
 
 pub fn (mut zr_d ZSqliteDb) close() {

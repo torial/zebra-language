@@ -42,6 +42,21 @@ Open bugs live in `BUGS.md`.
   lock cannot be made to land between two rows deterministically; the code path is the same
   `rc != DONE` check after the loop. Nor two threads sharing ONE connection, which see each other's
   refusal (QUICKSTART says to open a connection per thread).
+- **V route (2026-11-14, Fable):** mirrored in `selfhost/zebra_rt.v`. Until now a refused statement
+  on this route PANICKED (`zbr_panic('sqlite exec: ...')`) where the Zig route said nothing; both
+  print the one line and keep the refusal. V's `db.sqlite` hands back the code and a message shaped
+  `<errmsg> (<code>) (<query>)`; the tail is taken off, so `lastError()` and the printed line carry
+  SQLite's words alone, the code masked to the primary (`& 0xFF`). `querySegments` has no V mapping
+  (refused by name, as before). **Witness:** `tools/v_check.sh`'s `sqlite` row -- this entry's
+  fixture and a second program (begin / commit / rollback each refused by name, a duplicate key
+  with bound parameters, a query refused on its SECOND row answering no rows -- `abs()` of the
+  smallest int, which covers the "mid-way" case above without a lock -- the open's own pragma
+  refused under a lock, both argument orders), each run on both routes; stdout compared whole and
+  stderr's `sqlite: ` / `Sqlite.open: ` lines compared line for line, identical at the first run.
+  **Watched red:** 21 faults planted one at a time in `zebra_rt.v` after a control run (nothing
+  kept, nothing printed, V's tail left on, the code unrecorded, each call not clearing, the wrong
+  `<what>`, no busy timeout, a negative `busyMs` opening, the open's refusal dropped, a panic
+  again, ...), all seen -- 20 at the first sweep.
 
 ---
 
@@ -71,7 +86,16 @@ Open bugs live in `BUGS.md`.
   `busyMs: 0` in second position leaves journalMode "wal". Red-checked by removing the
   `sqlite3_busy_timeout` call: the waiting leg fails "database is locked". Refusals:
   `test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr` (five).
-- **V route:** Fable's mirror; until it lands, CodeGenV's open is still positional.
+- **V route (2026-11-14, Fable):** `zsqlite_open(path, write_ahead, busy_ms)` sets V's
+  `busy_timeout` before the two pragmas and refuses a negative or too-large value with the Zig
+  route's words; `CodeGenV.zbr` places the arguments through the same `sqliteOpenParamName` (imported,
+  not copied). **Watched red:** with a named argument in second position taken as writeAhead again,
+  rebuilt, the `sqlite` row fails; restored and rebuilt, it passes.
+- **A hole the V sweep found in this fixture, on both routes:** a `busyMs` that is IGNORED in
+  favour of the default passes it -- `busyMs: 0` under a lock is refused either way, five seconds
+  later. The V row's second program times it (`busyMs: 0 refused at once: true`, under 2.5 s for
+  an open and a write under an EXCLUSIVE lock); the fixture's own red-check removed the
+  `sqlite3_busy_timeout` call, which is a different fault.
 
 ---
 

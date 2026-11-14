@@ -412,6 +412,8 @@ New rows for the rules table:
 | `on c'0'..c'9'` | `` rune(`0`)...rune(`9`) `` | V's match range arm is three dots, inclusive |
 | `s.chars()` | `zstr_chars(s)` | the runtime's own decoder: an invalid byte is the escape char U+DC00+b (docs/design/str_invalid_utf8.md) |
 | `"${n:c}"`, n an int | `${zbyte_str(n)}` | one byte, trapping outside 0..255 (BUG-713; V's own `:c` writes a codepoint) |
+| `Sqlite.open(p, writeAhead: w, busyMs: b)` | `zsqlite_open(p, w, b)` | arguments placed by name, then position (`TypeChecker.sqliteOpenParamName`, the checker's own; BUG-717); `true` and `5000` when not given |
+| `db.lastError()`, `db.lastErrorCode()` | `db.last_error()` (`?string`), `db.last_error_code()` | the last call's refusal (BUG-716); a refused `exec` / `query` prints and returns, where this route panicked until 2026-11-14 |
 | `peek()` inside a class | `self.peek()` | V has no implicit receiver |
 | `var k = U.v()` | `mut k := U(U_v{})` | V types a variable by the variant struct unless cast to the sum type |
 | `xs.len` on a List | `xs.count()` | the runtime's list is a struct; `.len` is the string's and the array's |

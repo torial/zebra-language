@@ -20,7 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
-use TypeChecker exposing namespaceMembers, intLitSuffix, floatLitSuffix
+use TypeChecker exposing namespaceMembers, intLitSuffix, floatLitSuffix, sqliteOpenParamName
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtAllocate, StmtCopyOut, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
@@ -1952,6 +1952,10 @@ class VGen
                             return "&ZList[&ZSqliteRow]"
                         if ot == "&ZSqliteDb" and cm.member == "journalMode"
                             return "string"
+                        if ot == "&ZSqliteDb" and cm.member == "lastError"   # BUG-716
+                            return "?string"
+                        if ot == "&ZSqliteDb" and cm.member == "lastErrorCode"
+                            return "i64"
                         if jowner == "Dir" and (cm.member == "list" or cm.member == "walk")
                             return "&ZList[string]"
                         if jowner == "File" and (cm.member == "listDir" or cm.member == "readLines")
@@ -4340,6 +4344,10 @@ class VGen
             return obj + ".str()"   # a byte's toString is its number, as on the Zig route (until BUG-712 this route's char WAS a u8 and this printed the character)
         if rtype == "&ZSqliteDb" and name == "journalMode" and args.count() == 0
             return obj + ".journal_mode()"
+        if rtype == "&ZSqliteDb" and name == "lastError" and args.count() == 0   # BUG-716: the last call's refusal, nil after a success
+            return obj + ".last_error()"
+        if rtype == "&ZSqliteDb" and name == "lastErrorCode" and args.count() == 0
+            return obj + ".last_error_code()"
         if rtype == "&ZSqliteDb" and (name == "exec" or name == "query") and args.count() == 2
             return obj + "." + name + "(" + .exprStr(args.at(0).value) + ", " + .sqliteParamsStr(args.at(1).value) + ")"
         if rtype == "&ZSqliteDb" and (name == "exec" or name == "query") and args.count() == 1
@@ -4421,15 +4429,25 @@ class VGen
                 .refuse(ns + "." + m.member + " (the V runtime has no " + ns + " yet)", span)
             return ""   # (before the arguments are rendered: rendering binds temporaries, and a second rendering bound them twice)
         var name = m.member
-        # Sqlite.open(path, writeAhead: bool = true): the checker refuses any other
-        # argument, so a second one -- named or not -- is the write-ahead choice and its
-        # absence the default (CodeGen's genSqliteCall, zebra-language 11b4404). Before the
-        # arguments are rendered together: argsStr refuses a named argument to a callee it
-        # has no signature for, and this one is the runtime's.
+        # Sqlite.open(path, writeAhead: bool = true, busyMs: int = 5000): the checker refuses
+        # any other argument. Each one past the path is placed by sqliteOpenParamName -- the
+        # checker's own resolution, which CodeGen's genSqliteCall uses too (BUG-717,
+        # zebra-language e0ebc42) -- so a named `busyMs:` in second position is the busy
+        # timeout; taken by POSITION, as this was, `Sqlite.open(p, busyMs: 0)` opened with
+        # write-ahead off. Before the arguments are rendered together: argsStr refuses a
+        # named argument to a callee it has no signature for, and this one is the runtime's.
         if ns == "Sqlite" and name == "open" and args.count() > 0
-            if args.count() > 1
-                return "zsqlite_open(" + .exprStr(args.at(0).value) + ", " + .exprStr(args.at(1).value) + ")"
-            return "zsqlite_open(" + .exprStr(args.at(0).value) + ", true)"
+            var wa_s: str = "true"
+            var busy_s: str = "5000"
+            var ai: int = 1
+            while ai < args.count()
+                var pn: str = sqliteOpenParamName(args.at(ai), ai)
+                if pn == "writeAhead"
+                    wa_s = .exprStr(args.at(ai).value)
+                else if pn == "busyMs"
+                    busy_s = .exprStr(args.at(ai).value)
+                ai = ai + 1
+            return "zsqlite_open(" + .exprStr(args.at(0).value) + ", " + wa_s + ", " + busy_s + ")"
         var a = .argsStr(args)
         if ns == "File"
             if name == "exists": return "zfile_exists(" + a + ")"
@@ -4510,7 +4528,7 @@ class VGen
             .refuse("Json." + name, span)
             return "zjson_" + snakeCase(name) + "(" + a + ")"
         if ns == "Sqlite"
-            if name == "open": return "zsqlite_open(\"\", true)"   # no path at all: the Zig route opens ""
+            if name == "open": return "zsqlite_open(\"\", true, 5000)"   # no path at all: the Zig route opens ""
             .refuse("Sqlite." + name, span)
             return "zsqlite_" + snakeCase(name) + "(" + a + ")"
         if ns == "DateTime"
