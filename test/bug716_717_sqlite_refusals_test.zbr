@@ -44,13 +44,44 @@ def main()
     var b: SqliteDb = Sqlite.open(path, busyMs: 0)!
     assert b.journalMode() == "wal", "busyMs: 0 in second position left write-ahead on; got " + b.journalMode()
     a.exec("BEGIN IMMEDIATE")
+    var tz = Timer.start()
     b.exec("INSERT INTO t (id, v) VALUES (2, 'two')")
+    var tzms = tz.elapsed()
+    # busyMs: 0 must REFUSE AT ONCE, not after the default 5 s: a busyMs that is ignored in
+    # favour of the default is refused too, just later (Fable, 2026-11-14).
+    assert tzms < 2500.0, "busyMs: 0 refused at once, not after the default wait (" + tzms.toString() + " ms)"
     assert b.lastErrorCode() == 5, "a write under another's lock is SQLITE_BUSY (5) with busyMs: 0; got " + b.lastErrorCode().toString()
     print("busy write: " + (b.lastError() orelse "?"))
     # a refused READ answers an empty list WITH an error -- never "no rows" silently
     var r = b.query("INSERT INTO t (id, v) VALUES (3, 'three') RETURNING id")
     assert r.count() == 0 and b.lastErrorCode() == 5, "a refused query is empty and says why"
     a.exec("COMMIT")
+
+    # ── an open under another connection's EXCLUSIVE lock: ONE refusal, then it stops ──
+    # A ROLLBACK-journal database, where an EXCLUSIVE lock refuses BOTH of the open's pragmas
+    # (in WAL mode the second one passes, so a WAL database cannot tell one line from two --
+    # measured: the first version of this leg did not go red with the stop removed). The open
+    # prints `sqlite: open failed: ...` exactly once (the registration counts it) and answers
+    # the connection with lastError() set. It used to run the second pragma too and print twice.
+    var rpath: str = "zz_bug716_717_rb.db"
+    clean(rpath)
+    var x: SqliteDb = Sqlite.open(rpath, writeAhead: false)!
+    x.exec("CREATE TABLE t (id INTEGER)")
+    x.exec("BEGIN EXCLUSIVE")
+    x.exec("INSERT INTO t (id) VALUES (1)")
+    var e: SqliteDb = Sqlite.open(rpath, writeAhead: false, busyMs: 0)!
+    assert e.lastErrorCode() == 5, "the open's pragma was refused by the lock; got " + e.lastErrorCode().toString()
+    x.exec("COMMIT")
+    e.close()
+    x.close()
+    clean(rpath)
+
+    # ── a step refused MID-RESULT, deterministically: row 1 is read, row 2 overflows ──
+    a.exec("CREATE TABLE u (id INTEGER PRIMARY KEY)")
+    a.exec("INSERT INTO u (id) VALUES (1), (2)")
+    var ov = a.query("SELECT CASE WHEN id = 2 THEN abs(-9223372036854775807 - 1) ELSE id END AS x FROM u ORDER BY id")
+    assert ov.count() == 0, "a query refused on its second row answers NO rows, not the first; got " + ov.count().toString()
+    assert a.lastErrorCode() == 1 and (a.lastError() orelse "").contains("integer overflow"), "and says why: " + (a.lastError() orelse "nil")
 
     # ── the default busyMs (5000) waits for the lock and then succeeds ───────
     var c: SqliteDb = Sqlite.open(path)!

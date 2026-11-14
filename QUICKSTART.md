@@ -146,6 +146,7 @@ zebra hello.zbr World
 | `zebra check file.zbr` | Dead-code analysis |
 | `zebra debug file.zbr` | Launch with LLDB-DAP debugger |
 | `zebra --emit-zig file.zbr` | Emit Zig source without running |
+| `zebra --emit-exe=app file.zbr` | Build once and keep the executable (`app.exe` on Windows); do not run it |
 | `zebra --turbo file.zbr` | Strip contract checks (§24) |
 | `zebra --single-threaded file.zbr` | Commit to no threads → drops the allocator's mutex (faster). Spawning a thread (`ThreadPool`/`sys.go`) then becomes a compile error. |
 | `zebra --gui-backend=libui_ng f.zbr` | GUI with native OS controls (§30) |
@@ -3505,6 +3506,7 @@ zebra build                           # project build system (see below)
 zebra check file.zbr                  # dead-code analysis
 zebra debug file.zbr                  # launch with LLDB-DAP debugger
 zebra --emit-zig file.zbr             # emit Zig source without running
+zebra --emit-exe=app file.zbr         # build once, keep the executable, do not run it
 zebra --turbo file.zbr                # strip contract checks (faster)
 zebra --gui-backend=libui_ng f.zbr    # GUI with native OS controls
 ```
@@ -3535,8 +3537,8 @@ def main()
 
     # exe(name, entry_source) → BuildTarget
     var app = b.exe("myapp", "src/main.zbr")
-    app.platform("x86_64-linux")      # optional: cross-compilation target
-    app.option("optimize", "Debug")    # optional: zig build-exe flag
+    app.platform("x86_64-linux")      # recorded; NOT applied yet (no cross-compiling)
+    app.option("optimize", "Debug")    # recorded; NOT applied yet -- use `zebra build --release`
 
     # lib(name, entry_source) → BuildTarget
     var lib = b.lib("mylib", "src/lib.zbr")
@@ -3547,7 +3549,7 @@ def main()
     # b.dependency(name, version) — post-1.0 package manager stub (no-op now)
     b.dependency("some-pkg", "0.1.0")
 
-    # b.run() — compile all exe targets via zig build-exe
+    # b.run() — build every exe target (zebra --emit-exe)
     b.run()
 ```
 
@@ -3559,13 +3561,24 @@ style); the auto-run is a no-op if the explicit call already ran.
 ```python
 def main()
     var b = Build.new()
-    b.exe("myapp", "src/main.zbr").option("optimize", "ReleaseSafe")
+    b.exe("myapp", "src/main.zbr")
     # no b.run() needed — zebra build calls it automatically
 ```
 
 **How `b.run()` works:** for each `exe` target it runs
-`zebra --emit-zig <entry>` then `zig build-exe <zig_file> -femit-bin=zig-out/bin/<name>`.
-`lib` and `test_` targets are stubs that print a "not yet implemented" message.
+`zebra --emit-exe=zig-out/bin/<name> <entry>` -- the same compile-and-link a run uses (C
+sources and prebuilt libraries a module `use`s, SQLite when the program opens a database,
+libc), so a program that runs builds too (BUG-720). On Windows the file is
+`zig-out/bin/<name>.exe`. `zebra build --release` (and `--turbo`, `--cpu=`,
+`--single-threaded`) applies to every target; `.option(...)` and `.platform(...)` are recorded
+but not applied yet. `lib` and `test_` targets are stubs that print a "not yet implemented"
+message.
+
+**One program, no build file:** `zebra --emit-exe=PATH file.zbr` builds it once and keeps the
+executable at PATH without running it, with the same flags as a run (`--release` for an
+optimised one). On Windows `.exe` is added when PATH has no extension; the line `wrote PATH`
+names the file. A directory that does not exist, or a PATH that is a directory, is refused by
+name. The executable needs nothing beside it -- SQLite and the runtime are linked in.
 
 **BuildTarget chain methods** all return `self`, so they can be chained:
 
@@ -3683,6 +3696,7 @@ from both compilers in a structured format.
 | Flag | Effect |
 |------|--------|
 | `--emit-zig` | Write Zig source to stdout instead of compiling |
+| `--emit-exe=PATH` | Build the executable at PATH and do not run it (`.exe` added on Windows when PATH has no extension) |
 | `--output-dir DIR` | Write generated Zig files to `DIR/` |
 | `--turbo` | Strip all contract checks (`require`/`ensure`/`invariant`) |
 | `--cpu=VALUE` | Pass `-mcpu=VALUE` to Zig (e.g. `native`, `x86_64+avx2`) — see §32 |
@@ -5757,7 +5771,8 @@ var quick: SqliteDb? = Sqlite.open("app.db", busyMs: 0)             # never wait
 var both: SqliteDb? = Sqlite.open("app.db", writeAhead: false, busyMs: 20000)
 ```
 
-The open's own pragmas are statements too. If one is refused, the connection stays open with
+The open's own pragmas are statements too. If one is refused, the open stops there -- one
+`sqlite: open failed` line, not one per pragma -- and the connection stays open with
 `lastError()` set (below): ask `lastError()` straight after `open` if you need to know the mode
 took. `journalMode()` is the live answer either way.
 

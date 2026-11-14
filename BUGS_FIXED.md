@@ -6,6 +6,64 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-720: `zebra build` cannot build a program that uses SQLite -- FIXED 2026-11-14
+- **Status:** FIXED 2026-11-14 (filed 2026-11-13; Fable, from Graze; reproduced here on a copy of
+  C:/tmp/link_probe)
+- **Repro:** `build.zbr` holding `b.exe("main_b", "main_b.zbr")`, where `main_b.zbr` calls
+  `Sqlite.open` in its root (it runs fine with `zebra main_b.zbr`). `zebra build` fails with 16
+  `lld-link: undefined symbol: sqlite3_...` errors and `build: zig build-exe exit 1`.
+- **Cause:** the build path runs `zig build-exe` on the emitted Zig and never adds
+  `vendor/sqlite/sqlite3.c`; the run path does (by BUG-718's root-only decision).
+- **Second half (Windows):** for a program without SQLite the build works, but the output is
+  `zig-out/bin/<name>` with no `.exe` (beside `<name>.pdb`), which cmd will not run by name.
+- **Why it matters:** there is no supported way to build a SQLite app once. Every Graze start is
+  a compile (7 s for the task demo, 25 s with `--release`), and the only executable is the
+  `.zig.run.exe` in a scratch directory.
+- **Fix shape:** the build path takes the same link decision as the run path (after BUG-718, the
+  module-graph one), and names the file `.exe` on Windows.
+- **Control when fixing:** the repro builds and the binary prints `n = 42`; a program without
+  SQLite still builds without sqlite3.c; on Windows the output ends `.exe`.
+
+- **Not in the 716-719 batch (2026-11-14, Opus):** the build path is a second, smaller copy of the
+  run path's link step -- `zig build-exe <file> -femit-bin=...` with no `-lc`, no `use`d C sources,
+  no prebuilt libraries and no sqlite3.c. Adding sqlite3.c there would fix this repro and leave the
+  copy to drift again. The proposed shape: `zebra build` asks the compiler to compile-and-link
+  without running (one link decision, the run path's), and names the output `.exe` on Windows.
+  That is a CLI surface change, so it is agreed with Fable first.
+- **Fix (2026-11-14, Opus; shape agreed with Fable):** a new public flag, `--emit-exe=PATH`: the
+  run path with its last step replaced -- the same backend choice, `use`d C sources, prebuilt
+  libraries, sqlite3.c, `-lc`, `-O` and `-mcpu` -- so a build and a run of one source are one
+  program. The runtime's `_build_run` builds each exe target with `zebra --emit-exe=zig-out/bin/
+  <name>[.exe] <entry>` instead of `--emit-zig` plus a bare `zig build-exe`. That bare call had a
+  SECOND fault besides the missing inputs: it ran whatever `zig` was first on PATH (here the
+  shared 0.16), not the compiler's. Fable's proposal was an internal seam; it became public because
+  a flag the compiler accepts and `--help` does not list is invisible to `surface-freeze`, and
+  because `--emit-exe` alone is Graze's build-once with no build.zbr.
+  `zebra build --release` (and `--turbo`, `--cpu=`, `--single-threaded`) used to reach no target --
+  each is a separate compiler process -- so a release build of the targets was Debug (BUG-228's
+  shape). The compiler sets `ZEBRA_BUILD_FLAGS` from its own command line (always, even empty, so
+  a shell value cannot leak in) and `_build_run` appends it; the build line prints it.
+  `--emit-exe` refuses, by name: a missing directory, a PATH that is a directory, the space form
+  `--emit-exe file.zbr`, and `-c` / `--check-full` / `--emit-zig` / `--shared` / `--target` /
+  `--gui-backend` / `zebra test` / `zebra build` / `--library-mode` / program arguments. On Windows
+  `.exe` is added only when PATH has no extension, and `wrote PATH` names the file.
+  `.option(...)` and `.platform(...)` were documented as applied (`option("optimize",
+  "ReleaseSafe")`) and never were; QUICKSTART now says they are recorded and not applied.
+- **Witness:** `tools/cli_check.sh`, ten legs, from a scratch dir outside the repo, each built
+  executable run from ANOTHER directory: `--emit-exe=PATH` (+ `.exe`, the `wrote` line, it runs
+  alone), `app.bin` kept as given, the four refusals, byte-identity of the run path's executable and
+  `--emit-exe`'s at one output path (fast backend only: zig's LLVM output differs in 10 bytes
+  between two identical builds, measured, so it witnesses nothing there and is not asked to), this
+  repro through `zebra build` printing `n = 42` alone, and `zebra build --release` smaller than
+  `zebra build` by >25%. Red-checked with the real attacker -- the committed `_build_run`: the
+  repro leg fails with `lld-link: undefined symbol: sqlite3_close_v2`; with only the flag
+  forwarding removed the release leg alone fails, 15,728,640 bytes both ways.
+- **Found on the way:** an executable from Zig 0.16's fast backend IMPORTS a `compiler_rt.dll`
+  the linker writes beside it, and moved alone it prints nothing and exits 0. The pinned 0.17
+  writes none (measured). `--emit-exe` says so when one is beside its output.
+
+---
+
 ### BUG-716: a failed SQLite statement is silent, and a refused query reads as "no rows" -- FIXED 2026-11-14
 - **Status:** FIXED 2026-11-14 (filed 2026-11-13; Fable, from a Graze cold-start, measured on Graze's task
   demo at 7d24f18; the code read confirmed here)
@@ -38,9 +96,18 @@ Open bugs live in `BUGS.md`.
   cleared by the next good call), a prepare refusal (1), a write and a `RETURNING` query under
   another connection's `BEGIN IMMEDIATE` with `busyMs: 0` (5, empty list), and the control: an
   empty SELECT answers [] with NO error.
-- **Not covered by a fixture:** a step refused MID-WAY through a result (rows already read) -- a
-  lock cannot be made to land between two rows deterministically; the code path is the same
-  `rc != DONE` check after the loop. Nor two threads sharing ONE connection, which see each other's
+- **Follow-up legs (2026-11-14, from Fable's V mirror):** a step refused MID-WAY through a result
+  has a deterministic case with no lock -- `abs()` of the smallest int on row 2 -- so the fixture
+  asserts it answers NO rows and says "integer overflow" (1). The `busyMs: 0` write is TIMED (under
+  2.5 s): a busyMs ignored in favour of the default is refused too, five seconds later, and passed
+  the fixture -- red-checked by setting the timeout to 5000 whatever was asked (5499 ms, assert
+  fails). And an open under another connection's EXCLUSIVE lock on a ROLLBACK-journal database
+  (`writeAhead: false`, `busyMs: 0`) printed `sqlite: open failed` once per pragma; the open now
+  stops at its first refusal on both routes (the V half is Fable's text, landed with BUG-720's
+  commit so the v_check row never sees one route ahead). `smoke_run_once` counts the line: 1, and
+  2 with the stop removed. The first version of that leg used the WAL database and did NOT go red
+  -- in WAL mode the second pragma passes -- so it moved to a rollback-journal one.
+- **Not covered by a fixture:** two threads sharing ONE connection, which see each other's
   refusal (QUICKSTART says to open a connection per thread).
 - **V route (2026-11-14, Fable):** mirrored in `selfhost/zebra_rt.v`. Until now a refused statement
   on this route PANICKED (`zbr_panic('sqlite exec: ...')`) where the Zig route said nothing; both

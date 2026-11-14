@@ -1898,6 +1898,9 @@ pub fn zsqlite_open(zr_path string, zr_write_ahead bool, zr_busy_ms i64) ?&ZSqli
 	// journal_mode answers a row; a refusal leaves the mode as it was, and journal_mode()
 	// says what it is
 	zr_d.zr_run('open', 'PRAGMA journal_mode=' + zr_mode, []string{})
+	if zr_d.has_err {
+		return zr_d // one open, one refusal: the second pragma would only repeat it
+	}
 	zr_d.zr_run('open', 'PRAGMA synchronous=' + zr_level, []string{})
 	return zr_d
 }

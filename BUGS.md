@@ -184,32 +184,6 @@
 
 ---
 
-### BUG-720: `zebra build` cannot build a program that uses SQLite
-- **Status:** OPEN (filed 2026-11-13; Fable, from Graze; reproduced here on a copy of
-  C:/tmp/link_probe)
-- **Repro:** `build.zbr` holding `b.exe("main_b", "main_b.zbr")`, where `main_b.zbr` calls
-  `Sqlite.open` in its root (it runs fine with `zebra main_b.zbr`). `zebra build` fails with 16
-  `lld-link: undefined symbol: sqlite3_...` errors and `build: zig build-exe exit 1`.
-- **Cause:** the build path runs `zig build-exe` on the emitted Zig and never adds
-  `vendor/sqlite/sqlite3.c`; the run path does (by BUG-718's root-only decision).
-- **Second half (Windows):** for a program without SQLite the build works, but the output is
-  `zig-out/bin/<name>` with no `.exe` (beside `<name>.pdb`), which cmd will not run by name.
-- **Why it matters:** there is no supported way to build a SQLite app once. Every Graze start is
-  a compile (7 s for the task demo, 25 s with `--release`), and the only executable is the
-  `.zig.run.exe` in a scratch directory.
-- **Fix shape:** the build path takes the same link decision as the run path (after BUG-718, the
-  module-graph one), and names the file `.exe` on Windows.
-- **Control when fixing:** the repro builds and the binary prints `n = 42`; a program without
-  SQLite still builds without sqlite3.c; on Windows the output ends `.exe`.
-
-- **Not in the 716-719 batch (2026-11-14, Opus):** the build path is a second, smaller copy of the
-  run path's link step -- `zig build-exe <file> -femit-bin=...` with no `-lc`, no `use`d C sources,
-  no prebuilt libraries and no sqlite3.c. Adding sqlite3.c there would fix this repro and leave the
-  copy to drift again. The proposed shape: `zebra build` asks the compiler to compile-and-link
-  without running (one link decision, the run path's), and names the output `.exe` on Windows.
-  That is a CLI surface change, so it is agreed with Fable first.
----
-
 ### BUG-721: `HttpResponse.text` (and its other fields) have no type in the checker
 - **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's model calls)
 - **Repro:** `def g(resp: HttpResponse)` with `var u = resp.text` then `print(u.len)`: `-c`

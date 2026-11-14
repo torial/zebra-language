@@ -662,6 +662,32 @@ smoke_run() {
     fi
 }
 
+# Like smoke_run, but asserts the message appears EXACTLY ONCE in a run that SUCCEEDS --
+# the passing-program twin of smoke_run_fail_once. (BUG-716 follow-up: an open refused by a
+# lock printed `sqlite: open failed` once per pragma; `grep -qF` cannot tell one from two.)
+smoke_run_once() {
+    local zbr="$1"
+    local expected="$2"
+    local label
+    label="$(basename "$zbr" .zbr)_run_once"
+    local got n
+    if ! got=$(zbr_run_retrying "$ZEBRA" "$zbr" 2>&1); then
+        echo "  FAIL: $label (non-zero exit)" >&2
+        echo "$got" | tail -6 >&2
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    n=$(echo "$got" | grep -cF -- "$expected")
+    if [[ "$n" -eq 1 ]]; then
+        echo "  PASS: $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $label (expected '$expected' exactly ONCE, got $n)" >&2
+        echo "$got" | grep -F -- "$expected" >&2
+        FAIL=$((FAIL + 1))
+    fi
+}
+
 # smoke_quine <zbr> -- the program's STDOUT must equal its own source, byte for byte
 # (`cmp`, so a trailing newline counts). A substring check cannot prove a quine.
 smoke_quine() {
@@ -2176,6 +2202,7 @@ smoke_run_fail test/bug703_fmt_c_runtime_trap_test.zbr "integer conversion out o
 # another connection's lock, `busyMs: 0` refuses at once.
 smoke_run_bounded test/bug716_717_sqlite_refusals_test.zbr "bug716_717: OK" 120
 smoke_run test/bug716_717_sqlite_refusals_test.zbr "sqlite: exec failed: database is locked (code 5)"
+smoke_run_once test/bug716_717_sqlite_refusals_test.zbr "sqlite: open failed"
 smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs is -1 -- it is the wait in milliseconds"
 smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs is given twice"
 smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs must be an int (milliseconds), got str"

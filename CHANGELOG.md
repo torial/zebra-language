@@ -23,6 +23,22 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`--emit-exe=PATH`: build once, keep the executable, do not run it; `zebra build` uses it
+  (BUG-720).** A program that ran could fail to BUILD: `zebra build` compiled each target with
+  its own bare `zig build-exe`, which added no sqlite3.c, no libc, no `use`d C sources or
+  prebuilt libraries, ran whatever `zig` was first on PATH, and on Windows wrote
+  `zig-out/bin/<name>` with no `.exe`. Each target is now built by `zebra --emit-exe`, the run
+  path's own compile-and-link with the last step replaced, so a build and a run of the same
+  source are the same program (byte-identical on the fast debug backend, checked by
+  `cli-surface`). `zebra build --release` / `--turbo` / `--cpu=` / `--single-threaded` reach
+  every target; they used to build Debug whatever was asked. `--emit-exe` refuses a missing
+  directory, a PATH that is a directory, and the flags that build nothing (`-c`, `--emit-zig`,
+  `--shared`, `--target`, `--gui-backend`, `zebra test`), each by name.
+
+- **`Sqlite.open` stops at its first refused pragma (both routes).** Under another connection's
+  lock an open with `writeAhead: false` printed `sqlite: open failed: database is locked`
+  twice, one per pragma; it prints once, and `lastError()` keeps the first refusal.
+
 - **V route: a refused SQLite statement is reported, not a panic, and `Sqlite.open` takes `busyMs`
   (the V half of BUG-716 / BUG-717).** `db.lastError()`, `db.lastErrorCode()`, the one printed line
   (`sqlite: <what> failed: <message> (code N)` on stderr) and an empty list from a refused query, as

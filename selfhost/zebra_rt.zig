@@ -2155,31 +2155,39 @@ pub fn _build_run(b: *_Build) void {
         std.process.exit(1);
     };
     defer _allocator.free(self_exe);
-    std.Io.Dir.cwd().createDirPath(_io, ".zig-cache/zbr") catch {};
+    // BUG-720: each exe target is built by the COMPILER, `zebra --emit-exe=zig-out/bin/<name>
+    // <entry>` -- the run path's own link step (backend choice, -lc, `use`d C sources and
+    // prebuilt libraries, sqlite3.c, the pinned zig). This used to run `--emit-zig` and then a
+    // bare `zig build-exe` with none of those: a SQLite program failed to link (16 undefined
+    // sqlite3_* symbols), any C dependency was dropped, the zig was whatever PATH found rather
+    // than the compiler's, and on Windows the output had no `.exe`. ZEBRA_BUILD_FLAGS carries
+    // `zebra build`'s --release / --turbo / --cpu / --single-threaded (set by the compiler).
+    const bflags_env = _sys_getenv("ZEBRA_BUILD_FLAGS");
+    defer if (bflags_env) |f| _allocator.free(f);
     std.Io.Dir.cwd().createDirPath(_io, "zig-out/bin") catch {};
     for (b.targets.items) |t| {
         switch (t.kind) {
             .exe => {
-                const stem     = std.fs.path.stem(t.entry);
-                const zig_file  = std.fmt.allocPrint(_allocator, ".zig-cache/zbr/{s}.zig", .{stem})     catch @panic("OOM");
-                const out_path  = std.fmt.allocPrint(_allocator, "zig-out/bin/{s}",         .{t.name})   catch @panic("OOM");
-                const emit_flag = std.fmt.allocPrint(_allocator, "-femit-bin={s}",           .{out_path}) catch @panic("OOM");
-                defer _allocator.free(zig_file);
+                const exe_ext: []const u8 = if (builtin.os.tag == .windows and std.mem.indexOfScalar(u8, t.name, '.') == null) ".exe" else "";
+                const out_path  = std.fmt.allocPrint(_allocator, "zig-out/bin/{s}{s}", .{ t.name, exe_ext }) catch @panic("OOM");
+                const emit_flag = std.fmt.allocPrint(_allocator, "--emit-exe={s}",     .{out_path})           catch @panic("OOM");
                 defer _allocator.free(out_path);
                 defer _allocator.free(emit_flag);
-                std.debug.print("build: {s}: emit-zig {s}\n", .{ t.name, t.entry });
-                {
-                    const argv = [_][]const u8{ self_exe, "--emit-zig", t.entry, "--output-dir", ".zig-cache/zbr" };
-                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .ignore, .stderr = .inherit }) catch { std.debug.print("build: emit-zig spawn failed\n", .{}); std.process.exit(1); };
-                    const term = ch.wait(_io) catch { std.debug.print("build: emit-zig wait failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: emit-zig exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: emit-zig terminated\n", .{}); std.process.exit(1); } }
+                var argv: std.ArrayList([]const u8) = .empty;
+                defer argv.deinit(_allocator);
+                argv.append(_allocator, self_exe) catch @panic("OOM");
+                if (bflags_env) |f| {
+                    var it = std.mem.tokenizeScalar(u8, f, ' ');
+                    while (it.next()) |flag| argv.append(_allocator, flag) catch @panic("OOM");
                 }
-                std.debug.print("build: {s}: zig build-exe {s}\n", .{ t.name, zig_file });
+                argv.append(_allocator, emit_flag) catch @panic("OOM");
+                argv.append(_allocator, t.entry) catch @panic("OOM");
+                const bflags_shown: []const u8 = if (bflags_env) |f| f else "";
+                std.debug.print("build: {s}: zebra {s}{s}{s} {s}\n", .{ t.name, bflags_shown, if (bflags_shown.len > 0) " " else "", emit_flag, t.entry });
                 {
-                    const argv = [_][]const u8{ "zig", "build-exe", zig_file, emit_flag };
-                    var ch = std.process.spawn(_io, .{ .argv = &argv, .stdin = .ignore, .stdout = .inherit, .stderr = .inherit }) catch { std.debug.print("build: zig build-exe spawn failed\n", .{}); std.process.exit(1); };
-                    const term = ch.wait(_io) catch { std.debug.print("build: zig build-exe wait failed\n", .{}); std.process.exit(1); };
-                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: zig build-exe exit {d}\n", .{c}); std.process.exit(1); } }, else => { std.debug.print("build: zig build-exe terminated\n", .{}); std.process.exit(1); } }
+                    var ch = std.process.spawn(_io, .{ .argv = argv.items, .stdin = .ignore, .stdout = .inherit, .stderr = .inherit }) catch { std.debug.print("build: {s}: could not start the compiler ({s})\n", .{ t.name, self_exe }); std.process.exit(1); };
+                    const term = ch.wait(_io) catch { std.debug.print("build: {s}: compiler wait failed\n", .{t.name}); std.process.exit(1); };
+                    switch (term) { .exited => |c| { if (c != 0) { std.debug.print("build: {s}: the compiler refused {s} (exit {d})\n", .{ t.name, t.entry, c }); std.process.exit(1); } }, else => { std.debug.print("build: {s}: the compiler was terminated\n", .{t.name}); std.process.exit(1); } }
                 }
                 std.debug.print("build: {s} \xe2\x86\x92 {s}\n", .{ t.name, out_path });
             },
@@ -5015,6 +5023,9 @@ pub const _SqliteDbInner = struct {
     // Whatever SQLite answered is what journalMode() reports; nothing is assumed.
     pub fn _setWriteAhead(self: *_SqliteDbInner, on_: bool) void {
         _ = self._answer(if (on_) "PRAGMA journal_mode=WAL" else "PRAGMA journal_mode=DELETE", "open");
+        // One open, one refusal: under a lock the second pragma would only repeat the first's
+        // "database is locked" line, and overwrite lastError() with the same text (Fable, 2026-11-14).
+        if (self.last_err != null) return;
         self._run(if (on_) "PRAGMA synchronous=NORMAL" else "PRAGMA synchronous=FULL", &.{}, "open");
     }
     // SQLite's own answer, read live: "wal", "delete", "memory" (a :memory: db), ... --

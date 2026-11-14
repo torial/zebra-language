@@ -1286,6 +1286,7 @@ def emitUsage(to_stdout: bool)
     usageLine("  zebra --check-full <source.zbr>           full check: front end + zig analysis; never runs the program", to_stdout)
     usageLine("  zebra --emit-zig <source.zbr>            print generated Zig to stdout", to_stdout)
     usageLine("  zebra --emit-zig --output-dir DIR        emit .zig files to DIR", to_stdout)
+    usageLine("  zebra --emit-exe=PATH <source.zbr>       build once, keep the executable at PATH, do not run it (.exe added on Windows when PATH has none)", to_stdout)
     usageLine("  zebra --shared <lib.zbr>                 build a shared library (.so/.dll/.dylib) next to the source;", to_stdout)
     usageLine("                                           `@export(\"sym\") class` factories are its symbols (QUICKSTART §44)", to_stdout)
     usageLine("  zebra --release <source.zbr>             optimised build (default: debug); independent of --turbo", to_stdout)
@@ -3977,6 +3978,25 @@ def compileGuiProject(zig_path: str, mode_run: bool, backend: str, scaffold_only
 # contextual-self call there is "'this' used outside a class/struct method" -- which is
 # exactly how the first version of this failed, silently, inside a regen whose stderr
 # goes to /dev/null.
+# BUG-720: `--emit-exe=PATH` built the program; say exactly which file it wrote (the original
+# report could not tell `zig-out/bin/name` from `name.exe`). On stderr, like `--shared` and
+# node-addon's `wrote` lines. The scratch .zig goes with the scratch directory (exitWith); the
+# executable and its debug info at PATH are the user's and are never deleted here.
+def emitExeDone(exe: str)
+    if not File.exists(exe)
+        sys.errln("zebra: --emit-exe: zig reported success but " + exe + " does not exist")
+        sys.exit(1)
+    sys.errln("wrote " + exe)
+    # Zig 0.16's self-hosted COFF linker (the fast debug backend) writes compiler_rt.dll
+    # beside the image and the image IMPORTS it: moved alone, it prints nothing and exits 0
+    # (measured 2026-11-14 with 0.16 first on PATH; the pinned 0.17 writes none). Said rather
+    # than left to be found -- the two files must travel together.
+    var ee_dir: str = Path.dirname(exe)
+    if ee_dir == ""
+        ee_dir = "."
+    if File.exists(ee_dir + "/compiler_rt.dll")
+        sys.errln("note: " + ee_dir + "/compiler_rt.dll is beside it: an executable from zig 0.16's fast backend loads it at start, and moved without it prints nothing and exits 0 -- copy compiler_rt.dll with it, or build with zig 0.17, which writes none")
+
 def deleteScratch(path: str)
     # Early out: a `.pdb` only exists on the LLVM path, so most calls have nothing to do
     # and must not pay a syscall for it.
@@ -4678,7 +4698,7 @@ def main()
     if args.contains("--allow-implicit-try")
         sys.errln("zebra: --allow-implicit-try was removed (0.9.0-rc5): a throws call must be marked with `?`. Compile without the flag and every unmarked call is named with its line.")
         sys.exit(2)
-    var known_flags: str = "--also --gc --no-gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --source-root --strict --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
+    var known_flags: str = "--also --gc --no-gc --build-file --census --check --check-full --coverage --cpu --emit-zig --gui-backend --help --keep-temp --dump-map --dump-transform --emit-exe --from-lldb --library-mode --list --list-targets --module-path --no-runtime-module --only --out --output-dir --print --release --scaffold-only --selfhost-compile --shared --single-file --single-threaded --source-root --strict --tag --target --to --turbo --version --allow-inference-guess --warn-container-copy --warn-inference-guess --warn-non-exhaustive --warnings-as-errors -c -h"
     var bad_flag: str = args.unknownFlag(known_flags)
     if bad_flag != ""
         sys.errln("zebra: unrecognized flag: " + bad_flag)
@@ -5188,6 +5208,75 @@ def main()
             sys.errln("zebra: --source-root " + source_root + ": no such directory -- give the directory the generated paths should be relative to")
             sys.exit(2)
         setSourceRoot(source_root)
+    # --emit-exe=PATH (BUG-720, 2026-11-14, agreed with Fable): build the program ONCE and keep
+    # the executable at PATH; do not run it. It is the run path with the last step replaced --
+    # the same backend choice, C sources, prebuilt libraries, sqlite3.c, -lc and optimise flags
+    # (one link decision, below) -- so "built once" and "run" are the same program. `zebra
+    # build` builds each target through it; its runtime used to call a bare `zig build-exe`
+    # with none of those inputs (no sqlite3.c, no -lc, the PATH's zig rather than the pin) and
+    # wrote `zig-out/bin/<name>` with no `.exe`. Checked HERE, when declared.
+    var emit_exe: str = args.option("--emit-exe", "")
+    if args.contains("--emit-exe") and emit_exe == ""
+        sys.errln("zebra: --emit-exe needs a path: --emit-exe=PATH <source.zbr>")
+        sys.exit(2)
+    if emit_exe != ""
+        if emit_exe.endsWith(".zbr")
+            sys.errln("zebra: --emit-exe " + emit_exe + ": that is the source, not the output -- write --emit-exe=PATH <source.zbr>")
+            sys.exit(2)
+        var ee_bad: str = ""
+        if mode_c
+            ee_bad = "-c / --check-full (a check builds nothing)"
+        else if mode_emit
+            ee_bad = "--emit-zig (it prints the Zig and builds nothing)"
+        else if mode_shared
+            ee_bad = "--shared (it writes a shared library beside the source)"
+        else if mode_node or mode_v
+            ee_bad = "--target " + target_opt + " (it writes its own outputs)"
+        else if has_gui
+            ee_bad = "--gui-backend (a GUI program is built by `zig build` in its scaffold)"
+        else if run_test_mode
+            ee_bad = "`zebra test` (it builds and runs the tests)"
+        else if build_subcmd
+            ee_bad = "`zebra build` (each target names its own output)"
+        else if lib_mode
+            ee_bad = "--library-mode (a host links it; there is no executable)"
+        else if prog_args.len > 0
+            ee_bad = "program arguments after `--` (nothing is run)"
+        if ee_bad != ""
+            sys.errln("zebra: --emit-exe does not apply to " + ee_bad)
+            sys.exit(2)
+        if Dir.exists(emit_exe)
+            sys.errln("zebra: --emit-exe " + emit_exe + " is a directory -- name the file to write, e.g. " + emit_exe + "/app")
+            sys.exit(2)
+        var ee_dir: str = Path.dirname(emit_exe)
+        if ee_dir != "" and not Dir.exists(ee_dir)
+            sys.errln("zebra: --emit-exe " + emit_exe + ": the directory " + ee_dir + " does not exist -- create it first")
+            sys.exit(2)
+        # On Windows an executable is found by its `.exe`; one is added only when PATH names
+        # no extension, so `--emit-exe=app` gives app.exe and `--emit-exe=app.bin` is left alone.
+        var ee_base: str = emit_exe
+        var ee_slash: int = dbgNormSep(emit_exe).lastIndexOf("/")
+        if ee_slash >= 0
+            ee_base = emit_exe[ee_slash + 1..emit_exe.len]
+        if dbgIsWindows() and not ee_base.contains(".")
+            emit_exe = emit_exe + ".exe"
+    # `zebra build --release` (and --turbo, --cpu, --single-threaded) must reach every target:
+    # the build program builds each one by calling `zebra --emit-exe`, a separate process that
+    # sees none of OUR flags, so a release build of the targets silently came out Debug (the
+    # BUG-228 shape). They travel in ZEBRA_BUILD_FLAGS, set here from this command line --
+    # always, even empty, so a value left in the shell cannot leak into a build -- and the
+    # runtime's `_build_run` appends them to each target's command.
+    if build_subcmd
+        var bflags: List(str) = List(str)()
+        if release
+            bflags.add("--release")
+        if turbo
+            bflags.add("--turbo")
+        if single_threaded
+            bflags.add("--single-threaded")
+        if cpu_flag != ""
+            bflags.add("--cpu=" + cpu_flag)
+        sys.setenv("ZEBRA_BUILD_FLAGS", bflags.join(" "))
 
     # ── Selfhost pipeline (the only pipeline since 2026-09-15; --zig-backend is gone) ──
     # ── Selfhost pipeline: Lex → Resolve → Parse → ASTBuilder → CodeGen ──
@@ -5462,6 +5551,8 @@ def main()
     # back unresolved on the first run).
     if not release and selfHostedBackendUsable() and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib() and not censusOn()
         var fast_exe: str = zig_path + ".fast.exe"
+        if emit_exe != ""
+            fast_exe = emit_exe
         var fargv = List(str)()
         fargv.add(zigExe())
         fargv.add("build-exe")
@@ -5488,6 +5579,9 @@ def main()
             if mode_c
                 if fr.stderr != ""
                     sys.err(remapZigErrors(fr.stderr, zig_path))
+                mc.exitWith(0, false)
+            if emit_exe != ""
+                emitExeDone(emit_exe)
                 mc.exitWith(0, false)
             # Run the compiled program with INHERITED stdio, not captured.
             # sys.run() pipes the child's stdout/stderr; the reader blocks once
@@ -5543,6 +5637,8 @@ def main()
     # + sys.run() captured the *program's* output through a pipe that blocks at
     # ~4 KB (BUG-208). Mirrors src/main.zig (pipe the compile, inherit the run).
     var llvm_exe: str = zig_path + ".run.exe"
+    if emit_exe != ""
+        llvm_exe = emit_exe
     if mode_c
         argv2.add("build-exe")
         argv2.add(zig_path)
@@ -5639,6 +5735,11 @@ def main()
         deleteScratch(llvm_exe)
         deleteScratch(zig_path + ".run.pdb")
         mc.exitWith(1, true)
+    if emit_exe != "" and not mode_c
+        # The fast path may have left its attempt at PATH before falling back; the LLVM build
+        # just overwrote it, so what is there now is this build's.
+        emitExeDone(emit_exe)
+        mc.exitWith(0, false)
     if not mode_c
         # Run the freshly built exe with inherited stdio — output streams live
         # and never blocks, no matter how much the program prints (BUG-208).

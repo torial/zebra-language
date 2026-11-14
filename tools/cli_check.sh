@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # pins: BUG-706 the run mode passes the program's exit code through (fast and LLVM paths); a zig refusal stays 1
+# pins: BUG-720 `zebra build` builds a SQLite program that runs alone, through --emit-exe (the run path's link step); --release reaches the targets
 # pins: BUG-671 a front-end refusal (post-emit, or raised by a later dep) leaves no .zig in --output-dir; a zig failure keeps its .zig
 # pins: BUG-653 `zebra diagnostics` (the LSP's view) knows a `use`d module's types; a real mismatch through one is still reported
 # pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
@@ -499,6 +500,100 @@ if [ -x "$BARE" ]; then
 else
     bad "a build program with NO ZEBRA_COMPILER refuses by name" "could not build the bare build program to test it"
 fi
+
+# ---- --emit-exe and the build path (BUG-720, 2026-11-14) ---------------------------
+# `zebra build` built each target with a bare `zig build-exe` the run path never used: no
+# sqlite3.c, no -lc, no `use`d C sources, PATH's zig, and no `.exe` on Windows -- so a
+# SQLite program that RAN failed to BUILD (16 undefined sqlite3_* symbols). Both now go
+# through `--emit-exe=PATH`, the run path with its last step replaced. Each leg runs the
+# built executable from ANOTHER directory: "built once" means it starts alone.
+EXE_EXT=""; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) EXE_EXT=".exe";; esac
+mkdir -p "$W/ee" "$W/ee/elsewhere"
+run --emit-exe=ee/app hello.zbr
+chk "--emit-exe=PATH builds, says which file it wrote, and adds .exe only on Windows" \
+    "$([ "$RC" = 0 ] && [ -x "$W/ee/app$EXE_EXT" ] && case "$ERR" in *"wrote ee/app$EXE_EXT"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC files=[$(ls "$W/ee" | tr "\n" " ")] stderr=[$(echo "$ERR" | tail -1)]"
+cp "$W/ee/app$EXE_EXT" "$W/ee/elsewhere/" 2>/dev/null
+EE_OUT=$( cd "$W/ee/elsewhere" && timeout "$TMO" "./app$EXE_EXT" 2>&1 </dev/null | tr -d '\r' )
+chk "...and the executable runs ALONE, from another directory" \
+    "$([ "$EE_OUT" = "hi" ] && echo 0 || echo 1)" "got=[$EE_OUT] files=[$(ls "$W/ee" | tr "\n" " ")]"
+run --emit-exe=ee/app.bin hello.zbr
+chk "--emit-exe keeps an extension it was given (app.bin, no .exe appended)" \
+    "$([ "$RC" = 0 ] && [ -x "$W/ee/app.bin" ] && [ ! -e "$W/ee/app.bin.exe" ] && echo 0 || echo 1)" \
+    "exit=$RC files=[$(ls "$W/ee" | tr "\n" " ")]"
+run --emit-exe=no_such_dir/app hello.zbr
+chk "--emit-exe refuses a directory that does not exist, by name" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"the directory no_such_dir does not exist"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --emit-exe=ee hello.zbr
+chk "--emit-exe refuses a PATH that is a directory, by name" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"ee is a directory"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run --emit-exe hello.zbr
+chk "--emit-exe <source>: the space form is refused, naming the source (a value cannot be the .zbr)" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"that is the source"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+run -c --emit-exe=ee/x hello.zbr
+chk "--emit-exe with -c is refused by name (a check builds nothing)" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"does not apply to -c"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
+
+# ONE LINK DECISION: the run path and --emit-exe build the same bytes. Compared at ONE
+# output path (the run path's own, under --output-dir): an image names its debug-info file,
+# so two paths always differ. Only on the FAST backend (x86_64 debug): zig's LLVM output
+# differs between two IDENTICAL invocations (measured 2026-11-14: 10 bytes at one path), so
+# there it cannot witness anything and is not asked to.
+if [ "$(uname -m)" = "x86_64" ]; then
+    mkdir -p "$W/bi"
+    run --emit-exe=bi/hello.zig.fast.exe --output-dir bi hello.zbr
+    cp "$W/bi/hello.zig.fast.exe" "$W/bi/emitted.bin" 2>/dev/null
+    rm -f "$W/bi/hello.zig.fast.exe"
+    run --output-dir bi hello.zbr
+    chk "the run path and --emit-exe build byte-identical executables (fast backend, one output path)" \
+        "$([ -s "$W/bi/emitted.bin" ] && cmp -s "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" && echo 0 || echo 1)" \
+        "files=[$(ls "$W/bi" | tr "\n" " ")] cmp=[$(cmp "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" 2>&1 | head -1)]"
+else
+    echo "  skip   byte-identity: $(uname -m) has no fast backend, and zig's LLVM output is not reproducible"
+fi
+
+# THE BUG-720 REPRO: a program that calls Sqlite.open, built by `zebra build`, then run alone.
+mkdir -p "$W/sq/elsewhere"
+cat > "$W/sq/main_b.zbr" <<'ZBR'
+def main()
+    var db: SqliteDb = Sqlite.open("zz_cli_b.db")!
+    db.exec("CREATE TABLE IF NOT EXISTS t (n INTEGER)")
+    db.exec("DELETE FROM t")
+    db.exec("INSERT INTO t (n) VALUES (42)")
+    print("n = " + db.query("SELECT n FROM t").at(0).asInt("n").toString())
+    db.close()
+ZBR
+cat > "$W/sq/build.zbr" <<'ZBR'
+def main()
+    var b = Build.new()
+    var app = b.exe("main_b", "main_b.zbr")
+    b.run()
+ZBR
+( cd "$W/sq" && timeout 600 "$ZEBRA" build >"$O" 2>"$E" </dev/null )
+RC=$?; ERR=$(tr -d '\r' < "$E")
+cp "$W/sq/zig-out/bin/main_b$EXE_EXT" "$W/sq/elsewhere/" 2>/dev/null
+SQ_OUT=$( cd "$W/sq/elsewhere" && timeout "$TMO" "./main_b$EXE_EXT" 2>&1 </dev/null | tr -d '\r' )
+chk "\`zebra build\` builds a SQLite program, and it runs alone (BUG-720)" \
+    "$([ "$RC" = 0 ] && [ "$SQ_OUT" = "n = 42" ] && echo 0 || echo 1)" \
+    "exit=$RC got=[$SQ_OUT] stderr=[$(echo "$ERR" | grep -E 'error|undefined|build:' | head -3 | tr "\n" " ")]"
+
+# `zebra build --release` reaches the targets (ZEBRA_BUILD_FLAGS): the release target is
+# materially smaller than the debug one built the same way. Self-calibrating, like
+# release-mode -- the regression it exists for makes the two the SAME size (BUG-228's shape).
+mkdir -p "$W/rel"
+cp "$W/proj/app.zbr" "$W/proj/build.zbr" "$W/rel/"
+( cd "$W/rel" && timeout 600 "$ZEBRA" build >"$O" 2>"$E" </dev/null )
+DBG_SZ=$(wc -c < "$W/rel/zig-out/bin/demo$EXE_EXT" 2>/dev/null | tr -d ' ')
+( cd "$W/rel" && timeout 600 "$ZEBRA" build --release >"$O" 2>"$E" </dev/null )
+RC=$?; ERR=$(tr -d '\r' < "$E")
+REL_SZ=$(wc -c < "$W/rel/zig-out/bin/demo$EXE_EXT" 2>/dev/null | tr -d ' ')
+chk "\`zebra build --release\` builds the targets optimised (smaller than without it by > 25%)" \
+    "$([ "$RC" = 0 ] && [ -n "$DBG_SZ" ] && [ -n "$REL_SZ" ] && [ $((REL_SZ * 4)) -lt $((DBG_SZ * 3)) ] && case "$ERR" in *"zebra --release --emit-exe"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC debug=${DBG_SZ:-?} release=${REL_SZ:-?} bytes; build line=[$(echo "$ERR" | grep 'build: demo: zebra' | head -1)]"
 
 # ---- KNOWN-BROKEN, PINNED -----------------------------------------------------------
 # PROMOTED from pins 2026-09-01, the day BUG-321 was fixed. The pins failed the gate the
