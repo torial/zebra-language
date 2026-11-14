@@ -16,6 +16,8 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _zebra_in = _zbr_rt._zebra_in;
 const _str_concat = _zbr_rt._str_concat;
+const _zbr_utf8_next = _zbr_rt._zbr_utf8_next;
+const _zbr_char_str = _zbr_rt._zbr_char_str;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrMap = _zbr_rt._ZbrMap;
@@ -180,8 +182,10 @@ pub fn _zbr_fn_snakeCase(name: []const u8) []const u8 {
     var first: bool = true;
 // zbr:selfhost/CodeGenV.zbr:67
     {
-        var _cp_it_ch = std.unicode.Utf8View.initUnchecked(name).iterator();
-        while (_cp_it_ch.nextCodepoint()) |ch| {
+        const _cp_s_ch: []const u8 = name;
+        var _cp_i_ch: usize = 0;
+        while (_cp_i_ch < _cp_s_ch.len) {
+            const ch: u21 = _zbr_utf8_next(_cp_s_ch, &_cp_i_ch);
 // zbr:selfhost/CodeGenV.zbr:68
             if ((_zebra_ge(ch, 'A') and _zebra_le(ch, 'Z'))) {
 // zbr:selfhost/CodeGenV.zbr:69
@@ -193,7 +197,7 @@ pub fn _zbr_fn_snakeCase(name: []const u8) []const u8 {
                 out = _str_concat(out, _zbr_fn_lowerOf(ch), _zbr_rt._allocator);
             } else {
 // zbr:selfhost/CodeGenV.zbr:73
-                out = _str_concat(out, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(ch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
+                out = _str_concat(out, _zbr_char_str(ch, _zbr_rt._allocator), _zbr_rt._allocator);
             }
 // zbr:selfhost/CodeGenV.zbr:74
             first = false;
@@ -210,8 +214,10 @@ pub fn _zbr_fn_isAllCaps(name: []const u8) bool {
     var any: bool = false;
 // zbr:selfhost/CodeGenV.zbr:79
     {
-        var _cp_it_ch = std.unicode.Utf8View.initUnchecked(name).iterator();
-        while (_cp_it_ch.nextCodepoint()) |ch| {
+        const _cp_s_ch: []const u8 = name;
+        var _cp_i_ch: usize = 0;
+        while (_cp_i_ch < _cp_s_ch.len) {
+            const ch: u21 = _zbr_utf8_next(_cp_s_ch, &_cp_i_ch);
 // zbr:selfhost/CodeGenV.zbr:80
             if ((_zebra_ge(ch, 'a') and _zebra_le(ch, 'z'))) {
 // zbr:selfhost/CodeGenV.zbr:81
@@ -237,19 +243,21 @@ pub fn _zbr_fn_lowerOf(ch: u21) []const u8 {
     var i: i64 = 0;
 // zbr:selfhost/CodeGenV.zbr:91
     {
-        var _cp_it_lc = std.unicode.Utf8View.initUnchecked("abcdefghijklmnopqrstuvwxyz").iterator();
-        while (_cp_it_lc.nextCodepoint()) |lc| {
+        const _cp_s_lc: []const u8 = "abcdefghijklmnopqrstuvwxyz";
+        var _cp_i_lc: usize = 0;
+        while (_cp_i_lc < _cp_s_lc.len) {
+            const lc: u21 = _zbr_utf8_next(_cp_s_lc, &_cp_i_lc);
 // zbr:selfhost/CodeGenV.zbr:92
             if ((_zbr_at(up, i) == ch)) {
 // zbr:selfhost/CodeGenV.zbr:93
-                return (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(lc), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); });
+                return _zbr_char_str(lc, _zbr_rt._allocator);
             }
 // zbr:selfhost/CodeGenV.zbr:94
             i = (i + 1);
         }
     }
 // zbr:selfhost/CodeGenV.zbr:95
-    return (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(ch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); });
+    return _zbr_char_str(ch, _zbr_rt._allocator);
 }
 
 // zbr:selfhost/CodeGenV.zbr:100
@@ -11364,8 +11372,10 @@ pub fn _zbr_fn_condStr(s: []const u8) []const u8 {
     var in_lit: bool = false;
 // zbr:selfhost/CodeGenV.zbr:5192
     {
-        var _cp_it_ch = std.unicode.Utf8View.initUnchecked(s).iterator();
-        while (_cp_it_ch.nextCodepoint()) |ch| {
+        const _cp_s_ch: []const u8 = s;
+        var _cp_i_ch: usize = 0;
+        while (_cp_i_ch < _cp_s_ch.len) {
+            const ch: u21 = _zbr_utf8_next(_cp_s_ch, &_cp_i_ch);
 // zbr:selfhost/CodeGenV.zbr:5193
             if (in_lit) {
 // zbr:selfhost/CodeGenV.zbr:5194
@@ -11412,8 +11422,10 @@ pub fn _zbr_fn_startsUpper(name: []const u8) bool {
     @setRuntimeSafety(true);
 // zbr:selfhost/CodeGenV.zbr:5210
     {
-        var _cp_it_ch = std.unicode.Utf8View.initUnchecked(name).iterator();
-        while (_cp_it_ch.nextCodepoint()) |ch| {
+        const _cp_s_ch: []const u8 = name;
+        var _cp_i_ch: usize = 0;
+        while (_cp_i_ch < _cp_s_ch.len) {
+            const ch: u21 = _zbr_utf8_next(_cp_s_ch, &_cp_i_ch);
 // zbr:selfhost/CodeGenV.zbr:5211
             return (_zebra_ge(ch, 'A') and _zebra_le(ch, 'Z'));
         }
@@ -11429,8 +11441,10 @@ pub fn _zbr_fn_identPrefix(s: []const u8) []const u8 {
     var n: i64 = 0;
 // zbr:selfhost/CodeGenV.zbr:5217
     {
-        var _cp_it_ch = std.unicode.Utf8View.initUnchecked(s).iterator();
-        while (_cp_it_ch.nextCodepoint()) |ch| {
+        const _cp_s_ch: []const u8 = s;
+        var _cp_i_ch: usize = 0;
+        while (_cp_i_ch < _cp_s_ch.len) {
+            const ch: u21 = _zbr_utf8_next(_cp_s_ch, &_cp_i_ch);
 // zbr:selfhost/CodeGenV.zbr:5218
             if (((((_zebra_ge(ch, 'a') and _zebra_le(ch, 'z')) or (_zebra_ge(ch, 'A') and _zebra_le(ch, 'Z'))) or (_zebra_ge(ch, '0') and _zebra_le(ch, '9'))) or (ch == '_'))) {
 // zbr:selfhost/CodeGenV.zbr:5219

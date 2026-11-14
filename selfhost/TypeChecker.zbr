@@ -2228,7 +2228,7 @@ def checkNamespaceMember(ns: str, mem: ExprMember, ctx: InferCtx)
     ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'" + ns + "' has no static function '" + mem.member + "' (it has: " + shown + hint + ")")
 
 def strMethodKnown(name: str): bool
-    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
+    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "toValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
 
 # List(T): the documented set (QUICKSTART §10) plus what the probe showed compiling
 # (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
@@ -2470,6 +2470,8 @@ def stringMethodReturn(name: str): Type_?
         return Type_.bool_
     if name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"
         return Type_.bool_
+    if name == "toValidUtf8"
+        return Type_.string_
     if name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable"
         return Type_.bool_
     if name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase"
@@ -2671,7 +2673,7 @@ def stdlibArityError(recv_kind: str, name: str, argc: int): str
         else if name == "isEmpty" or name == "isAlpha" or name == "isNumeric"
             lo = 0
             hi = 0
-        else if name == "isAlphanumeric" or name == "isPrintable" or name == "isValidUtf8"
+        else if name == "isAlphanumeric" or name == "isPrintable" or name == "isValidUtf8" or name == "toValidUtf8"
             lo = 0
             hi = 0
         # exactly one
@@ -4879,6 +4881,14 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             var uconv_t: Type_ = sizedIntMethodType(mem.member)
                             if not (uconv_t is Type_.unresolved)
                                 return uconv_t
+                        # BUG-703: an escape char (an input byte that was not UTF-8) gives its
+                        # byte back; a real char gives nil. Other char methods stay untyped
+                        # here, as they always were (the char receiver is not a closed set).
+                        on Type_.char_
+                            if mem.member == "escapedByte"
+                                return Type_.optional(Type_.int_)
+                            if mem.member == "toString"
+                                return Type_.string_
                         on Type_.float_
                             if mem.member == "toInt"
                                 return Type_.int_
@@ -8494,6 +8504,19 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 # Anchored on the expression it formats: the interpolation node itself
                 # carries no span, and 0:0 is a coordinate, not "unknown".
                 if part is StringPart.format as fsp
+                    # BUG-703: `:c` on an int writes ONE byte, like `n.toUint8()`: a constant
+                    # outside 0..255 is refused here, a runtime one traps. (It truncated:
+                    # `${300:c}` wrote ',' and 0xDD00 a NUL, with nothing said.)
+                    if fsp.endsWith("c") and last_fe != nil
+                        var cbt: Type_ = inferExpr(last_fe!, ctx)
+                        if cbt is Type_.int_
+                            var cbv: ConstVal = constIntValue(last_fe!)
+                            if cbv.huge or (cbv.ok and (cbv.val < 0 or cbv.val > 255))
+                                var cbs: str = "too large"
+                                if cbv.ok
+                                    cbs = cbv.val.toString()
+                                ctx.addErr(file, anchorLine(last_fe!, line), anchorCol(last_fe!, 0),
+                                           "`:c` on an int writes one byte (0..255), and " + cbs + " does not fit -- for a codepoint, format a char (c'\\u{...}')")
                     var fig: str = fmtSpecIgnored(fsp)
                     if fig != ""
                         var fln: int = line

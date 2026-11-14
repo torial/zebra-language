@@ -1,0 +1,4 @@
+# BUG-703: `:c` on an int writes one byte, like n.toUint8(); a constant outside 0..255 is
+# refused (it was silently truncated: 300 wrote ',').
+def main()
+    print("${300:c}")

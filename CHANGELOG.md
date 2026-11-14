@@ -37,6 +37,15 @@ confirmed via `tools/bootstrap_check.sh`.
   deadline yet.
 - **BUG-700: `HttpResponse.ok(..).withHeader(..)` builds**, as do `Csv.parse(s).rowCount()` and
   other chains onto a CsvTable / CsvWriter. They passed `-c` and failed inside zig.
+- **`chars()` never panics on a str that is not UTF-8 (BUG-703, BUG-714).** A byte that is not
+  part of valid UTF-8 is its own escape char (`U+DC00 + byte`) and is written back as that
+  byte, so rebuilding a string char by char gives exactly its bytes; it panicked in Debug and
+  segfaulted under `--release`, and inside an `Http.serve` handler any client could end the
+  server with it. New: `s.toValidUtf8()` (display only) and `c.escapedByte(): int?`.
+  `codePointCount()` counts the same items (it answered 0). `${n:c}` on an int is now
+  `toUint8()`: a constant outside 0..255 is refused and a runtime one traps (it truncated).
+  A surrogate char literal outside `\u{DC80}..\u{DCFF}`, or one above U+10FFFF, is refused.
+  A char under a width (`${c:>4}`) is padded; the width was ignored.
 - **A TCP peer that leaves can no longer end the program (BUG-715, BUG-704).** A client that sent
   a request and left before the reply ended a `Tcp.serve` server (`panic: WriteFailed`); a
   failed `conn.write` is now dropped and the next `read()` returns `""`. A server that reset the

@@ -1584,8 +1584,8 @@ var hex  = "${n:08x}"               # 000000ff  (zero-padded 8-digit hex)
 var flt  = "${fval:.2f}"            # 3.14      (2 decimal places)
 var rpad = "${greeting:>20}"        #                hello  (right-align, width 20)
 var lpad = "${tag:-<15}"            # ok-------------       (left-align, fill '-')
-var cpt  = "${some_char:c}"         # a `char` value -> its codepoint, UTF-8 encoded
-var byte = "${206:c}"               # an `int` value  -> ONE BYTE (see the note below)
+var cpt  = "${some_char:c}"         # a `char` value -> its codepoint, UTF-8 encoded (an escape char: its byte)
+var byte = "${206:c}"               # an `int` value  -> ONE BYTE, 0..255 (see the note below)
 # align chars: < left  > right  ^ center
 # type chars:  x/X hex  o octal  b binary  f float  e/E scientific  s string
 
@@ -1598,8 +1598,10 @@ var result = sb.build()              # str; the builder keeps its text (clear() 
 
 > **`:c` depends on the ARGUMENT'S TYPE, and the difference matters.** On a `char`
 > (a `u21` codepoint) it emits the codepoint UTF-8-encoded — one to four bytes. On an
-> `int` it emits **exactly one byte**, whatever that byte is. Both behaviours are
-> deliberate and they are the same split Go (`string(rune)` vs `byte(n)`), Rust
+> `int` it emits **exactly one byte**, like `n.toUint8()`: a constant outside 0..255 is
+> refused, and a runtime one traps (`integer conversion out of range: 300 does not fit in
+> byte`). It used to truncate silently (BUG-703); `n.toByte()` still truncates, by name.
+> The char and int behaviours are deliberate, and they are the same split Go (`string(rune)` vs `byte(n)`), Rust
 > (`char::from_u32` vs `as u8`) and Python (`chr` vs `bytes([n])`) make with two
 > different spellings; Zebra keys it off the type instead.
 >
@@ -1702,7 +1704,7 @@ An `extend str` block adds methods the checker then accepts.
 | `toIntBase(base)` | `(int): int` | Parse with given base (2, 8, 10, 16) |
 | `tryInt()` | `(): int?` | Parse as decimal integer; **nil** on bad input |
 | `tryFloat()` | `(): float?` | Parse as float; **nil** on bad input |
-| `codePointCount()` | `(): int` | Count Unicode codepoints (not bytes) |
+| `codePointCount()` | `(): int` | Count the items `chars()` yields: codepoints, plus one per byte that is not UTF-8 |
 | `toFloat()` | `(): float` | Parse as float (**0.0** on bad input — use `tryFloat`) |
 
 > `toFloat()` / `toInt()` return `0.0` / `0` on unparseable input (they cannot
@@ -1721,7 +1723,8 @@ An `extend str` block adds methods the checker then accepts.
 | `isNumeric()` | `(): bool` | **ASCII** decimal digits only |
 | `isAlphanumeric()` | `(): bool` | **ASCII** letters or digits only |
 | `isPrintable()` | `(): bool` | **ASCII** printable characters only |
-| `isValidUtf8()` | `(): bool` | Valid UTF-8 byte sequence |
+| `isValidUtf8()` | `(): bool` | Valid UTF-8 byte sequence -- ask it where text enters |
+| `toValidUtf8()` | `(): str` | For DISPLAY: each byte that is not UTF-8 becomes U+FFFD; valid text unchanged. One U+FFFD per byte, so it differs from a browser's decoder on a truncated sequence (`E2 82` is two here, one there). Never compare or store through it |
 
 > **`reverse()` operates on CODEPOINTS, not bytes.** `"世界".reverse()` is `"界世"`,
 > and the result is always valid UTF-8 if the input was — byte order *within* a
@@ -1750,7 +1753,7 @@ An `extend str` block adds methods the checker then accepts.
 |--------|-----------|-------------|
 | `split(sep)` | `(str): List(str)` | Split on `sep` string |
 | `tokenize(seps)` | `(str): List(str)` | Split on ANY character in `seps`, dropping empties. **BUG-227: currently splits on the whole `seps` SEQUENCE, not on any character** — so multi-character `seps` does not yet behave as documented. Single-character `seps` is unaffected. |
-| `chars()` | *iterator* | Unicode codepoints (`u21`). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
+| `chars()` | *iterator* | Unicode codepoints (`u21`); a byte that is not UTF-8 is an escape char (below). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
 | `bytes()` | *iterator* | Bytes (`u8` as `int`). **`for`-only** — same restriction as `chars()`. |
 
 ### Bytes, codepoints, and graphemes
@@ -1762,6 +1765,18 @@ alternative (Swift's) leads to different expectations:
 * **`char` is a decoded Unicode codepoint** (`u21`), which is what `for c in s.chars()`
   yields and what a `c'x'` literal denotes.
 * **`byte` is a single `u8`**, which is what `for b in s.bytes()` yields.
+
+**`chars()` never refuses, and never panics** (BUG-703, 2026-11-13). A str can hold any
+bytes -- a request path, a file, a database column -- and not all of them are UTF-8. Each
+byte that is not part of valid UTF-8 comes out of `chars()` as its own **escape char**,
+`U+DC00 + byte` (U+DC80..U+DCFF, which no valid text decodes to), and turning a char back
+into text writes the original byte. So rebuilding a string char by char gives back exactly
+its bytes, and two different invalid inputs never compare equal. `c.escapedByte()` is that
+byte (`int?`, nil for a real char), and a literal `c'\u{DCFF}'` compares against one.
+Validity is a separate question, asked with `s.isValidUtf8()` where text enters your
+program: an allow-list validator ("only these characters") rejects an escape char, while a
+deny-list one ("no control characters") passes it. `s.toValidUtf8()` is the lossy view for
+display. (The rule is Python's PEP 383; docs/design/str_invalid_utf8.md has the decoder.)
 
 The two layers are deliberately distinct: byte operations are O(1) and codepoint
 operations require decoding. Use `.len` when you mean storage, `.codePointCount()` when
@@ -4840,9 +4855,10 @@ The server refuses two things itself, before the handler runs (BUG-699): a reque
 claiming a body over **1 MB** gets `413 Content Too Large`, and a header block over 16 KB
 gets `431 Request Header Fields Too Large`. The 1 MB limit is fixed. There is no read
 deadline yet: each connection runs on its own thread, and a client that sends slowly
-holds that thread. A handler that panics ends the whole server (BUG-701, open), and so
-does `s.chars()` on bytes that are not UTF-8 (BUG-703, open): check `s.isValidUtf8()` on
-the path, query and body first and answer 400.
+holds that thread. A handler that panics ends the whole server (BUG-701, open). Bytes
+that are not UTF-8 no longer do (`chars()` yields escape chars, BUG-703), but a handler
+that treats a path as text should still check `s.isValidUtf8()` on the path, query and
+body first and answer 400.
 (Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
 which does not build.)
 

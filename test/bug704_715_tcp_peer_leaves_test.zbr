@@ -29,21 +29,21 @@ def resetHandler(conn: TcpConn)
 
 def main()
     sys.go(def()
-        Tcp.serve(19961, slowHandler)
+        Tcp.serve(19963, slowHandler)
     )
     sys.go(def()
-        Tcp.serve(19962, resetHandler)
+        Tcp.serve(19964, resetHandler)
     )
     sys.sleep(400)
 
     # ── BUG-715: a client leaves before the reply ───────────────────────────
-    var c = Tcp.connect("127.0.0.1", 19961)
+    var c = Tcp.connect("127.0.0.1", 19963)
     if c as leaver
         leaver.write("leaver")
         leaver.close()
     sys.sleep(1500)              # the handler's writes fail during this
     var got: str = ""
-    var c2 = Tcp.connect("127.0.0.1", 19961)
+    var c2 = Tcp.connect("127.0.0.1", 19963)
     if c2 as stayer
         stayer.write("stayer")
         got = stayer.readAll()   # drain, so the handler finishes before main returns
@@ -54,7 +54,7 @@ def main()
     # ── BUG-704: the server resets the client's connection ─────────────────
     var rounds = 0
     while rounds < 5
-        var c3 = Tcp.connect("127.0.0.1", 19962)
+        var c3 = Tcp.connect("127.0.0.1", 19964)
         if c3 as client
             client.write("q".repeat(262144))     # far more than the handler reads
             var reply = client.readAll()         # the reset must end this, not panic

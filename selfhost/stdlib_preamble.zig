@@ -666,27 +666,164 @@ pub fn _str_repeat(s: []const u8, n: anytype, alloc: std.mem.Allocator) []const 
 /// codepoint: `"世界"` came back as invalid UTF-8 with codePointCount 0, from input
 /// that had 2. ASCII was unaffected, which is why the whole corpus was silent.
 ///
-/// Walks the input codepoint by codepoint and copies each one's bytes, intact and in
-/// order, into descending slots of the output — so byte order within a codepoint is
-/// preserved while codepoint order is reversed. Invalid UTF-8 in DOES fall back to a
-/// byte reverse rather than panicking: reverse() has no way to report an error, and
-/// garbage-in-garbage-out beats aborting a user's program over a string we were only
-/// asked to turn around.
+/// Walks the input item by item (`_zbr_utf8_next`, the same items `chars()` yields) and
+/// copies each one's bytes, intact and in order, into descending slots of the output -- so
+/// byte order within a codepoint is preserved while item order is reversed. A byte that is
+/// not part of valid UTF-8 is an item of its own (BUG-703), so it moves as one byte.
 pub fn _str_reverse(s: []const u8, alloc: std.mem.Allocator) []const u8 {
     if (s.len == 0) return "";
     const buf = alloc.alloc(u8, s.len) catch @panic("OOM");
-    const view = std.unicode.Utf8View.init(s) catch {
-        @memcpy(buf, s);
-        std.mem.reverse(u8, buf);
-        return buf;
-    };
-    var it = view.iterator();
+    var i: usize = 0;
     var end: usize = s.len;
-    while (it.nextCodepointSlice()) |cp| {
-        end -= cp.len;
-        @memcpy(buf[end..][0..cp.len], cp);
+    while (i < s.len) {
+        const start = i;
+        _ = _zbr_utf8_next(s, &i);
+        const n = i - start;
+        end -= n;
+        @memcpy(buf[end..][0..n], s[start..i]);
     }
     return buf;
+}
+// ── BUG-703: decoding a str that may not be UTF-8 (docs/design/str_invalid_utf8.md) ──────
+//
+// `chars()`, `codePointCount()`, `reverse()` and `toValidUtf8()` all walk a string with
+// `_zbr_utf8_next`, so they agree on what the items are. A well-formed sequence (Unicode
+// Table 3-7) is one item, its codepoint. Anything else -- a stray continuation byte, a
+// truncated sequence, an overlong, an encoded surrogate, a value above U+10FFFF -- yields
+// its FIRST byte b as the escape char U+DC00+b and resumes at the next byte (PEP 383's
+// surrogateescape). No valid UTF-8 decodes to U+DC80..U+DCFF, so an escape char never
+// collides with real text, and `_zbr_char_text` writes it back as the original byte: a
+// string rebuilt char by char is byte-identical to its input, for EVERY byte string.
+//
+// It never panics and never reads past `s`. std's `Utf8View.initUnchecked(...)` iterator,
+// which the `chars()` loop used before, decodes with `catch unreachable` inside std --
+// a panic in Debug and undefined behaviour in --release, where it segfaulted.
+// The V route implements the same rules in zebra_rt.v; v_poc_utf8.zbr diffs the two.
+pub const _ZBR_ESC_BASE: u21 = 0xDC00;
+pub fn _zbr_utf8_next(s: []const u8, i: *usize) u21 {
+    const p = i.*;
+    const b0 = s[p];
+    if (b0 < 0x80) {
+        i.* = p + 1;
+        return b0;
+    }
+    // (length, the second byte's allowed range) by lead byte, per Table 3-7.
+    var n: usize = 0;
+    var lo: u8 = 0x80;
+    var hi: u8 = 0xBF;
+    switch (b0) {
+        0xC2...0xDF => n = 2,
+        0xE0 => { n = 3; lo = 0xA0; },
+        0xE1...0xEC, 0xEE...0xEF => n = 3,
+        0xED => { n = 3; hi = 0x9F; },
+        0xF0 => { n = 4; lo = 0x90; },
+        0xF1...0xF3 => n = 4,
+        0xF4 => { n = 4; hi = 0x8F; },
+        else => {},
+    }
+    if (n == 0 or p + n > s.len) {
+        i.* = p + 1;
+        return _ZBR_ESC_BASE + b0;
+    }
+    const b1 = s[p + 1];
+    if (b1 < lo or b1 > hi) {
+        i.* = p + 1;
+        return _ZBR_ESC_BASE + b0;
+    }
+    var cp: u21 = @as(u21, b0) & (if (n == 2) @as(u21, 0x1F) else if (n == 3) @as(u21, 0x0F) else @as(u21, 0x07));
+    cp = (cp << 6) | (b1 & 0x3F);
+    var k: usize = 2;
+    while (k < n) : (k += 1) {
+        const bk = s[p + k];
+        if (bk < 0x80 or bk > 0xBF) {
+            i.* = p + 1;
+            return _ZBR_ESC_BASE + b0;
+        }
+        cp = (cp << 6) | (bk & 0x3F);
+    }
+    i.* = p + n;
+    return cp;
+}
+/// The text a char stands for, written into `buf` (at most 4 bytes). TOTAL over every u21:
+/// an escape char (U+DC80..U+DCFF) is its original byte; a valid scalar is its UTF-8; any
+/// other surrogate, and 0x110000..0x1FFFFF, get the generalized 3- or 4-byte form WTF-8
+/// would write (unreachable today: no int-to-char conversion exists, and the lexer refuses
+/// those literals -- the design note binds any future conversion to refuse them or say so).
+/// Never U+FFFD, never a panic.
+pub fn _zbr_char_text(c: u21, buf: *[4]u8) []const u8 {
+    if (c >= 0xDC80 and c <= 0xDCFF) {
+        buf[0] = @intCast(c - _ZBR_ESC_BASE);
+        return buf[0..1];
+    }
+    if (c < 0x80) {
+        buf[0] = @intCast(c);
+        return buf[0..1];
+    }
+    if (c < 0x800) {
+        buf[0] = @intCast(0xC0 | (c >> 6));
+        buf[1] = @intCast(0x80 | (c & 0x3F));
+        return buf[0..2];
+    }
+    if (c < 0x10000) {
+        buf[0] = @intCast(0xE0 | (c >> 12));
+        buf[1] = @intCast(0x80 | ((c >> 6) & 0x3F));
+        buf[2] = @intCast(0x80 | (c & 0x3F));
+        return buf[0..3];
+    }
+    buf[0] = @intCast(0xF0 | (c >> 18));
+    buf[1] = @intCast(0x80 | ((c >> 12) & 0x3F));
+    buf[2] = @intCast(0x80 | ((c >> 6) & 0x3F));
+    buf[3] = @intCast(0x80 | (c & 0x3F));
+    return buf[0..4];
+}
+/// `c.toString()`: the char's text, owned.
+pub fn _zbr_char_str(c: u21, alloc: std.mem.Allocator) []const u8 {
+    var buf: [4]u8 = undefined;
+    return alloc.dupe(u8, _zbr_char_text(c, &buf)) catch @panic("OOM");
+}
+/// A char as a format argument: `"${c}"` and `print(c)` emit `{f}` with this, so they
+/// write exactly what `toString()` does. (Zig's `{u}` writes U+FFFD for any surrogate,
+/// and ignores a width.)
+pub const _ZbrChar = struct {
+    c: u21,
+    pub fn format(self: _ZbrChar, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        var buf: [4]u8 = undefined;
+        try w.writeAll(_zbr_char_text(self.c, &buf));
+    }
+};
+pub fn _zbr_ch(c: anytype) _ZbrChar {
+    return .{ .c = @intCast(c) };
+}
+/// `s.codePointCount()`: the number of items `chars()` yields. Never a constant on failure
+/// (it was `utf8CountCodepoints(s) catch 0`, BUG-714).
+pub fn _zbr_cp_count(s: []const u8) i64 {
+    var i: usize = 0;
+    var n: i64 = 0;
+    while (i < s.len) : (n += 1) _ = _zbr_utf8_next(s, &i);
+    return n;
+}
+/// `c.escapedByte()`: the original byte for an escape char, nil for a real char.
+pub fn _zbr_escaped_byte(c: anytype) ?i64 {
+    const v: u21 = @intCast(c);
+    if (v >= 0xDC80 and v <= 0xDCFF) return @as(i64, v - _ZBR_ESC_BASE);
+    return null;
+}
+/// `s.toValidUtf8()`: the named lossy conversion, for display. Each escaped byte becomes
+/// U+FFFD; valid text is unchanged (a valid string comes back as itself, not a copy).
+pub fn _zbr_to_valid_utf8(s: []const u8, alloc: std.mem.Allocator) []const u8 {
+    if (std.unicode.utf8ValidateSlice(s)) return s;
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        const start = i;
+        const c = _zbr_utf8_next(s, &i);
+        if (c >= 0xDC80 and c <= 0xDCFF) {
+            out.appendSlice(alloc, "\xEF\xBF\xBD") catch @panic("OOM");
+        } else {
+            out.appendSlice(alloc, s[start..i]) catch @panic("OOM");
+        }
+    }
+    return out.toOwnedSlice(alloc) catch @panic("OOM");
 }
 /// FNV-1a 32-bit hash — used as the type-arg component of _type_tag.
 /// Low 32 bits of _ttag_ClassName hold the class hash; high 32 bits

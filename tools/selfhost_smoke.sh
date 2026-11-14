@@ -2159,6 +2159,18 @@ smoke_run_bounded test/tcp_echo_roundtrip_test.zbr "tcp_echo_roundtrip: OK" 120
 # BUG-715 / BUG-704: a TCP peer that leaves (client before the reply; server resetting a
 # client mid-request) must not end the program. Red: WriteFailed / ReadFailed panics.
 smoke_run_bounded test/bug704_715_tcp_peer_leaves_test.zbr "bug704_715: OK" 120
+# BUG-703 / 714 (docs/design/str_invalid_utf8.md): a str that is not UTF-8 decodes to escape
+# chars (U+DC00+byte) instead of panicking -- or segfaulting under --release. The server
+# control: an Http.serve handler walks a path holding 0xFF 0xFE and the server answers it and
+# the next request (red on the N-1 anchor: Utf8InvalidStartByte). v_poc_utf8 is the shared
+# decoder fixture v-check diffs against the V route; here it runs in Debug and --release.
+smoke_run_bounded test/bug703_chars_invalid_utf8_test.zbr "bug703: OK" 120
+smoke_run     examples/v_poc_utf8.zbr "utf8: OK"
+smoke_run_flag examples/v_poc_utf8.zbr --release "utf8: OK"
+smoke_tc_fail test/fail_fixtures/bug703_surrogate_char_literal_test.zbr "is a surrogate, not a character"
+smoke_tc_fail test/fail_fixtures/bug703_char_from_int_test.zbr "expected char, found int"
+smoke_tc_fail test/fail_fixtures/bug703_fmt_c_literal_range_test.zbr "on an int writes one byte (0..255)"
+smoke_run_fail test/bug703_fmt_c_runtime_trap_test.zbr "integer conversion out of range: 300 does not fit in byte"
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

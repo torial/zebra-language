@@ -169,6 +169,12 @@ OUT="$(mktemp -d)"; trap 'rm -rf "$OUT"' EXIT
 # Strip the compiler's own progress chatter so the manifest holds PROGRAM output only.
 # Without this, every entry would carry the emitted .zig path — which is a temp dir and
 # therefore itself nondeterministic, and would exclude the entire corpus.
+# What run_one strips from a capture: the COMPILER's lines, so only the program's output is
+# compared. It is part of the output cache's key (below): the cache stores FILTERED
+# captures, so a filter change must not replay entries filtered the old way -- on
+# 2026-11-13 adding BUG-706's line here left two stale entries reporting a "behaviour
+# change" that was the old filter's, until the cache was bypassed.
+CAPTURE_FILTER='^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK|^note: the scratch build is kept in |^note: the program exited -?[0-9]+$'
 run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification token
     local zbr="$1" raw rc
     # $MODE_FLAGS is unquoted deliberately: it is either empty or a single flag, and an
@@ -207,7 +213,11 @@ run_one() { # $1 = test/foo.zbr ; echoes program output, or a classification tok
         if [ -n "${OS_HOLD_SCRATCH:-}" ]; then printf '%s' "$sd" > "$OUT/scratch_last"
         else case "$sd" in */zebra-*) rm -rf -- "$sd";; esac; fi
     fi
-    printf '%s' "$raw" | grep -vE '^wrote |^compiling:|^ *parsing\.\.\.|^ *parsed OK|^ *resolved OK|^note: the scratch build is kept in '
+    # BUG-706 (2026-11-13) added a second compiler line on a failing run, `note: the program
+    # exited N`. It is filtered for the same reason: the exit code is gated by cli-surface's
+    # BUG-706 legs, and this sweep compares what the PROGRAM printed. (Its first FULL tier
+    # showed it as a behaviour change in bug259_runtime_exit_code_test and tco_test.)
+    printf '%s' "$raw" | grep -vE "$CAPTURE_FILTER"
 }
 
 # ── THE OUTPUT CACHE (2026-09-26; gate runs only) ────────────────────────────────────────
@@ -242,7 +252,7 @@ cached_run_one() {  # $1 = test/foo.zbr ; same contract as run_one
     key=""
     if [ -s "$od/$name.zig" ]; then
         key=$(zbr_verdict_key "$od/$name.zig") || key=""
-        [ -n "$key" ] && key=$(printf 'zbr-output v1\n%s\nflags %s\n%s\n' "$key" "$MODE_FLAGS" "$msgs" | sha256sum | cut -c1-64)
+        [ -n "$key" ] && key=$(printf 'zbr-output v1\n%s\nflags %s\nfilter %s\n%s\n' "$key" "$MODE_FLAGS" "$CAPTURE_FILTER" "$msgs" | sha256sum | cut -c1-64)
     fi
     if [ -n "$key" ] && [ -f "$OCACHE_DIR/${key:0:2}/$key" ]; then
         oc_hit=$((oc_hit+1)); cat "$OCACHE_DIR/${key:0:2}/$key"; rm -rf "$od"; return

@@ -1453,7 +1453,7 @@ def isReadOnlyMethod(name: str): bool
         return true
     if name == "toHex" or name == "fromHex" or name == "repeat" or name == "replace"
         return true
-    if name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8"
+    if name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "toValidUtf8"
         return true
     # Regex read-only methods
     if name == "match" or name == "find" or name == "findAll" or name == "groups"

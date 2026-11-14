@@ -2897,7 +2897,7 @@ pub fn _zbr_fn_isReadOnlyMethod(name: []const u8) bool {
         return true;
     }
 // zbr:selfhost/CgHelpers.zbr:1456
-    if (((std.mem.eql(u8, name, "isAlpha") or std.mem.eql(u8, name, "isNumeric")) or std.mem.eql(u8, name, "isValidUtf8"))) {
+    if ((((std.mem.eql(u8, name, "isAlpha") or std.mem.eql(u8, name, "isNumeric")) or std.mem.eql(u8, name, "isValidUtf8")) or std.mem.eql(u8, name, "toValidUtf8"))) {
 // zbr:selfhost/CgHelpers.zbr:1457
         return true;
     }

@@ -21,6 +21,7 @@ const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _zebra_in = _zbr_rt._zebra_in;
 const _str_concat = _zbr_rt._str_concat;
+const _zbr_utf8_next = _zbr_rt._zbr_utf8_next;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _zebra_sort_natural = _zbr_rt._zebra_sort_natural;
 const _ZbrList = _zbr_rt._ZbrList;
@@ -3559,8 +3560,10 @@ pub fn _zbr_fn_diagAllDigits(s: []const u8) bool {
     }
 // zbr:selfhost/main.zbr:1997
     {
-        var _cp_it_c = std.unicode.Utf8View.initUnchecked(s).iterator();
-        while (_cp_it_c.nextCodepoint()) |c| {
+        const _cp_s_c: []const u8 = s;
+        var _cp_i_c: usize = 0;
+        while (_cp_i_c < _cp_s_c.len) {
+            const c: u21 = _zbr_utf8_next(_cp_s_c, &_cp_i_c);
 // zbr:selfhost/main.zbr:1998
             if ((_zebra_lt(c, '0') or _zebra_gt(c, '9'))) {
 // zbr:selfhost/main.zbr:1999
@@ -4232,8 +4235,10 @@ pub fn _zbr_fn_lspFormatEdits(text: []const u8) []const u8 {
     var nlines: i64 = 1;
 // zbr:selfhost/main.zbr:2314
     {
-        var _cp_it_c = std.unicode.Utf8View.initUnchecked(text).iterator();
-        while (_cp_it_c.nextCodepoint()) |c| {
+        const _cp_s_c: []const u8 = text;
+        var _cp_i_c: usize = 0;
+        while (_cp_i_c < _cp_s_c.len) {
+            const c: u21 = _zbr_utf8_next(_cp_s_c, &_cp_i_c);
 // zbr:selfhost/main.zbr:2315
             if ((c == '\n')) {
 // zbr:selfhost/main.zbr:2316
@@ -4983,8 +4988,10 @@ pub fn _zbr_fn_lspCharAt(s: []const u8, i: i64) u21 {
     var idx: i64 = 0;
 // zbr:selfhost/main.zbr:2670
     {
-        var _cp_it_c = std.unicode.Utf8View.initUnchecked(s).iterator();
-        while (_cp_it_c.nextCodepoint()) |c| {
+        const _cp_s_c: []const u8 = s;
+        var _cp_i_c: usize = 0;
+        while (_cp_i_c < _cp_s_c.len) {
+            const c: u21 = _zbr_utf8_next(_cp_s_c, &_cp_i_c);
 // zbr:selfhost/main.zbr:2671
             if ((idx == i)) {
 // zbr:selfhost/main.zbr:2672

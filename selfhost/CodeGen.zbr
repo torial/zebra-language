@@ -12040,13 +12040,19 @@ struct Generator
                 writeIndent()
                 w.emit("}\n")
             else if isCharsIter(fi.iter)
-                # for c in str.chars() → Utf8View while loop yielding u21 codepoints
+                # for c in str.chars() → a while loop over _zbr_utf8_next, which yields u21
+                # codepoints and, for a byte that is not valid UTF-8, the escape char
+                # U+DC00+byte (BUG-703). It used std's Utf8View.initUnchecked iterator, whose
+                # decode is `catch unreachable` inside std: a panic in Debug, and undefined
+                # behaviour (a segfault) in --release, on any input that was not UTF-8.
                 writeIndent()
                 w.emit("{\n")
                 ig.writeIndent()
-                ig.w.emit("var _cp_it_" + vname + " = std.unicode.Utf8View.initUnchecked(")
+                ig.w.emit("const _cp_s_" + vname + ": []const u8 = ")
                 genCharsObject(fi.iter)
-                ig.w.emit(").iterator();\n")
+                ig.w.emit(";\n")
+                ig.writeIndent()
+                ig.w.emit("var _cp_i_" + vname + ": usize = 0;\n")
                 var label: str? = nil
                 var wg = ig
                 var bg = ig.indented()
@@ -12059,7 +12065,12 @@ struct Generator
                     bg = wg.indented()
                     bg.for_else_label = label!
                 wg.writeIndent()
-                wg.w.emit("while (_cp_it_" + vname + ".nextCodepoint()) |" + zigSafeName(vname) + "| {\n")
+                wg.w.emit("while (_cp_i_" + vname + " < _cp_s_" + vname + ".len) {\n")
+                bg.writeIndent()
+                if zigSafeName(vname) == "_"
+                    bg.w.emit("_ = _zbr_utf8_next(_cp_s_" + vname + ", &_cp_i_" + vname + ");\n")
+                else
+                    bg.w.emit("const " + zigSafeName(vname) + ": u21 = _zbr_utf8_next(_cp_s_" + vname + ", &_cp_i_" + vname + ");\n")
                 bg.discardUnusedLoopVars(fi)
                 bg.emitForGuard(fi)
                 bg.genStmts(fi.stmts)
@@ -13428,6 +13439,8 @@ struct Generator
             var spec0: str = .printFmtSpec(arg)
             if spec0 == "{show}"
                 spec0 = "{s}"
+            if spec0 == "{u}"
+                spec0 = "{f}"           # BUG-703: a char prints through _zbr_ch, never Zig's {u}
             w.emit(spec0)
             ai += 1
         if p.newline
@@ -13456,13 +13469,19 @@ struct Generator
             # Floats print through _zbr_show too (2026-09-27: whole floats show `6.0`), and
             # _zbr_show takes a comptime_float as f64 -- which is where BUG-414's guard
             # lives now (a folded `1.0 / 3.0` printed its exact 34-digit expansion).
-            var show_wrap: bool = .printFmtSpec(parg) == "{show}"
+            var pspec: str = .printFmtSpec(parg)
+            var show_wrap: bool = pspec == "{show}"
+            # BUG-703: Zig's `{u}` writes U+FFFD for a surrogate, so an escape char
+            # (an invalid input byte) printed something other than its byte.
+            var char_wrap: bool = pspec == "{u}"
             if show_wrap
                 w.emit("_zbr_show(")
+            if char_wrap
+                w.emit("_zbr_ch(")
             genExpr(parg)
             if needs_unwrap and not show_wrap
                 w.emit(".?")
-            if show_wrap
+            if show_wrap or char_wrap
                 w.emit(")")
             ai2 += 1
         w.emit("});\n")
@@ -13764,6 +13783,7 @@ struct Generator
             if is_prim
                 var fmt: str = "{}"
                 var det_float = false
+                var det_char = false
                 branch det_t
                     on Type_.float_
                         fmt = "{s}"
@@ -13772,7 +13792,8 @@ struct Generator
                         fmt = "{s}"
                         det_float = true
                     on Type_.char_
-                        fmt = "{u}"
+                        fmt = "{f}"             # BUG-703: _zbr_ch writes what toString() does
+                        det_char = true
                     else
                         pass
                 w.emit("{ const _rdet_")
@@ -13782,8 +13803,10 @@ struct Generator
                 w.emit("\", .{")
                 if det_float
                     w.emit("_zbr_show(")
+                if det_char
+                    w.emit("_zbr_ch(")
                 genExpr(det)
-                if det_float
+                if det_float or det_char
                     w.emit(")")
                 w.emit("}) catch @panic(\"OOM\");\n")
                 writeIndent()
@@ -16865,6 +16888,11 @@ struct Generator
         var cast_trunc: List(bool) = List(bool)()
         var needs_tostring: List(bool) = List(bool)()
         var show_wraps: List(bool) = List(bool)()     # {show}: wrap the arg in _zbr_show()
+        # BUG-703: a char never reaches Zig's `{u}` (U+FFFD for a surrogate, and it ignores a
+        # width). Plain `${c}` is `{f}` over _zbr_ch(c); `${c:>4}` / `${c:c}` with options is
+        # `{s:...}` over _zbr_char_str(c), so the width applies to the char's text.
+        var char_wraps: List(bool) = List(bool)()
+        var char_texts: List(bool) = List(bool)()
         var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
         var zpad_args: List(str) = List(str)()        # a number with the `0` flag: _zbr_zpad(arg + these)
         var i: int = 0
@@ -16888,23 +16916,33 @@ struct Generator
                             ex_type = inferExpr(e, .infer_ctx!)
                         var fpa: str = floatPrecArgs(fmt_spec, ex_type)
                         var zpa: str = zeroPadArgs(fmt_spec, ex_type)
+                        var ctext: bool = false
                         if fpa != "" or zpa != ""
                             fmt_str = fmt_str + "{f}"
                             cast_types.add("")
                             cast_trunc.add(false)
                         else
                             var zig_spec: str = zigFmtSpec(fmt_spec, ex_type)
-                            fmt_str = fmt_str + "{" + zig_spec + "}"
-                            cast_types.add(bitCastType(fmt_spec, ex_type))
-                            cast_trunc.add(fmt_spec.endsWith("c"))
+                            if ex_type is Type_.char_ and zig_spec.startsWith("u")
+                                fmt_str = fmt_str + "{s" + zig_spec.substring(1, zig_spec.len) + "}"
+                                cast_types.add("")
+                                cast_trunc.add(false)
+                                ctext = true
+                            else
+                                fmt_str = fmt_str + "{" + zig_spec + "}"
+                                cast_types.add(bitCastType(fmt_spec, ex_type))
+                                cast_trunc.add(fmt_spec.endsWith("c"))
                         ffmt_args.add(fpa)
                         zpad_args.add(zpa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
+                        char_wraps.add(false)
+                        char_texts.add(ctext)
                     else
                         # Implicit toString: named type with toString() method → {s}.
                         var ts: bool = false
                         var is_opt_part: bool = false
+                        var cwrap: bool = false
                         if .infer_ctx != nil
                             var et: Type_ = inferExpr(e, .infer_ctx!)
                             if et is Type_.named as tn
@@ -16931,6 +16969,10 @@ struct Generator
                             if ispec == "{show}"
                                 fmt_str = fmt_str + "{s}"
                                 show_wraps.add(true)
+                            else if ispec == "{u}"
+                                fmt_str = fmt_str + "{f}"
+                                show_wraps.add(false)
+                                cwrap = true
                             else
                                 fmt_str = fmt_str + ispec
                                 show_wraps.add(false)
@@ -16939,6 +16981,8 @@ struct Generator
                         ffmt_args.add("")
                         zpad_args.add("")
                         needs_tostring.add(ts)
+                        char_wraps.add(cwrap)
+                        char_texts.add(false)
                 on StringPart.format as _
                     pass
             i = i + 1
@@ -16969,8 +17013,10 @@ struct Generator
                     if cast_trunc.at(arg_idx)
                         # BUG-301. One preamble helper rather than an inline cast: the
                         # inline form broke the LITERAL case (@bitCast cannot take a
-                        # comptime_int), and _zbr_byte handles both shapes.
-                        w.emit("_zbr_byte(")
+                        # comptime_int). BUG-703: `:c` on an int is `toUint8()` -- out of
+                        # range TRAPS ("does not fit in byte"); it used to truncate, so 300
+                        # wrote ',' and 0xDD00 a NUL. `toByte()` still truncates, by name.
+                        w.emit("_zbr_int_to(u8, \"byte\", ")
                         genExpr(e)
                         w.emit(")")
                     else
@@ -16986,6 +17032,14 @@ struct Generator
                     w.emit("_zbr_show(")
                     genExpr(e)
                     w.emit(")")
+                else if char_wraps.at(arg_idx)
+                    w.emit("_zbr_ch(")
+                    genExpr(e)
+                    w.emit(")")
+                else if char_texts.at(arg_idx)
+                    w.emit("_zbr_char_str(")
+                    genExpr(e)
+                    w.emit(", _allocator)")
                 else if isFloatTyped(e)
                     w.emit("@as(f64, ")     # BUG-414
                     genExpr(e)
@@ -18874,9 +18928,9 @@ struct Generator
                         w.emit(")")
                         return
                     if mname == "codePointCount"
-                        w.emit("@as(i64, @intCast(std.unicode.utf8CountCodepoints(")
+                        w.emit("_zbr_cp_count(")   # BUG-714: was utf8CountCodepoints(..) catch 0
                         genExpr(m.object)
-                        w.emit(") catch 0))")
+                        w.emit(")")
                         return
                     if mname == "trim"
                         w.emit("std.mem.trim(u8, ")
@@ -19146,6 +19200,12 @@ struct Generator
                         w.emit("std.unicode.utf8ValidateSlice(")
                         genExpr(m.object)
                         w.emit(")")
+                        return
+                    if mname == "toValidUtf8"
+                        # BUG-703: the named lossy conversion, for display only.
+                        w.emit("_zbr_to_valid_utf8(")
+                        genExpr(m.object)
+                        w.emit(", _allocator)")
                         return
                     if mname == "toHex"
                         w.emit("(blk_hex: { const _hx_s = ")
@@ -19941,9 +20001,9 @@ struct Generator
             w.emit(".items)")
             return
         if mname == "codePointCount"
-            w.emit("@as(i64, @intCast(std.unicode.utf8CountCodepoints(")
+            w.emit("_zbr_cp_count(")   # BUG-714: was utf8CountCodepoints(..) catch 0
             genExpr(m.object)
-            w.emit(") catch 0))")
+            w.emit(")")
             return
         if mname == "trim"
             w.emit("std.mem.trim(u8, ")
@@ -19960,6 +20020,13 @@ struct Generator
             genExpr(m.object)
             w.emit(") catch @panic(\"OOM\"))")
             return
+        if mname == "escapedByte" and args.len == 0 and .infer_ctx != nil
+            # BUG-703: the original byte of an escape char (U+DC80..U+DCFF), nil for a real one.
+            if inferExpr(m.object, .infer_ctx!) is Type_.char_
+                w.emit("_zbr_escaped_byte(")
+                genExpr(m.object)
+                w.emit(")")
+                return
         if mname == "toString"
             # Types with a real toString() method (user-defined or @derive(Debug)) — don't intercept.
             var is_real_tostring_recv = false
@@ -19988,9 +20055,9 @@ struct Generator
                     genExpr(m.object)
                     w.emit(")")
                 else if is_char_recv
-                    w.emit("(blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(")
+                    w.emit("_zbr_char_str(")   # BUG-703: an escape char is its byte; no uninitialised `catch 1` buffer
                     genExpr(m.object)
-                    w.emit("), &_cpbuf) catch 1; break :blk _allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic(\"OOM\"); })")
+                    w.emit(", _allocator)")
                 else
                     w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
                     genExpr(m.object)
@@ -20573,6 +20640,11 @@ struct Generator
             w.emit("std.unicode.utf8ValidateSlice(")
             genExpr(m.object)
             w.emit(")")
+            return
+        if mname == "toValidUtf8"
+            w.emit("_zbr_to_valid_utf8(")
+            genExpr(m.object)
+            w.emit(", _allocator)")
             return
         if mname == "toHex"
             w.emit("(blk_hex: { const _hx_s = ")

@@ -1,0 +1,6 @@
+# BUG-703: a RUNTIME int outside 0..255 under `:c` traps with toUint8()'s words. Both routes
+# use the same text (the V route mirrors it).
+def main()
+    var k = sys.args().count() + 299
+    print("${k:c}")
+    print("SURVIVED")

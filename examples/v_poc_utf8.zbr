@@ -1,0 +1,176 @@
+# v_poc_utf8.zbr -- BUG-703 / 712 / 713 / 714: what a str that may not be UTF-8 decodes to,
+# on both routes. docs/design/str_invalid_utf8.md is the agreement (Opus and Fable,
+# 2026-11-13); `v-check` diffs this program's V run against its Zig run, so the two
+# decoders cannot drift apart unnoticed.
+#
+# The rule: a well-formed UTF-8 sequence is one char, its codepoint. Any other byte b is the
+# escape char U+DC00+b, and the decoder resumes at the next byte. A char becomes text as its
+# UTF-8, and an escape char as its original byte, so bytes -> chars -> bytes is the identity.
+#
+# Exhaustive blocks print a count and a HASH. A hash is only ever compared for equality
+# between the two routes, never read as a value. The readable vectors beside them are the
+# control.
+
+# FNV-1a over 31 bits, so every product stays inside an i64 on both routes.
+def mix(h: int, v: int): int
+    return ((h ^ v) * 16777619) % 2147483648
+
+def hexOf(s: str): str
+    var sb = StringBuilder()
+    var first = true
+    for b in s.bytes()
+        var n: int = b
+        if not first
+            sb.append(" ")
+        sb.append("${n:x}")
+        first = false
+    return sb.build()
+
+def cpHex(c: char): str
+    if c.escapedByte() as eb
+        return "esc(" + "${eb:x}" + ")"
+    return "U+" + "${c:x}"
+
+# The items of s, readable.
+def itemsOf(s: str): str
+    var sb = StringBuilder()
+    var first = true
+    for c in s.chars()
+        if not first
+            sb.append(" ")
+        sb.append(cpHex(c))
+        first = false
+    return sb.build()
+
+def rebuild(s: str): str
+    var sb = StringBuilder()
+    for c in s.chars()
+        sb.append(c.toString())
+    return sb.build()
+
+def countItems(s: str): int
+    var n = 0
+    for c in s.chars()
+        n = n + 1
+    return n
+
+# bytes of the given ints, each one byte (`:c` on an int)
+def bytesOf(bs: List(int)): str
+    var sb = StringBuilder()
+    for b in bs
+        sb.append("${b:c}")
+    return sb.build()
+
+class Block
+    var name: str
+    var strings: int
+    var items: int
+    var hash: int
+    var roundTripFails: int
+    var countFails: int
+    var validFails: int
+
+    cue init(name: str)
+        .name = name
+        .strings = 0
+        .items = 0
+        .hash = 2166136261 % 2147483648
+        .roundTripFails = 0
+        .countFails = 0
+        .validFails = 0
+
+    def take(s: str)
+        .strings = .strings + 1
+        var n = 0
+        for c in s.chars()
+            n = n + 1
+            if c.escapedByte() as eb
+                .hash = mix(.hash, 1000000 + eb)
+            else
+                var t = c.toString()
+                for b in t.bytes()
+                    var bi: int = b
+                    .hash = mix(.hash, bi)
+        .items = .items + n
+        var r = rebuild(s)
+        if r != s
+            .roundTripFails = .roundTripFails + 1
+        if s.codePointCount() != n
+            .countFails = .countFails + 1
+        # toValidUtf8 walks in step: the same number of items, U+FFFD where an escape was.
+        var v = s.toValidUtf8()
+        if v.codePointCount() != n or not v.isValidUtf8()
+            .validFails = .validFails + 1
+        for b in r.bytes()
+            var rb: int = b
+            .hash = mix(.hash, rb)
+
+    def report()
+        print(.name + ": strings=${.strings} items=${.items} hash=${.hash} roundtrip_fails=${.roundTripFails} count_fails=${.countFails} valid_fails=${.validFails}")
+
+def main()
+    # ── readable vectors ──────────────────────────────────────────────────────
+    var vectors = List(List(int))()
+    vectors.add([97, 255, 98])                 # the BUG-703 repro
+    vectors.add([226, 130])                    # truncated: two escapes, one byte each
+    vectors.add([237, 179, 191])               # an encoded surrogate is three escapes, not U+DCFF
+    vectors.add([192, 128])                    # overlong
+    vectors.add([224, 128, 128])               # overlong
+    vectors.add([244, 144, 128, 128])          # above U+10FFFF
+    vectors.add([97, 195, 169, 228, 184, 150, 240, 159, 152, 128])   # a, é, 世, 😀: valid 1-4 bytes
+    vectors.add([255])
+    vectors.add([254])
+    for vb in vectors
+        var s = bytesOf(vb)
+        print("[" + hexOf(s) + "] -> " + itemsOf(s) + " | count=${s.codePointCount()} valid=${s.isValidUtf8()} rebuilt=[" + hexOf(rebuild(s)) + "] display=[" + hexOf(s.toValidUtf8()) + "]")
+    var ff = bytesOf([255])
+    var fe = bytesOf([254])
+    print("distinct: rebuild(ff) == rebuild(fe) is ${rebuild(ff) == rebuild(fe)}")
+    var esc = c'\u{DCFF}'
+    for c in ff.chars()
+        print("ff's char == c'\\u{DCFF}' is ${c == esc}")
+    if c'a'.escapedByte() as nb
+        print("FAIL: a real char has an escaped byte ${nb}")
+    else
+        print("c'a'.escapedByte() is nil")
+
+    # ── exhaustive where cheap ────────────────────────────────────────────────
+    var one = Block("one-byte")
+    var a = 0
+    while a < 256
+        one.take(bytesOf([a]))
+        a = a + 1
+    one.report()
+    var two = Block("two-byte")
+    a = 0
+    while a < 256
+        var b = 0
+        while b < 256
+            two.take(bytesOf([a, b]))
+            b = b + 1
+        a = a + 1
+    two.report()
+    var three = Block("three/four-byte boundaries")
+    var leads = [224, 225, 236, 237, 238, 239, 240, 241, 243, 244, 245, 247, 248, 255]
+    var seconds = [0, 127, 128, 143, 144, 159, 160, 191, 192, 255]
+    var thirds = [65, 128, 191, 192]
+    for l in leads
+        for s2 in seconds
+            for s3 in thirds
+                three.take(bytesOf([l, s2, s3]))
+                for s4 in thirds
+                    three.take(bytesOf([l, s2, s3, s4]))
+    three.report()
+
+    # ── every str method that could decode, on the invalid vectors ───────────
+    var bad = bytesOf([97, 255, 98, 226, 130])
+    print("upper=[" + hexOf(bad.upper()) + "]")
+    print("lower=[" + hexOf(bad.lower()) + "]")
+    print("trim=[" + hexOf(bytesOf([32, 255, 32]).trim()) + "]")
+    print("reverse=[" + hexOf(bad.reverse()) + "]")
+    print("replace=[" + hexOf(bad.replace("b", "B")) + "]")
+    print("contains ff: ${bad.contains(bytesOf([255]))} indexOf ff: ${bad.indexOf(bytesOf([255]))}")
+    print("padLeft(8)=[" + hexOf(bad.padLeft(8)) + "] padRight(8)=[" + hexOf(bad.padRight(8)) + "] center(9)=[" + hexOf(bad.center(9)) + "]")
+    var cw = c'é'
+    print("char width >4=[" + hexOf("${cw:>4}") + "] (a width counts bytes, as for a str)")
+    print("utf8: OK")

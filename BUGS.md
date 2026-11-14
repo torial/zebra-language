@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-720. Next new bug: BUG-721.**
+**Last bug number generated: BUG-722. Next new bug: BUG-723.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -61,6 +61,9 @@
   not a patch. **Decided 2026-11-12 (Sean):** option A (remove the panics input can reach,
   BUG-703 first), then option B (an opt-in supervising restart), and both are required;
   `docs/design/http_serve_recovery.md`. This entry closes when B lands.
+- **Option A progress (2026-11-13):** BUG-703 (`chars()` on bytes that are not UTF-8), BUG-704
+  (`readAll` on a reset) and BUG-715 (`conn.write` to a peer that left) are fixed. Left in A:
+  the parse helpers' panic arms and integer conversions on header values.
 - **Workaround today:** check `isValidUtf8()` on path, query and body first and answer 400
   (Graze does; witnessed red and green in `graze/tasks/check_tasks.py`).
 - **Control when fixing:** a raw `Tcp` client sends the non-UTF-8 path; the server must answer
@@ -77,33 +80,6 @@
 - **Fix shape:** the receiver's numeric kind decides the lowering: an integer receiver of any
   width is `@as(i64, b)`, never `@intFromFloat`.
 - **Control when fixing:** the repro prints 65 and 66; `3.7.toInt()` keeps truncating.
-
----
-
-### BUG-703: `s.chars()` panics on a string that is not valid UTF-8
-- **Status:** OPEN (filed 2026-11-12; reproduced)
-- **Repro:** `var s = "a" + "${255:c}" + "b"`; `s.isValidUtf8()` is false, and `for c in s.chars()`
-  panics: `attempt to unwrap error: Utf8InvalidStartByte`. In an `Http.serve` handler that is
-  BUG-701 -- any client sending such bytes ends the server.
-- **Fix shape (a decision, not a patch):** yield U+FFFD for each invalid sequence (what most
-  languages' lossy decoders do), or refuse at the call by returning nothing for the bad run.
-  Either way, never panic on input bytes; `isValidUtf8()` stays the way to tell. Fable's leaning
-  (2026-11-12, to be agreed in writing before building, since the V route needs the same answer):
-  REFUSE in anything whose result feeds a comparison or a store, because two U+FFFDs compare
-  equal (the reassuring-answer failure), and keep a separately named lossy conversion for display.
-- **Release builds are worse (measured 2026-11-13):** the same repro under `--release` SEGFAULTS
-  (`Segmentation fault at address 0x11`) instead of panicking. The loop is
-  `std.unicode.Utf8View.initUnchecked(s).iterator().nextCodepoint()`, whose decode is
-  `catch unreachable` inside std -- compiled ReleaseFast, outside the user functions'
-  `@setRuntimeSafety(true)` (BUG-667/668), so it is undefined behaviour there. The fix must not
-  use std's unchecked iterator.
-- **Neighbours:** BUG-714 (`codePointCount()` returns 0 on the same input); BUG-712 (the V route
-  yields bytes, so its answer differs even on valid text). Read, not run: a `char`'s `toString()`
-  on a value `utf8Encode` rejects takes `catch 1` and returns one byte of an UNINITIALISED buffer
-  (CodeGen.zbr, `_cpbuf`).
-- **Proposal:** `docs/design/str_invalid_utf8.md` (2026-11-13), for agreement with Fable.
-- **Control when fixing:** the repro iterates three items (or the chosen spelling's count) and
-  exits 0, in Debug AND `--release`; a valid string's `chars()` is unchanged.
 
 ---
 
@@ -226,19 +202,6 @@
 
 ---
 
-### BUG-714: `s.codePointCount()` returns 0 for a string that is not valid UTF-8
-- **Status:** OPEN (filed 2026-11-13; part of BUG-701 option A's list)
-- **Repro:** `("a" + "${255:c}" + "b").codePointCount()` is `0`; the string has 3 bytes and is not
-  empty. The emit is `std.unicode.utf8CountCodepoints(s) catch 0` (CodeGen.zbr, two sites).
-- **Why it matters:** 0 is the count of the empty string, so it reads as an answer ("nothing
-  here") rather than as "could not count" -- a length check on input passes whatever it holds.
-- **Fix shape:** count by the same rule BUG-703 settles for `chars()`, so that `codePointCount()`
-  always equals the number of items `chars()` yields; never a constant on failure.
-- **Control when fixing:** the repro's count equals the `chars()` iteration count of the same
-  string; `"aéb".codePointCount()` stays 3.
-
----
-
 ### BUG-716: a failed SQLite statement is silent, and a refused query reads as "no rows"
 - **Status:** OPEN (filed 2026-11-13; Fable, from a Graze cold-start, measured on Graze's task
   demo at 7d24f18; the code read confirmed here)
@@ -298,11 +261,14 @@
 - **Where:** all three bind `0.0.0.0` (`stdlib_preamble.zig`, `_addr`/`_waddr`), with no way to
   ask for another address. Every Graze app prints `http://127.0.0.1:port/`, so a demo started on a
   laptop is reachable from every network the laptop is on, and nothing says so.
-- **Fix shape (the default is a decision for Sean):** an address argument,
-  `Http.serve(port, handler, host: "127.0.0.1")`, the same on `Ws.serve` and `Tcp.serve`.
-  Fable's recommendation, and mine: loopback by default, `"0.0.0.0"` asked for by name, since
-  exposure should be something a program states. The GameEngine's `--server` (through `Ws.serve`)
-  needs the LAN and would pass the address explicitly.
+- **DECIDED 2026-11-13 (Sean, first-hand): loopback by default for all three serve calls;
+  every other interface is asked for by name.** His reason: a broader default can reserve
+  network channels or ports a program was never meant to hold -- keep the default minimal.
+  Shape: an address argument, `Http.serve(port, handler, host: "127.0.0.1")`, the same on
+  `Ws.serve` and `Tcp.serve`, with `"0.0.0.0"` (all interfaces) stated by the program. The
+  GameEngine's `--server` (through `Ws.serve`) needs the LAN and will pass the address
+  explicitly (Fable, in the pin-move commit). An address the machine does not have is refused
+  by name, never a fallback. The V route has no serve calls yet, so nothing to mirror there.
 - **Confirmed (Fable, 2026-11-13):** a Graze app on port 8099 answered 200 on 127.0.0.1 and on both
   of the machine's non-loopback addresses; netstat showed `0.0.0.0:8099 LISTENING`.
 - **Control when fixing:** with the default, a connection to the machine's LAN address is refused
@@ -327,6 +293,36 @@
   module-graph one), and names the file `.exe` on Windows.
 - **Control when fixing:** the repro builds and the binary prints `n = 42`; a program without
   SQLite still builds without sqlite3.c; on Windows the output ends `.exe`.
+
+---
+
+### BUG-721: `HttpResponse.text` (and its other fields) have no type in the checker
+- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's model calls)
+- **Repro:** `def g(resp: HttpResponse)` with `var u = resp.text` then `print(u.len)`: `-c`
+  refuses "cannot infer the type of `u`, so `.len` cannot be resolved". The same through
+  `if r as resp` and through `resp.text.replace(..)`. A field read off a runtime object type
+  is untyped, so every use past a method call needs an annotation (`var u: str = resp.text`).
+- **Fix shape:** type `HttpResponse`'s fields (`status: int`, `text: str`, `headers`) where its
+  methods are typed (BUG-680's runtime-object tables), and check the other runtime objects'
+  fields the same way.
+- **Control when fixing:** the repro passes `-c` and prints the length; an unknown field on an
+  `HttpResponse` is refused by name.
+
+---
+
+### BUG-722: `Json.array().append(v)` with a JsonValue passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's model calls)
+- **Repro:** `var m = Json.object()`, `m.put("role", "user")`, `var arr = Json.array()`,
+  `arr.append(m)`. `-c` exits 0; the build fails `error: expected type 'str', found
+  'json.dynamic.Value'`. `put(k, obj)` is the same shape. So JSON objects cannot be nested
+  through the builder, and the front end does not say so.
+- **Workaround:** stringify each scalar-only object and join the request body as text
+  (`plm.zbr`'s `jq()`).
+- **Fix shape (a decision):** either `append`/`put` take a JsonValue (nesting, which is what a
+  request body needs), or a JsonValue argument is refused at `-c` naming the scalar forms.
+  The first is the useful one.
+- **Control when fixing:** the repro stringifies to `[{"role":"user"}]`, or is refused at `-c`
+  by name; scalar `append`/`put` unchanged.
 
 ---
 

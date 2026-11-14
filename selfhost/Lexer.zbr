@@ -475,6 +475,36 @@ class Lexer
             if c == c'\n'
                 raise line.toString() + ":1: error: char literal is never closed on this line"
             pos = pos + 1
+        # BUG-703: a surrogate is not a character. `c'\u{DC80}'`..`c'\u{DCFF}'` are allowed
+        # -- they are the escape chars `chars()` yields for a byte that is not UTF-8, so a
+        # program can compare against one -- and every other surrogate is refused, as it
+        # is in a string. Without this the only way a program could hold a char with no
+        # defined text was to spell one (docs/design/str_invalid_utf8.md, Decision 1).
+        var lit: str = src[start..pos]
+        var ui: int = lit.indexOf("\\u{")
+        if ui >= 0
+            var ue: int = lit.indexOf("}")
+            if ue > ui + 3
+                var cpv: int = 0
+                var hok: bool = true
+                var hx: int = ui + 3
+                while hx < ue
+                    var hc: char = lit[hx]
+                    if hc >= c'0' and hc <= c'9'
+                        cpv = cpv * 16 + (hc - c'0')
+                    else if hc >= c'a' and hc <= c'f'
+                        cpv = cpv * 16 + (hc - c'a' + 10)
+                    else if hc >= c'A' and hc <= c'F'
+                        cpv = cpv * 16 + (hc - c'A' + 10)
+                    else
+                        hok = false
+                    if cpv > 0x10FFFF
+                        break               # stop before a long escape overflows the int
+                    hx = hx + 1
+                if hok and cpv >= 0xD800 and cpv <= 0xDFFF and not (cpv >= 0xDC80 and cpv <= 0xDCFF)
+                    raise ln.toString() + ":" + cl.toString() + ": error: " + lit + " is a surrogate, not a character -- only \\u{DC80}..\\u{DCFF} are allowed, the escape chars chars() yields for a byte that is not UTF-8"
+                if cpv > 0x10FFFF
+                    raise ln.toString() + ":" + cl.toString() + ": error: " + lit + " is above U+10FFFF, the last codepoint"
         var kind = TokenKind.char_lit_single()
         if q == c'"'
             kind = TokenKind.char_lit_double()

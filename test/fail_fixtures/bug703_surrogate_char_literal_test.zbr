@@ -1,0 +1,5 @@
+# BUG-703: a surrogate is not a character. Only c'\u{DC80}'..c'\u{DCFF}', the escape chars
+# chars() yields for a byte that is not UTF-8, may be spelled.
+def main()
+    var c = c'\u{D800}'
+    print(c)

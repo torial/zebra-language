@@ -6,6 +6,69 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-703: `s.chars()` panicked on a string that is not valid UTF-8 -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13, Zig route (filed 2026-11-12); the V route is Fable's half (BUG-712/713)
+- **Repro:** `var s = "a" + "${255:c}" + "b"`; `s.isValidUtf8()` is false, and `for c in s.chars()`
+  panics: `attempt to unwrap error: Utf8InvalidStartByte`. In an `Http.serve` handler that is
+  BUG-701 -- any client sending such bytes ends the server.
+- **Fix shape (a decision, not a patch):** yield U+FFFD for each invalid sequence (what most
+  languages' lossy decoders do), or refuse at the call by returning nothing for the bad run.
+  Either way, never panic on input bytes; `isValidUtf8()` stays the way to tell. Fable's leaning
+  (2026-11-12, to be agreed in writing before building, since the V route needs the same answer):
+  REFUSE in anything whose result feeds a comparison or a store, because two U+FFFDs compare
+  equal (the reassuring-answer failure), and keep a separately named lossy conversion for display.
+- **Release builds are worse (measured 2026-11-13):** the same repro under `--release` SEGFAULTS
+  (`Segmentation fault at address 0x11`) instead of panicking. The loop is
+  `std.unicode.Utf8View.initUnchecked(s).iterator().nextCodepoint()`, whose decode is
+  `catch unreachable` inside std -- compiled ReleaseFast, outside the user functions'
+  `@setRuntimeSafety(true)` (BUG-667/668), so it is undefined behaviour there. The fix must not
+  use std's unchecked iterator.
+- **Neighbours:** BUG-714 (`codePointCount()` returns 0 on the same input); BUG-712 (the V route
+  yields bytes, so its answer differs even on valid text). Read, not run: a `char`'s `toString()`
+  on a value `utf8Encode` rejects takes `catch 1` and returns one byte of an UNINITIALISED buffer
+  (CodeGen.zbr, `_cpbuf`).
+- **Proposal:** `docs/design/str_invalid_utf8.md` (2026-11-13), for agreement with Fable.
+- **Control when fixing:** the repro iterates three items (or the chosen spelling's count) and
+  exits 0, in Debug AND `--release`; a valid string's `chars()` is unchanged.
+- **Fix (agreed with Fable in writing, docs/design/str_invalid_utf8.md "Decision"):** option C,
+  byte escape (Python's PEP 383). The runtime's own decoder `_zbr_utf8_next` replaces std's
+  unchecked iterator: a well-formed sequence is its codepoint, any other byte b the escape char
+  U+DC00+b, resuming at the next byte. `_zbr_char_text` writes a char back -- an escape char as
+  its byte -- and every char-to-text site goes through it (print, interpolation via `{f}` over
+  `_zbr_ch`, a width via `{s:..}`, `toString`; the site map was derived by emitting a probe).
+  New: `s.toValidUtf8()` (display only, one U+FFFD per escaped byte) and `c.escapedByte(): int?`.
+  The lexer refuses a surrogate char literal outside U+DC80..U+DCFF and one above U+10FFFF;
+  `${n:c}` on an int is `toUint8()` (a constant outside 0..255 refused at `-c`, a runtime one
+  traps "integer conversion out of range: N does not fit in byte"); `reverse` and
+  `codePointCount` (BUG-714) walk the same items.
+- **Pinned by:** `examples/v_poc_utf8.zbr` (the shared decoder fixture, Debug and `--release`:
+  all 256 one-byte and 65,536 two-byte strings plus the 3/4-byte boundaries round-trip, counts
+  agree, `toValidUtf8` walks in step; readable vectors; every decoding str method on invalid
+  input), `test/bug703_chars_invalid_utf8_test.zbr` (an Http.serve handler walking a path of
+  0xFF 0xFE answers it and the next request -- red on the N-1 anchor: `Utf8InvalidStartByte`),
+  three refusals in `test/fail_fixtures/bug703_*` (including `var c: char = 65`, which pins that
+  no int-to-char conversion exists) and the runtime trap `test/bug703_fmt_c_runtime_trap_test.zbr`.
+  The decoder was also tested standalone against std on every 1- and 2-byte string; a mutant
+  accepting encoded surrogates failed it.
+
+---
+
+### BUG-714: `s.codePointCount()` returned 0 for a string that is not valid UTF-8 -- FIXED 2026-11-13
+- **Status:** FIXED 2026-11-13 (filed 2026-11-13; part of BUG-701 option A's list)
+- **Repro:** `("a" + "${255:c}" + "b").codePointCount()` is `0`; the string has 3 bytes and is not
+  empty. The emit is `std.unicode.utf8CountCodepoints(s) catch 0` (CodeGen.zbr, two sites).
+- **Why it matters:** 0 is the count of the empty string, so it reads as an answer ("nothing
+  here") rather than as "could not count" -- a length check on input passes whatever it holds.
+- **Fix shape:** count by the same rule BUG-703 settles for `chars()`, so that `codePointCount()`
+  always equals the number of items `chars()` yields; never a constant on failure.
+- **Control when fixing:** the repro's count equals the `chars()` iteration count of the same
+  string; `"aéb".codePointCount()` stays 3.
+- **Fix:** `_zbr_cp_count` counts the items `chars()` yields (BUG-703's decoder), so
+  `"a\xffb"` counts 3 and the count always equals the iteration count. Pinned by
+  `examples/v_poc_utf8.zbr` (count_fails=0 over every block) and `test/bug703_chars_invalid_utf8_test.zbr`.
+
+---
+
 ### BUG-715: a `Tcp.serve` server ended when a client left before the reply -- FIXED 2026-11-13
 - **Status:** FIXED 2026-11-13 (filed and fixed 2026-11-13; found looking for BUG-701 option A's
   sites beside BUG-704)
@@ -141,6 +204,12 @@ Open bugs live in `BUGS.md`.
   before the fix: exit 1 on the fast path (Fable's repro, and mine on 8ac485e).
 
 
+- **Gating note (2026-11-13, later the same day):** this landed on QUICK alone (41/41).
+  `output_sweep`, which is FULL-only, captures a failing program's output and so saw the new
+  `note: the program exited N` line as a behaviour change in `bug259_runtime_exit_code_test`
+  and `tco_test` -- found by BUG-703's FULL tier. The sweep now filters the line, as it filters
+  the scratch-build note (the exit code is cli-surface's to gate), and its output cache is keyed
+  on that filter. A change to what `zebra run` prints wants a FULL tier, not QUICK.
 ---
 
 ### BUG-700: `HttpResponse.ok(..).withHeader(..)` -- and `Csv.parse(s).rowCount()`, `CsvWriter().writeRow(..)` -- passed `-c` and failed inside zig -- FIXED 2026-11-12

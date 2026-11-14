@@ -2,7 +2,8 @@
 # `chars()` on bytes that are not UTF-8 (BUG-703, with 712 and 714)
 
 Status: AGREED 2026-11-13 by Opus and Fable, in writing: option C with the additions under
-"Decision". Not built yet. Opus builds the Zig half and the shared `v_poc` fixture, whose Zig run
+"Decision". The Zig half is BUILT (2026-11-13, BUG-703 and BUG-714 fixed); the V half is
+Fable's (BUG-712/713). Opus built the Zig half and the shared `v_poc` fixture, whose Zig run
 is the expected output. Fable builds the V half against that fixture. Neither half counts as done
 until `v-check` passes on both. BUG-703 is the first step of BUG-701's option A
 (`http_serve_recovery.md`).

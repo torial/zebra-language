@@ -91,16 +91,18 @@ def main()
         fails = fails + 1
         print("FAIL literal :c")
 
-    # -- 4. TRUNCATING, not checked: out of range wraps rather than trapping, because
-    # @intCast would be undefined behaviour in ReleaseFast, which `--release` ships.
-    var over: int = 462           # 0x1CE -> 0xCE
-    var under: int = -50          # two's complement -> 206
-    if "${over:c}" <> "${under:c}"
+    # -- 4. (REVERSED 2026-11-13, BUG-703.) This leg pinned TRUNCATION: 462 wrote 0xCE and
+    # -50 wrote 206, because @intCast was undefined behaviour in ReleaseFast. `:c` on an int
+    # now goes through the checked conversion (`toUint8()`, std.math.cast -- a trap in every
+    # build mode, never UB), so an out-of-range value traps instead of writing a byte nobody
+    # asked for: test/bug703_fmt_c_runtime_trap_test.zbr pins that, and
+    # test/fail_fixtures/bug703_fmt_c_literal_range_test.zbr the constant's refusal. The
+    # in-range edges still write exactly one byte:
+    var top: int = 255
+    var bottom: int = 0
+    if "${top:c}".len <> 1 or "${bottom:c}".len <> 1
         fails = fails + 1
-        print("FAIL truncation is not consistent")
-    if "${over:c}".len <> 1
-        fails = fails + 1
-        print("FAIL out-of-range did not narrow to one byte")
+        print("FAIL the in-range edges did not write one byte")
 
     if fails == 0
         print("bug301: OK")

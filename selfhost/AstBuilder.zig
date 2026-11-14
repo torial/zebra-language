@@ -16,6 +16,8 @@ const _zbr_rem = _zbr_rt._zbr_rem;
 const _zebra_gt = _zbr_rt._zebra_gt;
 const _zebra_ge = _zbr_rt._zebra_ge;
 const _str_concat = _zbr_rt._str_concat;
+const _zbr_utf8_next = _zbr_rt._zbr_utf8_next;
+const _zbr_char_str = _zbr_rt._zbr_char_str;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrMap = _zbr_rt._ZbrMap;
@@ -3136,21 +3138,23 @@ pub const _zbr_ty_ASTBuilder = struct {
         var current: []const u8 = "";
 // zbr:selfhost/AstBuilder.zbr:1648
         {
-            var _cp_it_gch = std.unicode.Utf8View.initUnchecked(s).iterator();
-            while (_cp_it_gch.nextCodepoint()) |gch| {
+            const _cp_s_gch: []const u8 = s;
+            var _cp_i_gch: usize = 0;
+            while (_cp_i_gch < _cp_s_gch.len) {
+                const gch: u21 = _zbr_utf8_next(_cp_s_gch, &_cp_i_gch);
 // zbr:selfhost/AstBuilder.zbr:1649
                 if ((gch == '(')) {
 // zbr:selfhost/AstBuilder.zbr:1650
                     depth = (depth + 1);
 // zbr:selfhost/AstBuilder.zbr:1651
-                    current = _str_concat(current, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(gch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
+                    current = _str_concat(current, _zbr_char_str(gch, _zbr_rt._allocator), _zbr_rt._allocator);
                 } else {
 // zbr:selfhost/AstBuilder.zbr:1652
                     if ((gch == ')')) {
 // zbr:selfhost/AstBuilder.zbr:1653
                         depth = (depth - 1);
 // zbr:selfhost/AstBuilder.zbr:1654
-                        current = _str_concat(current, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(gch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
+                        current = _str_concat(current, _zbr_char_str(gch, _zbr_rt._allocator), _zbr_rt._allocator);
                     } else {
 // zbr:selfhost/AstBuilder.zbr:1655
                         if (((gch == ',') and (depth == 0))) {
@@ -3160,7 +3164,7 @@ pub const _zbr_ty_ASTBuilder = struct {
                             current = "";
                         } else {
 // zbr:selfhost/AstBuilder.zbr:1659
-                            current = _str_concat(current, (blk: { var _cpbuf: [4]u8 = undefined; const _cplen = std.unicode.utf8Encode(@intCast(gch), &_cpbuf) catch 1; break :blk _zbr_rt._allocator.dupe(u8, _cpbuf[0.._cplen]) catch @panic("OOM"); }), _zbr_rt._allocator);
+                            current = _str_concat(current, _zbr_char_str(gch, _zbr_rt._allocator), _zbr_rt._allocator);
                         }
                     }
                 }

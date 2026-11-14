@@ -1,0 +1,6 @@
+# BUG-703 (Decision 1): a program cannot make a char from an int. If this stops being refused,
+# the conversion that was added must refuse surrogates outside U+DC80..U+DCFF and values
+# above U+10FFFF, or carry the non-injectivity caveat: docs/design/str_invalid_utf8.md.
+def main()
+    var c: char = 65
+    print(c)

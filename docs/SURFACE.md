@@ -74,9 +74,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 ## Builtin receiver methods
 
-### str (54)
+### str (55)
 
-`bytes` `center` `charAt` `chars` `codePointCount` `concat` `contains` `containsIgnoreCase` `count` `decodeBase64` `encodeBase64` `endsWith` `endsWithIgnoreCase` `eqlIgnoreCase` `format` `fromHex` `hash` `indexOf` `indexOfFrom` `indexOfIgnoreCase` `isAlpha` `isAlphanumeric` `isEmpty` `isNumeric` `isPrintable` `isValidUtf8` `join` `lastIndexOf` `len` `lines` `lower` `padLeft` `padRight` `repeat` `replace` `replaceAll` `reverse` `split` `startsWith` `startsWithIgnoreCase` `substring` `toFloat` `toFloat32` `toHex` `toInt` `toIntBase` `toString` `tokenize` `trim` `trimLeft` `trimRight` `tryFloat` `tryInt` `upper`
+`bytes` `center` `charAt` `chars` `codePointCount` `concat` `contains` `containsIgnoreCase` `count` `decodeBase64` `encodeBase64` `endsWith` `endsWithIgnoreCase` `eqlIgnoreCase` `format` `fromHex` `hash` `indexOf` `indexOfFrom` `indexOfIgnoreCase` `isAlpha` `isAlphanumeric` `isEmpty` `isNumeric` `isPrintable` `isValidUtf8` `join` `lastIndexOf` `len` `lines` `lower` `padLeft` `padRight` `repeat` `replace` `replaceAll` `reverse` `split` `startsWith` `startsWithIgnoreCase` `substring` `toFloat` `toFloat32` `toHex` `toInt` `toIntBase` `toString` `toValidUtf8` `tokenize` `trim` `trimLeft` `trimRight` `tryFloat` `tryInt` `upper`
 
 ### List(T) (25)
 

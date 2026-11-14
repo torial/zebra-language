@@ -1,0 +1,57 @@
+# BUG-703: `chars()` on a str that is not valid UTF-8 panicked (Debug) or segfaulted
+# (--release), and inside an `Http.serve` handler that is BUG-701: any client sending such
+# bytes in a path ended the server. Now an invalid byte is the escape char U+DC00+byte
+# (docs/design/str_invalid_utf8.md); the walk finishes, the request is answered, and the
+# next one is too. The decoder's own vectors are examples/v_poc_utf8.zbr; this file is the
+# server control and the Zig-route basics.
+
+def handle(req: HttpRequest): HttpResponse
+    var items = 0
+    var escapes = 0
+    for c in req.path.chars()
+        items = items + 1
+        if c.escapedByte() as _b
+            escapes = escapes + 1
+    return HttpResponse.ok("items=${items} escapes=${escapes}")
+
+def raw(req: str): str
+    if Tcp.connect("127.0.0.1", 19965) as c
+        c.write(req)
+        var got = c.readAll()
+        c.close()
+        return got
+    return "<no connection>"
+
+def main()
+    # ── the basics, no server ───────────────────────────────────────────────
+    var bad = "a" + "${255:c}" + "b"
+    var n = 0
+    for c in bad.chars()
+        n = n + 1
+    assert n == 3, "three items: a, the escape char for 0xFF, b"
+    assert bad.codePointCount() == 3, "BUG-714: the count of the same items, not 0"
+    var sb = StringBuilder()
+    for c in bad.chars()
+        sb.append(c.toString())
+    assert sb.build() == bad, "rebuilt byte for byte"
+    assert "${bad.toValidUtf8()}" == "a" + "\u{FFFD}" + "b", "the named lossy conversion"
+    assert "aéb".codePointCount() == 3, "valid text unchanged"
+
+    # ── BUG-701's control, A half: the server survives the bytes ─────────────
+    sys.go(def()
+        Http.serve(19965, handle)
+    )
+    var reached: bool = false
+    var attempts: int = 0
+    while attempts < 40 and not reached
+        if Http.get("http://127.0.0.1:19965/") as _r0
+            reached = true
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+    assert reached, "client reached the in-process server"
+    var hostile = raw("GET /" + "${255:c}${254:c}" + " HTTP/1.1\r\nHost: t\r\n\r\n")
+    assert hostile.contains("items=3 escapes=2"), "the handler walked /, 0xFF, 0xFE: " + hostile
+    var next = raw("GET /ok HTTP/1.1\r\nHost: t\r\n\r\n")
+    assert next.contains("items=3 escapes=0"), "and the server answered the next request: " + next
+    print("bug703: OK")
