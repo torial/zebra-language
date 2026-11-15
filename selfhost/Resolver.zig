@@ -21,6 +21,7 @@ const _zbr_new = _zbr_rt._zbr_new;
 const _zbr_copy = _zbr_rt._zbr_copy;
 const _zbr_print = _zbr_rt._zbr_print;
 const _zbr_list_pop = _zbr_rt._zbr_list_pop;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_Parser = @import("Parser.zig");
 const _zbr_ty_PNode = _zbr_mod_Parser._zbr_ty_PNode;
@@ -152,7 +153,7 @@ pub const _zbr_ty_Resolver = struct {
     pub fn fmtErrAt(self: *_zbr_ty_Resolver, line: i64, col: i64, msg: []const u8) []const u8 {
         @setRuntimeSafety(true);
 // zbr:selfhost/Resolver.zbr:134
-        const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{col}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
+        const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), _zbr_show(line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(col), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
 // zbr:selfhost/Resolver.zbr:135
         const src_line: []const u8 = self.sourceLine((line - 1));
 // zbr:selfhost/Resolver.zbr:136
@@ -286,7 +287,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:201
                 if (_zebra_gt(first, 0)) {
 // zbr:selfhost/Resolver.zbr:202
-                    top_at = _str_concat(_str_concat(" (line ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{first}) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator);
+                    top_at = _str_concat(_str_concat(" (line ", _zbr_show(first), _zbr_rt._allocator), ")", _zbr_rt._allocator);
                 }
 // zbr:selfhost/Resolver.zbr:203
                 self.errors.append(_zbr_rt._allocator, _zbr_ty_ResolveError.init(self.fmtErrAt(line, col, _str_concat(_str_concat(_str_concat(_str_concat("`", name, _zbr_rt._allocator), "` is already declared at the top of this module", _zbr_rt._allocator), top_at, _zbr_rt._allocator), " -- two declarations cannot share a name; rename one", _zbr_rt._allocator)))) catch @panic("OOM");
@@ -540,7 +541,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:330
                 if (_zebra_gt(mfirst, 0)) {
 // zbr:selfhost/Resolver.zbr:331
-                    mwhere = _str_concat(_str_concat(" (line ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{mfirst}) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator);
+                    mwhere = _str_concat(_str_concat(" (line ", _zbr_show(mfirst), _zbr_rt._allocator), ")", _zbr_rt._allocator);
                 }
 // zbr:selfhost/Resolver.zbr:332
                 self.errors.append(_zbr_rt._allocator, _zbr_ty_ResolveError.init(self.fmtErrAt(line, col, _str_concat(_str_concat(_str_concat(_str_concat("`", name, _zbr_rt._allocator), "` is already a member of this type", _zbr_rt._allocator), mwhere, _zbr_rt._allocator), " -- two members cannot share a name (Zebra has no overloading); rename one", _zbr_rt._allocator)))) catch @panic("OOM");
@@ -823,7 +824,7 @@ pub const _zbr_ty_Resolver = struct {
 // zbr:selfhost/Resolver.zbr:484
                                 refused.put(_intern(nm), 1) catch @panic("OOM");
 // zbr:selfhost/Resolver.zbr:485
-                                self.errors.append(_zbr_rt._allocator, _zbr_ty_ResolveError.init(self.fmtErrAt((self.fn_written_line.get(nm).?), (self.fn_written_col.get(nm).?), _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("'", nm, _zbr_rt._allocator), "' is changed here, and a closure reads it (line ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(fr.first_line.get(nm).?)}) catch @panic("OOM")), _zbr_rt._allocator), ") -- only a `var` local can be shared with a closure, and this is a parameter, a loop variable or a binding; copy it into a `var` first (`var n2 = ", _zbr_rt._allocator), nm, _zbr_rt._allocator), "`), or keep the state in the closure with a `capture` block", _zbr_rt._allocator)))) catch @panic("OOM");
+                                self.errors.append(_zbr_rt._allocator, _zbr_ty_ResolveError.init(self.fmtErrAt((self.fn_written_line.get(nm).?), (self.fn_written_col.get(nm).?), _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("'", nm, _zbr_rt._allocator), "' is changed here, and a closure reads it (line ", _zbr_rt._allocator), _zbr_show((fr.first_line.get(nm).?)), _zbr_rt._allocator), ") -- only a `var` local can be shared with a closure, and this is a parameter, a loop variable or a binding; copy it into a `var` first (`var n2 = ", _zbr_rt._allocator), nm, _zbr_rt._allocator), "`), or keep the state in the closure with a `capture` block", _zbr_rt._allocator)))) catch @panic("OOM");
                             }
                         } else {
 // zbr:selfhost/Resolver.zbr:487

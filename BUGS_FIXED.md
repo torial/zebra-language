@@ -6,6 +6,46 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-743: `toString()` on a List or HashMap returns Zig's struct dump -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; Fable, from a V-route show program; reproduced on b5efe7a)
+- **Repro:** `var ints: List(int) = [1, 2, 3]` / `var strs: List(str) = ["a", "b c", ""]` /
+  `print("toString: " + ints.toString() + " " + strs.toString())` prints
+  `.{ .items = { 1, 2, 3 }, .capacity = 17 } .{ .items = { { 97 }, { 98, 32, 99 }, {  } }, .capacity = 9 }`.
+  A `List(float)` gives `.{ .items = { 1.5, 2 }, ... }`. A `HashMap(str, int)`'s `toString()` is
+  worse: the whole `std.StringHashMap` struct, allocator vtable addresses included, so the text
+  also differs from run to run. `print(ints)` and `"${ints}"` give `[1, 2, 3]` /
+  `["a", "b c", ""]` -- the right text exists, and `toString()` does not use it.
+- **Cost:** `toString()` is the documented way to get a value's text into a `str`; for a
+  container it hands back the runtime's representation, capacity included -- a number the
+  program never chose, and on a map, pointers.
+- **Fix shape:** `toString()` on a container produces exactly what `print` / a hole produce
+  (one formatter, `_zbr_show`'s), for List, HashMap, Set and nested containers. The V route
+  already prints the `print` spelling (Fable, 2026-11-15), so the contract is that spelling on
+  both routes. Measure first: `output_sweep` will name every corpus program that printed a
+  dump today.
+- **Control when fixing:** the repro prints `toString: [1, 2, 3] ["a", "b c", ""]`; a map's
+  `toString()` equals its `print` text; `toString()` on a str, int, float and a user class is
+  unchanged.
+- **Fix:** `CodeGen.zbr`'s generic `toString` arm emits `_zbr_show(x)` -- the formatter
+  `print` and `${x}` use -- for every receiver without a `toString` cue of its own except a
+  `char` (which keeps `_zbr_char_str`, BUG-703). It emitted `std.fmt.allocPrint("{}")`, which
+  is Zig's struct dump; floats already went through `_zbr_show` (2026-09-27). Wider than the
+  filing: a class without a `toString` cue, a struct and an enum had the same defect
+  (`.{ ._type_tag = ..., .x = 1 }`, `.{ .r = 3 }`, `.green`), and the one-formatter fix covers
+  them. `_zbr_show` itself calls a type's `toString` cue, so a cross-module class (which the
+  arm's own-module `toString_types` check cannot see) still reaches its cue.
+- **Pinned by:** `test/bug743_tostring_show_test.zbr` (`smoke_run`): List of int, str, float,
+  nested and empty; HashMap keyed by str and by int; Set; class; struct; enum -- each
+  `toString()` equal to both its literal spelling and its `${x}` hole -- and a map's text equal
+  across two calls. Controls: a class with its own cue, int, float, bool and str unchanged.
+  Red: the pre-fix compiler gets all 12 defect cases WRONG and the 5 controls right.
+- **Not covered:** the V route (Fable adds `toString()` to the V show row). `print`'s own
+  spelling is unchanged and is not fully regular: a map's str KEYS are unquoted (`{a: 1}`)
+  while its str values are quoted (`{7: "seven"}`), and a `Set(str)` prints `{z}`, unlike a
+  `List(str)`'s `["a"]`. `toString()` now inherits exactly that text.
+
+---
+
 ### BUG-708: `private` is not enforced from another module, and never on methods -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
 - **Repro:** `vault.zbr` declares `class Vault` with `private var secret: str`, `private var log:

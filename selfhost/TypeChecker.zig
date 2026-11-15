@@ -31,6 +31,7 @@ const _zbr_print = _zbr_rt._zbr_print;
 const _ZbrInitFrame = _zbr_rt._ZbrInitFrame;
 const _zbr_init_cycle = _zbr_rt._zbr_init_cycle;
 const _zbr_list_join = _zbr_rt._zbr_list_join;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_Ast = @import("Ast.zig");
 const _zbr_ty_Span = _zbr_mod_Ast._zbr_ty_Span;
@@ -3138,7 +3139,7 @@ pub const _zbr_ty_InferCtx = struct {
 // zbr:selfhost/TypeChecker.zbr:1796
             const d: _zbr_ty_Diagnostic = _zbr_at(self.errors.items, i);
 // zbr:selfhost/TypeChecker.zbr:1797
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(d.file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{d.line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{d.col}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), d.message, _zbr_rt._allocator), self.caretSuffix(d.line, d.col), _zbr_rt._allocator), "\n", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(d.file, ":", _zbr_rt._allocator), _zbr_show(d.line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(d.col), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), d.message, _zbr_rt._allocator), self.caretSuffix(d.line, d.col), _zbr_rt._allocator), "\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/TypeChecker.zbr:1798
             i = (i + 1);
         }
@@ -3257,7 +3258,7 @@ pub const _zbr_ty_InferCtx = struct {
 // zbr:selfhost/TypeChecker.zbr:1850
             const d: _zbr_ty_Diagnostic = _zbr_at(self.warnings.items, i);
 // zbr:selfhost/TypeChecker.zbr:1851
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(d.file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{d.line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{d.col}) catch @panic("OOM")), _zbr_rt._allocator), ": warning: ", _zbr_rt._allocator), d.message, _zbr_rt._allocator), self.caretSuffix(d.line, d.col), _zbr_rt._allocator), "\n", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(d.file, ":", _zbr_rt._allocator), _zbr_show(d.line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(d.col), _zbr_rt._allocator), ": warning: ", _zbr_rt._allocator), d.message, _zbr_rt._allocator), self.caretSuffix(d.line, d.col), _zbr_rt._allocator), "\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/TypeChecker.zbr:1852
             i = (i + 1);
         }
@@ -4274,7 +4275,7 @@ pub fn _zbr_fn_checkHttpServeHandler(h: _zbr_ty_Expr, sp: _zbr_ty_Span, ctx: *_z
 // zbr:selfhost/TypeChecker.zbr:2379
     if ((_zebra_ge(nparams, 0) and (nparams != 1))) {
 // zbr:selfhost/TypeChecker.zbr:2380
-        ctx.addErr(ctx.file, sp.line, sp.col, _str_concat(_str_concat("Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{nparams}) catch @panic("OOM")), _zbr_rt._allocator), shape, _zbr_rt._allocator));
+        ctx.addErr(ctx.file, sp.line, sp.col, _str_concat(_str_concat("Http.serve's handler takes ONE parameter, the HttpRequest, and returns the HttpResponse; this one takes ", _zbr_show(nparams), _zbr_rt._allocator), shape, _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:2381
         return;
     }
@@ -5004,11 +5005,11 @@ pub fn _zbr_fn_stdlibArityError(recv_kind: []const u8, name: []const u8, argc: i
         return "";
     }
 // zbr:selfhost/TypeChecker.zbr:2750
-    var want: []const u8 = (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{lo}) catch @panic("OOM"));
+    var want: []const u8 = _zbr_show(lo);
 // zbr:selfhost/TypeChecker.zbr:2751
     if ((hi != lo)) {
 // zbr:selfhost/TypeChecker.zbr:2752
-        want = _str_concat(_str_concat(want, " to ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{hi}) catch @panic("OOM")), _zbr_rt._allocator);
+        want = _str_concat(_str_concat(want, " to ", _zbr_rt._allocator), _zbr_show(hi), _zbr_rt._allocator);
     }
 // zbr:selfhost/TypeChecker.zbr:2753
     var plural: []const u8 = " arguments";
@@ -5018,7 +5019,7 @@ pub fn _zbr_fn_stdlibArityError(recv_kind: []const u8, name: []const u8, argc: i
         plural = " argument";
     }
 // zbr:selfhost/TypeChecker.zbr:2756
-    return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(recv_kind, ".", _zbr_rt._allocator), name, _zbr_rt._allocator), " expects ", _zbr_rt._allocator), want, _zbr_rt._allocator), plural, _zbr_rt._allocator), ", got ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{argc}) catch @panic("OOM")), _zbr_rt._allocator);
+    return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(recv_kind, ".", _zbr_rt._allocator), name, _zbr_rt._allocator), " expects ", _zbr_rt._allocator), want, _zbr_rt._allocator), plural, _zbr_rt._allocator), ", got ", _zbr_rt._allocator), _zbr_show(argc), _zbr_rt._allocator);
 }
 
 // zbr:selfhost/TypeChecker.zbr:2759
@@ -5383,7 +5384,7 @@ pub fn _zbr_fn_numTypeName(t: _zbr_ty_Type_) []const u8 {
         },
         .int_n => |w| {
 // zbr:selfhost/TypeChecker.zbr:2945
-            return _str_concat("int", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{w}) catch @panic("OOM")), _zbr_rt._allocator);
+            return _str_concat("int", _zbr_show(w), _zbr_rt._allocator);
         },
         .uint_n => |w2| {
 // zbr:selfhost/TypeChecker.zbr:2947
@@ -5392,11 +5393,11 @@ pub fn _zbr_fn_numTypeName(t: _zbr_ty_Type_) []const u8 {
                 return "byte";
             }
 // zbr:selfhost/TypeChecker.zbr:2949
-            return _str_concat("uint", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{w2}) catch @panic("OOM")), _zbr_rt._allocator);
+            return _str_concat("uint", _zbr_show(w2), _zbr_rt._allocator);
         },
         .float_n => |w3| {
 // zbr:selfhost/TypeChecker.zbr:2951
-            return _str_concat("float", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{w3}) catch @panic("OOM")), _zbr_rt._allocator);
+            return _str_concat("float", _zbr_show(w3), _zbr_rt._allocator);
         },
         else => {
 // zbr:selfhost/TypeChecker.zbr:2953
@@ -6807,7 +6808,7 @@ pub fn _zbr_fn_suffixLitFit(text: []const u8, neg: bool, t: _zbr_ty_Type_) []con
 // zbr:selfhost/TypeChecker.zbr:3697
     if (((cv.huge or _zebra_lt(val, lo)) or _zebra_gt(val, hi))) {
 // zbr:selfhost/TypeChecker.zbr:3698
-        return _str_concat(_str_concat(_str_concat(_str_concat(why, (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{lo}) catch @panic("OOM")), _zbr_rt._allocator), "..", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{hi}) catch @panic("OOM")), _zbr_rt._allocator), tail, _zbr_rt._allocator);
+        return _str_concat(_str_concat(_str_concat(_str_concat(why, _zbr_show(lo), _zbr_rt._allocator), "..", _zbr_rt._allocator), _zbr_show(hi), _zbr_rt._allocator), tail, _zbr_rt._allocator);
     }
 // zbr:selfhost/TypeChecker.zbr:3699
     return "";
@@ -6996,7 +6997,7 @@ pub fn _zbr_fn_narrowRangeWhy(val: i64, t: _zbr_ty_Type_) []const u8 {
 // zbr:selfhost/TypeChecker.zbr:3784
     if ((_zebra_lt(val, lo) or _zebra_gt(val, hi))) {
 // zbr:selfhost/TypeChecker.zbr:3785
-        return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("'", _zbr_fn_numTypeName(t), _zbr_rt._allocator), "' (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{lo}) catch @panic("OOM")), _zbr_rt._allocator), "..", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{hi}) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator);
+        return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("'", _zbr_fn_numTypeName(t), _zbr_rt._allocator), "' (", _zbr_rt._allocator), _zbr_show(lo), _zbr_rt._allocator), "..", _zbr_rt._allocator), _zbr_show(hi), _zbr_rt._allocator), ")", _zbr_rt._allocator);
     }
 // zbr:selfhost/TypeChecker.zbr:3786
     return "";
@@ -7049,7 +7050,7 @@ pub fn _zbr_fn_suffixedConstFitCheck(b: _zbr_ty_ExprBinary, t: _zbr_ty_Type_, ct
 // zbr:selfhost/TypeChecker.zbr:3809
     if (!std.mem.eql(u8, why, "")) {
 // zbr:selfhost/TypeChecker.zbr:3810
-        ctx.addErr(ctx.file, _zbr_fn_anchorLine(b.left.*, b.span.line), _zbr_fn_anchorCol(b.left.*, b.span.col), _str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cv.val}) catch @panic("OOM")), " (the value of this constant expression) does not fit in ", _zbr_rt._allocator), why, _zbr_rt._allocator), ", the type of its operands -- Zig computes it at compile time", _zbr_rt._allocator));
+        ctx.addErr(ctx.file, _zbr_fn_anchorLine(b.left.*, b.span.line), _zbr_fn_anchorCol(b.left.*, b.span.col), _str_concat(_str_concat(_str_concat(_zbr_show(cv.val), " (the value of this constant expression) does not fit in ", _zbr_rt._allocator), why, _zbr_rt._allocator), ", the type of its operands -- Zig computes it at compile time", _zbr_rt._allocator));
     }
 }
 
@@ -7177,7 +7178,7 @@ pub fn _zbr_fn_litFitsType(e: _zbr_ty_Expr, t: _zbr_ty_Type_) []const u8 {
 // zbr:selfhost/TypeChecker.zbr:3869
     if (std.mem.eql(u8, shown, "")) {
 // zbr:selfhost/TypeChecker.zbr:3870
-        shown = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cv.val}) catch @panic("OOM")), " (the value of this constant expression)", _zbr_rt._allocator);
+        shown = _str_concat(_zbr_show(cv.val), " (the value of this constant expression)", _zbr_rt._allocator);
     }
 // zbr:selfhost/TypeChecker.zbr:3871
     var bits: i64 = w;
@@ -7209,7 +7210,7 @@ pub fn _zbr_fn_litFitsType(e: _zbr_ty_Expr, t: _zbr_ty_Type_) []const u8 {
 // zbr:selfhost/TypeChecker.zbr:3883
     if (((cv.huge or _zebra_lt(cv.val, lo)) or _zebra_gt(cv.val, hi))) {
 // zbr:selfhost/TypeChecker.zbr:3884
-        return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(shown, " does not fit in '", _zbr_rt._allocator), _zbr_fn_numTypeName(t), _zbr_rt._allocator), "' (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{lo}) catch @panic("OOM")), _zbr_rt._allocator), "..", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{hi}) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator);
+        return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(shown, " does not fit in '", _zbr_rt._allocator), _zbr_fn_numTypeName(t), _zbr_rt._allocator), "' (", _zbr_rt._allocator), _zbr_show(lo), _zbr_rt._allocator), "..", _zbr_rt._allocator), _zbr_show(hi), _zbr_rt._allocator), ")", _zbr_rt._allocator);
     }
 // zbr:selfhost/TypeChecker.zbr:3885
     return "";
@@ -8082,7 +8083,7 @@ pub fn _zbr_fn_inferExpr(e: _zbr_ty_Expr, ctx: *_zbr_ty_InferCtx) _zbr_ty_Type_ 
 // zbr:selfhost/TypeChecker.zbr:4429
                     if (_zebra_gt(@as(i64, @intCast(tupt.len)), 0)) {
 // zbr:selfhost/TypeChecker.zbr:4430
-                        ctx.addErr(ctx.file, m.span.line, m.span.col, _str_concat(_str_concat(_str_concat(_str_concat("tuple index ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{tidx}) catch @panic("OOM")), _zbr_rt._allocator), " out of bounds (tuple has ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tupt.len))}) catch @panic("OOM")), _zbr_rt._allocator), " elements)", _zbr_rt._allocator));
+                        ctx.addErr(ctx.file, m.span.line, m.span.col, _str_concat(_str_concat(_str_concat(_str_concat("tuple index ", _zbr_show(tidx), _zbr_rt._allocator), " out of bounds (tuple has ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(tupt.len))), _zbr_rt._allocator), " elements)", _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:4431
                         return _zbr_ty_Type_.unknown_;
                     }
@@ -9992,7 +9993,7 @@ pub fn _zbr_fn_inferExpr(e: _zbr_ty_Expr, ctx: *_zbr_ty_InferCtx) _zbr_ty_Type_ 
                                 }
                             }
 // zbr:selfhost/TypeChecker.zbr:5548
-                            ctx.addErr(ctx.file, gid.span.line, gid.span.col, _str_concat(_str_concat(_str_concat(_str_concat("HashMap(...)() takes two type arguments, the key and the value: write `HashMap(str, ", hm_v, _zbr_rt._allocator), ")()` (got ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(gc.args.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator));
+                            ctx.addErr(ctx.file, gid.span.line, gid.span.col, _str_concat(_str_concat(_str_concat(_str_concat("HashMap(...)() takes two type arguments, the key and the value: write `HashMap(str, ", hm_v, _zbr_rt._allocator), ")()` (got ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(gc.args.items.len))), _zbr_rt._allocator), ")", _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:5550
                             return _zbr_ty_Type_.unknown_;
                         }
@@ -11818,7 +11819,7 @@ pub fn _zbr_fn_walkStmt(s: _zbr_ty_Stmt, ctx: *_zbr_ty_InferCtx) void {
 // zbr:selfhost/TypeChecker.zbr:6635
                 if ((_zebra_gt(@as(i64, @intCast(tupt.len)), 0) and (@as(i64, @intCast(tupt.len)) != @as(i64, @intCast(sds.names.items.len))))) {
 // zbr:selfhost/TypeChecker.zbr:6636
-                    ctx.addErr(ctx.file, _zbr_fn_anchorLine(sds.init_expr.*, sds.span.line), _zbr_fn_anchorCol(sds.init_expr.*, sds.span.col), _str_concat(_str_concat(_str_concat(_str_concat("destructuring expects ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(sds.names.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " names but tuple has ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tupt.len))}) catch @panic("OOM")), _zbr_rt._allocator), " elements", _zbr_rt._allocator));
+                    ctx.addErr(ctx.file, _zbr_fn_anchorLine(sds.init_expr.*, sds.span.line), _zbr_fn_anchorCol(sds.init_expr.*, sds.span.col), _str_concat(_str_concat(_str_concat(_str_concat("destructuring expects ", _zbr_show(@as(i64, @intCast(sds.names.items.len))), _zbr_rt._allocator), " names but tuple has ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(tupt.len))), _zbr_rt._allocator), " elements", _zbr_rt._allocator));
                 }
             } else {
 // zbr:selfhost/TypeChecker.zbr:6645
@@ -12125,7 +12126,7 @@ pub fn _zbr_fn_intNarrowHint(declared: _zbr_ty_Type_, inferred: _zbr_ty_Type_, e
 // zbr:selfhost/TypeChecker.zbr:6837
     if (((dk == 1) and (_zbr_val(declared) == .int_n))) {
 // zbr:selfhost/TypeChecker.zbr:6838
-        meth = _str_concat("toInt", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{dw}) catch @panic("OOM")), _zbr_rt._allocator);
+        meth = _str_concat("toInt", _zbr_show(dw), _zbr_rt._allocator);
     }
 // zbr:selfhost/TypeChecker.zbr:6839
     if ((dk == 2)) {
@@ -12134,7 +12135,7 @@ pub fn _zbr_fn_intNarrowHint(declared: _zbr_ty_Type_, inferred: _zbr_ty_Type_, e
 // zbr:selfhost/TypeChecker.zbr:6841
         if ((_zbr_val(declared) == .uint_n)) {
 // zbr:selfhost/TypeChecker.zbr:6842
-            meth = _str_concat("toUint", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{dw}) catch @panic("OOM")), _zbr_rt._allocator);
+            meth = _str_concat("toUint", _zbr_show(dw), _zbr_rt._allocator);
         }
     }
 // zbr:selfhost/TypeChecker.zbr:6843
@@ -12840,7 +12841,7 @@ pub fn _zbr_fn_fnValueMismatch(slot: _zbr_ty_Type_, val: _zbr_ty_Type_, ctx: *_z
 // zbr:selfhost/TypeChecker.zbr:7184
         if (((_zebra_ge(vf.arity, 0) and _zebra_ge(s_arity, 0)) and (vf.arity != s_arity))) {
 // zbr:selfhost/TypeChecker.zbr:7185
-            return _str_concat(_str_concat(_str_concat(_str_concat("it takes ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{vf.arity}) catch @panic("OOM")), _zbr_rt._allocator), " argument(s) where ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{s_arity}) catch @panic("OOM")), _zbr_rt._allocator), " are expected", _zbr_rt._allocator);
+            return _str_concat(_str_concat(_str_concat(_str_concat("it takes ", _zbr_show(vf.arity), _zbr_rt._allocator), " argument(s) where ", _zbr_rt._allocator), _zbr_show(s_arity), _zbr_rt._allocator), " are expected", _zbr_rt._allocator);
         }
 // zbr:selfhost/TypeChecker.zbr:7186
         var i: i64 = 0;
@@ -12849,7 +12850,7 @@ pub fn _zbr_fn_fnValueMismatch(slot: _zbr_ty_Type_, val: _zbr_ty_Type_, ctx: *_z
 // zbr:selfhost/TypeChecker.zbr:7188
             if (_zbr_fn_elemsDiffer(_zbr_at(s_params.items, i), _zbr_at(vf.params.items, i))) {
 // zbr:selfhost/TypeChecker.zbr:7189
-                return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("its parameter ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(i + 1)}) catch @panic("OOM")), _zbr_rt._allocator), " is ", _zbr_rt._allocator), _zbr_fn_userTypeName(_zbr_at(vf.params.items, i)), _zbr_rt._allocator), " where ", _zbr_rt._allocator), _zbr_fn_userTypeName(_zbr_at(s_params.items, i)), _zbr_rt._allocator), " is expected", _zbr_rt._allocator);
+                return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("its parameter ", _zbr_show((i + 1)), _zbr_rt._allocator), " is ", _zbr_rt._allocator), _zbr_fn_userTypeName(_zbr_at(vf.params.items, i)), _zbr_rt._allocator), " where ", _zbr_rt._allocator), _zbr_fn_userTypeName(_zbr_at(s_params.items, i)), _zbr_rt._allocator), " is expected", _zbr_rt._allocator);
             }
 // zbr:selfhost/TypeChecker.zbr:7190
             i += 1;
@@ -13265,7 +13266,7 @@ pub fn _zbr_fn_checkSqliteOpenArgs(call: _zbr_ty_ExprCall, file: []const u8, lin
 // zbr:selfhost/TypeChecker.zbr:7387
     if (_zebra_gt(@as(i64, @intCast(call.args.items.len)), 3)) {
 // zbr:selfhost/TypeChecker.zbr:7388
-        ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat("Sqlite.open takes at most 3 arguments, got ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(call.args.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), usage, _zbr_rt._allocator));
+        ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat("Sqlite.open takes at most 3 arguments, got ", _zbr_show(@as(i64, @intCast(call.args.items.len))), _zbr_rt._allocator), usage, _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:7389
         return;
     }
@@ -13298,7 +13299,7 @@ pub fn _zbr_fn_checkSqliteOpenArgs(call: _zbr_ty_ExprCall, file: []const u8, lin
                 ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat("Sqlite.open has no parameter '", a.name.?, _zbr_rt._allocator), "'", _zbr_rt._allocator), usage, _zbr_rt._allocator));
             } else {
 // zbr:selfhost/TypeChecker.zbr:7404
-                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat("Sqlite.open's argument ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(i + 1)}) catch @panic("OOM")), _zbr_rt._allocator), " has no parameter to fill -- name it", _zbr_rt._allocator), usage, _zbr_rt._allocator));
+                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat("Sqlite.open's argument ", _zbr_show((i + 1)), _zbr_rt._allocator), " has no parameter to fill -- name it", _zbr_rt._allocator), usage, _zbr_rt._allocator));
             }
 // zbr:selfhost/TypeChecker.zbr:7405
             return;
@@ -13345,7 +13346,7 @@ pub fn _zbr_fn_checkSqliteOpenArgs(call: _zbr_ty_ExprCall, file: []const u8, lin
 // zbr:selfhost/TypeChecker.zbr:7424
             if ((cv.ok and _zebra_lt(cv.val, 0))) {
 // zbr:selfhost/TypeChecker.zbr:7425
-                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat("Sqlite.open's busyMs is ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cv.val}) catch @panic("OOM")), _zbr_rt._allocator), " -- it is the wait in milliseconds for another connection's lock, 0 to refuse at once", _zbr_rt._allocator));
+                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat("Sqlite.open's busyMs is ", _zbr_show(cv.val), _zbr_rt._allocator), " -- it is the wait in milliseconds for another connection's lock, 0 to refuse at once", _zbr_rt._allocator));
             }
         }
 // zbr:selfhost/TypeChecker.zbr:7426
@@ -13553,7 +13554,7 @@ pub fn _zbr_fn_checkServeArgs(call: _zbr_ty_ExprCall, file: []const u8, line: i6
 // zbr:selfhost/TypeChecker.zbr:7526
     if (_zebra_gt(@as(i64, @intCast(call.args.items.len)), 4)) {
 // zbr:selfhost/TypeChecker.zbr:7527
-        ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(ns, ".serve takes at most ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{maxn}) catch @panic("OOM")), _zbr_rt._allocator), " arguments, got ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(call.args.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), usage, _zbr_rt._allocator));
+        ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(ns, ".serve takes at most ", _zbr_rt._allocator), _zbr_show(maxn), _zbr_rt._allocator), " arguments, got ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(call.args.items.len))), _zbr_rt._allocator), usage, _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:7528
         return;
     }
@@ -13575,7 +13576,7 @@ pub fn _zbr_fn_checkServeArgs(call: _zbr_ty_ExprCall, file: []const u8, line: i6
                 ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat(_str_concat(ns, ".serve has no parameter '", _zbr_rt._allocator), ai.name.?, _zbr_rt._allocator), "'", _zbr_rt._allocator), usage, _zbr_rt._allocator));
             } else {
 // zbr:selfhost/TypeChecker.zbr:7538
-                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat(_str_concat(ns, ".serve's argument ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(i + 1)}) catch @panic("OOM")), _zbr_rt._allocator), " has no parameter to fill -- name it", _zbr_rt._allocator), usage, _zbr_rt._allocator));
+                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat(_str_concat(ns, ".serve's argument ", _zbr_rt._allocator), _zbr_show((i + 1)), _zbr_rt._allocator), " has no parameter to fill -- name it", _zbr_rt._allocator), usage, _zbr_rt._allocator));
             }
 // zbr:selfhost/TypeChecker.zbr:7539
             return;
@@ -13772,7 +13773,7 @@ pub fn _zbr_fn_checkHttpRequestArgs(call: _zbr_ty_ExprCall, file: []const u8, li
 // zbr:selfhost/TypeChecker.zbr:7626
             if ((a.name == null)) {
 // zbr:selfhost/TypeChecker.zbr:7627
-                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat("Http.request's argument ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(i + 1)}) catch @panic("OOM")), _zbr_rt._allocator), " must be named `headers:` or `body:`", _zbr_rt._allocator), usage, _zbr_rt._allocator));
+                ctx.addErr(file, cl, mem.span.col, _str_concat(_str_concat(_str_concat("Http.request's argument ", _zbr_show((i + 1)), _zbr_rt._allocator), " must be named `headers:` or `body:`", _zbr_rt._allocator), usage, _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:7628
                 return;
             }
@@ -14353,7 +14354,7 @@ pub fn _zbr_fn_checkHttpRequestCtor(call: _zbr_ty_ExprCall, file: []const u8, li
 // zbr:selfhost/TypeChecker.zbr:7885
             if (_zebra_ge(pos, 4)) {
 // zbr:selfhost/TypeChecker.zbr:7886
-                ctx.addErr(file, cline, ccol, _str_concat("too many arguments to 'HttpRequest': expected at most 4 (method, path, content, query), found ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(call.args.items.len))}) catch @panic("OOM")), _zbr_rt._allocator));
+                ctx.addErr(file, cline, ccol, _str_concat("too many arguments to 'HttpRequest': expected at most 4 (method, path, content, query), found ", _zbr_show(@as(i64, @intCast(call.args.items.len))), _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:7887
                 return;
             }
@@ -14658,16 +14659,16 @@ pub fn _zbr_fn_checkArgCount(call: _zbr_ty_ExprCall, file: []const u8, line: i64
 // zbr:selfhost/TypeChecker.zbr:8053
         if ((required == total)) {
 // zbr:selfhost/TypeChecker.zbr:8054
-            ctx.addErr(file, cline, ccol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("too few arguments to ", callee_q, _zbr_rt._allocator), ": expected ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{total}) catch @panic("OOM")), _zbr_rt._allocator), ", found ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{provided}) catch @panic("OOM")), _zbr_rt._allocator));
+            ctx.addErr(file, cline, ccol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("too few arguments to ", callee_q, _zbr_rt._allocator), ": expected ", _zbr_rt._allocator), _zbr_show(total), _zbr_rt._allocator), ", found ", _zbr_rt._allocator), _zbr_show(provided), _zbr_rt._allocator));
         } else {
 // zbr:selfhost/TypeChecker.zbr:8056
-            ctx.addErr(file, cline, ccol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("too few arguments to ", callee_q, _zbr_rt._allocator), ": expected at least ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{required}) catch @panic("OOM")), _zbr_rt._allocator), ", found ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{provided}) catch @panic("OOM")), _zbr_rt._allocator));
+            ctx.addErr(file, cline, ccol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("too few arguments to ", callee_q, _zbr_rt._allocator), ": expected at least ", _zbr_rt._allocator), _zbr_show(required), _zbr_rt._allocator), ", found ", _zbr_rt._allocator), _zbr_show(provided), _zbr_rt._allocator));
         }
     } else {
 // zbr:selfhost/TypeChecker.zbr:8057
         if (_zebra_gt(provided, total)) {
 // zbr:selfhost/TypeChecker.zbr:8058
-            ctx.addErr(file, cline, ccol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("too many arguments to ", callee_q, _zbr_rt._allocator), ": expected at most ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{total}) catch @panic("OOM")), _zbr_rt._allocator), ", found ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{provided}) catch @panic("OOM")), _zbr_rt._allocator));
+            ctx.addErr(file, cline, ccol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat("too many arguments to ", callee_q, _zbr_rt._allocator), ": expected at most ", _zbr_rt._allocator), _zbr_show(total), _zbr_rt._allocator), ", found ", _zbr_rt._allocator), _zbr_show(provided), _zbr_rt._allocator));
         }
     }
 }
@@ -15942,7 +15943,7 @@ pub fn _zbr_fn_checkCallsInExpr(e: _zbr_ty_Expr, file: []const u8, line: i64, ct
 // zbr:selfhost/TypeChecker.zbr:8722
                                 if (cbv.ok) {
 // zbr:selfhost/TypeChecker.zbr:8723
-                                    cbs = (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cbv.val}) catch @panic("OOM"));
+                                    cbs = _zbr_show(cbv.val);
                                 }
 // zbr:selfhost/TypeChecker.zbr:8724
                                 ctx.addErr(file, _zbr_fn_anchorLine(last_fe.?, line), _zbr_fn_anchorCol(last_fe.?, 0), _str_concat(_str_concat("`:c` on an int writes one byte (0..255), and ", cbs, _zbr_rt._allocator), " does not fit -- for a codepoint, format a char (c'\\u{...}')", _zbr_rt._allocator));
@@ -16149,7 +16150,7 @@ pub fn _zbr_fn_checkSysArgv(mem: _zbr_ty_ExprMember, call: _zbr_ty_ExprCall, fil
 // zbr:selfhost/TypeChecker.zbr:8819
     if ((@as(i64, @intCast(call.args.items.len)) != want)) {
 // zbr:selfhost/TypeChecker.zbr:8820
-        ctx.addErr(file, eline, ecol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("sys.", m, _zbr_rt._allocator), " takes ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{want}) catch @panic("OOM")), _zbr_rt._allocator), " argument(s), found ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(call.args.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " -- `", _zbr_rt._allocator), shape, _zbr_rt._allocator), "`", _zbr_rt._allocator));
+        ctx.addErr(file, eline, ecol, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("sys.", m, _zbr_rt._allocator), " takes ", _zbr_rt._allocator), _zbr_show(want), _zbr_rt._allocator), " argument(s), found ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(call.args.items.len))), _zbr_rt._allocator), " -- `", _zbr_rt._allocator), shape, _zbr_rt._allocator), "`", _zbr_rt._allocator));
 // zbr:selfhost/TypeChecker.zbr:8821
         return;
     }
@@ -16893,7 +16894,7 @@ pub fn _zbr_fn_noteContainerCopy(kind: []const u8, file: []const u8, e: _zbr_ty_
         cl = stmt_line;
     }
 // zbr:selfhost/TypeChecker.zbr:9205
-    _zbr_mvref__container_copy_sites().*.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(kind, ": ", _zbr_rt._allocator), file, _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cc}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
+    _zbr_mvref__container_copy_sites().*.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(kind, ": ", _zbr_rt._allocator), file, _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(cc), _zbr_rt._allocator))) catch @panic("OOM");
 }
 
 // zbr:selfhost/TypeChecker.zbr:9209
@@ -19908,7 +19909,7 @@ pub fn _zbr_fn_shadowDeclare(name: []const u8, line: i64, col: i64, names: _ZbrL
 // zbr:selfhost/TypeChecker.zbr:10718
         if (std.mem.eql(u8, _zbr_at(names.items, i), name)) {
 // zbr:selfhost/TypeChecker.zbr:10719
-            var at_where: []const u8 = _str_concat("on line ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{_zbr_at(lines.items, i)}) catch @panic("OOM")), _zbr_rt._allocator);
+            var at_where: []const u8 = _str_concat("on line ", _zbr_show(_zbr_at(lines.items, i)), _zbr_rt._allocator);
 // zbr:selfhost/TypeChecker.zbr:10720
             if ((_zbr_at(lines.items, i) == 0)) {
 // zbr:selfhost/TypeChecker.zbr:10721
@@ -20896,7 +20897,7 @@ pub fn _zbr_fn_checkDeclShapes(m: _zbr_ty_Module, file: []const u8, ctx: *_zbr_t
                             ctx.addErr(file, c.span.line, c.span.col, _str_concat(_str_concat(_str_concat(_str_concat("'", ir_base, _zbr_rt._allocator), "' is not a generic interface: write `implements ", _zbr_rt._allocator), ir_base, _zbr_rt._allocator), "`", _zbr_rt._allocator));
                         } else {
 // zbr:selfhost/TypeChecker.zbr:11136
-                            ctx.addErr(file, c.span.line, c.span.col, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("interface '", ir_base, _zbr_rt._allocator), "' takes ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{want_n}) catch @panic("OOM")), _zbr_rt._allocator), " type argument(s): write `implements ", _zbr_rt._allocator), ir_base, _zbr_rt._allocator), "(...)` with ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{want_n}) catch @panic("OOM")), _zbr_rt._allocator), " type(s)", _zbr_rt._allocator));
+                            ctx.addErr(file, c.span.line, c.span.col, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("interface '", ir_base, _zbr_rt._allocator), "' takes ", _zbr_rt._allocator), _zbr_show(want_n), _zbr_rt._allocator), " type argument(s): write `implements ", _zbr_rt._allocator), ir_base, _zbr_rt._allocator), "(...)` with ", _zbr_rt._allocator), _zbr_show(want_n), _zbr_rt._allocator), " type(s)", _zbr_rt._allocator));
                         }
                     }
                 }

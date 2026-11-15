@@ -318,29 +318,6 @@
 
 ---
 
-### BUG-743: `toString()` on a List or HashMap returns Zig's struct dump
-- **Status:** OPEN (filed 2026-11-15; Fable, from a V-route show program; reproduced on b5efe7a)
-- **Repro:** `var ints: List(int) = [1, 2, 3]` / `var strs: List(str) = ["a", "b c", ""]` /
-  `print("toString: " + ints.toString() + " " + strs.toString())` prints
-  `.{ .items = { 1, 2, 3 }, .capacity = 17 } .{ .items = { { 97 }, { 98, 32, 99 }, {  } }, .capacity = 9 }`.
-  A `List(float)` gives `.{ .items = { 1.5, 2 }, ... }`. A `HashMap(str, int)`'s `toString()` is
-  worse: the whole `std.StringHashMap` struct, allocator vtable addresses included, so the text
-  also differs from run to run. `print(ints)` and `"${ints}"` give `[1, 2, 3]` /
-  `["a", "b c", ""]` -- the right text exists, and `toString()` does not use it.
-- **Cost:** `toString()` is the documented way to get a value's text into a `str`; for a
-  container it hands back the runtime's representation, capacity included -- a number the
-  program never chose, and on a map, pointers.
-- **Fix shape:** `toString()` on a container produces exactly what `print` / a hole produce
-  (one formatter, `_zbr_show`'s), for List, HashMap, Set and nested containers. The V route
-  already prints the `print` spelling (Fable, 2026-11-15), so the contract is that spelling on
-  both routes. Measure first: `output_sweep` will name every corpus program that printed a
-  dump today.
-- **Control when fixing:** the repro prints `toString: [1, 2, 3] ["a", "b c", ""]`; a map's
-  `toString()` equals its `print` text; `toString()` on a str, int, float and a user class is
-  unchanged.
-
----
-
 ### DESIGN-001: Throws auto-propagation scope — nested expression calls require `?`
 - **Not a bug** — by design
 - **Description:** Throws auto-propagation emits `try` for direct self-method calls and statement-level calls whose receiver is a `throws` method. It does NOT auto-propagate for:

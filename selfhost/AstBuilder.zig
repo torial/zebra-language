@@ -24,6 +24,7 @@ const _ZbrMap = _zbr_rt._ZbrMap;
 const _zbr_new = _zbr_rt._zbr_new;
 const _zbr_copy = _zbr_rt._zbr_copy;
 const _zbr_print = _zbr_rt._zbr_print;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_Ast = @import("Ast.zig");
 const _zbr_ty_StmtYield = _zbr_mod_Ast._zbr_ty_StmtYield;
@@ -2349,14 +2350,14 @@ pub const _zbr_ty_ASTBuilder = struct {
 // zbr:selfhost/AstBuilder.zbr:1241
                                 const isp: _zbr_ty_Span = _zbr_fn_spanOf(right_expr);
 // zbr:selfhost/AstBuilder.zbr:1242
-                                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1242", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{isp.line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{isp.col}) catch @panic("OOM")), _zbr_rt._allocator), ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`, `x is Mod.U.v`)", _zbr_rt._allocator) }; return error.ZebraError; }
+                                { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1242", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file, ":", _zbr_rt._allocator), _zbr_show(isp.line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(isp.col), _zbr_rt._allocator), ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`, `x is Mod.U.v`)", _zbr_rt._allocator) }; return error.ZebraError; }
                             }
                         },
                         else => {
 // zbr:selfhost/AstBuilder.zbr:1246
                             const isp2: _zbr_ty_Span = _zbr_fn_spanOf(right_expr);
 // zbr:selfhost/AstBuilder.zbr:1247
-                            { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1247", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{isp2.line}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{isp2.col}) catch @panic("OOM")), _zbr_rt._allocator), ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`); to test for nil, write `x == nil`", _zbr_rt._allocator) }; return error.ZebraError; }
+                            { _zbr_rt._error_ctx = .{ .at = "selfhost/AstBuilder.zbr:1247", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file, ":", _zbr_rt._allocator), _zbr_show(isp2.line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(isp2.col), _zbr_rt._allocator), ": error: `is` takes a type or a union variant on its right (`x is T`, `x is U.v`); to test for nil, write `x == nil`", _zbr_rt._allocator) }; return error.ZebraError; }
                         },
                     }
                 }

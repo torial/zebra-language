@@ -22,6 +22,7 @@ const _ZbrList = _zbr_rt._ZbrList;
 const _zbr_new = _zbr_rt._zbr_new;
 const _ZbrFn = _zbr_rt._ZbrFn;
 const _zbr_invoke = _zbr_rt._zbr_invoke;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_Token = @import("Token.zig");
 const _zbr_ty_TokenKind = _zbr_mod_Token._zbr_ty_TokenKind;
@@ -218,15 +219,15 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:139
         if ((b == '\r')) {
 // zbr:selfhost/Lexer.zbr:140
-            return _str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": unexpected '\\r' (CRLF line endings — convert to LF)", _zbr_rt._allocator);
+            return _str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": unexpected '\\r' (CRLF line endings — convert to LF)", _zbr_rt._allocator);
         }
 // zbr:selfhost/Lexer.zbr:152
         if (_zebra_gt(b, '\x7F')) {
 // zbr:selfhost/Lexer.zbr:153
-            return _str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": unexpected non-ASCII byte — identifiers and operators must be ASCII (non-ASCII text is fine inside a string literal or a comment)", _zbr_rt._allocator);
+            return _str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": unexpected non-ASCII byte — identifiers and operators must be ASCII (non-ASCII text is fine inside a string literal or a comment)", _zbr_rt._allocator);
         }
 // zbr:selfhost/Lexer.zbr:154
-        return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": unexpected character '", _zbr_rt._allocator), _zbr_char_str(b, _zbr_rt._allocator), _zbr_rt._allocator), "'", _zbr_rt._allocator);
+        return _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": unexpected character '", _zbr_rt._allocator), _zbr_char_str(b, _zbr_rt._allocator), _zbr_rt._allocator), "'", _zbr_rt._allocator);
     }
 
     // zbr:selfhost/Lexer.zbr:158
@@ -421,7 +422,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:252
         if ((_zebra_gt(tabs, 0) and _zebra_gt(spaces, 0))) {
 // zbr:selfhost/Lexer.zbr:253
-            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:253", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":1: error: mixed tabs and spaces in the indentation of this line -- Zebra indents with 4 spaces per level", _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:253", .message = _str_concat(_zbr_show(ln), ":1: error: mixed tabs and spaces in the indentation of this line -- Zebra indents with 4 spaces per level", _zbr_rt._allocator) }; return error.ZebraError; }
         }
 // zbr:selfhost/Lexer.zbr:254
         var level: i64 = 0;
@@ -430,7 +431,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:256
             if ((_zbr_rem(spaces, 4) != 0)) {
 // zbr:selfhost/Lexer.zbr:257
-                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:257", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{(spaces + 1)}) catch @panic("OOM")), _zbr_rt._allocator), ": error: indentation is ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{spaces}) catch @panic("OOM")), _zbr_rt._allocator), " space(s); Zebra indents by multiples of 4", _zbr_rt._allocator) }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:257", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show((spaces + 1)), _zbr_rt._allocator), ": error: indentation is ", _zbr_rt._allocator), _zbr_show(spaces), _zbr_rt._allocator), " space(s); Zebra indents by multiples of 4", _zbr_rt._allocator) }; return error.ZebraError; }
             }
 // zbr:selfhost/Lexer.zbr:258
             level = @divTrunc(spaces, 4);
@@ -539,7 +540,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:310
         if ((_zebra_gt(@as(i64, @intCast(self.lambdaStack.items.len)), 0) and _zebra_le((self.parenDepth + self.bracketDepth), _zbr_at(self.lambdaNest.items, (@as(i64, @intCast(self.lambdaNest.items.len)) - 1))))) {
 // zbr:selfhost/Lexer.zbr:311
-            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:311", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": error: `", _zbr_rt._allocator), ch, _zbr_rt._allocator), "` closes the call or literal around a statement-body lambda on the lambda's own body line -- put it on a line of its own, back at the level of the line the lambda's `def(` is on", _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:311", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": error: `", _zbr_rt._allocator), ch, _zbr_rt._allocator), "` closes the call or literal around a statement-body lambda on the lambda's own body line -- put it on a line of its own, back at the level of the line the lambda's `def(` is on", _zbr_rt._allocator) }; return error.ZebraError; }
         }
     }
 
@@ -618,7 +619,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:350
         if (_zebra_gt(self.blockDepth, 0)) {
 // zbr:selfhost/Lexer.zbr:351
-            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:351", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: block comment is never closed", _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:351", .message = _str_concat(_zbr_show(self.line), ":1: error: block comment is never closed", _zbr_rt._allocator) }; return error.ZebraError; }
         }
     }
 
@@ -840,7 +841,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:475
             if ((c == '\n')) {
 // zbr:selfhost/Lexer.zbr:476
-                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:476", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: char literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:476", .message = _str_concat(_zbr_show(self.line), ":1: error: char literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
             }
 // zbr:selfhost/Lexer.zbr:477
             self.pos = (self.pos + 1);
@@ -895,12 +896,12 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:504
                 if ((((hok and _zebra_ge(cpv, 0xD800)) and _zebra_le(cpv, 0xDFFF)) and (!(_zebra_ge(cpv, 0xDC80) and _zebra_le(cpv, 0xDCFF))))) {
 // zbr:selfhost/Lexer.zbr:505
-                    { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:505", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), lit, _zbr_rt._allocator), " is a surrogate, not a character -- only \\u{DC80}..\\u{DCFF} are allowed, the escape chars chars() yields for a byte that is not UTF-8", _zbr_rt._allocator) }; return error.ZebraError; }
+                    { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:505", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), lit, _zbr_rt._allocator), " is a surrogate, not a character -- only \\u{DC80}..\\u{DCFF} are allowed, the escape chars chars() yields for a byte that is not UTF-8", _zbr_rt._allocator) }; return error.ZebraError; }
                 }
 // zbr:selfhost/Lexer.zbr:506
                 if (_zebra_gt(cpv, 0x10FFFF)) {
 // zbr:selfhost/Lexer.zbr:507
-                    { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:507", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), lit, _zbr_rt._allocator), " is above U+10FFFF, the last codepoint", _zbr_rt._allocator) }; return error.ZebraError; }
+                    { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:507", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_zbr_show(ln), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), lit, _zbr_rt._allocator), " is above U+10FFFF, the last codepoint", _zbr_rt._allocator) }; return error.ZebraError; }
                 }
             }
         }
@@ -969,7 +970,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:545
             if ((c == '\n')) {
 // zbr:selfhost/Lexer.zbr:546
-                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:546", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:546", .message = _str_concat(_zbr_show(self.line), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
             }
 // zbr:selfhost/Lexer.zbr:547
             self.pos = (self.pos + 1);
@@ -1074,7 +1075,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:601
             if ((c == '\n')) {
 // zbr:selfhost/Lexer.zbr:602
-                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:602", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:602", .message = _str_concat(_zbr_show(self.line), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
             }
 // zbr:selfhost/Lexer.zbr:603
             if ((c == '\\')) {
@@ -1090,7 +1091,7 @@ pub const _zbr_ty_Lexer = struct {
                         esc_end = @as(i64, @intCast(self.src.len));
                     }
 // zbr:selfhost/Lexer.zbr:613
-                    { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:613", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{((self.pos - self.lineStart) + 1)}) catch @panic("OOM")), _zbr_rt._allocator), ": error: unknown escape `", _zbr_rt._allocator), self.src[@as(usize, @intCast(self.pos))..@as(usize, @intCast(esc_end))], _zbr_rt._allocator), "` in a string -- the escapes are \\n \\r \\t \\\\ \\\" \\' \\$ \\xNN \\u{N}; for a regex, write a raw string: r\"...\"", _zbr_rt._allocator) }; return error.ZebraError; }
+                    { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:613", .message = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_zbr_show(self.line), ":", _zbr_rt._allocator), _zbr_show(((self.pos - self.lineStart) + 1)), _zbr_rt._allocator), ": error: unknown escape `", _zbr_rt._allocator), self.src[@as(usize, @intCast(self.pos))..@as(usize, @intCast(esc_end))], _zbr_rt._allocator), "` in a string -- the escapes are \\n \\r \\t \\\\ \\\" \\' \\$ \\xNN \\u{N}; for a regex, write a raw string: r\"...\"", _zbr_rt._allocator) }; return error.ZebraError; }
                 }
 // zbr:selfhost/Lexer.zbr:614
                 self.pos = (self.pos + 2);
@@ -1100,7 +1101,7 @@ pub const _zbr_ty_Lexer = struct {
             self.pos = (self.pos + 1);
         }
 // zbr:selfhost/Lexer.zbr:618
-        { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:618", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:618", .message = _str_concat(_zbr_show(self.line), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/Lexer.zbr:622
@@ -1115,7 +1116,7 @@ pub const _zbr_ty_Lexer = struct {
 // zbr:selfhost/Lexer.zbr:642
             if (_zebra_ge(self.pos, @as(i64, @intCast(self.src.len)))) {
 // zbr:selfhost/Lexer.zbr:643
-                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:643", .message = _str_concat(_str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: an interpolation opened with $", _zbr_rt._allocator), "{ is never closed in this string", _zbr_rt._allocator) }; return error.ZebraError; }
+                { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:643", .message = _str_concat(_str_concat(_zbr_show(self.line), ":1: error: an interpolation opened with $", _zbr_rt._allocator), "{ is never closed in this string", _zbr_rt._allocator) }; return error.ZebraError; }
             }
 // zbr:selfhost/Lexer.zbr:644
             const c: u8 = _zbr_at(self.src, self.pos);
@@ -1223,7 +1224,7 @@ pub const _zbr_ty_Lexer = struct {
                 }
             }
 // zbr:selfhost/Lexer.zbr:708
-            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:708", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+            { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:708", .message = _str_concat(_zbr_show(self.line), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
         }
 // zbr:selfhost/Lexer.zbr:710
         if ((_zebra_lt(self.pos, @as(i64, @intCast(self.src.len))) and (_zbr_at(self.src, self.pos) == '\n'))) {
@@ -1260,7 +1261,7 @@ pub const _zbr_ty_Lexer = struct {
             }
         }
 // zbr:selfhost/Lexer.zbr:725
-        { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:725", .message = _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.line}) catch @panic("OOM")), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
+        { _zbr_rt._error_ctx = .{ .at = "selfhost/Lexer.zbr:725", .message = _str_concat(_zbr_show(self.line), ":1: error: string literal is never closed on this line", _zbr_rt._allocator) }; return error.ZebraError; }
     }
 
     // zbr:selfhost/Lexer.zbr:729

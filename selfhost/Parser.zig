@@ -17,6 +17,7 @@ const _str_concat = _zbr_rt._str_concat;
 const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
 const _zbr_new = _zbr_rt._zbr_new;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_Token = @import("Token.zig");
 const _zbr_ty_TokenKind = _zbr_mod_Token._zbr_ty_TokenKind;
@@ -1548,7 +1549,7 @@ pub const _zbr_ty_Parser = struct {
         @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/Parser.zbr:949
-        const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{ln}) catch @panic("OOM")), _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{cl}) catch @panic("OOM")), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
+        const head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.file_name, ":", _zbr_rt._allocator), _zbr_show(ln), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(cl), _zbr_rt._allocator), ": error: ", _zbr_rt._allocator), msg, _zbr_rt._allocator);
 // zbr:selfhost/Parser.zbr:950
         const src_line: []const u8 = self.sourceLine((ln - 1));
 // zbr:selfhost/Parser.zbr:951

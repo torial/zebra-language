@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`x.toString()` is the text `print` shows (BUG-743).** On a List, HashMap, Set, a class
+  without a `toString` cue, a struct or an enum, `toString()` returned Zig's struct dump --
+  `.{ .items = { 1, 2, 3 }, .capacity = 17, ... }`, a map's allocator addresses (different every
+  run), a class's `_type_tag`, an enum's `.green`. It now goes through the same formatter as
+  `print` and `${x}`: `[1, 2, 3]`, `{a: 1}`, `Pt{x: 1, y: 2}`, `green`. A type with its own
+  `toString` cue, a char, int, float, bool and str are unchanged. **Behaviour change** for any
+  program that printed or compared those dumps.
 - **A server whose port is taken exits 1 (BUG-727 follow-up).** `Tcp.serve`, `Ws.serve` and
   `Http.serve` printed `cannot listen on 127.0.0.1:<port>: AddressInUse` and returned, so a
   program went on past a server that never started. When a Zebra `main` owns the process, it

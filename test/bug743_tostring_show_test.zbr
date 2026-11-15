@@ -1,0 +1,75 @@
+# BUG-743: `x.toString()` is the text `print` / a `${x}` hole show, for every receiver without a
+# toString method of its own. It was a `{}` allocPrint -- Zig's struct dump: a List's capacity, a
+# map's allocator addresses (different every run), a class's `_type_tag`, an enum's `.green`.
+# Each value is checked against the literal spelling AND against the hole, so the final line
+# prints only when both agree.
+
+class Pt
+    var x: int = 1
+    var y: int = 2
+
+class Named
+    var n: str = "own"
+    cue toString(): str
+        return "Named(${.n})"
+
+struct Rgb
+    var r: int = 3
+
+enum Color
+    red
+    green
+
+var failures: int = 0
+
+def check(what: str, got: str, hole: str, want: str)
+    if got == want and hole == want
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: toString '${got}', hole '${hole}', want '${want}'")
+        failures += 1
+
+def main()
+    var ints: List(int) = [1, 2, 3]
+    check("list-int", ints.toString(), "${ints}", "[1, 2, 3]")
+    var strs: List(str) = ["a", "b c", ""]
+    check("list-str", strs.toString(), "${strs}", "[\"a\", \"b c\", \"\"]")
+    var fl: List(float) = [1.5, 2.0]
+    check("list-float", fl.toString(), "${fl}", "[1.5, 2.0]")
+    var nested: List(List(int)) = [[1], [2, 3]]
+    check("list-nested", nested.toString(), "${nested}", "[[1], [2, 3]]")
+    var empty: List(int) = []
+    check("list-empty", empty.toString(), "${empty}", "[]")
+    var m = HashMap(str, int)()
+    m["a"] = 1
+    check("map-str", m.toString(), "${m}", "{a: 1}")
+    var im = HashMap(int, str)()
+    im[7] = "seven"
+    check("map-int", im.toString(), "${im}", "{7: \"seven\"}")
+    var s: Set(int) = {4}
+    check("set-int", s.toString(), "${s}", "{4}")
+    var p = Pt()
+    check("class", p.toString(), "${p}", "Pt{x: 1, y: 2}")
+    var r = Rgb()
+    check("struct", r.toString(), "${r}", "Rgb{r: 3}")
+    var c = Color.green
+    check("enum", c.toString(), "${c}", "green")
+
+    # Controls: what was already right stays right.
+    var nd = Named()
+    check("own-toString", nd.toString(), "${nd}", "Named(own)")
+    var i = 5
+    check("int", i.toString(), "${i}", "5")
+    var f = 6.0
+    check("float", f.toString(), "${f}", "6.0")
+    var b = true
+    check("bool", b.toString(), "${b}", "true")
+    var t = "plain"
+    check("str", t.toString(), "${t}", "plain")
+    # A map's text must not change from one call to the next (it held allocator addresses).
+    check("map-stable", m.toString(), m.toString(), "{a: 1}")
+
+    if failures == 0
+        print("bug743_tostring_show: OK")
+    else
+        print("bug743_tostring_show: ${failures} WRONG")

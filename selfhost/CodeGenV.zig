@@ -24,6 +24,7 @@ const _ZbrMap = _zbr_rt._ZbrMap;
 const _zbr_new = _zbr_rt._zbr_new;
 const _zbr_copy = _zbr_rt._zbr_copy;
 const _zebra_map_keys = _zbr_rt._zebra_map_keys;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_AstWalk = @import("AstWalk.zig");
 const _zbr_fn_mightUseName = _zbr_mod_AstWalk._zbr_fn_mightUseName;
@@ -588,7 +589,7 @@ pub const _zbr_ty_VGen = struct {
     pub fn refuse(self: *_zbr_ty_VGen, what: []const u8, span: _zbr_ty_Span) void {
         @setRuntimeSafety(true);
 // zbr:selfhost/CodeGenV.zbr:299
-        self.refused.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(what, " (", _zbr_rt._allocator), self.current_file, _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{span.line}) catch @panic("OOM")), _zbr_rt._allocator), ")", _zbr_rt._allocator))) catch @panic("OOM");
+        self.refused.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(what, " (", _zbr_rt._allocator), self.current_file, _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(span.line), _zbr_rt._allocator), ")", _zbr_rt._allocator))) catch @panic("OOM");
     }
 
     // zbr:selfhost/CodeGenV.zbr:309
@@ -656,7 +657,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:336
         if (((_zebra_lt(@as(i64, @intCast(self.rt_fns.count())), 50) or _zebra_lt(@as(i64, @intCast(self.rt_types.count())), 10)) or _zebra_lt(@as(i64, @intCast(self.rt_methods.count())), 30))) {
 // zbr:selfhost/CodeGenV.zbr:337
-            self.refused.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("the runtime-name check: zebra_rt.v parsed to ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(self.rt_fns.count()))}) catch @panic("OOM")), _zbr_rt._allocator), " functions, ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(self.rt_types.count()))}) catch @panic("OOM")), _zbr_rt._allocator), " types and ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(self.rt_methods.count()))}) catch @panic("OOM")), _zbr_rt._allocator), " methods, under its floor -- no call into the runtime was checked", _zbr_rt._allocator))) catch @panic("OOM");
+            self.refused.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat("the runtime-name check: zebra_rt.v parsed to ", _zbr_show(@as(i64, @intCast(self.rt_fns.count()))), _zbr_rt._allocator), " functions, ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(self.rt_types.count()))), _zbr_rt._allocator), " types and ", _zbr_rt._allocator), _zbr_show(@as(i64, @intCast(self.rt_methods.count()))), _zbr_rt._allocator), " methods, under its floor -- no call into the runtime was checked", _zbr_rt._allocator))) catch @panic("OOM");
         } else {
 // zbr:selfhost/CodeGenV.zbr:338
             if ((((self.rt_fns.get("zlist_contains") == null) or (self.rt_methods.get("ZList.add") == null)) or (self.rt_fns.get("zbr_control_never_defined") != null))) {
@@ -904,7 +905,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:461
                 if ((_zebra_lt(@as(i64, @intCast(tt.elems.items.len)), 2) or _zebra_gt(@as(i64, @intCast(tt.elems.items.len)), 3))) {
 // zbr:selfhost/CodeGenV.zbr:462
-                    self.refused.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat("a tuple of ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tt.elems.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " (the runtime spells 2 and 3)", _zbr_rt._allocator))) catch @panic("OOM");
+                    self.refused.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat("a tuple of ", _zbr_show(@as(i64, @intCast(tt.elems.items.len))), _zbr_rt._allocator), " (the runtime spells 2 and 3)", _zbr_rt._allocator))) catch @panic("OOM");
 // zbr:selfhost/CodeGenV.zbr:463
                     return "voidptr";
                 }
@@ -921,7 +922,7 @@ pub const _zbr_ty_VGen = struct {
                     parts = _str_concat(parts, self.vType(et), _zbr_rt._allocator);
                 }
 // zbr:selfhost/CodeGenV.zbr:469
-                return _str_concat(_str_concat(_str_concat(_str_concat("ZTuple", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tt.elems.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), "[", _zbr_rt._allocator), parts, _zbr_rt._allocator), "]", _zbr_rt._allocator);
+                return _str_concat(_str_concat(_str_concat(_str_concat("ZTuple", _zbr_show(@as(i64, @intCast(tt.elems.items.len))), _zbr_rt._allocator), "[", _zbr_rt._allocator), parts, _zbr_rt._allocator), "]", _zbr_rt._allocator);
             },
             else => {
 // zbr:selfhost/CodeGenV.zbr:471
@@ -1564,7 +1565,7 @@ pub const _zbr_ty_VGen = struct {
                 self.line("\tzglobals_init()");
             }
 // zbr:selfhost/CodeGenV.zbr:762
-            self.line(_str_concat(_str_concat("\teprintln('zebra test (V target): ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(root_tests.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " test(s); a failing assert ends the run')", _zbr_rt._allocator));
+            self.line(_str_concat(_str_concat("\teprintln('zebra test (V target): ", _zbr_show(@as(i64, @intCast(root_tests.items.len))), _zbr_rt._allocator), " test(s); a failing assert ends the run')", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:763
             for (root_tests.items) |tn| {
 // zbr:selfhost/CodeGenV.zbr:764
@@ -1575,7 +1576,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:766
             self.line("\teprintln('')");
 // zbr:selfhost/CodeGenV.zbr:767
-            self.line(_str_concat(_str_concat("\teprintln('", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(root_tests.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " passed, 0 failed')", _zbr_rt._allocator));
+            self.line(_str_concat(_str_concat("\teprintln('", _zbr_show(@as(i64, @intCast(root_tests.items.len))), _zbr_rt._allocator), " passed, 0 failed')", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:768
             self.line("}");
 // zbr:selfhost/CodeGenV.zbr:769
@@ -1696,12 +1697,12 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:830
                             var n2: i64 = 2;
 // zbr:selfhost/CodeGenV.zbr:831
-                            while (self.isEmittedGlobal(_str_concat(_str_concat(sp, "_", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{n2}) catch @panic("OOM")), _zbr_rt._allocator))) {
+                            while (self.isEmittedGlobal(_str_concat(_str_concat(sp, "_", _zbr_rt._allocator), _zbr_show(n2), _zbr_rt._allocator))) {
 // zbr:selfhost/CodeGenV.zbr:832
                                 n2 = (n2 + 1);
                             }
 // zbr:selfhost/CodeGenV.zbr:833
-                            self.global_dedup.put(_intern(gv.name), _intern(_str_concat(_str_concat(sp, "_", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{n2}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
+                            self.global_dedup.put(_intern(gv.name), _intern(_str_concat(_str_concat(sp, "_", _zbr_rt._allocator), _zbr_show(n2), _zbr_rt._allocator))) catch @panic("OOM");
                         }
                     }
 // zbr:selfhost/CodeGenV.zbr:834
@@ -3175,7 +3176,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:1526
             fname = "script_main";
 // zbr:selfhost/CodeGenV.zbr:1527
-            self.line(_str_concat(_str_concat("// the root's main takes ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(m.params.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " parameter(s): emitted as script_main, for a host's own fn main to call", _zbr_rt._allocator));
+            self.line(_str_concat(_str_concat("// the root's main takes ", _zbr_show(@as(i64, @intCast(m.params.items.len))), _zbr_rt._allocator), " parameter(s): emitted as script_main, for a host's own fn main to call", _zbr_rt._allocator));
         }
 // zbr:selfhost/CodeGenV.zbr:1528
         var head: []const u8 = _str_concat(_str_concat(_str_concat(_str_concat("fn ", fname, _zbr_rt._allocator), "(", _zbr_rt._allocator), self.genParams(m.params), _zbr_rt._allocator), ")", _zbr_rt._allocator);
@@ -3890,7 +3891,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:1876
                 self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:1877
-                const otmp: []const u8 = _str_concat("zoct", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const otmp: []const u8 = _str_concat("zoct", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:1878
                 if (!std.mem.eql(u8, oinner, "")) {
 // zbr:selfhost/CodeGenV.zbr:1879
@@ -4535,7 +4536,7 @@ pub const _zbr_ty_VGen = struct {
                     tparts = _str_concat(tparts, et, _zbr_rt._allocator);
                 }
 // zbr:selfhost/CodeGenV.zbr:2146
-                return _str_concat(_str_concat(_str_concat(_str_concat("ZTuple", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tl.elems.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), "[", _zbr_rt._allocator), tparts, _zbr_rt._allocator), "]", _zbr_rt._allocator);
+                return _str_concat(_str_concat(_str_concat(_str_concat("ZTuple", _zbr_show(@as(i64, @intCast(tl.elems.items.len))), _zbr_rt._allocator), "[", _zbr_rt._allocator), tparts, _zbr_rt._allocator), "]", _zbr_rt._allocator);
             },
             else => {
 // zbr:selfhost/CodeGenV.zbr:2148
@@ -4971,7 +4972,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2345
             if ((((_zbr_val(s) == .return_) or (_zbr_val(s) == .raise_)) and _zebra_lt((i + 1), @as(i64, @intCast(stmts.items.len))))) {
 // zbr:selfhost/CodeGenV.zbr:2346
-                self.line(_str_concat(_str_concat("// (", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{((@as(i64, @intCast(stmts.items.len)) - i) - 1)}) catch @panic("OOM")), _zbr_rt._allocator), " unreachable statement(s) after it: not emitted)", _zbr_rt._allocator));
+                self.line(_str_concat(_str_concat("// (", _zbr_show(((@as(i64, @intCast(stmts.items.len)) - i) - 1)), _zbr_rt._allocator), " unreachable statement(s) after it: not emitted)", _zbr_rt._allocator));
                 break;
             }
 // zbr:selfhost/CodeGenV.zbr:2348
@@ -5343,7 +5344,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2524
                         self.matchN = (self.matchN + 1);
 // zbr:selfhost/CodeGenV.zbr:2525
-                        const rt: []const u8 = _str_concat("zrv", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.matchN}) catch @panic("OOM")), _zbr_rt._allocator);
+                        const rt: []const u8 = _str_concat("zrv", _zbr_show(self.matchN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:2526
                         self.line(_str_concat(_str_concat(rt, " := ", _zbr_rt._allocator), self.coWrap(rv, rvs), _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2527
@@ -5389,7 +5390,7 @@ pub const _zbr_ty_VGen = struct {
             .assert_ => |_ptr_asrt| {
                 const asrt = _ptr_asrt.*;
 // zbr:selfhost/CodeGenV.zbr:2551
-                const place: []const u8 = self.vStringLit(_str_concat(_str_concat(_str_concat(_str_concat("assert failed at ", self.current_file, _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{asrt.span.line}) catch @panic("OOM")), _zbr_rt._allocator), ": ", _zbr_rt._allocator));
+                const place: []const u8 = self.vStringLit(_str_concat(_str_concat(_str_concat(_str_concat("assert failed at ", self.current_file, _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(asrt.span.line), _zbr_rt._allocator), ": ", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2552
                 const cs: []const u8 = self.exprStr(asrt.cond.*);
 // zbr:selfhost/CodeGenV.zbr:2553
@@ -5567,7 +5568,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2639
             self.matchN = (self.matchN + 1);
 // zbr:selfhost/CodeGenV.zbr:2640
-            const et: []const u8 = _str_concat("zre", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.matchN}) catch @panic("OOM")), _zbr_rt._allocator);
+            const et: []const u8 = _str_concat("zre", _zbr_show(self.matchN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:2641
             self.line(_str_concat(_str_concat(_str_concat(et, " := zr_co_str(", _zbr_rt._allocator), msg, _zbr_rt._allocator), ")", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2642
@@ -5585,7 +5586,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2654
         self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:2655
-        const tn: []const u8 = _str_concat("zu", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+        const tn: []const u8 = _str_concat("zu", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:2656
         self.line(_str_concat(_str_concat(tn, " := ", _zbr_rt._allocator), self.exprStr(si.expr.*), _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2657
@@ -5644,7 +5645,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2691
         self.line(_str_concat(_str_concat("// allocate ", kind, _zbr_rt._allocator), ": a region on the collected heap", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2692
-        self.line(_str_concat(_str_concat(_str_concat(_str_concat("zr_region_push('", self.current_file, _zbr_rt._allocator), ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{al.span.line}) catch @panic("OOM")), _zbr_rt._allocator), "')", _zbr_rt._allocator));
+        self.line(_str_concat(_str_concat(_str_concat(_str_concat("zr_region_push('", self.current_file, _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(al.span.line), _zbr_rt._allocator), "')", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2693
         self.region_depth = (self.region_depth + 1);
 // zbr:selfhost/CodeGenV.zbr:2694
@@ -5711,7 +5712,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2727
         if ((@as(i64, @intCast(tc.clauses.items.len)) != 1)) {
 // zbr:selfhost/CodeGenV.zbr:2728
-            self.refuse(_str_concat(_str_concat("a catch with ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tc.clauses.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " clauses (one is the subset)", _zbr_rt._allocator), tc.span);
+            self.refuse(_str_concat(_str_concat("a catch with ", _zbr_show(@as(i64, @intCast(tc.clauses.items.len))), _zbr_rt._allocator), " clauses (one is the subset)", _zbr_rt._allocator), tc.span);
         }
 // zbr:selfhost/CodeGenV.zbr:2729
         var caps: []const u8 = "";
@@ -5760,7 +5761,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2751
         self.matchN = (self.matchN + 1);
 // zbr:selfhost/CodeGenV.zbr:2752
-        const rd: []const u8 = _str_concat("zrd", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.matchN}) catch @panic("OOM")), _zbr_rt._allocator);
+        const rd: []const u8 = _str_concat("zrd", _zbr_show(self.matchN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:2753
         self.line(_str_concat(rd, " := zr_regions.len", _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2754
@@ -5825,7 +5826,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:2784
         self.matchN = (self.matchN + 1);
 // zbr:selfhost/CodeGenV.zbr:2785
-        const t: []const u8 = _str_concat("zm", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.matchN}) catch @panic("OOM")), _zbr_rt._allocator);
+        const t: []const u8 = _str_concat("zm", _zbr_show(self.matchN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:2786
         self.line(_str_concat(_str_concat(t, " := ", _zbr_rt._allocator), self.exprStr(b.expr.*), _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:2787
@@ -6517,7 +6518,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3098
                         self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3099
-                        const zs: []const u8 = _str_concat("zs", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                        const zs: []const u8 = _str_concat("zs", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3100
                         self.line(_str_concat(_str_concat(zs, " := ", _zbr_rt._allocator), subj, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:3101
@@ -6696,7 +6697,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3183
         if ((@as(i64, @intCast(fi.vars.items.len)) != 1)) {
 // zbr:selfhost/CodeGenV.zbr:3184
-            self.refuse(_str_concat(_str_concat("for with ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(fi.vars.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " loop variables", _zbr_rt._allocator), fi.span);
+            self.refuse(_str_concat(_str_concat("for with ", _zbr_show(@as(i64, @intCast(fi.vars.items.len))), _zbr_rt._allocator), " loop variables", _zbr_rt._allocator), fi.span);
 // zbr:selfhost/CodeGenV.zbr:3185
             return;
         }
@@ -6778,9 +6779,9 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3226
                 self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3227
-                const it: []const u8 = _str_concat("zit", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const it: []const u8 = _str_concat("zit", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3228
-                const ix: []const u8 = _str_concat("zix", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const ix: []const u8 = _str_concat("zix", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3229
                 self.line(_str_concat(_str_concat(it, " := ", _zbr_rt._allocator), self.exprStr(fi.iter.*), _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:3230
@@ -6820,7 +6821,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3255
             self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3256
-            const zi: []const u8 = _str_concat("zit", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+            const zi: []const u8 = _str_concat("zit", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3257
             self.line(_str_concat(_str_concat(zi, " := ", _zbr_rt._allocator), iter_s, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:3258
@@ -6987,7 +6988,7 @@ pub const _zbr_ty_VGen = struct {
                 return known;
             }
 // zbr:selfhost/CodeGenV.zbr:3338
-            const hname: []const u8 = _str_concat("zshow_h", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(self.show_helpers.items.len))}) catch @panic("OOM")), _zbr_rt._allocator);
+            const hname: []const u8 = _str_concat("zshow_h", _zbr_show(@as(i64, @intCast(self.show_helpers.items.len))), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3339
             self.show_names.put(_intern(key), _intern(hname)) catch @panic("OOM");
 // zbr:selfhost/CodeGenV.zbr:3340
@@ -7061,7 +7062,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3374
                     if (self.local_types.get(id.name)) |nlt| {
 // zbr:selfhost/CodeGenV.zbr:3375
-                        return self.narrowedRead(self.localName(id.name), id.name, nlt, _str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{id.span.line}) catch @panic("OOM")), _zbr_rt._allocator));
+                        return self.narrowedRead(self.localName(id.name), id.name, nlt, _str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), _zbr_show(id.span.line), _zbr_rt._allocator));
                     }
                 }
 // zbr:selfhost/CodeGenV.zbr:3376
@@ -7220,10 +7221,10 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3445
                 if (std.mem.startsWith(u8, ot, "?")) {
 // zbr:selfhost/CodeGenV.zbr:3446
-                    return self.narrowedRead(self.exprStr(tnn.expr.*), "a value", ot, _str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{tnn.span.line}) catch @panic("OOM")), _zbr_rt._allocator));
+                    return self.narrowedRead(self.exprStr(tnn.expr.*), "a value", ot, _str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), _zbr_show(tnn.span.line), _zbr_rt._allocator));
                 }
 // zbr:selfhost/CodeGenV.zbr:3447
-                return _str_concat(_str_concat(_str_concat(_str_concat("zunwrap_at(", self.exprStr(tnn.expr.*), _zbr_rt._allocator), ", ", _zbr_rt._allocator), self.vStringLit(_str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{tnn.span.line}) catch @panic("OOM")), _zbr_rt._allocator)), _zbr_rt._allocator), ")", _zbr_rt._allocator);
+                return _str_concat(_str_concat(_str_concat(_str_concat("zunwrap_at(", self.exprStr(tnn.expr.*), _zbr_rt._allocator), ", ", _zbr_rt._allocator), self.vStringLit(_str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), _zbr_show(tnn.span.line), _zbr_rt._allocator)), _zbr_rt._allocator), ")", _zbr_rt._allocator);
             },
             .dict_lit => |_ptr_dl| {
                 const dl = _ptr_dl.*;
@@ -7308,7 +7309,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3482
                 if ((_zebra_lt(@as(i64, @intCast(tl.elems.items.len)), 2) or _zebra_gt(@as(i64, @intCast(tl.elems.items.len)), 3))) {
 // zbr:selfhost/CodeGenV.zbr:3483
-                    self.refuse(_str_concat(_str_concat("a tuple literal of ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tl.elems.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), " (the runtime spells 2 and 3)", _zbr_rt._allocator), tl.span);
+                    self.refuse(_str_concat(_str_concat("a tuple literal of ", _zbr_show(@as(i64, @intCast(tl.elems.items.len))), _zbr_rt._allocator), " (the runtime spells 2 and 3)", _zbr_rt._allocator), tl.span);
 // zbr:selfhost/CodeGenV.zbr:3484
                     return "0";
                 }
@@ -7324,12 +7325,12 @@ pub const _zbr_ty_VGen = struct {
                         fields = _str_concat(fields, ", ", _zbr_rt._allocator);
                     }
 // zbr:selfhost/CodeGenV.zbr:3490
-                    fields = _str_concat(_str_concat(_str_concat(_str_concat(fields, "f", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{fi}) catch @panic("OOM")), _zbr_rt._allocator), ": ", _zbr_rt._allocator), self.exprStr(el), _zbr_rt._allocator);
+                    fields = _str_concat(_str_concat(_str_concat(_str_concat(fields, "f", _zbr_rt._allocator), _zbr_show(fi), _zbr_rt._allocator), ": ", _zbr_rt._allocator), self.exprStr(el), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3491
                     fi = (fi + 1);
                 }
 // zbr:selfhost/CodeGenV.zbr:3492
-                return _str_concat(_str_concat(_str_concat(_str_concat("ZTuple", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{@as(i64, @intCast(tl.elems.items.len))}) catch @panic("OOM")), _zbr_rt._allocator), "{", _zbr_rt._allocator), fields, _zbr_rt._allocator), "}", _zbr_rt._allocator);
+                return _str_concat(_str_concat(_str_concat(_str_concat("ZTuple", _zbr_show(@as(i64, @intCast(tl.elems.items.len))), _zbr_rt._allocator), "{", _zbr_rt._allocator), fields, _zbr_rt._allocator), "}", _zbr_rt._allocator);
             },
             .set_lit => |_ptr_stl| {
                 const stl = _ptr_stl.*;
@@ -7407,7 +7408,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3531
                 self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3532
-                const tmp: []const u8 = _str_concat("zoc", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const tmp: []const u8 = _str_concat("zoc", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3533
                 self.local_names.append(_zbr_rt._allocator, _intern(tmp)) catch @panic("OOM");
 // zbr:selfhost/CodeGenV.zbr:3534
@@ -7437,7 +7438,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3551
                 self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3552
-                const basen: []const u8 = _str_concat("zocb", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const basen: []const u8 = _str_concat("zocb", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3553
                 self.line(_str_concat(_str_concat(basen, " := ", _zbr_rt._allocator), base_s, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:3554
@@ -7450,7 +7451,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3557
                 self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3558
-                const resn: []const u8 = _str_concat("zocr", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const resn: []const u8 = _str_concat("zocr", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3559
                 const rt: []const u8 = self.vTypeOf(_zbr_ty_Expr{ .opt_chain = blk_box_10: { const _bv: std.meta.Child(@FieldType(_zbr_ty_Expr, "opt_chain")) = oc; const _bp = _zbr_rt._allocator.create(@TypeOf(_bv)) catch @panic("OOM"); _bp.* = _bv; break :blk_box_10 _bp; } });
 // zbr:selfhost/CodeGenV.zbr:3564
@@ -7549,7 +7550,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3615
                     self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:3616
-                    const zr: []const u8 = _str_concat("zr", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                    const zr: []const u8 = _str_concat("zr", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3620
                     const nilable: bool = std.mem.startsWith(u8, crt, "!?");
 // zbr:selfhost/CodeGenV.zbr:3621
@@ -8146,7 +8147,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:3922
                                         if ((_zebra_gt(_zbr_fn_alignWidth(spec), 0) and (std.mem.eql(u8, self.vTypeOf(ex), "rune") or std.mem.eql(u8, self.vTypeOf(ex), "string")))) {
 // zbr:selfhost/CodeGenV.zbr:3926
-                                            out = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(out, "${zstr_align(", _zbr_rt._allocator), self.charText(ex, self.exprStr(ex)), _zbr_rt._allocator), ", ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{_zbr_fn_alignWidth(spec)}) catch @panic("OOM")), _zbr_rt._allocator), ", `", _zbr_rt._allocator), _zbr_fn_alignKind(spec), _zbr_rt._allocator), "`)}", _zbr_rt._allocator);
+                                            out = _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(out, "${zstr_align(", _zbr_rt._allocator), self.charText(ex, self.exprStr(ex)), _zbr_rt._allocator), ", ", _zbr_rt._allocator), _zbr_show(_zbr_fn_alignWidth(spec)), _zbr_rt._allocator), ", `", _zbr_rt._allocator), _zbr_fn_alignKind(spec), _zbr_rt._allocator), "`)}", _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:3927
                                             i = (i + 1);
                                         } else {
@@ -8418,7 +8419,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:4052
             if (self.field_types.get(m.member)) |nft| {
 // zbr:selfhost/CodeGenV.zbr:4053
-                return self.narrowedRead(plain, m.member, nft, _str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{m.span.line}) catch @panic("OOM")), _zbr_rt._allocator));
+                return self.narrowedRead(plain, m.member, nft, _str_concat(_str_concat(self.current_file, ":", _zbr_rt._allocator), _zbr_show(m.span.line), _zbr_rt._allocator));
             }
         }
 // zbr:selfhost/CodeGenV.zbr:4054
@@ -8635,7 +8636,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:4163
                     self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:4164
-                    const t: []const u8 = _str_concat("zt", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                    const t: []const u8 = _str_concat("zt", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:4165
                     self.line(_str_concat(_str_concat(_str_concat("mut ", t, _zbr_rt._allocator), " := ", _zbr_rt._allocator), slot, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:4166
@@ -8683,7 +8684,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:4189
                 self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:4190
-                const tn: []const u8 = _str_concat("zt", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+                const tn: []const u8 = _str_concat("zt", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:4191
                 self.line(_str_concat(_str_concat(_str_concat("mut ", tn, _zbr_rt._allocator), " := ", _zbr_rt._allocator), s, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:4192
@@ -9113,7 +9114,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:4386
             self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:4387
-            const tr: []const u8 = _str_concat("zt", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+            const tr: []const u8 = _str_concat("zt", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:4388
             self.line(_str_concat(_str_concat(_str_concat("mut ", tr, _zbr_rt._allocator), " := ", _zbr_rt._allocator), obj, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:4389
@@ -10695,7 +10696,7 @@ pub const _zbr_ty_VGen = struct {
 // zbr:selfhost/CodeGenV.zbr:4954
         self.tmpN = (self.tmpN + 1);
 // zbr:selfhost/CodeGenV.zbr:4955
-        const cn: []const u8 = _str_concat("zc", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{self.tmpN}) catch @panic("OOM")), _zbr_rt._allocator);
+        const cn: []const u8 = _str_concat("zc", _zbr_show(self.tmpN), _zbr_rt._allocator);
 // zbr:selfhost/CodeGenV.zbr:4956
         self.line(_str_concat(_str_concat(_str_concat("mut ", cn, _zbr_rt._allocator), " := ", _zbr_rt._allocator), l, _zbr_rt._allocator));
 // zbr:selfhost/CodeGenV.zbr:4957

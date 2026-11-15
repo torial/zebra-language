@@ -18,6 +18,7 @@ const _zbr_hash = _zbr_rt._zbr_hash;
 const _ZbrList = _zbr_rt._ZbrList;
 const _ZbrMap = _zbr_rt._ZbrMap;
 const _zbr_new = _zbr_rt._zbr_new;
+const _zbr_show = _zbr_rt._zbr_show;
 
 const _zbr_mod_Ast = @import("Ast.zig");
 const _zbr_ty_Module = _zbr_mod_Ast._zbr_ty_Module;
@@ -241,7 +242,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:101
         var sites: _ZbrList([]const u8) = (self.match_sites.get(key).?);
 // zbr:selfhost/Checker.zbr:102
-        sites.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{line}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
+        sites.append(_zbr_rt._allocator, _intern(_str_concat(_str_concat(file, ":", _zbr_rt._allocator), _zbr_show(line), _zbr_rt._allocator))) catch @panic("OOM");
     }
 
     // zbr:selfhost/Checker.zbr:104
@@ -274,7 +275,7 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:115
         if ((!self.module_fns.contains(key))) {
 // zbr:selfhost/Checker.zbr:116
-            self.module_fns.put(_intern(key), _intern(_str_concat(_str_concat(file, ":", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{line}) catch @panic("OOM")), _zbr_rt._allocator))) catch @panic("OOM");
+            self.module_fns.put(_intern(key), _intern(_str_concat(_str_concat(file, ":", _zbr_rt._allocator), _zbr_show(line), _zbr_rt._allocator))) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:117
             self.module_fn_key_list.append(_zbr_rt._allocator, _intern(key)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:118
@@ -1476,21 +1477,21 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:657
         if (_zebra_gt(dead_count, 0)) {
 // zbr:selfhost/Checker.zbr:658
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(RED, BLD, _zbr_rt._allocator), "dead union arms", _zbr_rt._allocator), RST, _zbr_rt._allocator), " — matched but never constructed (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{dead_count}) catch @panic("OOM")), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(RED, BLD, _zbr_rt._allocator), "dead union arms", _zbr_rt._allocator), RST, _zbr_rt._allocator), " — matched but never constructed (", _zbr_rt._allocator), _zbr_show(dead_count), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:659
             sb.appendSlice(_zbr_rt._allocator, (_zbr_rt._allocator.dupe(u8, dead_sb.items) catch @panic("OOM"))) catch @panic("OOM");
         }
 // zbr:selfhost/Checker.zbr:661
         if (_zebra_gt(phantom_count, 0)) {
 // zbr:selfhost/Checker.zbr:662
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(YLW, BLD, _zbr_rt._allocator), "phantom variants", _zbr_rt._allocator), RST, _zbr_rt._allocator), " — constructed but never matched (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{phantom_count}) catch @panic("OOM")), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(YLW, BLD, _zbr_rt._allocator), "phantom variants", _zbr_rt._allocator), RST, _zbr_rt._allocator), " — constructed but never matched (", _zbr_rt._allocator), _zbr_show(phantom_count), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:663
             sb.appendSlice(_zbr_rt._allocator, (_zbr_rt._allocator.dupe(u8, phantom_sb.items) catch @panic("OOM"))) catch @panic("OOM");
         }
 // zbr:selfhost/Checker.zbr:665
         if (_zebra_gt(unreachable_count, 0)) {
 // zbr:selfhost/Checker.zbr:666
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(YLW, BLD, _zbr_rt._allocator), "unreachable module-level functions", _zbr_rt._allocator), RST, _zbr_rt._allocator), " (", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{unreachable_count}) catch @panic("OOM")), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(YLW, BLD, _zbr_rt._allocator), "unreachable module-level functions", _zbr_rt._allocator), RST, _zbr_rt._allocator), " (", _zbr_rt._allocator), _zbr_show(unreachable_count), _zbr_rt._allocator), "):\n\n", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:667
             sb.appendSlice(_zbr_rt._allocator, (_zbr_rt._allocator.dupe(u8, unreach_sb.items) catch @panic("OOM"))) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:668
@@ -1506,21 +1507,21 @@ pub const _zbr_ty_DeadCodeChecker = struct {
 // zbr:selfhost/Checker.zbr:674
             sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(BLD, "zebra check: ", _zbr_rt._allocator), RST, _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:675
-            sb.appendSlice(_zbr_rt._allocator, _str_concat((std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{dead_count}) catch @panic("OOM")), " dead arm", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_zbr_show(dead_count), " dead arm", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:676
             if ((dead_count != 1)) {
 // zbr:selfhost/Checker.zbr:677
                 sb.appendSlice(_zbr_rt._allocator, "s") catch @panic("OOM");
             }
 // zbr:selfhost/Checker.zbr:678
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(", ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{phantom_count}) catch @panic("OOM")), _zbr_rt._allocator), " phantom variant", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(", ", _zbr_show(phantom_count), _zbr_rt._allocator), " phantom variant", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:679
             if ((phantom_count != 1)) {
 // zbr:selfhost/Checker.zbr:680
                 sb.appendSlice(_zbr_rt._allocator, "s") catch @panic("OOM");
             }
 // zbr:selfhost/Checker.zbr:681
-            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(", ", (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{unreachable_count}) catch @panic("OOM")), _zbr_rt._allocator), " unreachable fn", _zbr_rt._allocator)) catch @panic("OOM");
+            sb.appendSlice(_zbr_rt._allocator, _str_concat(_str_concat(", ", _zbr_show(unreachable_count), _zbr_rt._allocator), " unreachable fn", _zbr_rt._allocator)) catch @panic("OOM");
 // zbr:selfhost/Checker.zbr:682
             if ((unreachable_count != 1)) {
 // zbr:selfhost/Checker.zbr:683
@@ -1655,7 +1656,7 @@ pub fn _zbr_fn_runCheck(root_path: []const u8) anyerror!bool {
 // zbr:selfhost/Checker.zbr:742
     const n_deps: i64 = (@as(i64, @intCast(modules.items.len)) - 1);
 // zbr:selfhost/Checker.zbr:743
-    std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("zebra check: ", root_path, _zbr_rt._allocator), " (+ ", _zbr_rt._allocator), (std.fmt.allocPrint(_zbr_rt._allocator, "{}", .{n_deps}) catch @panic("OOM")), _zbr_rt._allocator), " deps)", _zbr_rt._allocator)});
+    std.debug.print("{s}\n", .{_str_concat(_str_concat(_str_concat(_str_concat("zebra check: ", root_path, _zbr_rt._allocator), " (+ ", _zbr_rt._allocator), _zbr_show(n_deps), _zbr_rt._allocator), " deps)", _zbr_rt._allocator)});
 // zbr:selfhost/Checker.zbr:745
     var checker: *_zbr_ty_DeadCodeChecker = _zbr_ty_DeadCodeChecker.init();
 // zbr:selfhost/Checker.zbr:748

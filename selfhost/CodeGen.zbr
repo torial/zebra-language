@@ -20066,32 +20066,23 @@ struct Generator
                     is_real_tostring_recv = toString_types.contains_(tn_dd)
             if not is_real_tostring_recv
                 # Char receivers (u21 codepoints from chars() loop) need codepoint encode.
-                # Int/other receivers need decimal string via allocPrint.
+                # Everything else is the text `print` shows, from the same formatter
+                # (`_zbr_show`): `6.0` for a whole float, `[1, 2, 3]` for a List, `{"a": 1}`
+                # for a map, `Pt{x: 1, y: 2}` for a class, `green` for an enum. BUG-743: this
+                # was a `{}` allocPrint, which is Zig's struct dump -- a List's capacity, a
+                # map's allocator addresses, a class's `_type_tag`.
                 var is_char_recv = false
-                var is_float_recv = false
                 if .infer_ctx != nil
-                    var recv_t: Type_ = inferExpr(m.object, .infer_ctx!)
-                    branch recv_t
-                        on Type_.char_
-                            is_char_recv = true
-                        on Type_.float_
-                            is_float_recv = true
-                        on Type_.float_n as _
-                            is_float_recv = true
-                        else
-                            pass
-                if is_float_recv
-                    w.emit("_zbr_show(")                # `6.0`, the same text print shows
-                    genExpr(m.object)
-                    w.emit(")")
-                else if is_char_recv
+                    if inferExpr(m.object, .infer_ctx!) is Type_.char_
+                        is_char_recv = true
+                if is_char_recv
                     w.emit("_zbr_char_str(")   # BUG-703: an escape char is its byte; no uninitialised `catch 1` buffer
                     genExpr(m.object)
                     w.emit(", _allocator)")
                 else
-                    w.emit("(std.fmt.allocPrint(_allocator, \"{}\", .{")
+                    w.emit("_zbr_show(")
                     genExpr(m.object)
-                    w.emit("}) catch @panic(\"OOM\"))")
+                    w.emit(")")
                 return
         if mname == "toFloat"
             # Mirror `toInt`'s str-vs-numeric dispatch: a string parses

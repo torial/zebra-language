@@ -1630,7 +1630,8 @@ var result = sb.build()              # str; the builder keeps its text (clear() 
   enum member by name (`green`), an optional as its value or `nil`, a class with a
   `toString()` through it and one without as `Name{field: value, ...}`, a tuple
   `(1, "a")`, a union member `circle(2)` / `dot`; strings *inside* a container are
-  quoted (`["a", "b"]`), a bare string is not.
+  quoted (`["a", "b"]`), a bare string is not. `x.toString()` returns that same text
+  (BUG-743; it used to return Zig's struct dump for a container, class, struct or enum).
 - **Format specifiers** — `${expr:spec}` where `spec` follows
   `[fill][align][width][.precision][type]`.  Fill is any character; align is
   `<` (left), `>` (right), or `^` (center); type chars: `x`/`X` hex, `o`
