@@ -300,6 +300,9 @@
   carries the return type), so the unmarked-call refusal and the method-catch routing both fire.
 - **Control when fixing:** both unmarked repros are refused at `-c`, naming `risky` and `?`; the
   marked form is unchanged; a same-module throws call is unchanged.
+- **Downstream when fixed:** graze's `check_gate.py` (GameEngine session, graze ec70545) builds five
+  ways of ignoring a refusal and expects each refused; today that rests on zig's errors, so those
+  five expectations change to this refusal's wording when it lands -- tell that session.
 
 ---
 
