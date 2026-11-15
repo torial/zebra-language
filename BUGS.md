@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-732. Next new bug: BUG-733.**
+**Last bug number generated: BUG-742. Next new bug: BUG-743.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -64,6 +64,17 @@
 - **Option A progress (2026-11-13):** BUG-703 (`chars()` on bytes that are not UTF-8), BUG-704
   (`readAll` on a reset) and BUG-715 (`conn.write` to a peer that left) are fixed. Left in A:
   the parse helpers' panic arms and integer conversions on header values.
+- **Option A sweep (2026-11-15):** 48 operations a handler applies to request data (every str
+  method that reads input, Base64, Json parse/get/stringify, Uri, Compress, Crypto, Csv, Hash,
+  Mime, Path, Regex) x 38 hostile inputs (bytes that are not UTF-8, NUL, 2 MB, bad base64/hex/
+  percent/gzip/PHC, huge and malformed numbers, JSON nested 256 / 257 / 5,000 / 100,000 deep),
+  each in its own process, with a surviving positive control and a dying negative one. Two
+  panic sites: BUG-733 (`decodeBase64`) and BUG-734 (`stringify` past 256 levels). Then 26
+  hostile raw requests against a server whose handler reads every request field: none ended
+  it, and Content-Length's `parseInt ... catch 0` cannot panic. But it does make up values
+  (BUG-735), and a header value can inject response headers (BUG-736). `Http.request`'s panic
+  arms are reachable only through a handler that forwards a client's header -- BUG-735's
+  bare-LF refusal closes that. A is done when BUG-733, 734, 735 and 736 are.
 - **Workaround today:** check `isValidUtf8()` on path, query and body first and answer 400
   (Graze does; witnessed red and green in `graze/tasks/check_tasks.py`).
 - **Control when fixing:** a raw `Tcp` client sends the non-UTF-8 path; the server must answer
@@ -370,6 +381,146 @@
 - **Fix shape:** resolve the exposed name to the module's function, not to the module; if that is
   ambiguous by design, refuse at `-c` naming both.
 - **Control when fixing:** the repro prints 42; `use riskmod exposing risky` is unchanged.
+
+---
+
+### BUG-733: `s.decodeBase64()` panics on input that is not base64 (BUG-701 option A)
+- **Status:** OPEN (filed 2026-11-15; found by the BUG-701 option A sweep: 48 operations x 38
+  hostile inputs, each in its own process, reproduced on e4045ec)
+- **Repro:** `print("abc".decodeBase64().len)` -> `panic: invalid base64`, exit 1. Every one of the
+  sweep's 36 non-base64 inputs ended the process. In an `Http.serve` handler that decodes a
+  client value (a Basic auth header, a cookie) any client ends the server.
+- **Cause:** `_base64_decode_str` ends both decoder calls with `catch @panic("invalid base64")`.
+  `Base64.decode(s)` and `Base64.decodeUrl(s)` already return `str?` (nil on bad input) and
+  survived every input.
+- **Fix shape (decision pending):** return `str?` like `Base64.decode` -- a surface change, two
+  corpus uses (both tests), none in Graze, Sprocket, zebra-ide or the GameEngine -- or retire the
+  method in favour of `Base64.decode`.
+- **Control when fixing:** `"abc".decodeBase64()` is nil and the process goes on; a valid input
+  decodes as before.
+
+---
+
+### BUG-734: `stringify` panics on a parsed JSON document nested deeper than 256 (BUG-701 option A)
+- **Status:** OPEN (filed 2026-11-15; found by the BUG-701 option A sweep, reproduced on e4045ec)
+- **Repro:** `Json.parse` of `[` x 257 + `]` x 257 succeeds; `v.stringify()` on it panics
+  `index out of bounds: index 32, len 32`. 256 levels work; 257, 5,000 and 100,000 all panic.
+  A server that stores or echoes a client's JSON body ends on one deep document.
+- **Cause:** Zig's `std.json.Stringify` keeps a 256-level nesting stack (32 bytes of bits) and
+  asserts in Debug and ReleaseSafe; the parser has no such limit, so `parse` accepts what
+  `stringify` cannot write. `_json_stringify` also turns any other failure into `"{}"`, a value
+  that reads as an answer.
+- **Fix shape (decision pending):** `Json.parse` returns nil past 256 levels (the depth stringify
+  can write; serde_json's default is 128), documented beside `parse`; the V route mirrors it.
+- **Control when fixing:** 256 levels parse and round-trip; 257 is nil from `parse`; no panic.
+
+---
+
+### BUG-735: `Http.serve` hands malformed requests to the handler with made-up fields
+- **Status:** OPEN (filed 2026-11-15; found by the BUG-701 option A sweep, 26 hostile raw requests
+  against a handler that reads every field; reproduced on e4045ec). No request killed the server.
+- **Observed:** an empty request, `\r\n\r\n`, or a request line with no path reaches the handler as
+  method `""` or `"GET"` and path `"/"`, and is answered 200 (the parser's `orelse "GET"` /
+  `orelse "/"`). `Content-Length: 12abc`, `-5` or `18446744073709551616` is read as 0 and the body
+  is ignored (`parseInt ... catch 0`). Two different Content-Length lines: the last wins. A body
+  shorter than its Content-Length (the client closed) is handed over as if complete. A bare LF
+  inside a header line is kept, so `req.header()` can return a value holding a line break --
+  which `Http.request` then refuses with a panic if a handler forwards it (proxy shape), and which
+  BUG-736 writes straight into a response.
+- **Why it matters:** RFC 9112 §6.3 requires a 400 and a close for an invalid Content-Length, and
+  each of these hands the handler values the client never sent.
+- **Fix shape:** answer 400 (and close) without calling the handler for: a request line that is
+  not `METHOD SP target SP version`, an invalid or conflicting Content-Length, a body that ends
+  short, and a bare CR or LF inside a header line.
+- **Control when fixing:** each case gets 400 and the next request 200; a well-formed request is
+  unchanged.
+
+---
+
+### BUG-736: `Http.serve` writes response header names and values unchecked -- a line break in one injects headers
+- **Status:** OPEN (filed 2026-11-15; found by the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** a handler returns `HttpResponse.new(200, "body").withHeader("X-Echo", v)` with `v` read
+  from `req.header("X-A")`. A client sends `X-A: a\nSet-Cookie: injected=1`; the response carries
+  `X-Echo: a\nSet-Cookie: injected=1\r\n` -- a second header line the client chose, for any
+  client that accepts a bare LF. A value holding `\r\n` from anywhere else is a full split.
+- **Cause:** `_http_serve` appends `_kv[0]`, `": "`, `_kv[1]` with no check. `Http.request` checks
+  the same thing on the way OUT (and panics).
+- **Fix shape:** refuse a response whose header name is empty or holds `:`/CR/LF, or whose value
+  holds CR/LF: answer 500 with no handler headers, and print the header's name on stderr. Not a
+  panic (BUG-701). BUG-735's bare-LF refusal closes the client route; this closes every route.
+- **Control when fixing:** the repro's response has no `Set-Cookie` line and the server says why;
+  an ordinary header is unchanged.
+
+---
+
+### BUG-737: `s.fromHex()` passes `-c` and never compiles
+- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `print("6162".fromHex() != nil)` -> zig: "value of type '[]u8' ignored".
+- **Cause:** both `fromHex` arms in CodeGen emit `std.fmt.hexToBytes(..) catch {..};` as a
+  statement, and `hexToBytes` returns the slice. No fixture uses `fromHex`, so no gate has ever
+  built it.
+- **Fix shape:** `_ = std.fmt.hexToBytes(..)` in both arms, and a run fixture (valid, odd length,
+  bad digit).
+- **Control when fixing:** `"6162".fromHex()` is `"ab"`; `"abc"` and `"zz"` are nil.
+
+---
+
+### BUG-738: `s.hash()` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `print("a".hash())` -> zig: "no field or member function named 'hash' in 'str'".
+- **Cause:** `hash` is in TypeChecker's str method list (since BUG-369) with no CodeGen arm. It is
+  in SURFACE.md's str list and in no QUICKSTART table.
+- **Fix shape (decision pending):** remove it from the list (it never worked; a `str: -hash`
+  surface line), or give it an arm (`Hash.fnv64` already exists).
+- **Control when fixing:** either `-c` refuses `"a".hash()` naming the method, or it prints a value.
+
+---
+
+### BUG-739: `x == nil` on a non-optional class or runtime struct passes `-c`; `Uri.parse` is documented as optional and is not
+- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `print(mk() != nil)` where `def mk(): P` returns a class -> zig: "comparison of '*P'
+  with null"; `print(Uri.parse(s) != nil)` -> "comparison of 'zebra_rt.UriResult' with null". The
+  same test on an `int` is refused at `-c` ("'int' is never nil").
+- **Second half:** QUICKSTART's table says `Uri.parse(s)` returns `UriResult?`. It returns a
+  `UriResult` whose fields are all empty (port 0) when the text does not parse -- a made-up value,
+  and the reason a reader writes the `!= nil` above.
+- **Fix shape:** the "is never nil" refusal for every non-optional type; `Uri.parse` returns
+  `UriResult?` as documented (a surface change) or the table says what it does.
+- **Control when fixing:** both comparisons refused at `-c` at their lines; an optional class
+  still compares.
+
+---
+
+### BUG-740: `Path.dirname(s).len` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `print(Path.dirname(s).len)` -> zig: "incompatible types: '*const str' and '*const
+  *const [0:0]u8'". `var d: str = Path.dirname(s)` then `d.len` works.
+- **Cause:** the emit is `(std.fs.path.dirname(s) orelse "")`, whose peer type is not a slice
+  when a member is read from it directly.
+- **Fix shape:** `orelse @as([]const u8, "")`; check the other `Path.*` arms for the same shape.
+- **Control when fixing:** the repro prints the length.
+
+---
+
+### BUG-741: `HttpResponse(status, text)` passes `-c`, then `.withHeader` on it fails inside zig
+- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `var r = HttpResponse(200, "body")` / `return r.withHeader("X", "1")` -> zig: "no
+  field or member function named 'withHeader' in 'zebra_rt.HttpResponse'". With
+  `HttpResponse.new(200, "body")` the same code works.
+- **Fix shape:** route `withHeader` on any HttpResponse-typed receiver, or refuse the bare
+  constructor at `-c` naming `HttpResponse.new`.
+- **Control when fixing:** the repro sends the header, or `-c` refuses it at its line.
+
+---
+
+### BUG-742: `r.withHeader(...)` as a statement silently does nothing
+- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `var r = HttpResponse.new(200, "body")` / `r.withHeader("X", "1")` / `return r` --
+  builds and runs, and the response has no `X` header. `withHeader` returns a NEW response
+  (QUICKSTART), and the statement drops it with no word.
+- **Fix shape:** refuse at `-c` a `withHeader` whose result is discarded, naming the
+  `return r.withHeader(..)` / `r = r.withHeader(..)` forms.
+- **Control when fixing:** the repro is refused at its line; both suggested forms compile.
 
 ---
 
