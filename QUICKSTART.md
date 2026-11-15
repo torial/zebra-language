@@ -4657,8 +4657,13 @@ computed at run time when the server starts (it prints why and exits 1). An addr
 machine does not have is refused the same way, with the OS's reason.
 
 **A port one server holds is not shared with a second** (BUG-727). Starting a second server on
-it prints `cannot listen on 127.0.0.1:<port>: AddressInUse` and its `serve` returns; the first
-keeps answering. A port whose server has just stopped can be listened on again at once. (On
+it prints `cannot listen on 127.0.0.1:<port>: AddressInUse` and the program **exits 1**; the
+first keeps answering. That is the rule whenever a Zebra `main` owns the process. A
+`--library-mode` script, or a Zig host calling the runtime's `_tcp_serve` / `_ws_serve` /
+`_http_serve` itself, prints the same line and its `serve` **returns** instead, so a held port
+never ends a host's process. The runtime tells them apart by `_zbr_main_tid`, which every
+emitted non-library entry (`main`, a class `static main`, `zebra test`) sets first and no
+library-mode emit sets. A port whose server has just stopped can be listened on again at once. (On
 Windows the runtime binds exclusively; before this a second listen there succeeded silently and
 the old server went on answering.)
 

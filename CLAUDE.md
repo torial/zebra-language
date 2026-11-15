@@ -1461,6 +1461,12 @@ bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-m
                                 #   inside `allocate` is refused by name. Red-checked with the two
                                 #   real attackers: freeing at once (the walk read garbage, integer
                                 #   overflow) and the dedupe removed (a segfault in the second free).
+                                #   LEG 4 (2026-11-15, BUG-727 follow-up): a held port EXITS 1 when a
+                                #   Zebra main owns the process, and must NOT end a host's: a Zig host
+                                #   holds a port and calls a library's Tcp.serve on it, which must
+                                #   print AddressInUse and return. The runtime decides by
+                                #   `_zbr_main_tid` (no library-mode emit sets it, also asserted);
+                                #   control: the same host with it set must exit 1.
                                 #   CANNOT SEE: frees the host performs on paths it does not test, or
                                 #   an alias of a queued container that outlives the sweep (a UAF
                                 #   by contract; nothing detects it).

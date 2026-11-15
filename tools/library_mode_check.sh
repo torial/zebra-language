@@ -18,6 +18,8 @@
 # Leg 2 (2026-10-05, BUG-501 1d): a host frees a Zebra-returned list with `_zbr_free` and its
 # DebugAllocator must report no leak; freeing nothing must report one (the control).
 #
+# Leg 4 (2026-11-15, BUG-727 follow-up): a held port in a library's Tcp.serve prints why and leaves
+# the HOST running; control: the same host with `_zbr_main_tid` set exits 1.
 # CANNOT SEE: frees the host performs later (it asserts the precondition, not the crash),
 # or a runtime that allocates from some other global.
 set -u
@@ -217,8 +219,61 @@ fi
 if ! grep -q "_zbr_free_at_sweep inside an .allocate. block" sweep_scope.log; then
     echo "library-mode: FAIL -- a queueing inside an allocate block was not refused by name"; tail -5 sweep_scope.log; exit 1
 fi
+# --- leg 4: a held port does not end a HOST's process (2026-11-15, BUG-727 follow-up) ---------
+# A server whose port is taken exits 1 when a Zebra `main` owns the process, and prints and
+# returns when a host does -- the GameEngine's NetHost calls `_ws_serve` from its own Zig main.
+# The discriminator is `_zbr_main_tid`, which no --library-mode emit sets. THE REAL ATTACKER is
+# that host shape: the library's main runs, the host holds a port itself, and a library function
+# serves on it; the host must still be running afterwards and the cause must be printed.
+# CONTROL: the same host with `_zbr_main_tid` set (what a Zebra main does) must be ENDED with
+# exit 1 -- otherwise "the host survived" could mean the exit path is simply gone.
+cat > libport.zbr <<'ZEOF'
+def onConn(c: TcpConn)
+    c.close()
+
+def serveOn(port: int)
+    Tcp.serve(port, onConn)
+
+def main()
+    pass
+ZEOF
+if ! "$ZEXE" --library-mode --emit-zig --output-dir outp libport.zbr >emitp.log 2>&1; then
+    echo "library-mode: REFUSING -- the compiler would not emit the held-port library"; cat emitp.log; exit 2
+fi
+if grep -q '_zbr_main_tid' outp/libport.zig; then
+    echo "library-mode: FAIL -- a --library-mode emit sets _zbr_main_tid, so a held port would end its host"; grep -n '_zbr_main_tid' outp/libport.zig; exit 1
+fi
+write_port_host() {   # $1 = host | owned
+    cat > outp/host.zig <<EOF
+const std = @import("std");
+const rt = @import("zebra_rt.zig");
+const lib = @import("libport.zig");
+pub fn main(init: std.process.Init) !void {
+    lib.main(init);
+    const addr = rt._zbr_listen_addr("127.0.0.1", 19986, "host");
+    var held = rt._zbr_listen(&addr, false) catch |e| {
+        std.debug.print("host could not hold the port: {s}\n", .{@errorName(e)});
+        return;
+    };
+    defer held.deinit(rt._io);
+    if (comptime std.mem.eql(u8, "$1", "owned")) rt._zbr_main_tid = std.Thread.getCurrentId();
+    lib._zbr_fn_serveOn(19986);
+    std.debug.print("host alive after held port\n", .{});
+}
+EOF
+}
+for m in host owned; do write_port_host $m; run_zig_host outp port_$m.log; done
+if grep -q "host could not hold the port" port_host.log port_owned.log; then
+    echo "library-mode: REFUSING -- leg 4's host could not hold port 19986 (is something listening on it?)"; tail -3 port_host.log; exit 2
+fi
+if grep -q "host alive after held port" port_owned.log || ! grep -q "AddressInUse" port_owned.log; then
+    echo "library-mode: REFUSING -- with _zbr_main_tid set the held port did not end the process, so leg 4 cannot see an exit"; tail -5 port_owned.log; exit 2
+fi
+if ! grep -q "Tcp.serve: cannot listen on 127.0.0.1:19986: AddressInUse" port_host.log || ! grep -q "host alive after held port" port_host.log; then
+    echo "library-mode: FAIL -- a held port in a library's Tcp.serve ended the HOST's process or did not say why"; tail -5 port_host.log; exit 1
+fi
 if grep -q "host allocator kept: true" run1.log; then
-    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); free-at-sweep survives a mid-walk release, frees once, leaks nothing (control: no sweep leaks), refuses inside allocate; infra-retries=$INFRA_RETRIES"
+    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); free-at-sweep survives a mid-walk release, frees once, leaks nothing (control: no sweep leaks), refuses inside allocate; a held port leaves a host running (control: a Zebra-owned process exits 1); infra-retries=$INFRA_RETRIES"
     exit 0
 fi
 echo "library-mode: FAIL -- the library's main replaced the host's allocator (BUG-485)"; tail -3 run1.log

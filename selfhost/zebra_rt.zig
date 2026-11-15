@@ -3057,13 +3057,25 @@ const _zbr_win_listen = if (builtin.target.os.tag == .windows) struct {
     }
 } else struct {};
 /// A listen that failed. An address this machine does not have is a refusal of the HOST
-/// (exit 1, as above); any other failure (the port is taken, ...) keeps the old contract --
-/// printed, and serve returns. Through Zig's own Windows listen such an address came back as an
-/// NTSTATUS Zig does not map (INVALID_ADDRESS_COMPONENT), i.e. `Unexpected`, and the message
-/// ASKS rather than asserts; since BUG-727 the servers bind through winsock there, whose
-/// WSAEADDRNOTAVAIL maps to AddressUnavailable. The ask stays for any other unmapped error.
+/// (exit 1, as above). Any other failure (the port is taken, ...) also exits 1 when a Zebra
+/// `main` owns the process -- a server that cannot serve should not let its program go on as if
+/// it had (Sean, 2026-11-15, BUG-727's follow-up; it was printed-and-returned until then). When a
+/// HOST owns the process it is printed and serve returns, as before: a `--library-mode` script or
+/// a Zig host calling `_ws_serve` directly (the GameEngine's NetHost) must not have its process
+/// ended by one held port. The discriminator is `_zbr_main_tid`, a RUNTIME fact: every emitted
+/// non-library entry (free `main`, class `static main`, the `zebra test` entry) sets it first,
+/// and no `--library-mode` emit does, so one zebra_rt.zig serves both kinds of process (Fable:
+/// the engine's runtime is shared by its library scripts and ~300 Zebra-main test executables,
+/// so a comptime "library build" flag could not be right for both). Pinned from both sides:
+/// test/bug727_listen_exclusive_test.zbr (the program exits 1) and tools/library_mode_check.sh
+/// leg 4 (a Zig host survives; control: the same host with the flag set does not).
+/// Through Zig's own Windows listen a foreign address came back as an NTSTATUS Zig does not map
+/// (INVALID_ADDRESS_COMPONENT), i.e. `Unexpected`, and the message ASKS rather than asserts;
+/// since BUG-727 the servers bind through winsock there, whose WSAEADDRNOTAVAIL maps to
+/// AddressUnavailable. The ask stays for any other unmapped error.
 pub fn _zbr_listen_failed(what: []const u8, host: []const u8, port: u16, e: anyerror) void {
     if (_zbr_listen_report(what, host, port, e)) _zbr_exit(1);
+    if (_zbr_main_tid != null) _zbr_exit(1);
 }
 /// Prints why a listen failed; true when the cause is a host that is not this machine's
 /// (the program cannot go on). Split from `_zbr_listen_failed` so a supervised Http.serve

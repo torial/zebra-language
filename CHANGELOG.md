@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A server whose port is taken exits 1 (BUG-727 follow-up).** `Tcp.serve`, `Ws.serve` and
+  `Http.serve` printed `cannot listen on 127.0.0.1:<port>: AddressInUse` and returned, so a
+  program went on past a server that never started. When a Zebra `main` owns the process, it
+  now exits 1 after printing that line, on every OS. A `--library-mode` script or a Zig host
+  that calls the runtime's serve functions keeps print-and-return: one held port must not end
+  a host's process (the GameEngine's NetHost). The runtime tells the two apart at run time by
+  `_zbr_main_tid`, which only a non-library entry sets. **Behaviour change:** code after a
+  `serve` call no longer runs when the port is taken. `Http.serve(..., restart: true)` is
+  unchanged (it already stopped with exit 98).
 - **`private` is enforced on methods, and across modules (BUG-708).** A private method was
   callable from anywhere, and a private field was reachable from a module that `use`d its class;
   only a private field within one file was refused. Both are refused at `-c` now, naming the

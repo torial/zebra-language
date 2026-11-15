@@ -273,6 +273,19 @@ Open bugs live in `BUGS.md`.
   failure but a foreign host). The control above asked for exit 1; that is a contract change
   and is put to Sean rather than made here. A supervised `Http.serve(.., restart: true)` already
   exits 98 on it.
+- **Follow-up, 2026-11-15 (decided by Sean, refined with Fable):** the contract is now exit 1 when
+  a Zebra `main` owns the process, on every OS; a HOST-owned process (a `--library-mode` script,
+  or a Zig host calling `_ws_serve` directly -- the GameEngine's NetHost) keeps print-and-return,
+  because one held port must not end a host. `_zbr_listen_failed` decides by `_zbr_main_tid`, a
+  run-time fact: every emitted non-library entry sets it first and no library-mode emit does
+  (checked in CodeGen: two set sites under `if not library_mode`, the third the `zebra test`
+  entry). A comptime flag was rejected because one engine runtime serves both library scripts
+  and ~300 Zebra-main test executables. The fixture now asserts exit 1 and that the line after
+  serve never runs (red-checked with the new line removed: the six exit legs go red, and the
+  "went on" legs print `serve returned`, so the stdout capture is live). The host side is
+  `tools/library_mode_check.sh` leg 4: a Zig host holds a port, a library's `Tcp.serve` is
+  called on it, and the host must print `AddressInUse` and keep running; its control, the same
+  host with `_zbr_main_tid` set, must exit 1.
 - **Pinned by:** `test/bug727_listen_exclusive_test.zbr` (`smoke_run_bounded`, 180 s): for each of
   Tcp, Http and Ws the driver starts this executable as a server, then a second copy on the same
   port; the second must end, say `AddressInUse` and return from serve, and the first must still

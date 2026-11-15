@@ -6,8 +6,10 @@
 # The driver (no arguments) starts this executable as a server, as a user would, then starts a
 # second copy on the same port:
 #   1. for each of Tcp.serve, Http.serve and Ws.serve the second copy is REFUSED -- it prints
-#      "cannot listen on 127.0.0.1:<port>: AddressInUse" and its serve returns (the contract
-#      for a failed listen other than a foreign host) -- and the first still answers;
+#      "cannot listen on 127.0.0.1:<port>: AddressInUse" and EXITS 1 (since 2026-11-15; it used
+#      to print and let serve return), so the line after its serve never runs -- and the first
+#      still answers. (A HOST-owned process keeps print-and-return: tools/library_mode_check.sh
+#      leg 4.)
 #   2. a port whose server answered requests and was stopped -- leaving connections in
 #      TIME_WAIT on the SERVER's side, since Http.serve closes first -- can be listened on again
 #      at once (the property SO_REUSEADDR exists for; an exclusive bind must not cost it).
@@ -72,9 +74,9 @@ def secondRefused(name: str, mode: str, port: int)
     var code = waitExit(second)
     var out = second.readAvailable()
     var err = second.readErrAvailable()
-    check("${name}-second-ended", code == 0, "the second ${name} server is still up or failed (exit ${code}); stderr: ${err}")
+    check("${name}-second-exit1", code == 1, "the second ${name} server did not exit 1 (exit ${code}); stderr: ${err}")
     check("${name}-second-said", err.contains("cannot listen on 127.0.0.1:${port}: AddressInUse"), "the second ${name} server did not say the port is taken; stderr: ${err}")
-    check("${name}-second-returned", out.contains("serve returned"), "the second ${name} server's serve did not return; stdout: ${out}")
+    check("${name}-second-stopped", not out.contains("serve returned"), "the second ${name} server's program went on after serve; stdout: ${out}")
     check("${name}-first-alive", first.isRunning() and listening(port), "the first ${name} server stopped answering")
     if name == "http"
         var got = httpGet(port)
