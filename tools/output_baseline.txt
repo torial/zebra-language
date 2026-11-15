@@ -1880,7 +1880,7 @@ true
 2
 true
 OK
-=== unicode_test sha1=4f89a9b46e23 ===
+=== unicode_test sha1=707bf5691e94 ===
 true
 5
 a
@@ -1893,8 +1893,8 @@ false
 true
 true
 true
-97
-90
+a
+Z
 === union_types sha1=983b34771fb7 ===
 3.14
 === unless_until_test sha1=32948c7748a9 ===

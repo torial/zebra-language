@@ -17,7 +17,9 @@
 | `s.trim()` | **BORROW** | — | `std.mem.trim(u8, s, " \t\n\r")` |  |
 | `s.trimLeft()` | **BORROW** | — | `std.mem.trimStart(u8, s, &std.ascii.whitespace)` |  |
 | `s.trimRight()` | **BORROW** | — | `std.mem.trimEnd(u8, s, &std.ascii.whitespace)` |  |
+| `s.bytes()` | **OWN** | **VALUE** | `_zbr_bytes(s)` | as a value (BUG-723); the loop form is below |
 | `s.center(20, " ")` | **OWN** | — | `_pad_center(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
+| `s.chars()` | **OWN** | **VALUE** | `_zbr_chars(s)` | as a value (BUG-723); the loop form is below |
 | `s.concat("!")` | **OWN** | — | `(std.mem.concat(_zbr_rt._allocator, u8, &.{ s, "!" }) catch @panic(...` |  |
 | `b.decodeBase64()` | **OWN** | — | `_base64_decode_str(b)` | receiver must be base64 |
 | `s.encodeBase64()` | **OWN** | — | `_base64_encode(s)` |  |
@@ -36,13 +38,11 @@
 | `s.toHex()` | **OWN** | — | `(blk_hex: { const _hx_s = s; const _hx_buf = _zbr_rt._allocator.all...` |  |
 | `s.tokenize(",")` | **OWN** | **BORROW** | `(blk_tok: { var _tok_it = std.mem.tokenizeAny(u8, s, ","); var _tok...` |  |
 | `s.upper()` | **OWN** | — | `(std.ascii.allocUpperString(_zbr_rt._allocator, s) catch @panic("OO...` |  |
-| `s.bytes()` | **UNKNOWN** | — | `s.bytes()` | for-only; binding emits invalid Zig |
-| `s.chars()` | **UNKNOWN** | — | `s.chars()` | for-only; binding emits invalid Zig |
 | `s.charAt(0)` | **VALUE** | — | `s[@intCast(0)]` | BUG-223: typed str, emits u8 |
 
-## for-only iterators
+## the `for` forms
 
-These cannot be bound to a variable, so no emitted binding exists to classify. The rows below are **hand-stated from the iterator codegen, not derived** — treat them with less authority than the table above.
+A loop walks the receiver without building the list the bound value is, so there is no binding to classify. The rows below are **hand-stated from the iterator codegen, not derived** — treat them with less authority than the table above.
 
 | iteration form | ownership of what it yields | why |
 |---|---|---|

@@ -17,7 +17,7 @@ in the snippet rather than as silently stale prose.
 FALSIFICATION (this tool must be able to be wrong out loud)
 -----------------------------------------------------------
 A classifier that answers "borrow" for everything would produce a clean, plausible,
-entirely useless table. So four CONTROLS with known-opposite answers are asserted
+entirely useless table. So CONTROLS with known-opposite answers are asserted
 before any output is trusted (`upper`/`concat` must own, `trim`/`substring` must
 borrow), and both classes must be non-empty. A method codegen does not intercept is
 reported as UNKNOWN, never defaulted into a class — an unrecognised method emits as
@@ -72,14 +72,14 @@ CASES = [
     ("lines",        "s.lines()",              ""),
     ("split",        's.split(",")',           ""),
     ("tokenize",     's.tokenize(",")',        ""),
-    ("chars",        "s.chars()",              "for-only; binding emits invalid Zig"),
-    ("bytes",        "s.bytes()",              "for-only; binding emits invalid Zig"),
+    ("chars",        "s.chars()",              "as a value (BUG-723); the loop form is below"),
+    ("bytes",        "s.bytes()",              "as a value (BUG-723); the loop form is below"),
 ]
 
-# The `for` forms of the two iterators that cannot be bound. Their yielded ownership is
-# not derivable from a binding (there is no valid binding), so these rows are stated by
-# hand from the loop codegen and marked as such — an underived row must never be
-# presented with the same authority as a derived one.
+# The `for` forms of the two iterators. A loop walks the receiver and builds no list, so
+# what it yields is not the bound value's row above; these rows are stated by hand from
+# the loop codegen and marked as such — an underived row must never be presented with
+# the same authority as a derived one.
 HAND_STATED = [
     ("for c in s.chars()", "VALUE", "decoded u21 codepoint — aliases nothing"),
     ("for byte in s.bytes()", "VALUE", "single u8 — aliases nothing"),
@@ -116,16 +116,19 @@ CONTAINER_MARKERS = ("ArrayList", "_ZbrList(")
 # forced into the borrow/own dichotomy where it does not belong. Both stay as
 # controls so neither blind spot can silently return.
 #
-# `chars` is a control for the UNKNOWN branch itself: it is a for-only iterator, so a
-# bound `s.chars()` emits a verbatim `s.chars()` call that no Zig type provides. If that
-# ever classifies as a borrow or an own, the unintercepted-call detector has stopped
-# working and unrecognised methods are being quietly absorbed into a class.
+# The UNKNOWN branch has its own control, on SYNTHETIC input (UNKNOWN_CONTROL below): an
+# unintercepted call must classify as UNKNOWN, a dotted call that is not on a receiver
+# must not. It was `chars` until 2026-11-15, chosen because a bound `s.chars()` emitted a
+# verbatim call no Zig type provides -- a control pinned to a BUG, which failed the day
+# BUG-723 was fixed. The checker refuses an unknown str method (BUG-369), so no real
+# program reaches the branch at all; the mechanism is what can be pinned.
 CONTROLS = {
     "upper": "OWN", "concat": "OWN", "encodeBase64": "OWN",
     "trim": "BORROW", "substring": "BORROW",
     "charAt": "VALUE",
-    "chars": "UNKNOWN",
 }
+UNKNOWN_CONTROL = [("s.zzprobe()", "zzprobe", "UNKNOWN"),
+                   ("std.mem.zzprobe(u8, s)", "zzprobe", "BORROW")]
 
 
 def build_program():
@@ -184,7 +187,10 @@ BODIES = preamble_bodies()
 # mentioning `ArrayList` may only be iterating one.
 BODY_ALLOC = ("_allocator.alloc", "_allocator.dupe", "allocPrint", ".toOwnedSlice(",
               # BUG-423: `_zbr_list_join` builds into an ArrayList / std.mem.join -- OWN.
-              "std.mem.join(", ".appendSlice(_allocator")
+              "std.mem.join(", ".appendSlice(_allocator",
+              # BUG-723: `_zbr_chars` / `_zbr_bytes` build a fresh List -- the container
+              # constructor allocates its header from the arena.
+              "_zbr_new(")
 
 
 SPLIT_HELPERS = ("splitSequence(u8, ", "splitScalar(u8, ", "splitAny(u8, ",
@@ -209,11 +215,21 @@ def element_class(rhs: str, declared: str) -> str:
     # binding, though — `tokenize()` emits a bare `const r = (blk: {...})` — so fall back
     # to the expression when there is no annotation to gate on.
     src = declared if declared else rhs
+    # A bare call of a runtime helper (`_zbr_chars(s)`, BUG-723) carries its type in the
+    # helper's own signature, not at the call site: read it there.
+    if not declared and rhs.startswith("_"):
+        callee = re.match(r"(_[A-Za-z_0-9]+)\s*\(", rhs)
+        sig = BODIES.get(callee.group(1), "").split("\n", 1)[0] if callee else ""
+        if any(m in sig for m in CONTAINER_MARKERS):
+            src = sig
     container = any(m in src for m in CONTAINER_MARKERS)
     if not container:
         return "—"
     if any(h in rhs for h in SPLIT_HELPERS):
         return "BORROW"
+    # A List(char) / List(byte) (BUG-723) holds codepoints or bytes: values that alias nothing.
+    if any(f"_ZbrList({t})" in src for t in ("u21", "u8")):
+        return "VALUE"
     if any(m in rhs for m in ("_allocator.dupe", "_allocator.alloc", "allocPrint")):
         return "OWN"
     return "?"
@@ -277,6 +293,8 @@ def main() -> int:
     got = {label: cls for label, _, cls, _, _, _ in rows}
     errs = [f"control {k}: expected {v}, got {got.get(k, 'MISSING')}"
             for k, v in CONTROLS.items() if got.get(k) != v]
+    errs += [f"unknown-branch control `{rhs}`: expected {want}, got {classify(rhs, lab)}"
+             for rhs, lab, want in UNKNOWN_CONTROL if classify(rhs, lab) != want]
     classes = {c for c in got.values() if c not in ("UNKNOWN", "UNBINDABLE")}
     if len(classes) < 2:
         errs.append(f"classifier did not discriminate — every row came out {classes}")
@@ -318,7 +336,7 @@ def main() -> int:
     # output stops being read.
     if "--check" not in sys.argv:
         print(table)
-        print("\nfor-only iterators (hand-stated, NOT derived — cannot be bound):\n")
+        print("\nthe `for` forms (hand-stated, NOT derived — a loop builds no list):\n")
         print(hand_table)
 
         counts = {}
@@ -348,9 +366,9 @@ def main() -> int:
             "**VALUE** = a byte or codepoint, not a slice. Aliases nothing, so neither "
             "borrow nor own applies.\n\n"
             + table + "\n\n"
-            "## for-only iterators\n\n"
-            "These cannot be bound to a variable, so no emitted binding exists to "
-            "classify. The rows below are **hand-stated from the iterator codegen, not "
+            "## the `for` forms\n\n"
+            "A loop walks the receiver without building the list the bound value is, so "
+            "there is no binding to classify. The rows below are **hand-stated from the iterator codegen, not "
             "derived** — treat them with less authority than the table above.\n\n"
             + hand_table + "\n")
         if "--check" in sys.argv:

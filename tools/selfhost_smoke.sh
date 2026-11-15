@@ -2228,6 +2228,7 @@ smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Tcp.serve's ho
 # server. The run leg spawns its own executable as the server, so it is bounded.
 smoke_run_bounded test/bug701_serve_restart_test.zbr "bug701_serve_restart: OK" 240
 smoke_run_bounded test/bug727_listen_exclusive_test.zbr "bug727_listen_exclusive: OK" 180
+smoke_run test/bug723_chars_value_test.zbr "bug723_chars_value: OK"
 smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Ws.serve has no parameter 'restart' -- only Http.serve restarts"
 smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Tcp.serve has no parameter 'restart'"
 smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Http.serve's restart must be a bool, got int"

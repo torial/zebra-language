@@ -18942,6 +18942,16 @@ struct Generator
                         genExpr(m.object)
                         w.emit(")")
                         return
+                    if mname == "chars" and args.len == 0
+                        w.emit("_zbr_chars(")   # BUG-723: as a value, a List(char); `for c in s.chars()` never reaches here
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
+                    if mname == "bytes" and args.len == 0
+                        w.emit("_zbr_bytes(")   # BUG-723: as a value, a List(byte); the loop form never reaches here either
+                        genExpr(m.object)
+                        w.emit(")")
+                        return
                     if mname == "trim"
                         w.emit("std.mem.trim(u8, ")
                         genExpr(m.object)
@@ -20012,6 +20022,16 @@ struct Generator
             return
         if mname == "codePointCount"
             w.emit("_zbr_cp_count(")   # BUG-714: was utf8CountCodepoints(..) catch 0
+            genExpr(m.object)
+            w.emit(")")
+            return
+        if mname == "chars" and args.len == 0 and .isStringBoth(m.object, "chars_recv")
+            w.emit("_zbr_chars(")   # BUG-723 (the typed sibling above has the note)
+            genExpr(m.object)
+            w.emit(")")
+            return
+        if mname == "bytes" and args.len == 0 and .isStringBoth(m.object, "bytes_recv")
+            w.emit("_zbr_bytes(")
             genExpr(m.object)
             w.emit(")")
             return

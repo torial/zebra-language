@@ -1,0 +1,73 @@
+# BUG-723: `s.chars()` as a VALUE passed `-c` and then failed inside zig ("no field or member
+# function named 'chars' in 'str'"), while the V route built it. It is a List(char) now: the
+# items `for c in s.chars()` yields -- codepoints, and an escape char for a byte that is not
+# UTF-8 (BUG-703). `s.bytes()` leaked the same way and is a List(byte). Every value below is
+# checked here; the last line prints only if all are right.
+
+class Word
+    var text: str
+    var letters: List(char)
+
+    cue init(text: str)
+        .text = text
+        .letters = text.chars()
+
+    def again(): int
+        return .text.chars().count()
+
+def letters(s: str): List(char)
+    return s.chars()
+
+var failures: int = 0
+
+def check(what: str, ok: bool, detail: str)
+    if not ok
+        print("  WRONG: ${what}: ${detail}")
+        failures += 1
+
+def main()
+    # Fable's repro: kept in a typed local and counted
+    var cs: List(char) = "aéb".chars()
+    check("count", cs.count() == 3, "${cs.count()}")
+    check("print", "${cs}" == "['a', 'é', 'b']", "${cs}")
+    check("at", cs.at(1).toString() == "é", cs.at(1).toString())
+    check("join", cs.join("-") == "a-é-b", cs.join("-"))
+
+    # an untyped local, a chain, the empty string
+    var us = "héllo".chars()
+    check("untyped", us.count() == 5, "${us.count()}")
+    check("chain", "xyz".chars().count() == 3, "${"xyz".chars().count()}")
+    check("empty", "".chars().count() == 0 and "${"".chars()}" == "[]", "${"".chars()}")
+
+    # returned from a function, held in a field, read through a field in a method
+    check("returned", letters("ab").count() == 2, "${letters("ab").count()}")
+    var w = Word("añb")
+    check("field", w.letters.count() == 3 and w.letters.at(1).toString() == "ñ", "${w.letters}")
+    check("method", w.again() == 3, "${w.again()}")
+
+    # the same items the loop yields, also for a byte that is not UTF-8
+    var bad = "a" + "${255:c}" + "b"
+    var items = bad.chars()
+    check("bad-count", items.count() == 3, "${items.count()}")
+    check("bad-escape", items.at(1).escapedByte() == 255, "the middle item is the escape char for 0xFF")
+    var sb = StringBuilder()
+    for c in items
+        sb.append(c.toString())
+    check("bad-rebuilt", sb.build() == bad, "rebuilt byte for byte")
+    var n = 0
+    for c in bad.chars()
+        n += 1
+    check("loop-unchanged", n == 3, "${n}")
+
+    # bytes() had the same leak: a List(byte), a copy of the bytes
+    var bs: List(byte) = "aé".bytes()
+    check("bytes-count", bs.count() == 3, "${bs.count()}")
+    check("bytes-print", "${bs}" == "[97, 195, 169]", "${bs}")
+    var ub = "hi".bytes()
+    check("bytes-untyped", ub.join(",") == "104,105", ub.join(","))
+    check("bytes-escape", bad.bytes().at(1) == 255, "the byte itself, not an escape char")
+
+    if failures == 0
+        print("bug723_chars_value: OK")
+    else
+        print("bug723_chars_value: ${failures} WRONG")

@@ -8,10 +8,10 @@ def main()
     print(s.codePointCount())    # 5
 
     # ── chars() — Unicode codepoint iteration ─────────────────────
-    # Each iteration yields a u21 codepoint
+    # Each iteration yields a char (a codepoint)
     var word: str = "abc"
     for c in word.chars()
-        print(c)                 # 97, 98, 99  (codepoint values)
+        print(c)                 # a, b, c  (a char prints as its text)
 
     # ── Char predicates (ASCII-aware) ─────────────────────────────
     var ca: char = c'A'
@@ -28,5 +28,5 @@ def main()
     print(cz.isLower())          # true
 
     # ── Char transforms ───────────────────────────────────────────
-    print(ca.toLower())          # 97 (= 'a')
-    print(cz.toUpper())          # 90 (= 'Z')
+    print(ca.toLower())          # a
+    print(cz.toUpper())          # Z

@@ -2439,6 +2439,11 @@ def stringMethodReturn(name: str): Type_?
         return Type_.string_
     if name == "tokenize" or name == "split" or name == "lines"
         return Type_.list_(Type_.string_)
+    # BUG-723: as a value; `for c in s.chars()` binds `char` through isCharsCallExpr.
+    if name == "chars"
+        return Type_.list_(Type_.char_)
+    if name == "bytes"
+        return Type_.list_(Type_.uint_n(8))
     if name == "encodeBase64"
         return Type_.string_
     if name == "count" or name == "len"

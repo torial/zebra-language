@@ -1754,8 +1754,8 @@ An `extend str` block adds methods the checker then accepts.
 |--------|-----------|-------------|
 | `split(sep)` | `(str): List(str)` | Split on `sep` string |
 | `tokenize(seps)` | `(str): List(str)` | Split on ANY character in `seps`, dropping empties. **BUG-227: currently splits on the whole `seps` SEQUENCE, not on any character** — so multi-character `seps` does not yet behave as documented. Single-character `seps` is unaffected. |
-| `chars()` | *iterator* | Unicode codepoints (`u21`); a byte that is not UTF-8 is an escape char (below). **`for`-only** — `for c in s.chars()` works; binding it (`var cs = s.chars()`) does not compile. |
-| `bytes()` | *iterator* | Bytes (`u8` as `int`). **`for`-only** — same restriction as `chars()`. |
+| `chars()` | `(): List(char)` | Unicode codepoints (`u21`); a byte that is not UTF-8 is an escape char (below). `for c in s.chars()` walks the string without building a list; as a value (`var cs = s.chars()`) it is a `List(char)` of the same items, and `print(cs)` shows `['a', 'é']` (BUG-723 -- it used to fail inside zig). |
+| `bytes()` | `(): List(byte)` | Bytes (`u8`). `for b in s.bytes()` walks them; as a value it is a `List(byte)`, a copy (BUG-723). |
 
 ### Bytes, codepoints, and graphemes
 

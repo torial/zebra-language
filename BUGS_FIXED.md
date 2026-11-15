@@ -6,6 +6,56 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-723: `s.chars()` as a value passes `-c` and fails inside zig (the V route builds it) -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-13; Fable, from a probe of every char-to-text position for
+  BUG-712; reproduced here)
+- **Repro:** `var cs: List(char) = "aéb".chars()` then `print(cs.count())`. `-c` exits 0; the
+  build fails `no field or member function named 'chars' in 'str'`. Three of Fable's 31 probe
+  programs died on it (keeping the list, printing it, joining it).
+- **Why it matters:** QUICKSTART says `chars()` is `for`-only and that binding it "does not
+  compile" -- but the refusal is zig's, about code the user never wrote, and the V route maps
+  it (`zstr_chars`), so the two routes disagree on whether the program builds at all.
+- **Fix shape (a decision):** support it on the Zig route (a `List(char)` built by the BUG-703
+  decoder, the same items the loop yields), or refuse it at `-c` by name on both routes. The
+  first matches the V route and costs little now that the decoder is the runtime's own.
+- **Control when fixing:** the repro prints 3 on both routes, or is refused at `-c` naming
+  `chars()`; `for c in s.chars()` unchanged.
+- **Fix (the first shape, matching the V route):** `s.chars()` as a value is a `List(char)`:
+  `_zbr_chars(s)` in the runtime walks the string with the BUG-703 decoder (`_zbr_utf8_next`),
+  so the list holds exactly the items the loop yields. `s.bytes()` had the same leak (found
+  probing this one: `var bs: List(byte) = s.bytes()` passed `-c`, then "no field or member
+  function named 'bytes'") and is a `List(byte)`, a copy, through `_zbr_bytes`. The checker
+  types both (`List(char)` / `List(byte)`), so an UNANNOTATED local works too -- before, it
+  was refused at `-c` ("cannot infer the type"). Codegen emits the helper on the typed str
+  path and, on the untyped path, only when the receiver is a string (`isStringBoth`), so a
+  user class's own `chars()` is untouched. The `for` forms do not come here and still build
+  no list.
+- **`print` of a List(char):** `_zbr_show` showed a `u21` as a number (`[97, 233, 98]`), and
+  `join` did the same. A `u21` is always a `char` in emitted code (a program's integer widths
+  are 8..128 by powers of two), so it now shows its text, single-quoted inside a container:
+  `['a', 'é', 'b']`, `cs.join("-")` is `a-é-b`. The V route prints its own container
+  internals there (`&ZList[rune]{ items: [...] }`); told to Fable.
+  The same rule reaches a char not printed through a container: `print(c'A'.toLower())`
+  printed `97` and prints `a` (the transform returns a `u21`, which went through the
+  generic show; a char printed directly already showed its text). `output_sweep` found
+  exactly that one program, `unicode_test`, out of 466; re-recorded for it alone.
+- **Pinned by:** `test/bug723_chars_value_test.zbr` (`smoke_run`): Fable's typed repro, an
+  untyped local, a chain, the empty string, a returned list, a field, a field read in a
+  method, a non-UTF-8 byte (its escape char, and the list rebuilding the bytes), the loop
+  unchanged, and the four `bytes()` legs. Red-checked: the pre-fix compiler (built from
+  083f972) refuses the fixture at `-c`, and on the ticket's own typed repro passes `-c` and
+  fails inside zig with the ticket's message; with the `u21` show rule switched off, the
+  print and join legs go red (`[97, 233, 98]`, `97-233-98`).
+- **An instrument it broke, fixed in the same change:** `str_ownership_extract.py` used
+  `chars` as its control for the UNKNOWN class BECAUSE a bound `s.chars()` emitted invalid
+  Zig -- a control pinned to this bug, which failed the day it was fixed. The control is now
+  synthetic (`s.zzprobe()` must classify UNKNOWN, `std.mem.zzprobe(u8, s)` must not);
+  red-checked by making the detector answer BORROW (the tool refuses, naming the control).
+  The generated table now says `chars` / `bytes` are OWN with VALUE elements.
+- **Not covered:** the V route's `print` of a List(char) (above).
+
+---
+
 ### BUG-727: on Windows a second server listens on a port another server holds, and neither says so -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-14; found by Fable in a cold-start run of the Graze README, where
   an agent restarted a rebuilt app and was answered by the old one)

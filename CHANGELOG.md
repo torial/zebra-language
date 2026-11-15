@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`s.chars()` and `s.bytes()` are values (BUG-723).** Bound to a variable, returned or kept
+  in a field, `s.chars()` is a `List(char)` of the items `for c in s.chars()` yields
+  (codepoints, and an escape char for a byte that is not UTF-8) and `s.bytes()` a
+  `List(byte)`. Both passed `-c` and then failed inside zig; the V route already built them.
+  `print` of a `List(char)` shows the characters, `['a', 'é']`, where it showed numbers.
+  So does `print(c.toLower())` / `print(c.toUpper())`: `a`, where it printed `97`.
+  The loop forms are unchanged and still build no list.
 - **On Windows a second server can no longer listen on a port another server holds (BUG-727).**
   Zig 0.17 binds through AFD in its shared mode, so a second `Http.serve` / `Ws.serve` /
   `Tcp.serve` on a held port listened silently and the old server went on answering. The

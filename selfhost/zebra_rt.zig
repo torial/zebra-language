@@ -802,6 +802,21 @@ pub fn _zbr_cp_count(s: []const u8) i64 {
     while (i < s.len) : (n += 1) _ = _zbr_utf8_next(s, &i);
     return n;
 }
+/// `s.chars()` as a value (BUG-723): a List(char) of the items `for c in s.chars()` yields --
+/// codepoints, and an escape char for each byte that is not UTF-8 (BUG-703). The loop form
+/// does not come here; it walks the string without building a list.
+pub fn _zbr_chars(s: []const u8) _ZbrList(u21) {
+    const out = _zbr_new(_ZbrList(u21));
+    var i: usize = 0;
+    while (i < s.len) out.append(_allocator, _zbr_utf8_next(s, &i)) catch @panic("OOM");
+    return out;
+}
+/// `s.bytes()` as a value (BUG-723, the same leak): a List(byte), a copy of the bytes.
+pub fn _zbr_bytes(s: []const u8) _ZbrList(u8) {
+    const out = _zbr_new(_ZbrList(u8));
+    out.appendSlice(_allocator, s) catch @panic("OOM");
+    return out;
+}
 /// `c.escapedByte()`: the original byte for an escape char, nil for a real char.
 pub fn _zbr_escaped_byte(c: anytype) ?i64 {
     const v: u21 = @intCast(c);
@@ -7899,6 +7914,16 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
         if (quote_str) try sb.append(_allocator, '"');
         try sb.appendSlice(_allocator, @as([]const u8, x));
         if (quote_str) try sb.append(_allocator, '"');
+        return;
+    }
+    // A Zebra `char` is the only u21 a program has (its integer widths are 8..128 by powers of
+    // two): its text, single-quoted inside a container -- `['a', 'é']`, not `[97, 233]`
+    // (BUG-723, once `s.chars()` became a value). An escape char shows the byte it holds.
+    if (comptime T == u21) {
+        var buf: [4]u8 = undefined;
+        if (quote_str) try sb.append(_allocator, '\'');
+        try sb.appendSlice(_allocator, _zbr_char_text(x, &buf));
+        if (quote_str) try sb.append(_allocator, '\'');
         return;
     }
     switch (info) {
