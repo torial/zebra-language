@@ -2793,6 +2793,56 @@ Where the routes still differ, and the row does not look:
   `if_indextoname`.
 - Windows only, as the rest of the V route's checks are.
 
+## A container as text, and Json.parse's depth (2026-11-15; BUG-723, BUG-734)
+
+**What was wrong.** A List, HashMap or Set in a `print` or an interpolation
+hole fell through to V's own `str()` of the boxed type, so the V route
+printed the runtime's internals (`&ZList[rune]{ items: [`a`, `é`, `b`] }`)
+where the Zig route prints `['a', 'é', 'b']`. Nothing in the corpus printed a
+container, so every row read IDENTICAL; BUG-723's fixture (`s.chars()` as a
+value) was the first program that did.
+
+**What the route does now.** `charText` (print's and a hole's text) and a
+list's `toString()` send a container through `showContainer`, which composes
+the runtime's `zshow_list` / `zshow_map` / `zshow_set` with the element's own
+printer, picked from the V type the emitter already knows (`showFn`): a
+string double-quoted and a char single-quoted inside a container, bare as a
+map's or a set's key; int, byte, bool as written; a float through `zshow_f`.
+A nested container gets a helper function of its own (`zshow_h<n>`, one per
+type, written after the program): a function literal in place would put
+braces inside a string's `${...}`. `list.join(sep)` on a list that is not of
+strings goes through `zjoin_with` and the bare printer (the fixture's
+`cs.join("-")` did not build: `zjoin` takes strings).
+
+**What is refused, by name.** An element with no printer -- a class, an
+optional, a tuple, a union -- is `printing a container of <type> (...)`.
+V's `str()` would have printed something of its own there; a named refusal
+is the stopgap that the Zig spelling (`Name{field: value}`, `nil`) slides
+under later.
+
+**What cannot be diffed.** A map's and a set's order: V's map keeps insertion
+order, the Zig route walks its hash table, and QUICKSTART promises neither.
+The row prints one entry each. And a list's `toString()`: the ZIG route
+prints Zig's struct dump there (`.{ .items = { 1, 2, 3 }, .capacity = 17 }`),
+found by this work's first run and reported to the Zig side; the V route
+prints `[1, 2, 3]`, and the row leaves `toString()` out until the two agree.
+
+**Json.parse's depth.** `zjson_parse` scans the text before `x.json2` sees it
+(`zjson_too_deep`: each `[` or `{` outside a string a level, escapes
+honoured) and answers nil past 256 levels -- Sean's number, the Zig route's
+`_json_depth_ok` the same scan. Neither route's answer depends on its
+library's own limit (x.json2 refuses at 513).
+
+**Witness.** `tools/v_check.sh`, the show row: the Zig side's two fixtures
+(`test/bug723_chars_value_test.zbr`, `test/bug734_json_depth_test.zbr`) and a
+29-line program of every element kind, nested three deep, in a print, a hole
+and a join, alike on both backends; a list of a class and of an optional
+refused. Watched red by hand on the runtime the emitter reads (the
+checkout's `selfhost/zebra_rt.v`, not the copy beside the binary -- the first
+three reds mutated the copy and read green): the quoted-string printer made
+bare (the 29-line program differs), the limit at 255 and the scan removed
+(the depth fixture says 3 WRONG each).
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

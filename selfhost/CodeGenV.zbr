@@ -214,6 +214,8 @@ class VGen
     var current_class: str        # "" outside a class
     var needs_math: bool
     var tmpN: int                 # the temporaries bound for mutating calls on call results
+    var show_names: HashMap(str, str)    # BUG-723: a nested container's printer, by its V type and quoting -> the helper's name
+    var show_helpers: List(str)          # those helpers' V text, appended after the program (a top-level fn each)
     var rt_fns: HashMap(str, bool)       # the runtime's free functions, read from zebra_rt.v (noteRuntime)
     var rt_types: HashMap(str, bool)     # the runtime's struct / type / enum / interface names, the same
     var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
@@ -283,6 +285,8 @@ class VGen
         .current_class = ""
         .needs_math = false
         .tmpN = 0
+        .show_names = HashMap(str, str)()
+        .show_helpers = List(str)()
         .ref_params = HashMap(str, List(bool))()
         .rt_fns = HashMap(str, bool)()
         .rt_types = HashMap(str, bool)()
@@ -3279,10 +3283,66 @@ class VGen
 
     # A char where text is written (print, an interpolation hole): its text through the
     # runtime, never V's own rune.str() -- that would write an escape char as three bytes.
+    # A container there (BUG-723): the Zig route's spelling through the runtime's
+    # zshow_*, never V's own str() of the boxed type -- that printed the runtime's
+    # internals (`&ZList[rune]{ items: [...] }`).
     def charText(e: Expr, rendered: str): str
-        if .vTypeOf(e) == "rune"
+        var ct: str = .vTypeOf(e)
+        if ct == "rune"
             return "zchar_str(" + rendered + ")"
+        if .isContainerType(ct)
+            return .showContainer(ct, rendered)
         return rendered
+
+    # A container of V type `vt` as the Zig route prints it: the runtime's
+    # zshow_list / zshow_map / zshow_set over the element's own printer.
+    def showContainer(vt: str, rendered: str): str
+        if vt.startsWith("&ZList[")
+            return "zshow_list(" + rendered + ", " + .showFn(.elemOf(vt), true) + ")"
+        var inner: str = vt.substring(6, vt.len - 1)   # "&ZMap[" and "&ZSet[" are both six long
+        if vt.startsWith("&ZSet[")
+            return "zshow_set(" + rendered + ", " + .showFn(inner, false) + ")"
+        # a map's key is a scalar on this route, so the first ", " ends it
+        var cut: int = inner.indexOf(", ")
+        if cut <= 0
+            .refused.add("printing a map whose V type is not understood (" + vt + ")")
+            return "zshow_raw_str('')"
+        return "zshow_map(" + rendered + ", " + .showFn(inner.substring(0, cut), false) + ", " + .showFn(inner.substring(cut + 2, inner.len), true) + ")"
+
+    # The printer for one element of V type `et`: quoted as the Zig route quotes
+    # an item inside a container (a string in double quotes, a char in single),
+    # bare for a map's or a set's key. A nested container gets a helper function
+    # of its own, written once per type after the program: a function literal
+    # here would put braces inside a string's `${...}`. An element the runtime
+    # has no printer for is REFUSED by name -- a class, an optional, a tuple, a
+    # union -- where V's str() would have printed something of its own.
+    def showFn(et: str, quoted: bool): str
+        if et == "string"
+            if quoted
+                return "zshow_q_str"
+            return "zshow_raw_str"
+        if et == "rune"
+            if quoted
+                return "zshow_q_char"
+            return "zshow_raw_char"
+        if et == "i64": return "zshow_int"
+        if et == "u8" or et == "byte": return "zshow_byte"   # a List(byte)'s element is spelled `byte` (V's alias of u8)
+        if et == "bool": return "zshow_bool"
+        if et == "f64": return "zshow_float"
+        if .isContainerType(et)
+            var key: str = et
+            if not quoted
+                key = et + " (bare)"
+            if .show_names.get(key) as known
+                return known
+            var hname: str = "zshow_h" + .show_helpers.count().toString()
+            .show_names.set(key, hname)
+            .show_helpers.add("")   # the name is taken before the body is built: a type inside itself is not a V type, but a sibling's helper must not take this number
+            var at: int = .show_helpers.count() - 1
+            .show_helpers.set(at, "fn " + hname + "(zr_e " + et + ") string {\n\treturn " + .showContainer(et, "zr_e") + "\n}\n")
+            return hname
+        .refused.add("printing a container of " + et + " (the V route prints containers of str, char, int, byte, bool, float and containers of those; V's own str() would print the runtime's internals)")
+        return "zshow_raw_str"
 
     # ── expressions ────────────────────────────────────────────────────────
     def exprStr(e: Expr): str
@@ -3869,6 +3929,9 @@ class VGen
                         .refused.add("a format spec (" + spec + ") on a char (mapped: none, c, x, X, d and a width)")
                         out = out + "\${zchar_str(" + .exprStr(ex) + ")}"
                         i = i + 1
+                    else if spec == "" and .isContainerType(.vTypeOf(ex))
+                        # a container in a hole: the Zig route's spelling (BUG-723)
+                        out = out + "\${" + .showContainer(.vTypeOf(ex), .exprStr(ex)) + "}"
                     else
                         out = out + "\${" + .exprStr(ex) + "}"
                 on StringPart.format as f
@@ -4381,6 +4444,10 @@ class VGen
             if isJsonPutMethod(name)
                 .refuse("Json." + name + " on a value that is not a name (the put family rewrites `j.put(k, v)` as `j = zjson_put(j, k, v)`)", span)
                 return obj
+        # a map's or a set's toString(): the text print gives it (BUG-723; the contract is
+        # the print spelling -- BUG-743 is the Zig route catching up to it)
+        if (rtype.startsWith("&ZMap[") or rtype.startsWith("&ZSet[")) and name == "toString" and args.count() == 0
+            return .showContainer(rtype, obj)
         if rtype.startsWith("&ZList[")
             if (name == "add" or name == "set") and args.count() >= 1 and .isSigName(.elemOf(rtype))
                 # a lambda into a list of a sig type: cast to the name (see coerced)
@@ -4396,7 +4463,7 @@ class VGen
             # comparing ones are free functions: see zebra_rt.v)
             if name == "indexOf" and args.count() == 1: return "zlist_index_of(" + obj + ", " + .argsStr(args) + ")"
             if name == "contains" and args.count() == 1: return "zlist_contains(" + obj + ", " + .argsStr(args) + ")"
-            if name == "toString" and args.count() == 0: return "zlist_str(" + obj + ")"
+            if name == "toString" and args.count() == 0: return .showContainer(rtype, obj)
             if name == "sort" and args.count() == 1 and isLambdaExpr(args.at(0).value)
                 # a comparator: the runtime's stable sort (std.mem.sort is stable on the Zig backend)
                 return "zlist_sort_with(mut " + obj + ", " + .exprStr(args.at(0).value) + ")"
@@ -4622,7 +4689,13 @@ class VGen
         if name == "center" and args.count() == 1: return "zr_s(zstr_center(" + obj + ", " + .argsStr(args) + ", ' '))"
         if name == "center" and args.count() == 2: return "zr_s(zstr_center(" + obj + ", " + .argsStr(args) + "))"
         if name == "bytes" and args.count() == 0: return "zlist_of[u8](" + obj + ".bytes())"   # Zebra's List(byte), the same
-        if name == "join" and args.count() == 1: return "zjoin(" + obj + ", " + .argsStr(args) + ")"
+        if name == "join" and args.count() == 1
+            var jel: str = .elemOf(rtype)
+            if jel != "" and jel != "string"
+                # a list of anything but strings (BUG-723: a List(char) or a List(byte) is a
+                # value now): each item's own text, bare, as the Zig route joins it
+                return "zjoin_with(" + obj + ", " + .argsStr(args) + ", " + .showFn(jel, false) + ")"
+            return "zjoin(" + obj + ", " + .argsStr(args) + ")"
         if name == "charAt" and args.count() == 1
             .refuse("str.charAt (Zebra's char is a number whose toString prints it; V has no char type to match -- the next slice decides a char's spelling)", span)
             return "zstr_char_at(" + obj + ", " + .argsStr(args) + ")"
@@ -5435,4 +5508,10 @@ def generateV(ms: List(Module), runtime: str): VResult
             if vSafe(isym) == isym
                 g.refused.add("internal: the V header imports `" + ipath + "` but vSafe does not rename a local named `" + isym + "` -- add it to the import list in vSafe (selfhost/CodeGenV.zbr)")
     head = head + "\n// -- the Zebra runtime for V (selfhost/zebra_rt.v), inlined so one file runs --\n" + rt_text + "\n// -- the program --\n"
-    return VResult(source: head + body, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)
+    # the nested containers' printers (BUG-723), a top-level fn each, after the program
+    var show_tail: str = ""
+    for sh in g.show_helpers
+        show_tail = show_tail + "\n" + sh
+    if show_tail != ""
+        show_tail = "\n// -- the printers of the nested containers this program prints --" + show_tail
+    return VResult(source: head + body + show_tail, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)

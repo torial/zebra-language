@@ -6,6 +6,8 @@
 # pins: BUG-716 a refused SQLite statement is printed and kept on the V route as on the Zig route, where it panicked (the sqlite row)
 # pins: BUG-717 busyMs on the V route, placed by name before position (the sqlite row: `Sqlite.open(p, busyMs: 0)` leaves write-ahead on)
 # pins: BUG-726 Net.resolve on the V route answers what the Zig route answers, and refuses text that is no host name in the same words (the net row)
+# pins: BUG-723 a container printed, interpolated or joined on the V route is the Zig route's text, and s.chars() / s.bytes() are values there too (the show row)
+# pins: BUG-734 Json.parse answers nil past 256 levels of nesting on the V route as on the Zig route (the show row's jd_fix)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -314,6 +316,141 @@ if [ -n "$nr_bad" ]; then echo "net: FAILED --$nr_bad"; fail=1
 elif [ "$(wc -l < "$OUT/nr_more_zig_said.txt")" != 7 ] || ! grep -qF 'net: cannot resolve "bad host": InvalidHostName (not a host name or an IP address)' "$OUT/nr_fix_zig_said.txt"; then echo "net: FAILED -- NO CONTROL: the Zig runs did not say the refusals the comparison is about ($(wc -l < "$OUT/nr_fix_zig_said.txt") and $(wc -l < "$OUT/nr_more_zig_said.txt") lines, wanted 1 and 7)"; fail=1
 elif ! grep -q 'znet_resolve(' "$OUT/nr_more.v" || ! grep -q '^import net$' "$OUT/nr_more.v"; then echo "net: FAILED -- the emitted V names no znet_resolve or does not import net: the row compared something else"; fail=1
 else echo "net: ok -- both programs alike on both backends: stdout ($(wc -l < "$OUT/nr_fix_zig_out.txt") + $(wc -l < "$OUT/nr_more_zig_out.txt") lines) and the refusals of what is no host name ($(wc -l < "$OUT/nr_fix_zig_said.txt") + $(wc -l < "$OUT/nr_more_zig_said.txt") lines)"; fi
+echo "── a container printed, interpolated or joined is the Zig route's text; Json.parse stops at 256 levels (BUG-723, BUG-734) ──"
+rows=$((rows + 1))
+# Three programs through both backends, stdout compared whole, and a fourth that must be
+# REFUSED. show_fix and jd_fix are the Zig route's own fixtures (test/bug723_chars_value_test.zbr:
+# s.chars() and s.bytes() as values, printed, counted, joined; test/bug734_json_depth_test.zbr:
+# arrays, objects and mixed nesting at 256 and 257, 100,000 levels, brackets inside strings).
+# show_more is what the first does not reach: every element kind the V route prints, in a
+# print, a hole and a join, empty, nested three deep, as a map's value, through a field.
+# Until BUG-723 a container in a print or a hole was V's own str() of the boxed type
+# (`&ZList[rune]{ items: [...] }`). A map and a set are printed with ONE entry: their order
+# is promised on neither route. Not here: a list's toString(), which the ZIG route prints as
+# Zig's own struct dump (`.{ .items = { 1, 2, 3 }, .capacity = 17 }`, found by this row's
+# first run and reported; the V route prints `[1, 2, 3]`).
+cp "$WT/test/bug723_chars_value_test.zbr" "$OUT/show_fix.zbr"
+cp "$WT/test/bug734_json_depth_test.zbr" "$OUT/jd_fix.zbr"
+cat > "$OUT/show_more.zbr" <<'ZBR'
+# BUG-723, the V half: what the Zig fixture does not reach. A container printed
+# by print, by an interpolation hole and by toString(), for every element kind
+# the V route prints, nested, empty, and as a map's value. A map and a set are
+# printed with ONE entry only: their order is not promised on either route.
+
+class Shelf
+    var names: List(str)
+    var counts: HashMap(str, int)
+
+    cue init()
+        .names = ["a", "b"]
+        .counts = HashMap(str, int)()
+        .counts.set("only", 7)
+
+    def show(): str
+        return "${.names} ${.counts}"
+
+def main()
+    var ints: List(int) = [1, 2, 3]
+    var strs: List(str) = ["a", "b c", ""]
+    var floats: List(float) = [1.0, 2.5, 0.1]
+    var bools: List(bool) = [true, false]
+    var cs: List(char) = "aéb".chars()
+    var bs: List(byte) = "hi".bytes()
+    print(ints)
+    print(strs)
+    print(floats)
+    print(bools)
+    print(cs)
+    print(bs)
+    print("holes: ${ints} ${strs} ${floats} ${bools} ${cs} ${bs}")
+    print("two args:", ints, strs)
+    # joins of what is not a list of strings
+    print("joins: " + ints.join("+") + " " + floats.join(" ") + " " + bools.join("/") + " " + cs.join("-") + " " + bs.join(","))
+
+    # empty ones
+    var none: List(str) = List(str)()
+    print(none)
+    print("empty hole: ${none}")
+
+    # nested
+    var grid: List(List(int)) = [[1, 2], [3], List(int)()]
+    print(grid)
+    print("grid hole: ${grid}")
+    var words: List(List(str)) = [["a"], ["b", "c"]]
+    print(words)
+    var deep: List(List(List(int))) = [[[1], [2, 3]], [[4]]]
+    print(deep)
+
+    # a map and a set, one entry each
+    var m: HashMap(str, int) = HashMap(str, int)()
+    m.set("a", 1)
+    print(m)
+    print("map hole: ${m}")
+    var ms: HashMap(str, str) = HashMap(str, str)()
+    ms.set("k", "v")
+    print(ms)
+    var ml: HashMap(str, List(str)) = HashMap(str, List(str))()
+    ml.set("k", ["x", "y"])
+    print(ml)
+    var mi: HashMap(int, List(int)) = HashMap(int, List(int))()
+    mi.set(4, [5])
+    print(mi)
+    var empty_map: HashMap(str, int) = HashMap(str, int)()
+    print(empty_map)
+    var s: Set(str) = Set(str)()
+    s.add("x")
+    print(s)
+    var si: Set(int) = Set(int)()
+    si.add(9)
+    print("set hole: ${si}")
+    var lm: List(HashMap(str, int)) = [m]
+    print(lm)
+
+    # through fields
+    var sh = Shelf()
+    print(sh.show())
+    print(sh.names)
+
+    # a char and a string OUTSIDE a container are bare, as they always were
+    print(cs.at(1))
+    print(strs.at(1))
+    print("show_more: OK")
+ZBR
+cat > "$OUT/show_refuse.zbr" <<'ZBR'
+class Pt
+    var x: int
+    cue init(x: int)
+        .x = x
+
+def main()
+    var ps: List(Pt) = [Pt(1)]
+    print(ps)
+    var os: List(int?) = [1, nil]
+    print("${os}")
+ZBR
+show_bad=""
+for p in show_fix jd_fix show_more; do
+  (cd "$OUT" && "$ZEBRA" $p.zbr > "$OUT/${p}_zig_out.txt" 2> "$OUT/${p}_zig_err.txt"); zrc=$?
+  (cd "$OUT" && "$ZEBRA" --target v $p.zbr > "$OUT/${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$p.v" > "$OUT/${p}_v_out.txt" 2> "$OUT/${p}_v_err.txt"); vrc=$?
+  if [ "$zrc" != 0 ] || ! tail -1 "$OUT/${p}_zig_out.txt" | grep -q ': OK$'; then show_bad="$show_bad $p(NO CONTROL: the Zig run exited $zrc and ended '$(tail -1 "$OUT/${p}_zig_out.txt" | cut -c1-80)': $(tail -c 160 "$OUT/${p}_zig_err.txt" | tr '\n' ' '))"
+  elif [ "$(grep -cE '^    ' "$OUT/${p}_emit.txt")" != 0 ]; then show_bad="$show_bad $p(REFUSED: $(grep -m1 -E '^    ' "$OUT/${p}_emit.txt" | cut -c1-140))"
+  elif [ "$vrc" != 0 ]; then show_bad="$show_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
+  elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then show_bad="$show_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
+done
+# the refusal: a container of a class, and of an optional, each named -- never V's str()
+(cd "$OUT" && "$ZEBRA" --target v show_refuse.zbr > "$OUT/show_refuse_emit.txt" 2>&1)
+show_refused=$(grep -cE '^    printing a container of (&Pt|\?i64) ' "$OUT/show_refuse_emit.txt")
+# the controls of the comparison itself: the Zig run must have printed the containers the
+# row is about (the spelling the V side is held to), the emitted V must reach the runtime's
+# printers and a nested helper (a program that printed no container would diff clean), and
+# the depth fixture's V file must call the scan
+if [ -n "$show_bad" ]; then echo "show: FAILED --$show_bad"; fail=1
+elif ! grep -qxF "['a', 'é', 'b']" "$OUT/show_more_zig_out.txt" || ! grep -qxF '{k: ["x", "y"]}' "$OUT/show_more_zig_out.txt" || ! grep -qxF '[[[1], [2, 3]], [[4]]]' "$OUT/show_more_zig_out.txt"; then echo "show: FAILED -- NO CONTROL: the Zig run did not print the containers the comparison is about"; fail=1
+elif ! grep -q 'zshow_list(' "$OUT/show_more.v" || ! grep -q '^fn zshow_h[0-9]' "$OUT/show_more.v" || ! grep -q 'zjoin_with(' "$OUT/show_more.v" || ! grep -q 'zshow_map(' "$OUT/show_more.v"; then echo "show: FAILED -- the emitted V names no zshow_list / zshow_map / zjoin_with or no nested helper: the row compared something else"; fail=1
+elif ! grep -q 'if zjson_too_deep(zr_s)' "$OUT/jd_fix.v"; then echo "show: FAILED -- the depth fixture's V file does not call the scan"; fail=1
+elif [ "$show_refused" != 2 ]; then echo "show: FAILED -- a list of a class and a list of an optional must each be refused by name ($show_refused of 2): $(grep -E '^    ' "$OUT/show_refuse_emit.txt" | head -2 | cut -c1-120 | tr '\n' ' ')"; fail=1
+else echo "show: ok -- three programs alike on both backends ($(wc -l < "$OUT/show_fix_zig_out.txt") + $(wc -l < "$OUT/jd_fix_zig_out.txt") + $(wc -l < "$OUT/show_more_zig_out.txt") lines); a container of a class and of an optional refused by name"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v

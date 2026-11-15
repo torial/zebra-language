@@ -82,11 +82,78 @@ pub fn (zr_l &ZList[T]) last() T {
 	return zr_l.items.last()
 }
 
-// (a free function, not a method: a method is instantiated for every
-// element type the struct is named with, and V's own string method for a
-// float array lost a helper to its unused-pruning at the C stage)
-pub fn zlist_str[T](zr_l &ZList[T]) string {
-	return zr_l.items.str()
+// ── A container as text (BUG-723) ──────────────────────────────────────────
+// The Zig route's `_zbr_show_into` spelling, where a container is printed,
+// interpolated or asked for its toString(): `[1, 2]`, a string double-quoted
+// and a char single-quoted INSIDE a container, a map `{k: v}` and a set `{k}`
+// with the key bare, a float as zshow_f has it. Never V's own str() of the
+// boxed type, which prints the runtime's internals (`&ZList[rune]{ items: .. }`)
+// and spells an array of strings its own way. CodeGenV picks each element's
+// printer from the type it knows and refuses an element it has none for.
+// (Free functions, not methods: a method is instantiated for every element
+// type the struct is named with, and V's own string method for a float array
+// lost a helper to its unused-pruning at the C stage.)
+// A map's and a set's order is V's (insertion); the Zig route's is its hash
+// table's. Neither is promised (QUICKSTART: "in the map's own order"), so a
+// program that prints a map of more than one entry is not one the two routes
+// can be diffed on.
+pub fn zshow_list[T](zr_l &ZList[T], zr_f fn (T) string) string {
+	mut zr_out := []string{cap: zr_l.items.len}
+	for zr_e in zr_l.items {
+		zr_out << zr_f(zr_e)
+	}
+	return '[' + zr_out.join(', ') + ']'
+}
+
+pub fn zshow_map[K, V](zr_m &ZMap[K, V], zr_kf fn (K) string, zr_vf fn (V) string) string {
+	mut zr_out := []string{cap: zr_m.m.len}
+	for zr_k, zr_v in zr_m.m {
+		zr_out << zr_kf(zr_k) + ': ' + zr_vf(zr_v)
+	}
+	return '{' + zr_out.join(', ') + '}'
+}
+
+pub fn zshow_set[T](zr_s &ZSet[T], zr_f fn (T) string) string {
+	mut zr_out := []string{cap: zr_s.m.len}
+	for zr_k, _ in zr_s.m {
+		zr_out << zr_f(zr_k)
+	}
+	return '{' + zr_out.join(', ') + '}'
+}
+
+// the element printers: quoted where the Zig route quotes (a list's items, a
+// map's values), bare where it does not (a map's and a set's keys)
+pub fn zshow_q_str(zr_s string) string {
+	return '"' + zr_s + '"'
+}
+
+pub fn zshow_raw_str(zr_s string) string {
+	return zr_s
+}
+
+pub fn zshow_q_char(zr_c rune) string {
+	return "'" + zchar_str(zr_c) + "'"
+}
+
+pub fn zshow_raw_char(zr_c rune) string {
+	return zchar_str(zr_c)
+}
+
+pub fn zshow_int(zr_x i64) string {
+	return zr_x.str()
+}
+
+// a byte is its number (V's own u8.str() would do, but ascii_str() is one typo away)
+pub fn zshow_byte(zr_x u8) string {
+	return int(zr_x).str()
+}
+
+pub fn zshow_bool(zr_x bool) string {
+	return if zr_x { 'true' } else { 'false' }
+}
+
+pub fn zshow_float(zr_x f64) string {
+	return zshow_f(zr_x)
 }
 
 // ── HashMap ────────────────────────────────────────────────────────────────
@@ -246,6 +313,16 @@ pub fn (zr_b &ZStringBuilder) len() i64 {
 // and `join` only exists for strings; `sort` wants a comparable T)
 pub fn zjoin(zr_l &ZList[string], zr_sep string) string {
 	return zr_l.items.join(zr_sep)
+}
+
+// a list of anything but strings, joined: each item through its own bare
+// printer (zshow_raw_char, zshow_byte, zshow_int, ...), picked by CodeGenV
+pub fn zjoin_with[T](zr_l &ZList[T], zr_sep string, zr_f fn (T) string) string {
+	mut zr_out := []string{cap: zr_l.items.len}
+	for zr_e in zr_l.items {
+		zr_out << zr_f(zr_e)
+	}
+	return zr_out.join(zr_sep)
 }
 
 // `x == nil` / `x != nil`: through a call, so V never smart-casts the name
@@ -1477,7 +1554,47 @@ pub fn (mut zr_t ZTimer) reset() {
 }
 
 // ── Json: Zebra's Json / JsonValue is json2.Any by value ──────────────────
+// BUG-734: Json.parse answers nil past 256 levels of nesting, on both routes
+// (Sean, 2026-11-15). Each `[` or `{` outside a string opens a level; a
+// top-level scalar is level 0; 256 parse, 257 is nil. A scan of the text
+// before the library sees it -- the Zig route's `_json_depth_ok` is the same
+// scan -- so the answer does not depend on the library's own limit (x.json2
+// refuses at 513, std.json recurses until the stack ends).
+pub const zjson_max_depth = 256
+
+pub fn zjson_too_deep(zr_s string) bool {
+	mut zr_depth := 0
+	mut zr_in_str := false
+	mut zr_i := 0
+	for zr_i < zr_s.len {
+		zr_c := zr_s[zr_i]
+		if zr_in_str {
+			if zr_c == `\\` {
+				zr_i += 2 // the escaped byte, whatever it is
+				continue
+			}
+			if zr_c == `"` {
+				zr_in_str = false
+			}
+		} else if zr_c == `"` {
+			zr_in_str = true
+		} else if zr_c == `[` || zr_c == `{` {
+			zr_depth++
+			if zr_depth > zjson_max_depth {
+				return true
+			}
+		} else if zr_c == `]` || zr_c == `}` {
+			zr_depth--
+		}
+		zr_i++
+	}
+	return false
+}
+
 pub fn zjson_parse(zr_s string) ?json2.Any {
+	if zjson_too_deep(zr_s) {
+		return none
+	}
 	zr_j := json2.decode[json2.Any](zr_s) or { return none }
 	return zjson_fix_keys(zr_j)
 }
