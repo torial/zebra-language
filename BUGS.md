@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-742. Next new bug: BUG-743.**
+**Last bug number generated: BUG-743. Next new bug: BUG-744.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -315,6 +315,29 @@
 - **Fix shape:** refuse at `-c` a `withHeader` whose result is discarded, naming the
   `return r.withHeader(..)` / `r = r.withHeader(..)` forms.
 - **Control when fixing:** the repro is refused at its line; both suggested forms compile.
+
+---
+
+### BUG-743: `toString()` on a List or HashMap returns Zig's struct dump
+- **Status:** OPEN (filed 2026-11-15; Fable, from a V-route show program; reproduced on b5efe7a)
+- **Repro:** `var ints: List(int) = [1, 2, 3]` / `var strs: List(str) = ["a", "b c", ""]` /
+  `print("toString: " + ints.toString() + " " + strs.toString())` prints
+  `.{ .items = { 1, 2, 3 }, .capacity = 17 } .{ .items = { { 97 }, { 98, 32, 99 }, {  } }, .capacity = 9 }`.
+  A `List(float)` gives `.{ .items = { 1.5, 2 }, ... }`. A `HashMap(str, int)`'s `toString()` is
+  worse: the whole `std.StringHashMap` struct, allocator vtable addresses included, so the text
+  also differs from run to run. `print(ints)` and `"${ints}"` give `[1, 2, 3]` /
+  `["a", "b c", ""]` -- the right text exists, and `toString()` does not use it.
+- **Cost:** `toString()` is the documented way to get a value's text into a `str`; for a
+  container it hands back the runtime's representation, capacity included -- a number the
+  program never chose, and on a map, pointers.
+- **Fix shape:** `toString()` on a container produces exactly what `print` / a hole produce
+  (one formatter, `_zbr_show`'s), for List, HashMap, Set and nested containers. The V route
+  already prints the `print` spelling (Fable, 2026-11-15), so the contract is that spelling on
+  both routes. Measure first: `output_sweep` will name every corpus program that printed a
+  dump today.
+- **Control when fixing:** the repro prints `toString: [1, 2, 3] ["a", "b c", ""]`; a map's
+  `toString()` equals its `print` text; `toString()` on a str, int, float and a user class is
+  unchanged.
 
 ---
 
