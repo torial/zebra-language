@@ -19198,7 +19198,7 @@ struct Generator
                         w.emit(")")
                         return
                     if mname == "decodeBase64"
-                        w.emit("_base64_decode_str(")
+                        w.emit("_base64_decode(")
                         genExpr(m.object)
                         w.emit(")")
                         return
@@ -20648,7 +20648,7 @@ struct Generator
             w.emit(")")
             return
         if mname == "decodeBase64"
-            w.emit("_base64_decode_str(")
+            w.emit("_base64_decode(")
             genExpr(m.object)
             w.emit(")")
             return

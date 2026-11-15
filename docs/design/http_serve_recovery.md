@@ -2,8 +2,8 @@
 # Http.serve: surviving a handler that panics (BUG-701)
 
 Status: DECIDED 2026-11-12 (Sean): A, then B, and both are required -- B is not optional once A
-lands. A in progress: BUG-703, 704, 715 (2026-11-13), 735, 736 (2026-11-15) fixed; BUG-733 and
-734 open (the 2026-11-15 sweep, recorded under BUG-701). B landed 2026-11-15: its rules are
+lands. BOTH LANDED 2026-11-15 (BUG-701 closed). A: BUG-703, 704, 715 (2026-11-13), 735, 736, 733 and
+734 (2026-11-15) fixed -- the 2026-11-15 sweep, recorded under BUG-701. B: its rules are
 under "B as built" below, pinned by `test/bug701_serve_restart_test.zbr`.
 
 Not covered by that fixture: the grandchild rule (a server process's own Zebra child ignoring

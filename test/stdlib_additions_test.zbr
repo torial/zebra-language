@@ -54,7 +54,7 @@ def main()
     # Instance methods
     var enc2 = "hello".encodeBase64()
     assert enc2 == "aGVsbG8="
-    var dec2 = "aGVsbG8=".decodeBase64()
+    var dec2 = "aGVsbG8=".decodeBase64()!
     assert dec2 == "hello"
 
     # ── Hash fast hashes ────────────────────────────────────────────────────────

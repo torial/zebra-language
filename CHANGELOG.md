@@ -23,6 +23,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`s.decodeBase64()` returns `str?` (BUG-733).** It panicked ("invalid base64") on any input
+  that was not base64, so a server decoding a client value ended on one bad request. It is nil
+  there now, like `Base64.decode(s)`. **Source change:** a use that wants the string writes
+  `s.decodeBase64()!` (or `orelse`, or `if ... as`).
+- **`Json.parse` returns nil past 256 levels of nesting (BUG-734).** It accepted any depth, and
+  `Json.stringify` of a value deeper than 256 panicked, so a client's deep JSON body ended a
+  server that echoed or stored it. Each `[` or `{` outside a string is a level; 256 parse and
+  write back, 257 is nil. The V route's half (the same count) is Fable's, and follows.
+- **BUG-701 is closed:** with BUG-733 and 734, no operation the option A sweep applied to request
+  data can end a server, and `Http.serve(port, handler, restart: true)` restarts one whose own
+  handler panics.
 - **`s.chars()` and `s.bytes()` are values (BUG-723).** Bound to a variable, returned or kept
   in a field, `s.chars()` is a `List(char)` of the items `for c in s.chars()` yields
   (codepoints, and an escape char for a byte that is not UTF-8) and `s.bytes()` a

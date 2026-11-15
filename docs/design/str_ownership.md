@@ -21,10 +21,10 @@
 | `s.center(20, " ")` | **OWN** | — | `_pad_center(s, @as(usize, @intCast(20)), " ", _zbr_rt._allocator)` |  |
 | `s.chars()` | **OWN** | **VALUE** | `_zbr_chars(s)` | as a value (BUG-723); the loop form is below |
 | `s.concat("!")` | **OWN** | — | `(std.mem.concat(_zbr_rt._allocator, u8, &.{ s, "!" }) catch @panic(...` |  |
-| `b.decodeBase64()` | **OWN** | — | `_base64_decode_str(b)` | receiver must be base64 |
+| `b.decodeBase64()` | **OWN** | — | `_base64_decode(b)` | str?: nil if not base64 (BUG-733) |
 | `s.encodeBase64()` | **OWN** | — | `_base64_encode(s)` |  |
 | `f.format(1)` | **OWN** | — | `(std.fmt.allocPrint(_zbr_rt._allocator, f, .{ 1 }) catch @panic("OO...` | variadic; see BUG-224 for 2+ args |
-| `h.fromHex()` | **OWN** | — | `(blk_fhx: { if (h.len % 2 != 0) break :blk_fhx @as(?[]const u8, nul...` | receiver must be hex digits |
+| `h.fromHex()` | **OWN** | — | `(blk_fhx: { if (h.len % 2 != 0) break :blk_fhx @as(?[]const u8, nul...` | str?: nil if not hex digits |
 | `parts.join(", ")` | **OWN** | — | `_zbr_list_join(", ", parts.items)` | called on List(str) |
 | `s.lines()` | **OWN** | **BORROW** | `blk_sl_2: { var _ll_2: _ZbrList([]const u8) = _zbr_new(_ZbrList([]c...` |  |
 | `s.lower()` | **OWN** | — | `(std.ascii.allocLowerString(_zbr_rt._allocator, s) catch @panic("OO...` |  |

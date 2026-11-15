@@ -1,0 +1,65 @@
+# BUG-734: `Json.parse` accepted a document nested deeper than `Json.stringify` can write
+# (Zig's writer keeps a 256-level stack and asserts in Debug), so a client's deep JSON body
+# ended any server that echoed or stored it. `Json.parse` now returns nil past 256 levels:
+# each `[` or `{` outside a string opens a level, a top-level scalar is level 0. The V route
+# answers the same pair (256 parses, 257 is nil). Every value below is checked here; the
+# last line prints only if all are right.
+
+var failures: int = 0
+
+def check(what: str, ok: bool)
+    if not ok
+        print("  WRONG: ${what}")
+        failures += 1
+
+def arrays(n: int): str
+    return "[".repeat(n) + "]".repeat(n)
+
+def objects(n: int): str
+    return "{\"a\":".repeat(n) + "1" + "}".repeat(n)
+
+def mixed(pairs: int): str
+    return "[{\"k\":".repeat(pairs) + "0" + "}]".repeat(pairs)
+
+def main()
+    # the edge, arrays: 256 parses and writes back byte for byte; 257 is nil
+    var a256 = arrays(256)
+    if Json.parse(a256) as v
+        check("arrays 256 round-trip", Json.stringify(v) == a256)
+    else
+        check("arrays 256 parses", false)
+    check("arrays 257 is nil", Json.parse(arrays(257)) == nil)
+
+    # the edge, objects
+    var o256 = objects(256)
+    if Json.parse(o256) as v
+        check("objects 256 round-trip", Json.stringify(v) == o256)
+    else
+        check("objects 256 parses", false)
+    check("objects 257 is nil", Json.parse(objects(257)) == nil)
+
+    # mixed `[{`: 128 pairs are 256 levels; one more `[` around them is 257
+    var m256 = mixed(128)
+    if Json.parse(m256) as v
+        check("mixed 256 round-trip", Json.stringify(v) == m256)
+    else
+        check("mixed 256 parses", false)
+    check("mixed 257 is nil", Json.parse("[" + m256 + "]") == nil)
+
+    # far past the edge: nil, and the process goes on
+    check("100000 is nil", Json.parse(arrays(100000)) == nil)
+
+    # brackets inside a string are not levels, an escaped quote does not end the string
+    var deep_text = "[\"" + "[".repeat(300) + "\"]"
+    check("brackets in a string", Json.parse(deep_text) != nil)
+    var escaped = "[\"\\\"" + "{".repeat(300) + "\"]"
+    check("escaped quote in a string", Json.parse(escaped) != nil)
+
+    # a top-level scalar is level 0, and malformed text is still nil
+    check("scalar", Json.parse("5") != nil)
+    check("malformed", Json.parse("[1,") == nil)
+
+    if failures == 0
+        print("bug734_json_depth: OK")
+    else
+        print("bug734_json_depth: ${failures} WRONG")

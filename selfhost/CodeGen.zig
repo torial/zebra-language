@@ -35900,7 +35900,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:19200
                     if (std.mem.eql(u8, mname, "decodeBase64")) {
 // zbr:selfhost/CodeGen.zbr:19201
-                        self.w.emit("_base64_decode_str(");
+                        self.w.emit("_base64_decode(");
 // zbr:selfhost/CodeGen.zbr:19202
                         self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:19203
@@ -38819,7 +38819,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:20650
         if (std.mem.eql(u8, mname, "decodeBase64")) {
 // zbr:selfhost/CodeGen.zbr:20651
-            self.w.emit("_base64_decode_str(");
+            self.w.emit("_base64_decode(");
 // zbr:selfhost/CodeGen.zbr:20652
             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:20653

@@ -17,11 +17,12 @@ def main()
     var bad = Base64.decode("!!!invalid!!!")
     assert bad == nil
 
-    # String instance methods (ergonomic form; decodeBase64 panics on invalid input)
+    # String instance methods (ergonomic form; decodeBase64 is nil on invalid input, BUG-733)
     var s = "hello"
     var s_enc = s.encodeBase64()
     assert s_enc == "aGVsbG8="
-    var s_dec = s_enc.decodeBase64()   # non-optional: panics on invalid base64
+    var s_dec = s_enc.decodeBase64()!  # `!`: this input is known to be base64
+    assert "abc".decodeBase64() == nil
     assert s_dec == "hello"
 
     print("stdlib_base64 OK")

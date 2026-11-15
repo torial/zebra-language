@@ -1683,9 +1683,9 @@ An `extend str` block adds methods the checker then accepts.
 | `join(sep)` | `(str): str` | Join list elements — called on a List (any element type; non-strings render as `print` shows them, BUG-423), not a single `str` |
 | `substring(start, end)` | `(int, int): str` | Slice from `start` to `end` (same as `s[start..end]`) |
 | `toHex()` | `(): str` | Hex-encode bytes |
-| `fromHex()` | `(): str` | Decode hex string to bytes |
+| `fromHex()` | `(): str?` | Decode hex string to bytes; `nil` if it is not hex |
 | `encodeBase64()` | `(): str` | Base64-encode |
-| `decodeBase64()` | `(): str` | Base64-decode |
+| `decodeBase64()` | `(): str?` | Base64-decode; `nil` if it is not base64, like `Base64.decode` (BUG-733) |
 | `lines()` | `(): List(str)` | Split into lines: no empty line after a final `\n`, `\r` stripped, interior blank lines kept, `""` → none (BUG-387) |
 | `replaceAll(from, to)` | `(str, str): str` | Alias of `replace` |
 | `toString()` | `(): str` | Identity; lets `str` satisfy a `toString`-shaped call |
@@ -4297,7 +4297,7 @@ var present  = args.contains("--dry-run")    # bool
 
 | Call                                 | Returns       | Notes                                   |
 |--------------------------------------|---------------|-----------------------------------------|
-| `Json.parse(src)`                    | `JsonValue?`  | Parse JSON to a tagged union value      |
+| `Json.parse(src)`                    | `JsonValue?`  | Parse JSON to a tagged union value; `nil` if malformed or nested deeper than 256 levels (BUG-734) |
 | `Json.parseStrict(T, src)`           | `?T`          | Strict parse to `@reflectable class T`  |
 | `Json.stringify(v)`                  | `str`         | Serialise a JsonValue                   |
 | `Json.object()` / `Json.array()`     | `JsonValue`   | Empty object/array constructors         |

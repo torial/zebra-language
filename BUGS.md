@@ -46,48 +46,6 @@
 
 ---
 
-### BUG-701: a panic in an `Http.serve` handler ends the whole server process
-- **Status:** OPEN (filed 2026-11-12; Fable, measured through the sprocket toolchain of 2026-11-08)
-- **Observed:** `GET /task/\xff\xfe HTTP/1.1` (a path holding bytes that are not UTF-8) killed
-  a Graze server: the next connection was refused. The handler walked the path as text
-  (`split` / `chars()` / compare). **The operation is `chars()`** (Fable, 2026-11-12: with the
-  guard removed, raw `\xff\xfe` went through `split`, `trim` and `==` and died in `for c in
-  s.chars()`), filed on its own as BUG-703 -- a `str` operation that panics on bytes a peer
-  controls is a crash any client can trigger.
-- **The general shape, true by construction:** the accept loop calls the handler in-process,
-  and a Zig panic is a process exit, so ANY handler defect is a denial of service. Graze's
-  charter (§4.3) wants per-request recovery that answers 500 and keeps serving; Zig has no
-  `recover`, so that needs a design (a worker process, or handlers that cannot panic on input),
-  not a patch. **Decided 2026-11-12 (Sean):** option A (remove the panics input can reach,
-  BUG-703 first), then option B (an opt-in supervising restart), and both are required;
-  `docs/design/http_serve_recovery.md`. This entry closes when both have landed.
-- **Option A progress (2026-11-13):** BUG-703 (`chars()` on bytes that are not UTF-8), BUG-704
-  (`readAll` on a reset) and BUG-715 (`conn.write` to a peer that left) are fixed. Left in A:
-  the parse helpers' panic arms and integer conversions on header values.
-- **Option A sweep (2026-11-15):** 48 operations a handler applies to request data (every str
-  method that reads input, Base64, Json parse/get/stringify, Uri, Compress, Crypto, Csv, Hash,
-  Mime, Path, Regex) x 38 hostile inputs (bytes that are not UTF-8, NUL, 2 MB, bad base64/hex/
-  percent/gzip/PHC, huge and malformed numbers, JSON nested 256 / 257 / 5,000 / 100,000 deep),
-  each in its own process, with a surviving positive control and a dying negative one. Two
-  panic sites: BUG-733 (`decodeBase64`) and BUG-734 (`stringify` past 256 levels). Then 26
-  hostile raw requests against a server whose handler reads every request field: none ended
-  it, and Content-Length's `parseInt ... catch 0` cannot panic. But it does make up values
-  (BUG-735), and a header value can inject response headers (BUG-736). `Http.request`'s panic
-  arms are reachable only through a handler that forwards a client's header -- BUG-735's
-  bare-LF refusal closes that. BUG-735 and 736 FIXED 2026-11-15; A is done when BUG-733 and 734 are.
-- **Option B LANDED 2026-11-15:** `Http.serve(port, handler, restart: true)`, a re-executing
-  supervisor (design note, "B as built"; QUICKSTART). Pinned by
-  `test/bug701_serve_restart_test.zbr`: crash -> new process with module vars reset, the sixth
-  crash in 60 s stops it (exit 1), a handler's `sys.exit(0)` stops it (0), a server that cannot
-  listen stops it (98, no retry), and killing the supervisor ends the server. Each leg watched
-  red against a runtime mutant built for it. **This entry now closes with BUG-733 and 734.**
-- **Workaround today:** check `isValidUtf8()` on path, query and body first and answer 400
-  (Graze does; witnessed red and green in `graze/tasks/check_tasks.py`).
-- **Control when fixing:** a raw `Tcp` client sends the non-UTF-8 path; the server must answer
-  it (400 or 500) AND answer the next request.
-
----
-
 ### BUG-702: `b.toInt()` on a byte from `s.bytes()` passes `-c` and fails inside zig
 - **Status:** OPEN (filed 2026-11-12; found by Fable in Graze's percent-decoder, reproduced on the
   batch's compiler)
@@ -339,38 +297,6 @@
 - **Fix shape:** resolve the exposed name to the module's function, not to the module; if that is
   ambiguous by design, refuse at `-c` naming both.
 - **Control when fixing:** the repro prints 42; `use riskmod exposing risky` is unchanged.
-
----
-
-### BUG-733: `s.decodeBase64()` panics on input that is not base64 (BUG-701 option A)
-- **Status:** OPEN (filed 2026-11-15; found by the BUG-701 option A sweep: 48 operations x 38
-  hostile inputs, each in its own process, reproduced on e4045ec)
-- **Repro:** `print("abc".decodeBase64().len)` -> `panic: invalid base64`, exit 1. Every one of the
-  sweep's 36 non-base64 inputs ended the process. In an `Http.serve` handler that decodes a
-  client value (a Basic auth header, a cookie) any client ends the server.
-- **Cause:** `_base64_decode_str` ends both decoder calls with `catch @panic("invalid base64")`.
-  `Base64.decode(s)` and `Base64.decodeUrl(s)` already return `str?` (nil on bad input) and
-  survived every input.
-- **Fix shape (decision pending):** return `str?` like `Base64.decode` -- a surface change, two
-  corpus uses (both tests), none in Graze, Sprocket, zebra-ide or the GameEngine -- or retire the
-  method in favour of `Base64.decode`.
-- **Control when fixing:** `"abc".decodeBase64()` is nil and the process goes on; a valid input
-  decodes as before.
-
----
-
-### BUG-734: `stringify` panics on a parsed JSON document nested deeper than 256 (BUG-701 option A)
-- **Status:** OPEN (filed 2026-11-15; found by the BUG-701 option A sweep, reproduced on e4045ec)
-- **Repro:** `Json.parse` of `[` x 257 + `]` x 257 succeeds; `v.stringify()` on it panics
-  `index out of bounds: index 32, len 32`. 256 levels work; 257, 5,000 and 100,000 all panic.
-  A server that stores or echoes a client's JSON body ends on one deep document.
-- **Cause:** Zig's `std.json.Stringify` keeps a 256-level nesting stack (32 bytes of bits) and
-  asserts in Debug and ReleaseSafe; the parser has no such limit, so `parse` accepts what
-  `stringify` cannot write. `_json_stringify` also turns any other failure into `"{}"`, a value
-  that reads as an answer.
-- **Fix shape (decision pending):** `Json.parse` returns nil past 256 levels (the depth stringify
-  can write; serde_json's default is 128), documented beside `parse`; the V route mirrors it.
-- **Control when fixing:** 256 levels parse and round-trip; 257 is nil from `parse`; no panic.
 
 ---
 

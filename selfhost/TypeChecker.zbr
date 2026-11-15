@@ -2483,7 +2483,10 @@ def stringMethodReturn(name: str): Type_?
         return Type_.bool_
     if name == "fromHex"
         return Type_.optional(Type_.string_)
-    if name == "decodeBase64" or name == "encodeBase64"
+    if name == "decodeBase64"
+        # BUG-733: nil on input that is not base64, like Base64.decode (it panicked)
+        return Type_.optional(Type_.string_)
+    if name == "encodeBase64"
         return Type_.string_
     return nil
 

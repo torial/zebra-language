@@ -2554,7 +2554,39 @@ pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
     return dt; // Unknown zone: return as-is (UTC)
 }
 pub const JsonValue = std.json.Value;
+/// The deepest JSON document `Json.parse` accepts (BUG-734): the depth `std.json.Stringify`
+/// can write back -- its nesting stack is 256 levels and ASSERTS past that in Debug and
+/// ReleaseSafe -- so a parsed value can always be stringified. Each `[` or `{` outside a
+/// string opens a level; a top-level scalar is level 0. The V route counts the same way.
+pub const _json_max_depth: usize = 256;
+/// True when `src` nests no deeper than `_json_max_depth`. A scan of the TEXT, before the
+/// parser sees it, so the answer is the same whatever the parser's own limits. In text the
+/// parser will accept, brackets outside strings balance, so this is that text's real depth;
+/// in text it will refuse, the answer does not matter.
+pub fn _json_depth_ok(src: []const u8) bool {
+    var depth: usize = 0;
+    var in_str = false;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        const c = src[i];
+        if (in_str) {
+            if (c == '\\') i += 1 else if (c == '"') in_str = false;
+            continue;
+        }
+        switch (c) {
+            '"' => in_str = true,
+            '[', '{' => {
+                depth += 1;
+                if (depth > _json_max_depth) return false;
+            },
+            ']', '}' => depth -|= 1,
+            else => {},
+        }
+    }
+    return true;
+}
 pub fn _json_parse(src: []const u8) ?JsonValue {
+    if (!_json_depth_ok(src)) return null;
     // BUG-556: the tree is built in `_allocator` -- the program arena, or the enclosing
     // `allocate` block's -- like every other value. It was the std page allocator, which
     // gives EVERY allocation its own page and was never freed: the GameEngine's 13 MB of
@@ -2576,7 +2608,10 @@ pub fn _json_keys(v: JsonValue) _ZbrList([]const u8) {
     return _r;
 }
 pub fn _json_stringify(v: JsonValue) []const u8 {
-    return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch "{}";
+    // Its only error is OutOfMemory (BUG-734 replaced a `catch "{}"`: an answer for a
+    // failure). The depth assertion inside cannot fire: the only deep values come from
+    // `_json_parse`, which refuses past `_json_max_depth` (put/append take scalars).
+    return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch @panic("OOM");
 }
 pub fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
 pub fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
@@ -7403,13 +7438,6 @@ pub fn _base64_decode(s: []const u8) ?[]const u8 {
     const out_len = dec.calcSizeForSlice(s) catch return null;
     const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
     dec.decode(out, s) catch return null;
-    return out;
-}
-pub fn _base64_decode_str(s: []const u8) []const u8 {
-    const dec = std.base64.standard.Decoder;
-    const out_len = dec.calcSizeForSlice(s) catch @panic("invalid base64");
-    const out = _allocator.alloc(u8, out_len) catch @panic("OOM");
-    dec.decode(out, s) catch @panic("invalid base64");
     return out;
 }
 pub fn _base64_encode_url(s: []const u8) []const u8 {

@@ -1,0 +1,40 @@
+# BUG-733: `s.decodeBase64()` panicked ("invalid base64") on any input that is not base64,
+# so a server decoding a client value (a Basic auth header, a cookie) ended on one bad
+# request. It returns `str?` now, like `Base64.decode(s)`: nil on bad input, and the process
+# goes on. Every value below is checked here; the last line prints only if all are right.
+
+var failures: int = 0
+
+def check(what: str, ok: bool)
+    if not ok
+        print("  WRONG: ${what}")
+        failures += 1
+
+def main()
+    # valid input decodes as before
+    if "aGVsbG8=".decodeBase64() as s
+        check("valid", s == "hello")
+    else
+        check("valid decodes", false)
+    check("empty", ("".decodeBase64() orelse "x") == "")
+
+    # not base64: nil, and the process goes on
+    var bad = ["abc", "a", "====", "aGVsbG8", "a$b=", "éééé","aGVsbG8=x"]
+    var nils = 0
+    for b in bad
+        if b.decodeBase64() == nil
+            nils += 1
+    check("every bad input is nil", nils == bad.count())
+
+    # the same answer as Base64.decode, the namespace form
+    for b in bad
+        check("agrees with Base64.decode: ${b}", (b.decodeBase64() == nil) == (Base64.decode(b) == nil))
+
+    # the default sits in view
+    var user = "%%%".decodeBase64() orelse "anonymous"
+    check("orelse", user == "anonymous")
+
+    if failures == 0
+        print("bug733_decode_base64_optional: OK")
+    else
+        print("bug733_decode_base64_optional: ${failures} WRONG")
