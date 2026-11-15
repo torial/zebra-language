@@ -6,6 +6,35 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-737: `s.fromHex()` passed `-c` and never compiled -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; found writing the BUG-701 option A sweep)
+- **Repro:** `print("6162".fromHex() != nil)` -> zig: "value of type '[]u8' ignored".
+- **Cause:** both `fromHex` arms in CodeGen emitted `std.fmt.hexToBytes(..) catch {..};` as a
+  statement, and `hexToBytes` returns the slice. No fixture used `fromHex`, so no gate had ever
+  built it.
+- **Fix:** `_ = std.fmt.hexToBytes(..)` in both arms.
+- **Pinned by:** `test/bug737_740_fromhex_dirname_test.zbr` (`smoke_run`): a literal, a local, a
+  field and a call result as the receiver (`"ab"`, `"ABC"`, `"hi"`, `"ze"`), odd length and a
+  non-hex digit answering nil, the empty string answering `""`. Each value is checked by the
+  program, so the marker prints only when all are right (watched fail with one expectation
+  changed). Red on the old compiler (zig refused the emit at the first call).
+
+---
+
+### BUG-740: `Path.dirname(s).len` passed `-c` and failed inside zig -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; found writing the BUG-701 option A sweep)
+- **Repro:** `print(Path.dirname(s).len)` -> zig: "incompatible types: '*const str' and '*const
+  *const [0:0]u8'".
+- **Cause:** the emit was `(std.fs.path.dirname(s) orelse "")`, whose peer type is not a slice
+  when a member is read from it directly.
+- **Fix:** `orelse @as([]const u8, "")`. It was the only `orelse ""` emit in CodeGen; the other
+  `Path.*` arms return slices already.
+- **Pinned by:** the BUG-737 fixture's second half: `.len` read off the call (3, and 0 for a
+  name with no directory), interpolation, comparison and a local. Red on the old compiler with
+  that half alone.
+
+---
+
 ### BUG-735: `Http.serve` handed malformed requests to the handler with made-up fields -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-15; found by the BUG-701 option A sweep, 26 hostile
   raw requests against a handler that reads every field; reproduced on e4045ec). No request

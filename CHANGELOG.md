@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`s.fromHex()` and `Path.dirname(s).len` compile (BUG-737, BUG-740).** Both passed `-c` and
+  failed inside zig: every program calling `fromHex` ("value of type '[]u8' ignored"), and a
+  member read straight off `Path.dirname(...)`. `fromHex` answers the bytes, or nil for an odd
+  length or a character that is not a hex digit.
+
 - **`Http.serve` refuses a request it cannot read as sent, and a response header holding a line
   break (BUG-735, BUG-736).** These used to reach the handler with a value made up in place of
   what the client sent: a request line with no method, target or `HTTP/` version (method "GET",

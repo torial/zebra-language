@@ -35953,7 +35953,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:19227
                         self.w.emit(".len / 2) catch @panic(\"OOM\"); ");
 // zbr:selfhost/CodeGen.zbr:19228
-                        self.w.emit("std.fmt.hexToBytes(_hbuf, ");
+                        self.w.emit("_ = std.fmt.hexToBytes(_hbuf, ");
 // zbr:selfhost/CodeGen.zbr:19229
                         self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:19230
@@ -38850,7 +38850,7 @@ pub const _zbr_ty_Generator = struct {
 // zbr:selfhost/CodeGen.zbr:20666
             self.w.emit(".len / 2) catch @panic(\"OOM\"); ");
 // zbr:selfhost/CodeGen.zbr:20667
-            self.w.emit("std.fmt.hexToBytes(_hbuf, ");
+            self.w.emit("_ = std.fmt.hexToBytes(_hbuf, ");
 // zbr:selfhost/CodeGen.zbr:20668
             self.genExpr(m.object.*);
 // zbr:selfhost/CodeGen.zbr:20669
@@ -45828,7 +45828,7 @@ pub const _zbr_ty_Generator = struct {
                 self.w.emit("\"\"");
             }
 // zbr:selfhost/CodeGen.zbr:24113
-            self.w.emit(") orelse \"\")");
+            self.w.emit(") orelse @as([]const u8, \"\"))");
 // zbr:selfhost/CodeGen.zbr:24114
             return;
         }

@@ -416,18 +416,6 @@
 
 ---
 
-### BUG-737: `s.fromHex()` passes `-c` and never compiles
-- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
-- **Repro:** `print("6162".fromHex() != nil)` -> zig: "value of type '[]u8' ignored".
-- **Cause:** both `fromHex` arms in CodeGen emit `std.fmt.hexToBytes(..) catch {..};` as a
-  statement, and `hexToBytes` returns the slice. No fixture uses `fromHex`, so no gate has ever
-  built it.
-- **Fix shape:** `_ = std.fmt.hexToBytes(..)` in both arms, and a run fixture (valid, odd length,
-  bad digit).
-- **Control when fixing:** `"6162".fromHex()` is `"ab"`; `"abc"` and `"zz"` are nil.
-
----
-
 ### BUG-738: `s.hash()` passes `-c` and fails inside zig
 - **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
 - **Repro:** `print("a".hash())` -> zig: "no field or member function named 'hash' in 'str'".
@@ -451,17 +439,6 @@
   `UriResult?` as documented (a surface change) or the table says what it does.
 - **Control when fixing:** both comparisons refused at `-c` at their lines; an optional class
   still compares.
-
----
-
-### BUG-740: `Path.dirname(s).len` passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
-- **Repro:** `print(Path.dirname(s).len)` -> zig: "incompatible types: '*const str' and '*const
-  *const [0:0]u8'". `var d: str = Path.dirname(s)` then `d.len` works.
-- **Cause:** the emit is `(std.fs.path.dirname(s) orelse "")`, whose peer type is not a slice
-  when a member is read from it directly.
-- **Fix shape:** `orelse @as([]const u8, "")`; check the other `Path.*` arms for the same shape.
-- **Control when fixing:** the repro prints the length.
 
 ---
 

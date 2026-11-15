@@ -2785,7 +2785,7 @@ pub fn _zbr_fn_defaultPreamblePath() []const u8 {
 pub fn _zbr_fn_runtimeFilePath(name: []const u8) []const u8 {
     @setRuntimeSafety(true);
 // zbr:selfhost/main.zbr:1630
-    var exe_dir: []const u8 = (std.fs.path.dirname(_sys_self_exe()) orelse "");
+    var exe_dir: []const u8 = (std.fs.path.dirname(_sys_self_exe()) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:1631
     if (std.mem.eql(u8, exe_dir, "")) {
 // zbr:selfhost/main.zbr:1632
@@ -2862,7 +2862,7 @@ pub fn _zbr_fn_vCollect(path: []const u8, module_path: []const u8, visited: _Zbr
 // zbr:selfhost/main.zbr:1669
     const m: _zbr_ty_Module = (try _zbr_fn_vLoadModule(path));
 // zbr:selfhost/main.zbr:1670
-    var dir: []const u8 = (std.fs.path.dirname(path) orelse "");
+    var dir: []const u8 = (std.fs.path.dirname(path) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:1671
     if (std.mem.eql(u8, dir, "")) {
 // zbr:selfhost/main.zbr:1672
@@ -3273,7 +3273,7 @@ pub fn _zbr_fn_vTarget(path: []const u8, gc_on: bool, module_path: []const u8, g
                     }
                 }
 // zbr:selfhost/main.zbr:1859
-                var dir: []const u8 = (std.fs.path.dirname(path) orelse "");
+                var dir: []const u8 = (std.fs.path.dirname(path) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:1860
                 if (std.mem.eql(u8, dir, "")) {
 // zbr:selfhost/main.zbr:1861
@@ -6685,7 +6685,7 @@ pub fn _zbr_fn_upFetch(url: []const u8) anyerror![]const u8 {
 pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
     @setRuntimeSafety(true);
 // zbr:selfhost/main.zbr:3548
-    const exe_dir: []const u8 = (std.fs.path.dirname(_sys_self_exe()) orelse "");
+    const exe_dir: []const u8 = (std.fs.path.dirname(_sys_self_exe()) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:3549
     if (((!check_only) and !std.mem.eql(u8, (std.fs.path.basename(exe_dir)), "current"))) {
 // zbr:selfhost/main.zbr:3550
@@ -6767,7 +6767,7 @@ pub fn _zbr_fn_runUp(check_only: bool, want: []const u8) anyerror!void {
         return;
     }
 // zbr:selfhost/main.zbr:3589
-    const root: []const u8 = (std.fs.path.dirname(exe_dir) orelse "");
+    const root: []const u8 = (std.fs.path.dirname(exe_dir) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:3590
     const downloads: []const u8 = _str_concat(root, "/downloads", _zbr_rt._allocator);
 // zbr:selfhost/main.zbr:3591
@@ -7118,7 +7118,7 @@ pub fn _zbr_fn_luiManifest() []const u8 {
 pub fn _zbr_fn_copyGuiDeps(zig_path: []const u8, srcDir: []const u8) void {
     @setRuntimeSafety(true);
 // zbr:selfhost/main.zbr:3877
-    var dir: []const u8 = (std.fs.path.dirname(zig_path) orelse "");
+    var dir: []const u8 = (std.fs.path.dirname(zig_path) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:3878
     if (std.mem.eql(u8, dir, "")) {
 // zbr:selfhost/main.zbr:3879
@@ -7312,7 +7312,7 @@ pub fn _zbr_fn_emitExeDone(exe: []const u8) void {
 // zbr:selfhost/main.zbr:3989
     std.debug.print("{s}\n", .{_str_concat("wrote ", exe, _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:3994
-    var ee_dir: []const u8 = (std.fs.path.dirname(exe) orelse "");
+    var ee_dir: []const u8 = (std.fs.path.dirname(exe) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:3995
     if (std.mem.eql(u8, ee_dir, "")) {
 // zbr:selfhost/main.zbr:3996
@@ -7408,7 +7408,7 @@ pub fn _zbr_fn_keepFailedScratch(dir: []const u8, stem: []const u8) void {
         break :blk_fw {};
     });
 // zbr:selfhost/main.zbr:4054
-    const parent: []const u8 = (std.fs.path.dirname(dir) orelse "");
+    const parent: []const u8 = (std.fs.path.dirname(dir) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:4055
     const mine: []const u8 = (std.fs.path.basename(dir));
 // zbr:selfhost/main.zbr:4056
@@ -8545,7 +8545,7 @@ pub fn _zbr_fn_zigExe() []const u8 {
         }
     }
 // zbr:selfhost/main.zbr:4664
-    var d: []const u8 = (std.fs.path.dirname(_sys_self_exe()) orelse "");
+    var d: []const u8 = (std.fs.path.dirname(_sys_self_exe()) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:4665
     if (std.mem.eql(u8, d, "")) {
 // zbr:selfhost/main.zbr:4666
@@ -9318,7 +9318,7 @@ pub fn main(_zinit: std.process.Init) void {
                     _zbr_exit(@as(i64, 2));
                 }
 // zbr:selfhost/main.zbr:5251
-                const ee_dir: []const u8 = (std.fs.path.dirname(emit_exe) orelse "");
+                const ee_dir: []const u8 = (std.fs.path.dirname(emit_exe) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:5252
                 if ((!std.mem.eql(u8, ee_dir, "") and (!(blk_de: { var _de_d = std.Io.Dir.cwd().openDir(_zbr_rt._io, ee_dir, .{}) catch break :blk_de false; _de_d.close(_zbr_rt._io); break :blk_de true; })))) {
 // zbr:selfhost/main.zbr:5253
@@ -9527,7 +9527,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:5385
                 const sh_zig: []const u8 = mc.zbrToZig(path);
 // zbr:selfhost/main.zbr:5386
-                var sh_dir: []const u8 = (std.fs.path.dirname(path) orelse "");
+                var sh_dir: []const u8 = (std.fs.path.dirname(path) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:5387
                 if (std.mem.eql(u8, sh_dir, "")) {
 // zbr:selfhost/main.zbr:5388
@@ -9941,7 +9941,7 @@ pub fn main(_zinit: std.process.Init) void {
 // zbr:selfhost/main.zbr:5697
                 const self_exe_path: []const u8 = _sys_self_exe();
 // zbr:selfhost/main.zbr:5698
-                var exe_dir: []const u8 = (std.fs.path.dirname(self_exe_path) orelse "");
+                var exe_dir: []const u8 = (std.fs.path.dirname(self_exe_path) orelse @as([]const u8, ""));
 // zbr:selfhost/main.zbr:5699
                 if (std.mem.eql(u8, exe_dir, "")) {
 // zbr:selfhost/main.zbr:5700

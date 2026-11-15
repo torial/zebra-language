@@ -19225,7 +19225,7 @@ struct Generator
                         w.emit("const _hbuf = _allocator.alloc(u8, ")
                         genExpr(m.object)
                         w.emit(".len / 2) catch @panic(\"OOM\"); ")
-                        w.emit("std.fmt.hexToBytes(_hbuf, ")
+                        w.emit("_ = std.fmt.hexToBytes(_hbuf, ")
                         genExpr(m.object)
                         w.emit(") catch { _allocator.free(_hbuf); break :blk_fhx @as(?[]const u8, null); }; ")
                         w.emit("break :blk_fhx @as(?[]const u8, _hbuf); })")
@@ -20664,7 +20664,7 @@ struct Generator
             w.emit("const _hbuf = _allocator.alloc(u8, ")
             genExpr(m.object)
             w.emit(".len / 2) catch @panic(\"OOM\"); ")
-            w.emit("std.fmt.hexToBytes(_hbuf, ")
+            w.emit("_ = std.fmt.hexToBytes(_hbuf, ")
             genExpr(m.object)
             w.emit(") catch { _allocator.free(_hbuf); break :blk_fhx @as(?[]const u8, null); }; ")
             w.emit("break :blk_fhx @as(?[]const u8, _hbuf); })")
@@ -24110,7 +24110,7 @@ struct Generator
                 genExpr(args.at(0).value)
             else
                 w.emit("\"\"")
-            w.emit(") orelse \"\")")
+            w.emit(") orelse @as([]const u8, \"\"))")
             return
         if mname == "ext" or mname == "extension"
             w.emit("(std.fs.path.extension(")

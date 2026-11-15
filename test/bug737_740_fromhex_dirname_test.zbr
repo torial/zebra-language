@@ -1,0 +1,54 @@
+# BUG-737: `s.fromHex()` emitted `std.fmt.hexToBytes(..)` as a statement, a value Zig refuses
+# to ignore, so every program calling it failed inside zig.
+# BUG-740: `Path.dirname(s)` emitted `(.. orelse "")`, whose peer type is a pointer to an array
+# rather than a slice, so reading `.len` straight off the call failed inside zig.
+# Each value is checked here, so the final line prints only when all of them are right.
+
+var failures: int = 0
+
+class Holder
+    var hex: str
+
+    cue init(h: str)
+        hex = h
+
+def makeHex(): str
+    return "7a65"
+
+def show(h: str?): str
+    if h == nil
+        return "nil"
+    return h!
+
+def check(what: str, got: str, want: str)
+    print("${what}=${got}")
+    if got != want
+        print("  WRONG: ${what} is '${got}', want '${want}'")
+        failures += 1
+
+def main()
+    # fromHex: a literal, a local, a field and a call's result as the receiver
+    check("lit", show("6162".fromHex()), "ab")
+    var s = "414243"
+    check("local", show(s.fromHex()), "ABC")
+    var holder = Holder("6869")
+    check("field", show(holder.hex.fromHex()), "hi")
+    check("call", show(makeHex().fromHex()), "ze")
+    # the refusals: odd length and a digit that is not hex; the empty string is zero bytes
+    check("odd", show("abc".fromHex()), "nil")
+    check("bad", show("zz".fromHex()), "nil")
+    check("empty", show("".fromHex()), "")
+    check("nil-check", "${"6162".fromHex() != nil}", "true")
+
+    # Path.dirname: a member read straight off the call, interpolation, comparison, a local
+    var p = "a/b/c.txt"
+    check("dlen", "${Path.dirname(p).len}", "3")
+    check("dir", "${Path.dirname(p)}", "a/b")
+    check("eq", "${Path.dirname(p) == "a/b"}", "true")
+    var none = Path.dirname("c.txt")
+    check("none", none, "")
+    check("nlen", "${Path.dirname("c.txt").len}", "0")
+    if failures == 0
+        print("bug737_740_fromhex_dirname: OK")
+    else
+        print("bug737_740_fromhex_dirname: ${failures} WRONG")
