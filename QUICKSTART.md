@@ -4649,6 +4649,12 @@ addresses nobody read), and IPv6 is refused as not supported yet: a literal at `
 computed at run time when the server starts (it prints why and exits 1). An address this
 machine does not have is refused the same way, with the OS's reason.
 
+**A port one server holds is not shared with a second** (BUG-727). Starting a second server on
+it prints `cannot listen on 127.0.0.1:<port>: AddressInUse` and its `serve` returns; the first
+keeps answering. A port whose server has just stopped can be listened on again at once. (On
+Windows the runtime binds exclusively; before this a second listen there succeeded silently and
+the old server went on answering.)
+
 A port is an ordinary `int` in every networking call (`Tcp`, `Ws.serve`, `Http.serve`,
 `Udp`). One outside 0..65535 is refused by name and the call does nothing: `connect`
 returns nil, a server returns, `send` skips, and `Udp.bind` stops the program (BUG-688).

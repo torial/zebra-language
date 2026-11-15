@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-727: on Windows a second server listens on a port another server holds, and neither says so -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-14; found by Fable in a cold-start run of the Graze README, where
+  an agent restarted a rebuilt app and was answered by the old one)
+- **Repro:** start any `Http.serve` program built with 237f2e0 on 127.0.0.1:8146, then a second copy
+  on the same port. Both print their startup line and stay up; `netstat -ano` shows two LISTENING
+  rows for 127.0.0.1:8146 with two PIDs; requests go to the first (Fable, verified). Expected: the
+  second exits 1 with BUG-719's "cannot listen on ..." words.
+- **Cause, measured:** Zig 0.17's own Windows listen. A plain Zig program calling
+  `IpAddress.listen(io, .{})` twice on one address in ONE process gets two successful listens
+  (`first listen ok`, `SECOND listen ok`; 2026-11-14, zig 0.17.1). `reuse_address` defaults to false
+  and is not set; `netListenIpWindows` binds through AFD with `BIND_INFO.Mode = .Passive`, value 1.
+  Unverified reading: in AFD's own numbering 1 is the SHARE/REUSE mode (ReactOS headers:
+  UNIQUE 0, REUSE 1, WILDCARD 2, EXCLUSIVE 3), so every listen is a shared one. POSIX does not set
+  SO_REUSEADDR unless asked, so Linux should refuse the second bind -- not run.
+- **Where:** all three serve functions open their listener with default options:
+  `_addr.listen(_io, .{})` in the preamble's Http, Ws and Tcp serve paths.
+- **Why it matters:** a stale server left running after a rebuild keeps answering, with no word from
+  either process; and any local process can bind a port a Zebra server already holds.
+- **Fix shape:** the mode is hard-coded inside std, so options sit in our runtime: (a) on Windows,
+  open the listening socket ourselves with an exclusive bind (winsock `SO_EXCLUSIVEADDRUSE`, or the
+  AFD bind with the exclusive mode) and hand std the handle, if std accepts one it did not open;
+  (b) a connect probe before listening, which catches the stale-server case and is not race-free
+  -- name that in the code if chosen. Measure first which handles std's accept takes. No Zig bug
+  report (standing rule).
+- **Control when fixing:** two listens on one address: the second refused with "cannot listen on
+  ..." and exit 1, on all three serve functions; one listen still serves; a port freed by a closed
+  server can be listened on again at once (the property SO_REUSEADDR exists for -- an exclusive bind
+  must not cost it).
+- **Measured before fixing (2026-11-15, zig 0.17.1, scratchpad probes):** a winsock socket opened
+  with `SO_EXCLUSIVEADDRUSE`, bound and listened, handed to std as a `net.Server`: std's
+  AFD-based accept and read work on it. While it holds the port, a second exclusive bind is
+  refused (10048) and std's own listen is refused (NTSTATUS ACCESS_DENIED, which std reports as
+  `Unexpected`); an exclusive bind over a std listener is refused too (10048). With the SERVER
+  closing first -- three connections in TIME_WAIT on the server's port, shown by netstat -- an
+  exclusive rebind right after closing the listener succeeds. A default-mode winsock bind
+  measured the same on every leg; exclusive was chosen as the stronger guarantee (no later
+  SO_REUSEADDR socket can take the port over).
+- **Fix:** `_zbr_listen(addr, reuse)` in the preamble opens the listener for all three serve
+  functions. On Windows it is `_zbr_win_listen.open`: `WSASocketW` (overlapped, not inherited --
+  a child the server spawns must not keep the port), `SO_EXCLUSIVEADDRUSE`, `bind`, `listen`,
+  `getsockname`, handed to std; winsock errors map to std's names (10048 AddressInUse, 10049
+  AddressUnavailable, 10013 AccessDenied, ...). Elsewhere it is std's listen with
+  `reuse_address` as before (POSIX refuses a second bind without SO_REUSEADDR; the fixture runs
+  there on Linux CI). A side effect worth knowing: a host that is not this machine's
+  (192.0.2.1) now reports AddressUnavailable on Windows, and the message asserts ("is not an
+  address of this machine") instead of asking -- the NTSTATUS Zig left unmapped is no longer on
+  the path.
+- **The contract for a held port is unchanged:** the second server prints `cannot listen on
+  127.0.0.1:<port>: AddressInUse` and its serve returns (BUG-719 kept that for every listen
+  failure but a foreign host). The control above asked for exit 1; that is a contract change
+  and is put to Sean rather than made here. A supervised `Http.serve(.., restart: true)` already
+  exits 98 on it.
+- **Pinned by:** `test/bug727_listen_exclusive_test.zbr` (`smoke_run_bounded`, 180 s): for each of
+  Tcp, Http and Ws the driver starts this executable as a server, then a second copy on the same
+  port; the second must end, say `AddressInUse` and return from serve, and the first must still
+  answer. Then an HTTP server that answered five requests (server-side TIME_WAIT) is killed and
+  a new one must listen at once. Red-checked with the real attacker -- `_zbr_listen` sending
+  Windows back through std's shared-mode listen: all nine "second" legs went red (each second
+  server stayed up). `bug701_serve_restart` (its restarted server rebinds the crashed one's
+  port) and the three bug719 fixtures pass.
+- **Not covered:** a layered service provider (some antivirus) that wraps winsock sockets, whose
+  handle std's AFD accept may not take -- nothing here has one. An OLDER Zebra program trying
+  to listen on a port a new one holds is refused with std's `Unexpected` and BUG-719's "is ...
+  an address of this machine?" question, which is the wrong question for that case. The
+  fixture cannot tell an exclusive bind from a default-mode one (both refuse a second server);
+  the probes above can. `Udp.bind` is not a listen and was not changed.
+
+---
+
 ### BUG-737: `s.fromHex()` passed `-c` and never compiled -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-15; found writing the BUG-701 option A sweep)
 - **Repro:** `print("6162".fromHex() != nil)` -> zig: "value of type '[]u8' ignored".

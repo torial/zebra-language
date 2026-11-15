@@ -2936,11 +2936,82 @@ pub fn _zbr_listen_addr(host: []const u8, port: u16, what: []const u8) std.Io.ne
         _zbr_exit(1);
     };
 }
+/// BUG-727: open the listening socket of `Http.serve` / `Ws.serve` / `Tcp.serve`. On Windows
+/// Zig 0.17's listen binds through AFD in its shared (REUSE) mode, so a second listen on an
+/// address another server holds SUCCEEDS and both stay up, the first answering -- a stale
+/// server left running after a rebuild answered in place of the new one, and neither said so.
+/// There the socket is opened through winsock with SO_EXCLUSIVEADDRUSE and handed to std, whose
+/// accept works on it (measured): a second bind is refused (10048 -> AddressInUse), a std
+/// listener of an older Zebra program holding the port refuses ours too, and a port whose
+/// closed server left connections in TIME_WAIT can be bound again at once (measured with the
+/// server closing first, as Http.serve does). `reuse` (SO_REUSEADDR) is POSIX-only for that
+/// reason. Not covered: a layered service provider (some antivirus) that wraps winsock sockets,
+/// whose handle std's AFD accept may not take.
+pub fn _zbr_listen(addr: *const std.Io.net.IpAddress, reuse: bool) !std.Io.net.Server {
+    if (comptime builtin.target.os.tag == .windows) {
+        return _zbr_win_listen.open(addr);
+    } else {
+        return addr.listen(_io, .{ .reuse_address = reuse });
+    }
+}
+const _zbr_win_listen = if (builtin.target.os.tag == .windows) struct {
+    const SOCKET = std.os.windows.HANDLE;
+    const WSADATA = extern struct { bytes: [512]u8 = undefined };
+    const SockaddrIn = extern struct { family: u16 = 2, port: u16, addr: [4]u8, zero: [8]u8 = @splat(0) };
+    extern "ws2_32" fn WSAStartup(ver: u16, data: *WSADATA) callconv(.winapi) i32;
+    extern "ws2_32" fn WSASocketW(af: i32, ty: i32, proto: i32, pi: ?*anyopaque, g: u32, flags: u32) callconv(.winapi) SOCKET;
+    extern "ws2_32" fn setsockopt(s: SOCKET, level: i32, name: i32, val: [*]const u8, len: i32) callconv(.winapi) i32;
+    extern "ws2_32" fn bind(s: SOCKET, addr: *const anyopaque, len: i32) callconv(.winapi) i32;
+    extern "ws2_32" fn listen(s: SOCKET, backlog: i32) callconv(.winapi) i32;
+    extern "ws2_32" fn getsockname(s: SOCKET, addr: *anyopaque, len: *i32) callconv(.winapi) i32;
+    extern "ws2_32" fn closesocket(s: SOCKET) callconv(.winapi) i32;
+    extern "ws2_32" fn WSAGetLastError() callconv(.winapi) i32;
+    const SOL_SOCKET: i32 = 0xffff;
+    const SO_EXCLUSIVEADDRUSE: i32 = ~@as(i32, 4); // ~SO_REUSEADDR
+    // overlapped (std's I/O expects it); not inherited, or a child the server spawns would keep
+    // the port held after the server ends
+    const FLAGS: u32 = 0x01 | 0x80;
+
+    fn err() anyerror {
+        return switch (WSAGetLastError()) {
+            10048 => error.AddressInUse, // WSAEADDRINUSE
+            10049 => error.AddressUnavailable, // WSAEADDRNOTAVAIL
+            10013 => error.AccessDenied, // WSAEACCES (a reserved or excluded port)
+            10047 => error.AddressFamilyUnsupported,
+            10024 => error.ProcessFdQuotaExceeded,
+            10055 => error.SystemResources,
+            10050 => error.NetworkDown,
+            else => error.Unexpected,
+        };
+    }
+    fn open(addr: *const std.Io.net.IpAddress) !std.Io.net.Server {
+        const a4 = switch (addr.*) {
+            .ip4 => |a| a,
+            .ip6 => return error.AddressFamilyUnsupported, // _zbr_listen_addr refuses IPv6 first
+        };
+        var wd: WSADATA = .{};
+        // reference-counted, so one call per listen is fine; the servers listen once
+        if (WSAStartup(0x0202, &wd) != 0) return error.NetworkDown;
+        const s = WSASocketW(2, 1, 6, null, 0, FLAGS); // AF_INET, SOCK_STREAM, IPPROTO_TCP
+        if (s == std.os.windows.INVALID_HANDLE_VALUE) return err();
+        errdefer _ = closesocket(s);
+        const one: i32 = 1;
+        if (setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, @ptrCast(&one), @sizeOf(i32)) != 0) return err();
+        var sa: SockaddrIn = .{ .port = std.mem.nativeToBig(u16, a4.port), .addr = a4.bytes };
+        if (bind(s, &sa, @sizeOf(SockaddrIn)) != 0) return err();
+        if (listen(s, 128) != 0) return err();
+        var len: i32 = @sizeOf(SockaddrIn);
+        if (getsockname(s, &sa, &len) != 0) return err();
+        const bound: std.Io.net.IpAddress = .{ .ip4 = .{ .bytes = sa.addr, .port = std.mem.bigToNative(u16, sa.port) } };
+        return .{ .socket = .{ .handle = s, .address = bound }, .options = .{ .mode = .stream, .protocol = .tcp } };
+    }
+} else struct {};
 /// A listen that failed. An address this machine does not have is a refusal of the HOST
 /// (exit 1, as above); any other failure (the port is taken, ...) keeps the old contract --
-/// printed, and serve returns. Windows answers such an address with an NTSTATUS Zig does
-/// not map (INVALID_ADDRESS_COMPONENT), so there it arrives as `Unexpected`: the message
-/// then ASKS rather than asserts, because Unexpected is any unmapped OS error.
+/// printed, and serve returns. Through Zig's own Windows listen such an address came back as an
+/// NTSTATUS Zig does not map (INVALID_ADDRESS_COMPONENT), i.e. `Unexpected`, and the message
+/// ASKS rather than asserts; since BUG-727 the servers bind through winsock there, whose
+/// WSAEADDRNOTAVAIL maps to AddressUnavailable. The ask stays for any other unmapped error.
 pub fn _zbr_listen_failed(what: []const u8, host: []const u8, port: u16, e: anyerror) void {
     if (_zbr_listen_report(what, host, port, e)) _zbr_exit(1);
 }
@@ -3445,12 +3516,12 @@ pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8, restart: bo
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _addr = _zbr_listen_addr(host, port, "Http.serve");
+    const _addr = _zbr_listen_addr(host, port, "Http.serve");
     // A supervised process re-binds the port its crashed predecessor held. On POSIX that needs
     // SO_REUSEADDR, or the predecessor's connections in TIME_WAIT refuse the bind for up to a
-    // minute. Not on Windows, where the flag lets a second socket take a bound port (BUG-727).
+    // minute. Windows binds exclusively and needs no flag: TIME_WAIT does not refuse it (BUG-727).
     const _reuse = supervised and builtin.target.os.tag != .windows;
-    var _srv = _addr.listen(_io, .{ .reuse_address = _reuse }) catch |e| {
+    var _srv = _zbr_listen(&_addr, _reuse) catch |e| {
         if (supervised) {
             _ = _zbr_listen_report("Http.serve", host, port, e);
             _zbr_exit(_HTTP_SERVE_LISTEN_FAILED);
@@ -3961,8 +4032,8 @@ pub fn _ws_serve(port_in: i64, handler: anytype, host: []const u8) void {
         }
     };
     const _pa = std.heap.page_allocator;
-    var _waddr = _zbr_listen_addr(host, port, "Ws.serve");
-    var _srv = _waddr.listen(_io, .{}) catch |e| {
+    const _waddr = _zbr_listen_addr(host, port, "Ws.serve");
+    var _srv = _zbr_listen(&_waddr, false) catch |e| {
         _zbr_listen_failed("Ws.serve", host, port, e);
         return;
     };
@@ -4377,8 +4448,8 @@ pub fn _tcp_serve(port_in: i64, handler: anytype, host: []const u8) void {
         }
     };
     const _alloc = std.heap.page_allocator;
-    var _addr = _zbr_listen_addr(host, port, "Tcp.serve");
-    var _srv = _addr.listen(_io, .{}) catch |e| {
+    const _addr = _zbr_listen_addr(host, port, "Tcp.serve");
+    var _srv = _zbr_listen(&_addr, false) catch |e| {
         _zbr_listen_failed("Tcp.serve", host, port, e);
         return;
     };

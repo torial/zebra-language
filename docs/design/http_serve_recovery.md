@@ -134,8 +134,9 @@ of the program found it taken.
 
 **A re-bind after a crash.** On POSIX the server process listens with SO_REUSEADDR, or Linux
 refuses the bind while the previous process's closed connections sit in TIME_WAIT (up to 60 s).
-Not on Windows, where SO_REUSEADDR lets a second socket take a port already bound (BUG-727 is
-that hazard without the flag). An unsupervised `Http.serve` is unchanged.
+Not on Windows, where SO_REUSEADDR lets a second socket take a port already bound; there every
+server binds exclusively since BUG-727 (measured: an exclusive rebind succeeds with the old
+server's connections in TIME_WAIT). An unsupervised `Http.serve` is unchanged.
 
 What a restart does NOT give: an answer to the request in flight (the client sees a reset), or
 anything held in memory. That is option C's ground.

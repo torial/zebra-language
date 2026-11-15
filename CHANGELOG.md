@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **On Windows a second server can no longer listen on a port another server holds (BUG-727).**
+  Zig 0.17 binds through AFD in its shared mode, so a second `Http.serve` / `Ws.serve` /
+  `Tcp.serve` on a held port listened silently and the old server went on answering. The
+  runtime now opens the listener through winsock with `SO_EXCLUSIVEADDRUSE`: the second server
+  prints `cannot listen on ...: AddressInUse` and its serve returns, as on POSIX. A port whose
+  server just stopped can still be listened on at once. A host that is not this machine's now
+  reports `AddressUnavailable` on Windows and says so outright instead of asking.
 - **`Http.serve(port, handler, restart: true)` restarts a server that crashes (BUG-701,
   option B).** The calling process becomes a supervisor and runs the program again as the
   server process. It restarts it after a panic or crash, with a backoff from 100 ms; the sixth
