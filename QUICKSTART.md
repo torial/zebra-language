@@ -2238,6 +2238,13 @@ print(c.area())                    # method call — parens required
 **Field visibility** — use `public` or `private` on fields and methods.
 `private` restricts the member to the owning class and excludes it from
 cross-module interface tables.  Default (no keyword) is equivalent to `public`.
+The class's own methods, its static methods and lambdas inside them may read,
+write and call a private member; anything else -- another class, a free
+function, another module -- is refused at `-c`, naming the member and the class
+(`'balance' is private to Wallet`). This holds for fields and methods alike, in
+the declaring module and in every module that `use`s it (BUG-708; before
+2026-11-15 a private method was callable anywhere, and a private field was
+reachable from another module).
 
 There is no `internal` and no `protected`.  `internal` named a middle level
 (hidden cross-module, visible within the module) but the two compilers disagreed

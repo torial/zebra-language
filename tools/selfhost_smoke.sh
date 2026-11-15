@@ -2229,6 +2229,13 @@ smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Tcp.serve's ho
 smoke_run_bounded test/bug701_serve_restart_test.zbr "bug701_serve_restart: OK" 240
 smoke_run_bounded test/bug727_listen_exclusive_test.zbr "bug727_listen_exclusive: OK" 180
 smoke_run test/bug723_chars_value_test.zbr "bug723_chars_value: OK"
+smoke_run test/bug708_private_ok_test.zbr "bug708_private_ok: OK"
+smoke_tc_fail test/bug708_private_fail_test.zbr "bug708_private_fail_test.zbr:14:7: error: 'secret' is private to Vault"
+smoke_tc_fail test/bug708_private_fail_test.zbr "bug708_private_fail_test.zbr:15:7: error: 'log' is private to Vault"
+smoke_tc_fail test/bug708_private_fail_test.zbr "bug708_private_fail_test.zbr:16:13: error: 'hidden' is private to Vault"
+smoke_tc_fail test/bug708_private_fail_test.zbr "bug708_private_fail_test.zbr:17:13: error: 'secret' is private to Vault"
+smoke_tc_fail test/bug708_private_fail_test.zbr "bug708_private_fail_test.zbr:19:13: error: 'bump' is private to Local"
+smoke_tc_fail test/bug708_private_fail_test.zbr "bug708_private_fail_test.zbr:22:13: error: 'tag' is private to Box"
 smoke_run test/bug733_decode_base64_optional_test.zbr "bug733_decode_base64_optional: OK"
 smoke_run test/bug734_json_depth_test.zbr "bug734_json_depth: OK"
 smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Ws.serve has no parameter 'restart' -- only Http.serve restarts"

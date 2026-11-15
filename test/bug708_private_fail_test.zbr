@@ -1,0 +1,22 @@
+# BUG-708: `private` was not enforced from another module, and never on methods. Each line below
+# reaches a private member of Vault (bug708_vault.zbr, beside this file) from outside the class and must be
+# refused at its column, naming the member and the class.
+use bug708_vault exposing Vault, Box
+
+class Local
+    private var tally: int = 0
+
+    private def bump(): int
+        return 1
+
+def main()
+    var v = Vault()
+    v.secret = "w"
+    v.log.append("x")
+    print(v.hidden())
+    print(v.secret)
+    var l = Local()
+    print(l.bump())
+    print(v.open)
+    var b = Box()
+    print(b.tag())

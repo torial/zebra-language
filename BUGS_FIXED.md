@@ -6,6 +6,62 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-708: `private` is not enforced from another module, and never on methods -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
+- **Repro:** `vault.zbr` declares `class Vault` with `private var secret: str`, `private var log:
+  StringBuilder` and `private def hidden(): str`. `other.zbr` does `use vault exposing Vault`, then
+  `v.secret = "w"`, `v.log.append("x")`, `print(v.hidden())`. `zebra -c other.zbr` exits 0 and the
+  program runs, printing the written value through both methods.
+- **Two defects, measured separately:**
+  1. **Fields, across modules.** In ONE file the field shapes are refused at their column
+     (`'secret' is private`, `'log' is private`, for a read, a write and a container mutation).
+     From another module none is. The check in `TypeChecker.zbr` (`'...' is private`, near the
+     BUG-680 runtime-object arms) asks only `ctx.module_types.isPrivateMember`; a dep's class
+     records its private keys in `dep_types`, which is never consulted (reading, not yet
+     measured: `populateModuleTypes` runs `addClassMembers` for deps, which records the key).
+  2. **Methods, everywhere.** `v.hidden()` is accepted even with the class and the call in the
+     same file. `addClassMembers` records a private method's key, but no call path reads it.
+- **Cost:** QUICKSTART §18 says `private` "restricts the member to the owning class". A type whose
+  point is an invariant -- Graze's `SafeHtml` keeps its text in a private `StringBuilder` so only
+  its methods can write it -- has no guarantee from the compiler. Graze covers it with a source
+  check of its own.
+- **Fix shape:** an `isPrivateMemberAny` beside `fieldTypeAny` (own module, dep table, bare-name
+  fallback), used by the field check; the same test on the member-call path for methods, with
+  the owning-class exemption. A refusal names the member and the class (`'hidden' is private to
+  Vault`). Before landing, measure: `-c` refusal counts over this repo, zebra-ide and the
+  GameEngine before and after, since a private method called from outside may exist today.
+- **Control when fixing:** each of the four repro lines refused at its column across modules, and
+  the method call refused in one file; the class's own methods still read and call every
+  private member; a public member of the same class still reachable from `other.zbr`.
+- **Fix:** `TypeChecker.zbr` has `isPrivateMemberAny` beside `fieldTypeAny` -- own module,
+  then the dep table (which `addClassMembers` fills for a `use`d module's classes too), then the
+  bare-name fallback -- and `privateRefusal(class, member)`, which allows the access only when
+  `current_class` is the owning class (its methods, static methods, and lambdas inside them).
+  The field check uses it in place of the own-module-only test, and the user-method return path
+  now asks it too, so a private method is refused wherever it is called from outside. The
+  message names the class: `'hidden' is private to Vault` (it was `'secret' is private`, which
+  the existing `visibility_tc_fail` registration still matches as a substring).
+- **Measured before landing:** `-c` over every tracked `.zbr` of this repo, zebra-ide and the
+  GameEngine (3,245 files), old binary against new, neither panicking on any: ONE file changed,
+  `test/visibility_tc_fail.zbr`, already refused, its message gaining ` to Vault`. No program in
+  the three repos reaches a private member from outside its class.
+- **Pinned by:** `test/bug708_private_fail_test.zbr` (`smoke_tc_fail` x6): with
+  `test/bug708_vault.zbr` beside it, a cross-module write, a container mutation, a private method
+  call and a read, each refused at its column; a private method called in one file; and a
+  mixin's private method called through its host class from outside (`'tag' is private to Box`
+  -- a mixin's methods merge into the host, keys included). Red: the pre-fix compiler accepts
+  all six. `test/bug708_private_ok_test.zbr` (`smoke_run`): the class's own methods, a lambda
+  inside one and a static method reach every private member; the mixin's own method and the
+  host's call the mixin's private method; another module reaches the public members.
+  Red-checked by removing the owning-class exemption: the helper module is refused at its
+  first private access.
+- **Not covered:** a mixin's private method is callable from the HOST class's methods (it is
+  merged into the host; mixin FIELDS are private to the mixin by BUG-595's own refusal) -- the
+  pinned behaviour, recorded so it is not mistaken for a gap. The message names the host
+  class, not the mixin, for that case.
+
+---
+
 ### BUG-733: `s.decodeBase64()` panics on input that is not base64 (BUG-701 option A) -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-15; found by the BUG-701 option A sweep: 48 operations x 38
   hostile inputs, each in its own process, reproduced on e4045ec)

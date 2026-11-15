@@ -1,0 +1,43 @@
+# BUG-708: the helper module for test/bug708_private_ok_test.zbr and
+# test/bug708_private_fail_test.zbr. Vault keeps its text in private members; only its
+# own code -- methods, a static method, a lambda inside a method -- may reach them. Box adds
+# Tagged, whose private method its own method and the host's may call, and nothing else.
+
+class Vault
+    private var secret: str = "s"
+    private var log: StringBuilder = StringBuilder()
+    var open: int = 1
+
+    private def hidden(): str
+        return this.secret + "-hidden"
+
+    private def logged(): str
+        return this.log.toString()
+
+    def reveal(): str
+        this.log.append("r")
+        return this.hidden() + "/" + this.logged()
+
+    def viaLambda(): str
+        var f = def(): str
+            return this.secret
+        return f()
+
+    static def make(s: str): Vault
+        var v = Vault()
+        v.secret = s
+        v.log.append("m")
+        return v
+
+mixin Tagged
+    private def tag(): str
+        return "t"
+
+    def show(): str
+        return "[" + this.tag() + "]"
+
+class Box adds Tagged
+    var n: int = 0
+
+    def both(): str
+        return this.tag() + this.show()

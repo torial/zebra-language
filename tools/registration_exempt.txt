@@ -40,6 +40,7 @@ bug590_lib  # helper module imported by bug590_iface_upstream_is_test; has no ma
 bug604_anim  # helper module for bug604_exposed_vs_transitive_test; has no main()
 bug604_clips  # helper module (loaded transitively) for the bug604 tests; has no main()
 bug604_comps  # helper module for the bug604 tests; has no main()
+bug708_vault  # helper module for the bug708 tests; has no main()
 bug238_except_lib  # helper module imported by other tests; has no main()
 bug476_sig_import_lib  # helper module imported by bug476_sig_import_test; has no main()
 bug496_module_init_lib  # helper module imported by bug496_module_runtime_init_test; has no main()

@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`private` is enforced on methods, and across modules (BUG-708).** A private method was
+  callable from anywhere, and a private field was reachable from a module that `use`d its class;
+  only a private field within one file was refused. Both are refused at `-c` now, naming the
+  member and the class (`'hidden' is private to Vault`); the class's own methods, static methods
+  and lambdas inside them still reach every private member. **Source change** for code that
+  reached a private member from outside its class: make the member public or go through a
+  method.
 - **`s.decodeBase64()` returns `str?` (BUG-733).** It panicked ("invalid base64") on any input
   that was not base64, so a server decoding a client value ended on one bad request. It is nil
   there now, like `Base64.decode(s)`. **Source change:** a use that wants the string writes

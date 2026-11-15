@@ -1917,6 +1917,31 @@ class InferCtx
             return .dep_types.fieldType(bare, field_name)
         return nil
 
+    # BUG-708: is `member_name` private to `class_name`, wherever the class is declared? The
+    # field check asked only module_types, so a dep's private field was reachable from the module
+    # that `use`d it; dep_types holds the dep's keys (addClassMembers runs for deps too). Same
+    # lookup order as fieldTypeAny, bare-name fallback included.
+    def isPrivateMemberAny(class_name: str, member_name: str): bool
+        if .module_types.isPrivateMember(class_name, member_name)
+            return true
+        if .dep_types.isPrivateMember(class_name, member_name)
+            return true
+        var bare: str = stripModulePrefix(class_name)
+        if bare != class_name
+            return .module_types.isPrivateMember(bare, member_name) or .dep_types.isPrivateMember(bare, member_name)
+        return false
+
+    # BUG-708: the refusal of a private member reached from outside its class, or nil when the
+    # access is allowed. The class's own methods (and its static methods, lambdas inside them)
+    # run with `current_class` set to it; nothing else may reach a private member.
+    def privateRefusal(class_name: str, member_name: str): str?
+        if not .isPrivateMemberAny(class_name, member_name)
+            return nil
+        var bare: str = stripModulePrefix(class_name)
+        if .current_class == class_name or .current_class == bare
+            return nil
+        return "'" + member_name + "' is private to " + bare
+
     # BUG-604: the `$fns:<module>` entry of the module this file EXPOSES `name` from, when it
     # is not a def of this file itself -- or nil. A bare free-function lookup consults it
     # before the "" table every dependency shares.
@@ -4357,9 +4382,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     return Type_.named(tn)
                 var ft: Type_? = ctx.fieldTypeAny(tn, m.member)
                 if ft as ft_v
-                    if ctx.module_types.isPrivateMember(tn, m.member)
-                        if ctx.current_class != tn
-                            ctx.addErr(ctx.file, m.span.line, m.span.col, "'" + m.member + "' is private")
+                    if ctx.privateRefusal(tn, m.member) as pf_why
+                        ctx.addErr(ctx.file, m.span.line, m.span.col, pf_why)
                     return ft_v
                 # BUG-594: a member a USER class or struct does not have -- read or assigned
                 # (`c.nothere`, `c.alsonot = 3`) -- passed the front end and reached zig as
@@ -4968,6 +4992,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                     return Type_.unknown_
                             var rt: Type_? = ctx.methodReturnAny(tn, mem.member)
                             if rt as rt_v
+                                # BUG-708: a private METHOD was callable from anywhere -- the
+                                # key was recorded and no call path read it.
+                                if ctx.privateRefusal(tn, mem.member) as pm_why
+                                    ctx.addErr(ctx.file, mem.span.line, mem.span.col, pm_why)
                                 ctx.noteDeprecated(tn, mem.member, mem.span.line, mem.span.col)
                                 # A generic interface method returning one of its own type
                                 # parameters (`def convert(x: A): B`): the argument is not

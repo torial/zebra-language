@@ -72,36 +72,6 @@
 
 ---
 
-### BUG-708: `private` is not enforced from another module, and never on methods
-- **Status:** OPEN (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
-- **Repro:** `vault.zbr` declares `class Vault` with `private var secret: str`, `private var log:
-  StringBuilder` and `private def hidden(): str`. `other.zbr` does `use vault exposing Vault`, then
-  `v.secret = "w"`, `v.log.append("x")`, `print(v.hidden())`. `zebra -c other.zbr` exits 0 and the
-  program runs, printing the written value through both methods.
-- **Two defects, measured separately:**
-  1. **Fields, across modules.** In ONE file the field shapes are refused at their column
-     (`'secret' is private`, `'log' is private`, for a read, a write and a container mutation).
-     From another module none is. The check in `TypeChecker.zbr` (`'...' is private`, near the
-     BUG-680 runtime-object arms) asks only `ctx.module_types.isPrivateMember`; a dep's class
-     records its private keys in `dep_types`, which is never consulted (reading, not yet
-     measured: `populateModuleTypes` runs `addClassMembers` for deps, which records the key).
-  2. **Methods, everywhere.** `v.hidden()` is accepted even with the class and the call in the
-     same file. `addClassMembers` records a private method's key, but no call path reads it.
-- **Cost:** QUICKSTART §18 says `private` "restricts the member to the owning class". A type whose
-  point is an invariant -- Graze's `SafeHtml` keeps its text in a private `StringBuilder` so only
-  its methods can write it -- has no guarantee from the compiler. Graze covers it with a source
-  check of its own.
-- **Fix shape:** an `isPrivateMemberAny` beside `fieldTypeAny` (own module, dep table, bare-name
-  fallback), used by the field check; the same test on the member-call path for methods, with
-  the owning-class exemption. A refusal names the member and the class (`'hidden' is private to
-  Vault`). Before landing, measure: `-c` refusal counts over this repo, zebra-ide and the
-  GameEngine before and after, since a private method called from outside may exist today.
-- **Control when fixing:** each of the four repro lines refused at its column across modules, and
-  the method call refused in one file; the class's own methods still read and call every
-  private member; a public member of the same class still reachable from `other.zbr`.
-
----
-
 ### BUG-709: `zebra -c` accepts a `str` or `int` where a class is expected
 - **Status:** OPEN (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
 - **Repro:** `class SafeHtml` and `def html(body: SafeHtml)`; then `html("<p>")`, `return name`

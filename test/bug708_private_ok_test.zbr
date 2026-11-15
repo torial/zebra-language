@@ -1,0 +1,16 @@
+# BUG-708: what `private` must still ALLOW once it is enforced across modules and on methods.
+# Vault (test/bug708_vault.zbr) reaches its own private fields and methods from its methods, a
+# lambda inside one, and a static method; another module reaches its public field and methods.
+use bug708_vault exposing Vault, Box
+
+def main()
+    var v = Vault()
+    print(v.open)
+    print(v.reveal())
+    print(v.viaLambda())
+    var w = Vault.make("k")
+    print(w.reveal())
+    var b = Box()
+    print(b.show())
+    print(b.both())
+    print("bug708_private_ok: OK")
