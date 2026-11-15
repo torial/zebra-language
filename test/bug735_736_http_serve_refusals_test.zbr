@@ -1,0 +1,112 @@
+# BUG-735 / BUG-736 -- what Http.serve refuses before (and after) the handler, read off the
+# WIRE with a raw Tcp client.
+#
+# BUG-735: a request the server cannot read as the client sent it is answered 400 (or 501 for a
+# transfer coding) and the handler is NOT called. Each of these used to reach the handler with a
+# value made up in its place: method "GET" / path "/" for a request line that had none, an
+# empty body for a Content-Length that did not parse, a short body as if whole, a header value
+# holding a bare line break. Every refusal is followed by a request that must still be served.
+# BUG-736: a response header whose name is not a token or whose value holds CR/LF is never
+# written: the response becomes a 500. The client route to it (a bare LF echoed back from a
+# request header) is closed by BUG-735's 400; the handler's own literal is the other route.
+# Not covered here, because a TcpConn cannot half-close: a request ending in bare-LF line
+# endings (the server waits for a CRLFCRLF that never comes until the client closes).
+var handled_short: bool = false
+
+def handle(req: HttpRequest): HttpResponse
+    if req.path == "/short"
+        handled_short = true
+        return HttpResponse.ok("short")
+    if req.path == "/echo"
+        var v = "none"
+        if req.header("X-A") as a
+            v = a
+        return HttpResponse.ok("echo").withHeader("X-Echo", v)
+    if req.path == "/crlf"
+        return HttpResponse.ok("x").withHeader("X-Split", "a\r\nInjected: 1")
+    if req.path == "/badname"
+        return HttpResponse.ok("x").withHeader("Bad Name", "v")
+    return HttpResponse.ok("m=${req.method} p=${req.path} b=${req.content}")
+
+def raw(req: str): str
+    if Tcp.connect("127.0.0.1", 19971) as c
+        c.write(req)
+        var got = c.readAll()
+        c.close()
+        return got
+    return "<no connection>"
+
+def refused(req: str, status: str, what: str)
+    var got = raw(req)
+    assert got.startsWith("HTTP/1.1 " + status + "\r\n"), what + ": " + got
+    var next = raw("GET /next HTTP/1.1\r\nHost: t\r\n\r\n")
+    assert next.endsWith("m=GET p=/next b="), what + ", then: " + next
+
+def main()
+    sys.go(def()
+        Http.serve(19971, handle)
+    )
+    var reached: bool = false
+    var attempts: int = 0
+    while attempts < 40 and not reached
+        if Http.get("http://127.0.0.1:19971/") as _r0
+            reached = true
+        else
+            sys.sleep(50)
+        attempts = attempts + 1
+    assert reached, "client reached the in-process server"
+
+    # Controls: a well-formed request with a body, and two Content-Length lines that agree.
+    assert raw("POST /x HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabc").endsWith("m=POST p=/x b=abc")
+    assert raw("POST /x HTTP/1.1\r\nContent-Length: 3\r\nContent-Length: 3\r\n\r\nabc").endsWith("b=abc")
+    assert raw("GET /e HTTP/1.1\r\nX-A: plain value\r\n\r\n").endsWith("m=GET p=/e b=")
+    var echo = raw("GET /echo HTTP/1.1\r\nX-A: hello\r\n\r\n")
+    assert echo.contains("\r\nX-Echo: hello\r\n"), echo
+    print("bug735: controls OK")
+
+    # BUG-735: the request line.
+    refused("GET\r\n\r\n", "400 Bad Request", "no target")
+    refused("\r\n\r\n", "400 Bad Request", "empty request line")
+    refused("GET / HTTP/1.1 extra\r\n\r\n", "400 Bad Request", "four parts")
+    refused("GET /\r\n\r\n", "400 Bad Request", "no version")
+    refused("GET ?a=1 HTTP/1.1\r\n\r\n", "400 Bad Request", "a target that is not a path")
+    refused("G@T / HTTP/1.1\r\n\r\n", "400 Bad Request", "a method that is not a token")
+    refused("GET /a\x00b HTTP/1.1\r\n\r\n", "400 Bad Request", "a NUL in the target")
+    # The header lines.
+    refused("GET / HTTP/1.1\r\nNoColonHere\r\n\r\n", "400 Bad Request", "a header with no colon")
+    refused("GET / HTTP/1.1\r\n: v\r\n\r\n", "400 Bad Request", "an empty header name")
+    refused("GET / HTTP/1.1\r\nX-A : v\r\n\r\n", "400 Bad Request", "whitespace before the colon")
+    refused("GET /echo HTTP/1.1\r\nX-A: a\nSet-Cookie: injected=1\r\n\r\n", "400 Bad Request", "a bare LF in a header value")
+    refused("GET / HTTP/1.1\r\nX-A: a\rb\r\n\r\n", "400 Bad Request", "a bare CR in a header value")
+    refused("GET / HTTP/1.1\r\nX-A: a\x00b\r\n\r\n", "400 Bad Request", "a NUL in a header value")
+    # Content-Length.
+    refused("POST / HTTP/1.1\r\nContent-Length: 12abc\r\n\r\nhello", "400 Bad Request", "Content-Length 12abc")
+    refused("POST / HTTP/1.1\r\nContent-Length: -5\r\n\r\nhello", "400 Bad Request", "Content-Length -5")
+    refused("POST / HTTP/1.1\r\nContent-Length: +5\r\n\r\nhello", "400 Bad Request", "Content-Length +5")
+    refused("POST / HTTP/1.1\r\nContent-Length: 18446744073709551616\r\n\r\n", "400 Bad Request", "Content-Length past usize")
+    refused("POST / HTTP/1.1\r\nContent-Length: 3\r\nContent-Length: 5\r\n\r\nabcde", "400 Bad Request", "two Content-Lengths that disagree")
+    refused("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n", "501 Not Implemented", "a transfer coding")
+    print("bug735: request line, header and Content-Length refusals OK")
+
+    # A body that ends short: the client closes after 3 of 100 bytes. The answer cannot be read
+    # (the client is gone), so what is checked is that the handler never ran.
+    if Tcp.connect("127.0.0.1", 19971) as c
+        c.write("POST /short HTTP/1.1\r\nContent-Length: 100\r\n\r\nabc")
+        c.close()
+    # A connection that sends nothing at all.
+    if Tcp.connect("127.0.0.1", 19971) as c2
+        c2.close()
+    sys.sleep(300)
+    assert raw("GET /next HTTP/1.1\r\n\r\n").endsWith("m=GET p=/next b=")
+    assert not handled_short, "the handler ran on a body that ended short"
+    print("bug735: a short body never reaches the handler OK")
+
+    # BUG-736: the handler's own header literal.
+    var split = raw("GET /crlf HTTP/1.1\r\n\r\n")
+    assert split.startsWith("HTTP/1.1 500 Internal Server Error\r\n"), split
+    assert not split.contains("Injected"), split
+    var badname = raw("GET /badname HTTP/1.1\r\n\r\n")
+    assert badname.startsWith("HTTP/1.1 500 Internal Server Error\r\n"), badname
+    assert raw("GET /next HTTP/1.1\r\n\r\n").endsWith("m=GET p=/next b=")
+    print("bug736: a response header holding a line break is never written OK")
+    print("bug735_736_http_serve_refusals: OK")

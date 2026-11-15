@@ -2,7 +2,8 @@
 # Http.serve: surviving a handler that panics (BUG-701)
 
 Status: DECIDED 2026-11-12 (Sean): A, then B, and both are required -- B is not optional once A
-lands. Nothing built yet.
+lands. A in progress: BUG-703, 704, 715 (2026-11-13), 735, 736 (2026-11-15) fixed; BUG-733 and
+734 open (the 2026-11-15 sweep, recorded under BUG-701). B not started.
 
 ## The problem
 

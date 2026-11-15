@@ -4886,9 +4886,17 @@ onto the constructor (BUG-700, fixed 2026-11-12). The server sends
 `Content-Type: text/html; charset=utf-8` unless the handler sets its own Content-Type
 (BUG-698). Read a request header with `req.header(name)`.
 
-The server refuses two things itself, before the handler runs (BUG-699): a request
+The server refuses some requests itself, before the handler runs: a request
 claiming a body over **1 MB** gets `413 Content Too Large`, and a header block over 16 KB
-gets `431 Request Header Fields Too Large`. The 1 MB limit is fixed. There is no read
+gets `431 Request Header Fields Too Large` (BUG-699). A request it cannot read as sent gets
+`400 Bad Request` (BUG-735): a request line that is not `METHOD target HTTP/version`, a target
+that does not start with `/` (or is not `*` or an absolute URL) or holds a control byte, a
+header line with no colon or with a space before it, a bare CR or LF or a NUL in a header, a
+Content-Length that is not digits only, two Content-Lengths that disagree, a body shorter
+than its Content-Length, and lines ended by a bare LF. A `Transfer-Encoding` (chunked bodies)
+gets `501 Not Implemented`. A response header whose name is not a token or whose value holds
+CR or LF is never written: the client gets `500 Internal Server Error` and stderr names the
+header (BUG-736). The 1 MB limit is fixed. There is no read
 deadline yet: each connection runs on its own thread, and a client that sends slowly
 holds that thread. A handler that panics ends the whole server (BUG-701, open). Bytes
 that are not UTF-8 no longer do (`chars()` yields escape chars, BUG-703), but a handler

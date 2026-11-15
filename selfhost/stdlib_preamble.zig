@@ -2959,6 +2959,51 @@ pub const _HTTP_MAX_BODY: usize = 1024 * 1024;
 /// not lost to a reset, and for how long.
 pub const _HTTP_DRAIN_MAX: usize = 16 * 1024 * 1024;
 pub const _HTTP_DRAIN_NS: i128 = 10 * std.time.ns_per_s;
+/// RFC 9110 5.6.2 `token`: one or more of ALPHA DIGIT and !#$%&'*+-.^_`|~. A method and a
+/// header field name are tokens, so a space, a colon, a CR/LF or an empty name is not one.
+pub fn _http_is_token(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| {
+        if (std.ascii.isAlphanumeric(c)) continue;
+        if (std.mem.indexOfScalar(u8, "!#$%&'*+-.^_`|~", c) == null) return false;
+    }
+    return true;
+}
+/// True when every CR in `s` starts a CRLF and every LF ends one (BUG-735).
+pub fn _http_crlf_only(s: []const u8) bool {
+    for (s, 0..) |c, i| {
+        if (c == '\r' and (i + 1 >= s.len or s[i + 1] != '\n')) return false;
+        if (c == '\n' and (i == 0 or s[i - 1] != '\r')) return false;
+    }
+    return true;
+}
+/// True when `s` holds a control byte (below 0x20, or DEL). Bytes from 0x80 up are allowed:
+/// a path that is not UTF-8 reaches the handler, which checks `isValidUtf8()` (BUG-703).
+pub fn _http_has_ctl(s: []const u8) bool {
+    for (s) |c| if (c < 0x20 or c == 0x7f) return true;
+    return false;
+}
+/// A Content-Length value: one or more ASCII digits that fit a usize; null otherwise. Checked
+/// by hand first because `parseInt` also takes a sign and `_` separators (BUG-735).
+pub fn _http_parse_length(s: []const u8) ?usize {
+    if (s.len == 0) return null;
+    for (s) |c| if (c < '0' or c > '9') return null;
+    return std.fmt.parseInt(usize, s, 10) catch null;
+}
+/// BUG-736: say which response header was refused. The VALUE is not printed (it may be
+/// anything a client sent); a name that is not a token is printed with its unprintable bytes
+/// escaped, so the message itself cannot carry a line break.
+pub fn _http_bad_resp_header(name: []const u8, name_ok: bool) void {
+    if (name_ok) {
+        std.debug.print("Http.serve: the value of response header '{s}' holds a line break (CR or LF) -- answered 500 Internal Server Error instead\n", .{name});
+        return;
+    }
+    std.debug.print("Http.serve: response header name '", .{});
+    for (name) |c| {
+        if (c >= 0x20 and c < 0x7f) std.debug.print("{c}", .{c}) else std.debug.print("\\x{x:0>2}", .{c});
+    }
+    std.debug.print("' is not a valid header name (empty, or holds ':', whitespace or a line break) -- answered 500 Internal Server Error instead\n", .{});
+}
 pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
     const port = _zbr_port(port_in, "Http.serve") orelse return;
     const _HFn = *const fn(HttpRequest) HttpResponse;
@@ -3012,30 +3057,78 @@ pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
             // A header block that fills the buffer without ending used to be parsed AS IF it
             // were complete -- a truncated last header handed to the handler as real.
             if (!_hdr_done and _hl >= _hd.len - 1) { ctx.reject(&_srv_rd.interface, "431 Request Header Fields Too Large", _HTTP_MAX_BODY); return; }
+            // BUG-735: a request the parser cannot read as the client sent it is answered 400
+            // (or 501) and the handler is NOT called. Each case below used to reach the handler
+            // with a value made up in its place: method "GET" and path "/" for a request line
+            // that had none, an empty body for a Content-Length that did not parse, a short
+            // body as if whole, a header value holding a bare line break.
+            // A connection closed before it sent a byte is not a request: nothing to answer.
+            if (_hl == 0) return;
+            // The client stopped before the blank line that ends the headers: it closed, or it
+            // ends lines with a bare LF, which this server does not accept (RFC 9112 2.2 lets a
+            // server refuse it).
+            if (!_hdr_done) { ctx.reject(&_srv_rd.interface, "400 Bad Request", 0); return; }
             const _head = _hd[0.._hl];
-            // Parse request line: METHOD PATH VERSION
+            // Every CR must start a CRLF and every LF end one. A bare LF inside a header value
+            // reached `req.header()`, and a handler that echoed it into a response header wrote
+            // a header line the CLIENT chose (BUG-736).
+            if (!_http_crlf_only(_head)) { ctx.reject(&_srv_rd.interface, "400 Bad Request", _HTTP_MAX_BODY); return; }
+            // The request line: exactly METHOD SP target SP HTTP/version.
             const _rl_end = std.mem.indexOf(u8, _head, "\r\n") orelse _hl;
             var _rp = std.mem.splitScalar(u8, _head[0.._rl_end], ' ');
-            const _method = _rp.next() orelse "GET";
-            const _raw_path = _rp.next() orelse "/";
+            const _method = _rp.next() orelse "";
+            const _raw_path = _rp.next() orelse "";
+            const _version = _rp.next() orelse "";
+            // The target is a path (`/...`), `*` (OPTIONS), or an absolute URL (what a client
+            // sends to a proxy), and holds no control byte: `GET ?a=1` reached the handler with
+            // path "" and a NUL in a path reached it whole.
+            const _target_ok = _raw_path.len > 0 and !_http_has_ctl(_raw_path) and
+                (_raw_path[0] == '/' or std.mem.eql(u8, _raw_path, "*") or
+                 std.ascii.startsWithIgnoreCase(_raw_path, "http://") or std.ascii.startsWithIgnoreCase(_raw_path, "https://"));
+            if (_rp.next() != null or !_http_is_token(_method) or !_target_ok or
+                !std.mem.startsWith(u8, _version, "HTTP/"))
+            {
+                ctx.reject(&_srv_rd.interface, "400 Bad Request", _HTTP_MAX_BODY);
+                return;
+            }
             // Split ONCE at the first '?' and keep BOTH halves. This used to cut the
             // path and discard the remainder, so a handler could not reach `?q=` at all
             // -- which is why callers reached for `/search/{q}` path-param stand-ins.
             const _q_at = std.mem.indexOfScalar(u8, _raw_path, '?');
             const _path = if (_q_at) |_qi| _raw_path[0.._qi] else _raw_path;
             const _query = if (_q_at) |_qi| _raw_path[_qi + 1 ..] else "";
-            // Parse Content-Length.
+            // The header lines: each is `name: value` with a token name and no whitespace
+            // before the colon (RFC 9112 5.1 says a server MUST refuse that with 400).
+            // Content-Length is digits only -- `parseInt .. catch 0` read `12abc`, `-5` and an
+            // overflow as 0 and dropped the body -- and two that disagree are refused (RFC 9112
+            // 6.3). A transfer coding is not implemented, so its body would have been dropped
+            // too: 501.
             var _cl: usize = 0;
+            var _cl_seen = false;
+            var _bad_hdr = false;
+            var _has_te = false;
             var _hdr_it = std.mem.splitSequence(u8, _head, "\r\n");
             _ = _hdr_it.next();
             while (_hdr_it.next()) |_hl_| {
                 if (_hl_.len == 0) break;
-                const _cp = std.mem.indexOfScalar(u8, _hl_, ':') orelse continue;
-                const _hn = std.mem.trim(u8, _hl_[0.._cp], " ");
-                const _hv = std.mem.trim(u8, _hl_[_cp+1..], " ");
-                if (std.ascii.eqlIgnoreCase(_hn, "content-length"))
-                    _cl = std.fmt.parseInt(usize, _hv, 10) catch 0;
+                const _cp = std.mem.indexOfScalar(u8, _hl_, ':') orelse { _bad_hdr = true; break; };
+                const _hn = _hl_[0.._cp];
+                if (!_http_is_token(_hn)) { _bad_hdr = true; break; }
+                const _hv = std.mem.trim(u8, _hl_[_cp+1..], " \t");
+                // RFC 9110 5.5: a field value holding NUL (CR and LF are refused above) is
+                // refused, not handed on.
+                if (std.mem.indexOfScalar(u8, _hv, 0) != null) { _bad_hdr = true; break; }
+                if (std.ascii.eqlIgnoreCase(_hn, "content-length")) {
+                    const _n = _http_parse_length(_hv) orelse { _bad_hdr = true; break; };
+                    if (_cl_seen and _n != _cl) { _bad_hdr = true; break; }
+                    _cl = _n;
+                    _cl_seen = true;
+                } else if (std.ascii.eqlIgnoreCase(_hn, "transfer-encoding")) {
+                    _has_te = true;
+                }
             }
+            if (_bad_hdr) { ctx.reject(&_srv_rd.interface, "400 Bad Request", _HTTP_MAX_BODY); return; }
+            if (_has_te) { ctx.reject(&_srv_rd.interface, "501 Not Implemented", _HTTP_MAX_BODY); return; }
             // BUG-699: the claimed length was allocated as given, so one request claiming
             // gigabytes panicked the process (OOM) before a byte of body arrived. Refused
             // with 413 without reading the body. A fixed limit (_HTTP_MAX_BODY); not settable.
@@ -3050,6 +3143,9 @@ pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
                     if (_rn == 0) break;
                     _bi += _rn;
                 }
+                // The client closed before the body it announced was complete. Handing the
+                // handler the part that came, as if whole, is a made-up body (BUG-735).
+                if (_bi < _cl) { _alloc.free(_bb); ctx.reject(&_srv_rd.interface, "400 Bad Request", 0); return; }
                 _body = _bb[0.._bi];
             }
             // The header lines, copied out of the stack buffer so `req.header()` stays valid.
@@ -3070,6 +3166,16 @@ pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
             };
             // BUG-698: the default Content-Type is sent only when the handler set none; a
             // handler's own `withHeader("Content-Type", ..)` used to go out as a SECOND line.
+            // BUG-736: a header the handler set is written as given, so a name or value holding
+            // CR or LF writes header lines nobody declared -- from a value echoed out of a
+            // request, a header line the client chose. Checked before anything is sent: the
+            // response is replaced by a 500 and stderr names the header. Not a panic (BUG-701).
+            for (_resp.headers) |_kv| {
+                if (_http_is_token(_kv[0]) and std.mem.indexOfAny(u8, _kv[1], "\r\n") == null) continue;
+                _http_bad_resp_header(_kv[0], _http_is_token(_kv[0]));
+                ctx.reject(&_srv_rd.interface, "500 Internal Server Error", 0);
+                return;
+            }
             var _has_ct = false;
             var _xh: std.ArrayList(u8) = .empty;
             for (_resp.headers) |_kv| {

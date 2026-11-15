@@ -6,6 +6,60 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-735: `Http.serve` handed malformed requests to the handler with made-up fields -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; found by the BUG-701 option A sweep, 26 hostile
+  raw requests against a handler that reads every field; reproduced on e4045ec). No request
+  killed the server.
+- **Observed:** an empty request, `\r\n\r\n`, or a request line with no path reached the handler
+  as method `""` or `"GET"` and path `"/"`, and was answered 200 (the parser's `orelse "GET"` /
+  `orelse "/"`). `Content-Length: 12abc`, `-5` or `18446744073709551616` was read as 0 and the
+  body ignored (`parseInt ... catch 0`). Two different Content-Length lines: the last won. A body
+  shorter than its Content-Length (the client closed) was handed over as if complete. A bare LF
+  inside a header line was kept, so `req.header()` could return a value holding a line break --
+  which `Http.request` refuses with a panic if a handler forwards it (proxy shape), and which
+  BUG-736 wrote straight into a response. `GET ?a=1` reached the handler with path `""`, and a
+  NUL in a path or header reached it whole.
+- **Why it mattered:** RFC 9112 §6.3 requires a 400 and a close for an invalid Content-Length,
+  and each case handed the handler values the client never sent.
+- **Fix:** `_http_serve` answers 400 without calling the handler for a request line that is not
+  `METHOD SP target SP HTTP/version` (method a token, target `/...`, `*` or an absolute URL with
+  no control byte), a header line with no colon or a name that is not a token (so whitespace
+  before the colon, RFC 9112 5.1), any bare CR or LF in the header block, a NUL in a header
+  value, a Content-Length that is not digits only or overflows, two that disagree, and a body
+  that ends short. A `Transfer-Encoding` is answered 501 (its body was dropped too). Lines ended
+  by a bare LF are refused (RFC 9112 2.2 lets a server do so). A connection closed before
+  sending a byte gets no answer. Helpers `_http_is_token`, `_http_crlf_only`, `_http_has_ctl`,
+  `_http_parse_length`.
+- **Pinned by:** `test/bug735_736_http_serve_refusals_test.zbr` (`smoke_run_bounded`): 19
+  refusals each followed by a request that must be served, controls that must still be served
+  (a body, two agreeing Content-Lengths, an ordinary header, an echoed one), and a short body
+  whose handler must never run. Red on the old runtime at its first refusal (`no target: HTTP/1.1
+  200 OK`). The sweep's 26 raw requests: each answered as above, the server alive throughout.
+- **Not done:** a read deadline (BUG-699's open half): a client that announces a body and sends
+  none still holds a thread until it closes.
+
+---
+
+### BUG-736: `Http.serve` wrote response header names and values unchecked -- a line break in one injected headers -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; found by the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** a handler returned `HttpResponse.new(200, "body").withHeader("X-Echo", v)` with `v`
+  read from `req.header("X-A")`. A client sent `X-A: a\nSet-Cookie: injected=1`; the response
+  carried `X-Echo: a\nSet-Cookie: injected=1\r\n` -- a second header line the client chose, for
+  any client that accepts a bare LF. A value holding `\r\n` from anywhere else was a full split.
+- **Cause:** `_http_serve` appended `_kv[0]`, `": "`, `_kv[1]` with no check. `Http.request`
+  checks the same thing on the way OUT (and panics).
+- **Fix:** before anything is sent, every response header's name must be a token and its value
+  hold no CR or LF; otherwise the response is replaced by `500 Internal Server Error` and stderr
+  names the header (the value is never printed; a bad name is printed with unprintable bytes
+  escaped). Not a panic (BUG-701). BUG-735's bare-LF refusal closes the client route; this
+  closes every route.
+- **Pinned by:** the BUG-735 fixture's last legs: a handler literal `"a\r\nInjected: 1"` and a
+  name `"Bad Name"` each answered 500 with no injected line, and the next request served. Red on
+  the old runtime (`200 OK` carrying the split header), checked with those legs alone.
+
+---
+
+
 ### BUG-726: `Net.resolve` answers an empty list when the lookup FAILS, and at most one address -- FIXED 2026-11-14
 - **Status:** FIXED 2026-11-14 (filed 2026-11-14; found writing BUG-719's LAN fixture)
 - **Repro:** on torial, `Net.resolve("localhost")` and `Net.resolve(sys.getenv("COMPUTERNAME")!)`

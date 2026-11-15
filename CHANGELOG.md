@@ -23,6 +23,19 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Http.serve` refuses a request it cannot read as sent, and a response header holding a line
+  break (BUG-735, BUG-736).** These used to reach the handler with a value made up in place of
+  what the client sent: a request line with no method, target or `HTTP/` version (method "GET",
+  path "/"), a target that is not a path or holds a control byte, a header line with no colon or
+  a name that is not a token, a bare CR or LF or a NUL in a header, a Content-Length that is not
+  digits only (`12abc`, `-5` and an overflow were read as 0, the body dropped), two that
+  disagree, and a body that ends short. Each is now answered `400 Bad Request` without calling
+  the handler; a `Transfer-Encoding` is answered `501 Not Implemented` (its body was dropped too).
+  A connection closed before sending anything gets no answer. A response header whose name is
+  not a token or whose value holds CR or LF used to be written as given, so a handler echoing a
+  request header could send a header line the client chose; the response is now a `500` and
+  stderr names the header. Neither is a panic: the server keeps serving (BUG-701).
+
 - **`Net.resolve` looks names up (BUG-726).** It called a function that only parses an address
   literal, so `Net.resolve("localhost")` answered an empty list, exactly as a name that does not
   exist did, and at most one IPv4 address ever came back. It now asks the system resolver and
