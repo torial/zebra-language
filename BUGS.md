@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-727. Next new bug: BUG-728.**
+**Last bug number generated: BUG-732. Next new bug: BUG-733.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -281,6 +281,92 @@
   `+`) -- and pin every alignment.
 - **Control when fixing:** the repro prints `[  1] [  1] [1  ] [  7] [001] [ -1]`; `${n:+>3}` and
   `${n:+}` still show the sign where the spec asks for it.
+
+---
+
+### BUG-728: an imported function's `throws` is invisible to the front end
+- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session moving procgen's generated
+  clients to `throws`; repros `C:\tmp\conc\optprobe\xmod`, reproduced on d9067e4)
+- **Repro:** `riskmod.zbr` declares `def risky(n: int): List(int) throws`; a caller does
+  `use riskmod exposing risky`. `-c` passes all five shapes. (1) An unmarked call is not refused
+  for want of `?`; zig refuses it instead: `var xs = risky(n)` then `xs.count()` -> "type
+  'anyerror!List(int)' does not support field access", and a bare `risky(n)` statement -> "error
+  union is discarded". (2) Under a method-level `catch |e|` the unmarked call is not routed to the
+  catch: zig reports "unused block label" at the def's line. The marked form, `risky(n)?`, under
+  the same catch works ("ok 1" / "caught: refused -2"), and so does the same program in one module.
+- **Why it matters:** QUICKSTART §12 says the `?` rule holds across modules. The user gets a zig
+  diagnostic about code they never wrote, and the catch they wrote does nothing until they add `?`.
+- **Fix shape:** carry `throws` on the imported signature the checker sees (the table that already
+  carries the return type), so the unmarked-call refusal and the method-catch routing both fire.
+- **Control when fixing:** both unmarked repros are refused at `-c`, naming `risky` and `?`; the
+  marked form is unchanged; a same-module throws call is unchanged.
+
+---
+
+### BUG-729: an unmarked throwing call nested in an expression, under a method-level `catch`, passes `-c` and emits Zig that does not parse
+- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session in zebra-sprocket's check_crud
+  driver; reproduced on d9067e4)
+- **Repro:** one module, `def risky(n: int): List(int) throws`, and a def ending in `catch |e|`
+  that uses the call without `?` as a `for` operand (`for x in risky(n)`) -> zig "expected ','
+  after for operand"; or inside an interpolation (`"count ${risky(n).count()}"`) -> zig "expected
+  ',' after argument". `-c` passes both.
+- **Why it matters:** DESIGN-001 says a throwing call nested in an expression needs an explicit
+  `?`, and with it both positions work (`for x in risky(n)?` and `"${(risky(n)?).count()}"` print
+  the right values and route a raise to the catch). So the front end owes a refusal here and
+  emits text that is not Zig instead.
+- **A trap in the fix's wording:** `risky(n)?.count()` is read as optional chaining (`?.`) and
+  fails inside zig ("expected optional type, found 'List(int)'"); only `(risky(n)?).count()` or a
+  temp works. A refusal that suggests "add `?`" must say where, or it sends the user into a
+  second zig error.
+- **Fix shape:** refuse an unmarked throws call in a non-statement position at `-c`, naming the
+  call and the parenthesised form; separately, decide whether `f()?.m()` on a throws call should
+  parse as propagate-then-call.
+- **Control when fixing:** both unmarked positions are refused at their lines; the marked forms
+  still print "walked 2 / caught: refused -2 / count 1 / caught: refused -2"; a call bound to a
+  var is unchanged.
+
+---
+
+### BUG-730: a throwing function passed where a non-throwing `def` type is expected is refused only by zig, inside zebra_rt.zig
+- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; repro
+  `C:\tmp\conc\optprobe\t_value.zbr`, reproduced on d9067e4)
+- **Repro:** `def propagates(n: int): str` calls `risky(n)?` (so it throws), and is passed to
+  `def dispatch(h: def(int): str, n: int)`. `-c` passes; zig: "expected type '[]const u8', found
+  'anyerror![]const u8'" at `zebra_rt.zig:3794`, with no .zbr line at all.
+- **Fix shape:** the checker compares the argument's throwing-ness against the `def` type and
+  refuses at the call site, naming the function and the parameter.
+- **Control when fixing:** refused at `-c` at the call's line; a non-throwing handler passed the
+  same way is unchanged.
+
+---
+
+### BUG-731: an optional list used as a list is refused only by zig, and the `else` of `if x == nil` does not narrow
+- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; repros
+  `C:\tmp\conc\optprobe\p_for.zbr`, `p_pass.zbr`, `n_narrow.zbr`, reproduced on d9067e4)
+- **Repro:** `def gone(d: SqliteDb): List(ItemRow)?`. (1) `for it in gone(d)` passes `-c`; zig:
+  "type '?List(ItemRow)' does not support field access". (2) `page(gone(d))` where
+  `page(xs: List(ItemRow))` passes `-c`; zig: "expected type 'T', found '?T'". (3)
+  `if ys == nil` / `print("ys is nil")` / `else` / `print("ys count ${ys.count()}")` is refused
+  at `-c` (n_narrow.zbr:26:27, "'ys' may be nil here"), although the `else` branch can only run
+  when `ys` is not nil; the early-return form of the same test narrows.
+- **Why it matters:** (1) and (2) are the nil-safety rule failing open into zig's words; (3)
+  refuses code the language says is safe.
+- **Fix shape:** the checker refuses an optional where a non-optional list is required (`for`
+  operand, argument), naming `!` and `if ... as`; narrowing applies to the `else` of `== nil` as
+  it does to the `then` of `!= nil`.
+- **Control when fixing:** (1) and (2) refused at `-c` at their lines; (3) prints "ys is nil";
+  the early-return narrowing is unchanged.
+
+---
+
+### BUG-732: `use risky exposing risky` (a module and a function it exposes sharing a name) fails inside zig
+- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; reproduced on d9067e4)
+- **Repro:** `risky.zbr` is `def risky(n: int): int` / `return n * 2`; `main.zbr` is
+  `use risky exposing risky` / `def main()` / `print(risky(21))`. `-c` passes; zig: "use of
+  undeclared identifier '_zbr_fn_risky'" at main.zbr:4.
+- **Fix shape:** resolve the exposed name to the module's function, not to the module; if that is
+  ambiguous by design, refuse at `-c` naming both.
+- **Control when fixing:** the repro prints 42; `use riskmod exposing risky` is unchanged.
 
 ---
 
