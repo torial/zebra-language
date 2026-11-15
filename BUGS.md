@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-743. Next new bug: BUG-744.**
+**Last bug number generated: BUG-744. Next new bug: BUG-745.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -315,6 +315,24 @@
 - **Fix shape:** refuse at `-c` a `withHeader` whose result is discarded, naming the
   `return r.withHeader(..)` / `r = r.withHeader(..)` forms.
 - **Control when fixing:** the repro is refused at its line; both suggested forms compile.
+
+---
+
+### BUG-744: a class or container as a generic function's type argument emits a name zig cannot find
+- **Status:** OPEN (filed 2026-11-15; found writing BUG-709's ok fixture; reproduced on 718330a)
+- **Repro:** `class Box` with a field, `def same(T)(x: T): T` returning `x`, then
+  `print(same(Box)(b).s)`. `-c` passes; the build fails `use of undeclared identifier 'Box'` at
+  the call's `.zbr` line. The emit is `_zbr_fn_same(Box, b)`: since BUG-281 B a Zebra type is
+  `_zbr_ty_Box` in the generated Zig, and the type-argument position was not given the prefix.
+  A struct (`same(Pt)(Pt())`) fails the same way, and so does a container type argument:
+  `same(List(int))(xs)` emits a bare `List` ("undeclared identifier 'List'"). `same(int)(5)` works.
+- **Cost:** a generic function can be instantiated only with scalar built-in types; with a class,
+  struct or container the program cannot be built, and the message is about generated code.
+- **Fix shape:** the emit of a generic call's type arguments goes through the same type-name
+  spelling as every other type position (the `_zbr_ty_` prefix for a user type, a qualified one
+  for a `use`d module's).
+- **Control when fixing:** `same(Box)(b).s` and `same(Pt)(Pt()).x` build and print; `same(int)(5)`
+  unchanged; `same(List(int))(xs)` builds and prints `[1, 2]`.
 
 ---
 
