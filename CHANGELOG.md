@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Http.serve(port, handler, restart: true)` restarts a server that crashes (BUG-701,
+  option B).** The calling process becomes a supervisor and runs the program again as the
+  server process. It restarts it after a panic or crash, with a backoff from 100 ms; the sixth
+  crash in 60 s stops it with exit 1. A handler's `sys.exit(0)`, Ctrl-C, or a server that
+  cannot listen (exit 98) stop it without a restart. The server process runs `main` again
+  from the top, so every module-level `var` starts over: a rate limit kept in memory is reset
+  by a crash. Killing the supervisor ends the server process too. The call must come from
+  `main`'s own thread, once per program; `Ws.serve` and `Tcp.serve` refuse `restart:` by name.
+  `serve`'s `host:` and `restart:` are placed by name, in either order.
+
 - **`s.fromHex()` and `Path.dirname(s).len` compile (BUG-737, BUG-740).** Both passed `-c` and
   failed inside zig: every program calling `fromHex` ("value of type '[]u8' ignored"), and a
   member read straight off `Path.dirname(...)`. `fromHex` answers the bytes, or nil for an odd

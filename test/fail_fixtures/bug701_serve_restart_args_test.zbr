@@ -1,0 +1,21 @@
+# BUG-701 B: `Http.serve(port, handler, restart: true)`. Each serve below must be refused at -c
+# (the smoke suite greps for each message); the last two are the controls that must NOT be.
+def h(req: HttpRequest): HttpResponse
+    return HttpResponse(200, "ok")
+
+def t(conn: TcpConn)
+    conn.close()
+
+def w(ws: WsConn)
+    ws.close()
+
+def main()
+    Ws.serve(8082, w, restart: true)
+    Tcp.serve(8084, t, host: "0.0.0.0", restart: true)
+    Http.serve(8085, h, restart: 1)
+    Http.serve(8086, h, restart: true, restart: false)
+    Http.serve(8087, h, "0.0.0.0", true)
+    Http.serve(8088, h, host: "0.0.0.0", restart: true, extra: 1)
+    # controls: both orders are accepted
+    Http.serve(8089, h, restart: true, host: "0.0.0.0")
+    Http.serve(8090, h, "127.0.0.1", restart: false)

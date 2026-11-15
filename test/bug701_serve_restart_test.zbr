@@ -1,0 +1,147 @@
+# BUG-701 option B: `Http.serve(port, handler, restart: true)`. The process that makes the call
+# becomes a supervisor; it re-runs this executable as the server process and restarts it when
+# it crashes. docs/design/http_serve_recovery.md, "B as built".
+#
+# The driver (no arguments) starts this same executable in a server mode, as a real user would
+# start a server, and talks to it over HTTP:
+#   1. a handler's panic ends the server process, and a NEW one answers -- the module-level
+#      `hits` counter starts over, which is the documented reset rule (a rate limit kept in
+#      memory is reset by anyone who can crash the server);
+#   2. after 5 restarts inside a minute the 6th crash stops the supervisor, exit 1, saying so;
+#   3. a handler's `sys.exit(0)` stops the supervisor with 0 -- no restart;
+#   4. a server that cannot listen (a host that is not this machine's) stops the supervisor
+#      with exit 98 and no restart. Before the reserved code, that cause exited 1 like a
+#      panic, and the supervisor would have retried it five times;
+#   5. killing the supervisor ends the server process too (a Job object on Windows,
+#      PR_SET_PDEATHSIG on Linux, a parent-pid poll elsewhere).
+# Each value is checked here, so the final line prints only when all are right.
+
+var hits: int = 0
+
+def handle(req: HttpRequest): HttpResponse
+    if req.path == "/count"
+        hits += 1
+        return HttpResponse.ok("${hits}")
+    if req.path == "/crash"
+        var xs: List(int) = []
+        return HttpResponse.ok("${xs[3]}")
+    if req.path == "/stop"
+        sys.exit(0)
+    return HttpResponse.ok("up")
+
+var failures: int = 0
+
+def check(what: str, ok: bool, detail: str)
+    if ok
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: ${detail}")
+        failures += 1
+
+def get(port: int, path: str): str
+    if Http.get("http://127.0.0.1:${port}${path}") as r
+        return r.text
+    return "<none>"
+
+# Waits up to 10 s of wall clock for the server to answer; false if it never does. By the
+# clock, not by a count of tries: on Windows a connect to a port nobody listens on retries for
+# about 2 s, so 100 tries against a server that never came back took minutes, and a broken
+# supervisor showed up as a timeout instead of a named leg.
+def waitUp(port: int): bool
+    var t = Timer.start()
+    while t.elapsed() < 10000.0
+        if get(port, "/") == "up"
+            return true
+        sys.sleep(100)
+    return false
+
+# Waits up to 15 s for the supervisor to end; its exit code, or -1 if it is still running.
+def waitExit(p: SysProcess): int
+    var t = Timer.start()
+    while t.elapsed() < 15000.0 and p.isRunning()
+        sys.sleep(100)
+    return p.exitCode()
+
+def startServer(mode: str): SysProcess
+    var argv: List(str) = [sys.selfExe(), mode]
+    return sys.spawnPiped(argv)
+
+def drive()
+    # A server left on the port by an earlier run would answer every leg below in place of
+    # the one started here (on Windows a second listener can share the port, BUG-727).
+    if get(19976, "/") != "<none>" or get(19977, "/") != "<none>"
+        print("bug701_serve_restart: REFUSED -- something already answers on port 19976 or 19977; stop it first")
+        return
+    # 1. crash -> a new server process, module vars reset
+    var p = startServer("--serve")
+    check("up", waitUp(19976), "the supervised server never answered")
+    check("count1", get(19976, "/count") == "1", "first /count")
+    check("count2", get(19976, "/count") == "2", "second /count")
+    check("crash-no-answer", get(19976, "/crash") == "<none>", "a panicking handler answered")
+    check("back-up", waitUp(19976), "the server did not come back after a crash")
+    var c = get(19976, "/count")
+    check("count-reset", c == "1", "after a restart /count is '${c}', want '1' (module vars start over)")
+    check("supervisor-alive", p.isRunning(), "the supervisor ended after one crash")
+
+    # 2. five restarts allowed in a minute; the sixth crash stops it. One crash is spent.
+    var n: int = 1
+    while n < 6
+        get(19976, "/crash")
+        n += 1
+        if n < 6
+            check("back-up-${n}", waitUp(19976), "no server after crash ${n}")
+    var code = waitExit(p)
+    check("gives-up", code == 1, "after 6 crashes the supervisor's exit code is ${code}, want 1")
+    var err = p.readErrAvailable()
+    check("restart-said", err.contains("restarting in"), "no restart message on stderr: ${err}")
+    check("give-up-said", err.contains("not restarting"), "no give-up message on stderr: ${err}")
+    check("down-after-give-up", get(19976, "/") == "<none>", "a server still answers after the supervisor gave up")
+
+    # 3. a handler's sys.exit(0) stops the supervisor with 0
+    var q = startServer("--serve")
+    check("up-again", waitUp(19976), "the second supervised server never answered")
+    get(19976, "/stop")
+    var qcode = waitExit(q)
+    check("stop-exit-0", qcode == 0, "after sys.exit(0) in a handler the supervisor's exit code is ${qcode}, want 0")
+
+    # 4. cannot listen -> exit 98, no restart
+    var b = startServer("--badhost")
+    var bcode = waitExit(b)
+    var berr = b.readErrAvailable()
+    check("listen-98", bcode == 98, "a server that cannot listen left the supervisor with ${bcode}, want 98; stderr: ${berr}")
+    check("listen-said", berr.contains("could not listen"), "no listen-failure message: ${berr}")
+    check("listen-no-restart", not berr.contains("restarting in"), "it was restarted: ${berr}")
+
+    # 5. the server process does not outlive its supervisor: killed, it takes the server along,
+    #    or the port stays held and the next start of the program finds it taken
+    var k = startServer("--serve")
+    check("up-to-kill", waitUp(19976), "the third supervised server never answered")
+    k.kill()
+    var gone: bool = false
+    var t = Timer.start()
+    while t.elapsed() < 5000.0 and not gone
+        if get(19976, "/") == "<none>"
+            gone = true
+        else
+            sys.sleep(100)
+    check("dies-with-supervisor", gone, "the server still answers 5 s after its supervisor was killed")
+
+    for proc in [p, q, b, k]
+        if proc.isRunning()
+            proc.kill()
+    if failures == 0
+        print("bug701_serve_restart: OK")
+    else
+        print("bug701_serve_restart: ${failures} WRONG")
+
+def main()
+    var args = sys.args()
+    if args.len >= 2 and args.at(1) == "--serve"
+        Http.serve(19976, handle, restart: true)
+        return
+    if args.len >= 2 and args.at(1) == "--badhost"
+        # computed, so the checker cannot refuse it: TEST-NET-1, an address no machine holds
+        var h = "192.0.2." + "1"
+        Http.serve(19977, handle, host: h, restart: true)
+        return
+    drive()

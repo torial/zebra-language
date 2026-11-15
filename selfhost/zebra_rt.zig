@@ -2942,15 +2942,22 @@ pub fn _zbr_listen_addr(host: []const u8, port: u16, what: []const u8) std.Io.ne
 /// not map (INVALID_ADDRESS_COMPONENT), so there it arrives as `Unexpected`: the message
 /// then ASKS rather than asserts, because Unexpected is any unmapped OS error.
 pub fn _zbr_listen_failed(what: []const u8, host: []const u8, port: u16, e: anyerror) void {
+    if (_zbr_listen_report(what, host, port, e)) _zbr_exit(1);
+}
+/// Prints why a listen failed; true when the cause is a host that is not this machine's
+/// (the program cannot go on). Split from `_zbr_listen_failed` so a supervised Http.serve
+/// process can report the cause and then exit with `_HTTP_SERVE_LISTEN_FAILED` instead.
+pub fn _zbr_listen_report(what: []const u8, host: []const u8, port: u16, e: anyerror) bool {
     std.debug.print("{s}: cannot listen on {s}:{d}: {s}\n", .{ what, host, port, @errorName(e) });
     if (e == error.AddressUnavailable) {
         std.debug.print("{s}: {s} is not an address of this machine -- 127.0.0.1 is loopback, 0.0.0.0 every IPv4 interface\n", .{ what, host });
-        _zbr_exit(1);
+        return true;
     }
     if (e == error.Unexpected) {
         std.debug.print("{s}: is {s} an address of this machine? 127.0.0.1 is loopback, 0.0.0.0 every IPv4 interface\n", .{ what, host });
-        _zbr_exit(1);
+        return true;
     }
+    return false;
 }
 /// BUG-699: the largest request body `Http.serve` will read; a larger Content-Length is
 /// answered 413 without reading it. 1 MB, the figure Graze's charter asks for.
@@ -3004,8 +3011,249 @@ pub fn _http_bad_resp_header(name: []const u8, name_ok: bool) void {
     }
     std.debug.print("' is not a valid header name (empty, or holds ':', whitespace or a line break) -- answered 500 Internal Server Error instead\n", .{});
 }
-pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
+// ── Http.serve(port, handler, restart: true): the supervisor (BUG-701 B) ──────────────────
+// docs/design/http_serve_recovery.md, "B as built". The process that reaches the call
+// re-executes itself as the SERVER process and restarts it when it crashes. The server process
+// re-runs `main` from the top and is told what it is by ZEBRA_SERVE_CHILD=<port>:<supervisor
+// pid>, honoured only when that pid really is its parent.
+/// A supervised server process exits with this when it cannot listen; the supervisor stops.
+pub const _HTTP_SERVE_LISTEN_FAILED: u8 = 98;
+/// Restarts allowed inside any `_HTTP_SERVE_CRASH_WINDOW_S`; the next crash stops the supervisor.
+pub const _HTTP_SERVE_MAX_CRASHES: usize = 5;
+pub const _HTTP_SERVE_CRASH_WINDOW_S: i128 = 60;
+/// Set by the entry prologue (not under --library-mode): the thread `main` runs on.
+pub var _zbr_main_tid: ?std.Thread.Id = null;
+var _http_restart_claimed = std.atomic.Value(bool).init(false);
+const _HTTP_SERVE_ENV = "ZEBRA_SERVE_CHILD";
+
+const _zbr_win_proc = if (builtin.target.os.tag == .windows) struct {
+    const W = std.os.windows;
+    extern "kernel32" fn CreateJobObjectW(attrs: ?*anyopaque, name: ?[*:0]const u16) callconv(.winapi) ?W.HANDLE;
+    extern "kernel32" fn SetInformationJobObject(job: W.HANDLE, class: c_int, info: *anyopaque, len: u32) callconv(.winapi) W.BOOL;
+    extern "kernel32" fn AssignProcessToJobObject(job: W.HANDLE, proc: W.HANDLE) callconv(.winapi) W.BOOL;
+    extern "kernel32" fn WaitForSingleObject(h: W.HANDLE, ms: u32) callconv(.winapi) u32;
+    extern "kernel32" fn GetExitCodeProcess(h: W.HANDLE, code: *u32) callconv(.winapi) W.BOOL;
+    extern "kernel32" fn GetCurrentProcessId() callconv(.winapi) u32;
+    // JOBOBJECT_EXTENDED_LIMIT_INFORMATION (winnt.h); only LimitFlags is set.
+    const ExtLimit = extern struct {
+        per_process_user_time: i64 = 0,
+        per_job_user_time: i64 = 0,
+        limit_flags: u32 = 0,
+        min_ws: usize = 0,
+        max_ws: usize = 0,
+        active_process_limit: u32 = 0,
+        affinity: usize = 0,
+        priority_class: u32 = 0,
+        scheduling_class: u32 = 0,
+        io: [6]u64 = @splat(0),
+        process_memory_limit: usize = 0,
+        job_memory_limit: usize = 0,
+        peak_process_memory: usize = 0,
+        peak_job_memory: usize = 0,
+    };
+    const JobObjectExtendedLimitInformation: c_int = 9;
+    const KILL_ON_JOB_CLOSE: u32 = 0x2000;
+    const STATUS_CONTROL_C_EXIT: u32 = 0xC000013A;
+} else struct {};
+
+fn _zbr_self_pid() u64 {
+    if (comptime builtin.target.os.tag == .windows) return _zbr_win_proc.GetCurrentProcessId();
+    if (comptime builtin.link_libc) return @intCast(std.c.getpid());
+    if (comptime builtin.target.os.tag == .linux) return @intCast(std.os.linux.getpid());
+    return 0;
+}
+fn _zbr_parent_pid() u64 {
+    if (comptime builtin.target.os.tag == .windows) {
+        const W = std.os.windows;
+        var info: W.PROCESS.BASIC_INFORMATION = undefined;
+        return switch (W.ntdll.NtQueryInformationProcess(W.GetCurrentProcess(), .BasicInformation, &info, @sizeOf(W.PROCESS.BASIC_INFORMATION), null)) {
+            .SUCCESS => info.InheritedFromUniqueProcessId,
+            else => 0,
+        };
+    }
+    return @intCast(std.posix.getppid());
+}
+
+/// Run at the call. Refuses a call `restart:` cannot honour; returns true in the server process
+/// (serve here), and in the supervisor does not return.
+fn _http_serve_restart_entry(port: u16) bool {
+    const here = std.Thread.getCurrentId();
+    if (_zbr_main_tid == null or _zbr_main_tid.? != here) {
+        std.debug.print("Http.serve(restart: true) must be called from main's own thread: a restart runs the program again from main, so a call from a sys.go thread (or in a --library-mode build) would repeat whatever main did next. Call it from main, or drop restart:\n", .{});
+        _zbr_exit(1);
+    }
+    if (_http_restart_claimed.swap(true, .seq_cst)) {
+        std.debug.print("Http.serve(restart: true) is called a second time in this program: a restart runs the whole program again, so only one server can supervise itself. Drop restart: from all but one call\n", .{});
+        _zbr_exit(1);
+    }
+    // Without both pids a server process could not tell it is one, would supervise in its turn,
+    // and every generation would start another: refuse rather than guess.
+    if (_zbr_self_pid() == 0 or _zbr_parent_pid() == 0) {
+        std.debug.print("Http.serve(restart: true): cannot read this process's id or its parent's on this platform, so a restart cannot be supervised. Drop restart:\n", .{});
+        _zbr_exit(1);
+    }
+    if (_sys_getenv(_HTTP_SERVE_ENV)) |v| {
+        if (std.mem.indexOfScalar(u8, v, ':')) |c| {
+            const mport = std.fmt.parseInt(u16, v[0..c], 10) catch 0;
+            const mpid = std.fmt.parseInt(u64, v[c + 1 ..], 10) catch 0;
+            if (mport == port and mpid != 0 and mpid == _zbr_parent_pid()) {
+                _http_serve_bind_to_parent(mpid);
+                return true;
+            }
+        }
+    }
+    _http_serve_supervise(port);
+}
+
+/// The server process must not outlive its supervisor: a server left behind holds the port, and
+/// the next start of the program finds it taken. Windows: the supervisor's Job object does this.
+fn _http_serve_bind_to_parent(ppid: u64) void {
+    switch (comptime builtin.target.os.tag) {
+        .windows => {},
+        .linux => {
+            _ = std.os.linux.prctl(@intFromEnum(std.os.linux.PR.SET_PDEATHSIG), @intFromEnum(std.os.linux.SIG.KILL), 0, 0, 0);
+            if (_zbr_parent_pid() != ppid) std.process.exit(1); // it went before the prctl
+        },
+        else => {
+            const _Watch = struct {
+                fn run(p: u64) void {
+                    while (true) {
+                        _sysSleep(1000);
+                        if (_zbr_parent_pid() != p) std.process.exit(1);
+                    }
+                }
+            };
+            if (std.Thread.spawn(.{}, _Watch.run, .{ppid})) |t| t.detach() else |_| {
+                std.debug.print("Http.serve: could not start the thread that ends this server with its supervisor; it may outlive it\n", .{});
+            }
+        },
+    }
+}
+
+const _HttpServeEnd = union(enum) { exited: u32, signal: u32, unknown };
+
+fn _http_serve_supervise(port: u16) noreturn {
+    // The supervisor never returns, and Http.serve may be called inside an `allocate` block
+    // whose arena is not the program's; its argv / env / exe path are owned by no scope.
+    const pa = std.heap.page_allocator;
+    const self_exe = std.process.executablePathAlloc(_io, pa) catch |e| {
+        std.debug.print("Http.serve(restart: true): cannot find this program's own executable to restart it ({s})\n", .{@errorName(e)});
+        _zbr_exit(1);
+    };
+    const argv = _args.toSlice(pa) catch {
+        std.debug.print("Http.serve(restart: true): cannot read this program's arguments to restart it\n", .{});
+        _zbr_exit(1);
+    };
+    var env = _environ.createMap(pa) catch {
+        std.debug.print("Http.serve(restart: true): cannot read this program's environment to restart it\n", .{});
+        _zbr_exit(1);
+    };
+    var ov = _env_overrides.iterator();
+    while (ov.next()) |e| env.put(e.key_ptr.*, e.value_ptr.*) catch {};
+    const marker = std.fmt.allocPrint(pa, "{d}:{d}", .{ port, _zbr_self_pid() }) catch @panic("OOM");
+    env.put(_HTTP_SERVE_ENV, marker) catch @panic("OOM");
+
+    const job = if (comptime builtin.target.os.tag == .windows) blk: {
+        const P = _zbr_win_proc;
+        const j = P.CreateJobObjectW(null, null);
+        if (j) |h| {
+            var lim: P.ExtLimit = .{ .limit_flags = P.KILL_ON_JOB_CLOSE };
+            if (!P.SetInformationJobObject(h, P.JobObjectExtendedLimitInformation, &lim, @sizeOf(P.ExtLimit)).toBool()) break :blk null;
+        }
+        break :blk j;
+    } else {};
+
+    var crashes: [_HTTP_SERVE_MAX_CRASHES + 1]i128 = undefined; // when each recent crash happened (s)
+    var ncrash: usize = 0;
+    while (true) {
+        const t0: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+        var child = std.process.spawn(_io, .{
+            .exe = .{ .explicit = .{ .dir = std.Io.Dir.cwd(), .path = self_exe } },
+            .argv = argv,
+            .environ_map = &env,
+            .stdin = .inherit,
+            .stdout = .inherit,
+            .stderr = .inherit,
+        }) catch |e| {
+            std.debug.print("Http.serve(restart: true): cannot start the server process ({s})\n", .{@errorName(e)});
+            _zbr_exit(1);
+        };
+        var end: _HttpServeEnd = .unknown;
+        if (comptime builtin.target.os.tag == .windows) {
+            const P = _zbr_win_proc;
+            const h = child.id.?;
+            if (job) |j| {
+                if (!P.AssignProcessToJobObject(j, h).toBool())
+                    std.debug.print("Http.serve(restart: true): could not tie the server process to this one; if this process is killed, the server may keep the port\n", .{});
+            } else std.debug.print("Http.serve(restart: true): could not create a Job object; if this process is killed, the server may keep the port\n", .{});
+            _ = P.WaitForSingleObject(h, 0xFFFFFFFF);
+            var code: u32 = 0;
+            if (P.GetExitCodeProcess(h, &code).toBool()) end = .{ .exited = code };
+            _ = child.wait(_io) catch {};
+        } else {
+            const term = child.wait(_io) catch |e| {
+                std.debug.print("Http.serve(restart: true): lost track of the server process ({s})\n", .{@errorName(e)});
+                _zbr_exit(1);
+            };
+            end = switch (term) {
+                .exited => |c| .{ .exited = c },
+                .signal => |s| .{ .signal = @intCast(@intFromEnum(s)) },
+                else => .unknown,
+            };
+        }
+        const t1: i128 = @intCast(std.Io.Timestamp.now(_io, .awake).nanoseconds);
+        const up_ms: i128 = @divTrunc(t1 - t0, std.time.ns_per_ms);
+        switch (end) {
+            .exited => |c| {
+                if (c == 0) _zbr_exit(0);
+                if (c == _HTTP_SERVE_LISTEN_FAILED) {
+                    std.debug.print("Http.serve(restart: true): the server could not listen on port {d} (the reason is above); not restarting -- a held port or a wrong host is not cured by trying again\n", .{port});
+                    _zbr_exit(_HTTP_SERVE_LISTEN_FAILED);
+                }
+                if (comptime builtin.target.os.tag == .windows) {
+                    if (c == _zbr_win_proc.STATUS_CONTROL_C_EXIT) _zbr_exit(130);
+                }
+            },
+            .signal => |s| {
+                if (comptime builtin.target.os.tag != .windows) {
+                    if (s == @intFromEnum(std.posix.SIG.INT) or s == @intFromEnum(std.posix.SIG.TERM)) _zbr_exit(128 + @as(i64, s));
+                }
+            },
+            .unknown => {},
+        }
+        // A crash. Keep the ones inside the window, oldest first.
+        const now_s: i128 = @divTrunc(t1, std.time.ns_per_s);
+        var keep: usize = 0;
+        for (crashes[0..ncrash]) |t| {
+            if (now_s - t < _HTTP_SERVE_CRASH_WINDOW_S) {
+                crashes[keep] = t;
+                keep += 1;
+            }
+        }
+        ncrash = keep;
+        crashes[ncrash] = now_s;
+        ncrash += 1;
+        var how_buf: [64]u8 = undefined;
+        const how = switch (end) {
+            .exited => |c| if (c > 255) std.fmt.bufPrint(&how_buf, "exit code 0x{X}", .{c}) catch "?" else std.fmt.bufPrint(&how_buf, "exit code {d}", .{c}) catch "?",
+            .signal => |s| std.fmt.bufPrint(&how_buf, "signal {d}", .{s}) catch "?",
+            .unknown => "an unknown cause",
+        };
+        if (ncrash > _HTTP_SERVE_MAX_CRASHES) {
+            std.debug.print("Http.serve(restart: true): the server process stopped ({s}) for the {d}th time in {d} s; not restarting\n", .{ how, ncrash, _HTTP_SERVE_CRASH_WINDOW_S });
+            _zbr_exit(1);
+        }
+        const backoff_ms: i64 = @as(i64, 100) << @intCast(ncrash - 1);
+        std.debug.print("Http.serve(restart: true): the server process stopped ({s}) after {d} ms; restarting in {d} ms (crash {d} of {d} allowed in {d} s)\n", .{ how, up_ms, backoff_ms, ncrash, _HTTP_SERVE_MAX_CRASHES, _HTTP_SERVE_CRASH_WINDOW_S });
+        _sysSleep(backoff_ms);
+    }
+}
+
+pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8, restart: bool) void {
     const port = _zbr_port(port_in, "Http.serve") orelse return;
+    // BUG-701 B: `restart: true`. The first process to get here becomes the supervisor and
+    // never returns; the server process it starts gets here again and serves (`supervised`).
+    const supervised = restart and _http_serve_restart_entry(port);
     const _HFn = *const fn(HttpRequest) HttpResponse;
     const _fn: _HFn = handler;
     const _Ctx = struct {
@@ -3198,7 +3446,15 @@ pub fn _http_serve(port_in: i64, handler: anytype, host: []const u8) void {
     };
     const _alloc = std.heap.page_allocator;
     var _addr = _zbr_listen_addr(host, port, "Http.serve");
-    var _srv = _addr.listen(_io, .{}) catch |e| {
+    // A supervised process re-binds the port its crashed predecessor held. On POSIX that needs
+    // SO_REUSEADDR, or the predecessor's connections in TIME_WAIT refuse the bind for up to a
+    // minute. Not on Windows, where the flag lets a second socket take a bound port (BUG-727).
+    const _reuse = supervised and builtin.target.os.tag != .windows;
+    var _srv = _addr.listen(_io, .{ .reuse_address = _reuse }) catch |e| {
+        if (supervised) {
+            _ = _zbr_listen_report("Http.serve", host, port, e);
+            _zbr_exit(_HTTP_SERVE_LISTEN_FAILED);
+        }
         _zbr_listen_failed("Http.serve", host, port, e);
         return;
     };

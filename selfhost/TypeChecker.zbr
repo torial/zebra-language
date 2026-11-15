@@ -7406,14 +7406,35 @@ def sqliteOpenParamName(a: Arg, pos: int): str
         return "busyMs"
     return ""
 
-# BUG-719: the index of the `host` argument of `Http.serve` / `Ws.serve` / `Tcp.serve`
-# (`serve(port, handler, host: "0.0.0.0")`), or -1 when the call gives none and the default,
-# loopback, applies. Shared by checkServeArgs and codegen.
+# Which parameter of `Http.serve` / `Ws.serve` / `Tcp.serve` the argument at `pos` (>= 2,
+# past port and handler) fills: an unnamed third argument is `host`, a named one picks its
+# parameter (`host` or `restart`), "" = none. checkServeArgs and codegen both resolve through
+# here, so `serve(p, h, restart: true, host: "0.0.0.0")` places each by NAME (BUG-701 B).
+def serveParamName(a: Arg, pos: int): str
+    if a.name != nil
+        var n: str = a.name!
+        if n == "host" or n == "restart"
+            return n
+        return ""
+    if pos == 2
+        return "host"
+    return ""
+
+# BUG-719: the index of the `host` argument of a `serve` call, or -1 when the call gives none
+# and the default, loopback, applies.
 def serveHostArgIndex(args: List(Arg)): int
-    if args.len >= 3
-        var a: Arg = args.at(2)
-        if a.name == nil or a.name! == "host"
-            return 2
+    return serveArgIndex(args, "host")
+
+# BUG-701 B: the index of `Http.serve`'s `restart:` argument, or -1 (no supervisor).
+def serveRestartArgIndex(args: List(Arg)): int
+    return serveArgIndex(args, "restart")
+
+def serveArgIndex(args: List(Arg), want: str): int
+    var i: int = 2
+    while i < args.len
+        if serveParamName(args.at(i), i) == want
+            return i
+        i = i + 1
     return -1
 
 # BUG-719: why a literal host is refused, or "" when it is a dotted-quad IPv4 address. The
@@ -7460,15 +7481,43 @@ def checkServeArgs(call: ExprCall, file: str, line: int, ctx: InferCtx)
     if mem.span.line > 0
         cl = mem.span.line
     var usage: str = " -- it is `" + ns + ".serve(port, handler)` (this machine only) or `" + ns + ".serve(port, handler, host: \"0.0.0.0\")`"
-    if call.args.len > 3
-        ctx.addErr(file, cl, mem.span.col, ns + ".serve takes at most 3 arguments, got " + call.args.len.toString() + usage)
+    if ns == "Http"
+        usage = usage + ", with `restart: true` to restart the server when it crashes"
+    var maxn: int = 3
+    if ns == "Http"
+        maxn = 4
+    # Up to 4 go on to the per-argument checks, so a Ws/Tcp `restart:` is refused by its name.
+    if call.args.len > 4
+        ctx.addErr(file, cl, mem.span.col, ns + ".serve takes at most " + maxn.toString() + " arguments, got " + call.args.len.toString() + usage)
         return
-    if call.args.len < 3
+    var hi: int = -1
+    var i: int = 2
+    while i < call.args.len
+        var ai: Arg = call.args.at(i)
+        var pname: str = serveParamName(ai, i)
+        if pname == ""
+            if ai.name != nil
+                ctx.addErr(file, cl, mem.span.col, ns + ".serve has no parameter '" + ai.name! + "'" + usage)
+            else
+                ctx.addErr(file, cl, mem.span.col, ns + ".serve's argument " + (i + 1).toString() + " has no parameter to fill -- name it" + usage)
+            return
+        if serveArgIndex(call.args, pname) != i
+            ctx.addErr(file, cl, mem.span.col, ns + ".serve's " + pname + " is given twice" + usage)
+            return
+        if pname == "restart"
+            if ns != "Http"
+                ctx.addErr(file, cl, mem.span.col, ns + ".serve has no parameter 'restart' -- only Http.serve restarts a crashed server; a " + ns + " server's open connections are its state, and a restart would drop them")
+                return
+            var rt: Type_ = inferExpr(ai.value, ctx)
+            if not (rt is Type_.bool_) and not (rt is Type_.unknown_)
+                ctx.addErr(file, cl, mem.span.col, "Http.serve's restart must be a bool, got " + userTypeName(rt) + usage)
+                return
+        else
+            hi = i
+        i = i + 1
+    if hi < 0
         return
-    var a: Arg = call.args.at(2)
-    if serveHostArgIndex(call.args) != 2
-        ctx.addErr(file, cl, mem.span.col, ns + ".serve has no parameter '" + a.name! + "'" + usage)
-        return
+    var a: Arg = call.args.at(hi)
     var ht: Type_ = inferExpr(a.value, ctx)
     if not isString(ht) and not (ht is Type_.unknown_)
         ctx.addErr(file, cl, mem.span.col, ns + ".serve's host must be a str, got " + userTypeName(ht) + usage)

@@ -2224,6 +2224,15 @@ smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Tcp.serve's ho
 smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Ws.serve's host \"10.0.0.300\" is not an IPv4 address"
 smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Http.serve has no parameter 'hots'"
 smoke_tc_fail test/fail_fixtures/bug719_serve_host_args_test.zbr "Tcp.serve's host must be a str, got int"
+# BUG-701 B: Http.serve(port, handler, restart: true) -- a supervisor that restarts a crashed
+# server. The run leg spawns its own executable as the server, so it is bounded.
+smoke_run_bounded test/bug701_serve_restart_test.zbr "bug701_serve_restart: OK" 240
+smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Ws.serve has no parameter 'restart' -- only Http.serve restarts"
+smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Tcp.serve has no parameter 'restart'"
+smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Http.serve's restart must be a bool, got int"
+smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Http.serve's restart is given twice"
+smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Http.serve's argument 4 has no parameter to fill"
+smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Http.serve takes at most 4 arguments, got 5"
 
 # BUG-255. Lambdas, capture blocks and except-fields were among 40 nonterminals missing from
 # grammar.txt, so fuzz/gramgen.py had NEVER generated a program using them. The drift is

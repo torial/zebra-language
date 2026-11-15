@@ -3,7 +3,12 @@
 
 Status: DECIDED 2026-11-12 (Sean): A, then B, and both are required -- B is not optional once A
 lands. A in progress: BUG-703, 704, 715 (2026-11-13), 735, 736 (2026-11-15) fixed; BUG-733 and
-734 open (the 2026-11-15 sweep, recorded under BUG-701). B not started.
+734 open (the 2026-11-15 sweep, recorded under BUG-701). B landed 2026-11-15: its rules are
+under "B as built" below, pinned by `test/bug701_serve_restart_test.zbr`.
+
+Not covered by that fixture: the grandchild rule (a server process's own Zebra child ignoring
+the marker), the Linux and macOS ends-with-the-supervisor paths (the fixture runs them, but has
+only been watched red on Windows), and a signal-terminated server on POSIX.
 
 ## The problem
 
@@ -78,6 +83,62 @@ database. Everything else Graze holds is rebuilt at startup from its inputs
 (route table, the session key from its key file, the decoy password hash) or is stateless
 (signed session cookies, signed forgery tokens). B's documentation must state the reset rule
 and name the rate-limit case.
+
+## B as built (2026-11-15)
+
+`Http.serve(port, handler, restart: true)`; `restart` is named only, a `bool`, and may stand
+beside `host:` in either order. `Ws.serve` and `Tcp.serve` refuse `restart:` by name: the
+decision covers `Http.serve`, and a WebSocket's open connections are its state, so a restart there
+needs its own design.
+
+**Re-exec, not fork.** Windows has no fork, so the process that reaches the call becomes the
+SUPERVISOR: it never listens, and starts its own executable again, same argv, as the SERVER
+process, with `ZEBRA_SERVE_CHILD=<port>:<supervisor pid>` in its environment. The server process
+runs `main` from the top, reaches the same call, sees the marker, and serves. Consequences, all
+documented in QUICKSTART:
+
+- Everything before the call runs once in the supervisor and again in every server process.
+- Every module-level `var` starts over on a restart: caches, counters, and rate limits. A rate
+  limit kept in memory is reset by anyone who can crash the server (the Graze receipt above).
+- The call must be made from `main`'s own thread, and once per program. Called from a
+  `sys.go` thread, the restarted process would re-run `main` and redo whatever that thread's
+  caller did next, so the runtime refuses it (`_zbr_main_tid`, recorded by the entry prologue;
+  a program with no recorded main thread -- `--library-mode` -- is refused too).
+- The marker names the supervisor's pid. A server process whose parent is not that pid ignores
+  it, so a Zebra program a handler starts supervises itself rather than inheriting the role.
+
+**What the supervisor does with an ending server process.** Windows exit codes are read whole
+(`GetExitCodeProcess`); Zig's `Term` truncates them to 8 bits.
+
+| how it ended | supervisor |
+|---|---|
+| exit 0 (a handler called `sys.exit(0)`) | exits 0, no restart |
+| exit 98, `_HTTP_SERVE_LISTEN_FAILED` (it could not listen; the reason is printed above) | exits 98, no restart -- a held port or a bad host is not cured by trying again |
+| Ctrl-C or a terminate request (SIGINT/SIGTERM; Windows `STATUS_CONTROL_C_EXIT`) | exits 128 + the signal (130 for Ctrl-C on Windows), no restart. A console Ctrl-C reaches both processes, so the supervisor usually ends by it directly |
+| anything else: a panic (exit 1), a segfault, another exit code, another signal | restarts after a backoff, and prints the code or signal, the uptime and the count |
+
+Restart policy: at most `_HTTP_SERVE_MAX_CRASHES` (5) restarts in any `_HTTP_SERVE_CRASH_WINDOW_S`
+(60 s); the next crash in that window ends the supervisor with exit 1 and a message naming the
+count. The backoff doubles from 100 ms for each crash in the window (100, 200, 400, 800, 1600
+ms). A server process that serves for a minute without crashing restarts the count.
+
+**Exit 98 is only meaningful from a server process.** A handler that calls `sys.exit(98)`
+stops the supervisor as if the port were held. The code is documented, not hidden.
+
+**The server process does not outlive the supervisor.** Windows: it is assigned to a Job object
+created with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so it ends when the supervisor ends, however
+it ends. Linux: `PR_SET_PDEATHSIG` = SIGKILL, then a check that the parent did not already go.
+Other POSIX (macOS): a thread polls `getppid()` once a second and exits the process when it
+changes. Without this, killing the supervisor left a server holding the port, and the next start
+of the program found it taken.
+
+**A re-bind after a crash.** On POSIX the server process listens with SO_REUSEADDR, or Linux
+refuses the bind while the previous process's closed connections sit in TIME_WAIT (up to 60 s).
+Not on Windows, where SO_REUSEADDR lets a second socket take a port already bound (BUG-727 is
+that hazard without the flag). An unsupervised `Http.serve` is unchanged.
+
+What a restart does NOT give: an answer to the request in flight (the client sees a reset), or
+anything held in memory. That is option C's ground.
 
 ## Recommendation
 

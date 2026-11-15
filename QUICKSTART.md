@@ -4898,10 +4898,45 @@ gets `501 Not Implemented`. A response header whose name is not a token or whose
 CR or LF is never written: the client gets `500 Internal Server Error` and stderr names the
 header (BUG-736). The 1 MB limit is fixed. There is no read
 deadline yet: each connection runs on its own thread, and a client that sends slowly
-holds that thread. A handler that panics ends the whole server (BUG-701, open). Bytes
-that are not UTF-8 no longer do (`chars()` yields escape chars, BUG-703), but a handler
-that treats a path as text should still check `s.isValidUtf8()` on the path, query and
-body first and answer 400.
+holds that thread. A handler that panics ends the whole server process, unless the
+server was started with `restart: true` (below). Bytes that are not UTF-8 no longer crash
+it (`chars()` yields escape chars, BUG-703), but a handler that treats a path as text should
+still check `s.isValidUtf8()` on the path, query and body first and answer 400.
+
+#### `restart: true` -- start the server again when it crashes
+
+```zebra
+def main()
+    Http.serve(8080, handle, restart: true)              # host: may come before or after
+```
+
+The process that makes this call becomes a **supervisor**: it never listens, and runs the
+program again as the **server process**, restarting it when it crashes (BUG-701). The client
+whose request crashed it gets a closed connection, not an answer; the next connections reach
+the new server process after a short delay. What to know before relying on it:
+
+- **The server process runs `main` again from the top.** Everything before the call runs once
+  in the supervisor and again in every server process, so keep it to setup that may repeat
+  (opening a database, building routes).
+- **Every module-level `var` starts over on each restart**: caches, counters, and anything a
+  handler accumulates. A **rate limit** or a failed-sign-in count kept in memory is reset by
+  anyone who can crash the server -- keep it in Sqlite, which survives the restart.
+- Call it from `main`'s own thread, once per program. A call from a `sys.go` thread, a second
+  call, or a `--library-mode` build is refused at run time with the reason.
+- **When it stops instead of restarting:** a handler's `sys.exit(0)` stops the supervisor with
+  exit 0; a server that cannot listen (a held port, a host that is not this machine's) stops it
+  with **exit 98** after printing why; Ctrl-C stops both. Any other end -- a panic, a crash,
+  another exit code -- restarts it, after 100 ms, doubling per crash. The sixth crash inside
+  60 s stops the supervisor with exit 1. Each restart is printed on stderr with the exit code
+  and how long the server ran.
+- Killing the supervisor ends the server process too (on Windows a Job object, on Linux
+  `PR_SET_PDEATHSIG`, on macOS within a second), so the port is not left held.
+- `sys.args()` and the environment are passed through unchanged, plus `ZEBRA_SERVE_CHILD`,
+  which marks the server process; a handler that calls `sys.exit(98)` stops the supervisor as
+  if the port were held.
+
+`Ws.serve` and `Tcp.serve` take no `restart:`. Design and rules:
+`docs/design/http_serve_recovery.md`.
 (Corrected 2026-09-25: this section showed a `def(req, res)` handler writing into `res`,
 which does not build.)
 

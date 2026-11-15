@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex, serveRestartArgIndex
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -2231,6 +2231,8 @@ def generateEntryPoint(m: Module, library_mode: bool): str
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
+    if not library_mode
+        sb.append("    _zbr_main_tid = std.Thread.getCurrentId();\n")   # BUG-701 B: restart: needs main's thread
     if library_mode
         sb.append("    if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
     else
@@ -2676,6 +2678,7 @@ def generateTestEntryPoint(m: Module, file_stem: str, tag_filter: str?): str
     sb.append("    _io = _zinit.io;\n")
     sb.append("    _args = _zinit.minimal.args;\n")
     sb.append("    _environ = _zinit.minimal.environ;\n")
+    sb.append("    _zbr_main_tid = std.Thread.getCurrentId();\n")   # BUG-701 B
     sb.append("    _allocator = _prog_alloc();\n")
     sb.append(censInstall("    "))
     sb.append(depInitLines("    "))                       # BUG-539
@@ -7636,6 +7639,9 @@ struct Generator
                 ei.w.emit("_args = _zinit.minimal.args;\n")
                 ei.writeIndent()
                 ei.w.emit("_environ = _zinit.minimal.environ;\n")
+                if not .library_mode
+                    ei.writeIndent()
+                    ei.w.emit("_zbr_main_tid = std.Thread.getCurrentId();\n")   # BUG-701 B
                 ei.writeIndent()
                 if .library_mode
                     ei.w.emit("if (!_host_alloc_set) _allocator = _prog_alloc();\n")   # BUG-485
@@ -22854,6 +22860,14 @@ struct Generator
                 w.emit("undefined")
             w.emit(", ")
             genServeHost(args)
+            # BUG-701 B: `restart: true` makes this process a supervisor (the runtime's
+            # _http_serve_supervise); false, or no argument, serves in this process.
+            w.emit(", ")
+            var ri: int = serveRestartArgIndex(args)
+            if ri >= 0
+                genExpr(args.at(ri).value)
+            else
+                w.emit("false")
             w.emit(")")
             return
         if mname == "json"

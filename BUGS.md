@@ -60,7 +60,7 @@
   `recover`, so that needs a design (a worker process, or handlers that cannot panic on input),
   not a patch. **Decided 2026-11-12 (Sean):** option A (remove the panics input can reach,
   BUG-703 first), then option B (an opt-in supervising restart), and both are required;
-  `docs/design/http_serve_recovery.md`. This entry closes when B lands.
+  `docs/design/http_serve_recovery.md`. This entry closes when both have landed.
 - **Option A progress (2026-11-13):** BUG-703 (`chars()` on bytes that are not UTF-8), BUG-704
   (`readAll` on a reset) and BUG-715 (`conn.write` to a peer that left) are fixed. Left in A:
   the parse helpers' panic arms and integer conversions on header values.
@@ -75,6 +75,12 @@
   (BUG-735), and a header value can inject response headers (BUG-736). `Http.request`'s panic
   arms are reachable only through a handler that forwards a client's header -- BUG-735's
   bare-LF refusal closes that. BUG-735 and 736 FIXED 2026-11-15; A is done when BUG-733 and 734 are.
+- **Option B LANDED 2026-11-15:** `Http.serve(port, handler, restart: true)`, a re-executing
+  supervisor (design note, "B as built"; QUICKSTART). Pinned by
+  `test/bug701_serve_restart_test.zbr`: crash -> new process with module vars reset, the sixth
+  crash in 60 s stops it (exit 1), a handler's `sys.exit(0)` stops it (0), a server that cannot
+  listen stops it (98, no retry), and killing the supervisor ends the server. Each leg watched
+  red against a runtime mutant built for it. **This entry now closes with BUG-733 and 734.**
 - **Workaround today:** check `isValidUtf8()` on path, query and body first and answer 400
   (Graze does; witnessed red and green in `graze/tasks/check_tasks.py`).
 - **Control when fixing:** a raw `Tcp` client sends the non-UTF-8 path; the server must answer
