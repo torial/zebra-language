@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`Net.resolve` looks names up (BUG-726).** It called a function that only parses an address
+  literal, so `Net.resolve("localhost")` answered an empty list, exactly as a name that does not
+  exist did, and at most one IPv4 address ever came back. It now asks the system resolver and
+  answers every address -- IPv4 first, so `.at(0)` is what it was, then IPv6 -- with duplicates
+  dropped; an IP literal (IPv6 included) answers itself. A failed lookup prints
+  `net: cannot resolve "host": <reason>` on stderr and answers an empty list: since a lookup that
+  succeeds always has an address, empty means failed.
+
 - **`--emit-exe=PATH`: build once, keep the executable, do not run it; `zebra build` uses it
   (BUG-720).** A program that ran could fail to BUILD: `zebra build` compiled each target with
   its own bare `zig build-exe`, which added no sqlite3.c, no libc, no `use`d C sources or

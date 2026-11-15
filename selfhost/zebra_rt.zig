@@ -4068,19 +4068,62 @@ pub fn _udp_bind(port_in: i64) UdpSocket {
     return s;
 }
 
+// BUG-726: `Net.resolve` asked `IpAddress.resolve`, which only PARSES an address literal --
+// it does no lookup -- and turned the failure into an empty list, so `Net.resolve("localhost")`
+// answered nothing and a name that does not exist looked the same. It also kept one IPv4
+// address. Now: a literal answers itself; a name goes to the system resolver
+// (`HostName.lookup`) and answers EVERY address, IPv4 first (so `.at(0)` is what it was), then
+// IPv6, duplicates dropped. A failed lookup prints why on stderr and answers an empty list --
+// and since a lookup that succeeds always has an address (IPv6 counted), empty means failed.
 pub fn _net_resolve(host: []const u8) _ZbrList([]const u8) {
     // A1 (1.0 API freeze): returns List(str), not a raw []str slice, so it shares
     // the .count()/.at()/iterate API with every other string-sequence stdlib call.
     var _result = _zbr_new(_ZbrList([]const u8));
-    const addr = std.Io.net.IpAddress.resolve(_io, host, 0) catch return _result;
-    switch (addr) {
-        .ip4 => |a| {
-            const _ip = std.fmt.allocPrint(std.heap.page_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch return _result;
-            _result.append(std.heap.page_allocator, _ip) catch return _result;
+    const net = std.Io.net;
+    if (net.IpAddress.resolve(_io, host, 0)) |lit| {
+        _result.append(_allocator, _net_addr_text(lit)) catch @panic("OOM");
+        return _result;
+    } else |_| {}
+    const hn = net.HostName.init(host) catch |e| {
+        std.debug.print("net: cannot resolve \"{s}\": {s} (not a host name or an IP address)\n", .{ host, @errorName(e) });
+        return _result;
+    };
+    var _buf: [64]net.HostName.LookupResult = undefined;
+    var _q: std.Io.Queue(net.HostName.LookupResult) = .init(&_buf);
+    const _v6 = _zbr_new(_ZbrList([]const u8));
+    var _err: ?anyerror = null;
+    hn.lookup(_io, &_q, .{ .port = 0 }) catch |e| {
+        _err = e;
+    };
+    while (_q.getOneUncancelable(_io)) |r| switch (r) {
+        .address => |ad| {
+            const t = _net_addr_text(ad);
+            const into = if (ad == .ip4) _result else _v6;
+            var seen = false;
+            for (into.items) |x| {
+                if (std.mem.eql(u8, x, t)) seen = true;
+            }
+            if (!seen) into.append(_allocator, t) catch @panic("OOM");
         },
-        .ip6 => {},
+        .canonical_name => {},
+    } else |_| {}
+    for (_v6.items) |t| _result.append(_allocator, t) catch @panic("OOM");
+    if (_result.items.len == 0) {
+        std.debug.print("net: cannot resolve \"{s}\": {s}\n", .{ host, if (_err) |e| @errorName(e) else "NoAddressReturned" });
     }
     return _result;
+}
+// An address as text, no port: `127.0.0.1`, `::1`, `fe80::1%eth0` (a scope only when the
+// address has one -- a link-local address without it cannot be connected to).
+fn _net_addr_text(ad: std.Io.net.IpAddress) []const u8 {
+    switch (ad) {
+        .ip4 => |a| return std.fmt.allocPrint(_allocator, "{d}.{d}.{d}.{d}", .{ a.bytes[0], a.bytes[1], a.bytes[2], a.bytes[3] }) catch @panic("OOM"),
+        .ip6 => |a| {
+            const iname = if (a.interface.isNone()) null else (a.interface.name(_io) catch null);
+            const u: std.Io.net.Ip6Address.Unresolved = .{ .bytes = a.bytes, .interface_name = if (iname) |n| n.toSlice() else null };
+            return std.fmt.allocPrint(_allocator, "{f}", .{u}) catch @panic("OOM");
+        },
+    }
 }
 // ─── Thompson NFA regex engine ───────────────────────────────────────────────
 pub const _RNodeKind = enum(u8) { match, lit, dot, cls, split, save, bol, eol_a, wb };

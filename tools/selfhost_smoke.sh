@@ -2203,6 +2203,9 @@ smoke_run_fail test/bug703_fmt_c_runtime_trap_test.zbr "integer conversion out o
 smoke_run_bounded test/bug716_717_sqlite_refusals_test.zbr "bug716_717: OK" 120
 smoke_run test/bug716_717_sqlite_refusals_test.zbr "sqlite: exec failed: database is locked (code 5)"
 smoke_run_once test/bug716_717_sqlite_refusals_test.zbr "sqlite: open failed"
+# BUG-726: Net.resolve did no lookup (it only parsed literals) and answered a failure as an
+# empty list. Every address now, IPv4 first; a failed lookup says why on stderr, once.
+smoke_run_once test/bug726_net_resolve_test.zbr 'net: cannot resolve "bad host"'
 smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs is -1 -- it is the wait in milliseconds"
 smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs is given twice"
 smoke_tc_fail test/fail_fixtures/bug717_sqlite_open_busy_args_test.zbr "Sqlite.open's busyMs must be an int (milliseconds), got str"

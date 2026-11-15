@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-726: `Net.resolve` answers an empty list when the lookup FAILS, and at most one address -- FIXED 2026-11-14
+- **Status:** FIXED 2026-11-14 (filed 2026-11-14; found writing BUG-719's LAN fixture)
+- **Repro:** on torial, `Net.resolve("localhost")` and `Net.resolve(sys.getenv("COMPUTERNAME")!)`
+  both answer an empty list (measured). `ipconfig` lists two IPv4 addresses for the same machine.
+- **Where:** `_net_resolve` in the preamble: `IpAddress.resolve(...) catch return _result;` -- a
+  failure becomes "no addresses", the UNGIT fabricated case -- and it keeps ONE address, dropping
+  IPv6 by design (`.ip6 => {}`) and every further IPv4.
+- **Fix shape:** say why a lookup failed (nil, or a printed reason beside the empty list), return
+  every address the resolver gives, and decide whether IPv6 addresses are included (QUICKSTART's
+  `Udp.send` line already names `"::1"` as a literal). First find out why localhost fails here.
+- **Control when fixing:** `Net.resolve("localhost")` contains `127.0.0.1`; a name that does not
+  exist is distinguishable from one with no IPv4 address.
+- **Cause (found fixing it):** "why localhost fails here" had a plain answer -- `_net_resolve`
+  called `IpAddress.resolve`, which in Zig 0.17 only PARSES an address literal (IPv4, or IPv6 with a
+  scope); it performs no lookup. So every name failed, and the failure became an empty list.
+- **Fix (2026-11-14):** a literal answers itself; anything else goes to `HostName.lookup` (the
+  system resolver) and every address comes back, IPv4 first (so `.at(0)` is what it was), then IPv6,
+  duplicates dropped. IPv6 is included: `Udp.send` already takes `"::1"`, and with it a lookup that
+  succeeds always has an address, so an empty list now MEANS failed -- and the reason is printed
+  (`net: cannot resolve "host": UnknownHostName`, or `InvalidHostName ... (not a host name or an IP
+  address)`). The surface is unchanged (`List(str)`, the A1 freeze). Strings and list now come from
+  `_allocator`: the list was grown with page_allocator -- a page per address -- and handed to user
+  code that appends with `_allocator` (escape-hatches 83 -> 81).
+- **Witness:** `test/bug726_net_resolve_test.zbr`, `smoke_run_once` on the printed reason: localhost
+  includes 127.0.0.1 and starts with it, both literal families answer themselves, no duplicates, a
+  name that cannot be looked up is empty with its reason printed once, the result can be grown.
+  Red-checked against the committed preamble: `assert failed ... localhost resolves; got nothing`.
+  The failure case uses "bad host", which never reaches a resolver: a name that merely does not
+  exist would get an address on a network whose DNS answers everything (the dns_test note).
+  `test/dns_test.zbr` now prints what holds on every machine (localhost resolves, 127.0.0.1 first)
+  instead of the address lists, since output_sweep compares its text across machines.
+- **Not covered:** the V route (`Net` has no V lowering; Fable's), and a lookup that times out.
+
+---
+
 ### BUG-720: `zebra build` cannot build a program that uses SQLite -- FIXED 2026-11-14
 - **Status:** FIXED 2026-11-14 (filed 2026-11-13; Fable, from Graze; reproduced here on a copy of
   C:/tmp/link_probe)

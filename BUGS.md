@@ -200,21 +200,6 @@
 
 ---
 
-### BUG-726: `Net.resolve` answers an empty list when the lookup FAILS, and at most one address
-- **Status:** OPEN (filed 2026-11-14; found writing BUG-719's LAN fixture)
-- **Repro:** on torial, `Net.resolve("localhost")` and `Net.resolve(sys.getenv("COMPUTERNAME")!)`
-  both answer an empty list (measured). `ipconfig` lists two IPv4 addresses for the same machine.
-- **Where:** `_net_resolve` in the preamble: `IpAddress.resolve(...) catch return _result;` -- a
-  failure becomes "no addresses", the UNGIT fabricated case -- and it keeps ONE address, dropping
-  IPv6 by design (`.ip6 => {}`) and every further IPv4.
-- **Fix shape:** say why a lookup failed (nil, or a printed reason beside the empty list), return
-  every address the resolver gives, and decide whether IPv6 addresses are included (QUICKSTART's
-  `Udp.send` line already names `"::1"` as a literal). First find out why localhost fails here.
-- **Control when fixing:** `Net.resolve("localhost")` contains `127.0.0.1`; a name that does not
-  exist is distinguishable from one with no IPv4 address.
-
----
-
 ### BUG-721: `HttpResponse.text` (and its other fields) have no type in the checker
 - **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's model calls)
 - **Repro:** `def g(resp: HttpResponse)` with `var u = resp.text` then `print(u.len)`: `-c`

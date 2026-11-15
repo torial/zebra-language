@@ -772,13 +772,16 @@ discard_var_test OK
 dispatch_collision: OK
 === dispatch_diag sha1=92cfceb39d57 ===
 42
-=== dns_test sha1=b90de743ada5 ===
-Resolving localhost:
+=== dns_test sha1=1aa556530b7f ===
+localhost resolves: true
+first is 127.0.0.1: true
 Resolving: localhost
+  -> 127.0.0.1
 Resolving: 127.0.0.1
   -> 127.0.0.1
 Attempting to resolve invalid host:
-Got 0 results
+net: cannot resolve "bad host": InvalidHostName (not a host name or an IP address)
+no address: true
 === dynlib_export_class_test sha1=c7b6b9ac19bf ===
 dynlib_export_class OK
 === dynlib_export_def_test sha1=92cfceb39d57 ===
@@ -898,15 +901,15 @@ test/forgot_parens_test.zbr:7:5: warning: 'greet' is a function used as a value 
     ^
 === forin_throws_test sha1=5108449fdb08 ===
 forin_throws_test: run with 'zebra test'
-=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
-i8=7 f32=1.5 usize=3 c_int=abc r=10.5
-fuzz_f1: OK
 === fuzz_f11_unused_capture_ternary_test sha1=8a8ca1cb6b8d ===
 x=10
 a=7
 y=2
 y=2
 fuzz_f11: OK
+=== fuzz_f1_primitive_names_test sha1=f19f64457d63 ===
+i8=7 f32=1.5 usize=3 c_int=abc r=10.5
+fuzz_f1: OK
 === fuzz_f2_unused_local_test sha1=693203703cf7 ===
 w=3 bump=11
 fuzz_f2: OK

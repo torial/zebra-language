@@ -15,7 +15,8 @@ def httpH(req: HttpRequest): HttpResponse
     return HttpResponse(200, "http-hi")
 
 # This machine's first non-loopback IPv4 address, or "". Read from the OS's own tool
-# (`ipconfig` on Windows, `hostname -I` elsewhere): Net.resolve answers nothing here (BUG-726).
+# (`ipconfig` on Windows, `hostname -I` elsewhere). Net.resolve of the machine's own name
+# answered nothing when this was written (BUG-726, since fixed); the OS tool needs no resolver.
 def lanAddress(): str
     var text: str = ""
     if (sys.getenv("OS") orelse "") == "Windows_NT"

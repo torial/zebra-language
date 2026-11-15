@@ -1,8 +1,12 @@
+# Net.resolve. The addresses a name resolves to depend on the machine (localhost may also give
+# ::1; a host name gives its LAN addresses), so this prints what holds everywhere rather than
+# the lists themselves -- output_sweep compares the printed text across machines and runs.
+
 def testLocalhostResolve
-    # localhost always resolves (to 127.0.0.1 and/or ::1)
-    print("Resolving localhost:")
-    for ip in Net.resolve("localhost")
-        print(ip)
+    # localhost always resolves, and 127.0.0.1 comes first (IPv4 before IPv6)
+    var ips = Net.resolve("localhost")
+    print("localhost resolves: " + (ips.len > 0).toString())
+    print("first is 127.0.0.1: " + (ips.at(0) == "127.0.0.1").toString())
 
 def testMultipleHosts
     var hosts: List(str) = List()
@@ -11,13 +15,17 @@ def testMultipleHosts
     for hostname in hosts
         print("Resolving: ".concat(hostname))
         for ip in Net.resolve(hostname)
-            print("  -> ".concat(ip))
+            if ip == "127.0.0.1"
+                print("  -> ".concat(ip))
 
 def testInvalidHost
-    # This should fail gracefully or return empty
+    # "bad host" (a space) is not a host name, so no resolver is asked: no address, and the
+    # same reason on stderr on every machine. A name that merely does not exist is NOT used:
+    # a DNS that answers every name (ISP wildcard hijacking) would give it an address, and its
+    # failure reason differs by resolver -- this file's output is compared across machines.
     print("Attempting to resolve invalid host:")
-    var results = Net.resolve("invalid.hostname.that.does.not.exist.local")
-    print("Got ".concat(results.len.toString()).concat(" results"))
+    var results = Net.resolve("bad host")
+    print("no address: " + (results.len == 0).toString())
 
 def main()
     testLocalhostResolve()

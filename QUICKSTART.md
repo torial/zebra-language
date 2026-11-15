@@ -4652,7 +4652,7 @@ machine does not have is refused the same way, with the OS's reason.
 A port is an ordinary `int` in every networking call (`Tcp`, `Ws.serve`, `Http.serve`,
 `Udp`). One outside 0..65535 is refused by name and the call does nothing: `connect`
 returns nil, a server returns, `send` skips, and `Udp.bind` stops the program (BUG-688).
-| `Net.resolve(host)`               | `[]str`         | DNS lookup                          |
+| `Net.resolve(host)`               | `List(str)`     | Every address of `host`, IPv4 first, then IPv6; an IP literal answers itself. A failed lookup prints `net: cannot resolve "host": <reason>` and answers an empty list |
 
 On a `TcpConn`:
 

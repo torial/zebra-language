@@ -1,0 +1,39 @@
+# BUG-726: Net.resolve did no lookup at all -- it asked a function that only PARSES an address
+# literal -- and turned the failure into an empty list. `Net.resolve("localhost")` answered
+# nothing, a name that does not exist answered the same, and at most one IPv4 address came back.
+#
+# Now a literal answers itself, a name answers every address the system resolver gives (IPv4
+# first, then IPv6), and a failed lookup prints `net: cannot resolve "<host>": <reason>` on
+# stderr -- exactly once here (the registration counts it) -- and answers an empty list. A lookup
+# that succeeds always has an address, so empty means failed.
+
+def main()
+    # A name: localhost is in every hosts file. IPv4 comes first, so `.at(0)` is still an IPv4
+    # address the way it was when only one was kept.
+    var lh = Net.resolve("localhost")
+    assert lh.len >= 1, "localhost resolves; got nothing"
+    assert lh.contains("127.0.0.1"), "localhost includes 127.0.0.1; got " + lh.join(" ")
+    assert lh.at(0) == "127.0.0.1", "IPv4 first; got " + lh.join(" ")
+
+    # Literals answer themselves, IPv6 included (`::1` is not a host name, so a lookup alone
+    # would refuse it).
+    assert Net.resolve("10.1.2.3").join(" ") == "10.1.2.3", "an IPv4 literal answers itself"
+    assert Net.resolve("::1").join(" ") == "::1", "an IPv6 literal answers itself"
+
+    # No duplicates: a resolver may answer one address once per socket type.
+    var seen: Set(str) = Set()
+    for a in lh
+        assert not seen.contains(a), "duplicate address " + a + " in " + lh.join(" ")
+        seen.add(a)
+
+    # A failed lookup: empty, and the reason printed. "bad host" (a space) is not a host name,
+    # so no resolver is asked -- a name that merely does not exist is NOT used here, because a
+    # network whose DNS answers every name (ISP wildcard hijacking) would give it an address.
+    var none = Net.resolve("bad host")
+    assert none.len == 0, "a name that cannot be looked up answers no address; got " + none.join(" ")
+
+    # The answer is an ordinary list the program can grow.
+    lh.add("extra")
+    assert lh.at(lh.len - 1) == "extra", "the result is a list like any other"
+
+    print("bug726: OK")
