@@ -6,6 +6,54 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-709: `zebra -c` accepts a `str` or `int` where a class is expected -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
+- **Repro:** `class SafeHtml` and `def html(body: SafeHtml)`; then `html("<p>")`, `return name`
+  from `def f(name: str): SafeHtml`, and `var h: SafeHtml = name`. `-c` exits 0 on all three.
+  `--check-full` and a build refuse at the `.zbr` line (`expected type '*SafeHtml', found
+  '*const [3:0]u8'`), so a build never ships it. `html(5)` and `html(Other())` with another
+  class pass `-c` too; `-c --strict` sees none of them.
+- **Cost:** `-c` is the fast check the IDE and the LSP run on every edit; a wrong argument type
+  shows up only at build, as a Zig type name. `--help` says `-c` can pass code a build refuses,
+  but plain argument types are the first thing a reader expects it to cover.
+- **Fix shape:** in the call-argument loop, the typed-`var` check and `return`, refuse a value
+  whose type is KNOWN (a literal, a `str`/`int`/`float`/`bool` local, another class) where the
+  slot is a user class, naming both types. An unknown type is not refused (the BUG-632 rule).
+  Measure `-c` counts over the three corpora first.
+- **Control when fixing:** the five shapes refused at their columns; a `SafeHtml` value, a
+  `SafeHtml?` slot given `nil`, and an interface slot given an implementing class still pass.
+- **Fix (`TypeChecker.zbr`), three gaps:**
+  1. **Call arguments.** A class / enum / interface parameter is stored as the tag
+     `named(SafeHtml)`, and `paramTypeFromTag` decoded it to nil, so no argument given to one
+     was ever compared -- not even another class (`html(Other())`). It decodes now; the argument
+     loop compares a slot naming a declared class, enum or union, and leaves a `sig` to BUG-630's
+     own branch (whose message names the parameter) and a generic `T` unchecked, as before.
+  2. **A known primitive into a class slot.** `checkExpr`'s and `checkVarDecl`'s named branches
+     compared class against class only. `primitiveIntoClass` (the mirror of BUG-650's
+     `namedIntoPrimitive`) refuses a `str` / `int` / `float` / `bool` / `char` value where a
+     declared class, struct or interface is expected: `type mismatch: expected SafeHtml, got str`.
+     An unknown value, a type alias and a generic `T` are not refused.
+  3. **Constructor arguments.** `checkCallExpr` never consulted a `cue init`'s parameter types
+     (`Pt("a")` for `cue init(x: int)` passed -c and failed in zig). It does now, under the guard
+     BUG-659's arity check uses: a class this file declares or exposes, not a local, not generic.
+- **Measured before landing:** `-c` over every tracked `.zbr` of this repo, zebra-ide and the
+  GameEngine (3,249 files), old binary against new, neither panicking on any: 0 changed. The
+  first draft changed one (BUG-630's line 18 lost its parameter-naming message to the generic
+  one -- a `sig` slot decoded as a named type), which is what established the sweep could see a
+  change; the `sig` exemption above came from it.
+- **Pinned by:** `test/bug709_class_slot_fail_test.zbr` (`smoke_tc_fail` x8): a str literal
+  argument, `return name`, `var h: SafeHtml = name`, an int argument, another class, a
+  constructor argument, a method argument, and a str into a `cue init(x: int)`, each refused at
+  its column. Red: the pre-fix compiler refuses none. `test/bug709_class_slot_ok_test.zbr`
+  (`smoke_run`): the class itself, nil into `SafeHtml?`, an implementing class into an interface,
+  an int into a generic `T`, and constructors given their declared types.
+- **Not covered:** an enum or union slot given a primitive (refused at build, not at -c); a
+  generic class constructor's arguments (`Box(int)("x")` passes -c); BUG-744 -- a CLASS as a generic
+  function's type argument (`same(SafeHtml)(h)`) emits a bare name and fails inside zig, found
+  writing the ok fixture, which therefore passes an int there.
+
+---
+
 ### BUG-743: `toString()` on a List or HashMap returns Zig's struct dump -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-15; Fable, from a V-route show program; reproduced on b5efe7a)
 - **Repro:** `var ints: List(int) = [1, 2, 3]` / `var strs: List(str) = ["a", "b c", ""]` /

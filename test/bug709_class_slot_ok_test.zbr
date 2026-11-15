@@ -1,0 +1,52 @@
+# BUG-709: what a class-typed slot must still accept once a known wrong type is refused there --
+# the class itself, nil into an optional of it, an implementing class into an interface, an int
+# into a generic `T` (a class there is BUG-744, a codegen bug), and a constructor given the
+# types its `cue init` declares.
+class SafeHtml
+    var s: str = "ok"
+
+interface Shape
+    def area(): int
+
+class Sq implements Shape
+    var w: int = 3
+    def area(): int
+        return .w * .w
+
+class Page
+    var body: SafeHtml = SafeHtml()
+    cue init(b: SafeHtml)
+        .body = b
+
+class Pt
+    var x: int = 0
+    cue init(x: int)
+        .x = x
+
+def html(body: SafeHtml): str
+    return body.s
+
+def maybe(h: SafeHtml?): str
+    if h as v
+        return v.s
+    return "none"
+
+def areaOf(sh: Shape): int
+    return sh.area()
+
+def same(T)(x: T): T
+    return x
+
+def make(): SafeHtml
+    return SafeHtml()
+
+def main()
+    var h: SafeHtml = make()
+    print(html(h))
+    print(maybe(nil))
+    print(maybe(h))
+    print(areaOf(Sq()))
+    print(same(int)(5))
+    print(Page(h).body.s)
+    print(Pt(7).x)
+    print("bug709_class_slot_ok: OK")

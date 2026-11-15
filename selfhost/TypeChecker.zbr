@@ -7028,10 +7028,19 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
         # Type aliases are transparent — skip conformance check when expected is an alias.
         if ctx.isTypeAlias(exp_class)
             return inferred
+        # Only a slot naming a DECLARED class / interface / enum / union is compared: a generic
+        # function's `T` is a named slot too, and any class may go into it (BUG-709 made call
+        # arguments reach here, which they never had).
+        if not (ctx.hasClassAny(exp_class) or ctx.hasEnumAny(exp_class) or ctx.hasUnion(exp_class))
+            return inferred
         if inferred is Type_.named as inf_class
             if not sameClassName(exp_class, inf_class)
                 if not ctx.classConformsToAny(inf_class, exp_class)
                     ctx.addErr(file, d_line, d_col, "type mismatch: expected " + exp_class + ", got " + inf_class + " (which does not implement " + exp_class + ")")
+        var pc_got: str = primitiveIntoClass(exp, inferred, ctx)   # BUG-709
+        if pc_got != ""
+            ctx.addErr(file, d_line, d_col, "type mismatch: expected " + exp_class + ", got " + pc_got)
+            return exp
         return inferred
     # BUG-431 (second half): an int VALUE into a byte slot (call args, returns, field
     # inits). Before the isPrimitive guard, which does not count uint_n(8).
@@ -7240,6 +7249,10 @@ def paramTypeFromTag(tag: str): Type_?
         return Type_.char_
     if tag == "str"
         return Type_.string_
+    # BUG-709: a class / struct / enum / interface parameter (`named(SafeHtml)`). It decoded to
+    # nil, so no argument given to one was ever compared -- `html("<p>")` passed -c.
+    if tag.startsWith("named(") and tag.endsWith(")") and tag.len > 7
+        return typeFromName(tag[6 .. tag.len - 1])
     # BUG-626: a container parameter, so its argument's element type is compared. An element
     # this cannot decode (`opt` carries no payload, a class, a sized int) is `unknown`, which
     # the comparison never refuses on.
@@ -8843,6 +8856,7 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
     # back to the enclosing statement line when no callee position is available.
     var cline: int = line
     var ccol: int = 0
+    var ctor_cls: str = ""   # BUG-709: set when the call constructs a class through its cue init
     branch call.callee
         on Expr.ident as cid
             lookup_class = ctx.current_class  # "" at module scope
@@ -8850,6 +8864,13 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
             if cid.span.line > 0
                 cline = cid.span.line
                 ccol = cid.span.col
+            # BUG-709: a constructor's arguments were never compared with its `cue init`'s
+            # parameters (`Pt("a")` for `cue init(x: int)` passed -c). Same guard as BUG-659's
+            # arity check: a class this file declares or exposes, not a local, with a cue init
+            # (dep_types also holds classes of modules this one never uses, BUG-502).
+            if ctx.hasClassAny(cid.name) and not ctx.hasLocal(cid.name) and ctx.genericParamNames(cid.name).len == 0
+                if (ctx.module_types.hasClass(cid.name) or ctx.module_types.exposedOwner(cid.name) != nil) and ctx.fnParamListAny(cid.name, "init") != nil
+                    ctor_cls = cid.name
         on Expr.member as mem
             if mem.object is Expr.ident as nsid
                 if nsid.name == "sys" and not ctx.hasLocal("sys")
@@ -8901,10 +8922,22 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
     var idx: int = 0
     for arg in call.args
         var expected: Type_? = nil
-        if lookup_class != ""
-            expected = ctx.methodParamTypeAtAny(lookup_class, lookup_method, idx)
-        if expected == nil
-            expected = ctx.methodParamTypeAtAny("", lookup_method, idx)
+        if ctor_cls != ""
+            expected = ctx.module_types.ctorParamAt(ctor_cls, idx)
+            if expected == nil
+                expected = ctx.dep_types.ctorParamAt(ctor_cls, idx)
+        else
+            if lookup_class != ""
+                expected = ctx.methodParamTypeAtAny(lookup_class, lookup_method, idx)
+            if expected == nil
+                expected = ctx.methodParamTypeAtAny("", lookup_method, idx)
+            # BUG-709: a `named(...)` tag now decodes, but only a declared class / enum / union
+            # is compared here. A `sig` keeps BUG-630's branch below (its message names the
+            # parameter), and a generic `T` stays unchecked, as before.
+            if expected as ex_named
+                if ex_named is Type_.named as exn
+                    if not (ctx.hasClassAny(exn) or ctx.hasEnumAny(exn) or ctx.hasUnion(exn))
+                        expected = nil
         if expected != nil
             # Anchor the mismatch at the argument itself when it carries a real
             # span (ident/member), else fall back to the callee position.
@@ -9032,6 +9065,9 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
                 if not sameClassName(dec_class, inf_class)
                     if not ctx.classConformsToAny(inf_class, dec_class)
                         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + dec_class + ", found " + inf_class + " (which does not implement " + dec_class + ")")
+            var pc_got: str = primitiveIntoClass(declared, cv_inferred, ctx)   # BUG-709
+            if pc_got != ""
+                ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + dec_class + ", found " + pc_got)
         return
     # BUG-431 (second half): `var b: byte = <int value>`. Checked BEFORE the isPrimitive
     # guard below, which does not count uint_n(8) as primitive and would return first.
@@ -9088,6 +9124,19 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         return
     if not typesCompatible(declared, inferred)
         ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + typeTag(declared) + ", found " + typeTag(inferred))
+
+# BUG-709: the user spelling of a str / int / float / bool / char VALUE going into a slot that
+# names a declared class, struct or interface (`html("<p>")`, `var h: SafeHtml = name`), or ""
+# when it is not one. The mirror of namedIntoPrimitive. -c passed all of these and zig refused
+# them at build ("expected type '*SafeHtml', found '*const [3:0]u8'"). An unknown or
+# unresolved value is not refused (the BUG-632 rule), nor is a type alias or a generic `T`.
+def primitiveIntoClass(exp: Type_, inferred: Type_, ctx: InferCtx): str
+    if exp is Type_.named as cn
+        if cn.len == 0 or ctx.isTypeAlias(cn) or not ctx.hasClassAny(cn)
+            return ""
+        if isPrimitive(inferred)
+            return userTypeName(inferred)
+    return ""
 
 # BUG-650: the description of a user enum / union / class / struct value that cannot go
 # into a primitive slot ("Color (an enum)"), or "" when `t` is not one (a type alias, a

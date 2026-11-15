@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`-c` refuses a wrong value in a class-typed slot (BUG-709).** `html("<p>")` for
+  `def html(body: SafeHtml)`, `return name` from a function returning `SafeHtml`,
+  `var h: SafeHtml = name`, `html(5)`, `html(Other())`, and a constructor given the wrong type
+  (`Pt("a")` for `cue init(x: int)`) all passed `-c` and failed at build as a zig type error.
+  Each is now `type mismatch: expected SafeHtml, got str` at the value's column. Constructor
+  arguments were not type-checked at all before. A generic `T`, a `sig` parameter, an optional
+  slot given `nil` and an interface given an implementing class are unchanged. Measured: no
+  file in this repo, zebra-ide or the GameEngine changes verdict.
 - **`x.toString()` is the text `print` shows (BUG-743).** On a List, HashMap, Set, a class
   without a `toString` cue, a struct or an enum, `toString()` returned Zig's struct dump --
   `.{ .items = { 1, 2, 3 }, .capacity = 17, ... }`, a map's allocator addresses (different every

@@ -72,25 +72,6 @@
 
 ---
 
-### BUG-709: `zebra -c` accepts a `str` or `int` where a class is expected
-- **Status:** OPEN (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
-- **Repro:** `class SafeHtml` and `def html(body: SafeHtml)`; then `html("<p>")`, `return name`
-  from `def f(name: str): SafeHtml`, and `var h: SafeHtml = name`. `-c` exits 0 on all three.
-  `--check-full` and a build refuse at the `.zbr` line (`expected type '*SafeHtml', found
-  '*const [3:0]u8'`), so a build never ships it. `html(5)` and `html(Other())` with another
-  class pass `-c` too; `-c --strict` sees none of them.
-- **Cost:** `-c` is the fast check the IDE and the LSP run on every edit; a wrong argument type
-  shows up only at build, as a Zig type name. `--help` says `-c` can pass code a build refuses,
-  but plain argument types are the first thing a reader expects it to cover.
-- **Fix shape:** in the call-argument loop, the typed-`var` check and `return`, refuse a value
-  whose type is KNOWN (a literal, a `str`/`int`/`float`/`bool` local, another class) where the
-  slot is a user class, naming both types. An unknown type is not refused (the BUG-632 rule).
-  Measure `-c` counts over the three corpora first.
-- **Control when fixing:** the five shapes refused at their columns; a `SafeHtml` value, a
-  `SafeHtml?` slot given `nil`, and an interface slot given an implementing class still pass.
-
----
-
 ### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so
 - **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
 - **Repro:** `DateTime.of(2026, 1, 15, 12, 0, 0).inZone("America/Phonix")` (a typo) and

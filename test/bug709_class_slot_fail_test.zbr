@@ -1,0 +1,37 @@
+# BUG-709: a value whose type is known goes into a slot that names a class, and is not that
+# class. `-c` passed every line below; a build refused each inside zig ("expected type
+# '*SafeHtml', found '*const [3:0]u8'"). Each must be refused at its column.
+class SafeHtml
+    var s: str = ""
+
+class Other
+    var n: int = 0
+
+class Page
+    var body: SafeHtml = SafeHtml()
+    cue init(b: SafeHtml)
+        .body = b
+    def set(b: SafeHtml)
+        .body = b
+
+class Pt
+    var x: int = 0
+    cue init(x: int)
+        .x = x
+
+def html(body: SafeHtml): str
+    return body.s
+
+def wrap(name: str): SafeHtml
+    return name
+
+def main()
+    var name = "x"
+    print(html("<p>"))
+    var h: SafeHtml = name
+    print(html(5))
+    print(html(Other()))
+    var pg = Page("raw")
+    pg.set("raw")
+    var p = Pt("a")
+    print(h.s + pg.body.s + p.x.toString() + wrap(name).s)
