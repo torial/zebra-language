@@ -5,6 +5,7 @@
 # pins: BUG-713 `${n:c}` on an int is one byte on the V route, and traps out of 0..255 with the Zig route's words (the fmt_c row)
 # pins: BUG-716 a refused SQLite statement is printed and kept on the V route as on the Zig route, where it panicked (the sqlite row)
 # pins: BUG-717 busyMs on the V route, placed by name before position (the sqlite row: `Sqlite.open(p, busyMs: 0)` leaves write-ahead on)
+# pins: BUG-726 Net.resolve on the V route answers what the Zig route answers, and refuses text that is no host name in the same words (the net row)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -269,6 +270,50 @@ done
 if [ -n "$sq_bad" ]; then echo "sqlite: FAILED --$sq_bad"; fail=1
 elif ! grep -qF 'sqlite: exec failed: database is locked (code 5)' "$OUT/sq_fix_zig_said.txt" || ! grep -qF 'sqlite: open failed: ' "$OUT/sq_more_zig_said.txt" || ! grep -qF 'is negative -- it is the wait in milliseconds, 0 to refuse at once' "$OUT/sq_more_zig_said.txt"; then echo "sqlite: FAILED -- the Zig run did not say the refusals the comparison rests on (NO CONTROL): $(cat "$OUT/sq_fix_zig_said.txt" "$OUT/sq_more_zig_said.txt" | head -4 | cut -c1-120 | tr '\n' ' ')"; fail=1
 else echo "sqlite: ok -- both programs alike on both backends: stdout ($(wc -l < "$OUT/sq_fix_zig_out.txt") + $(wc -l < "$OUT/sq_more_zig_out.txt") lines) and the refusal lines on stderr ($(wc -l < "$OUT/sq_fix_zig_said.txt") + $(wc -l < "$OUT/sq_more_zig_said.txt"))"; fi
+echo "── Net.resolve asks the system resolver on both backends, and refuses what is no host name in the same words (BUG-726) ──"
+rows=$((rows + 1))
+# The V route had no Net at all until 2026-11-14 (a program naming it was refused). Two
+# programs, each through both backends: the Zig route's own fixture for BUG-726, and one
+# with the refusals written out and a local named `net` (the emitted V file imports a module
+# of that name). Compared: stdout whole, and stderr's refusals of text that is no host name
+# -- the words both routes agree on. A lookup that FAILS says the resolver's own reason,
+# which differs by backend and by machine, so no such host is in either program.
+cp "$WT/test/bug726_net_resolve_test.zbr" "$OUT/nr_fix.zbr"
+cat > "$OUT/nr_more.zbr" <<'ZBR'
+def main()
+    var net = Net.resolve("localhost")
+    print("localhost: ${net.len > 0}, first ${net.at(0)}")
+    print("an IPv4 literal: " + Net.resolve("192.0.2.7").join(" "))
+    print("an IPv6 literal: " + Net.resolve("::1").join(" "))
+    var bad: List(str) = ["bad host", "", "-lead.example", "a..b", "trail-.example", "under_score.example", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example"]
+    for b in bad
+        var got = Net.resolve(b)
+        print("no host name '" + b + "': ${got.len == 0}")
+    var grown = Net.resolve("127.0.0.1")
+    grown.add("more")
+    print("a list like any other: ${grown.len} " + grown.join(" "))
+    print("nr_more: OK")
+ZBR
+nr_bad=""
+for p in nr_fix nr_more; do
+  (cd "$OUT" && "$ZEBRA" $p.zbr > "$OUT/${p}_zig_out.txt" 2> "$OUT/${p}_zig_err.txt"); zrc=$?
+  (cd "$OUT" && "$ZEBRA" --target v $p.zbr > "$OUT/${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$p.v" > "$OUT/${p}_v_out.txt" 2> "$OUT/${p}_v_err.txt"); vrc=$?
+  grep -E '^net: cannot resolve ".*": [A-Za-z]+ \(not a host name or an IP address\)' "$OUT/${p}_zig_err.txt" > "$OUT/${p}_zig_said.txt"
+  grep -E '^net: cannot resolve ".*": [A-Za-z]+ \(not a host name or an IP address\)' "$OUT/${p}_v_err.txt" > "$OUT/${p}_v_said.txt"
+  if [ "$zrc" != 0 ] || ! tail -1 "$OUT/${p}_zig_out.txt" | grep -q ': OK$'; then nr_bad="$nr_bad $p(NO CONTROL: the Zig run exited $zrc: $(tail -c 160 "$OUT/${p}_zig_err.txt" | tr '\n' ' '))"
+  elif [ "$(grep -cE '^    ' "$OUT/${p}_emit.txt")" != 0 ]; then nr_bad="$nr_bad $p(REFUSED: $(grep -m1 -E '^    ' "$OUT/${p}_emit.txt" | cut -c1-140))"
+  elif [ "$vrc" != 0 ]; then nr_bad="$nr_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
+  elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then nr_bad="$nr_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"
+  elif ! diff -q "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" > /dev/null; then nr_bad="$nr_bad $p(the refusal lines differ, V then Zig: $(diff "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
+done
+# the controls of the comparison itself: the Zig run must have SAID the refusals (an empty
+# list equals an empty list), seven of them in the second program, and the V file must have
+# been built WITH the net section (a program that named no znet_ call would diff clean)
+if [ -n "$nr_bad" ]; then echo "net: FAILED --$nr_bad"; fail=1
+elif [ "$(wc -l < "$OUT/nr_more_zig_said.txt")" != 7 ] || ! grep -qF 'net: cannot resolve "bad host": InvalidHostName (not a host name or an IP address)' "$OUT/nr_fix_zig_said.txt"; then echo "net: FAILED -- NO CONTROL: the Zig runs did not say the refusals the comparison is about ($(wc -l < "$OUT/nr_fix_zig_said.txt") and $(wc -l < "$OUT/nr_more_zig_said.txt") lines, wanted 1 and 7)"; fail=1
+elif ! grep -q 'znet_resolve(' "$OUT/nr_more.v" || ! grep -q '^import net$' "$OUT/nr_more.v"; then echo "net: FAILED -- the emitted V names no znet_resolve or does not import net: the row compared something else"; fail=1
+else echo "net: ok -- both programs alike on both backends: stdout ($(wc -l < "$OUT/nr_fix_zig_out.txt") + $(wc -l < "$OUT/nr_more_zig_out.txt") lines) and the refusals of what is no host name ($(wc -l < "$OUT/nr_fix_zig_said.txt") + $(wc -l < "$OUT/nr_more_zig_said.txt") lines)"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v

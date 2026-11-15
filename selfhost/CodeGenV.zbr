@@ -147,7 +147,7 @@ def vSafe(name: str): str
     # the modules the emitted file imports: a parameter `time` was a duplicate of one
     # every symbol the emitted file's imports bind (sync, sqlite and http were missing
     # until 2026-11-12; generateV refuses an import whose symbol is not here)
-    if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2" or s == "bits" or s == "sync" or s == "sqlite" or s == "http" or s == "hmac" or s == "argon2" or s == "crand"
+    if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2" or s == "bits" or s == "sync" or s == "sqlite" or s == "http" or s == "hmac" or s == "argon2" or s == "crand" or s == "net"
         return s + "_"
     return s
 
@@ -1962,6 +1962,8 @@ class VGen
                             return "&ZList[string]"
                         if jowner == "Http" and (cm.member == "get" or cm.member == "post")
                             return "?ZHttpResponse"
+                        if jowner == "Net" and cm.member == "resolve"
+                            return "&ZList[string]"
                         if jowner == "sys"
                             if cm.member == "run"
                                 return "ZRunResult"
@@ -4499,6 +4501,13 @@ class VGen
         if ns == "Tcp"
             .refuse("Tcp." + name + " (no TCP client in the V runtime yet)", span)
             return "0"
+        if ns == "Net"
+            # V's net, through the runtime's net section (inlined with its import
+            # only when a program names it): the system resolver, as the Zig
+            # route's Net.resolve asks it since BUG-726
+            if name == "resolve": return "znet_resolve(" + a + ")"
+            .refuse("Net." + name + " (resolve is mapped; the UDP calls are not)", span)
+            return "0"
         if ns == "Dir"
             if name == "exists": return "os.is_dir(" + a + ")"
             if name == "createAll": return "os.mkdir_all(" + a + ") or {}"
@@ -5346,7 +5355,7 @@ def rtBaseType(t: str): str
     return identPrefix(s)
 
 def isBuiltinNs(ns: str): bool
-    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp" or ns == "Crypto"
+    return ns == "File" or ns == "Path" or ns == "sys" or ns == "Dir" or ns == "Json" or ns == "Random" or ns == "Hash" or ns == "Http" or ns == "Arg" or ns == "Terminal" or ns == "Sqlite" or ns == "DateTime" or ns == "Timer" or ns == "Tcp" or ns == "Crypto" or ns == "Net"
 
 def isFloatLit(e: Expr): bool
     branch e
@@ -5386,6 +5395,16 @@ def generateV(ms: List(Module), runtime: str): VResult
         var hb: int = rt_text.indexOf("// == http end ==")
         if ha >= 0 and hb > ha
             rt_text = rt_text.substring(0, ha) + "// (the http section is left out: the program makes no request)\n" + rt_text.substring(hb + "// == http end ==".len, rt_text.len)
+    # the runtime's net section (V's net: the resolver) goes in, with its import,
+    # only when the program names it
+    var needs_net: bool = body.contains("znet_")
+    if needs_net
+        head = head + "import net\n"
+    else
+        var na: int = rt_text.indexOf("// == net begin ==")
+        var nb: int = rt_text.indexOf("// == net end ==")
+        if na >= 0 and nb > na
+            rt_text = rt_text.substring(0, na) + "// (the net section is left out: the program resolves no name)\n" + rt_text.substring(nb + "// == net end ==".len, rt_text.len)
     # the runtime's crypto section (argon2 and its blake2b are a second of V compile)
     # goes in, with its imports, only when the program names it
     var needs_crypto: bool = body.contains("zcrypto_") or body.contains("zhash_hmac256(")
@@ -5402,7 +5421,7 @@ def generateV(ms: List(Module), runtime: str): VResult
     # last path component, or the alias after ` as `. Checked HERE, where the imports
     # are declared: one added without its vSafe entry refuses at once and names the
     # fix. The conditional imports are checked whether or not this program has them.
-    var import_lines: str = head + "import db.sqlite\nimport net.http\n" + crypto_imports
+    var import_lines: str = head + "import db.sqlite\nimport net.http\nimport net\n" + crypto_imports
     for iline in import_lines.split("\n")
         if iline.startsWith("import ")
             var ipath: str = iline.substring(7, iline.len).trim()

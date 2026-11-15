@@ -2758,6 +2758,41 @@ array element's address (`&big[0]`) and a fixed array's address (`&tmp[0]`)
 both want `unsafe`; `fn C.strtod` redeclared beside the builtin's returned a
 wrong value with no diagnostic — use V's `string.f64()` instead.
 
+## Net.resolve on the V route (2026-11-14)
+
+The V route had no `Net` namespace: a program naming `Net.resolve` was refused. BUG-726
+changed what the Zig route answers (every address the system resolver gives, IPv4 first,
+duplicates dropped, a literal answering itself, a failed lookup said on stderr), so the V
+route was written to that contract the same day, from the engine session.
+
+- `CodeGenV.zbr`: `Net` is a mapped namespace; `Net.resolve(h)` is `znet_resolve(h)`,
+  typed `&ZList[string]`; anything else on `Net` is refused by name (the UDP calls are not
+  mapped). The runtime's `net` section is inlined, with `import net`, only into a program
+  that names a `znet_` call, as the sqlite, http and crypto sections are; `net` joins the
+  import symbols `vSafe` renames a local away from.
+- `zebra_rt.v`: `znet_resolve` over V's `net.resolve_ipaddrs` (getaddrinfo, `.unspec`).
+  Text that is not a host name is refused BEFORE any resolver is asked, in the Zig route's
+  words: `std.Io.net.HostName.validate`'s rules are written again in
+  `znet_host_name_fault`, and the line is `net: cannot resolve "<host>": InvalidHostName
+  (not a host name or an IP address)` on both routes.
+- `tools/v_check.sh`: the `net` row. Two programs through both backends (the Zig route's
+  own BUG-726 fixture, and one with seven refusals written out and a local named `net`),
+  stdout compared whole and the refusal lines compared on stderr. Its controls: the Zig
+  runs must have said the refusals, and the emitted V must name `znet_resolve` and import
+  `net`. Watched red twice with the row run alone: IPv6 put before IPv4, and the
+  refusal's word changed.
+
+Where the routes still differ, and the row does not look:
+
+- A lookup that FAILS says the resolver's own reason after the colon: an error name on
+  the Zig route, getaddrinfo's message on the V route (`socket error: (11001)
+  wsahost_not_found` on Windows). Neither program in the row resolves a name that does
+  not exist, because a network that answers every name would give it an address.
+- A link-local IPv6 address carries its zone as the interface's index on the V route
+  (`fe80::1%3`) and as its name on the Zig route (`fe80::1%eth0`): V does not wrap
+  `if_indextoname`.
+- Windows only, as the rest of the V route's checks are.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

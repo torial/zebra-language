@@ -895,6 +895,96 @@ pub fn zhttp_post(zr_url string, zr_body string) ?ZHttpResponse {
 }
 // == http end ==
 
+// == net begin ==
+// Zebra's Net.resolve over V's net (getaddrinfo): every address of a host as text, IPv4
+// first, then IPv6, duplicates dropped; an IP literal answers itself. What the Zig route
+// answers since BUG-726, with its refusals: text that is not a host name is refused before
+// any resolver is asked, in the Zig route's words (std.Io.net.HostName.validate's rules,
+// written again here), and a lookup that fails prints why and answers an empty list. The
+// reason after the colon is the resolver's own and differs between the routes.
+// Inlined only when a program names it (the section's import with it).
+pub fn znet_resolve(zr_host string) &ZList[string] {
+	mut zr_out := []string{}
+	mut zr_query := zr_host + ':0'
+	if zr_host.contains(':') {
+		zr_query = '[' + zr_host + ']:0' // an IPv6 literal: nothing else has a colon
+	} else {
+		zr_why := znet_host_name_fault(zr_host)
+		if zr_why != '' {
+			eprintln('net: cannot resolve "${zr_host}": ${zr_why} (not a host name or an IP address)')
+			return zlist_of[string](zr_out)
+		}
+	}
+	zr_addrs := net.resolve_ipaddrs(zr_query, .unspec, .tcp) or {
+		eprintln('net: cannot resolve "${zr_host}": ${err.msg().trim_string_left('net: ')}')
+		return zlist_of[string](zr_out)
+	}
+	mut zr_six := []string{}
+	for zr_a in zr_addrs {
+		zr_t := znet_addr_text(zr_a)
+		if zr_a.family() == .ip {
+			if zr_t !in zr_out {
+				zr_out << zr_t
+			}
+		} else if zr_t !in zr_six {
+			zr_six << zr_t
+		}
+	}
+	zr_out << zr_six
+	if zr_out.len == 0 {
+		eprintln('net: cannot resolve "${zr_host}": NoAddressReturned')
+	}
+	return zlist_of[string](zr_out)
+}
+
+// an address as text, no port: `127.0.0.1`, `::1`, `fe80::1%3` (V names a link-local
+// address's zone by its interface index, where the Zig route names the interface)
+fn znet_addr_text(zr_a net.Addr) string {
+	zr_s := zr_a.str() // `127.0.0.1:0`, `[::1]:0`
+	if zr_s.starts_with('[') {
+		return zr_s.all_after('[').all_before_last(']')
+	}
+	return zr_s.all_before_last(':')
+}
+
+// '' for a host name, else the Zig route's name for what is wrong with it: labels of
+// letters, digits and hyphens between dots, each 1 to 63 long, beginning and ending in a
+// letter or digit; 253 bytes at most, a trailing dot not counted
+fn znet_host_name_fault(zr_host string) string {
+	if zr_host.len == 0 {
+		return 'InvalidHostName'
+	}
+	zr_end := if zr_host[zr_host.len - 1] == `.` { zr_host.len - 1 } else { zr_host.len }
+	if zr_end > 253 {
+		return 'NameTooLong'
+	}
+	mut zr_label := 0
+	for zr_i in 0 .. zr_end {
+		zr_c := zr_host[zr_i]
+		if zr_c == `.` {
+			if zr_label == 0 || zr_label > 63 || !zr_host[zr_i - 1].is_alnum() {
+				return 'InvalidHostName'
+			}
+			zr_label = 0
+		} else if zr_c == `-` {
+			if zr_label == 0 {
+				return 'InvalidHostName'
+			}
+			zr_label++
+		} else {
+			if !zr_c.is_alnum() {
+				return 'InvalidHostName'
+			}
+			zr_label++
+		}
+	}
+	if zr_label == 0 || zr_label > 63 || !zr_host[zr_end - 1].is_alnum() {
+		return 'InvalidHostName'
+	}
+	return ''
+}
+// == net end ==
+
 pub fn zunwrap[T](zr_x ?T) T {
 	return zr_x or { zbr_panic('a nil unwrapped') }
 }
