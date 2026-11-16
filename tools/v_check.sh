@@ -8,6 +8,7 @@
 # pins: BUG-726 Net.resolve on the V route answers what the Zig route answers, and refuses text that is no host name in the same words (the net row)
 # pins: BUG-723 a container printed, interpolated or joined on the V route is the Zig route's text, and s.chars() / s.bytes() are values there too (the show row)
 # pins: BUG-734 Json.parse answers nil past 256 levels of nesting on the V route as on the Zig route (the show row's jd_fix)
+# pins: BUG-743 a container's toString() on the V route is the text print gives, as on the Zig route (the show row's show_more)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
 # and the Zig suites are for the Zig side.
@@ -32,9 +33,11 @@ set -u
 source "$(dirname "${BASH_SOURCE[0]}")/zig_toolchain.sh"   # the PINNED zig, also standalone (hazard_lint H14)
 WT=$(cd "$(dirname "$0")/.." && pwd)
 ZEBRA="$WT/zig-out/bin/zebra.exe"
-# the pin (vlang/v master b399a50 since 2026-11-08), as tools/gates.sh passes it: the
-# crypto row needs V's crypto.argon2, which 0.5.2 (the default here until 2026-11-12) lacks
-V=${V:-/c/Projects/v-b399a50/v.exe}
+# the pin (vlang/v master c4dee97 since 2026-11-15; b399a50 from 11-08), as tools/gates.sh
+# passes it: the crypto row needs V's crypto.argon2, which 0.5.2 (the default here until
+# 2026-11-12) lacks, and the certs row needs net.http's certificate check on by default,
+# which b399a50 lacks
+V=${V:-/c/Projects/v-c4dee97/v.exe}
 [ "${1:-}" = "--v" ] && V=$2
 OUT=${OUT:-$WT/.zig-cache/v_check}
 ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-2}   # main.zbr's two zig literals (Zig-backend code by definition): more is a regression
@@ -316,6 +319,26 @@ if [ -n "$nr_bad" ]; then echo "net: FAILED --$nr_bad"; fail=1
 elif [ "$(wc -l < "$OUT/nr_more_zig_said.txt")" != 7 ] || ! grep -qF 'net: cannot resolve "bad host": InvalidHostName (not a host name or an IP address)' "$OUT/nr_fix_zig_said.txt"; then echo "net: FAILED -- NO CONTROL: the Zig runs did not say the refusals the comparison is about ($(wc -l < "$OUT/nr_fix_zig_said.txt") and $(wc -l < "$OUT/nr_more_zig_said.txt") lines, wanted 1 and 7)"; fail=1
 elif ! grep -q 'znet_resolve(' "$OUT/nr_more.v" || ! grep -q '^import net$' "$OUT/nr_more.v"; then echo "net: FAILED -- the emitted V names no znet_resolve or does not import net: the row compared something else"; fail=1
 else echo "net: ok -- both programs alike on both backends: stdout ($(wc -l < "$OUT/nr_fix_zig_out.txt") + $(wc -l < "$OUT/nr_more_zig_out.txt") lines) and the refusals of what is no host name ($(wc -l < "$OUT/nr_fix_zig_said.txt") + $(wc -l < "$OUT/nr_more_zig_said.txt") lines)"; fi
+echo "── the V this runs with verifies HTTPS certificates by default (the V route's Http.get is V's http.get) ──"
+rows=$((rows + 1))
+# zebra_rt.v's zhttp_get / zhttp_post call V's http.get / http.post with no config, so the V
+# route's answer to a certificate nobody signed is V's default. Until vlang/v 40774847a9
+# (2026-11-08) that default was NOT to check: under the pin before this one (b399a50) http.get
+# answered 200 from a self-signed host and from an expired one, where the Zig route refuses
+# both. A test of the behaviour needs the network, which no gate has; this leg reads the
+# default out of the V it was given instead. Every `validate bool` field in the two files must
+# say `= true`. A file that is missing, or that has no such field any more, is REFUSED too:
+# when the shape changes this leg can no longer tell, and must not read that as a pass.
+cert_root=$(dirname "$V"); cert_bad=""
+for f in vlib/net/http/http.v vlib/net/http/request.v; do
+  if [ ! -f "$cert_root/$f" ]; then cert_bad="$cert_bad $f(not found beside $V: nothing was read)"; continue; fi
+  cert_fields=$(grep -cE '^[[:space:]]+validate[[:space:]]+bool' "$cert_root/$f")
+  cert_on=$(grep -cE '^[[:space:]]+validate[[:space:]]+bool[[:space:]]*=[[:space:]]*true' "$cert_root/$f")
+  if [ "$cert_fields" = 0 ]; then cert_bad="$cert_bad $f(no \`validate bool\` field: the file's shape changed and this leg can no longer tell)"
+  elif [ "$cert_on" != "$cert_fields" ]; then cert_bad="$cert_bad $f($cert_on of $cert_fields \`validate\` fields default to true)"; fi
+done
+if [ -n "$cert_bad" ]; then echo "certs: FAILED -- this V does not verify HTTPS certificates by default, or it cannot be told:$cert_bad -- use a V at or after vlang/v 40774847a9 (the pin, /c/Projects/v-c4dee97/v.exe)"; fail=1
+else echo "certs: ok -- FetchConfig.validate and Request.validate default to true in $cert_root/vlib/net/http"; fi
 echo "── a container printed, interpolated or joined is the Zig route's text; Json.parse stops at 256 levels (BUG-723, BUG-734) ──"
 rows=$((rows + 1))
 # Three programs through both backends, stdout compared whole, and a fourth that must be
@@ -326,9 +349,8 @@ rows=$((rows + 1))
 # print, a hole and a join, empty, nested three deep, as a map's value, through a field.
 # Until BUG-723 a container in a print or a hole was V's own str() of the boxed type
 # (`&ZList[rune]{ items: [...] }`). A map and a set are printed with ONE entry: their order
-# is promised on neither route. Not here: a list's toString(), which the ZIG route prints as
-# Zig's own struct dump (`.{ .items = { 1, 2, 3 }, .capacity = 17 }`, found by this row's
-# first run and reported; the V route prints `[1, 2, 3]`).
+# is promised on neither route. A container's toString() is the same text (BUG-743: the Zig
+# route printed Zig's own struct dump there until 718330a; this row's first run found it).
 cp "$WT/test/bug723_chars_value_test.zbr" "$OUT/show_fix.zbr"
 cp "$WT/test/bug734_json_depth_test.zbr" "$OUT/jd_fix.zbr"
 cat > "$OUT/show_more.zbr" <<'ZBR'
@@ -364,6 +386,7 @@ def main()
     print(bs)
     print("holes: ${ints} ${strs} ${floats} ${bools} ${cs} ${bs}")
     print("two args:", ints, strs)
+    print("toString: " + ints.toString() + " " + strs.toString() + " " + cs.toString() + " " + floats.toString())
     # joins of what is not a list of strings
     print("joins: " + ints.join("+") + " " + floats.join(" ") + " " + bools.join("/") + " " + cs.join("-") + " " + bs.join(","))
 
@@ -405,6 +428,7 @@ def main()
     print("set hole: ${si}")
     var lm: List(HashMap(str, int)) = [m]
     print(lm)
+    print("map toString: " + m.toString() + " " + ml.toString() + " set: " + s.toString() + " nested: " + grid.toString())
 
     # through fields
     var sh = Shelf()

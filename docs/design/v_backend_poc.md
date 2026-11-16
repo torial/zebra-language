@@ -2822,10 +2822,10 @@ under later.
 
 **What cannot be diffed.** A map's and a set's order: V's map keeps insertion
 order, the Zig route walks its hash table, and QUICKSTART promises neither.
-The row prints one entry each. And a list's `toString()`: the ZIG route
-prints Zig's struct dump there (`.{ .items = { 1, 2, 3 }, .capacity = 17 }`),
-found by this work's first run and reported to the Zig side; the V route
-prints `[1, 2, 3]`, and the row leaves `toString()` out until the two agree.
+The row prints one entry each. A container's `toString()` is in the row
+since BUG-743 (718330a): the ZIG route printed Zig's struct dump there
+(`.{ .items = { 1, 2, 3 }, .capacity = 17 }`), found by this work's first run;
+both routes now give the text `print` gives.
 
 **Json.parse's depth.** `zjson_parse` scans the text before `x.json2` sees it
 (`zjson_too_deep`: each `[` or `{` outside a string a level, escapes
@@ -2842,6 +2842,38 @@ checkout's `selfhost/zebra_rt.v`, not the copy beside the binary -- the first
 three reds mutated the copy and read green): the quoted-string printer made
 bare (the 29-line program differs), the limit at 255 and the scan removed
 (the depth fixture says 3 WRONG each).
+
+## The pin is vlang/v master c4dee97, and the certs row (2026-11-15)
+
+Sean's word, after the evaluation recorded in the engine's
+`docs/V_HOST_PORT.md` (every V host row and this file's `tools/v_check.sh`
+green under it). `tools/v_check.sh` and `tools/v_engine_check.py` default to
+`/c/Projects/v-c4dee97/v.exe`; the engine ladder's default had still been
+V 0.5.2, under which 103 of its roots fail on `uint`.
+
+**Why this pin, beyond green rows.** The runtime's `zhttp_get` / `zhttp_post`
+call V's `http.get` / `http.post` with no config, so what the V route does
+with a certificate nobody signed is V's default. Until vlang/v 40774847a9 that
+default was not to check: under b399a50 a three-line V program got status 200
+from `self-signed.badssl.com` and from `expired.badssl.com`; under c4dee97
+both are refused (`vschannel request failed: 0x800b0109` / `0x800b0101`). The
+Zig route refused them all along.
+
+**The certs row.** The behaviour needs the network, which no gate has, so
+`tools/v_check.sh` reads the default out of the V it is given: every
+`validate bool` field in `vlib/net/http/http.v` and `request.v` beside the V
+must say `= true`. A file that is missing, or that no longer has such a
+field, is refused too -- when the shape changes the row can no longer tell,
+and that must not read as a pass. Seen red: b399a50 (0 of 1 in each file),
+and three altered copies of c4dee97's files (the field renamed away, a file
+removed, one of the two defaults removed). Seen green: c4dee97.
+
+**Open on this route, from the Zig side's BUG-743 fixture** (which cannot go
+into the row as written: the route refuses a set literal): BUG-745, a struct
+with a field default and no `cue init` constructed with no arguments gets 0,
+not the default (`new_rgb(0)`); BUG-746, a class or struct without its own
+`toString` prints V's dump, and one with its own prints `&Named(own)` in a
+hole.
 
 ## If the branch ever merges to main
 
