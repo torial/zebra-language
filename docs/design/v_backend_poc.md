@@ -2983,6 +2983,52 @@ WRONG, and `show_types` printed `tags: [], tagged: &nil`. The engine ladder
 (`tools/v_engine_check.py`, 367 roots) reads the same before and after: 100
 identical, the same two refusals and four standing failures.
 
+## The engine ladder's four standing failures (2026-11-16)
+
+`tools/v_engine_check.py` had carried the same four red roots for weeks: two that
+did not build under V and two that failed an assert. Read from the ladder's own
+logs, they were three emitter shapes, none of them the engine's.
+
+**A capture's name declared again.** V's closure captures a variable of the
+enclosing scope, so `capture var c: Counter = counter` is emitted as a
+declaration in the enclosing function before the statement that holds the
+lambda -- where it outlives the lambda. A later `var c = ...` in the same
+function is legal Zebra (the capture was the lambda's) and was V's
+"redefinition of `c`" (`instance_test`). `genLocal` asks whether the name is
+already in V's scope and, when it is, declares the local under a name of its
+own (`c_r<n>`, the temporary counter) and records the rename; every later read
+goes through it, a second lambda's `capture var c = c` included. A stale entry
+in the emitter's local list costs a renamed local and nothing else.
+
+**A class's own `pop()`.** `vTypeOf` answered `!elem` for any zero-argument
+`.pop()`, the List's signature, whatever the receiver. A class with
+`def pop(): str` called as a statement was emitted `wire.pop()!`, and V
+refused the `!` on a function that returns no result (`wire_build_test`). The
+answer is the List's only when the receiver is a List; any other receiver's
+method is typed from its own declaration, a line below.
+
+**The free-at-sweep queue.** `zig"_zbr_free_at_sweep(xs)"`, `zig"_zbr_sweep()"`
+and `zig"_zbr_sweep_pending()"` were an acknowledgement, a comment and the
+constant 0: V's collector frees a replaced container, so there was nothing to
+do. Two engine tests pin the DISCIPLINE, not the freeing -- a release path
+queues exactly the lists it replaced, and the frame boundary's sweep empties
+the queue (`signal_test`, `door_block_test`: `pending 0 after 0`). The runtime
+keeps the queue now (`zsweep_queue`, `zsweep`, `zsweep_pending`): a container
+once however often it is queued, as on the Zig route, held until the sweep,
+which drops the array rather than clearing it (a cleared array's storage would
+keep the swept containers reachable). Nothing is freed; a queued container is
+whole until the frame boundary on this route too. What the V route still does
+not have is the Zig route's two refusals (a non-container argument is a
+compile error there, a queueing inside an `allocate` block a panic).
+
+`tools/v_check.sh`'s `ladder` row is the three shapes as one program, alike on
+both routes, with the emitted V checked for each shape (a renamed local, the
+bare `s.pop()` statement, three `zsweep_queue` calls) so a program that met
+none of them cannot pass by comparing nothing. The reds are the engine's own
+four roots on the compiler before the change, and the row's program on it
+("redefinition of `c`"). After: the four roots identical, and the ladder at
+104 identical with no standing failure.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

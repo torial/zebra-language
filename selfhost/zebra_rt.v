@@ -106,6 +106,40 @@ pub fn (zr_l &ZList[T]) last() T {
 // in full both times. The path is kept per thread, by thread id under one lock --
 // V has no thread-local a program can declare -- and a thread's entry is dropped
 // when its path empties, so the map holds only the threads that are mid-print.
+// free-at-sweep: the Zig route's `_zbr_free_at_sweep` / `_zbr_sweep` / `_zbr_sweep_pending`.
+// V's collector frees a replaced container when nothing reaches it, so the sweep frees
+// nothing here; the QUEUE is kept all the same -- a container once however often it is
+// queued, held until the sweep -- so what a program pins about its own queueing is true on
+// both routes, and a queued container is whole until the frame boundary on this one too.
+pub fn zsweep_queue(zr_p voidptr) {
+	zr_sweep_mu.lock()
+	defer {
+		zr_sweep_mu.unlock()
+	}
+	for zr_a in zr_sweep_q {
+		if zr_a == zr_p {
+			return
+		}
+	}
+	zr_sweep_q << zr_p
+}
+
+pub fn zsweep() {
+	zr_sweep_mu.lock()
+	defer {
+		zr_sweep_mu.unlock()
+	}
+	zr_sweep_q = []voidptr{} // a new array, not clear(): the old storage would keep the swept containers reachable
+}
+
+pub fn zsweep_pending() i64 {
+	zr_sweep_mu.lock()
+	defer {
+		zr_sweep_mu.unlock()
+	}
+	return i64(zr_sweep_q.len)
+}
+
 pub const zshow_max_depth = 256
 
 pub fn zshow_enter(zr_p voidptr) bool {
@@ -507,6 +541,8 @@ __global (
 	zr_region_spare   []&ZRegion // popped records kept for the next push: a block allocates nothing of its own
 	zr_show_mu        sync.Mutex // BUG-749: guards zr_show_paths
 	zr_show_paths     map[u64][]voidptr // the classes each thread is printing, outermost first (zshow_enter)
+	zr_sweep_mu    sync.Mutex
+	zr_sweep_q     []voidptr
 )
 
 fn C.GC_base(voidptr) voidptr

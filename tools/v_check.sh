@@ -830,6 +830,116 @@ elif ! grep -q '^fn new_node_() &Node' "$OUT/names.v" || ! grep -q '^fn is_termi
 elif ! grep -qx 'new_node' "$OUT/names_v_private.txt" || [ "$(wc -l < "$OUT/names_v_private.txt")" -lt 100 ]; then echo "names: FAILED -- cannot read builtin's private functions beside this V ($names_root/vlib/builtin: $(wc -l < "$OUT/names_v_private.txt") names, new_node not among them or too few): the emitter's list cannot be checked against it"; fail=1
 elif [ -n "$names_missing" ]; then echo "names: FAILED -- this V's builtin has private functions the emitter's list (vBuiltinPrivateNames in CodeGenV.zbr) lacks: $(echo "$names_missing" | cut -c1-200)"; fail=1
 else echo "names: ok -- a class Node, a struct, a function, a field and a local named like builtin's private functions are alike on both backends ($(wc -l < "$OUT/names_zig_out.txt") lines); the emitter's list covers all $(wc -l < "$OUT/names_v_private.txt") private names of $names_root/vlib/builtin"; fi
+echo "── three shapes the engine's ladder met: a capture's name declared again, a class's own pop(), the free-at-sweep queue ──"
+rows=$((rows + 1))
+# The four engine tests that stood red on this route until 2026-11-16 (tools/v_engine_check.py:
+# instance_test and wire_build_test did not build, signal_test and door_block_test failed an
+# assert), as one program alike on both routes:
+#  1. a lambda's capture is declared in the ENCLOSING V scope and outlives the lambda there, so a
+#     later local of that name in the same function was V's "redefinition"; the later local is
+#     declared under a name of its own (genLocal), and a second lambda capturing it gets that one.
+#  2. a zero-argument pop() was typed as the List's (a result) whatever the receiver, so a class's
+#     own `pop(): str` as a statement was emitted with a `!`.
+#  3. the free-at-sweep queue was a constant 0 here; the runtime keeps it now (a container once
+#     however often queued, emptied by the sweep, nothing freed: V's collector does that).
+# The emitted V must show each shape was met (a renamed local, the bare pop statement, the
+# queue call), or the program compared nothing.
+cat > "$OUT/ladder.zbr" <<'ZBR'
+sig VoidCallback()
+
+class Counter
+    var n: int = 0
+    def bump()
+        .n = .n + 1
+
+class Bell
+    var handlers: List(VoidCallback)
+    cue init()
+        .handlers = List(VoidCallback)()
+    def connect(h: VoidCallback)
+        .handlers.add(h)
+    def ring()
+        for h in .handlers
+            h()
+
+class Sink
+    var sent: List(str)
+    cue init()
+        .sent = List(str)()
+    def push(s: str)
+        .sent.add(s)
+    def pop(): str
+        if .sent.count() == 0
+            return ""
+        var last = .sent.at(.sent.count() - 1)
+        var keep = List(str)()
+        var i = 0
+        while i < .sent.count() - 1
+            keep.add(.sent.at(i))
+            i = i + 1
+        .sent = keep
+        return last
+
+def main()
+    # 1. a capture's name declared again as a local, later in the same function
+    var bell = Bell()
+    var counter = Counter()
+    bell.connect(def(): void
+        capture
+            var c: Counter = counter
+        c.bump()
+    )
+    bell.ring()
+    var c = "a later local of the capture's name"
+    print(c + " / " + counter.n.toString())
+    c = c + "!"
+    print(c)
+    # and a second lambda that captures the later local itself
+    bell.connect(def(): void
+        capture
+            var c: str = c
+        print("captured: " + c)
+    )
+    bell.ring()
+    print("bumped ${counter.n}")
+    # 2. a class's own pop() as a statement (not a List's, which may fail)
+    var s = Sink()
+    s.push("one")
+    s.push("two")
+    s.pop()
+    print(s.pop())
+    var xs = List(int)()
+    xs.add(4)
+    xs.add(5)
+    var top: int = xs.pop() catch -1
+    print("list pop ${top}")
+    # 3. the free-at-sweep queue: queued once however often asked, emptied by the sweep
+    var pend0: int = zig"@as(i64, @intCast(_zbr_sweep_pending()))"
+    var stale = List(int)()
+    stale.add(1)
+    var other = List(int)()
+    zig"_zbr_free_at_sweep(stale)"
+    zig"_zbr_free_at_sweep(stale)"
+    var pend1: int = zig"@as(i64, @intCast(_zbr_sweep_pending()))"
+    zig"_zbr_free_at_sweep(other)"
+    var pend2: int = zig"@as(i64, @intCast(_zbr_sweep_pending()))"
+    zig"_zbr_sweep()"
+    var pend3: int = zig"@as(i64, @intCast(_zbr_sweep_pending()))"
+    print("pending ${pend0} ${pend1} ${pend2} ${pend3}")
+    print("ladder: OK")
+ZBR
+(cd "$OUT" && "$ZEBRA" ladder.zbr > "$OUT/ladder_zig_out.txt" 2> "$OUT/ladder_zig_err.txt"); zrc=$?
+(cd "$OUT" && "$ZEBRA" --target v ladder.zbr > "$OUT/ladder_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ladder.v" > "$OUT/ladder_v_out.txt" 2> "$OUT/ladder_v_err.txt"); vrc=$?
+if [ "$zrc" != 0 ] || ! tail -1 "$OUT/ladder_zig_out.txt" | grep -qx 'ladder: OK'; then echo "ladder: FAILED -- NO CONTROL: the Zig run exited $zrc and ended '$(tail -1 "$OUT/ladder_zig_out.txt" | cut -c1-80)'"; fail=1
+elif ! grep -qxF 'pending 0 1 2 0' "$OUT/ladder_zig_out.txt" || ! grep -qxF 'bumped 2' "$OUT/ladder_zig_out.txt" || ! grep -qxF 'one' "$OUT/ladder_zig_out.txt"; then echo "ladder: FAILED -- NO CONTROL: the Zig run did not print the queue's four counts, the two bumps and the popped text the row is about"; fail=1
+elif [ "$(grep -cE '^    ' "$OUT/ladder_emit.txt")" != 0 ]; then echo "ladder: FAILED -- REFUSED: $(grep -m1 -E '^    ' "$OUT/ladder_emit.txt" | cut -c1-140)"; fail=1
+elif [ "$vrc" != 0 ]; then echo "ladder: FAILED -- v exit $vrc: $(grep -m2 -E 'error|panic|Unhandled' "$OUT/ladder_v_err.txt" | cut -c1-200 | tr '\n' ' ')"; fail=1
+elif ! diff -q "$OUT/ladder_v_out.txt" "$OUT/ladder_zig_out.txt" > /dev/null; then echo "ladder: FAILED -- stdout differs, V then Zig: $(diff "$OUT/ladder_v_out.txt" "$OUT/ladder_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' ')"; fail=1
+elif ! grep -qE '^[[:space:]]*mut c_r[0-9]+ := ' "$OUT/ladder.v"; then echo "ladder: FAILED -- the emitted V declares no renamed local c_rN: the later local met no capture of its name and the row compared nothing"; fail=1
+elif ! grep -qE '^[[:space:]]*s\.pop\(\)$' "$OUT/ladder.v"; then echo "ladder: FAILED -- the emitted V has no bare s.pop() statement (a class's own pop, no result mark)"; fail=1
+elif [ "$(grep -c 'zsweep_queue(voidptr(' "$OUT/ladder.v")" -lt 3 ] || ! grep -q 'zsweep_pending()' "$OUT/ladder.v"; then echo "ladder: FAILED -- the emitted V does not queue through the runtime (zsweep_queue at the three queueings, zsweep_pending at the reads)"; fail=1
+else echo "ladder: ok -- a capture's name declared again as a local, a class's own pop() as a statement and the free-at-sweep queue's counts are alike on both backends ($(wc -l < "$OUT/ladder_zig_out.txt") lines)"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v

@@ -1994,8 +1994,11 @@ class VGen
                         var ot: str = .vTypeOf(cm.object)
                         if cm.member == "last" and c.args.count() == 0
                             return .elemOf(ot)
-                        if cm.member == "pop" and c.args.count() == 0
+                        if cm.member == "pop" and c.args.count() == 0 and ot.startsWith("&ZList[")
                             return "!" + .elemOf(ot)   # the last element or an error (an empty list): `xs.pop()?` propagates
+                        # (any other receiver's pop() is its own method, typed below: a class
+                        # with `def pop(): str` was emitted `wire.pop()!` as a statement --
+                        # the engine's wire_build_test, 2026-11-16)
                         var rown: str = ot
                         if rown.startsWith("&")
                             rown = rown.substring(1, rown.len)
@@ -2659,14 +2662,17 @@ class VGen
         branch e
             on Expr.zig_lit as zl
                 # free-at-sweep (2026-11-07, the GameEngine's release paths): V's runtime is
-                # collected, so there is nothing to free at a frame boundary. The queued local
-                # is acknowledged (it is otherwise unread on this backend: V's unused variable).
+                # collected, so nothing is FREED at a frame boundary -- but the queue is kept
+                # (2026-11-16): which containers a release path queued, once each, until the
+                # sweep empties it, so a program that pins its queueing reads the same on both
+                # routes (the engine's signal_test and door_block_test read `pending 0 after
+                # 0` while this was a constant).
                 var fas: str = freeAtSweepArg(zl.text)
                 if fas != ""
-                    .line("_ = " + .localName(fas) + " // _zbr_free_at_sweep: V's collector frees it")
+                    .line("zsweep_queue(voidptr(" + .localName(fas) + "))")
                     return
                 if zl.text == "_zbr_sweep()"
-                    .line("// _zbr_sweep(): nothing queued under V's collector")
+                    .line("zsweep()")
                     return
             on Expr.call as c
                 branch c.callee
@@ -2974,6 +2980,13 @@ class VGen
     # `var x: int = 5` -> `mut x := i64(5)`; the type carried onto a numeric
     # literal, since V's untyped int is 32-bit and Zebra's is 64
     def genLocal(v: DeclVar)
+        # already in V's scope: a lambda's `capture var c` is declared in the
+        # ENCLOSING scope (V captures a variable of it) and outlives the lambda
+        # there, so a later `var c` of the same function -- legal Zebra, the
+        # capture was the lambda's -- is V's "redefinition of `c`" (the
+        # engine's instance_test, 2026-11-16). The later local takes a name of
+        # its own; every read of it goes through the rename.
+        var held: bool = .isLocalName(v.name)
         .local_names.add(v.name)
         var name = vSafe(v.name)
         if .isFnName(name)
@@ -2981,6 +2994,10 @@ class VGen
             .renames.set(v.name, name)
         else if .isEmittedGlobal(name)
             name = name + "_v"   # a local shadowing a module-level const of any module: a warning -prod refuses
+            .renames.set(v.name, name)
+        else if held
+            .tmpN = .tmpN + 1
+            name = name + "_r" + .tmpN.toString()
             .renames.set(v.name, name)
         if v.init_expr as ie
             var tname: str = ""
@@ -3681,7 +3698,7 @@ class VGen
                 if zl.text == "@as(i64, @intCast(std.os.windows.GetCurrentProcessId()))"
                     return "i64(os.getpid())"
                 if zl.text == "_zbr_sweep_pending()" or zl.text == "@as(i64, @intCast(_zbr_sweep_pending()))"
-                    return "i64(0)"   # free-at-sweep: nothing is ever queued under V's collector
+                    return "zsweep_pending()"   # free-at-sweep: the queue's length (kept on this route, nothing freed)
                 .refuse("a zig literal (Zig-backend code; no V for it)", zl.span)
                 return "0"
             on Expr.opt_chain as oc
