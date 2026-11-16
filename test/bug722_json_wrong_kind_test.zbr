@@ -1,0 +1,12 @@
+# BUG-722 (Sean, 2026-11-15): `put` on anything but an object, or `append` on anything but an
+# array, did nothing -- the value was silently not stored. It stops the program naming what it
+# was called on. The object/array lines run first and must not stop it.
+
+def main()
+    var o = Json.object()
+    o.put("a", "b")
+    var a = Json.array()
+    a.append("x")
+    print("stored: ${o.stringify()} ${a.stringify()}")
+    a.put("k", "v")
+    print("SURVIVED: put on an array stored nothing and carried on")

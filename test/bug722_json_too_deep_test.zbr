@@ -1,0 +1,16 @@
+# BUG-722: put/append refuse a value that would nest deeper than 256 levels -- the limit
+# Json.parse holds to, so every JsonValue can be stringified. A 256-deep array appended to
+# another array would be 257 deep: the program stops naming the limit, never truncating.
+
+def main()
+    var cur = Json.array()
+    var level = 1
+    while level < 256
+        var next = Json.array()
+        next.append(cur)
+        cur = next
+        level += 1
+    print("built 256 levels")
+    var outer = Json.array()
+    outer.append(cur)
+    print("SURVIVED: a 257-level value was stored")

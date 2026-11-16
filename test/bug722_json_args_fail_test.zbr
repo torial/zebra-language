@@ -1,0 +1,19 @@
+# BUG-722: the JsonValue builders' arguments are typed. Each line below passed -c and failed
+# inside zig.
+
+class Pt
+    var x: int = 0
+
+def main()
+    var o = Json.object()
+    var a = Json.array()
+    o.put("n", 5)
+    o.put("f", 1.5)
+    o.put("b", true)
+    o.put(1, "v")
+    o.putInt("n", "five")
+    a.append(7)
+    a.append(Pt())
+    a.appendBool(3)
+    o.put("only one")
+    print(o.stringify())

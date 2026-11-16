@@ -8825,6 +8825,57 @@ def checkContainerArgs(recv: Type_, mem: ExprMember, call: ExprCall, file: str, 
                 checkExpr(arg.value, exp_t, file, aline, acol, ctx)
         idx += 1
 
+# BUG-722: the JsonValue builders' arguments were never typed, so `o.put("k", 5)` and
+# `arr.append(m)` with a JsonValue `m` passed -c and failed inside zig (`expected type 'str',
+# found 'json.dynamic.Value'`). `put` / `append` take a str or a JsonValue -- a JsonValue is
+# stored as a snapshot (a deep copy) -- and putInt/putFloat/putBool and their append forms
+# take that scalar; a key is a str. Only a KNOWN wrong type is refused (the #5a rule): an
+# argument inference cannot type gets no check.
+def checkJsonBuilderArgs(recv: Type_, mem: ExprMember, call: ExprCall, file: str, line: int, ctx: InferCtx)
+    if not (recv is Type_.json_value)
+        return
+    var m: str = mem.member
+    var is_put: bool = m == "put" or m == "putInt" or m == "putFloat" or m == "putBool"
+    var is_app: bool = m == "append" or m == "appendInt" or m == "appendFloat" or m == "appendBool"
+    if not (is_put or is_app)
+        return
+    var eline: int = line
+    var ecol: int = 0
+    if mem.span.line > 0
+        eline = mem.span.line
+        ecol = mem.span.col
+    var want: int = 1
+    if is_put
+        want = 2
+    if call.args.len != want
+        ctx.addErr(file, eline, ecol, "JsonValue." + m + " takes " + want.toString() + " argument(s), found " + call.args.len.toString())
+        return
+    if is_put
+        checkExpr(call.args.at(0).value, Type_.string_, file, eline, ecol, ctx)
+    var va: Expr = call.args.at(want - 1).value
+    if m == "put" or m == "append"
+        var vt: Type_ = inferExpr(va, ctx)
+        if vt is Type_.unknown_ or vt is Type_.json_value or isString(vt)
+            return
+        var typed: str = ""
+        if vt is Type_.int_
+            typed = "Int"
+        else if vt is Type_.float_
+            typed = "Float"
+        else if vt is Type_.bool_
+            typed = "Bool"
+        var fix: str = "store its text, or build it as a JsonValue"
+        if typed != ""
+            fix = "use " + m + typed + "(" + if(is_put, "k, ", "") + "v)"
+        ctx.addErr(file, eline, ecol, "JsonValue." + m + " takes a str or a JsonValue, found " + userTypeName(vt) + " -- " + fix)
+        return
+    var scalar: Type_ = Type_.bool_
+    if m.endsWith("Int")
+        scalar = Type_.int_
+    else if m.endsWith("Float")
+        scalar = Type_.float_
+    checkExpr(va, scalar, file, eline, ecol, ctx)
+
 # BUG-636: the argv family of `sys` hands its first argument to a runtime helper that
 # takes `anytype`, so a wrong one was not refused anywhere before zig -- whose error then
 # named `argv.items` inside zebra_rt.zig, a line the user never wrote and with no line of
@@ -8926,6 +8977,7 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 # a primitive are checked (checkExpr's own rule), and only on a
                 # KNOWN receiver -- an untyped container gets no check, as before.
                 checkContainerArgs(recv, mem, call, file, line, ctx)
+                checkJsonBuilderArgs(recv, mem, call, file, line, ctx)
                 if sk != ""
                     var aerr: str = stdlibArityError(sk, mem.member, call.args.len)
                     if aerr != ""

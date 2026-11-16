@@ -1870,6 +1870,12 @@ allocate
 Holding the container is not enough; the lifetime that matters is that of the
 **receiver**, not of the list.
 
+**Open, BUG-750 (2026-11-15): the RIGHT example above loses `parts` today.** A list declared
+outside an `allocate` block and grown inside it grows in the block's arena, so its buffer is
+freed when the block ends -- wrong values for an `int` list, a crash for `str`. Until it is
+fixed, add to an outer container only outside the block (collect inside, then `<<-` the inner
+list out, as `test/allocate_copyout_deep_test.zbr` does).
+
 **The authoritative per-operation table is [`docs/design/str_ownership.md`](docs/design/str_ownership.md).**
 It is *generated from real compiler output* by `tools/str_ownership_extract.py` — each row
 carries the emitted Zig it was classified from — and gated, so it cannot drift from the
@@ -4321,8 +4327,30 @@ var present  = args.contains("--dry-run")    # bool
 | `v.tryStr()` / `tryInt()` / ... (no key) | `T?`      | the VALUE itself; `nil` if it is not that type |
 | `v.keys()`                          | `List(str)`   | Object keys, in insertion order          |
 | `v.isNull()` / `isObject()` / `isArray()` | `bool`  | What kind of value `v` is               |
+| `v.put(k, x)` / `putInt` / `putFloat` / `putBool` | `void` | Set member `k` of an object; `put` takes a `str` or a `JsonValue` (stored as a snapshot, below) |
+| `v.append(x)` / `appendInt` / `appendFloat` / `appendBool` | `void` | Add an element to an array; `append` takes a `str` or a `JsonValue` |
 
 `k` is a `str` (an object member) or an `int` (an array element).
+
+**Building nests by copying** (BUG-722, 2026-11-15). `put(k, v)` and `append(v)` with a
+JsonValue store a SNAPSHOT -- a deep copy -- so a later change to `v` is not seen in the
+container, and appending an array to itself appends what it held before the call. What the
+builder stores (a copied value, a `str`) lives outside any `allocate` block, so a value parsed
+inside one outlives it once stored. A store that would nest deeper than 256 levels -- the limit
+`Json.parse` holds to, so every JsonValue can be stringified -- stops the program naming the
+limit, and so does `put` on anything but an object or `append` on anything but an array
+(`Json: put on an array -- ...`): a value that cannot be stored is never dropped silently.
+
+```zebra
+var msg = Json.object()
+msg.put("role", "user")
+var body = Json.object()
+body.put("model", "m")
+var messages = Json.array()
+messages.append(msg)                           # a copy of msg as it is now
+body.put("messages", messages)
+print(body.stringify())                        # {"model":"m","messages":[{"role":"user"}]}
+```
 
 **Two ways to read, and nothing in between** (BUG-331, 2026-09-28). A key the program
 REQUIRES is read with `v[k]?`; one that MAY be absent with `get`/`tryX`. No read answers a

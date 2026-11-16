@@ -18365,6 +18365,10 @@ struct Generator
                     else if mname == "putInt": jput_fn = "_json_put_int"
                     else if mname == "putFloat": jput_fn = "_json_put_float"
                     else if mname == "putBool": jput_fn = "_json_put_bool"
+                    # BUG-722: a JsonValue to store is copied (a snapshot), not taken as text
+                    if mname == "put" and args.len == 2
+                        if inferExpr(args.at(1).value, .infer_ctx!) is Type_.json_value
+                            jput_fn = "_json_put_val"
                     if jput_fn != ""
                         w.emit(jput_fn)
                         w.emit("(&")
@@ -18380,6 +18384,9 @@ struct Generator
                     else if mname == "appendInt": jarr_fn = "_json_arr_int"
                     else if mname == "appendFloat": jarr_fn = "_json_arr_float"
                     else if mname == "appendBool": jarr_fn = "_json_arr_bool"
+                    if mname == "append" and args.len == 1
+                        if inferExpr(args.at(0).value, .infer_ctx!) is Type_.json_value
+                            jarr_fn = "_json_arr_val"
                     if jarr_fn != ""
                         w.emit(jarr_fn)
                         w.emit("(&")

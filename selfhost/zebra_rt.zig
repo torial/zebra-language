@@ -2609,46 +2609,138 @@ pub fn _json_keys(v: JsonValue) _ZbrList([]const u8) {
 }
 pub fn _json_stringify(v: JsonValue) []const u8 {
     // Its only error is OutOfMemory (BUG-734 replaced a `catch "{}"`: an answer for a
-    // failure). The depth assertion inside cannot fire: the only deep values come from
-    // `_json_parse`, which refuses past `_json_max_depth` (put/append take scalars).
+    // failure). The depth assertion inside cannot fire: `_json_parse` refuses past
+    // `_json_max_depth`, and put/append refuse a value that would nest deeper (BUG-722).
     return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch @panic("OOM");
 }
+// BUG-722: what the BUILDER stores lives in `_zbr_scoped_backing()` -- an allocator that frees
+// and outlives every `allocate` block (the host's under --library-mode) -- so a value put
+// inside a block survives it, as a JsonValue always has. A map is never RESIZED in place: the
+// map a put grows may be a parsed one, whose storage belongs to the arena `_json_parse` built
+// it in (BUG-556), and growing it with another allocator freed arena memory ("incorrect
+// alignment" on the 9th put). A full map is copied into the builder's allocator instead and
+// the copy grows; the old storage is left to its owner.
+fn _json_alloc() std.mem.Allocator {
+    return _zbr_scoped_backing();
+}
+fn _json_obj_room(v: *JsonValue) void {
+    if (v.object.count() < v.object.capacity()) return;
+    var m: std.json.ObjectMap = .empty;
+    m.ensureTotalCapacity(_json_alloc(), @max(8, v.object.count() * 2)) catch @panic("OOM");
+    var it = v.object.iterator();
+    while (it.next()) |e| m.putAssumeCapacity(e.key_ptr.*, e.value_ptr.*);
+    v.object = m;
+}
+fn _json_obj_set(v: *JsonValue, key: []const u8, val: JsonValue) void {
+    if (v.object.getPtr(key)) |slot| {
+        slot.* = val;
+        return;
+    }
+    _json_obj_room(v);
+    v.object.putAssumeCapacity(_json_alloc().dupe(u8, key) catch @panic("OOM"), val);
+}
+// A put on anything but an object, or an append on anything but an array, did nothing: the
+// value was silently not stored (Sean, 2026-11-15: a store that cannot happen is LOUD).
+fn _json_put_not_object(v: JsonValue) noreturn {
+    std.debug.panic("Json: put on {s} -- put sets a member of an object; an array takes append(v)", .{_json_kind(v)});
+}
+fn _json_append_not_array(v: JsonValue) noreturn {
+    std.debug.panic("Json: append on {s} -- append adds an element to an array; an object takes put(k, v)", .{_json_kind(v)});
+}
+fn _json_own_str(s: []const u8) []const u8 {
+    return _json_alloc().dupe(u8, s) catch @panic("OOM");
+}
 pub fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
-pub fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(std.heap.page_allocator) }; }
+pub fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(_json_alloc()) }; }
 pub fn _json_is_null(v: JsonValue) bool   { return v == .null; }
 pub fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, else => false }; }
 pub fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
 pub fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
-    if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .string = val }) catch {};
+    if (v.* != .object) _json_put_not_object(v.*);
+    _json_obj_set(v, key, .{ .string = _json_own_str(val) });
 }
 pub fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
-    if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .integer = val }) catch {};
+    if (v.* != .object) _json_put_not_object(v.*);
+    _json_obj_set(v, key, .{ .integer = val });
 }
 pub fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
-    if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .float = val }) catch {};
+    if (v.* != .object) _json_put_not_object(v.*);
+    _json_obj_set(v, key, .{ .float = val });
 }
 pub fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
-    if (v.* != .object) return;
-    v.object.put(std.heap.page_allocator, std.heap.page_allocator.dupe(u8, key) catch return, .{ .bool = val }) catch {};
+    if (v.* != .object) _json_put_not_object(v.*);
+    _json_obj_set(v, key, .{ .bool = val });
 }
+// An array is `std.json.Array` (managed): it grows with the allocator it was made with, so a
+// parsed array grows in its own arena and a builder array in `_json_alloc()` -- no mismatch.
 pub fn _json_arr_str(v: *JsonValue, val: []const u8) void {
-    if (v.* != .array) return;
-    v.array.append(.{ .string = val }) catch {};
+    if (v.* != .array) _json_append_not_array(v.*);
+    v.array.append(.{ .string = _json_own_str(val) }) catch @panic("OOM");
 }
 pub fn _json_arr_int(v: *JsonValue, val: i64) void {
-    if (v.* != .array) return;
-    v.array.append(.{ .integer = val }) catch {};
+    if (v.* != .array) _json_append_not_array(v.*);
+    v.array.append(.{ .integer = val }) catch @panic("OOM");
 }
 pub fn _json_arr_float(v: *JsonValue, val: f64) void {
-    if (v.* != .array) return;
-    v.array.append(.{ .float = val }) catch {};
+    if (v.* != .array) _json_append_not_array(v.*);
+    v.array.append(.{ .float = val }) catch @panic("OOM");
 }
 pub fn _json_arr_bool(v: *JsonValue, val: bool) void {
-    if (v.* != .array) return;
-    v.array.append(.{ .bool = val }) catch {};
+    if (v.* != .array) _json_append_not_array(v.*);
+    v.array.append(.{ .bool = val }) catch @panic("OOM");
+}
+// BUG-722: put(k, v) / append(v) of a JsonValue store a SNAPSHOT (Sean, 2026-11-15): a deep
+// copy in `_json_alloc()`, strings included, so a later change to the original is not seen
+// and a value parsed inside an `allocate` block outlives the block once stored. Depth counts
+// as `_json_depth_ok` does -- an object or array is a level, a scalar none -- with the
+// receiver as level 1, so a value whose own depth is 256 is refused under any key.
+pub const _json_too_deep_msg = "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to -- store a shallower value, or its text with stringify()";
+fn _json_depth(v: JsonValue) usize {
+    return switch (v) {
+        .object => |o| blk: {
+            var d: usize = 0;
+            for (o.values()) |x| d = @max(d, _json_depth(x));
+            break :blk d + 1;
+        },
+        .array => |a| blk: {
+            var d: usize = 0;
+            for (a.items) |x| d = @max(d, _json_depth(x));
+            break :blk d + 1;
+        },
+        else => 0,
+    };
+}
+fn _json_copy(v: JsonValue) JsonValue {
+    const a = _json_alloc();
+    return switch (v) {
+        .object => |o| blk: {
+            var m: std.json.ObjectMap = .empty;
+            m.ensureTotalCapacity(a, @max(8, o.count())) catch @panic("OOM");
+            var it = o.iterator();
+            while (it.next()) |e| m.putAssumeCapacity(_json_own_str(e.key_ptr.*), _json_copy(e.value_ptr.*));
+            break :blk .{ .object = m };
+        },
+        .array => |arr| blk: {
+            var r = std.json.Array.initCapacity(a, arr.items.len) catch @panic("OOM");
+            for (arr.items) |x| r.appendAssumeCapacity(_json_copy(x));
+            break :blk .{ .array = r };
+        },
+        .string => |s| .{ .string = _json_own_str(s) },
+        .number_string => |s| .{ .number_string = _json_own_str(s) },
+        else => v,
+    };
+}
+pub fn _json_put_val(v: *JsonValue, key: []const u8, val: JsonValue) void {
+    if (v.* != .object) _json_put_not_object(v.*);
+    if (_json_depth(val) + 1 > _json_max_depth) @panic(_json_too_deep_msg);
+    // the copy is taken BEFORE the put: `val` may share storage with `v` (o.put("me", o))
+    _json_obj_set(v, key, _json_copy(val));
+}
+pub fn _json_arr_val(v: *JsonValue, val: JsonValue) void {
+    if (v.* != .array) _json_append_not_array(v.*);
+    if (_json_depth(val) + 1 > _json_max_depth) @panic(_json_too_deep_msg);
+    const c = _json_copy(val); // before the append: `val` may be `v` itself (a.append(a))
+    v.array.append(c) catch @panic("OOM");
 }
 // BUG-331: the JSON READ surface. Two forms, and nothing in between:
 //   j["k"]?         REQUIRED. Throws naming the key when it is missing or the value will

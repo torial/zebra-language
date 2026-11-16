@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **JSON objects nest through the builder (BUG-722).** `put(k, v)` and `append(v)` take a
+  JsonValue and store a snapshot -- a deep copy, so a later change to `v` is not seen; a value
+  that would nest deeper than 256 levels stops the program naming the limit. Both used to pass
+  `-c` and fail inside zig. Their arguments are typed now (`o.put("n", 5)` is refused naming
+  `putInt`), and `put` on a parsed object no longer crashes once it grows ("incorrect
+  alignment": the map was grown with an allocator it did not come from). What the builder
+  stores outlives an `allocate` block. `put` on anything but an object and `append` on anything
+  but an array stop the program naming it (`Json: put on an array -- ...`); they did nothing,
+  so the value was silently lost.
 - **Running out of memory while printing a value panics ("OOM").** `print`, `${...}` and
   `toString()` used to write `?` in the value's place and carry on, so the output looked
   like the value's text.

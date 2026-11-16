@@ -1,0 +1,119 @@
+# BUG-722: `put(k, v)` and `append(v)` with a JsonValue passed `-c` and failed inside zig, so
+# a JSON object could not be nested through the builder. They store a SNAPSHOT now -- a deep
+# copy, so a later change to the original is not seen in the container it was put into.
+# Each value is checked here, so the final line prints only when all are right.
+
+var failures: int = 0
+
+def check(what: str, got: str, want: str)
+    if got == want
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: got '${got}', want '${want}'")
+        failures += 1
+
+def main()
+    # the filing's repro
+    var m = Json.object()
+    m.put("role", "user")
+    var arr = Json.array()
+    arr.append(m)
+    check("repro", arr.stringify(), "[{\"role\":\"user\"}]")
+
+    # a snapshot: changing m afterwards does not reach the copy in arr
+    m.put("role", "system")
+    m.putInt("n", 1)
+    check("snapshot-append", arr.stringify(), "[{\"role\":\"user\"}]")
+
+    var o = Json.object()
+    o.put("msg", m)
+    m.put("role", "tool")
+    check("snapshot-put", o.stringify(), "{\"msg\":{\"role\":\"system\",\"n\":1}}")
+
+    # a request body: an array of objects under a key, beside scalars
+    var body = Json.object()
+    body.put("model", "x")
+    body.put("messages", arr)
+    body.putBool("stream", false)
+    check("body", body.stringify(), "{\"model\":\"x\",\"messages\":[{\"role\":\"user\"}],\"stream\":false}")
+
+    # appending an array to itself appends what it held before the call
+    var a2 = Json.array()
+    a2.appendInt(1)
+    a2.append(a2)
+    check("self-append", a2.stringify(), "[1,[1]]")
+
+    # a parsed value nests the same way
+    if Json.parse("{\"a\":[1,2.5,\"s\",null,true]}") as p
+        var w = Json.object()
+        w.put("p", p)
+        check("parsed", w.stringify(), "{\"p\":{\"a\":[1,2.5,\"s\",null,true]}}")
+    else
+        check("parsed", "parse failed", "parsed")
+
+    # growing a PARSED object: its storage is the parse's arena, and growing it with another
+    # allocator crashed ("incorrect alignment") at the first put past its capacity
+    if Json.parse("{\"a\":1}") as g
+        var grown = g
+        var gi = 0
+        while gi < 40
+            grown.putInt("k${gi}", gi)
+            gi += 1
+        grown.put("a", "replaced")
+        check("parsed-grows", "${grown.keys().len} ${grown.tryStr("a") orelse "?"} ${grown.tryInt("k39") orelse -1}", "41 replaced 39")
+    else
+        check("parsed-grows", "parse failed", "parsed")
+
+    # a value parsed inside an `allocate` block outlives it once put: the copy owns its strings
+    # (and a scalar str put inside the block, which the builder copies too). The block first
+    # takes a few MB, so its arena's chunks are large ones the backing allocator hands back to
+    # the OS at the block's end: a copy left in them is unmapped, not merely stale.
+    var outer = Json.object()
+    allocate Arena()
+        var big: List(int) = List(int)()
+        var bi = 0
+        while bi < 300000
+            big.add(bi)
+            bi += 1
+        var src = "{\"k\":\"inner text\",\"xs\":[\"a\",\"b\",\"c\"],\"o\":{\"deep\":\"value\"}}"
+        if Json.parse(src) as q
+            outer.put("q", q)
+        var made = "made ${outer.keys().len} inside"
+        outer.put("s", made)
+    allocate Arena()
+        var junk: List(str) = List(str)()
+        var ji = 0
+        while ji < 20000
+            junk.add("overwrite overwrite overwrite ${ji}")
+            ji += 1
+        if junk.len == 0
+            print("unreachable")
+    check("allocate-outlives", outer.stringify(), "{\"q\":{\"k\":\"inner text\",\"xs\":[\"a\",\"b\",\"c\"],\"o\":{\"deep\":\"value\"}},\"s\":\"made 1 inside\"}")
+
+    # 256 levels is the limit Json.parse holds to; the builder reaches it and stringifies
+    var cur = Json.array()
+    var level = 1
+    while level < 256
+        var next = Json.array()
+        next.append(cur)
+        cur = next
+        level += 1
+    var text = cur.stringify()
+    check("depth-256", "${text.len}", "512")
+
+    # the scalar forms are unchanged
+    var s = Json.object()
+    s.put("a", "b")
+    s.putInt("i", 2)
+    s.putFloat("f", 1.5)
+    var sa = Json.array()
+    sa.append("x")
+    sa.appendInt(3)
+    sa.appendBool(true)
+    s.put("arr", sa)
+    check("scalars", s.stringify(), "{\"a\":\"b\",\"i\":2,\"f\":1.5,\"arr\":[\"x\",3,true]}")
+
+    if failures == 0
+        print("bug722_json_nest: OK")
+    else
+        print("bug722_json_nest: ${failures} WRONG")

@@ -6,6 +6,61 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-722: `Json.array().append(v)` with a JsonValue passes `-c` and fails inside zig -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-13; found building the Pocket Lab manager's model calls)
+- **Repro:** `var m = Json.object()`, `m.put("role", "user")`, `var arr = Json.array()`,
+  `arr.append(m)`. `-c` exits 0; the build fails `error: expected type 'str', found
+  'json.dynamic.Value'`. `put(k, obj)` is the same shape. So JSON objects cannot be nested
+  through the builder, and the front end does not say so.
+- **Workaround:** stringify each scalar-only object and join the request body as text
+  (`plm.zbr`'s `jq()`).
+- **Fix shape (a decision):** either `append`/`put` take a JsonValue (nesting, which is what a
+  request body needs), or a JsonValue argument is refused at `-c` naming the scalar forms.
+  The first is the useful one.
+- **Control when fixing:** the repro stringifies to `[{"role":"user"}]`, or is refused at `-c`
+  by name; scalar `append`/`put` unchanged.
+- **Fix (Sean's decision, 2026-11-15: SNAPSHOT):** `put(k, v)` / `append(v)` with a JsonValue
+  store a deep copy (`_json_put_val` / `_json_arr_val`; CodeGen picks them when the argument's
+  type is JsonValue), strings included, so a later change to `v` is not seen and `a.append(a)`
+  appends what `a` held. A store that would nest deeper than 256 levels panics naming the limit
+  (`_json_too_deep_msg`; counted as `_json_depth_ok` counts brackets, the receiver as level 1).
+  `TypeChecker.checkJsonBuilderArgs` types the arguments: `put`/`append` take a str or a
+  JsonValue (an int, float or bool is refused naming `putInt`/`putFloat`/`putBool`), the typed
+  forms their scalar, a key a str, and the arity.
+- **Found fixing it -- `put` on a PARSED object crashed:** `Json.parse` builds its tree in
+  `_allocator` (BUG-556) and every put grew the map with `page_allocator`, so the first put past
+  the map's capacity freed arena memory ("incorrect alignment"; 40 `putInt` on
+  `Json.parse("{\"a\":1}")` is enough, also through `get()`). The builder now never resizes a map
+  in place: a full map is copied into `_zbr_scoped_backing()` (frees, outlives every `allocate`
+  block, the host's allocator under --library-mode) and the copy grows; what the builder stores
+  (keys, strings, copies, `Json.array()`) lives there too, so it outlives an `allocate` block as a
+  JsonValue always meant to. Escape hatches 82 -> 77. Out of memory in the builder panics "OOM"
+  (it was `catch {}` -- the value silently not stored). And (Sean, 2026-11-15, UNGIT) `put` on
+  anything but an object and `append` on anything but an array -- all ten forms -- panic naming
+  it (`Json: put on an array -- put sets a member of an object; an array takes append(v)`); they
+  returned and the value was lost.
+- **Measured before landing:** `-c` over every tracked `.zbr` of this repo, zebra-ide, the GameEngine and
+  pocket-lab-manager (3,260 files), neither binary panicking: no file changed. The positive control
+  -- this bug's args fixture, staged and re-swept over this repo's 1,360 -- changed and nothing
+  else did (the first run could not see it: the sweep reads tracked files only).
+- **Pinned by:** `test/bug722_json_nest_test.zbr` (`smoke_run`): the repro, a snapshot through
+  append and through put, a request body, self-append, a parsed value nested, a parsed object
+  grown by 40 puts, a value parsed and a str stored inside an `allocate` block that first takes
+  ~2.4 MB (so its arena's chunks are unmapped at the end), 256 levels built and stringified, the
+  scalar forms. `test/bug722_json_too_deep_test.zbr` (`smoke_run_fail`, 257 levels).
+  `test/bug722_json_args_fail_test.zbr` (9 `smoke_tc_fail` lines). Red-checked with four runtime
+  mutants, each the failure it exists to stop: no copy (snapshot lines WRONG), the pre-fix growth
+  ("incorrect alignment"), copies in the block's arena instead of the backing (segfault after the
+  block -- an earlier fixture without the 2.4 MB did NOT catch it: freed small chunks were never
+  reused), depth off by one (`SURVIVED`). `test/bug722_json_wrong_kind_test.zbr` (put on an array)
+  and `..._wrong_kind2_test.zbr` (appendInt on a parsed object), `smoke_run_fail`; with the old
+  `return` put back both print SURVIVED.
+- **Not covered:** `var q = p` then a store through `q` -- BUG-751 (Sean: a shared handle); the
+  V route (Fable: V's put returns a new value, a snapshot by construction; the depth and
+  wrong-kind rules land in V's own JSON tree with BUG-751).
+
+---
+
 ### BUG-752: on the V route `class Node` is built by V's own `new_node` -- no field defaults, a nil list -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed and fixed the same day; Fable, from the first run of the
   V route's cycle program for BUG-749). V route only. Upstream: vlang/v#32404.

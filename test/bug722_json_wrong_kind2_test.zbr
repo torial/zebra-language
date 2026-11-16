@@ -1,0 +1,9 @@
+# BUG-722 (Sean, 2026-11-15): `append` on an object stops the program naming it, as `put` on an
+# array does (bug722_json_wrong_kind_test). A parsed number is not a container either.
+
+def main()
+    if Json.parse("{\"n\":1}") as p
+        p.putInt("m", 2)
+        print("stored: ${p.stringify()}")
+        p.appendInt(3)
+        print("SURVIVED: append on an object stored nothing and carried on")

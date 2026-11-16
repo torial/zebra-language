@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-752. Next new bug: BUG-753.**
+**Last bug number generated: BUG-753. Next new bug: BUG-754.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -92,22 +92,6 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
-
----
-
-### BUG-722: `Json.array().append(v)` with a JsonValue passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's model calls)
-- **Repro:** `var m = Json.object()`, `m.put("role", "user")`, `var arr = Json.array()`,
-  `arr.append(m)`. `-c` exits 0; the build fails `error: expected type 'str', found
-  'json.dynamic.Value'`. `put(k, obj)` is the same shape. So JSON objects cannot be nested
-  through the builder, and the front end does not say so.
-- **Workaround:** stringify each scalar-only object and join the request body as text
-  (`plm.zbr`'s `jq()`).
-- **Fix shape (a decision):** either `append`/`put` take a JsonValue (nesting, which is what a
-  request body needs), or a JsonValue argument is refused at `-c` naming the scalar forms.
-  The first is the useful one.
-- **Control when fixing:** the repro stringifies to `[{"role":"user"}]`, or is refused at `-c`
-  by name; scalar `append`/`put` unchanged.
 
 ---
 
@@ -320,6 +304,71 @@
   line (red-checked with one appended byte). It does not yet print which backend each build
   used; read the kept messages, then diff the PE headers and sections.
 - **Control when fixing:** the leg red-checked against a forced fallback on one path.
+
+---
+
+### BUG-750: a List grown inside an `allocate` block that it was declared outside reads freed memory after the block
+- **Status:** OPEN (filed 2026-11-15; found while choosing BUG-722's allocator)
+- **Repro:** `var nums: List(int) = List(int)()`, then `allocate Arena()` with `nums.add(i)` for
+  2,000 values, then a second `allocate Arena()` that adds 100,000 ints to a list of its own;
+  after both, `nums.at(0)` prints `41943064` and `nums.at(1999)` prints `0` -- no crash, wrong
+  values. The same list grown OUTSIDE the block prints `0` and `1999` (the control). With `str`
+  elements (`parts.add("item${i}".concat(""))`) it segfaults.
+- **Cause:** the emit is `nums.append(_zbr_rt._allocator, ...)`, and inside the block
+  `_allocator` is the block's arena: the outer list's buffer moves into the scoped arena and is
+  freed with it at the block's end.
+- **Cost:** QUICKSTART's "RIGHT -- copy the elements you intend to keep" example (an outer
+  `parts.add(p.concat(""))` inside `allocate`) is this shape, so the documented way to keep
+  values past a block loses them -- silently for scalars. A HashMap, StringBuilder or set grown
+  the same way is expected to share it (not measured). QUICKSTART's own 26-add shape reads back
+  whole -- it stays in the block's first chunk and nothing reuses it -- which is how it passed.
+- **Zig route only** (Fable, measured 2026-11-15): both repros read back whole on the V route at
+  the pin, under `-gc none` and under `-d zbr_region_check` (a block's exit poisons what its
+  record holds) -- a V list grows with V's own allocator, which no block records.
+- **Decided (Sean, 2026-11-15):** growing an outer container inside a scoped block is a COMPILE
+  ERROR that points at `<<-` (which replaces, so: collect into a list made inside the block, then
+  `outer <<- inner`). Fable: no V-route exemption -- one checker, one language. Lexical cases
+  only (a local, parameter, module variable or field reached from outside the block); a callee
+  that grows a list it was handed, called inside a block, is not visible to the checker and stays
+  a runtime hazard -- the refusal's entry must say so. Refusals to be measured over the four repos
+  before landing (Fable expects none in the engine: it forbids `allocate` blocks). Not fixed
+  inside BUG-722; the JSON builder sidesteps it by storing in `_zbr_scoped_backing()`.
+- **Control when fixing:** the repro is refused at `-c` naming `nums` and `<<-`; its rewrite with
+  `<<-` prints `0` and `1999`; the same loops outside any block unchanged.
+
+---
+
+### BUG-751: `var q = p` for a JsonValue shares some changes and not others
+- **Status:** OPEN (filed 2026-11-15; found writing BUG-722's fixture)
+- **Repro:** `var p = Json.object()`, `p.putInt("a", 1)`, `var q = p`, `q.putInt("a", 2)`,
+  `q.putInt("b", 3)`: `p` prints `{"a":2}` and `q` `{"a":2,"b":3}` -- the changed key is seen
+  through `p`, the new one is not. An array: `ys = xs; ys.appendInt(2)` leaves `xs` at `[1]`.
+- **Cause:** a JsonValue is a tagged union copied by value whose object/array storage is shared,
+  so a store that fits in place writes the shared entries while each copy keeps its own count.
+  Before BUG-722 a store that GREW the map also freed the storage the other copy still read (a
+  use-after-free: after 8 keys, `p.tryInt("k0")` came back nil); since BUG-722 a full map is
+  copied and the old storage left alone, so it is only the semantics that is split.
+- **Decided (Sean, 2026-11-15): a SHARED HANDLE**, like a List since BUG-501 -- every change is
+  seen through every name, and `get()` hands out a handle into the parent. `put`/`append` of a
+  JsonValue stay a snapshot (BUG-722). The V route builds its own JSON tree for it (Fable: V's
+  json2.Any cannot be shared), with BUG-722's depth and wrong-kind rules put straight into it.
+- **Control when fixing:** both `p` and `q` print `{"a":2,"b":3}`; a change through a `get()`
+  result is seen in the parent; the BUG-722 fixtures unchanged.
+
+---
+
+### BUG-753: a class field `HashMap(str, C) = {}` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-15; found by Fable on the V route's side of the engine work)
+- **Repro:** `class Reg` with `var by: HashMap(str, Node) = {}` (`Node` a class), `Reg()`, then
+  `r.by.set("a", Node())`. `-c` exits 0; the build fails `expected type
+  '*hash_map.HashMap([]const u8,*_zbr_ty_Node,...)', found '*hash_map.HashMap([]const
+  u8,[]const u8,hash_map.AutoContext([]const u8),80)'` -- the `{}` default is emitted as
+  `_ZbrAutoMap([]const u8, []const u8)` whatever the field's declared type.
+- **Workaround:** `= HashMap(str, Node)()`.
+- **Fix shape:** the empty-literal default takes its type from the field's declaration (the V
+  route refuses `= {}` and `= []` there by name; matching the Zig route is the other option).
+- **Control when fixing:** the repro prints `1`; `= HashMap(str, Node)()` unchanged; an empty
+  `= []` default on a `List(Node)` field checked the same way.
 
 ---
 
