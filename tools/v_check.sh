@@ -9,6 +9,8 @@
 # pins: BUG-723 a container printed, interpolated or joined on the V route is the Zig route's text, and s.chars() / s.bytes() are values there too (the show row)
 # pins: BUG-734 Json.parse answers nil past 256 levels of nesting on the V route as on the Zig route (the show row's jd_fix)
 # pins: BUG-743 a container's toString() on the V route is the text print gives, as on the Zig route (the show row's show_more)
+# pins: BUG-745 on the V route a struct built with fewer arguments than fields takes each missing field's default, and a class's list or class field keeps its declared default (the show row's show_types and show_fix2)
+# pins: BUG-746 a class or struct as text on the V route is the Zig route's (`Name{field: value}`, or its own toString with no `&` before it in a hole) (the show row's show_types and show_fix2)
 # pins: BUG-748 the V route's net.http checks certificates by default (the certs row: every validate bool in vlib/net/http/http.v and request.v defaults to true)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
@@ -352,8 +354,101 @@ rows=$((rows + 1))
 # (`&ZList[rune]{ items: [...] }`). A map and a set are printed with ONE entry: their order
 # is promised on neither route. A container's toString() is the same text (BUG-743: the Zig
 # route printed Zig's own struct dump there until 718330a; this row's first run found it).
+# show_fix2 is the Zig route's fixture for that (test/bug743_tostring_show_test.zbr), which
+# also asks for a class, a struct and an enum as text and writes a set literal. show_types
+# is what IT does not reach, and what it found on this route: a class without its own
+# toString printed V's dump and one with its own printed `&Named(own)` in a hole (BUG-746);
+# a struct built with fewer arguments than fields got zero, not the field's default, and a
+# class's list or class field with a declared default started empty or nil (BUG-745).
+# Not in it: a class that reaches itself through a field (`next: Leaf?`), which the ZIG
+# route does not build when printed (a dependency loop in _zbr_show_into; reported).
 cp "$WT/test/bug723_chars_value_test.zbr" "$OUT/show_fix.zbr"
 cp "$WT/test/bug734_json_depth_test.zbr" "$OUT/jd_fix.zbr"
+cp "$WT/test/bug743_tostring_show_test.zbr" "$OUT/show_fix2.zbr"
+cat > "$OUT/show_types.zbr" <<'ZBR'
+# BUG-745 / BUG-746, the V half: a class, a struct and an enum as text -- printed,
+# in a hole, from toString(), inside a container, as a field of another -- and a
+# struct built with fewer arguments than it has fields.
+
+class Leaf
+    var name: str = "leaf"
+    var n: int = 2
+    var note: str? = nil
+    var count: int? = 5
+
+class Tagged
+    var t: str = "own"
+    cue toString(): str
+        return "Tagged(${.t})"
+
+struct Rgb
+    var r: int = 3
+    var g: int = 4
+
+enum Hue
+    warm
+    cold
+
+class Box
+    var hue: Hue = Hue.cold
+    var rgb: Rgb = Rgb()
+    var tags: List(str) = ["a"]
+    var tagged: Tagged = Tagged()
+
+def main()
+    # a class without its own toString: Name{field: value, ...}, a string field quoted
+    var lf = Leaf()
+    print(lf)
+    print("hole: ${lf}")
+    print("toString: " + lf.toString())
+    var two = Leaf()
+    two.name = "two"
+    two.note = "noted"
+    two.count = nil
+    print(two)
+
+    # a class with its own: that text, with no `&` before it in a hole
+    var tg = Tagged()
+    print(tg)
+    print("hole: ${tg}")
+    print("toString: " + tg.toString())
+
+    # a struct with no cue init: a missing argument is the field's default (BUG-745)
+    var none_given = Rgb()
+    print(none_given)
+    var one_given = Rgb(9)
+    print(one_given)
+    var both_given = Rgb(7, 8)
+    print("hole: ${both_given} toString: " + both_given.toString())
+    print("fields: ${none_given.r} ${none_given.g} ${one_given.r} ${one_given.g}")
+
+    # an enum, and all of them as fields of a class
+    var h = Hue.warm
+    print(h)
+    print("hole: ${h} toString: " + h.toString())
+    var bx = Box()
+    print(bx)
+
+    # inside containers
+    var leaves: List(Leaf) = [lf]
+    print(leaves)
+    var tgs: List(Tagged) = [tg]
+    print(tgs)
+    var hues: List(Hue) = [Hue.warm, Hue.cold]
+    print(hues)
+    var rgbs: List(Rgb) = [none_given, one_given]
+    print("hole: ${rgbs}")
+    var by_name: HashMap(str, Leaf) = HashMap(str, Leaf)()
+    by_name.set("k", lf)
+    print(by_name)
+
+    # a set literal
+    var st: Set(int) = {4}
+    print(st)
+    var words: Set(str) = {"w"}
+    print("hole: ${words} count ${words.count()}")
+    print("show_types: OK")
+ZBR
 cat > "$OUT/show_more.zbr" <<'ZBR'
 # BUG-723, the V half: what the Zig fixture does not reach. A container printed
 # by print, by an interpolation hole and by toString(), for every element kind
@@ -442,19 +537,22 @@ def main()
     print("show_more: OK")
 ZBR
 cat > "$OUT/show_refuse.zbr" <<'ZBR'
-class Pt
-    var x: int
-    cue init(x: int)
-        .x = x
+interface Labelled
+    def label(): str
+
+class Tag implements Labelled
+    var t: str = "x"
+    def label(): str
+        return .t
 
 def main()
-    var ps: List(Pt) = [Pt(1)]
-    print(ps)
     var os: List(int?) = [1, nil]
     print("${os}")
+    var ls: List(Labelled) = [Tag()]
+    print(ls)
 ZBR
 show_bad=""
-for p in show_fix jd_fix show_more; do
+for p in show_fix jd_fix show_more show_fix2 show_types; do
   (cd "$OUT" && "$ZEBRA" $p.zbr > "$OUT/${p}_zig_out.txt" 2> "$OUT/${p}_zig_err.txt"); zrc=$?
   (cd "$OUT" && "$ZEBRA" --target v $p.zbr > "$OUT/${p}_emit.txt" 2>&1)
   (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$p.v" > "$OUT/${p}_v_out.txt" 2> "$OUT/${p}_v_err.txt"); vrc=$?
@@ -463,9 +561,11 @@ for p in show_fix jd_fix show_more; do
   elif [ "$vrc" != 0 ]; then show_bad="$show_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
   elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then show_bad="$show_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
 done
-# the refusal: a container of a class, and of an optional, each named -- never V's str()
+# the refusals: a container of an optional (V's generics take no option type: named where the
+# type is spelled, where until BUG-746's work it reached V and failed there), and an interface
+# value printed -- each by name, never V's str()
 (cd "$OUT" && "$ZEBRA" --target v show_refuse.zbr > "$OUT/show_refuse_emit.txt" 2>&1)
-show_refused=$(grep -cE '^    printing a container of (&Pt|\?i64) ' "$OUT/show_refuse_emit.txt")
+show_refused=$(grep -cE '^    (a List of an optional \(\?i64\)|printing a Labelled )' "$OUT/show_refuse_emit.txt")
 # the controls of the comparison itself: the Zig run must have printed the containers the
 # row is about (the spelling the V side is held to), the emitted V must reach the runtime's
 # printers and a nested helper (a program that printed no container would diff clean), and
@@ -474,8 +574,10 @@ if [ -n "$show_bad" ]; then echo "show: FAILED --$show_bad"; fail=1
 elif ! grep -qxF "['a', 'é', 'b']" "$OUT/show_more_zig_out.txt" || ! grep -qxF '{k: ["x", "y"]}' "$OUT/show_more_zig_out.txt" || ! grep -qxF '[[[1], [2, 3]], [[4]]]' "$OUT/show_more_zig_out.txt"; then echo "show: FAILED -- NO CONTROL: the Zig run did not print the containers the comparison is about"; fail=1
 elif ! grep -q 'zshow_list(' "$OUT/show_more.v" || ! grep -q '^fn zshow_h[0-9]' "$OUT/show_more.v" || ! grep -q 'zjoin_with(' "$OUT/show_more.v" || ! grep -q 'zshow_map(' "$OUT/show_more.v"; then echo "show: FAILED -- the emitted V names no zshow_list / zshow_map / zjoin_with or no nested helper: the row compared something else"; fail=1
 elif ! grep -q 'if zjson_too_deep(zr_s)' "$OUT/jd_fix.v"; then echo "show: FAILED -- the depth fixture's V file does not call the scan"; fail=1
-elif [ "$show_refused" != 2 ]; then echo "show: FAILED -- a list of a class and a list of an optional must each be refused by name ($show_refused of 2): $(grep -E '^    ' "$OUT/show_refuse_emit.txt" | head -2 | cut -c1-120 | tr '\n' ' ')"; fail=1
-else echo "show: ok -- three programs alike on both backends ($(wc -l < "$OUT/show_fix_zig_out.txt") + $(wc -l < "$OUT/jd_fix_zig_out.txt") + $(wc -l < "$OUT/show_more_zig_out.txt") lines); a container of a class and of an optional refused by name"; fi
+elif ! grep -qxF 'Box{hue: cold, rgb: Rgb{r: 3, g: 4}, tags: ["a"], tagged: Tagged(own)}' "$OUT/show_types_zig_out.txt" || ! grep -qxF 'Rgb{r: 9, g: 4}' "$OUT/show_types_zig_out.txt" || ! grep -qxF 'hole: Tagged(own)' "$OUT/show_types_zig_out.txt"; then echo "show: FAILED -- NO CONTROL: the Zig run did not print the class, struct and default lines show_types is about"; fail=1
+elif ! grep -qE '^fn zshow_h[0-9]+\(zr_e &Leaf\) string' "$OUT/show_types.v" || ! grep -q 'zset_of\[' "$OUT/show_types.v"; then echo "show: FAILED -- the emitted V has no class printer or no set literal: show_types compared something else"; fail=1
+elif [ "$show_refused" != 2 ]; then echo "show: FAILED -- a list of an optional and a printed interface must each be refused by name ($show_refused of 2): $(grep -E '^    ' "$OUT/show_refuse_emit.txt" | head -2 | cut -c1-120 | tr '\n' ' ')"; fail=1
+else echo "show: ok -- five programs alike on both backends ($(wc -l < "$OUT/show_fix_zig_out.txt") + $(wc -l < "$OUT/jd_fix_zig_out.txt") + $(wc -l < "$OUT/show_more_zig_out.txt") + $(wc -l < "$OUT/show_fix2_zig_out.txt") + $(wc -l < "$OUT/show_types_zig_out.txt") lines); a list of an optional and a printed interface refused by name"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v

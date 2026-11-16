@@ -216,6 +216,9 @@ class VGen
     var tmpN: int                 # the temporaries bound for mutating calls on call results
     var show_names: HashMap(str, str)    # BUG-723: a nested container's printer, by its V type and quoting -> the helper's name
     var show_helpers: List(str)          # those helpers' V text, appended after the program (a top-level fn each)
+    var show_fields: HashMap(str, List(str))   # BUG-746: a class's / struct's fields in declared order, for its printed text
+    var own_tostring: HashMap(str, bool)       # the classes and structs that declare `cue toString()`
+    var refused_once: HashMap(str, bool)       # a refusal said once however often its cause is met (a type is spelled many times)
     var rt_fns: HashMap(str, bool)       # the runtime's free functions, read from zebra_rt.v (noteRuntime)
     var rt_types: HashMap(str, bool)     # the runtime's struct / type / enum / interface names, the same
     var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
@@ -287,6 +290,9 @@ class VGen
         .tmpN = 0
         .show_names = HashMap(str, str)()
         .show_helpers = List(str)()
+        .show_fields = HashMap(str, List(str))()
+        .own_tostring = HashMap(str, bool)()
+        .refused_once = HashMap(str, bool)()
         .ref_params = HashMap(str, List(bool))()
         .rt_fns = HashMap(str, bool)()
         .rt_types = HashMap(str, bool)()
@@ -297,6 +303,21 @@ class VGen
 
     def refuse(what: str, span: Span)
         .refused.add(what + " (" + .current_file + ":" + span.line.toString() + ")")
+
+    # a refusal that has no one place: said once
+    def refuseOnce(what: str)
+        if .refused_once.get(what) != nil
+            return
+        .refused_once.set(what, true)
+        .refused.add(what)
+
+    # A container of an optional: V's generics take no option type (`cannot use
+    # Option type name as concrete type`), so the runtime's boxed containers
+    # cannot hold one. Refused by name where the type is spelled; until the show
+    # work of BUG-746 it reached V and failed there.
+    def noOptionalElement(kind: str, et: str)
+        if et.startsWith("?")
+            .refuseOnce("a " + kind + " of an optional (" + et + "): V's generics take no option type, so the V route's containers cannot hold one")
 
     # ── the runtime's names ────────────────────────────────────────────────
     # What zebra_rt.v DEFINES, read from the runtime text itself rather than
@@ -428,11 +449,17 @@ class VGen
                 # the containers are references, as Zebra's are: the runtime's
                 # boxed ZList / ZMap by reference (zebra_rt.v), never V's value arrays
                 if g.name == "List" and g.args.count() == 1
-                    return "&ZList[" + .vType(g.args.at(0)) + "]"
+                    var list_et: str = .vType(g.args.at(0))
+                    .noOptionalElement("List", list_et)
+                    return "&ZList[" + list_et + "]"
                 if g.name == "HashMap" and g.args.count() == 2
-                    return "&ZMap[" + .vType(g.args.at(0)) + ", " + .vType(g.args.at(1)) + "]"
+                    var map_vt: str = .vType(g.args.at(1))
+                    .noOptionalElement("HashMap", map_vt)
+                    return "&ZMap[" + .vType(g.args.at(0)) + ", " + map_vt + "]"
                 if g.name == "Set" and g.args.count() == 1
-                    return "&ZSet[" + .vType(g.args.at(0)) + "]"
+                    var set_et: str = .vType(g.args.at(0))
+                    .noOptionalElement("Set", set_et)
+                    return "&ZSet[" + set_et + "]"
                 if g.name == "Chan" and g.args.count() == 1
                     return "chan " + .vType(g.args.at(0))   # V's own channel
                 if g.name == "Atomic" and g.args.count() == 1
@@ -1379,11 +1406,16 @@ class VGen
             .refuse("module-level var " + v.name + " without an initializer", v.span)
 
     def noteMembers(ctor: str, members: List(Decl), owner: str)
+        var shown = List(str)()
         for mem in members
             branch mem
+                on Decl.var_ as fv
+                    shown.add(fv.name)   # in declared order: what the type's printed text lists (BUG-746)
                 on Decl.init as ini
                     .noteSig(ctor, ini.params)
                 on Decl.method as cm
+                    if cm.name == "toString" and cm.params.count() == 0 and not cm.mods.is_static
+                        .own_tostring.set(owner, true)
                     if cm.mods.is_static
                         .noteSig(snakeCase(owner) + "_" + vSafe(cm.name), cm.params)   # as the static is emitted and called
                     else
@@ -1391,9 +1423,13 @@ class VGen
                         .noteSig(owner + "." + vSafe(cm.name), cm.params)   # by owner too: no collision when the receiver's type is known
                 else
                     pass
+        .show_fields.set(owner, shown)
 
     # a struct with no `cue init` is constructed from its fields, every one
-    # named or in order, a missing one zero (Zebra's implicit constructor)
+    # named or in order, a missing one its declared default, else zero
+    # (Zebra's implicit constructor). Until BUG-745 a missing one was ALWAYS
+    # zero here: `Rgb()` for `var r: int = 3` built r = 0, where the Zig route
+    # builds 3.
     def noteImplicitCtor(ctor: str, members: List(Decl))
         if .sigs.get(ctor) != nil
             return
@@ -1403,7 +1439,10 @@ class VGen
                 on Decl.var_ as f
                     fsig.names.add(f.name)
                     fsig.has_default.add(true)
-                    fsig.defaults.add(.zeroExpr(f))
+                    if f.init_expr as fie
+                        fsig.defaults.add(fie)
+                    else
+                        fsig.defaults.add(.zeroExpr(f))
                     fsig.refs.add(.isRefType(f.type_))
                     fsig.types.add(.vType(f.type_))
                 else
@@ -1611,7 +1650,11 @@ class VGen
             branch mem
                 on Decl.var_ as f
                     var ft = .vType(f.type_)
-                    if ft.startsWith("&")
+                    # a reference field WITH a declared default is left to it (the field's
+                    # own `= ...` in the struct, fieldDefault): naming it here overrode the
+                    # default with empty / nil -- `var tags: List(str) = ["a"]` started
+                    # empty, `var owner: Owner = Owner()` started nil (BUG-745's family)
+                    if ft.startsWith("&") and f.init_expr == nil
                         var field_init: str = "unsafe { nil }"   # (not `init`: it shadows a declaration in the emitted Zig)
                         if ft.startsWith("&ZList[") or ft.startsWith("&ZMap[") or ft.startsWith("&ZSet[") or ft == "&ZStringBuilder"
                             field_init = .zeroOf(ft)   # a container starts empty, never nil (Zebra's default)
@@ -3292,7 +3335,29 @@ class VGen
             return "zchar_str(" + rendered + ")"
         if .isContainerType(ct)
             return .showContainer(ct, rendered)
+        if .isShownType(ct)
+            return .showValue(ct, rendered)
         return rendered
+
+    # a class or a struct by its V type (`&Pt`, `Rgb`): what print, a hole and
+    # toString() give the Zig route's text for (BUG-746)
+    def isShownType(vt: str): bool
+        var bare: str = vt
+        if bare.startsWith("&")
+            bare = bare.substring(1, bare.len)
+        return bare != "" and (.isClassName(bare) or .isStructName(bare))
+
+    # A class or struct value as text. One that declares `cue toString()` is its
+    # own str(), called by name: V's `${x}` of a reference writes `&` before it
+    # (`&Named(own)`). One that does not is the Zig route's `Name{field: value}`,
+    # through a helper written after the program -- never V's own dump.
+    def showValue(vt: str, rendered: str): str
+        var bare: str = vt
+        if bare.startsWith("&")
+            bare = bare.substring(1, bare.len)
+        if .own_tostring.get(bare) != nil
+            return rendered + ".str()"
+        return .showFn(vt, true) + "(" + rendered + ")"
 
     # A container of V type `vt` as the Zig route prints it: the runtime's
     # zshow_list / zshow_map / zshow_set over the element's own printer.
@@ -3329,20 +3394,58 @@ class VGen
         if et == "u8" or et == "byte": return "zshow_byte"   # a List(byte)'s element is spelled `byte` (V's alias of u8)
         if et == "bool": return "zshow_bool"
         if et == "f64": return "zshow_float"
+        var key: str = et
+        if not quoted
+            key = et + " (bare)"
+        if .show_names.get(key) as known
+            return known
         if .isContainerType(et)
-            var key: str = et
-            if not quoted
-                key = et + " (bare)"
-            if .show_names.get(key) as known
-                return known
-            var hname: str = "zshow_h" + .show_helpers.count().toString()
-            .show_names.set(key, hname)
-            .show_helpers.add("")   # the name is taken before the body is built: a type inside itself is not a V type, but a sibling's helper must not take this number
-            var at: int = .show_helpers.count() - 1
-            .show_helpers.set(at, "fn " + hname + "(zr_e " + et + ") string {\n\treturn " + .showContainer(et, "zr_e") + "\n}\n")
-            return hname
-        .refused.add("printing a container of " + et + " (the V route prints containers of str, char, int, byte, bool, float and containers of those; V's own str() would print the runtime's internals)")
+            var at: int = .reserveShow(key)
+            .show_helpers.set(at, "fn zshow_h" + at.toString() + "(zr_e " + et + ") string {\n\treturn " + .showContainer(et, "zr_e") + "\n}\n")
+            return "zshow_h" + at.toString()
+        if .isShownType(et)
+            # a class or a struct (BUG-746): its own toString when it has one (the
+            # method's receiver is `mut self`, so the helper takes its own handle),
+            # else the Zig route's `Name{field: value, ...}`, each field as inside a
+            # container -- a string quoted, a nested value through its own printer
+            var bare: str = et
+            if bare.startsWith("&")
+                bare = bare.substring(1, bare.len)
+            var cat: int = .reserveShow(key)
+            var body: str = ""
+            if .own_tostring.get(bare) != nil
+                body = "\tmut zr_m := unsafe { zr_e }\n\treturn zr_m.str()\n"
+            else
+                var text: str = "'" + bare + "{'"
+                var n: int = 0
+                for fname in .show_fields.get(bare) orelse List(str)()
+                    var ft: str = .all_field_types.get(bare + "." + fname) orelse ""
+                    if n > 0
+                        text = text + " + ', '"
+                    text = text + " + '" + fname + ": ' + " + .showFn(ft, true) + "(zr_e." + vSafe(fname) + ")"
+                    n = n + 1
+                body = "\treturn " + text + " + '}'\n"
+            .show_helpers.set(cat, "fn zshow_h" + cat.toString() + "(zr_e " + et + ") string {\n" + body + "}\n")
+            return "zshow_h" + cat.toString()
+        if .isEnumName(et)
+            var eat: int = .reserveShow(key)
+            .show_helpers.set(eat, "fn zshow_h" + eat.toString() + "(zr_e " + et + ") string {\n\treturn zr_e.str()\n}\n")
+            return "zshow_h" + eat.toString()
+        if et.startsWith("?") and et.len > 1
+            # an optional: `nil`, else the value as its own printer has it
+            var oat: int = .reserveShow(key)
+            var inner_fn: str = .showFn(et.substring(1, et.len), quoted)
+            .show_helpers.set(oat, "fn zshow_h" + oat.toString() + "(zr_e " + et + ") string {\n\tif zr_v := zr_e {\n\t\treturn " + inner_fn + "(zr_v)\n\t}\n\treturn 'nil'\n}\n")
+            return "zshow_h" + oat.toString()
+        .refused.add("printing a " + et + " (the V route prints str, char, int, byte, bool, float, an enum, a class, a struct, an optional or a container of those; V's own str() would print the runtime's internals)")
         return "zshow_raw_str"
+
+    # the next helper's number, taken under `key` BEFORE its body is built: a
+    # type that reaches itself (a node whose field is a node) finds its own name
+    def reserveShow(key: str): int
+        .show_names.set(key, "zshow_h" + .show_helpers.count().toString())
+        .show_helpers.add("")
+        return .show_helpers.count() - 1
 
     # ── expressions ────────────────────────────────────────────────────────
     def exprStr(e: Expr): str
@@ -3491,8 +3594,31 @@ class VGen
                     fi = fi + 1
                 return "ZTuple" + tl.elems.count().toString() + "{" + fields + "}"   # (V infers the type arguments from the fields)
             on Expr.set_lit as stl
-                .refuse("a set literal", stl.span)
-                return "new_zset[i64]()"
+                # `{4, 5}`: the runtime's boxed set of the declared element type,
+                # else the first element's when the emitter knows it
+                var set_t: str = ""
+                if stl.elem_type as sett
+                    set_t = .vType(sett)
+                if set_t == "" and stl.elems.count() > 0
+                    var sfirst = stl.elems.at(0)
+                    set_t = .vTypeOf(sfirst)
+                    if set_t == "" and isStringLit(sfirst)
+                        set_t = "string"
+                    if set_t == "" and isIntLit(sfirst)
+                        set_t = "i64"
+                    if set_t == "" and isFloatLit(sfirst)
+                        set_t = "f64"
+                if set_t == ""
+                    .refuse("a set literal whose element type the V route cannot tell (declare it: `Set(int)`)", stl.span)
+                    return "new_zset[i64]()"
+                var set_out: str = "zset_of[" + set_t + "](["
+                var set_first: bool = true
+                for sel in stl.elems
+                    if not set_first
+                        set_out = set_out + ", "
+                    set_first = false
+                    set_out = set_out + .coerced(sel, set_t)
+                return set_out + "])"
             on Expr.array_lit as al
                 .refuse("an array literal", al.span)
                 return "0"
@@ -3932,6 +4058,9 @@ class VGen
                     else if spec == "" and .isContainerType(.vTypeOf(ex))
                         # a container in a hole: the Zig route's spelling (BUG-723)
                         out = out + "\${" + .showContainer(.vTypeOf(ex), .exprStr(ex)) + "}"
+                    else if spec == "" and .isShownType(.vTypeOf(ex))
+                        # a class or a struct in a hole: its text, never V's `&` before a reference (BUG-746)
+                        out = out + "\${" + .showValue(.vTypeOf(ex), .exprStr(ex)) + "}"
                     else
                         out = out + "\${" + .exprStr(ex) + "}"
                 on StringPart.format as f
@@ -4396,7 +4525,9 @@ class VGen
             own = own.substring(1, own.len)
         if own != "" and (.isClassName(own) or .isStructName(own) or .isIfaceName(own))
             if name == "toString" and args.count() == 0
-                return obj + ".str()"   # a type's `cue toString` is V's str()
+                if .isShownType(rtype)
+                    return .showValue(rtype, obj)   # its own `cue toString` (V's str()), else the Zig route's `Name{...}` (BUG-746)
+                return obj + ".str()"   # an interface's: the implementer's str()
             var okey: str = "." + vSafe(name)
             if .sigs.get(own + "." + vSafe(name)) != nil
                 okey = own + "." + vSafe(name)

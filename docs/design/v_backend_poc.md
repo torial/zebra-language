@@ -2868,12 +2868,55 @@ and that must not read as a pass. Seen red: b399a50 (0 of 1 in each file),
 and three altered copies of c4dee97's files (the field renamed away, a file
 removed, one of the two defaults removed). Seen green: c4dee97.
 
-**Open on this route, from the Zig side's BUG-743 fixture** (which cannot go
-into the row as written: the route refuses a set literal): BUG-745, a struct
-with a field default and no `cue init` constructed with no arguments gets 0,
-not the default (`new_rgb(0)`); BUG-746, a class or struct without its own
-`toString` prints V's dump, and one with its own prints `&Named(own)` in a
-hole.
+## A class, a struct and an enum as text; a constructor's defaults (2026-11-15; BUG-745, BUG-746)
+
+Found by the Zig side's BUG-743 fixture
+(`test/bug743_tostring_show_test.zbr`) run on this route, and by a wider
+program written to follow it.
+
+**BUG-745, wrong values.** Two forms of one mistake: the constructor named a
+field and so overrode the field's declared default.
+
+- A struct with no `cue init`, built with fewer arguments than fields: the
+  call was filled out with zeros (`Rgb()` for `var r: int = 3` emitted
+  `new_rgb(0)`). The recorded signature's defaults are the fields' own
+  initializers now, zero only where there is none.
+- A class's reference field with a declared default (`var tags: List(str) =
+  ["a"]`, `var owner: Owner = Owner()`): the constructor's struct literal
+  named every reference field as empty or nil, because V wants each one
+  initialized. A field that has its own `= ...` in the struct is left to it.
+
+**BUG-746, text.** A class or struct without `cue toString()` printed V's own
+multi-line dump; one with it printed `&Named(own)` in a hole, since V writes
+`&` before a reference. Now: its own `str()` called by name where it has one,
+else a generated printer in the Zig route's spelling, `Name{field: value,
+...}`, each field as inside a container (a string quoted, an optional `nil`
+or its value, a nested value through its own printer). The printers are the
+helper functions the container work added, one per type, written after the
+program, and only for a type the program prints. An enum, a class, a struct
+and an optional field are printable inside a container as well.
+
+**Also mapped:** a set literal (`{4}` is `zset_of[i64]([4])`).
+
+**Refused by name where it used to fail in V:** a List, HashMap or Set OF an
+optional. V's generics take no option type, so the runtime's boxed containers
+cannot hold one; until now the type reached V and the build died there. An
+interface value printed is refused as before.
+
+**Not done:** a value that reaches itself. The Zig route prints a revisited
+object as `Leaf{...}` and cuts at 256 levels (BUG-749); this route's
+generated printers recurse without a guard, so a real cycle overflows the
+stack here. The row leaves that shape out until the route has the same rule.
+
+**Witness.** The show row of `tools/v_check.sh`: the fixture above as
+written, and `show_types` (22 lines: a class, a struct, an enum and optional
+fields printed, in a hole, from toString(), inside containers and as fields
+of one another; a struct built with zero, one and both arguments; set
+literals), alike on both backends. Each was seen wrong on the build before
+its fix: the fixture reported the class, the struct (`r: 0`) and the hole
+WRONG, and `show_types` printed `tags: [], tagged: &nil`. The engine ladder
+(`tools/v_engine_check.py`, 367 roots) reads the same before and after: 100
+identical, the same two refusals and four standing failures.
 
 ## If the branch ever merges to main
 

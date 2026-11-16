@@ -234,6 +234,15 @@ pub fn new_zset[T]() &ZSet[T] {
 	return zr_set(&ZSet[T]{})
 }
 
+// a set literal: `{4, 5}`
+pub fn zset_of[T](zr_items []T) &ZSet[T] {
+	mut zr_s := new_zset[T]()
+	for zr_x in zr_items {
+		zr_s.m[zr_x] = true
+	}
+	return zr_s
+}
+
 pub fn (mut zr_s ZSet[T]) add(zr_x T) {
 	zr_s.m[zr_x] = true
 }
