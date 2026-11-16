@@ -1,0 +1,37 @@
+# BUG-750: a List or StringBuilder made outside a scoped `allocate` block and grown inside it
+# grows in the block's memory, freed when the block ends. Refused at the call, naming `<<-`.
+# Each refused line is registered with its position in tools/selfhost_smoke.sh.
+
+class Bag
+    var items: List(int) = List(int)()
+
+    def fill()
+        allocate Arena()
+            .items.add(1)
+
+var module_list: List(int) = List(int)()
+
+def grow(xs: List(int))
+    allocate Arena()
+        xs.add(1)
+
+def main()
+    var nums: List(int) = List(int)()
+    var sb = StringBuilder()
+    var bag = Bag()
+    allocate Arena()
+        nums.add(1)
+        nums.append(nums)
+        nums.reserve(10)
+        sb.append("x")
+        sb.appendChar('c')
+        bag.items.add(2)
+        module_list.add(3)
+        if nums.len > 0
+            for i in 0..3
+                nums.add(i)
+    allocate Debug()
+        nums.add(4)
+    bag.fill()
+    grow(nums)
+    print(nums.len)

@@ -9251,6 +9251,119 @@ def bareUnionVariant(e: Expr, ctx: InferCtx): str
                         return bid.name + " (a union value)"
     return ""
 
+# BUG-750 (Sean, 2026-11-15): a List or StringBuilder made OUTSIDE a scoped `allocate`
+# block and grown INSIDE it grows in the block's memory -- the emit passes
+# `_zbr_rt._allocator`, which is the block's allocator there -- so its buffer is freed when
+# the block ends: wrong values for an int list, a crash for str. Refused at the call.
+# Which calls grow is MEASURED from the emit, not assumed: List add / append / reserve and
+# StringBuilder append / appendChar pass the allocator; a HashMap's or a Set's put does not
+# (they keep the allocator they were made with), and set / remove / sort / clear never grow.
+# LEXICAL ONLY: a name declared in the block (and anything reached through it) is the
+# block's own; `this`, a parameter, an outer local or a module variable is not. A function
+# or lambda that grows a list it was handed, called inside the block, is NOT seen here and
+# stays a runtime hazard. A nested `allocate` is skipped: a scoped one checks itself, and in
+# a Page()/Smp()/C() block the allocator is not freed.
+def checkScopedGrowth(stmts: List(Stmt), inner: List(str), file: str, ctx: InferCtx)
+    for s in stmts
+        branch s
+            on Stmt.var_ as dv
+                inner.add(dv.name)
+            on Stmt.destruct as sd
+                for dn in sd.names
+                    inner.add(dn)
+            on Stmt.expr as se
+                checkGrowthCall(se, inner, file, ctx)
+            on Stmt.if_ as si
+                if si.is_capture as cap
+                    inner.add(cap)
+                checkScopedGrowth(si.then_stmts, inner, file, ctx)
+                for ei in si.else_ifs
+                    if ei.is_capture as cap2
+                        inner.add(cap2)
+                    checkScopedGrowth(ei.stmts, inner, file, ctx)
+                if si.else_stmts as ies
+                    checkScopedGrowth(ies, inner, file, ctx)
+            on Stmt.while_ as sw
+                checkScopedGrowth(sw.stmts, inner, file, ctx)
+            on Stmt.for_in as sf
+                for fv in sf.vars
+                    inner.add(fv)
+                checkScopedGrowth(sf.stmts, inner, file, ctx)
+                if sf.else_ as fes
+                    checkScopedGrowth(fes, inner, file, ctx)
+            on Stmt.for_num as sn
+                inner.add(sn.var_)
+                checkScopedGrowth(sn.stmts, inner, file, ctx)
+                if sn.else_ as nes
+                    checkScopedGrowth(nes, inner, file, ctx)
+            on Stmt.branch_ as sb
+                for bc in sb.cases
+                    if bc.binding as bb
+                        inner.add(bb)
+                    checkScopedGrowth(bc.stmts, inner, file, ctx)
+                if sb.else_ as bes
+                    checkScopedGrowth(bes, inner, file, ctx)
+            on Stmt.try_catch as st
+                checkScopedGrowth(st.stmts, inner, file, ctx)
+                for cl in st.clauses
+                    if cl.binding as cbn
+                        inner.add(cbn)
+                    checkScopedGrowth(cl.stmts, inner, file, ctx)
+            on Stmt.with_ as sw2
+                checkScopedGrowth(sw2.stmts, inner, file, ctx)
+            on Stmt.in_scope as sin
+                checkScopedGrowth(sin.stmts, inner, file, ctx)
+            else
+                pass
+
+# The name a receiver is reached through: `xs` for `xs`, `b.items`, `xs[0]`; `this` for a
+# field of the current object. Nil when it is reached through a call or anything else the
+# checker cannot follow -- not refused.
+def growthRoot(e: Expr): str?
+    branch e
+        on Expr.ident as gi
+            return gi.name
+        on Expr.this_
+            return "this"
+        on Expr.member as gm
+            return growthRoot(gm.object)
+        on Expr.index as gx
+            return growthRoot(gx.object)
+        else
+            return nil
+
+def growthText(e: Expr): str
+    branch e
+        on Expr.ident as ti
+            return ti.name
+        on Expr.this_
+            return "this"
+        on Expr.member as tm
+            const o: str = growthText(tm.object)
+            if o == "this"
+                return "." + tm.member
+            return o + "." + tm.member
+        else
+            return "the receiver"
+
+def checkGrowthCall(e: Expr, inner: List(str), file: str, ctx: InferCtx)
+    if e is Expr.call as gc
+        if gc.callee is Expr.member as gm
+            var fix = ""
+            const rt: Type_ = inferExpr(gm.object, ctx)
+            if rt is Type_.list_
+                if gm.member == "add" or gm.member == "append" or gm.member == "reserve"
+                    fix = "build a List inside the block and copy it out with `<<-` (`outer <<- inner`, which replaces `outer`)"
+            else if rt is Type_.string_builder
+                if gm.member == "append" or gm.member == "appendChar"
+                    fix = "build the text with a StringBuilder made inside the block and copy it out with `<<-` (`text <<- sb.toString()`)"
+            if fix != ""
+                if growthRoot(gm.object) as root
+                    if not inner.contains(root)
+                        const what: str = growthText(gm.object)
+                        ctx.addErr(file, gm.span.line, gm.span.col,
+                                   "`" + what + "` was made outside this `allocate` block, and `" + gm.member + "` grows it in the block's memory, which is freed when the block ends -- " + fix)
+
 def checkStmts(stmts: List(Stmt), file: str, ctx: InferCtx)
     # Early-exit narrowing, as walkStmts applies it (the two walks must agree on what
     # is known, or the optional-operand refusal fires on a guarded use).
@@ -9677,6 +9790,8 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                 checkStmts(si.stmts, file, ctx)
             on Stmt.allocate_ as sal
                 checkStmts(sal.stmts, file, ctx)
+                if sal.is_scoped
+                    checkScopedGrowth(sal.stmts, List(str)(), file, ctx)
             on Stmt.branch_ as sb
                 for c in sb.cases
                     # BUG-381 control: this pass shares one flat scope across every

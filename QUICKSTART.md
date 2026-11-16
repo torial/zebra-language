@@ -1860,21 +1860,28 @@ allocate
     var line: str = readLine()
     parts = line.split(",")     # the List is yours; every element points into `line`
 
-# RIGHT — copy the elements you intend to keep.
+# RIGHT — build the list inside the block and copy it out with `<<-`, which copies the
+# list AND every string in it into the memory outside the block.
 allocate
     var line: str = readLine()
+    var got: List(str) = List(str)()
     for p in line.split(",")
-        parts.add(p.concat(""))  # concat OWNs, so the copy outlives the scope
+        got.add(p)
+    parts <<- got               # replaces `parts`; to add to it, `<<-` into a fresh list
+                                # and add that list's elements to `parts` after the block
 ```
 
 Holding the container is not enough; the lifetime that matters is that of the
 **receiver**, not of the list.
 
-**Open, BUG-750 (2026-11-15): the RIGHT example above loses `parts` today.** A list declared
-outside an `allocate` block and grown inside it grows in the block's arena, so its buffer is
-freed when the block ends -- wrong values for an `int` list, a crash for `str`. Until it is
-fixed, add to an outer container only outside the block (collect inside, then `<<-` the inner
-list out, as `test/allocate_copyout_deep_test.zbr` does).
+**Growing an outer list inside the block is a compile error** (BUG-750, 2026-11-16). A
+`List` or `StringBuilder` made outside a scoped `allocate` block (`Arena()`, `Debug()`, a bare
+`allocate`, ...) and grown inside it with `add`, `append`, `reserve` or `appendChar` would
+grow in the block's memory and lose its buffer when the block ends, so the call is refused
+and the message names `<<-`. A `HashMap` or `Set` is not affected (it keeps the allocator it
+was made with), nor is a `Page()` / `Smp()` / `C()` block (its memory is not freed). The
+check is lexical: a function that grows a list it was handed, called inside the block, is not
+seen -- build what you keep inside the block and `<<-` it out.
 
 **The authoritative per-operation table is [`docs/design/str_ownership.md`](docs/design/str_ownership.md).**
 It is *generated from real compiler output* by `tools/str_ownership_extract.py` — each row

@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Growing an outer list inside an `allocate` block is a compile error (BUG-750).** A `List`
+  or `StringBuilder` made outside a scoped block and grown inside it (`add`, `append`,
+  `reserve`, `appendChar`) grew in the block's memory and lost its buffer at the block's end
+  -- wrong values, or a crash for strings, with no error. The call is now refused, naming
+  `<<-`: build the list inside the block and `outer <<- inner`. `HashMap` / `Set` and
+  `Page()` / `Smp()` / `C()` blocks are not affected. Lexical: growth inside a function called
+  from the block is not seen.
 - **JSON objects nest through the builder (BUG-722).** `put(k, v)` and `append(v)` take a
   JsonValue and store a snapshot -- a deep copy, so a later change to `v` is not seen; a value
   that would nest deeper than 256 levels stops the program naming the limit. Both used to pass

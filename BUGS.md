@@ -307,37 +307,6 @@
 
 ---
 
-### BUG-750: a List grown inside an `allocate` block that it was declared outside reads freed memory after the block
-- **Status:** OPEN (filed 2026-11-15; found while choosing BUG-722's allocator)
-- **Repro:** `var nums: List(int) = List(int)()`, then `allocate Arena()` with `nums.add(i)` for
-  2,000 values, then a second `allocate Arena()` that adds 100,000 ints to a list of its own;
-  after both, `nums.at(0)` prints `41943064` and `nums.at(1999)` prints `0` -- no crash, wrong
-  values. The same list grown OUTSIDE the block prints `0` and `1999` (the control). With `str`
-  elements (`parts.add("item${i}".concat(""))`) it segfaults.
-- **Cause:** the emit is `nums.append(_zbr_rt._allocator, ...)`, and inside the block
-  `_allocator` is the block's arena: the outer list's buffer moves into the scoped arena and is
-  freed with it at the block's end.
-- **Cost:** QUICKSTART's "RIGHT -- copy the elements you intend to keep" example (an outer
-  `parts.add(p.concat(""))` inside `allocate`) is this shape, so the documented way to keep
-  values past a block loses them -- silently for scalars. A HashMap, StringBuilder or set grown
-  the same way is expected to share it (not measured). QUICKSTART's own 26-add shape reads back
-  whole -- it stays in the block's first chunk and nothing reuses it -- which is how it passed.
-- **Zig route only** (Fable, measured 2026-11-15): both repros read back whole on the V route at
-  the pin, under `-gc none` and under `-d zbr_region_check` (a block's exit poisons what its
-  record holds) -- a V list grows with V's own allocator, which no block records.
-- **Decided (Sean, 2026-11-15):** growing an outer container inside a scoped block is a COMPILE
-  ERROR that points at `<<-` (which replaces, so: collect into a list made inside the block, then
-  `outer <<- inner`). Fable: no V-route exemption -- one checker, one language. Lexical cases
-  only (a local, parameter, module variable or field reached from outside the block); a callee
-  that grows a list it was handed, called inside a block, is not visible to the checker and stays
-  a runtime hazard -- the refusal's entry must say so. Refusals to be measured over the four repos
-  before landing (Fable expects none in the engine: it forbids `allocate` blocks). Not fixed
-  inside BUG-722; the JSON builder sidesteps it by storing in `_zbr_scoped_backing()`.
-- **Control when fixing:** the repro is refused at `-c` naming `nums` and `<<-`; its rewrite with
-  `<<-` prints `0` and `1999`; the same loops outside any block unchanged.
-
----
-
 ### BUG-751: `var q = p` for a JsonValue shares some changes and not others
 - **Status:** OPEN (filed 2026-11-15; found writing BUG-722's fixture)
 - **Repro:** `var p = Json.object()`, `p.putInt("a", 1)`, `var q = p`, `q.putInt("a", 2)`,

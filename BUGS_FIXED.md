@@ -6,6 +6,65 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-750: a List grown inside an `allocate` block that it was declared outside reads freed memory after the block -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed 2026-11-15; found while choosing BUG-722's allocator)
+- **Repro:** `var nums: List(int) = List(int)()`, then `allocate Arena()` with `nums.add(i)` for
+  2,000 values, then a second `allocate Arena()` that adds 100,000 ints to a list of its own;
+  after both, `nums.at(0)` prints `41943064` and `nums.at(1999)` prints `0` -- no crash, wrong
+  values. The same list grown OUTSIDE the block prints `0` and `1999` (the control). With `str`
+  elements (`parts.add("item${i}".concat(""))`) it segfaults.
+- **Cause:** the emit is `nums.append(_zbr_rt._allocator, ...)`, and inside the block
+  `_allocator` is the block's arena: the outer list's buffer moves into the scoped arena and is
+  freed with it at the block's end.
+- **Cost:** QUICKSTART's "RIGHT -- copy the elements you intend to keep" example (an outer
+  `parts.add(p.concat(""))` inside `allocate`) is this shape, so the documented way to keep
+  values past a block loses them -- silently for scalars. A HashMap, StringBuilder or set grown
+  the same way is expected to share it (not measured). QUICKSTART's own 26-add shape reads back
+  whole -- it stays in the block's first chunk and nothing reuses it -- which is how it passed.
+- **Zig route only** (Fable, measured 2026-11-15): both repros read back whole on the V route at
+  the pin, under `-gc none` and under `-d zbr_region_check` (a block's exit poisons what its
+  record holds) -- a V list grows with V's own allocator, which no block records.
+- **Decided (Sean, 2026-11-15):** growing an outer container inside a scoped block is a COMPILE
+  ERROR that points at `<<-` (which replaces, so: collect into a list made inside the block, then
+  `outer <<- inner`). Fable: no V-route exemption -- one checker, one language. Lexical cases
+  only (a local, parameter, module variable or field reached from outside the block); a callee
+  that grows a list it was handed, called inside a block, is not visible to the checker and stays
+  a runtime hazard -- the refusal's entry must say so. Refusals to be measured over the four repos
+  before landing (Fable expects none in the engine: it forbids `allocate` blocks). Not fixed
+  inside BUG-722; the JSON builder sidesteps it by storing in `_zbr_scoped_backing()`.
+- **Control when fixing:** the repro is refused at `-c` naming `nums` and `<<-`; its rewrite with
+  `<<-` prints `0` and `1999`; the same loops outside any block unchanged.
+- **Fix (Sean's decision, a compile error pointing at `<<-`):** `TypeChecker.checkScopedGrowth`
+  runs after each SCOPED `allocate` block is checked: a call that grows a `List` (`add`,
+  `append`, `reserve`) or a `StringBuilder` (`append`, `appendChar`) whose receiver is reached
+  through a name not declared in the block -- an outer local, a parameter, a module variable,
+  `this` / `.field` -- is refused at the member, naming the receiver and the fix (build inside
+  the block, `outer <<- inner`). The set of growing calls was MEASURED from the emit (a probe
+  calling every mutating member on an outer receiver inside a block): those five pass
+  `_zbr_rt._allocator`; `HashMap`/`Set` `put` does not (a managed map keeps its own allocator)
+  and `set`/`remove`/`sort`/`clear`/`pop` never grow. A nested `allocate` is skipped (a scoped
+  one checks itself; `Page()`/`Smp()`/`C()` are not freed). One checker, both routes (Fable: no
+  V exemption). QUICKSTART's "RIGHT" example -- the repro's own shape -- now builds inside
+  and copies out with `<<-`.
+- **Measured before landing:** `-c` over every tracked `.zbr` of this repo, zebra-ide, the
+  GameEngine and pocket-lab-manager (3,267 files), neither binary panicking: only this bug's
+  fail fixture changed (staged, the positive control). No program in any of the four repos
+  grows an outer container inside a scoped block.
+- **Pinned by:** `test/bug750_allocate_growth_fail_test.zbr` (11 `smoke_tc_fail` positions + both
+  fix texts: a local through add/append/reserve, a StringBuilder through append/appendChar, a
+  field through `bag.items` and `.items` in a method, a parameter, a module variable, a call
+  nested in `if`/`for`, a `Debug()` block). `test/bug750_allocate_copyout_test.zbr`
+  (`smoke_run`): the repro's rewrite with `<<-` reads back `0 1999 2000` after a block that
+  reuses the freed memory, a str list and a StringBuilder's text the same way, and the legal
+  shapes (a list made inside, an outer list grown in `Page()`, growth outside any block).
+  Red: the pre-fix compiler accepts the fail fixture at `-c` (exit 0, the sweep's old column).
+- **Not covered (lexical check):** a function or lambda that grows a list it was handed, called
+  inside a block; a receiver reached through a call (`getList().add(x)`) or a `with` block's
+  implicit receiver; assigning a block-made value to an outer name (`parts = line.split(",")`,
+  QUICKSTART's WRONG example) is a different shape and is not refused.
+
+---
+
 ### BUG-722: `Json.array().append(v)` with a JsonValue passes `-c` and fails inside zig -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-13; found building the Pocket Lab manager's model calls)
 - **Repro:** `var m = Json.object()`, `m.put("role", "user")`, `var arr = Json.array()`,

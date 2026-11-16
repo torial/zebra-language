@@ -1,0 +1,57 @@
+# BUG-750: what to write instead of growing an outer container inside a scoped `allocate`
+# block -- build inside, copy out with `<<-`. The second block allocates enough to reuse the
+# first block's freed memory, so a list whose buffer was left in the first block would read
+# back wrong (it printed 41943064 and 0 before the refusal existed). Plus the shapes that stay
+# legal: a list made inside the block, an outer list grown inside a Page() block, and growth
+# outside any block.
+
+def churn()
+    allocate Arena()
+        var other: List(int) = List(int)()
+        var k = 0
+        while k < 100000
+            other.add(k * 7)
+            k += 1
+
+def main()
+    var nums: List(int) = List(int)()
+    allocate Arena()
+        var inner: List(int) = List(int)()
+        var i = 0
+        while i < 2000
+            inner.add(i)
+            i += 1
+        nums <<- inner
+    churn()
+    print("ints: ${nums.at(0)} ${nums.at(1999)} ${nums.len}")
+
+    var parts: List(str) = List(str)()
+    allocate Arena()
+        var got: List(str) = List(str)()
+        for p in "a,bb,ccc".split(",")
+            got.add(p.concat("!"))
+        parts <<- got
+    churn()
+    print("strs: ${parts.join("|")}")
+
+    var text: str = ""
+    allocate Arena()
+        var sb = StringBuilder()
+        sb.append("built ")
+        sb.appendChar('x')
+        text <<- sb.toString()
+    churn()
+    print("text: ${text}")
+
+    # legal: made inside the block; an outer list grown in a block whose memory is not freed
+    var kept: List(int) = List(int)()
+    allocate Arena()
+        var local: List(int) = List(int)()
+        local.add(5)
+        print("local: ${local.len}")
+    allocate Page()
+        kept.add(9)
+    kept.add(10)
+    churn()
+    print("kept: ${kept.at(0)} ${kept.at(1)}")
+    print("bug750_allocate_copyout: OK")
