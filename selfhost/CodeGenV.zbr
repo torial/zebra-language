@@ -131,6 +131,28 @@ def freeAtSweepArg(t: str): str
         i = i + 1
     return id
 
+# The functions V's builtin module keeps to itself (vlib/builtin/*.v, the private top-level
+# ones, as of the V pin). A program function of the same name and signature is silently
+# given the builtin's body by V master's C generator -- `fn new_node() &Node` came back as
+# the sorted map's `new_node() &mapnode`, every field default gone (vlang/v#32404; with
+# another signature the C does not build). `class Node` writes exactly that constructor, so
+# such a name gets a trailing `_` here. tools/v_check.sh's names row reads the same files
+# beside the V in use and fails when this list has fallen behind them.
+def vBuiltinPrivateNames(): str
+    # one literal: this is asked of every identifier the emitter writes, and a string built
+    # here would be built (and kept) each time
+    return " __as_cast __at_least_one __malloc_at_least_one __new_array __new_array_aligned __new_array_noscan __new_array_with_array_default __new_array_with_array_default_noscan __new_array_with_default __new_array_with_default_noscan __new_array_with_map_default __new_array_with_multi_default __new_array_with_multi_default_noscan __print_assert_failure __v2_flag_all_int __v2_flag_has_int _ht_alloc _ht_free _memory_panic _write_buf_to_fd _writeln_to_fd abs64 add_unhandled_exception_handler alloc_array_data alloc_array_data_aligned alloc_array_data_noscan alloc_array_data_noscan_uninit alloc_array_data_uninit arena_align arena_alloc arena_alloc_current arena_checked arena_chunk_header_size arena_chunk_release arena_grow arena_lock arena_owner arena_owns_ptr arena_range_set arena_range_start arena_range_stop arena_realloc arena_registry_add arena_registry_begin_write arena_registry_end_write arena_registry_find arena_registry_remove arena_registry_upper arena_release_chunks arena_unlock array_data_allocation_size array_data_header_size array_sort_move autostr_addr_pop autostr_addr_type_in_stack autostr_addr_type_push backtrace_addr2line_executable backtrace_current_executable_name backtrace_exec_capture backtrace_shell_quote break_if_debugger_attached bsd_backtrace_resolve_atos builtin_init compare_lower_strings compare_strings_by_len copy_element_to data_alignment_exponent data_to_hex_string demangle_backtrace_sym demangle_v_symbol dense_array_allocate dense_array_free dense_array_resize drop_owned_result_error drop_owned_result_error_interface eprint_libbacktrace eprint_space_padding fabs32 fabs64 fast_string_eq format_float_sb free_unaliased gc_prepare_for_debugger_init gc_report_fatal_errors_on_stderr gc_restore_roots_after_debugger_init gc_runtime_init grapheme_break_property grapheme_hex_byte grapheme_hex_nibble grapheme_range_value grapheme_state_from_rune impl_i64_to_string impl_utf8_to_utf32 in_grapheme_ranges init_array_data install_segfault_handler install_windows_stack_overflow_handler internal_gc_abort_to_stderr internal_gc_warn_proc_none is_address_in_executable is_extended_pictographic is_terminal malloc_noscan_uninit malloc_string_buffer malloc_uninit map_clone_int_1 map_clone_int_16 map_clone_int_2 map_clone_int_4 map_clone_int_8 map_clone_string map_clone_string_shared map_enum_fn map_eq_int_1 map_eq_int_16 map_eq_int_2 map_eq_int_4 map_eq_int_8 map_eq_kind map_eq_string map_free_nop map_free_string map_hash_bytes map_hash_half map_hash_int_1 map_hash_int_16 map_hash_int_2 map_hash_int_4 map_hash_int_8 map_hash_kind map_hash_string map_hash_word map_length_filter_eq_kind map_map_eq map_string_first_bit map_string_length_bit new_array_from_array_and_c_array new_array_from_c_array new_array_from_c_array_aligned new_array_from_c_array_no_alloc new_array_from_c_array_no_alloc_aligned new_array_from_c_array_noscan new_dense_array new_dense_array_noscan new_map new_map_aligned new_map_data new_map_init new_map_init_noscan_key new_map_init_noscan_key_value new_map_init_noscan_value new_map_noscan_key new_map_noscan_key_value new_map_noscan_value new_map_update_init new_map_with_dense_array new_node new_sorted_map new_sorted_map_init next_interpolated_float panic_debug panic_fatal panic_frame_done panic_frame_pop panic_frame_push panic_frame_relink panic_frames_reset panic_jump_next panic_n3 panic_on_negative_cap panic_on_negative_len panic_record panic_record_drop panic_recover_frame panic_unwind portable_max_int portable_min_int prealloc_block_pool_free prealloc_block_pool_lock prealloc_block_pool_put prealloc_block_pool_take prealloc_block_pool_unlock prealloc_calloc prealloc_malloc prealloc_malloc_align prealloc_realloc prealloc_scope_add_block prealloc_scope_detach_current prealloc_scope_finish_if_ready prealloc_scope_free_blocks prealloc_scope_remove_block prealloc_scope_request_free prealloc_scope_unlink prealloc_trace_scope prealloc_vcleanup prealloc_vinit print_backtrace_skipping_top_frames_bsd print_backtrace_skipping_top_frames_linux print_backtrace_skipping_top_frames_mingw print_backtrace_skipping_top_frames_msvc print_backtrace_skipping_top_frames_tcc print_libbacktrace race_stdio_read race_stdio_write reference_map_hash reference_word set_stream_binary_mode set_stream_unbuffered should_break_grapheme split_generic_params string_bytes_equal string_concat_pair string_contains_byte string_content_equal string_graphemes_impl string_index_byte string_index_pair string_int_base string_last_index_byte string_plus_many string_plus_many_general test_bool_size test_c_strstr_is_declared test_fixed_precision_float_interpolation test_fixed_precision_interpolation_allocation_budget test_float_interpolation_buffers_preserve_evaluation_order test_g_main_argc test_g_main_argv test_generic_fixed_float_interpolation_keeps_conversion_helpers test_live_local_in_asan_fake_frame_is_a_root test_map_hash_bytes_matches_the_reference_at_every_length_and_alignment test_prealloc_reclaims_cached_blocks_before_reporting_out_of_memory test_register_spills_keep_physical_stack_bounds test_saved_registers_are_roots_under_memory_sanitizer test_str_intp_fixed_float_builder_path test_v_getpid__and__v_gettid trace_error u128_to_bin u128_to_hex u64_to_hex u64_to_hex_no_leading_zeros unhandled_exception_handler utf8_decode_rune utf8_grapheme_visible_length utf8_is_continuation utf8_rune_visible_width v3_gcboehm_runtime_init v3_vgc_runtime_init v_fixed_index v_fixed_index_i64 v_fixed_index_ni v_fixed_index_u64 v_ni_index v_segmentation_fault_handler v_slice_index_i64 v_slice_index_u64 vbacktrace vbacktrace_symbols vbacktrace_symbols_fd vgc_alloc_large vgc_arena_map_add vgc_cache_get_span vgc_calloc vgc_can_use_work_fastpath vgc_central_file_span vgc_central_get_span vgc_central_return_span vgc_clear_mark_bits vgc_collect vgc_count_marked vgc_do_sweep vgc_drain_mark_work vgc_enable vgc_ensure_registered vgc_enter vgc_find_arena vgc_find_span vgc_free vgc_free_obj vgc_gc_run vgc_gc_start vgc_get_free_span vgc_get_obj_size vgc_heap_live vgc_heap_usage vgc_is_enabled vgc_is_heap_ptr vgc_live_sum vgc_malloc vgc_malloc_noscan vgc_malloc_noscan_opts vgc_malloc_typed vgc_malloc_typed_opts vgc_mark_data_segments vgc_mark_roots vgc_maybe_gc vgc_memdup vgc_memdup_noscan vgc_memdup_typed vgc_memory_use vgc_meta_alloc vgc_new_arena vgc_next_span vgc_on_thread_exit vgc_parallel_mark vgc_push_free_span vgc_put_free_span vgc_realloc vgc_refresh_stack_range_for_sp vgc_register_thread vgc_reset_cache vgc_safepoint vgc_safepoint_at vgc_safepoint_wait vgc_scan_precise vgc_scan_range vgc_scan_range_skipping vgc_scan_stack_range vgc_shade vgc_span_alloc vgc_span_alloc_obj vgc_span_init vgc_span_set_bitmaps vgc_sweep_and_file_span vgc_sweep_finish vgc_sweep_span vgc_sweep_spans vgc_take_free_span vgc_test_check_spill_bounds vgc_test_mark_register_window vgc_test_mark_stack_window vgc_test_root_marked vgc_total_alloc vgc_unregister_thread vgc_update_trigger vgc_wait_for_stops vgc_work_get vgc_work_put vgc_write_barrier vmemcpy_unchecked vmemory_abort_on_nil vmemory_align_up vmemory_block_current_or_new vmemory_block_free vmemory_block_free_after vmemory_block_free_chain vmemory_block_grow vmemory_block_init_thread vmemory_block_malloc vmemory_block_malloc_aligned vmemory_block_new vmemory_block_new_sized vmemory_block_size vmemory_block_used vmemory_effective_align vqsort vsort_ptr_at vstable_sort_merge write_buf_to_console write_buf_to_console_kernel32 write_buf_to_fd_kernel32 write_buf_to_fd_kernel32_or_exit write_buf_to_fd_kernel32_status write_buf_to_fd_windows_non_minimal write_buf_to_std_handle_kernel32 wtf8_from_wide wtf8_to_wide "
+
+def isVBuiltinPrivate(s: str): bool
+    return s.len > 3 and vBuiltinPrivateNames().contains(" " + s + " ")
+
+# a class's or a struct's constructor: `new_<name>`, moved off a builtin's private name
+def ctorName(name: str): str
+    var n: str = "new_" + snakeCase(name)
+    if isVBuiltinPrivate(n)
+        return n + "_"
+    return n
+
 def vSafe(name: str): str
     var s = snakeCase(name)
     if s.startsWith("_")
@@ -148,6 +170,9 @@ def vSafe(name: str): str
     # every symbol the emitted file's imports bind (sync, sqlite and http were missing
     # until 2026-11-12; generateV refuses an import whose symbol is not here)
     if s == "time" or s == "os" or s == "math" or s == "strconv" or s == "rand" or s == "sha256" or s == "json2" or s == "bits" or s == "sync" or s == "sqlite" or s == "http" or s == "hmac" or s == "argon2" or s == "crand" or s == "net"
+        return s + "_"
+    # a private function of V's builtin module (vlang/v#32404)
+    if isVBuiltinPrivate(s)
         return s + "_"
     return s
 
@@ -1025,10 +1050,10 @@ class VGen
         var sn0: str = vSafe(name)
         if sn0.startsWith("new_")
             for cn in .class_names
-                if "new_" + snakeCase(cn) == sn0
+                if ctorName(cn) == sn0
                     return sn0 + "_fn"
             for stn in .struct_names
-                if "new_" + snakeCase(stn) == sn0
+                if ctorName(stn) == sn0
                     return sn0 + "_fn"
         if .def_modules.get(name) as mods
             if mods.count() > 1
@@ -1290,14 +1315,14 @@ class VGen
                 on Decl.method as mth
                     .noteSig(.freeFnName(mth.name), mth.params)   # keyed as emitted: a module-prefixed name has its own entry
                 on Decl.class_ as c
-                    .noteMembers("new_" + snakeCase(c.name), c.members, c.name)
+                    .noteMembers(ctorName(c.name), c.members, c.name)
                 on Decl.interface_ as di
                     .noteMembers("", di.members, di.name)
                 on Decl.sig_ as sg
                     .noteSig("sig:" + sg.name, sg.params)   # a call through a value of this type
                 on Decl.struct_ as st
-                    .noteMembers("new_" + snakeCase(st.name), st.members, st.name)
-                    .noteImplicitCtor("new_" + snakeCase(st.name), st.members)
+                    .noteMembers(ctorName(st.name), st.members, st.name)
+                    .noteImplicitCtor(ctorName(st.name), st.members)
                 else
                     pass
 
@@ -1627,7 +1652,7 @@ class VGen
                 else
                     .refuse("a member kind the subset does not spell in class " + c.name, c.span)
         if not had_init
-            .line("fn new_" + snakeCase(c.name) + "() &" + c.name + " {")
+            .line("fn " + ctorName(c.name) + "() &" + c.name + " {")
             .depth = .depth + 1
             .line("return " + .structLit(c.name, c.members))
             .depth = .depth - 1
@@ -1721,7 +1746,7 @@ class VGen
             branch mem
                 on Decl.init as ini
                     had_init = true
-                    .line("fn new_" + snakeCase(st.name) + "(" + .genParams(ini.params) + ") " + ret_name + " {")
+                    .line("fn " + ctorName(st.name) + "(" + .genParams(ini.params) + ") " + ret_name + " {")
                     .depth = .depth + 1
                     .resetLocals(ini.params)
                     .line("mut self := " + .structLit(st.name, st.members, heap))
@@ -1761,7 +1786,7 @@ class VGen
                         pass
             if heap
                 lit = "&" + lit
-            .line("fn new_" + snakeCase(st.name) + "(" + ps + ") " + ret_name + " {")
+            .line("fn " + ctorName(st.name) + "(" + ps + ") " + ret_name + " {")
             .depth = .depth + 1
             .line("return " + lit + "}")
             .depth = .depth - 1
@@ -1844,13 +1869,13 @@ class VGen
         .line("")
 
     def genInit(ini: DeclInit, owner: str, members: List(Decl))
-        .line("fn new_" + snakeCase(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
+        .line("fn " + ctorName(owner) + "(" + .genParams(ini.params) + ") &" + owner + " {")
         .depth = .depth + 1
         .resetLocals(ini.params)
         .line("mut self := zr_o(" + .structLit(owner, members) + ")")   # the open allocate block's, if any
         if ini.stmts as body
             .in_ctor = true
-            .genBody(body, "new_" + snakeCase(owner))
+            .genBody(body, ctorName(owner))
             .in_ctor = false
         .line("return self")
         .depth = .depth - 1
@@ -3337,7 +3362,19 @@ class VGen
             return .showContainer(ct, rendered)
         if .isShownType(ct)
             return .showValue(ct, rendered)
+        if .isShownOptional(ct)
+            return .showFn(ct, false) + "(" + rendered + ")"
         return rendered
+
+    # An optional of something this route prints (BUG-746's ground: until 2026-11-15 one
+    # in a print or a hole was V's own text -- `Option(none)`, `&Option(&nil)`, V's dump
+    # of a class inside it -- where the Zig route writes `nil` or the value). Its printer
+    # is the optional helper showFn already writes for a field.
+    def isShownOptional(vt: str): bool
+        if not vt.startsWith("?") or vt.len < 2
+            return false
+        var inner: str = vt.substring(1, vt.len)
+        return inner == "string" or inner == "rune" or inner == "i64" or inner == "u8" or inner == "byte" or inner == "bool" or inner == "f64" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
 
     # a class or a struct by its V type (`&Pt`, `Rgb`): what print, a hole and
     # toString() give the Zig route's text for (BUG-746)
@@ -3424,7 +3461,15 @@ class VGen
                         text = text + " + ', '"
                     text = text + " + '" + fname + ": ' + " + .showFn(ft, true) + "(zr_e." + vSafe(fname) + ")"
                     n = n + 1
-                body = "\treturn " + text + " + '}'\n"
+                if et.startsWith("&")
+                    # a class (BUG-749): one met again on the path being printed is
+                    # `Name{...}` -- following it recursed until the stack ended. The
+                    # runtime keeps the path per thread (zshow_enter / zshow_leave), as
+                    # the Zig route's `_zbr_show_path`; a struct is a value and cannot
+                    # reach itself, so it takes no place on the path there or here.
+                    body = "\tif !zshow_enter(voidptr(zr_e)) {\n\t\treturn '" + bare + "{...}'\n\t}\n\tzr_txt := " + text + " + '}'\n\tzshow_leave()\n\treturn zr_txt\n"
+                else
+                    body = "\treturn " + text + " + '}'\n"
             .show_helpers.set(cat, "fn zshow_h" + cat.toString() + "(zr_e " + et + ") string {\n" + body + "}\n")
             return "zshow_h" + cat.toString()
         if .isEnumName(et)
@@ -4061,6 +4106,9 @@ class VGen
                     else if spec == "" and .isShownType(.vTypeOf(ex))
                         # a class or a struct in a hole: its text, never V's `&` before a reference (BUG-746)
                         out = out + "\${" + .showValue(.vTypeOf(ex), .exprStr(ex)) + "}"
+                    else if spec == "" and .isShownOptional(.vTypeOf(ex))
+                        # an optional in a hole: `nil` or the value's own text, never V's `Option(...)`
+                        out = out + "\${" + .showFn(.vTypeOf(ex), false) + "(" + .exprStr(ex) + ")}"
                     else
                         out = out + "\${" + .exprStr(ex) + "}"
                 on StringPart.format as f
@@ -4419,7 +4467,7 @@ class VGen
     # new_name(args)), else a free function
     def identCallStr(name: str, args: List(Arg)): str
         if .isClassName(name) or .isStructName(name)
-            return "new_" + snakeCase(name) + "(" + .argsStr(args, "new_" + snakeCase(name)) + ")"
+            return ctorName(name) + "(" + .argsStr(args, ctorName(name)) + ")"
         if name == "StringBuilder"
             return "new_zstring_builder()"
         if (name == "List" or name == "HashMap" or name == "Set") and args.count() == 0

@@ -97,6 +97,50 @@ pub fn (zr_l &ZList[T]) last() T {
 // table's. Neither is promised (QUICKSTART: "in the map's own order"), so a
 // program that prints a map of more than one entry is not one the two routes
 // can be diffed on.
+//
+// BUG-749: a class that reaches itself. The generated printer of a class asks
+// zshow_enter before it writes its fields and calls zshow_leave after; a class
+// already on the PATH being printed is written `Name{...}` by the caller, and so
+// is one past zshow_max_depth levels (the Zig route's `_zbr_show_path`: 256
+// entries, per thread). Only the path counts: an object two fields share prints
+// in full both times. The path is kept per thread, by thread id under one lock --
+// V has no thread-local a program can declare -- and a thread's entry is dropped
+// when its path empties, so the map holds only the threads that are mid-print.
+pub const zshow_max_depth = 256
+
+pub fn zshow_enter(zr_p voidptr) bool {
+	zr_t := sync.thread_id()
+	zr_show_mu.lock()
+	defer {
+		zr_show_mu.unlock()
+	}
+	if zr_t in zr_show_paths {
+		if zr_show_paths[zr_t].len >= zshow_max_depth {
+			return false
+		}
+		for zr_a in zr_show_paths[zr_t] {
+			if zr_a == zr_p {
+				return false
+			}
+		}
+	}
+	zr_show_paths[zr_t] << zr_p
+	return true
+}
+
+pub fn zshow_leave() {
+	zr_t := sync.thread_id()
+	zr_show_mu.lock()
+	defer {
+		zr_show_mu.unlock()
+	}
+	if zr_show_paths[zr_t].len <= 1 {
+		zr_show_paths.delete(zr_t)
+	} else {
+		zr_show_paths[zr_t].delete_last()
+	}
+}
+
 pub fn zshow_list[T](zr_l &ZList[T], zr_f fn (T) string) string {
 	mut zr_out := []string{cap: zr_l.items.len}
 	for zr_e in zr_l.items {
@@ -461,6 +505,8 @@ __global (
 	zr_region_hooked  bool
 	zr_poisoned       []voidptr // check mode: the poisoned blocks, held so they are never reused
 	zr_region_spare   []&ZRegion // popped records kept for the next push: a block allocates nothing of its own
+	zr_show_mu        sync.Mutex // BUG-749: guards zr_show_paths
+	zr_show_paths     map[u64][]voidptr // the classes each thread is printing, outermost first (zshow_enter)
 )
 
 fn C.GC_base(voidptr) voidptr

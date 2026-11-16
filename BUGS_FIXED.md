@@ -6,6 +6,36 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-752: on the V route `class Node` is built by V's own `new_node` -- no field defaults, a nil list -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed and fixed the same day; Fable, from the first run of the
+  V route's cycle program for BUG-749). V route only. Upstream: vlang/v#32404.
+- **Repro:** `class Node` with `var name: str = "n"` and `var kids: List(Node) = List(Node)()`;
+  `var root = Node()`, `root.kids.add(root)`. On the V route under the master pins (ee6d62a,
+  b399a50, c4dee97) the program dies at the `add` with an access violation: `root.name` is `""`
+  and `root.kids` is nil. V 0.5.2 and the Zig route are right.
+- **Cause (V's, not the emitter's):** the class's constructor is emitted as `fn new_node() &Node`.
+  V's builtin module has a PRIVATE `fn new_node() &mapnode` (`vlib/builtin/sorted_map.v`), and
+  master's C generator gives a program function of the same name and signature the builtin's
+  body, with no error: `fn new_node() int { return 7 }` prints an address. The caller was
+  handed a `mapnode`. With another signature the C does not compile; a PUBLIC builtin name is
+  a V error ("cannot redefine builtin public function").
+- **Cost:** silent wrong values for any class, struct or function whose emitted name is one of
+  builtin's 367 private functions (`new_node`, `new_map`, `new_map_init`, `is_terminal`, ...).
+  None of the engine's 184 emitted and host V files met one.
+- **Fix (Fable, `CodeGenV.zbr`):** the emitter carries builtin's private function names
+  (`vBuiltinPrivateNames`, one literal, read from the pin's `vlib/builtin/*.v`) and writes such
+  a name with a trailing `_`: a constructor through `ctorName`, every other identifier through
+  `vSafe`.
+- **Pinned by:** `tools/v_check.sh`'s `names` row -- a program with a class `Node`, a class with
+  an init, a struct, a function, a method, a field and locals of such names is IDENTICAL on
+  both routes; the emitted V must name `new_node_`; and the private names of the V IN USE (read
+  from the vlib beside it) must all be in the emitter's list, so a pin move that adds one fails
+  by name. `# pins: BUG-752`. Red: before the fix the program printed `made` and died.
+- **Not covered:** a class named like a builtin TYPE of V (`SortedMap`, `DenseArray`) -- V's
+  own error ("another type with this name exists"), loud.
+
+---
+
 ### BUG-746: on the V route a class or struct prints V's own text, not the Zig route's -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-15; Fable, running BUG-743's fixture cases on the V route)
 - **Repro:** `class Pt` (`x = 1`, `y = 2`, no `toString` cue): `"${p}"` and `p.toString()` give
@@ -27,9 +57,13 @@ Open bugs live in `BUGS.md`.
   inside V.
 - **Pinned by:** `tools/v_check.sh`'s show row (`show_types`, `show_fix2` =
   `test/bug743_tostring_show_test.zbr`, IDENTICAL on both routes) -- `# pins: BUG-746`.
-- **Not covered:** BUG-749's cycle rule on the V route -- its generated printers recurse with
-  no guard, so a cycle overflows the stack there today (Fable's next item, with
-  `test/bug749_show_self_ref_test.zbr` as the spec).
+- **Extended 2026-11-15 (Fable):** BUG-749's cycle rule holds on the V route too (a class's
+  generated printer asks the runtime's per-thread path, `zshow_enter` / `zshow_leave`; the
+  show row's `show_fix3` = `test/bug749_show_self_ref_test.zbr` and `show_cycle`). And an
+  OPTIONAL as text -- `"${x}"` or `print(x)` for `x: Leaf?`, `List(int)?`, an `int?` that is
+  nil -- was still V's own (`&Option(&nil)`, `Option(none)`, V's dump of the class inside),
+  which also made a cycle through a cue toString's `"${.b}"` overflow the stack; it goes
+  through the same printers now (`isShownOptional`; the show row's `show_opt`).
 
 ---
 

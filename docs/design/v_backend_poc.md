@@ -2903,10 +2903,75 @@ optional. V's generics take no option type, so the runtime's boxed containers
 cannot hold one; until now the type reached V and the build died there. An
 interface value printed is refused as before.
 
-**Not done:** a value that reaches itself. The Zig route prints a revisited
-object as `Leaf{...}` and cuts at 256 levels (BUG-749); this route's
-generated printers recurse without a guard, so a real cycle overflows the
-stack here. The row leaves that shape out until the route has the same rule.
+**A value that reaches itself** (BUG-749's V half, 2026-11-15). The Zig route
+prints a class met again on the path being printed as `Leaf{...}` and cuts at
+256 levels; this route has the same rule. A class's generated printer asks the
+runtime before it writes its fields and tells it after:
+
+```v
+fn zshow_h0(zr_e &Leaf) string {
+	if !zshow_enter(voidptr(zr_e)) {
+		return 'Leaf{...}'
+	}
+	zr_txt := 'Leaf{' + ... + '}'
+	zshow_leave()
+	return zr_txt
+}
+```
+
+`zshow_enter` keeps the path per thread: a map from thread id to the classes
+that thread is printing, under one lock, an entry dropped when its path
+empties. (The Zig route's path is a threadlocal; V has none a program can
+declare.) Only the path counts, so an object two fields share prints in full
+both times. A struct is a value and takes no place on the path, on either
+route. Kept in the runtime rather than passed down the printers, so a class's
+own `toString()` that prints its fields continues the same path, as on the Zig
+route.
+
+Witness: the show row's `show_fix3` (the Zig route's fixture,
+`test/bug749_show_self_ref_test.zbr`) and `show_cycle` (the way back through a
+list, a map and a struct; 300 links, of which 256 are written and one cut; the
+path empty again afterwards; four threads printing one cyclic object 500 times
+each). Reds: with `zshow_enter` answering true always the fixture dies of a
+stack overflow; with every thread given the same key the four threads read
+`Node{...}` for an object another thread was in the middle of.
+
+**An optional as text** (the same day; BUG-746's ground). `"${x}"` and
+`print(x)` for an optional were still V's own: `Option(none)` for a nil
+`int?`, `&Option(&nil)` for a nil class, V's multi-line dump for a class or a
+list inside one. They go through the optional printer `showFn` already wrote
+for a field (`isShownOptional`: an optional of a string, char, int, byte,
+bool, float, enum, class, struct or container): `nil`, else the value's own
+text. This is what made a cycle through a cue toString overflow the stack
+(`"Owner<${.b}>"` with `b: Held?` was V's dump recursing, outside the path);
+with it the route prints `Owner<Held{o: Owner<Held{...}>}>` as the Zig route
+does. Witness: the show row's `show_opt` (16 lines); its red is the build
+before the fix, which printed `&Option(&nil)` and died of a stack overflow on
+the cycle.
+
+**A name V's builtin keeps to itself** (vlang/v#32404, found by `show_cycle`'s
+first run). `class Node` did not work on this route under the master pins: its
+constructor is `new_node()`, V's builtin has a private `fn new_node() &mapnode`
+(the sorted map's), and master's C generator gives a program function of the
+same name and signature the builtin's body, silently. The Node came back with
+no field defaults and a nil list. (Another signature fails in the C compiler; a
+public builtin name is a V error; 0.5.2 has none of this.) The emitter carries
+builtin's private function names (`vBuiltinPrivateNames`, 367 of them at
+c4dee97, one literal) and writes a constructor (`ctorName`), a function or any
+other identifier (`vSafe`) of such a name with a trailing `_`. The `names` row
+runs a program of them on both routes, requires the moved names in the emitted
+V, and reads the private names from the vlib beside the V in use: one the list
+lacks fails the row by name, so a pin move cannot bring a new one in unseen.
+A class named like a builtin TYPE (`SortedMap`, `DenseArray`) is V's own error
+("another type with this name exists"), loud, and not handled here.
+
+**No run is handed to V's fallback compiler.** V master retries a build whose
+C does not compile with a cached V 0.5.2 (`retrying with
+.../v1-fallback/0.5.2/v.exe`), so a row could be judged by a compiler it does
+not name. `tools/v_check.sh` and `tools/v_engine_check.py` set
+`V_MACOS_V3_NO_FALLBACK=1` (read on every OS, whatever its name), and the
+`fallback` row refuses any run of the invocation whose log says the retry
+happened. No earlier log had it.
 
 **Witness.** The show row of `tools/v_check.sh`: the fixture above as
 written, and `show_types` (22 lines: a class, a struct, an enum and optional

@@ -10,7 +10,9 @@
 # pins: BUG-734 Json.parse answers nil past 256 levels of nesting on the V route as on the Zig route (the show row's jd_fix)
 # pins: BUG-743 a container's toString() on the V route is the text print gives, as on the Zig route (the show row's show_more)
 # pins: BUG-745 on the V route a struct built with fewer arguments than fields takes each missing field's default, and a class's list or class field keeps its declared default (the show row's show_types and show_fix2)
-# pins: BUG-746 a class or struct as text on the V route is the Zig route's (`Name{field: value}`, or its own toString with no `&` before it in a hole) (the show row's show_types and show_fix2)
+# pins: BUG-746 a class or struct as text on the V route is the Zig route's (`Name{field: value}`, or its own toString with no `&` before it in a hole), and so is an optional of one (`nil` or the value) (the show row's show_types, show_fix2 and show_opt)
+# pins: BUG-749 on the V route a class met again on the path being printed is `Name{...}`, a shared object prints in full, the cut is at 256 levels and the path is each thread's own (the show row's show_fix3 and show_cycle)
+# pins: BUG-752 a class, struct or function whose V name is a private function of V's builtin (`class Node` -> new_node, vlang/v#32404) is moved aside, and the emitter's list covers the V in use (the names row)
 # pins: BUG-748 the V route's net.http checks certificates by default (the certs row: every validate bool in vlib/net/http/http.v and request.v defaults to true)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
@@ -42,6 +44,11 @@ ZEBRA="$WT/zig-out/bin/zebra.exe"
 # which b399a50 lacks
 V=${V:-/c/Projects/v-c4dee97/v.exe}
 [ "${1:-}" = "--v" ] && V=$2
+# V master retries a build whose C does not compile with a cached V 0.5.2 ("retrying with
+# `...v1-fallback/0.5.2/v.exe`"): a row could then be judged by a compiler it does not name.
+# Switched off here (the name says macOS; cmd/v/v.v reads it on every OS), and the last row
+# refuses any run whose stderr says the retry happened all the same.
+export V_MACOS_V3_NO_FALLBACK=1
 OUT=${OUT:-$WT/.zig-cache/v_check}
 ROUTE_REFUSALS_BASELINE=${ROUTE_REFUSALS_BASELINE:-2}   # main.zbr's two zig literals (Zig-backend code by definition): more is a regression
 mkdir -p "$OUT/scratch"
@@ -360,11 +367,120 @@ rows=$((rows + 1))
 # toString printed V's dump and one with its own printed `&Named(own)` in a hole (BUG-746);
 # a struct built with fewer arguments than fields got zero, not the field's default, and a
 # class's list or class field with a declared default started empty or nil (BUG-745).
-# Not in it: a class that reaches itself through a field (`next: Leaf?`), which the ZIG
-# route does not build when printed (a dependency loop in _zbr_show_into; reported).
+# show_fix3 is the Zig route's fixture for a class that reaches itself (BUG-749,
+# test/bug749_show_self_ref_test.zbr: one met again on the path being printed is
+# `Name{...}`, a shared one prints in full). show_cycle is what it does not reach: the way
+# back through a list, a map and a struct, the cut at 256 levels, and four threads printing
+# one cyclic object at once (the path is each thread's own). show_opt is an optional as text:
+# printed and in a hole it was still V's own (`Option(none)`, V's dump of the class inside).
 cp "$WT/test/bug723_chars_value_test.zbr" "$OUT/show_fix.zbr"
 cp "$WT/test/bug734_json_depth_test.zbr" "$OUT/jd_fix.zbr"
 cp "$WT/test/bug743_tostring_show_test.zbr" "$OUT/show_fix2.zbr"
+cp "$WT/test/bug749_show_self_ref_test.zbr" "$OUT/show_fix3.zbr"
+cat > "$OUT/show_cycle.zbr" <<'ZBR'
+# What the Zig route's BUG-749 fixture does not reach: a cycle that passes through a list,
+# a map, a struct and an optional on its way back; the cut at 256 levels; and the path being
+# each thread's own (four threads print one cyclic object at once: a path shared between
+# them would write `Node{...}` for an object another thread is in the middle of).
+
+class Node
+    var name: str = "n"
+    var kids: List(Node) = List(Node)()
+    var by: HashMap(str, Node) = HashMap(str, Node)()
+
+struct Slot
+    var held: Link? = nil
+
+class Link
+    var id: int = 0
+    var slot: Slot = Slot()
+    var next: Link? = nil
+
+var failures: int = 0
+
+def check(what: str, got: str, want: str)
+    if got == want
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: got '${got}', want '${want}'")
+        failures += 1
+
+def count(hay: str, needle: str): int
+    var n: int = 0
+    var at: int = hay.indexOf(needle)
+    while at >= 0
+        n += 1
+        var rest: str = hay.substring(at + needle.len, hay.len)
+        var nx: int = rest.indexOf(needle)
+        if nx < 0
+            at = -1
+        else
+            at = at + needle.len + nx
+    return n
+
+def main()
+    var root = Node()
+    root.name = "root"
+    root.kids.add(root)
+    check("through-a-list", root.toString(), "Node{name: \"root\", kids: [Node{...}], by: {}}")
+
+    var m = Node()
+    m.name = "m"
+    m.by.set("me", m)
+    check("through-a-map", "${m}", "Node{name: \"m\", kids: [], by: {me: Node{...}}}")
+
+    var a = Link()
+    a.id = 1
+    var b = Link()
+    b.id = 2
+    a.slot = Slot(held: b)
+    b.next = a
+    check("through-a-struct", a.toString(), "Link{id: 1, slot: Slot{held: Link{id: 2, slot: Slot{held: nil}, next: Link{...}}}, next: nil}")
+
+    # 300 links in a line: 256 are written, the 257th is cut
+    var head = Link()
+    var tail = head
+    for i in 1..300
+        var nx = Link()
+        nx.id = i
+        tail.next = nx
+        tail = nx
+    var deep: str = head.toString()
+    check("deep-written", count(deep, "Link{id:").toString(), "256")
+    check("deep-cut", count(deep, "Link{...}").toString(), "1")
+    # and the path is empty again after it: the same value prints the same
+    check("deep-again", (head.toString() == deep).toString(), "true")
+    check("after-deep", root.toString(), "Node{name: \"root\", kids: [Node{...}], by: {}}")
+
+    # four threads, one cyclic object, 500 prints each
+    var want: str = root.toString()
+    var done: Chan(int) = Chan(int)(8)
+    for t in 0..4
+        sys.go(def()
+            capture
+                var r: Node = root
+                var w: str = want
+                var d: Chan(int) = done
+            var bad: int = 0
+            for k in 0..500
+                if r.toString() != w
+                    bad += 1
+            d.send(bad)
+        )
+    var wrong: int = 0
+    for t in 0..4
+        var got: int? = done.recv()
+        if got as g
+            wrong += g
+        else
+            wrong += 1000
+    check("four-threads", wrong.toString(), "0")
+
+    if failures == 0
+        print("show_cycle: OK")
+    else
+        print("show_cycle: ${failures} WRONG")
+ZBR
 cat > "$OUT/show_types.zbr" <<'ZBR'
 # BUG-745 / BUG-746, the V half: a class, a struct and an enum as text -- printed,
 # in a hole, from toString(), inside a container, as a field of another -- and a
@@ -551,8 +667,75 @@ def main()
     var ls: List(Labelled) = [Tag()]
     print(ls)
 ZBR
+cat > "$OUT/show_opt.zbr" <<'ZBR'
+# An optional as text (BUG-746's ground): printed and in a hole, `nil` or the value as the Zig
+# route writes it -- never V's `Option(none)` / `&Option(&nil)` or its dump of a class inside.
+# The last lines are a cycle that goes round through a cue toString's own hole (`"${.b}"`):
+# V's dump recursed there until the stack ended.
+
+class Leaf
+    var name: str = "leaf"
+
+struct Rgb
+    var r: int = 1
+
+enum Hue
+    warm
+    cold
+
+class Holder
+    var l: Leaf? = nil
+    var n: int? = nil
+    def show(): str
+        return "l=${.l} n=${.n}"
+
+class Owner
+    var b: Held? = nil
+    cue toString(): str
+        return "Owner<${.b}>"
+
+class Held
+    var o: Owner? = nil
+
+def main()
+    var a: int? = 5
+    var b: int? = nil
+    var s: str? = "hi"
+    var t: str? = nil
+    var f: float? = 2.0
+    var k: bool? = true
+    var c: char? = c'x'
+    var l: Leaf? = Leaf()
+    var m: Leaf? = nil
+    var r: Rgb? = Rgb()
+    var h: Hue? = Hue.cold
+    var xs: List(int)? = [1, 2]
+    print("int ${a} ${b}")
+    print("str ${s} ${t}")
+    print("float ${f} bool ${k} char ${c}")
+    print("class ${l} ${m}")
+    print("struct ${r} enum ${h}")
+    print("list ${xs}")
+    print(a)
+    print(s)
+    print(l)
+    print(m)
+    print(xs)
+    var hd = Holder()
+    print(hd.show())
+    hd.l = Leaf()
+    hd.n = 3
+    print(hd.show())
+    var ow = Owner()
+    var held = Held()
+    ow.b = held
+    held.o = ow
+    print(ow.toString())
+    print("${held}")
+    print("show_opt: OK")
+ZBR
 show_bad=""
-for p in show_fix jd_fix show_more show_fix2 show_types; do
+for p in show_fix jd_fix show_more show_fix2 show_types show_fix3 show_cycle show_opt; do
   (cd "$OUT" && "$ZEBRA" $p.zbr > "$OUT/${p}_zig_out.txt" 2> "$OUT/${p}_zig_err.txt"); zrc=$?
   (cd "$OUT" && "$ZEBRA" --target v $p.zbr > "$OUT/${p}_emit.txt" 2>&1)
   (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$p.v" > "$OUT/${p}_v_out.txt" 2> "$OUT/${p}_v_err.txt"); vrc=$?
@@ -576,8 +759,77 @@ elif ! grep -q 'zshow_list(' "$OUT/show_more.v" || ! grep -q '^fn zshow_h[0-9]' 
 elif ! grep -q 'if zjson_too_deep(zr_s)' "$OUT/jd_fix.v"; then echo "show: FAILED -- the depth fixture's V file does not call the scan"; fail=1
 elif ! grep -qxF 'Box{hue: cold, rgb: Rgb{r: 3, g: 4}, tags: ["a"], tagged: Tagged(own)}' "$OUT/show_types_zig_out.txt" || ! grep -qxF 'Rgb{r: 9, g: 4}' "$OUT/show_types_zig_out.txt" || ! grep -qxF 'hole: Tagged(own)' "$OUT/show_types_zig_out.txt"; then echo "show: FAILED -- NO CONTROL: the Zig run did not print the class, struct and default lines show_types is about"; fail=1
 elif ! grep -qE '^fn zshow_h[0-9]+\(zr_e &Leaf\) string' "$OUT/show_types.v" || ! grep -q 'zset_of\[' "$OUT/show_types.v"; then echo "show: FAILED -- the emitted V has no class printer or no set literal: show_types compared something else"; fail=1
+elif ! grep -qxF 'class Leaf{name: "leaf"} nil' "$OUT/show_opt_zig_out.txt" || ! grep -qxF 'Owner<Held{o: Owner<Held{...}>}>' "$OUT/show_opt_zig_out.txt"; then echo "show: FAILED -- NO CONTROL: the Zig run did not print the optional and the cue-toString cycle show_opt is about"; fail=1
+elif ! grep -q 'if !zshow_enter(voidptr(zr_e))' "$OUT/show_cycle.v" || ! grep -q 'if !zshow_enter(voidptr(zr_e))' "$OUT/show_fix3.v"; then echo "show: FAILED -- the emitted class printers do not ask the path (zshow_enter): the cycle programs compared something else"; fail=1
 elif [ "$show_refused" != 2 ]; then echo "show: FAILED -- a list of an optional and a printed interface must each be refused by name ($show_refused of 2): $(grep -E '^    ' "$OUT/show_refuse_emit.txt" | head -2 | cut -c1-120 | tr '\n' ' ')"; fail=1
-else echo "show: ok -- five programs alike on both backends ($(wc -l < "$OUT/show_fix_zig_out.txt") + $(wc -l < "$OUT/jd_fix_zig_out.txt") + $(wc -l < "$OUT/show_more_zig_out.txt") + $(wc -l < "$OUT/show_fix2_zig_out.txt") + $(wc -l < "$OUT/show_types_zig_out.txt") lines); a list of an optional and a printed interface refused by name"; fi
+else echo "show: ok -- eight programs alike on both backends ($(wc -l < "$OUT/show_fix_zig_out.txt") + $(wc -l < "$OUT/jd_fix_zig_out.txt") + $(wc -l < "$OUT/show_more_zig_out.txt") + $(wc -l < "$OUT/show_fix2_zig_out.txt") + $(wc -l < "$OUT/show_types_zig_out.txt") + $(wc -l < "$OUT/show_fix3_zig_out.txt") + $(wc -l < "$OUT/show_cycle_zig_out.txt") + $(wc -l < "$OUT/show_opt_zig_out.txt") lines); a list of an optional and a printed interface refused by name"; fi
+echo "── a program name V's builtin module keeps privately is moved aside (vlang/v#32404: class Node was built by the sorted map's new_node) ──"
+rows=$((rows + 1))
+# V master gives a program function the BODY of a private builtin function of the same name
+# and signature, silently: `fn new_node() &Node` returned a mapnode, so a `class Node` came
+# back with no field defaults and a nil list. CodeGenV carries the private names and writes
+# such a name with a trailing `_`. Three legs: the program below is alike on both routes;
+# its V names the moved constructor (a program that met no such name would diff clean);
+# and the emitter's list still covers the private names of the V in use, read from the
+# vlib beside it -- a pin move that adds one fails here, by name, before it bites.
+cat > "$OUT/names.zbr" <<'ZBR'
+# Names V's builtin module keeps privately (vlang/v#32404): a class Node's constructor is
+# `new_node`, which V master silently swaps for its sorted map's. Each shape a program can
+# write such a name in -- a class with defaults, a class with an init, a struct, a function,
+# a method, a field, a local -- must behave as on the Zig route.
+
+class Node
+    var name: str = "n"
+    var kids: List(Node) = List(Node)()
+
+class MapInit
+    var size: int
+    cue init(size: int)
+        .size = size
+    def newNode(): int
+        return .size + 1
+
+struct MapData
+    var cap: int = 4
+    var newMap: int = 9
+
+def isTerminal(): bool
+    return true
+
+def newDenseArray(a: int, b: int): int
+    return a * 10 + b
+
+def main()
+    var root = Node()
+    root.kids.add(root)
+    print("node: ${root.name} ${root.kids.count()}")
+    var sm = MapInit(3)
+    print("map init: ${sm.size} ${sm.newNode()}")
+    var da = MapData()
+    print("map data: ${da.cap} ${da.newMap}")
+    var d2 = MapData(cap: 6)
+    print("map data 2: ${d2.cap} ${d2.newMap}")
+    print("def: ${isTerminal()} ${newDenseArray(4, 2)}")
+    var vqsort: int = 5
+    var abs64: int = vqsort + 1
+    print("locals: ${vqsort} ${abs64}")
+    print("names: OK")
+ZBR
+(cd "$OUT" && "$ZEBRA" names.zbr > "$OUT/names_zig_out.txt" 2> "$OUT/names_zig_err.txt"); zrc=$?
+(cd "$OUT" && "$ZEBRA" --target v names.zbr > "$OUT/names_emit.txt" 2>&1)
+(cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/names.v" > "$OUT/names_v_out.txt" 2> "$OUT/names_v_err.txt"); vrc=$?
+names_root=$(dirname "$V")
+ls "$names_root"/vlib/builtin/*.v 2>/dev/null | grep -v '_test\.v$' | xargs -r grep -hoE '^fn [a-z_0-9]+\(' 2>/dev/null | sed -E 's/^fn //; s/\($//' | grep -vxE 'main|init' | LC_ALL=C sort -u > "$OUT/names_v_private.txt"
+grep -A3 '^def vBuiltinPrivateNames' "$WT/selfhost/CodeGenV.zbr" | grep -oE 'return " [^"]*"' | tr ' ' '\n' | grep -E '^[a-z_0-9]+$' | LC_ALL=C sort -u > "$OUT/names_emitter.txt"
+names_missing=$(LC_ALL=C comm -23 "$OUT/names_v_private.txt" "$OUT/names_emitter.txt" | tr '\n' ' ')
+if [ "$zrc" != 0 ] || ! tail -1 "$OUT/names_zig_out.txt" | grep -qx 'names: OK'; then echo "names: FAILED -- NO CONTROL: the Zig run exited $zrc and ended '$(tail -1 "$OUT/names_zig_out.txt" | cut -c1-80)'"; fail=1
+elif [ "$(grep -cE '^    ' "$OUT/names_emit.txt")" != 0 ]; then echo "names: FAILED -- REFUSED: $(grep -m1 -E '^    ' "$OUT/names_emit.txt" | cut -c1-140)"; fail=1
+elif [ "$vrc" != 0 ]; then echo "names: FAILED -- v exit $vrc: $(grep -m2 -E 'error|panic|Unhandled' "$OUT/names_v_err.txt" | cut -c1-200 | tr '\n' ' ')"; fail=1
+elif ! diff -q "$OUT/names_v_out.txt" "$OUT/names_zig_out.txt" > /dev/null; then echo "names: FAILED -- stdout differs, V then Zig: $(diff "$OUT/names_v_out.txt" "$OUT/names_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' ')"; fail=1
+elif ! grep -q '^fn new_node_() &Node' "$OUT/names.v" || ! grep -q '^fn is_terminal_() bool' "$OUT/names.v"; then echo "names: FAILED -- the emitted V does not move new_node / is_terminal aside: the program met no private name and compared nothing"; fail=1
+elif ! grep -qx 'new_node' "$OUT/names_v_private.txt" || [ "$(wc -l < "$OUT/names_v_private.txt")" -lt 100 ]; then echo "names: FAILED -- cannot read builtin's private functions beside this V ($names_root/vlib/builtin: $(wc -l < "$OUT/names_v_private.txt") names, new_node not among them or too few): the emitter's list cannot be checked against it"; fail=1
+elif [ -n "$names_missing" ]; then echo "names: FAILED -- this V's builtin has private functions the emitter's list (vBuiltinPrivateNames in CodeGenV.zbr) lacks: $(echo "$names_missing" | cut -c1-200)"; fail=1
+else echo "names: ok -- a class Node, a struct, a function, a field and a local named like builtin's private functions are alike on both backends ($(wc -l < "$OUT/names_zig_out.txt") lines); the emitter's list covers all $(wc -l < "$OUT/names_v_private.txt") private names of $names_root/vlib/builtin"; fi
 echo "── a name the V runtime does not define is REFUSED by name, not reported clean (2026-10-30: 152 'clean' census files did not build) ──"
 rows=$((rows + 1))
 # three shapes: a stdlib namespace the emitter does not map, a ZList method zebra_rt.v
@@ -658,6 +910,15 @@ else
   if [ "$zig_ans" = "2 1 1 0" ] && [ "$v_ans" = "2 1 1 0" ]; then echo "lsp: ok -- both answer initialize (capabilities) and shutdown, and exit on exit (zig: $zig_ans, v: $v_ans)"
   else echo "lsp: FAILED -- responses capabilities shutdown exit: zig [$zig_ans] v [$v_ans] (want [2 1 1 0] on both)"; head -3 "$OUT/lsp_err.txt" | cut -c1-160; fail=1; fi
 fi
+echo "── no run was handed to V's fallback compiler ──"
+rows=$((rows + 1))
+# V master's retry with a cached 0.5.2 is switched off at the top; this reads what the runs
+# of THIS invocation said (the outputs are rewritten by every row) and refuses the retry's
+# own words, in case the switch is renamed under a later pin
+fallback_hits=$(grep -l 'retrying with' "$OUT"/*_v_err.txt "$OUT"/*_build.txt "$OUT"/*_check.txt 2>/dev/null | head -5 | xargs -r -n1 basename | tr '\n' ' ')
+if [ -n "$fallback_hits" ]; then echo "fallback: FAILED -- V retried with its fallback compiler in: $fallback_hits(a row judged by a compiler it does not name)"; fail=1
+elif [ "$(ls "$OUT"/*_v_err.txt 2>/dev/null | wc -l)" -lt 10 ]; then echo "fallback: FAILED -- fewer than ten V error logs under $OUT: nothing to read"; fail=1
+else echo "fallback: ok -- none of $(ls "$OUT"/*_v_err.txt | wc -l) V runs says 'retrying with'"; fi
 echo "── the engine's roots: tools/v_engine_check.py (not run here) ──"
 if [ "$fail" = 0 ]; then echo "v_check: ok -- $rows rows, every example and dump identical to its fresh Zig control, the route within its baseline"; exit 0; fi
 echo "v_check: FAILED (see the rows above; outputs under $OUT)"; exit 1
