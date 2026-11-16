@@ -3029,7 +3029,7 @@ four roots on the compiler before the change, and the row's program on it
 ("redefinition of `c`"). After: the four roots identical, and the ladder at
 104 identical with no standing failure.
 
-## A JsonValue is a shared handle (2026-11-16; BUG-751, BUG-722)
+## A JsonValue is a shared handle (2026-11-16; BUG-751, BUG-722, BUG-754, BUG-756)
 
 Until this change a `JsonValue` was x.json2's `Any` BY VALUE on this route,
 and `j.put(k, v)` was rewritten `j = zjson_put(j, k, v)` because a sum type
@@ -3128,20 +3128,27 @@ not `mut j ZJson`. A JsonValue field or local without a value is JSON null
 exist here and not there (a surface difference older than this change, to be
 settled apart). A local named `u2` is accepted here, and that is right: the
 Zig route's refusal ("name shadows primitive") is a leak in its emission of
-an `if x as u2` binding, filed on that side with the Zig route's flip.
+an `if x as u2` binding, BUG-755 on that side.
 
 **A code point in braces.** The edge program wrote DEL as backslash-u-{7f},
 the Zig route's spelling, which a Zebra string may carry. `vEscape` passed it
 on as written and V refused the brace; it is V's backslash-u with four hex
 digits now, or backslash-U with eight.
 
-`tools/v_check.sh`'s `json` row: the eighty-four edge lines (`json_edges`:
-what parses, what a number is, what stringify writes) alike on both routes;
-BUG-722's nest fixture alike on both routes
+`tools/v_check.sh`'s `json` row, every program from `test/` and every one
+against the Zig run as its control (the two routes took the flip in one
+push): the eighty-four edge lines (`json_edges`, the Zig suite's golden test
+`test/json_edges_test.zbr`: what parses, what a number is, what stringify
+writes) alike on both routes; BUG-722's nest fixture alike on both routes
 and its three refusals stopped by the same message on both; BUG-751's handle
-fixture (twenty checks) and its two depth refusals on this route against
-their own text until the Zig route's flip lands, when the row takes the
-shared fixtures from `test/` and the Zig run becomes its control.
+fixture alike on both routes (twenty checks, BUG-754's three among them) and
+its two depth refusals stopped by the same message on both.
+
+**What the flip costs the engine** (measured on the Zig route, where the
+engine runs: the same build with only the runtime swapped, 25 s of the
+autoplay): 24.2 MB live before, 27.6 MB after, paid at startup and flat from
+there -- the JSON trees the engine keeps are a heap node each now. The whole
+suite reads the same (367 roots), and no engine module's emission changed.
 
 ## If the branch ever merges to main
 

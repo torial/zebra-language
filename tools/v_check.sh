@@ -14,6 +14,8 @@
 # pins: BUG-749 on the V route a class met again on the path being printed is `Name{...}`, a shared object prints in full, the cut is at 256 levels and the path is each thread's own (the show row's show_fix3 and show_cycle)
 # pins: BUG-752 a class, struct or function whose V name is a private function of V's builtin (`class Node` -> new_node, vlang/v#32404) is moved aside, and the emitter's list covers the V in use (the names row)
 # pins: BUG-722 on the V route put/append of a JsonValue store a snapshot, an object's members keep the order they were stored in, and a wrong kind or a 257th level stops the program with the Zig route's message (the json row's four test/bug722 fixtures)
+# pins: BUG-751 on the V route a JsonValue is a shared handle -- assignment, a parameter and every value read out share, put / append store a snapshot, a replaced key detaches the old node, the 256 levels count from the root -- as on the Zig route (the json row's three test/bug751 fixtures against the Zig run)
+# pins: BUG-756 on the V route Json.parse reads an integer exactly, writes a float in plain digits, keeps a number that fits neither type as its text and refuses a duplicate key, as the Zig route does (the json row's json_edges, test/json_edges_test.zbr, 84 lines)
 # pins: BUG-748 the V route's net.http checks certificates by default (the certs row: every validate bool in vlib/net/http/http.v and request.v defaults to true)
 # The V target's check (2026-10-20; the docket's item 3, tooling parity): the
 # V side's drift alarm and suites in one run, as `regen_selfhost.sh --check`
@@ -841,9 +843,10 @@ rows=$((rows + 1))
 #  - BUG-722's four fixtures (test/), alike on both routes: the nest fixture line for line,
 #    and the three that must STOP -- both routes exit non-zero with the same `Json: ...`
 #    message and neither prints SURVIVED.
-#  - BUG-751's three fixtures, on THIS route against their own expected text: the Zig route's
-#    flip to handles is the other half of the same change and lands with it; until it does
-#    the Zig run of these is not a control (it does not build), and this row says so.
+#  - BUG-751's three fixtures (test/), alike on both routes: the handle fixture line for line
+#    (both routes took the flip together, 2026-11-16), the two depth refusals stopped by the
+#    same message. A JsonValue as text is its JSON text on both (BUG-754, the fixture's last
+#    three checks and its print).
 json_both() {
   (cd "$OUT" && "$ZEBRA" "$1.zbr" > "$OUT/$1_zig_out.txt" 2> "$OUT/$1_zig_err.txt"); echo $? > "$OUT/$1_zig_rc.txt"
   json_v "$1"
@@ -857,331 +860,20 @@ cp "$WT/test/bug722_json_nest_test.zbr" "$OUT/json_nest.zbr"
 cp "$WT/test/bug722_json_too_deep_test.zbr" "$OUT/json_deep.zbr"
 cp "$WT/test/bug722_json_wrong_kind_test.zbr" "$OUT/json_kind.zbr"
 cp "$WT/test/bug722_json_wrong_kind2_test.zbr" "$OUT/json_kind2.zbr"
-cat > "$OUT/json_handle.zbr" <<'ZBR'
-# BUG-751 (Sean, 2026-11-15): a JsonValue is a SHARED HANDLE, like a List since BUG-501. Every
-# name for a value sees every change made through any of them, and a value read out of an
-# object or array (`get`, `tryObj`, the elements of `tryList`) is a handle INTO it. Storing a
-# JsonValue with put/append still stores a snapshot (BUG-722): that is the one copying operation.
-# Each value is checked here, so the final line prints only when all are right.
-
-var failures: int = 0
-
-def check(what: str, got: str, want: str)
-    if got == want
-        print("${what}: ok")
-    else
-        print("  WRONG: ${what}: got '${got}', want '${want}'")
-        failures += 1
-
-def addTag(j: JsonValue, t: str)
-    j.put("tag", t)
-
-def indexReads(d2: JsonValue)
-    var a = d2["a"]?
-    a.putInt("m", 5)
-    var x0 = d2["xs"][0]?
-    x0.putInt("m", 6)
-    # converted to List(JsonValue): the List is new, its elements are handles
-    var xl: List(JsonValue) = d2["xs"]?
-    var e0 = xl.at(0)
-    e0.putBool("seen", true)
-    xl.add(Json.object())
-catch |e|
-    check("index-read", "raised ${e.message}", "no raise")
-
-def main()
-    # assignment shares: a changed key AND a new key are both seen through the other name
-    var p = Json.object()
-    p.putInt("a", 1)
-    var q = p
-    q.putInt("a", 2)
-    q.putInt("b", 3)
-    check("assign-object", p.stringify(), "{\"a\":2,\"b\":3}")
-    check("assign-object-q", q.stringify(), "{\"a\":2,\"b\":3}")
-
-    var xs = Json.array()
-    xs.appendInt(1)
-    var ys = xs
-    ys.appendInt(2)
-    check("assign-array", xs.stringify(), "[1,2]")
-
-    # many stores through the second name: growth must not split the two
-    var big = Json.object()
-    var alias = big
-    var i = 0
-    while i < 40
-        alias.putInt("k${i}", i)
-        i += 1
-    check("assign-grows", "${big.keys().len} ${big.tryInt("k39") orelse -1}", "40 39")
-
-    # a parameter is the same value: a change made in a function is seen by the caller
-    var r = Json.object()
-    addTag(r, "x")
-    check("param", r.stringify(), "{\"tag\":\"x\"}")
-
-    # get() is a handle into the parent: a change through it is seen in the parent
-    if Json.parse("{\"user\":{\"name\":\"a\"},\"tags\":[\"t\"]}") as doc
-        if doc.get("user") as u
-            u.put("name", "b")
-            u.putInt("age", 7)
-        check("get-handle", doc.stringify(), "{\"user\":{\"name\":\"b\",\"age\":7},\"tags\":[\"t\"]}")
-        if doc.tryObj("user") as ub
-            ub.putBool("admin", true)
-        check("tryObj-handle", doc.stringify(), "{\"user\":{\"name\":\"b\",\"age\":7,\"admin\":true},\"tags\":[\"t\"]}")
-        # the elements of tryList are handles; the List itself is a new list (adding to it does
-        # not change the JSON array)
-        if doc.tryList("tags") as tl
-            tl.add(Json.object())
-        check("tryList-list-is-new", doc.stringify(), "{\"user\":{\"name\":\"b\",\"age\":7,\"admin\":true},\"tags\":[\"t\"]}")
-    else
-        check("parse", "parse failed", "parsed")
-
-    if Json.parse("[{\"n\":1},{\"n\":2}]") as rows
-        for row in rows.tryList() orelse List(JsonValue)()
-            var n = row.tryInt("n") orelse 0
-            row.putInt("double", n * 2)
-        check("tryList-elements", rows.stringify(), "[{\"n\":1,\"double\":2},{\"n\":2,\"double\":4}]")
-
-    # a handle survives its parent growing
-    var root = Json.object()
-    root.put("child", Json.object())
-    if root.get("child") as c
-        var k = 0
-        while k < 40
-            root.putInt("pad${k}", k)
-            k += 1
-        c.put("late", "yes")
-    check("handle-survives-growth", root.tryObj("child")?.tryStr("late") orelse "missing", "yes")
-
-    # replacing a key swaps the node: a handle to the old child keeps it, detached
-    var host = Json.object()
-    host.put("child", Json.object())
-    if host.get("child") as old
-        host.put("child", "text")
-        old.put("late", "yes")
-        check("replace-detaches-handle", old.stringify(), "{\"late\":\"yes\"}")
-    check("replace-parent", host.stringify(), "{\"child\":\"text\"}")
-
-    # detached, the old child is the root of its own tree: depth counts from 1 again, so a
-    # 255-deep value under it is legal (256 levels); under the attached child it would be 257
-    var deep = Json.array()
-    var lv = 1
-    while lv < 255
-        var nx = Json.array()
-        nx.append(deep)
-        deep = nx
-        lv += 1
-    var host2 = Json.object()
-    host2.put("child", Json.object())
-    if host2.get("child") as old2
-        host2.putInt("child", 0)
-        old2.put("deep", deep)
-        check("detached-depth-from-1", "${old2.stringify().len}", "${255 * 2 + 9}")
-
-    # a required read is a handle too: v[k]? and v[i]? with no annotation stay JsonValue
-    if Json.parse("{\"a\":{\"n\":1},\"xs\":[{\"n\":2}]}") as d2
-        indexReads(d2)
-        check("index-handles", d2.stringify(), "{\"a\":{\"n\":1,\"m\":5},\"xs\":[{\"n\":2,\"m\":6,\"seen\":true}]}")
-
-    # a handle storing its own root stays finite: the argument is copied before it is stored
-    var top = Json.object()
-    top.put("kid", Json.object())
-    if top.get("kid") as kid
-        kid.put("up", top)
-    check("handle-stores-root", top.stringify(), "{\"kid\":{\"up\":{\"kid\":{}}}}")
-
-    # put/append of a JsonValue is still a snapshot (BUG-722)
-    var m = Json.object()
-    m.put("role", "user")
-    var arr = Json.array()
-    arr.append(m)
-    m.put("role", "system")
-    check("put-still-copies", arr.stringify(), "[{\"role\":\"user\"}]")
-
-    # a key replaced keeps its position
-    var ord = Json.object()
-    ord.putInt("x", 1)
-    ord.putInt("y", 2)
-    ord.putInt("x", 3)
-    check("key-order", ord.stringify(), "{\"x\":3,\"y\":2}")
-
-    # rule 14: a JsonValue as text is its JSON -- toString, a string hole and print alike; a
-    # string node is JSON text too, quotes included (tryStr gets the string itself)
-    var tx = Json.object()
-    tx.put("a", "b")
-    tx.putInt("n", 2)
-    check("text-toString", tx.toString(), "{\"a\":\"b\",\"n\":2}")
-    check("text-hole", "${tx}", "{\"a\":\"b\",\"n\":2}")
-    if tx.get("a") as sn
-        check("text-string-node", sn.toString(), "\"b\"")
-    print(tx)
-
-    if failures == 0
-        print("bug751_json_handle: OK")
-    else
-        print("bug751_json_handle: ${failures} WRONG")
-ZBR
-cat > "$OUT/json_hdepth.zbr" <<'ZBR'
-# BUG-751: with handles, a store can reach a tree through a value read out of it. The 256-level
-# limit (BUG-722) counts from the tree's ROOT, not from the receiver: storing a 255-deep value
-# under a handle that is itself the root's child makes the tree 257 deep, and is refused.
-
-def main()
-    var deep = Json.array()
-    var level = 1
-    while level < 255
-        var next = Json.array()
-        next.append(deep)
-        deep = next
-        level += 1
-    var root = Json.object()
-    root.put("child", Json.object())
-    root.put("ok", deep)
-    print("stored 255 levels under the root: tree is 256")
-    if root.get("child") as c
-        c.put("deep", deep)
-    print("SURVIVED: a 257-level tree was built through a handle")
-ZBR
-cat > "$OUT/json_detached.zbr" <<'ZBR'
-# BUG-751: a child detached by replacing its key is the root of its own tree, so the 256-level
-# limit counts from it: a 255-deep value under it is legal (bug751_json_handle_test), one level
-# more (256 under a root = 257) is refused with BUG-722's message.
-
-def main()
-    var deep = Json.array()
-    var level = 1
-    while level < 256
-        var next = Json.array()
-        next.append(deep)
-        deep = next
-        level += 1
-    var host = Json.object()
-    host.put("child", Json.object())
-    if host.get("child") as old
-        host.putInt("child", 0)
-        old.put("deep", deep)
-    print("SURVIVED: a 257-level tree was built under a detached handle")
-ZBR
+cp "$WT/test/bug751_json_handle_test.zbr" "$OUT/json_handle.zbr"
+cp "$WT/test/bug751_json_handle_depth_test.zbr" "$OUT/json_hdepth.zbr"
+cp "$WT/test/bug751_json_detached_depth_test.zbr" "$OUT/json_detached.zbr"
 # json_edges: what Json.parse accepts, what a number is, and what stringify writes, alike on
 # both routes line for line. Until 2026-11-16 this route read through x.json2, which made every
 # number an f64 -- an integer past 2^53 came back changed (9223372036854775807 read
 # 9223372036854776000 and was no int at all), a float was written with an exponent (1e+21,
 # 1e-7) where the Zig route writes plain digits, a number too big for either type was lost
 # (1e400 was nil), and a DUPLICATE KEY was accepted, the last one kept, where the Zig route
-# answers nil. The runtime parses for itself now, by std.json's rules.
-cat > "$OUT/json_edges.zbr" <<'ZBR'
-def show(what: str, text: str)
-    if Json.parse(text) as j
-        var kind = "other"
-        if j.tryInt() as i
-            kind = "int ${i}"
-        else if j.tryFloat() as f
-            kind = "float ${f}"
-        else if j.tryStr() as s
-            kind = "str ${s.len}"
-        else if j.isNull()
-            kind = "null"
-        print("${what}: ${j.stringify()} [${kind}]")
-    else
-        print("${what}: nil")
-
-def main()
-    show("int", "1")
-    show("neg", "-7")
-    show("zero", "0")
-    show("neg-zero", "-0")
-    show("float", "2.5")
-    show("whole-float", "1.0")
-    show("trailing-zeros", "2.50")
-    show("exp", "1e3")
-    show("exp-neg", "1e-3")
-    show("exp-cap", "1E3")
-    show("big-exp", "1e21")
-    show("tiny", "1e-7")
-    show("i64-max", "9223372036854775807")
-    show("i64-over", "9223372036854775808")
-    show("i64-min", "-9223372036854775808")
-    show("huge-int", "123456789012345678901234567890")
-    show("exp-overflow", "1e400")
-    show("frac-long", "0.1234567890123456789")
-    show("third", "0.3333333333333333")
-    show("leading-zero", "01")
-    show("plus", "+1")
-    show("dot-only", "1.")
-    show("hex", "0x10")
-    show("nan", "NaN")
-    show("dup-key", "{\"a\":1,\"b\":5,\"a\":2}")
-    show("empty", "")
-    show("space", "  [ 1 , 2 ]  ")
-    show("trailing-comma", "[1,2,]")
-    show("garbage-after", "{\"a\":1} x")
-    show("single-quote", "{'a':1}")
-    show("bare-key", "{a:1}")
-    show("escape-slash", "\"a\\/b\"")
-    show("escape-u", "\"\\u00e9\"")
-    show("surrogates", "\"\\ud83d\\ude00\"")
-    show("lone-surrogate", "\"\\ud83d\"")
-    show("control", "\"a\\u0001b\"")
-    show("tab-escape", "\"a\\tb\"")
-    show("quote-escape", "\"a\\\"b\"")
-    show("backslash", "\"a\\\\b\"")
-    show("utf8", "\"é😀\"")
-    show("key-escape", "{\"a\\\"b\":1}")
-    show("key-unicode", "{\"\\u00e9\":1}")
-    show("null", "null")
-    show("true", "true")
-    show("nested-empty", "{\"a\":{},\"b\":[]}")
-    show("neg-zero-float", "-0.0")
-    show("exp-plus", "1e+3")
-    show("neg-exp", "-1E-2")
-    show("zero-exp", "0e0")
-    show("one-exp0", "1.0e0")
-    show("exp-missing", "1e")
-    show("exp-sign-only", "1e+")
-    show("minus-only", "-")
-    show("double-minus", "--1")
-    show("int-as-float-big", "1e19")
-    show("float-big-frac", "123456789.123456789")
-    show("denormal", "5e-324")
-    show("underflow", "1e-400")
-    show("max-f64", "1.7976931348623157e308")
-    show("nul-escape", "\"a\\u0000b\"")
-    show("del-raw", "\"a\u{7f}b\"")
-    show("empty-key", "{\"\":1}")
-    show("nested", "[[1,[2,{\"a\":[3]}]],{}]")
-    show("ws-all", " \t\n\r{ \"a\" : [ 1 , 2 ] } \n")
-    show("unterminated", "\"abc")
-    show("bad-escape", "\"a\\qb\"")
-    show("short-u", "\"\\u12\"")
-    show("upper-hex", "\"\\u00E9\"")
-    show("low-then-high", "\"\\ude00\\ud83d\"")
-    show("high-then-text", "\"\\ud83dx\"")
-    show("raw-tab", "\"a\tb\"")
-    show("raw-newline", "\"a\nb\"")
-    show("true-prefix", "truex")
-    show("capital-true", "True")
-    show("null-long", "nulll")
-    show("two-values", "1 2")
-    show("comma-only", "[,]")
-    show("colon-missing", "{\"a\" 1}")
-    show("unclosed", "[1,2")
-    show("unclosed-object", "{\"a\":1")
-    show("key-not-string", "{1:2}")
-    show("dup-key-nested", "{\"o\":{\"k\":1,\"k\":2}}")
-    show("same-key-different-objects", "[{\"k\":1},{\"k\":2}]")
-    var o = Json.object()
-    o.putFloat("one", 1.0)
-    o.putFloat("hundred", 100.0)
-    o.putFloat("tenth", 0.1)
-    o.putFloat("big", 1.0e21)
-    o.putFloat("small", 0.000001)
-    o.putFloat("neg", -2.5)
-    o.putInt("i", 42)
-    o.put("s", "tab\there \"quoted\" back\\slash é")
-    print(o.stringify())
-ZBR
-for p in json_nest json_deep json_kind json_kind2 json_edges; do json_both $p; done
-for p in json_handle json_hdepth json_detached; do json_v $p; done
+# answers nil. The runtime parses for itself now, by std.json's rules (BUG-756). The program is
+# test/json_edges_test.zbr, which the Zig route's suite holds to a golden file: one source for
+# both parsers.
+cp "$WT/test/json_edges_test.zbr" "$OUT/json_edges.zbr"
+for p in json_nest json_deep json_kind json_kind2 json_edges json_handle json_hdepth json_detached; do json_both $p; done
 # the nest fixture again under the region check mode: a string a tree kept but did not copy is
 # POISONED at its block's end there ("<freed at ..."), where the plain run reads it right
 # whenever the allocator has not reused the bytes yet -- seen: with the copy taken out the
@@ -1196,8 +888,8 @@ if [ "$(cat "$OUT/json_nest_chk_rc.txt")" != 0 ] || ! grep -qx 'bug722_json_nest
 if [ "$(cat "$OUT/json_edges_zig_rc.txt")" != 0 ] || [ "$(wc -l < "$OUT/json_edges_zig_out.txt")" -lt 80 ] || ! grep -qxF 'i64-max: 9223372036854775807 [int 9223372036854775807]' "$OUT/json_edges_zig_out.txt" || ! grep -qxF 'dup-key: nil' "$OUT/json_edges_zig_out.txt" || ! grep -qxF 'tiny: 0.0000001 [float 0.0000001]' "$OUT/json_edges_zig_out.txt" || ! grep -qxF 'exp-overflow: 1e400 [float inf]' "$OUT/json_edges_zig_out.txt"; then json_bad="$json_bad json_edges(NO CONTROL: the Zig run did not print the eighty-odd lines, or not the exact i64, the refused duplicate key, the plain-digit float and the kept number text the program is about)"
 elif [ "$(cat "$OUT/json_edges_v_rc.txt")" != 0 ]; then json_bad="$json_bad json_edges(v exit $(cat "$OUT/json_edges_v_rc.txt"): $(grep -m1 -E 'error|panic' "$OUT/json_edges_v_err.txt" | cut -c1-140))"
 elif ! diff -q "$OUT/json_edges_v_out.txt" "$OUT/json_edges_zig_out.txt" > /dev/null; then json_bad="$json_bad json_edges(differs, V then Zig: $(diff "$OUT/json_edges_v_out.txt" "$OUT/json_edges_zig_out.txt" | head -3 | cut -c1-160 | tr '\n' ' '))"; fi
-# the three that must stop: the same message on both routes, the same lines before it
-for p in json_deep json_kind json_kind2; do
+# the five that must stop: the same message on both routes, the same lines before it
+for p in json_deep json_kind json_kind2 json_hdepth json_detached; do
   zmsg=$(grep -m1 -oE 'Json: .*' "$OUT/${p}_zig_err.txt" | tr -d '\r')
   vmsg=$(grep -m1 -oE 'Json: .*' "$OUT/${p}_v_err.txt" | tr -d '\r')
   if [ "$(cat "$OUT/${p}_zig_rc.txt")" = 0 ] || [ -z "$zmsg" ]; then json_bad="$json_bad $p(NO CONTROL: the Zig run did not stop with a Json: message)"
@@ -1206,20 +898,22 @@ for p in json_deep json_kind json_kind2; do
   elif grep -q SURVIVED "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt"; then json_bad="$json_bad $p(SURVIVED printed)"
   elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then json_bad="$json_bad $p(the lines before the stop differ)"; fi
 done
-# the handle fixtures, on this route against their own text
-if [ "$(cat "$OUT/json_handle_v_rc.txt")" != 0 ]; then json_bad="$json_bad json_handle(v exit $(cat "$OUT/json_handle_v_rc.txt"): $(grep -m1 -E 'error|panic' "$OUT/json_handle_v_err.txt" | cut -c1-140))"
-elif ! tail -1 "$OUT/json_handle_v_out.txt" | grep -qx 'bug751_json_handle: OK' || grep -q WRONG "$OUT/json_handle_v_out.txt"; then json_bad="$json_bad json_handle($(grep -m1 WRONG "$OUT/json_handle_v_out.txt" | cut -c1-140))"
-elif [ "$(grep -c ': ok$' "$OUT/json_handle_v_out.txt")" -lt 20 ] || ! grep -qxF '{"a":"b","n":2}' "$OUT/json_handle_v_out.txt"; then json_bad="$json_bad json_handle(fewer than twenty checks ran, or print of a value was not its JSON text)"
+# BUG-751's handle fixture: the Zig run ends OK after its checks and its print, the V run is
+# the same text, and the emitted V calls the runtime on the value (no rebind left)
+if [ "$(cat "$OUT/json_handle_zig_rc.txt")" != 0 ] || ! tail -1 "$OUT/json_handle_zig_out.txt" | grep -qx 'bug751_json_handle: OK' || [ "$(grep -c ': ok$' "$OUT/json_handle_zig_out.txt")" -lt 20 ] || ! grep -qxF '{"a":"b","n":2}' "$OUT/json_handle_zig_out.txt"; then json_bad="$json_bad json_handle(NO CONTROL: the Zig run did not end 'bug751_json_handle: OK' after twenty checks and a value printed as its JSON text)"
+elif [ "$(cat "$OUT/json_handle_v_rc.txt")" != 0 ]; then json_bad="$json_bad json_handle(v exit $(cat "$OUT/json_handle_v_rc.txt"): $(grep -m1 -E 'error|panic' "$OUT/json_handle_v_err.txt" | cut -c1-140))"
+elif ! diff -q "$OUT/json_handle_v_out.txt" "$OUT/json_handle_zig_out.txt" > /dev/null; then json_bad="$json_bad json_handle(differs, V then Zig: $(diff "$OUT/json_handle_v_out.txt" "$OUT/json_handle_zig_out.txt" | head -3 | cut -c1-160 | tr '\n' ' '))"
 elif grep -qE '^[[:space:]]*[A-Za-z_.0-9]+ = zjson_(put|append)' "$OUT/json_handle.v" || ! grep -q 'zjson_put_str(' "$OUT/json_handle.v"; then json_bad="$json_bad json_handle(the emitted V still rebinds a put, or calls none)"; fi
+# the two depth refusals are the DEPTH message (the loop above held them to the same one on
+# both routes), and the first starts from the 256-level tree it says it built
 for p in json_hdepth json_detached; do
-  if [ "$(cat "$OUT/${p}_v_rc.txt")" = 0 ] || grep -q SURVIVED "$OUT/${p}_v_out.txt"; then json_bad="$json_bad $p(a 257th level was stored)"
-  elif ! grep -q 'Json: put/append would nest a value deeper than 256 levels' "$OUT/${p}_v_err.txt"; then json_bad="$json_bad $p(stopped, but not by the depth message: $(grep -m1 -E 'error|panic' "$OUT/${p}_v_err.txt" | cut -c1-120))"; fi
+  if ! grep -q 'Json: put/append would nest a value deeper than 256 levels' "$OUT/${p}_zig_err.txt"; then json_bad="$json_bad $p(NO CONTROL: the Zig run was not stopped by the depth message)"; fi
 done
-if ! grep -qxF 'stored 255 levels under the root: tree is 256' "$OUT/json_hdepth_v_out.txt"; then json_bad="$json_bad json_hdepth(NO CONTROL: the 256-level tree it starts from was not built)"; fi
+if ! grep -qxF 'stored 255 levels under the root: tree is 256' "$OUT/json_hdepth_zig_out.txt"; then json_bad="$json_bad json_hdepth(NO CONTROL: the 256-level tree it starts from was not built)"; fi
 json_refused=$(cat "$OUT"/json_*_emit.txt | grep -cE '^    ')
 if [ -n "$json_bad" ]; then echo "json: FAILED --$json_bad"; fail=1
 elif [ "$json_refused" != 0 ]; then echo "json: FAILED -- REFUSED: $(cat "$OUT"/json_*_emit.txt | grep -m1 -E '^    ' | cut -c1-140)"; fail=1
-else echo "json: ok -- parse, numbers and stringify alike on both backends over $(wc -l < "$OUT/json_edges_zig_out.txt") edge lines; BUG-722's nest fixture alike on both backends ($(wc -l < "$OUT/json_nest_zig_out.txt") lines; right under the region check mode too) and its three refusals stopped by the same message on both; BUG-751's handle fixture ($(grep -c ': ok$' "$OUT/json_handle_v_out.txt") checks) and its two depth refusals on this backend against their own text (the Zig route's flip is the other half)"; fi
+else echo "json: ok -- parse, numbers and stringify alike on both backends over $(wc -l < "$OUT/json_edges_zig_out.txt") edge lines; BUG-722's nest fixture alike on both backends ($(wc -l < "$OUT/json_nest_zig_out.txt") lines; right under the region check mode too) and its three refusals stopped by the same message on both; BUG-751's handle fixture alike on both ($(grep -c ': ok$' "$OUT/json_handle_zig_out.txt") checks) and its two depth refusals stopped by the same message on both"; fi
 echo "── three shapes the engine's ladder met: a capture's name declared again, a class's own pop(), the free-at-sweep queue ──"
 rows=$((rows + 1))
 # The four engine tests that stood red on this route until 2026-11-16 (tools/v_engine_check.py:
