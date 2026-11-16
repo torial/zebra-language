@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # pins: BUG-485 a Zig host keeps its allocator across a --library-mode main (the regression test for the fix)
+# pins: BUG-757 a List the runtime hands to a library (keys(), regex split/findAll, CSV header) is grown and freed through the host's allocator (leg 5)
 # THE EMBEDDING GATE (BUG-485), registered as `library-mode` (FAST tier).
 #
 # `--library-mode` compiles a Zebra program to be linked into a HOST process. The host
@@ -272,8 +273,76 @@ fi
 if ! grep -q "Tcp.serve: cannot listen on 127.0.0.1:19986: AddressInUse" port_host.log || ! grep -q "host alive after held port" port_host.log; then
     echo "library-mode: FAIL -- a held port in a library's Tcp.serve ended the HOST's process or did not say why"; tail -5 port_host.log; exit 1
 fi
+# --- leg 5: Lists the runtime hands out (2026-11-16, BUG-757) ----------------------------------
+# `j.keys()`, `re.split(s)`, `re.findAll(s)` and a CSV header were built on page_allocator, so
+# the library's first `add` freed a page block through the HOST's allocator. THE REAL ATTACKER is
+# the GameEngine's shape: a DebugAllocator host, a library function that grows such a list and
+# returns it, and the host freeing it with `_zbr_free`. On the old runtime every one panicked
+# "Invalid free" inside the library's `add`. CONTROL: a List the program built itself, grown and
+# freed the same way, must come back whole -- so a red here cannot be the harness.
+cat > lib757.zbr <<'ZEOF'
+def grown(xs: List(str)): List(str)
+    var i = 0
+    while i < 40
+        xs.add("x")
+        i += 1
+    return xs
+
+def fromPlain(): List(str)
+    var xs = List(str)()
+    xs.add("a")
+    return grown(xs)
+
+def fromKeys(): List(str)
+    if Json.parse("{\"a\":1,\"b\":2}") as j
+        return grown(j.keys())
+    return List(str)()
+
+def fromSplit(): List(str)
+    var re = Regex.compile(",")
+    return grown(re.split("a,b,c"))
+
+def fromFindAll(): List(str)
+    var re = Regex.compile("[a-z]")
+    return grown(re.findAll("a,b,c"))
+
+def fromCsv(): List(str)
+    var t = Csv.parse("h1,h2\n1,2\n")
+    return grown(t.header())
+
+def main()
+    pass
+ZEOF
+if ! "$ZEXE" --library-mode --emit-zig --output-dir outk lib757.zbr >emitk.log 2>&1; then
+    echo "library-mode: REFUSING -- the compiler would not emit the BUG-757 library"; cat emitk.log; exit 2
+fi
+for w in fromPlain:41 fromKeys:42 fromSplit:43 fromFindAll:43 fromCsv:42; do
+    fn="${w%%:*}"; want="${w##*:}"
+    cat > outk/host.zig <<EOF
+const std = @import("std");
+const rt = @import("zebra_rt.zig");
+const lib = @import("lib757.zig");
+pub fn main(init: std.process.Init) !void {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    rt._initAllocator(gpa.allocator());
+    lib.main(init);
+    const xs = lib._zbr_fn_$fn();
+    std.debug.print("items: {}\n", .{xs.items.len});
+    rt._zbr_free(xs);
+    std.debug.print("freed\n", .{});
+}
+EOF
+    run_zig_host outk "k_$fn.log"
+    if ! grep -q "items: $want" "k_$fn.log" || ! grep -q "^freed" "k_$fn.log"; then
+        if [ "$fn" = fromPlain ]; then
+            echo "library-mode: REFUSING -- leg 5's control (a program-built List) did not come back whole, so the harness is broken"; tail -5 "k_$fn.log"; exit 2
+        fi
+        echo "library-mode: FAIL -- a List from $fn could not be grown and freed through the host's allocator (BUG-757)"
+        grep -m1 -E "panic|Invalid|error" "k_$fn.log"; exit 1
+    fi
+done
 if grep -q "host allocator kept: true" run1.log; then
-    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); free-at-sweep survives a mid-walk release, frees once, leaks nothing (control: no sweep leaks), refuses inside allocate; a held port leaves a host running (control: a Zebra-owned process exits 1); infra-retries=$INFRA_RETRIES"
+    echo "library-mode: PASS -- a host allocator survives the library's main (control: the old prologue replaces it); _zbr_free leaves no leak (control: freeing nothing leaks); free-at-sweep survives a mid-walk release, frees once, leaks nothing (control: no sweep leaks), refuses inside allocate; a held port leaves a host running (control: a Zebra-owned process exits 1); runtime-built Lists grow and free through the host's allocator (control: a program-built List); infra-retries=$INFRA_RETRIES"
     exit 0
 fi
 echo "library-mode: FAIL -- the library's main replaced the host's allocator (BUG-485)"; tail -3 run1.log

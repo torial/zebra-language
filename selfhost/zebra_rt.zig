@@ -2696,7 +2696,7 @@ pub fn _json_keys(v: JsonValue) _ZbrList([]const u8) {
     var _r = _zbr_new(_ZbrList([]const u8));
     switch (v.data) {
         .object => |o| {
-            for (o.keys()) |k| _r.append(std.heap.page_allocator, k) catch @panic("OOM");
+            for (o.keys()) |k| _r.append(_allocator, k) catch @panic("OOM");
         },
         else => {},
     }
@@ -4467,26 +4467,31 @@ pub fn _csv_parse_file(path: []const u8) _CsvTable {
 }
 pub fn _csv_row_count(t: _CsvTable) i64 { return @as(i64, @intCast(t.rows.len)); }
 pub fn _csv_col_count(t: _CsvTable) i64 { return if (t.rows.len > 0) @as(i64, @intCast(t.rows[0].len)) else 0; }
+// BUG-757: a List handed to the program is the program's: its storage comes from `_allocator`
+// (a host's allocator in --library-mode), as every other List-returning helper's does. These
+// four, `_json_keys` and `_regex_find_all` / `_regex_split` built it on page_allocator, so the
+// program's first `add` freed a page block through `_allocator` ("Invalid free" under a
+// host's DebugAllocator); and CSV's `catch {}` returned a SHORTER row on allocation failure.
 pub fn _csv_header(t: _CsvTable) _ZbrList([]const u8) {
     var _r = _zbr_new(_ZbrList([]const u8));
-    if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(std.heap.page_allocator, f) catch {};
+    if (t.rows.len > 0) for (t.rows[0]) |f| _r.append(_allocator, f) catch @panic("OOM");
     return _r;
 }
 pub fn _csv_row(t: _CsvTable, n: i64) _ZbrList([]const u8) {
     var _r = _zbr_new(_ZbrList([]const u8));
     const _i: usize = @intCast(@max(0, n));
-    if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(std.heap.page_allocator, f) catch {};
+    if (_i < t.rows.len) for (t.rows[_i]) |f| _r.append(_allocator, f) catch @panic("OOM");
     return _r;
 }
 pub fn _csv_rows(t: _CsvTable) _ZbrList(_ZbrList([]const u8)) {
     var _out = _zbr_new(_ZbrList(_ZbrList([]const u8)));
-    for (t.rows) |row| { var _r = _zbr_new(_ZbrList([]const u8)); for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows) |row| { var _r = _zbr_new(_ZbrList([]const u8)); for (row) |f| _r.append(_allocator, f) catch @panic("OOM"); _out.append(_allocator, _r) catch @panic("OOM"); }
     return _out;
 }
 pub fn _csv_data_rows(t: _CsvTable) _ZbrList(_ZbrList([]const u8)) {
     var _out = _zbr_new(_ZbrList(_ZbrList([]const u8)));
     const _s: usize = if (t.rows.len > 0) 1 else 0;
-    for (t.rows[_s..]) |row| { var _r = _zbr_new(_ZbrList([]const u8)); for (row) |f| _r.append(std.heap.page_allocator, f) catch {}; _out.append(std.heap.page_allocator, _r) catch {}; }
+    for (t.rows[_s..]) |row| { var _r = _zbr_new(_ZbrList([]const u8)); for (row) |f| _r.append(_allocator, f) catch @panic("OOM"); _out.append(_allocator, _r) catch @panic("OOM"); }
     return _out;
 }
 pub fn _csv_get(t: _CsvTable, row: anytype, col: []const u8) []const u8 {
@@ -5269,7 +5274,7 @@ pub fn _regex_find_all(re: Regex, input: []const u8) _ZbrList([]const u8) {
     var i: usize = 0;
     while (i < input.len) {
         if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
-            out.append(std.heap.page_allocator, input[i..e]) catch @panic("OOM");
+            out.append(_allocator, input[i..e]) catch @panic("OOM");
             i = if (e > i) e else i + 1;
         } else i += 1;
     }
@@ -5284,13 +5289,13 @@ pub fn _regex_split(re: Regex, input: []const u8) _ZbrList([]const u8) {
     while (i < input.len) {
         if (re.matchAt(input, i, .first) catch @panic("regex: out of memory")) |e| {
             if (e > i) {
-                out.append(std.heap.page_allocator, input[start..i]) catch @panic("OOM");
+                out.append(_allocator, input[start..i]) catch @panic("OOM");
                 start = e;
                 i = e;
             } else i += 1;
         } else i += 1;
     }
-    out.append(std.heap.page_allocator, input[start..]) catch @panic("OOM");
+    out.append(_allocator, input[start..]) catch @panic("OOM");
     return out;
 }
 pub fn _regex_replace(re: Regex, input: []const u8, sub: []const u8) []const u8 {

@@ -2293,6 +2293,7 @@ smoke_run test/bug751_json_handle_test.zbr "bug751_json_handle: OK"
 smoke_run_fail test/bug751_json_handle_depth_test.zbr "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to"
 smoke_run_fail test/bug751_json_detached_depth_test.zbr "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to"
 smoke_golden test/json_edges_test.zbr
+smoke_run test/bug755_primitive_binders_test.zbr "bug755_primitive_binders: OK"
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:10:20: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:16:12: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:23:14: error: "

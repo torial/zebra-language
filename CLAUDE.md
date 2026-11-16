@@ -1468,6 +1468,12 @@ bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-m
                                 #   print AddressInUse and return. The runtime decides by
                                 #   `_zbr_main_tid` (no library-mode emit sets it, also asserted);
                                 #   control: the same host with it set must exit 1.
+                                #   LEG 5 (2026-11-16, BUG-757): a list from `keys()`, `re.split`,
+                                #   `re.findAll` or a CSV header, grown 40 times in the library and freed
+                                #   by the host with `_zbr_free`, under a DebugAllocator. They were built
+                                #   on page_allocator: "Invalid free" inside the library's own `add`.
+                                #   Control: a program-built List the same way must come back whole.
+                                #   Red-checked with the previous compiler: FAIL at `fromKeys`.
                                 #   CANNOT SEE: frees the host performs on paths it does not test, or
                                 #   an alias of a queued container that outlives the sweep (a UAF
                                 #   by contract; nothing detects it).
@@ -3766,7 +3772,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **1017** <!-- doc-gen: 1017 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **1018** <!-- doc-gen: 1018 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.

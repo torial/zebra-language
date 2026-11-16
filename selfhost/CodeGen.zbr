@@ -11420,6 +11420,10 @@ struct Generator
     # ── genIf ─────────────────────────────────────────────────────────────────
 
     def genIsCaptureThen(cond_expr: Expr, cap: str, stmts: List(Stmt))
+        # BUG-755: the binding as Zig spells it -- a name a Zig primitive owns (`u2`) or a Zig
+        # keyword is @"..."-escaped, like every other binder; the private `_zbr_cap_` /
+        # `_ptr` names built from `cap` need no escape.
+        var zc: str = zigSafeName(cap)
         # Helper called from genIf when is_capture is set.
         # Takes Expr by value so callers with ^Expr get auto-deref at the call site.
         # BUG-137: the capture binding shadows any same-named module var.
@@ -11459,9 +11463,9 @@ struct Generator
                         ig.genExpr(tc.expr)
                         ig.w.emit(deref + "." + variant + ";\n")
                         ig.writeIndent()
-                        ig.w.emit("const " + cap + " = " + cap + "_ptr.*;\n")
+                        ig.w.emit("const " + zc + " = " + cap + "_ptr.*;\n")
                     else
-                        ig.w.emit("const " + cap + " = ")
+                        ig.w.emit("const " + zc + " = ")
                         ig.genExpr(tc.expr)
                         ig.w.emit(deref + "." + variant + ";\n")
                     # Track ^T fields for this binding to enable auto-deref (mirrors genBranch)
@@ -11497,7 +11501,7 @@ struct Generator
                     # is conservative (true when unsure): no pointless discard.
                     if cap != "_" and not mightUseName(cap, stmts)
                         ig.writeIndent()
-                        ig.w.emit("_ = " + cap + ";\n")
+                        ig.w.emit("_ = " + zc + ";\n")
                     # BUG-583: inference is flat per function, so inside this block the
                     # capture would be typed by the name's LAST binding (a sibling block's
                     # `var x: int` printed this str payload with `{}`). Bind it to the
@@ -11537,16 +11541,16 @@ struct Generator
                     if mut_a
                         w.emit("_zbr_cap_" + cap)
                     else
-                        w.emit(cap)
+                        w.emit(zc)
                     w.emit("| {\n")
                     var ig = indented()
                     if mut_a
                         ig.writeIndent()
-                        ig.w.emit("var " + cap + " = _zbr_cap_" + cap + ";\n")
+                        ig.w.emit("var " + zc + " = _zbr_cap_" + cap + ";\n")
                     # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
                     if cap != "_" and not mightUseName(cap, stmts)
                         ig.writeIndent()
-                        ig.w.emit("_ = " + cap + ";\n")
+                        ig.w.emit("_ = " + zc + ";\n")
                     ig.genStmts(stmts)
             else
                 # Option B: `if x as n` -- optional unwrap
@@ -11608,18 +11612,18 @@ struct Generator
                 else if mut_b
                     w.emit("_zbr_cap_" + cap)
                 else
-                    w.emit(cap)
+                    w.emit(zc)
                 w.emit("| {\n")
                 if box_cap and cap != "_"
                     ig2.writeIndent()
-                    ig2.w.emit(if(mut_b, "var ", "const ") + cap + " = _zbr_capp_" + cap + ".*;\n")
+                    ig2.w.emit(if(mut_b, "var ", "const ") + zc + " = _zbr_capp_" + cap + ".*;\n")
                 else if mut_b
                     ig2.writeIndent()
-                    ig2.w.emit("var " + cap + " = _zbr_cap_" + cap + ";\n")
+                    ig2.w.emit("var " + zc + " = _zbr_cap_" + cap + ";\n")
                 # BUG-164 (fuzz F6): Zig rejects an unused payload capture.
                 if cap != "_" and not mightUseName(cap, stmts)
                     ig2.writeIndent()
-                    ig2.w.emit("_ = " + cap + ";\n")
+                    ig2.w.emit("_ = " + zc + ";\n")
                 ig2.genStmts(stmts)
 
     def genIf(si: StmtIf)
@@ -12401,7 +12405,7 @@ struct Generator
         writeIndent()
         w.emit("for (")
         genExpr(fi.iter)
-        w.emit(".items, 0..) |" + vname + ", _zbr_i| {\n")
+        w.emit(".items, 0..) |" + zigSafeName(vname) + ", _zbr_i| {\n")
         ig.writeIndent()
         ig.w.emit("const " + zigSafeName(iname) + " = @as(i64, @intCast(_zbr_i));\n")
         # Discard i / v if neither the body nor the where-clause reads them
@@ -12485,7 +12489,7 @@ struct Generator
                     lv_used = mightUseNameInExpr(lv, fi.filter!)
                 if not lv_used
                     writeIndent()
-                    w.emit("_ = " + lv + ";\n")
+                    w.emit("_ = " + zigSafeName(lv) + ";\n")
 
     # Detect `str.bytes()`: a for-in iterator — emit `for (s) |b|` not `for (s.bytes().items) |b|`
     def isBytesIter(e: Expr): bool
@@ -14767,7 +14771,7 @@ struct Generator
                 w.emit("var ")
             else
                 w.emit("const ")
-            w.emit(d.names.at(i))
+            w.emit(zigSafeName(d.names.at(i)))   # BUG-755
             # A `var` from a tuple of literals is comptime_int / comptime_float in Zig, which a
             # runtime `var` cannot hold -- annotate it with the element's inferred type.
             if ds_is_var and not d.is_struct and .infer_ctx != nil

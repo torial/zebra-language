@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Lists from `keys()`, `re.split`, `re.findAll` and CSV rows belong to the program (BUG-757).**
+  They were built on the page allocator, so in a `--library-mode` host the first `add` freed a
+  block through the host's allocator ("Invalid free" under a DebugAllocator), and every call took
+  a page nothing returned. CSV's row and header helpers also returned a SHORTER row on an
+  allocation failure; they stop with "OOM" now.
+- **A name a Zig primitive type owns works in every binding (BUG-755).** `if x as u2`,
+  `else if ... as`, `is T as`, a tuple destructure and the value of `for i, v in list` emitted the
+  name bare, and zig refused the program ("name shadows primitive") although `-c` passed; they
+  are escaped now, like locals and parameters always were.
 - **A JsonValue is a shared handle (BUG-751).** Assignment, parameters and fields share it, and
   a value read out of an object or array (`get`, `tryObj`, `v[k]?`, `tryList`'s elements) is a
   handle into it, so a change through it is seen in the parent -- before, a store through a

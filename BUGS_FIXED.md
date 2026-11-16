@@ -6,6 +6,75 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-757: Lists the runtime hands to the program are built on `page_allocator`, then grown and freed through the program's allocator -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed 2026-11-16; Fable saw `_json_keys` while reading BUG-751's runtime; the
+  family found by grepping the preamble)
+- **Where:** `_json_keys` (`j.keys()`), `_csv_header` / `_csv_row` / `_csv_rows` /
+  `_csv_data_rows`, `_regex_find_all` and `_regex_split` build the returned `_ZbrList` with
+  `.append(std.heap.page_allocator, ...)`. The program then owns an ordinary List and grows it
+  with `_allocator`, so the first growth frees a page-allocator block through the program's
+  allocator.
+- **Measured (`zebra --census`, the 77fdb12 compiler):** `j.keys()` then 40 `add`s, and
+  `"a,b,c".split(",")` then 40 `add`s: the census reports `blocks the census never saw allocated:
+  1 frees` -- in a program that installed the census at startup, which the report itself calls
+  "a block freed through an allocator that did not make it". Under the default arena this is
+  silent (an arena free of a block it does not own is a no-op); under a host's allocator
+  (`--library-mode`, a DebugAllocator) it is an invalid free, and every call takes at least a
+  page that nothing returns.
+- **Also, CSV only:** those four append with `catch {}`, so an allocation failure returns a
+  SHORTER row or table with no sign -- a fabricated answer, not a refusal.
+- **Fix shape:** build each returned List with `_allocator` (as every other List-returning helper
+  does) and `catch @panic("OOM")`; red-check with the census's unseen-free count and with
+  `library_mode_check`'s DebugAllocator host freeing a returned list after growing it.
+- **Control when fixing:** the census run above reports 0 unseen frees; `keys()` / CSV / regex
+  results unchanged.
+- **Measured with the real attacker:** a `--library-mode` library returns each list after 40
+  `add`s to a Zig host whose allocator is a DebugAllocator, and the host frees it with
+  `_zbr_free` -- the GameEngine's shape (it frees host-owned lists with `_zbr_free` and queues
+  replaced ones for the sweep). On the old runtime `keys()`, `re.split`, `re.findAll` and a CSV
+  header each panicked "Invalid free" inside the library's own `add`, before the host freed
+  anything.
+- **Fix:** the eight `append`s build on `_allocator` (the host's allocator in library mode), and
+  CSV's `catch {}` became `catch @panic("OOM")`. `escape-hatches` 77 -> 70.
+- **Pinned by:** `library_mode_check.sh` leg 5 (`library-mode`, FAST tier): the four sources grown
+  and freed through the host's DebugAllocator, after a CONTROL -- a List the program built
+  itself, the same way -- comes back whole. Red-checked by running the leg with the previous
+  compiler (its runtime is read from its own checkout): FAIL at `fromKeys`, "Invalid free", after
+  the control passed. The census probe now reports 0 unseen frees.
+
+---
+
+### BUG-755: a name a Zig PRIMITIVE TYPE owns, bound by `if x as NAME`, is emitted bare and zig refuses it -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed 2026-11-16; found by Fable running a BUG-751 draft that bound `as u2`)
+- **Repro:** `def f(): int?` returning 3, then `if f() as u2` / `print(u2)`. `-c` exits 0; the
+  build fails `error: name shadows primitive 'u2'` at the `if` line. The emit is
+  `if (_zbr_fn_f()) |u2| {` while the body's use is `@"u2"` -- the capture alone is not escaped.
+  A local (`var u8 = 1`) and a `for i37 in ...` variable are both escaped and work.
+- **The V route accepts the program, correctly** -- the name is legal Zebra; the refusal is
+  zig's, reached through an unescaped emit (a leak, the leakgen class), not a language rule.
+- **Fix shape:** the `if`/`elif` capture goes through `emitName` like the other binders; the
+  site map comes from emitting every binder (`if as`, `elif as`, `while as`, `branch ... as`,
+  `catch |e|`, destructuring, lambda params) with a primitive-type name, keyword_ident_check's
+  method, and the fixture joins that gate.
+- **Control when fixing:** the repro prints `3`; `var u8` / `for i37` unchanged.
+- **Site map (emitted, not read):** a probe binding a different odd-width primitive name in
+  every binder found FIVE emit paths with a bare name -- `if x as` / `else if x as`
+  (`genIsCaptureThen`'s optional path: the read capture, the mutated `var` copy, the `^T?` field's
+  value copy, and the unused discard), `is T as` (its union path: the binding, the `^T`-payload
+  copy, the discard), a tuple destructure's declaration, and the value of an indexed
+  `for i, v in list` plus `discardUnusedLoopVars`' `_ = v`. Already escaped, kept as controls:
+  `branch ... on ... as`, `catch |e|`, lambda and function parameters, locals, and `for` over a
+  list, a map and a range.
+- **Fix:** each of those spells the binding through `zigSafeName` (`@"u2"`), as the uses already
+  were; the private `_zbr_cap_` / `_ptr` names built from it are unchanged.
+- **Pinned by:** `test/bug755_primitive_binders_test.zbr` (`smoke_run`, 20 checks): every fixed
+  binder read, mutated, unused and boxed where the path has those arms, plus the controls. Seen
+  red: emitted by the unfixed compiler, the 13 bare names are exactly the fixed sites and no
+  control. It builds and runs, so zig is the witness -- no keyword-ident leg is needed, since a
+  bare primitive name is a hard zig error, not a silent one.
+
+---
+
 ### BUG-756: on the V route `Json.parse` read numbers through an f64 and kept a duplicate key -- an integer past 2^53 came back changed -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (filed and fixed the same day; Fable, from an 84-line edge probe
   written when BUG-751's Zig parser named "duplicate key refused"). V route only; the Zig route
@@ -111,6 +180,14 @@ Open bugs live in `BUGS.md`.
   fixture prints SURVIVED).
 - **Not covered:** concurrent mutation of one JsonValue from two threads (shared now, unlocked --
   as a List); memory of replaced nodes (kept by design).
+- **Measured cost (Fable, the GameEngine on 77fdb12, 2026-11-16):** live memory after 25 s of the
+  autoplay was 24.2 MB on the old runtime and 27.6 MB on the node runtime (20.2 / 23.1 MB at the
+  first window): about +3.4 MB, +14%, paid once at startup for the JSON trees the engine keeps
+  (its converted animation clips, parsed once and cached) and flat afterwards -- a value that sat
+  inline in its parent's array is now a node of its own with a parent pointer. The engine's
+  emitted code was otherwise identical (one file differed, zebra_rt.zig's JSON block) and its
+  367-root suite passed. The lever if this ever matters: allocate a tree's nodes from one arena
+  rather than one allocation each.
 
 ---
 

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-756. Next new bug: BUG-757.**
+**Last bug number generated: BUG-758. Next new bug: BUG-759.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,24 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-758: `var ys = xs.map(f)` unannotated, then `ys[i]`, passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-16; found writing BUG-755's fixture)
+- **Repro:** `var xs = [1, 2, 3]` / `var ys = xs.map(def(v) = v * 2)` / `print(ys[2])`. `-c`
+  exits 0; the build fails in the runtime, `std/meta.zig: error: Expected pointer, slice, array
+  or vector type, found '*array_list.Aligned(i64,null)'`. Annotated (`var ys: List(int) = ...`)
+  it prints 6. With `ys.len` instead of `ys[2]` the front end refuses ("cannot infer the type of
+  `ys`, so `.len` cannot be resolved -- annotate it") -- so the type IS unknown to the checker and
+  the index path lets it through where the member path refuses.
+- **Cost:** a Zig diagnostic about runtime code the user never wrote (the leakgen class).
+- **Fix shape:** infer `map`'s result as `List(R)` where R is the lambda's result type (the
+  checker already types an arithmetic lambda body over a known element type); failing that,
+  refuse the index the way `.len` is refused. Probe the other untyped-receiver forms
+  (`filter`, `reduce`, a `for` over the result) in the same pass.
+- **Control when fixing:** the annotated form unchanged; `test/bug755_primitive_binders_test.zbr`
+  keeps its annotation (it tests binders, not this).
 
 ---
 
@@ -303,6 +321,22 @@
   build's stdout/stderr on failure, in a `zbr_cli_bug747.*` dir under TMPDIR named on its FAIL
   line (red-checked with one appended byte). It does not yet print which backend each build
   used; read the kept messages, then diff the PE headers and sections.
+- **Second occurrence, 2026-11-16 (BUG-755/757's FULL tier, then standalone at once):** red both
+  times, so not load alone. Kept pair (`zbr_cli_bug747.1mJnzF`, `.mpHkn4`): SAME file size, four
+  header bytes differ -- `SizeOfImage` (0x26d0000 vs 0x1350000) and `.text`'s VirtualSize -- and
+  the larger image was the `--emit-exe` build in one pair and the run-path build in the other.
+  **Reproduced with a7118f5's compiler at the same rate as the fixed one** (1 differing run of 4
+  each), and only ever on the FIRST build of a program text zig has not cached: a warm repeat is
+  3/3 identical; a fresh text differed on run 1 in one of two trials. One of those differs was at
+  char 163, inside `AddressOfEntryPoint` -- a moved entry point, so a layout change, not only a
+  reservation. The route hypothesis above looks WRONG (no fallback in either build's messages,
+  identical contents). The working hypothesis: the fast backend is not reproducible from a COLD
+  cache, so the leg's premise fails on its first build. The tier made that likelier: a changed
+  runtime makes every program cold.
+- **Next:** the missing control -- `--emit-exe` twice at one path from a cold cache. If those two
+  differ too, Zebra's two paths are not at fault; the leg warms up first (build once, discard),
+  then compares, which keeps BUG-720's property. Not by masking header fields: the entry-point
+  differ shows more than the reservation moves.
 - **Control when fixing:** the leg red-checked against a forced fallback on one path.
 
 ---
@@ -319,22 +353,6 @@
   route refuses `= {}` and `= []` there by name; matching the Zig route is the other option).
 - **Control when fixing:** the repro prints `1`; `= HashMap(str, Node)()` unchanged; an empty
   `= []` default on a `List(Node)` field checked the same way.
-
----
-
-### BUG-755: a name a Zig PRIMITIVE TYPE owns, bound by `if x as NAME`, is emitted bare and zig refuses it
-- **Status:** OPEN (filed 2026-11-16; found by Fable running a BUG-751 draft that bound `as u2`)
-- **Repro:** `def f(): int?` returning 3, then `if f() as u2` / `print(u2)`. `-c` exits 0; the
-  build fails `error: name shadows primitive 'u2'` at the `if` line. The emit is
-  `if (_zbr_fn_f()) |u2| {` while the body's use is `@"u2"` -- the capture alone is not escaped.
-  A local (`var u8 = 1`) and a `for i37 in ...` variable are both escaped and work.
-- **The V route accepts the program, correctly** -- the name is legal Zebra; the refusal is
-  zig's, reached through an unescaped emit (a leak, the leakgen class), not a language rule.
-- **Fix shape:** the `if`/`elif` capture goes through `emitName` like the other binders; the
-  site map comes from emitting every binder (`if as`, `elif as`, `while as`, `branch ... as`,
-  `catch |e|`, destructuring, lambda params) with a primitive-type name, keyword_ident_check's
-  method, and the fixture joins that gate.
-- **Control when fixing:** the repro prints `3`; `var u8` / `for i37` unchanged.
 
 ---
 

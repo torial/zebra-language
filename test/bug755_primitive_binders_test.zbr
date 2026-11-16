@@ -1,0 +1,122 @@
+# BUG-755: a name a Zig primitive TYPE owns (`u2`, `i7`, ...) is a legal Zebra name in every
+# binding position. Each binder was emitted bare by some path and zig refused it with "name
+# shadows primitive"; the site map came from emitting this file, one odd-width name per
+# binder so the emit says which one leaked: `if x as` and `else if x as` (read, mutated,
+# unused, a `^T?` field), `is T as` (plain and `^T` payload, read and unused), a tuple
+# destructure, and the value of an indexed `for i, v in list` (read and unused). The other
+# binders were already escaped and are kept as controls: `branch ... on ... as`, `catch |e|`,
+# a lambda parameter, a function parameter, a local, `for` over a list, a map and a range.
+union Shape
+    circle: int
+    sq: int
+    boxed: ^Pt
+
+struct Pt
+    var x: int
+
+struct PtBox
+    var p: ^Pt?
+
+def some(n: int): int?
+    if n > 0
+        return n
+    return nil
+
+def someList(): List(int)?
+    return [1]
+
+def boom(n: int): int throws
+    if n > 5
+        raise "big"
+    return n
+
+def pair(): (int, int)
+    return (3, 4)
+
+def param(u3: int): int
+    return u3 + 1
+
+var failures = 0
+
+def check(what: str, got: int, want: int)
+    if got != want
+        print("${what}: WRONG ${got}, want ${want}")
+        failures += 1
+
+def main()
+    if some(1) as u2
+        check("if-as", u2, 1)
+    var seen_else = 0
+    if some(0) as zz
+        seen_else = zz
+    else if some(2) as u5
+        seen_else = u5
+    check("else-if-as", seen_else, 2)
+    var hit = 0
+    if some(3) as u4
+        hit = 1
+    check("if-as-unused", hit, 1)
+    if someList() as u26
+        u26.add(5)
+        check("if-as-mutated", u26.len, 2)
+    var b = PtBox(Pt(8))
+    if b.p as u27
+        check("if-as-hat-field", u27.x, 8)
+
+    var sh = Shape.circle(7)
+    if sh is Shape.circle as u9
+        check("is-as", u9, 7)
+    var hit2 = 0
+    if sh is Shape.circle as u28
+        hit2 = 1
+    check("is-as-unused", hit2, 1)
+    var bx = Shape.boxed(Pt(6))
+    if bx is Shape.boxed as u29
+        check("is-as-hat-payload", u29.x, 6)
+
+    var (u11, u13) = pair()
+    check("destructure", u11 * 10 + u13, 34)
+
+    var xs = [1, 2, 3]
+    var sum_iv = 0
+    for u15, u17 in xs
+        sum_iv += u15 * 10 + u17
+    check("for-index-value", sum_iv, 36)
+    var count_i = 0
+    for u30, u31 in xs
+        count_i += 1
+    check("for-index-value-unused", count_i, 3)
+
+    # controls: already escaped before the fix
+    var br = 0
+    branch sh
+        on Shape.circle as u6
+            br = u6
+        on Shape.sq as u7
+            br = u7
+        on Shape.boxed as u8
+            br = u8.x
+    check("branch-as", br, 7)
+    var c = boom(9) catch |u10| u10.message.len
+    check("catch", c, 3)
+    var ys: List(int) = xs.map(def(u22) = u22 * 2)   # annotated: BUG-758
+    check("lambda-param", ys[2], 6)
+    var u23 = 4
+    check("local", u23, 4)
+    check("param", param(1), 2)
+    var s14 = 0
+    for u14 in xs
+        s14 += u14
+    check("for", s14, 6)
+    var m = {"ab": 1}
+    var sm = 0
+    for u19, u21 in m
+        sm += u21 + u19.len
+    check("for-map", sm, 3)
+    var sr = 0
+    for u25 in 0 .. 3
+        sr += u25
+    check("for-range", sr, 3)
+
+    if failures == 0
+        print("bug755_primitive_binders: OK")
