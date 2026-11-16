@@ -2336,6 +2336,24 @@ def runtimeObjFields(tn: str): str
         return " year month day weekday monthName era "
     return ""
 
+# BUG-721: the Zebra type of a runtime object's field, as the runtime declares it, or nil
+# for a field with no Zebra type. Without it `var u = resp.text` was untyped and `u.len` was
+# refused ("cannot infer the type of `u`"). HttpResponse.status is the runtime's u16, so it
+# is uint16 rather than int -- an `int` here would let `var s = resp.status` claim a range
+# the value does not have. `headers` is a slice of string pairs, which no Zebra type spells.
+def runtimeObjFieldType(tn: str, f: str): Type_?
+    if tn == "HttpResponse"
+        if f == "status"
+            return typeFromName("uint16")
+        if f == "text"
+            return Type_.string_
+    if tn == "CalendarView"
+        if f == "year" or f == "month" or f == "day" or f == "weekday"
+            return Type_.int_
+        if f == "monthName" or f == "era"
+            return Type_.string_
+    return nil
+
 def runtimeObjCovered(tn: str): bool
     return runtimeObjMethods(tn) != "" or runtimeObjFields(tn) != ""
 
@@ -4377,6 +4395,8 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                             rof_why = rof_why + "; the response body is .text"
                         ctx.addErr(ctx.file, m.span.line, m.span.col, rof_why + runtimeObjHint(tn))
                         return Type_.unknown_
+                    if runtimeObjFieldType(tn, m.member) as rof_t   # BUG-721
+                        return rof_t
                 # Enum member access: Color.red → Type_.named("Color").
                 if ctx.hasEnumAny(tn)
                     return Type_.named(tn)

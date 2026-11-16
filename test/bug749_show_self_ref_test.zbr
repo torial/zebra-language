@@ -1,0 +1,56 @@
+# BUG-749: printing a class that can reach itself through a field. The program did not build
+# at all ("dependency loop" through the runtime printer's inferred error set), and once it did,
+# a real cycle recursed until the stack overflowed. A class already on the path being printed
+# is written `Name{...}`; an object shared by two fields (not a cycle) prints in full each time.
+# Each value is checked here, so the final line prints only when all are right.
+
+class Leaf
+    var name: str = "leaf"
+    var next: Leaf? = nil
+
+class Pair
+    var l: Leaf? = nil
+    var r: Leaf? = nil
+
+var failures: int = 0
+
+def check(what: str, got: str, want: str)
+    if got == want
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: got '${got}', want '${want}'")
+        failures += 1
+
+def main()
+    var lone = Leaf()
+    check("no-next", lone.toString(), "Leaf{name: \"leaf\", next: nil}")
+    check("no-next-hole", "${lone}", "Leaf{name: \"leaf\", next: nil}")
+
+    var a = Leaf()
+    var b = Leaf()
+    b.name = "b"
+    a.next = b
+    check("chain", a.toString(), "Leaf{name: \"leaf\", next: Leaf{name: \"b\", next: nil}}")
+
+    b.next = a
+    check("cycle", a.toString(), "Leaf{name: \"leaf\", next: Leaf{name: \"b\", next: Leaf{...}}}")
+    check("cycle-other-end", "${b}", "Leaf{name: \"b\", next: Leaf{name: \"leaf\", next: Leaf{...}}}")
+
+    var me = Leaf()
+    me.next = me
+    check("self-loop", me.toString(), "Leaf{name: \"leaf\", next: Leaf{...}}")
+
+    var s = Leaf()
+    s.name = "s"
+    var p = Pair()
+    p.l = s
+    p.r = s
+    check("shared-not-cycle", p.toString(), "Pair{l: Leaf{name: \"s\", next: nil}, r: Leaf{name: \"s\", next: nil}}")
+
+    var xs: List(Leaf) = [me, me]
+    check("list-of-cyclic", xs.toString(), "[Leaf{name: \"leaf\", next: Leaf{...}}, Leaf{name: \"leaf\", next: Leaf{...}}]")
+
+    if failures == 0
+        print("bug749_show_self_ref: OK")
+    else
+        print("bug749_show_self_ref: ${failures} WRONG")

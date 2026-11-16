@@ -6,6 +6,64 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-749: printing a class that can reach itself through a field did not build, and a cycle overflowed the stack -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed and fixed the same day; Fable, writing the V route's show row)
+- **Repro:** `class Leaf` with `var name: str = "leaf"` and `var next: Leaf? = nil`;
+  `print(Leaf())`. The Zig route refused the program: `error: dependency loop with length 3 ...
+  function 'zebra_rt._zbr_show_into__anon_N' uses inferred error set of function
+  'zebra_rt._zbr_show_into__anon_M'` -- each instantiation of the runtime printer waited on its
+  own error set. The V route printed `Leaf{name: "leaf", next: nil}`. With that fixed, a real
+  cycle (`a.next = b`, `b.next = a`, `print(a)`) recursed until "Stack overflow".
+- **Cost:** any linked structure -- a list node, a tree with a parent field -- could not be
+  printed or `toString()`ed at all, and the message named the runtime's internals.
+- **Fix:** `_zbr_show_into`, `_zbr_show_fmt` and `_zbr_show_float` declare
+  `error{OutOfMemory}!void` (every fallible call in them allocates), which ends the loop. The
+  pointer arm keeps a per-thread stack of the objects on the path being printed: one met again
+  is written `Leaf{...}`, as Python writes `[...]`; an object two fields share (a diamond, not a
+  cycle) prints in full both times, because only the current path counts. Nesting deeper than
+  256 classes is cut the same way rather than left unprinted.
+- **Pinned by:** `test/bug749_show_self_ref_test.zbr` (`smoke_run`): no next, a chain, a
+  two-node cycle from each end, a self-loop, a shared object, and a list of cyclic objects, each
+  `toString()` / hole compared with its full text. Red-checked three ways: the fixed runtime
+  passes; the pre-fix runtime fails to build ("dependency loop"); the fixed runtime with the
+  path check disabled prints the cycle 256 levels deep and the fixture names it WRONG (an earlier
+  mutant that removed the check outright did not compile and so tested nothing).
+- **Not covered:** a class with its own `toString` cue that prints a field of itself recurses
+  in the user's code, not the runtime's; the V route (Fable's show row adds the Leaf shape).
+
+---
+
+### BUG-721: `HttpResponse.text` (and its other fields) have no type in the checker -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-13; found building the Pocket Lab manager's model calls)
+- **Repro:** `def g(resp: HttpResponse)` with `var u = resp.text` then `print(u.len)`: `-c`
+  refuses "cannot infer the type of `u`, so `.len` cannot be resolved". The same through
+  `if r as resp` and through `resp.text.replace(..)`. A field read off a runtime object type
+  is untyped, so every use past a method call needs an annotation (`var u: str = resp.text`).
+- **Fix shape:** type `HttpResponse`'s fields (`status: int`, `text: str`, `headers`) where its
+  methods are typed (BUG-680's runtime-object tables), and check the other runtime objects'
+  fields the same way.
+- **Control when fixing:** the repro passes `-c` and prints the length; an unknown field on an
+  `HttpResponse` is refused by name.
+- **Fix:** `TypeChecker.zbr`'s `runtimeObjFieldType` gives a runtime object's field the type
+  the runtime declares, beside BUG-680's refusal of an unknown one: `HttpResponse.text` is `str`
+  and `.status` is `uint16` (the runtime's `u16` -- typing it `int` would let `var s =
+  resp.status` claim a range the value does not have); `CalendarView`'s `year` / `month` / `day`
+  / `weekday` are `int`, `monthName` / `era` `str`.
+- **Measured before landing:** `-c` over every tracked `.zbr` of this repo, zebra-ide, the
+  GameEngine and pocket-lab-manager (3,258 files), neither binary panicking: the only file that
+  changed was BUG-709's fail fixture, which the old binary predates (it is the sweep's positive
+  control). `plm.zbr`'s `var u: str = resp.text` workaround stays valid.
+- **Pinned by:** `test/bug721_runtime_fields_test.zbr` (`smoke_run`, no network --
+  `HttpResponse.ok` / `.notFound` build responses locally): `resp.text` into an untyped local
+  then `.len`, `.replace`, concatenation; `.status` into a local, compared, added to, in a hole;
+  a CalendarView's int and str fields. Red: the pre-fix compiler refuses it with 6 errors.
+- **Not covered:** `HttpResponse.headers` stays untyped -- the runtime holds a slice of string
+  pairs, which no Zebra type spells (`var h = resp.headers` then a method on `h` is still
+  refused for want of a type). The other runtime objects (CsvTable, CsvWriter, ThreadPool,
+  DynLib) have methods only.
+
+---
+
 ### BUG-748: the V route accepted HTTPS certificates the Zig route refuses -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed and fixed the same day; Fable, evaluating V master c4dee97)
 - **Repro:** `Http.get("https://self-signed.badssl.com/")` and `https://expired.badssl.com/`

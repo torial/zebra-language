@@ -1632,6 +1632,9 @@ var result = sb.build()              # str; the builder keeps its text (clear() 
   `(1, "a")`, a union member `circle(2)` / `dot`; strings *inside* a container are
   quoted (`["a", "b"]`), a bare string is not. `x.toString()` returns that same text
   (BUG-743; it used to return Zig's struct dump for a container, class, struct or enum).
+  A class reached again while it is being printed (a cycle: `a.next = b`, `b.next = a`) is
+  written `Leaf{...}` at the point it repeats; an object two fields share prints in full each
+  time. Nesting deeper than 256 classes is cut the same way (BUG-749).
 - **Format specifiers** — `${expr:spec}` where `spec` follows
   `[fill][align][width][.precision][type]`.  Fill is any character; align is
   `<` (left), `>` (right), or `^` (center); type chars: `x`/`X` hex, `o`

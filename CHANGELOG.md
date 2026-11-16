@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A class that reaches itself through a field prints (BUG-749).** `print(leaf)` for a class
+  with a `next: Leaf?` field did not build ("dependency loop" inside the runtime printer). It
+  prints now, and a real cycle is written `Leaf{...}` where it repeats instead of overflowing
+  the stack; an object two fields share prints in full both times. Nesting deeper than 256
+  classes is cut the same way.
+- **`HttpResponse` and `CalendarView` fields have types (BUG-721).** `var u = resp.text` then
+  `u.len` was refused ("cannot infer the type of `u`"). `resp.text` is `str`, `resp.status` is
+  `uint16` (the runtime's own width), a CalendarView's `year`/`month`/`day`/`weekday` are `int`
+  and `monthName`/`era` `str`. `resp.headers` is still untyped.
 - **`-c` refuses a wrong value in a class-typed slot (BUG-709).** `html("<p>")` for
   `def html(body: SafeHtml)`, `return name` from a function returning `SafeHtml`,
   `var h: SafeHtml = name`, `html(5)`, `html(Other())`, and a constructor given the wrong type

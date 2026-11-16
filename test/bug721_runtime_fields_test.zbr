@@ -1,0 +1,47 @@
+# BUG-721: a field read off a runtime object type had no type in the checker, so a local bound
+# to one could not be used (`var u = resp.text` then `u.len`: "cannot infer the type of `u`"),
+# nor an operand built from one (`nf.status + 0`). HttpResponse.text is str and .status the
+# runtime's uint16; a CalendarView's year/month/day/weekday are int, monthName and era str.
+# Each value is checked here, so the final line prints only when all are right. No network:
+# HttpResponse.ok / .notFound build responses locally.
+
+var failures: int = 0
+
+def check(what: str, ok: bool, detail: str)
+    if ok
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: ${detail}")
+        failures += 1
+
+def textLen(resp: HttpResponse): int
+    var u = resp.text
+    return u.len
+
+def statusPlusOne(resp: HttpResponse): int
+    var s = resp.status
+    var n: int = s
+    return n + 1
+
+def main()
+    var r = HttpResponse.ok("hello")
+    check("text-local", textLen(r) == 5, "len ${textLen(r)}")
+    check("text-method", r.text.replace("l", "L") == "heLLo", r.text.replace("l", "L"))
+    check("text-concat", r.text + "!" == "hello!", r.text + "!")
+    check("status-local", statusPlusOne(r) == 201, "${statusPlusOne(r)}")
+    check("status-compare", r.status == 200, "${r.status}")
+    var nf = HttpResponse.notFound("nope")
+    check("status-arith", nf.status + 0 == 404, "${nf.status + 0}")
+    check("status-hole", "${nf.status}" == "404", "${nf.status}")
+
+    var view = DateTime.of(2024, 3, 15).inCalendar(Calendar.Gregorian)
+    var y = view.year
+    check("cal-int", y + 1 == 2025, "${y + 1}")
+    var mn = view.monthName
+    check("cal-str", mn.len > 0, "monthName '${mn}'")
+    check("cal-weekday", view.weekday == 5, "${view.weekday}")
+
+    if failures == 0
+        print("bug721_runtime_fields: OK")
+    else
+        print("bug721_runtime_fields: ${failures} WRONG")

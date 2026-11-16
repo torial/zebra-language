@@ -2246,6 +2246,8 @@ smoke_tc_fail test/bug709_class_slot_fail_test.zbr "bug709_class_slot_fail_test.
 smoke_tc_fail test/bug709_class_slot_fail_test.zbr "bug709_class_slot_fail_test.zbr:34:19: error: type mismatch: expected SafeHtml, got str"
 smoke_tc_fail test/bug709_class_slot_fail_test.zbr "bug709_class_slot_fail_test.zbr:35:12: error: type mismatch: expected SafeHtml, got str"
 smoke_tc_fail test/bug709_class_slot_fail_test.zbr "bug709_class_slot_fail_test.zbr:36:16: error: type mismatch: expected int, got str"
+smoke_run test/bug721_runtime_fields_test.zbr "bug721_runtime_fields: OK"
+smoke_run test/bug749_show_self_ref_test.zbr "bug749_show_self_ref: OK"
 smoke_run test/bug733_decode_base64_optional_test.zbr "bug733_decode_base64_optional: OK"
 smoke_run test/bug734_json_depth_test.zbr "bug734_json_depth: OK"
 smoke_tc_fail test/fail_fixtures/bug701_serve_restart_args_test.zbr "Ws.serve has no parameter 'restart' -- only Http.serve restarts"

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-748. Next new bug: BUG-749.**
+**Last bug number generated: BUG-749. Next new bug: BUG-750.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -92,20 +92,6 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
-
----
-
-### BUG-721: `HttpResponse.text` (and its other fields) have no type in the checker
-- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's model calls)
-- **Repro:** `def g(resp: HttpResponse)` with `var u = resp.text` then `print(u.len)`: `-c`
-  refuses "cannot infer the type of `u`, so `.len` cannot be resolved". The same through
-  `if r as resp` and through `resp.text.replace(..)`. A field read off a runtime object type
-  is untyped, so every use past a method call needs an annotation (`var u: str = resp.text`).
-- **Fix shape:** type `HttpResponse`'s fields (`status: int`, `text: str`, `headers`) where its
-  methods are typed (BUG-680's runtime-object tables), and check the other runtime objects'
-  fields the same way.
-- **Control when fixing:** the repro passes `-c` and prints the length; an unknown field on an
-  `HttpResponse` is refused by name.
 
 ---
 
