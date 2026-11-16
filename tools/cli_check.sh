@@ -19,6 +19,8 @@
 #       GUI run path dropped them; zebra-ide opened with no files).
 # pins: BUG-322 `zebra repl` and `zebra build` are exercised from a directory OUTSIDE
 #       the repo, which is the only place that bug was ever visible.
+# pins: BUG-747 the run path and --emit-exe are compared by BUILD ROUTE (tools/pe_route.py on
+#       Windows), not bytes: zig's self-hosted backend is not byte-reproducible.
 # THE CLI-SURFACE GATE — the only gate that exercises the compiler AS A COMMAND.
 #
 #   bash tools/cli_check.sh
@@ -538,12 +540,20 @@ chk "--emit-exe with -c is refused by name (a check builds nothing)" \
     "$([ "$RC" = 2 ] && case "$ERR" in *"does not apply to -c"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC stderr=[$(echo "$ERR" | head -1)]"
 
-# ONE LINK DECISION: the run path and --emit-exe build the same bytes. Compared at ONE
-# output path (the run path's own, under --output-dir): an image names its debug-info file,
-# so two paths always differ. Only on the FAST backend (x86_64 debug): zig's LLVM output
-# differs between two IDENTICAL invocations (measured 2026-11-14: 10 bytes at one path), so
-# there it cannot witness anything and is not asked to.
+# ONE LINK DECISION: the run path and --emit-exe take the same BUILD ROUTE. Built at ONE
+# output path (the run path's own, under --output-dir): an image names its debug-info file.
+# Only on the FAST backend (x86_64 debug), the route the run path prefers; the question is
+# whether --emit-exe takes it too rather than falling to LLVM.
+# THE ROUTE, NOT THE BYTES, on Windows (BUG-747, 2026-11-16). This leg asked for byte-identical
+# images and went red on a correct compiler: zig's self-hosted backend is not byte-reproducible.
+# Two `--emit-exe` builds of one program at one path differed 2 times in 26, cold cache or warm
+# (SizeOfImage and `.text` VirtualSize; once the whole layout from the entry point on). So a PE
+# image is compared by tools/pe_route.py's fingerprint -- file size (the self-hosted linker
+# preallocates), linker version, section names -- which was identical across every one of those
+# pairs and which an LLVM/LLD build of the same program changes in all three. Anything else is
+# still compared byte for byte. A differing pair is kept either way, with each build's messages.
 if [ "$(uname -m)" = "x86_64" ]; then
+    PY=python; command -v python >/dev/null 2>&1 || PY=python3
     mkdir -p "$W/bi"
     run --emit-exe=bi/hello.zig.fast.exe --output-dir bi hello.zbr
     cp "$W/bi/hello.zig.fast.exe" "$W/bi/emitted.bin" 2>/dev/null
@@ -551,19 +561,30 @@ if [ "$(uname -m)" = "x86_64" ]; then
     rm -f "$W/bi/hello.zig.fast.exe"
     run --output-dir bi hello.zbr
     printf 'exit=%s\n--- stdout\n%s\n--- stderr\n%s\n' "$RC" "$OUT" "$ERR" > "$W/bi/run-path.messages"
-    bi_rc=$([ -s "$W/bi/emitted.bin" ] && cmp -s "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" && echo 0 || echo 1)
+    bi_a=""; bi_b=""; bi_how="bytes"
+    if [ -s "$W/bi/emitted.bin" ] && [ -s "$W/bi/hello.zig.fast.exe" ]; then
+        bi_a=$("$PY" "$REPO/tools/pe_route.py" "$W/bi/emitted.bin" 2>&1) || bi_a="UNREADABLE-A: $bi_a"
+        bi_b=$("$PY" "$REPO/tools/pe_route.py" "$W/bi/hello.zig.fast.exe" 2>&1) || bi_b="UNREADABLE-B: $bi_b"
+    fi
+    case "$bi_a" in
+        "pe "*)
+            bi_how="route"
+            bi_rc=$([ "$bi_a" = "$bi_b" ] && echo 0 || echo 1) ;;
+        not-pe)
+            bi_rc=$(cmp -s "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" && echo 0 || echo 1) ;;
+        *)
+            bi_rc=1 ;;
+    esac
     bi_kept=""
     if [ "$bi_rc" != 0 ]; then
-        # BUG-747: this leg went red once under load (SizeOfImage differed, so two different
-        # builds) and the scratch dir took both binaries with it. Keep them, with each build's
-        # messages, OUTSIDE $W, which the EXIT trap removes.
+        # Keep both images and each build's messages OUTSIDE $W, which the EXIT trap removes.
         bi_kept=$(mktemp -d "${TMPDIR:-/tmp}/zbr_cli_bug747.XXXXXX") && cp -r "$W/bi/." "$bi_kept/"
     fi
-    chk "the run path and --emit-exe build byte-identical executables (fast backend, one output path)" \
+    chk "the run path and --emit-exe take the same build route (fast backend, one output path; PE: route fingerprint)" \
         "$bi_rc" \
-        "files=[$(ls "$W/bi" | tr "\n" " ")] cmp=[$(cmp "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" 2>&1 | head -1)] kept=[${bi_kept:-nothing}]"
+        "compared=$bi_how emit-exe=[$bi_a] run-path=[$bi_b] files=[$(ls "$W/bi" | tr "\n" " ")] kept=[${bi_kept:-nothing}]"
 else
-    echo "  skip   byte-identity: $(uname -m) has no fast backend, and zig's LLVM output is not reproducible"
+    echo "  skip   build-route identity: $(uname -m) has no fast backend, and zig's LLVM output is not reproducible"
 fi
 
 # THE BUG-720 REPRO: a program that calls Sqlite.open, built by `zebra build`, then run alone.

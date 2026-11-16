@@ -6,6 +6,56 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-747: under load the run path and `--emit-exe` can build different executables -- FIXED 2026-11-16 (the gate's premise)
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-15; `cli-surface` red once in the QUICK tier on 8960d50))
+- **Observed:** the leg "the run path and --emit-exe build byte-identical executables (fast
+  backend, one output path)" failed: `differ: char 203`. Byte 203 is in the PE optional
+  header's `SizeOfImage`, so the two images had different LAYOUTS -- two genuinely different
+  builds, not a timestamp. Re-run standalone at once: 94/94. Idle, six `--emit-exe` builds of
+  the same program at one path were byte-identical. The tier ran beside Fable's engine V builds.
+- **Hypothesis, untested:** under load one of the two builds took another route (the LLVM
+  fallback after a failed fast-backend attempt, or a BUG-302 retry that changed backend), which
+  BUG-720's "one link decision" says cannot differ between the two paths.
+- **Cost:** a gate red that does not reproduce, and, if the hypothesis holds, a build whose
+  bytes depend on the machine's load.
+- **What the next occurrence needs:** since 2026-11-15 the leg keeps both binaries and each
+  build's stdout/stderr on failure, in a `zbr_cli_bug747.*` dir under TMPDIR named on its FAIL
+  line (red-checked with one appended byte). It does not yet print which backend each build
+  used; read the kept messages, then diff the PE headers and sections.
+- **Second occurrence, 2026-11-16 (BUG-755/757's FULL tier, then standalone at once):** red both
+  times, so not load alone. Kept pair (`zbr_cli_bug747.1mJnzF`, `.mpHkn4`): SAME file size, four
+  header bytes differ -- `SizeOfImage` (0x26d0000 vs 0x1350000) and `.text`'s VirtualSize -- and
+  the larger image was the `--emit-exe` build in one pair and the run-path build in the other.
+  **Reproduced with a7118f5's compiler at the same rate as the fixed one** (1 differing run of 4
+  each), and only ever on the FIRST build of a program text zig has not cached: a warm repeat is
+  3/3 identical; a fresh text differed on run 1 in one of two trials. One of those differs was at
+  char 163, inside `AddressOfEntryPoint` -- a moved entry point, so a layout change, not only a
+  reservation. The route hypothesis above looks WRONG (no fallback in either build's messages,
+  identical contents). The working hypothesis: the fast backend is not reproducible from a COLD
+  cache, so the leg's premise fails on its first build. The tier made that likelier: a changed
+  runtime makes every program cold.
+- **Next (as planned that morning; superseded by "Resolved" below):** the missing control --
+  `--emit-exe` twice at one path from a cold cache; if those differ too, warm up first. The
+  control did differ, and the warm-up did not hold either. Not by masking header fields: the
+  entry-point differ shows more than the reservation moves.
+- **Control when fixing:** the leg red-checked against a forced fallback on one path.
+- **Resolved:** the hypothesis was wrong, and so was the leg's premise. Two `--emit-exe` builds
+  of ONE program at ONE path differ too: 2 times in 26 trials (fresh program texts), cold cache or
+  after a discarded warm-up build alike (interleaved: 1 of 20 each). Most differ only in
+  `SizeOfImage` and `.text`'s VirtualSize; one differed through the whole image from the entry
+  point on. zig's self-hosted backend is simply not byte-reproducible on Windows, so the run path
+  and `--emit-exe` cannot be asked for identical bytes, any more than LLVM could.
+- **Fix (the instrument):** the leg compares the BUILD ROUTE, which is what BUG-720's "one link
+  decision" means. `tools/pe_route.py` prints a PE image's file size, linker version and section
+  names; that fingerprint was identical across every differing pair (15,728,640 bytes, linker
+  0.0, `.bss,.data,.rdata,.text`), and an LLVM/LLD build of the same program changes all three
+  (2,594,816 bytes, 14.0, seven sections). Non-PE images are still compared byte for byte; an
+  unreadable header refuses (exit 2) rather than comparing equal.
+- **Red-checked with the real attacker:** a copy of the leg whose `--emit-exe` build passes
+  `--census` (the LLVM route) fails, naming both fingerprints; the fixed gate 94/94.
+
+---
+
 ### BUG-757: Lists the runtime hands to the program are built on `page_allocator`, then grown and freed through the program's allocator -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (filed 2026-11-16; Fable saw `_json_keys` while reading BUG-751's runtime; the
   family found by grepping the preamble)
