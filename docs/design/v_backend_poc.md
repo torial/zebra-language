@@ -3029,6 +3029,85 @@ four roots on the compiler before the change, and the row's program on it
 ("redefinition of `c`"). After: the four roots identical, and the ladder at
 104 identical with no standing failure.
 
+## A JsonValue is a shared handle (2026-11-16; BUG-751, BUG-722)
+
+Until this change a `JsonValue` was x.json2's `Any` BY VALUE on this route,
+and `j.put(k, v)` was rewritten `j = zjson_put(j, k, v)` because a sum type
+cannot be a `mut` parameter. That kept the value semantics the Zig route's
+`std.json.Value` was thought to have, and it had four consequences the rows
+never saw:
+
+- a second name, a parameter and a value read out with `get` were each a
+  COPY: a function handed a JsonValue could not change it;
+- a put on anything but a plain name was refused ("on a value that is not a
+  name");
+- an object's members were written in ALPHABETICAL order (json2's encoder),
+  where the Zig route writes them in the order they were stored;
+- `put` on an array quietly made an object of it, `append` on an object an
+  array, and nothing held the builder to the 256 levels `Json.parse` holds
+  to (BUG-722's three refusals did not exist here).
+
+Sean's decision (2026-11-15, BUG-751) is that a JsonValue is a SHARED HANDLE,
+like a List since BUG-501, on both routes. The rules were agreed with the Zig
+route's seat before either side built (the shared design, fourteen rules):
+
+1. assignment and parameter passing share -- a new key included;
+2. `get`, `tryObj`, `j[k]?` / `j[i]?`, the elements of `tryList` and of a
+   `List(JsonValue)` conversion are handles INTO the parent;
+3. the List `tryList` answers is new (`add` on it does not grow the array);
+4. `put` / `append` of a JsonValue stores a SNAPSHOT (BUG-722), the one
+   copying operation, taken before it is stored -- a value put into itself,
+   or a root put under its own child, stores what it held before the call;
+5. replacing a key keeps the key's position and SWAPS the node: a handle to
+   the old child keeps the old value, detached, a tree of its own;
+6. the 256-level limit counts from the ROOT of the receiver's tree, through
+   a parent pointer (nil for a root and for a detached node), not from the
+   receiver; a detached handle counts from 1 again;
+7. a wrong kind and a 257th level stop the program with BUG-722's messages;
+8. a JsonValue as text -- `print(j)`, `"${j}"`, `j.toString()`, and one
+   inside a printed List or optional -- is exactly `stringify()`; a string
+   node's text keeps its quotes (`tryStr` is how the string is had).
+
+**The runtime.** `ZJson` is a heap struct: a kind, a scalar kept as json2's
+own `Any` (so a number's digits and a string's escapes are json2's, as
+before), a `map[string]&ZJson` (V's map keeps insertion order and a replaced
+key's position, which is rule 5's first half for free), a `[]&ZJson`, and
+the parent pointer. `zjson_parse` converts json2's tree once; `stringify` is
+this file's for the containers. Every function takes the handle as a plain
+`&ZJson` and changes it through an `unsafe` mutable alias inside, so nothing
+at a call site needs `mut` -- a temporary, an `if ... as` binding and a
+loop variable all take a put.
+
+**Strings are the tree's own.** A string built inside an `allocate` block is
+the block's on this route (`zr_s` records it) and its bytes are freed at the
+block's end, while a tree made outside the block outlives it. BUG-722's nest
+fixture caught this on the first run (`"s":"made 1 inside"` read back as
+bytes of something else). `zjson_own` copies every non-literal string and
+key the tree keeps, unrecorded, so no block frees them; the nodes themselves
+are never recorded either. The plain run is a weak witness of this -- with
+the copy taken out it still read the string right once the allocator had not
+reused the bytes -- so the row runs the fixture under `-d zbr_region_check`
+as well, where a freed string is poisoned (`"s":"<freed at j72"`).
+
+**The emitter.** The type string is `&ZJson` wherever it was `json2.Any`
+(twenty-four sites). The put family is a call on the value, whatever
+expression reaches it (`jsonPutCall`); the refusal is gone. A JsonValue
+parameter is exempt from the reference rule (`isRefType`): it is `j &ZJson`,
+not `mut j ZJson`. A JsonValue field or local without a value is JSON null
+(`zjson_null()`). The coercions (`var n: int = j["k"]?`) are
+`zjson_as_int` / `_float` / `_bool`.
+
+**What is not the same as the Zig route yet.** `values()` and `for x in j`
+exist here and not there (a surface difference older than this change, to be
+settled apart). The V front end accepts a local named `u2`, which the Zig
+emission refuses as a primitive's name.
+
+`tools/v_check.sh`'s `json` row: BUG-722's nest fixture alike on both routes
+and its three refusals stopped by the same message on both; BUG-751's handle
+fixture (twenty checks) and its two depth refusals on this route against
+their own text until the Zig route's flip lands, when the row takes the
+shared fixtures from `test/` and the Zig run becomes its control.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

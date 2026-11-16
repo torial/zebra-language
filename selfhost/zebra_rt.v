@@ -1644,7 +1644,28 @@ pub fn (mut zr_t ZTimer) reset() {
 	zr_t.started = time.now()
 }
 
-// ── Json: Zebra's Json / JsonValue is json2.Any by value ──────────────────
+// ── Json: Zebra's Json / JsonValue is a SHARED HANDLE, &ZJson (BUG-751) ─────
+// A JsonValue is a reference to a node of a tree, like a List since BUG-501:
+// every name for a value sees every change made through any of them, and a
+// value read out of an object or an array (get, tryObj, j[k], the elements of
+// tryList and of a List(JsonValue) conversion) is a handle INTO it. Until
+// 2026-11-16 it was x.json2's Any by value here, and `j.put(k, v)` was
+// rewritten `j = zjson_put(j, k, v)`: a second name, a parameter and a value
+// read out were each a copy. The rules, shared with the Zig route:
+//   - put / append of a JsonValue stores a SNAPSHOT (BUG-722): the one copying
+//     operation; the List that tryList answers is new, its elements handles
+//   - replacing a key keeps the key's position and SWAPS the node: a handle
+//     to the old child keeps the old value, detached, a tree of its own
+//   - put on anything but an object, append on anything but an array, stops
+//     the program naming what it was called on (BUG-722)
+//   - no tree is deeper than 256 levels, the limit Json.parse holds to
+//     (BUG-734): a put / append is refused when the receiver's level, counted
+//     from the ROOT of its tree through the parent pointers, plus the depth of
+//     the value stored, passes it. A detached handle counts from 1 again.
+// A scalar is kept as x.json2's own value, so its text (a number's digits, a
+// string's escapes) is json2's, as it was; the containers are this file's --
+// V's map keeps insertion order and a replaced key's position.
+//
 // BUG-734: Json.parse answers nil past 256 levels of nesting, on both routes
 // (Sean, 2026-11-15). Each `[` or `{` outside a string opens a level; a
 // top-level scalar is level 0; 256 parse, 257 is nil. A scan of the text
@@ -1652,6 +1673,21 @@ pub fn (mut zr_t ZTimer) reset() {
 // scan -- so the answer does not depend on the library's own limit (x.json2
 // refuses at 513, std.json recurses until the stack ends).
 pub const zjson_max_depth = 256
+pub const zjson_too_deep_msg = 'Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to -- store a shallower value, or its text with stringify()'
+
+pub const zjk_scalar = u8(0)
+pub const zjk_array = u8(1)
+pub const zjk_object = u8(2)
+
+@[heap]
+pub struct ZJson {
+pub mut:
+	kind   u8        // zjk_scalar, zjk_array or zjk_object
+	scalar json2.Any // a scalar's value: null, a bool, a number or a string
+	obj    map[string]&ZJson
+	arr    []&ZJson
+	parent &ZJson = unsafe { nil } // the container this node is stored in; nil for a root and for a detached node
+}
 
 pub fn zjson_too_deep(zr_s string) bool {
 	mut zr_depth := 0
@@ -1682,37 +1718,47 @@ pub fn zjson_too_deep(zr_s string) bool {
 	return false
 }
 
-pub fn zjson_parse(zr_s string) ?json2.Any {
+pub fn zjson_parse(zr_s string) ?&ZJson {
 	if zjson_too_deep(zr_s) {
 		return none
 	}
 	zr_j := json2.decode[json2.Any](zr_s) or { return none }
-	return zjson_fix_keys(zr_j)
+	return zjson_from(zr_j, unsafe { nil })
 }
 
-// V 0.5.2's decoder leaves a key's escape sequences in the key (a key
-// `Iron \"Spear\"` reads back with its backslashes, and encodes doubled);
-// master decodes them. Every object's keys unescaped after a decode, the
-// values walked; a key without a backslash is untouched.
-fn zjson_fix_keys(zr_j json2.Any) json2.Any {
+// x.json2's tree as this file's, once. V 0.5.2's decoder leaves a key's
+// escape sequences in the key (a key `Iron \"Spear\"` reads back with its
+// backslashes, and encodes doubled); master decodes them. Every object's keys
+// are unescaped here; a key without a backslash is untouched.
+fn zjson_from(zr_j json2.Any, zr_parent &ZJson) &ZJson {
 	if zr_j is map[string]json2.Any {
 		zr_old := zr_j as map[string]json2.Any
-		mut zr_out := map[string]json2.Any{}
+		mut zr_n := &ZJson{
+			kind:   zjk_object
+			parent: unsafe { zr_parent }
+		}
 		for zr_k, zr_v in zr_old {
 			zr_kk := if zr_k.contains('\\') { zjson_unescape(zr_k) } else { zr_k }
-			zr_out[zr_kk] = zjson_fix_keys(zr_v)
+			zr_n.obj[zr_kk] = zjson_from(zr_v, zr_n)
 		}
-		return json2.Any(zr_out)
+		return zr_n
 	}
 	if zr_j is []json2.Any {
 		zr_old := zr_j as []json2.Any
-		mut zr_out := []json2.Any{cap: zr_old.len}
-		for zr_v in zr_old {
-			zr_out << zjson_fix_keys(zr_v)
+		mut zr_n := &ZJson{
+			kind:   zjk_array
+			parent: unsafe { zr_parent }
 		}
-		return json2.Any(zr_out)
+		for zr_v in zr_old {
+			zr_n.arr << zjson_from(zr_v, zr_n)
+		}
+		return zr_n
 	}
-	return zr_j
+	return &ZJson{
+		kind:   zjk_scalar
+		scalar: zr_j
+		parent: unsafe { zr_parent }
+	}
 }
 
 fn zjson_unescape(zr_s string) string {
@@ -1752,39 +1798,68 @@ fn zjson_unescape(zr_s string) string {
 	return zr_b.bytestr()
 }
 
-pub fn zjson_object() json2.Any {
-	return json2.Any(map[string]json2.Any{})
+pub fn zjson_object() &ZJson {
+	return &ZJson{
+		kind: zjk_object
+	}
 }
 
-pub fn zjson_array() json2.Any {
-	return json2.Any([]json2.Any{})
+pub fn zjson_array() &ZJson {
+	return &ZJson{
+		kind: zjk_array
+	}
 }
 
-pub fn zjson_get(zr_j json2.Any, zr_k string) ?json2.Any {
-	if zr_j is map[string]json2.Any {
-		zr_m := zr_j as map[string]json2.Any
-		return zr_m[zr_k] or { return none }
+// A string the tree keeps is the tree's own. A string built inside an
+// `allocate` block is the block's (zr_s records it) and is freed at the
+// block's end, while a value stored into a tree made outside the block
+// outlives it: the bytes are copied, unrecorded, so no block ever frees
+// them. A literal's bytes are static and kept as they are.
+fn zjson_own(zr_x string) string {
+	if zr_x.is_lit != 0 {
+		return zr_x
+	}
+	return zr_x.clone()
+}
+
+// a scalar node holding a json2 value (a builder's putInt, appendStr, ...)
+fn zjson_leaf(zr_v json2.Any, zr_parent &ZJson) &ZJson {
+	return &ZJson{
+		kind:   zjk_scalar
+		scalar: zr_v
+		parent: unsafe { zr_parent }
+	}
+}
+
+// the member itself: a handle into the object
+pub fn zjson_get(zr_j &ZJson, zr_k string) ?&ZJson {
+	if zr_j.kind == zjk_object {
+		return zr_j.obj[zr_k] or { return none }
 	}
 	return none
 }
 
-pub fn zjson_has(zr_j json2.Any, zr_k string) bool {
-	if zr_j is map[string]json2.Any {
-		zr_m := zr_j as map[string]json2.Any
-		return zr_k in zr_m
-	}
-	return false
+pub fn zjson_has(zr_j &ZJson, zr_k string) bool {
+	return zr_j.kind == zjk_object && zr_k in zr_j.obj
 }
 
-pub fn zjson_try_str(zr_j json2.Any) ?string {
-	if zr_j is string {
-		return zr_j as string
+pub fn zjson_try_str(zr_j &ZJson) ?string {
+	if zr_j.kind != zjk_scalar {
+		return none
+	}
+	zr_x := zr_j.scalar
+	if zr_x is string {
+		return zr_x as string
 	}
 	return none
 }
 
-fn zjson_is_number(zr_j json2.Any) bool {
-	if zr_j is string || zr_j is bool || zr_j is json2.Null || zr_j is []json2.Any || zr_j is map[string]json2.Any {
+fn zjson_is_number(zr_j &ZJson) bool {
+	if zr_j.kind != zjk_scalar {
+		return false
+	}
+	zr_x := zr_j.scalar
+	if zr_x is string || zr_x is bool || zr_x is json2.Null {
 		return false
 	}
 	return true
@@ -1792,196 +1867,364 @@ fn zjson_is_number(zr_j json2.Any) bool {
 
 // a whole number only: json2 parses every number as f64, and a fraction
 // is not an int (the Zig backend's _json_as_int is null for 1.6)
-pub fn zjson_try_int(zr_j json2.Any) ?i64 {
-	if zr_j is f64 {
-		zr_f := zr_j as f64
+pub fn zjson_try_int(zr_j &ZJson) ?i64 {
+	if !zjson_is_number(zr_j) {
+		return none
+	}
+	zr_x := zr_j.scalar
+	if zr_x is f64 {
+		zr_f := zr_x as f64
 		if math.floor(zr_f) == zr_f && zr_f >= -9.2233720368547758e18 && zr_f < 9.2233720368547758e18 {
 			return i64(zr_f)
 		}
 		return none
 	}
+	return zr_x.i64()
+}
+
+pub fn zjson_try_float(zr_j &ZJson) ?f64 {
 	if zjson_is_number(zr_j) {
-		return zr_j.i64()
+		return zr_j.scalar.f64()
 	}
 	return none
 }
 
-pub fn zjson_try_float(zr_j json2.Any) ?f64 {
-	if zjson_is_number(zr_j) {
-		return zr_j.f64()
+pub fn zjson_try_bool(zr_j &ZJson) ?bool {
+	if zr_j.kind != zjk_scalar {
+		return none
+	}
+	zr_x := zr_j.scalar
+	if zr_x is bool {
+		return zr_x as bool
 	}
 	return none
 }
 
-pub fn zjson_try_bool(zr_j json2.Any) ?bool {
-	if zr_j is bool {
-		return zr_j as bool
+// the object itself (a handle), when it is one
+pub fn zjson_try_obj(zr_j &ZJson) ?&ZJson {
+	if zr_j.kind == zjk_object {
+		return unsafe { zr_j }
 	}
 	return none
 }
 
-pub fn zjson_try_obj(zr_j json2.Any) ?json2.Any {
-	if zr_j is map[string]json2.Any {
-		return zr_j
-	}
-	return none
-}
-
-pub fn zjson_try_list(zr_j json2.Any) ?&ZList[json2.Any] {
-	if zr_j is []json2.Any {
-		return zlist_of[json2.Any](zr_j as []json2.Any)
+// a NEW List whose elements are the array's own nodes (handles): adding to
+// the List does not change the array, a put through an element does
+pub fn zjson_try_list(zr_j &ZJson) ?&ZList[&ZJson] {
+	if zr_j.kind == zjk_array {
+		return zlist_of[&ZJson](zr_j.arr.clone())
 	}
 	return none
 }
 
 // `v.tryX(key)`: the member as X when v is an object with the key, else none
 // (Zebra's _json_try_X beside the bare _json_self_X)
-pub fn zjson_tryk_str(zr_j json2.Any, zr_k string) ?string {
+pub fn zjson_tryk_str(zr_j &ZJson, zr_k string) ?string {
 	zr_m := zjson_get(zr_j, zr_k) or { return none }
 	return zjson_try_str(zr_m)
 }
 
-pub fn zjson_tryk_int(zr_j json2.Any, zr_k string) ?i64 {
+pub fn zjson_tryk_int(zr_j &ZJson, zr_k string) ?i64 {
 	zr_m := zjson_get(zr_j, zr_k) or { return none }
 	return zjson_try_int(zr_m)
 }
 
-pub fn zjson_tryk_float(zr_j json2.Any, zr_k string) ?f64 {
+pub fn zjson_tryk_float(zr_j &ZJson, zr_k string) ?f64 {
 	zr_m := zjson_get(zr_j, zr_k) or { return none }
 	return zjson_try_float(zr_m)
 }
 
-pub fn zjson_tryk_bool(zr_j json2.Any, zr_k string) ?bool {
+pub fn zjson_tryk_bool(zr_j &ZJson, zr_k string) ?bool {
 	zr_m := zjson_get(zr_j, zr_k) or { return none }
 	return zjson_try_bool(zr_m)
 }
 
-pub fn zjson_tryk_obj(zr_j json2.Any, zr_k string) ?json2.Any {
+pub fn zjson_tryk_obj(zr_j &ZJson, zr_k string) ?&ZJson {
 	zr_m := zjson_get(zr_j, zr_k) or { return none }
 	return zjson_try_obj(zr_m)
 }
 
-pub fn zjson_tryk_list(zr_j json2.Any, zr_k string) ?&ZList[json2.Any] {
+pub fn zjson_tryk_list(zr_j &ZJson, zr_k string) ?&ZList[&ZJson] {
 	zr_m := zjson_get(zr_j, zr_k) or { return none }
 	return zjson_try_list(zr_m)
 }
 
-// `j[key]?`: the member, or an error (Zebra's _json_idx)
-pub fn zjson_idx(zr_j json2.Any, zr_k string) !json2.Any {
-	if zr_j is map[string]json2.Any {
-		zr_m := zr_j as map[string]json2.Any
-		return zr_m[zr_k] or { return error('json: no key ' + zr_k) }
+// `j[key]?`: the member (a handle), or an error (Zebra's _json_idx)
+pub fn zjson_idx(zr_j &ZJson, zr_k string) !&ZJson {
+	if zr_j.kind == zjk_object {
+		return zr_j.obj[zr_k] or { return error('json: no key ' + zr_k) }
 	}
 	return error('json: not an object, indexed by ' + zr_k)
 }
 
-// `arr[i]?`: the element, or an error
-pub fn zjson_idx_at(zr_j json2.Any, zr_i i64) !json2.Any {
-	if zr_j is []json2.Any {
-		zr_a := zr_j as []json2.Any
-		if zr_i < 0 || zr_i >= zr_a.len {
-			return error('json: index ${zr_i} of ${zr_a.len}')
+// `arr[i]?`: the element (a handle), or an error
+pub fn zjson_idx_at(zr_j &ZJson, zr_i i64) !&ZJson {
+	if zr_j.kind == zjk_array {
+		if zr_i < 0 || zr_i >= zr_j.arr.len {
+			return error('json: index ${zr_i} of ${zr_j.arr.len}')
 		}
-		return zr_a[int(zr_i)]
+		return zr_j.arr[int(zr_i)]
 	}
 	return error('json: not an array, indexed by ${zr_i}')
 }
 
+// the value as JSON text: compact, an object's members in the order they
+// were first stored
+pub fn zjson_stringify(zr_j &ZJson) string {
+	if zr_j.kind == zjk_object {
+		mut zr_parts := []string{cap: zr_j.obj.len}
+		for zr_k, zr_v in zr_j.obj {
+			zr_parts << json2.Any(zr_k).json_str() + ':' + zjson_stringify(zr_v)
+		}
+		return '{' + zr_parts.join(',') + '}'
+	}
+	if zr_j.kind == zjk_array {
+		mut zr_parts := []string{cap: zr_j.arr.len}
+		for zr_v in zr_j.arr {
+			zr_parts << zjson_stringify(zr_v)
+		}
+		return '[' + zr_parts.join(',') + ']'
+	}
+	return zr_j.scalar.json_str()
+}
+
 // a Json value received as a str: the string itself, else its JSON text
-pub fn zjson_str(zr_j json2.Any) string {
-	if zr_j is string {
-		return zr_j as string
+pub fn zjson_str(zr_j &ZJson) string {
+	if zr_s := zjson_try_str(zr_j) {
+		return zr_s
 	}
-	return zr_j.json_str()
+	return zjson_stringify(zr_j)
 }
 
-// `for x in j`: the array's elements (none for anything else)
-pub fn zjson_list(zr_j json2.Any) &ZList[json2.Any] {
-	if zr_j is []json2.Any {
-		return zlist_of[json2.Any](zr_j as []json2.Any)
+// a Json array as a List(JsonValue), and `for x in j`: a new List of the
+// array's own nodes (none for anything else)
+pub fn zjson_list(zr_j &ZJson) &ZList[&ZJson] {
+	if zr_j.kind == zjk_array {
+		return zlist_of[&ZJson](zr_j.arr.clone())
 	}
-	return new_zlist[json2.Any]()
+	return new_zlist[&ZJson]()
 }
 
-pub fn zjson_keys(zr_j json2.Any) &ZList[string] {
-	if zr_j is map[string]json2.Any {
-		zr_m := zr_j as map[string]json2.Any
-		return zlist_of[string](zr_m.keys())
+pub fn zjson_keys(zr_j &ZJson) &ZList[string] {
+	if zr_j.kind == zjk_object {
+		return zlist_of[string](zr_j.obj.keys())
 	}
 	return new_zlist[string]()
 }
 
-pub fn zjson_values(zr_j json2.Any) &ZList[json2.Any] {
-	if zr_j is map[string]json2.Any {
-		zr_m := zr_j as map[string]json2.Any
-		return zlist_of[json2.Any](zr_m.values())
+pub fn zjson_values(zr_j &ZJson) &ZList[&ZJson] {
+	if zr_j.kind == zjk_object {
+		return zlist_of[&ZJson](zr_j.obj.values())
 	}
-	return new_zlist[json2.Any]()
+	return new_zlist[&ZJson]()
 }
 
-pub fn zjson_is_null(zr_j json2.Any) bool {
-	return zr_j is json2.Null
-}
-
-pub fn zjson_is_object(zr_j json2.Any) bool {
-	return zr_j is map[string]json2.Any
-}
-
-pub fn zjson_is_array(zr_j json2.Any) bool {
-	return zr_j is []json2.Any
-}
-
-// the put / append family returns the new value: the emitter writes
-// `j = zjson_put(j, k, v)` for Zebra's `j.put(k, v)` (a sum type cannot be
-// a mut parameter), which keeps the value semantics of Zig's std.json.Value
-pub fn zjson_put(zr_j json2.Any, zr_k string, zr_v json2.Any) json2.Any {
-	mut zr_m := map[string]json2.Any{}
-	if zr_j is map[string]json2.Any {
-		zr_m = (zr_j as map[string]json2.Any).clone()
+pub fn zjson_is_null(zr_j &ZJson) bool {
+	if zr_j.kind != zjk_scalar {
+		return false
 	}
-	zr_m[zr_k] = zr_v
-	return json2.Any(zr_m)
+	zr_x := zr_j.scalar
+	return zr_x is json2.Null
 }
 
-pub fn zjson_put_str(zr_j json2.Any, zr_k string, zr_v string) json2.Any {
-	return zjson_put(zr_j, zr_k, json2.Any(zr_v))
+pub fn zjson_is_object(zr_j &ZJson) bool {
+	return zr_j.kind == zjk_object
 }
 
-pub fn zjson_put_int(zr_j json2.Any, zr_k string, zr_v i64) json2.Any {
-	return zjson_put(zr_j, zr_k, json2.Any(zr_v))
+pub fn zjson_is_array(zr_j &ZJson) bool {
+	return zr_j.kind == zjk_array
 }
 
-pub fn zjson_put_float(zr_j json2.Any, zr_k string, zr_v f64) json2.Any {
-	return zjson_put(zr_j, zr_k, json2.Any(zr_v))
-}
-
-pub fn zjson_put_bool(zr_j json2.Any, zr_k string, zr_v bool) json2.Any {
-	return zjson_put(zr_j, zr_k, json2.Any(zr_v))
-}
-
-pub fn zjson_append(zr_j json2.Any, zr_v json2.Any) json2.Any {
-	mut zr_a := []json2.Any{}
-	if zr_j is []json2.Any {
-		zr_a = (zr_j as []json2.Any).clone()
+// what a refused put / append names (the Zig route's _json_kind)
+fn zjson_kind_name(zr_j &ZJson) string {
+	if zr_j.kind == zjk_object {
+		return 'an object'
 	}
-	zr_a << zr_v
-	return json2.Any(zr_a)
+	if zr_j.kind == zjk_array {
+		return 'an array'
+	}
+	zr_x := zr_j.scalar
+	if zr_x is string {
+		return 'string'
+	}
+	if zr_x is bool {
+		return 'bool'
+	}
+	if zr_x is json2.Null {
+		return 'null'
+	}
+	return 'number'
 }
 
-pub fn zjson_append_str(zr_j json2.Any, zr_v string) json2.Any {
-	return zjson_append(zr_j, json2.Any(zr_v))
+// the node's level in its tree: 1 for a root (and for a detached node),
+// one more for each container above it
+fn zjson_level(zr_j &ZJson) int {
+	mut zr_n := 1
+	unsafe {
+		mut zr_p := zr_j.parent
+		for !isnil(zr_p) {
+			zr_n++
+			zr_p = zr_p.parent
+		}
+	}
+	return zr_n
 }
 
-pub fn zjson_append_int(zr_j json2.Any, zr_v i64) json2.Any {
-	return zjson_append(zr_j, json2.Any(zr_v))
+// a scalar 0, a container one more than its deepest child
+fn zjson_depth(zr_j &ZJson) int {
+	if zr_j.kind == zjk_scalar {
+		return 0
+	}
+	mut zr_d := 0
+	for _, zr_v in zr_j.obj {
+		zr_c := zjson_depth(zr_v)
+		if zr_c > zr_d {
+			zr_d = zr_c
+		}
+	}
+	for zr_v in zr_j.arr {
+		zr_c := zjson_depth(zr_v)
+		if zr_c > zr_d {
+			zr_d = zr_c
+		}
+	}
+	return zr_d + 1
 }
 
-pub fn zjson_append_float(zr_j json2.Any, zr_v f64) json2.Any {
-	return zjson_append(zr_j, json2.Any(zr_v))
+// the snapshot a put / append stores: a tree of its own under `zr_parent`
+fn zjson_copy(zr_j &ZJson, zr_parent &ZJson) &ZJson {
+	mut zr_n := &ZJson{
+		kind:   zr_j.kind
+		scalar: zr_j.scalar
+		parent: unsafe { zr_parent }
+	}
+	for zr_k, zr_v in zr_j.obj {
+		zr_n.obj[zr_k] = zjson_copy(zr_v, zr_n)
+	}
+	for zr_v in zr_j.arr {
+		zr_n.arr << zjson_copy(zr_v, zr_n)
+	}
+	return zr_n
 }
 
-pub fn zjson_append_bool(zr_j json2.Any, zr_v bool) json2.Any {
-	return zjson_append(zr_j, json2.Any(zr_v))
+fn zjson_want_object(zr_j &ZJson) {
+	if zr_j.kind != zjk_object {
+		zbr_panic('Json: put on ' + zjson_kind_name(zr_j) + ' -- put sets a member of an object; an array takes append(v)')
+	}
+}
+
+fn zjson_want_array(zr_j &ZJson) {
+	if zr_j.kind != zjk_array {
+		zbr_panic('Json: append on ' + zjson_kind_name(zr_j) + ' -- append adds an element to an array; an object takes put(k, v)')
+	}
+}
+
+// the member set: a replaced key keeps its position (V's map) and the node
+// it held is detached -- a handle to it keeps the old value, a root now
+fn zjson_set(zr_j &ZJson, zr_k string, zr_c &ZJson) {
+	mut zr_m := unsafe { zr_j }
+	if zr_k in zr_m.obj {
+		mut zr_old := zr_m.obj[zr_k] or { unsafe { nil } }
+		if !isnil(zr_old) {
+			zr_old.parent = unsafe { nil }
+		}
+	}
+	zr_m.obj[zjson_own(zr_k)] = unsafe { zr_c }
+}
+
+fn zjson_push(zr_j &ZJson, zr_c &ZJson) {
+	mut zr_m := unsafe { zr_j }
+	zr_m.arr << unsafe { zr_c }
+}
+
+// put / append of a JsonValue: a SNAPSHOT (BUG-722), taken before it is
+// stored, so a value put into itself, or a root put under its own child,
+// stores what it held before the call
+pub fn zjson_put(zr_j &ZJson, zr_k string, zr_v &ZJson) {
+	zjson_want_object(zr_j)
+	if zjson_level(zr_j) + zjson_depth(zr_v) > zjson_max_depth {
+		zbr_panic(zjson_too_deep_msg)
+	}
+	zjson_set(zr_j, zr_k, zjson_copy(zr_v, zr_j))
+}
+
+pub fn zjson_put_str(zr_j &ZJson, zr_k string, zr_v string) {
+	zjson_want_object(zr_j)
+	zjson_set(zr_j, zr_k, zjson_leaf(json2.Any(zjson_own(zr_v)), zr_j))
+}
+
+pub fn zjson_put_int(zr_j &ZJson, zr_k string, zr_v i64) {
+	zjson_want_object(zr_j)
+	zjson_set(zr_j, zr_k, zjson_leaf(json2.Any(zr_v), zr_j))
+}
+
+pub fn zjson_put_float(zr_j &ZJson, zr_k string, zr_v f64) {
+	zjson_want_object(zr_j)
+	zjson_set(zr_j, zr_k, zjson_leaf(json2.Any(zr_v), zr_j))
+}
+
+pub fn zjson_put_bool(zr_j &ZJson, zr_k string, zr_v bool) {
+	zjson_want_object(zr_j)
+	zjson_set(zr_j, zr_k, zjson_leaf(json2.Any(zr_v), zr_j))
+}
+
+pub fn zjson_append(zr_j &ZJson, zr_v &ZJson) {
+	zjson_want_array(zr_j)
+	if zjson_level(zr_j) + zjson_depth(zr_v) > zjson_max_depth {
+		zbr_panic(zjson_too_deep_msg)
+	}
+	zjson_push(zr_j, zjson_copy(zr_v, zr_j))
+}
+
+pub fn zjson_append_str(zr_j &ZJson, zr_v string) {
+	zjson_want_array(zr_j)
+	zjson_push(zr_j, zjson_leaf(json2.Any(zjson_own(zr_v)), zr_j))
+}
+
+pub fn zjson_append_int(zr_j &ZJson, zr_v i64) {
+	zjson_want_array(zr_j)
+	zjson_push(zr_j, zjson_leaf(json2.Any(zr_v), zr_j))
+}
+
+pub fn zjson_append_float(zr_j &ZJson, zr_v f64) {
+	zjson_want_array(zr_j)
+	zjson_push(zr_j, zjson_leaf(json2.Any(zr_v), zr_j))
+}
+
+pub fn zjson_append_bool(zr_j &ZJson, zr_v bool) {
+	zjson_want_array(zr_j)
+	zjson_push(zr_j, zjson_leaf(json2.Any(zr_v), zr_j))
+}
+
+// the zero value of a JsonValue field or local: JSON null
+pub fn zjson_null() &ZJson {
+	return &ZJson{
+		kind:   zjk_scalar
+		scalar: json2.Any(json2.Null{})
+	}
+}
+
+// a Json value received as an int, a float or a bool (`var n: int = j["k"]?`):
+// json2's own conversion of a scalar; a container is 0 / false
+pub fn zjson_as_int(zr_j &ZJson) i64 {
+	if zr_j.kind != zjk_scalar {
+		return 0
+	}
+	return zr_j.scalar.i64()
+}
+
+pub fn zjson_as_float(zr_j &ZJson) f64 {
+	if zr_j.kind != zjk_scalar {
+		return 0
+	}
+	return zr_j.scalar.f64()
+}
+
+pub fn zjson_as_bool(zr_j &ZJson) bool {
+	if zr_j.kind != zjk_scalar {
+		return false
+	}
+	return zr_j.scalar.bool()
 }
 
 // ── Random: a seeded generator (xoshiro256++, seeded by splitmix64 as Zig's

@@ -534,7 +534,7 @@ class VGen
         if name == "char": return "rune"   # a codepoint (BUG-712: it was u8, and chars() yielded bytes)
         if name == "void": return ""
         if name == "StringBuilder": return "&ZStringBuilder"
-        if name == "Json" or name == "JsonValue": return "json2.Any"   # by value, as Zig's std.json.Value
+        if name == "Json" or name == "JsonValue": return "&ZJson"   # a shared handle to a node of the runtime's own tree (BUG-751; x.json2's Any by value until 2026-11-16)
         if .aliases.get(name) as at
             return .vType(at)   # `type Alias = Base`: the base, wherever named
         if .sig_canon.get(name) as owner
@@ -648,6 +648,18 @@ class VGen
             var payload: str = vt.substring(1, vt.len)
             return "zunwrap_at[" + payload + "](zopt_id[" + payload + "](" + rendered + "), " + .vStringLit(at) + ")"
         return "zunwrap_at(zopt_id(" + rendered + "), " + .vStringLit(at) + ")"
+
+    # `j.put(k, v)` / `j.append(v)` and their typed forms as the runtime's call on
+    # the handle; put / append take a JsonValue or a string, the last argument's
+    # type deciding which
+    def jsonPutCall(member: str, recv: str, args: List(Arg)): str
+        var helper: str = "zjson_" + snakeCase(member)
+        if (member == "put" or member == "append") and args.count() > 0
+            var lastArg = args.at(args.count() - 1).value
+            var lt: str = .vTypeOf(lastArg)
+            if lt == "string" or isStringLit(lastArg)
+                helper = helper + "_str"
+        return helper + "(" + recv + ", " + .argsStr(args) + ")"
 
     def jsonTry(kind: str, obj: str, args: List(Arg), ja: str): str
         if args.count() == 1
@@ -1526,6 +1538,8 @@ class VGen
         if t == nil
             return false
         var vt: str = .vType(t)
+        if vt == "&ZJson"
+            return false   # a JsonValue is a handle the runtime changes through as it is: `j &ZJson`, no `mut` at the call
         return vt.startsWith("&") or .isIfaceName(vt)   # (an interface value is a pointer; a method on it needs mut)
 
     def genParams(params: List(Param)): str
@@ -2063,12 +2077,12 @@ class VGen
                                 return "bool"
                         if jowner == "Json"
                             if cm.member == "parse"
-                                return "?json2.Any"
+                                return "?&ZJson"
                             if cm.member == "object" or cm.member == "array"
-                                return "json2.Any"
-                        if ot == "json2.Any" or (ot == "" and isJsonOnlyMethod(cm.member))
+                                return "&ZJson"
+                        if ot == "&ZJson" or (ot == "" and isJsonOnlyMethod(cm.member))
                             if cm.member == "get" or cm.member == "tryObj"
-                                return "?json2.Any"
+                                return "?&ZJson"
                             if cm.member == "tryStr"
                                 return "?string"
                             if cm.member == "tryInt"
@@ -2078,11 +2092,11 @@ class VGen
                             if cm.member == "tryBool"
                                 return "?bool"
                             if cm.member == "tryList"
-                                return "?&ZList[json2.Any]"
+                                return "?&ZList[&ZJson]"
                             if cm.member == "keys"
                                 return "&ZList[string]"
                             if cm.member == "values"
-                                return "&ZList[json2.Any]"
+                                return "&ZList[&ZJson]"
                         if cm.member == "bytes" and c.args.count() == 0 and (ot == "string" or ot == "")
                             return "&ZList[u8]"
                         if cm.member == "chars" and c.args.count() == 0 and (ot == "string" or ot == "")
@@ -2153,8 +2167,8 @@ class VGen
                 return "rune"
             on Expr.index as ix
                 var ixo: str = .vTypeOf(ix.object)
-                if ixo == "json2.Any" or ixo == "!json2.Any"
-                    return "!json2.Any"   # a subscript on a Json value is a result (`j[k]?`); a chain too
+                if ixo == "&ZJson" or ixo == "!&ZJson"
+                    return "!&ZJson"   # a subscript on a Json value is a result (`j[k]?`); a chain too
                 if ixo.startsWith("&ZList[")
                     return .elemOf(ixo)
                 if ixo == "string"
@@ -2199,10 +2213,10 @@ class VGen
                 if bn.op == BinaryOp.dotdot
                     return ""
                 var blt: str = .vTypeOf(bn.left)
-                if blt != "" and blt != "json2.Any"
+                if blt != "" and blt != "&ZJson"
                     return blt
                 var brt: str = .vTypeOf(bn.right)
-                if brt != "json2.Any"
+                if brt != "&ZJson"
                     return brt
                 return ""
             on Expr.tuple_lit as tl
@@ -2677,17 +2691,12 @@ class VGen
             on Expr.call as c
                 branch c.callee
                     on Expr.member as m
-                        if isJsonPutMethod(m.member) and isNameExpr(m.object) and (.vTypeOf(m.object) == "json2.Any" or (isJsonOnlyMethod(m.member) and .vTypeOf(m.object) == ""))
-                            # `j.put(k, v)` -> `j = zjson_put(j, k, v)`: the value semantics kept
-                            var jobj: str = .exprStr(m.object)
-                            var helper: str = "zjson_" + snakeCase(m.member)
-                            if m.member == "put" or m.member == "append"
-                                # a Json value or a string: the last argument's type decides
-                                var lastArg = c.args.at(c.args.count() - 1).value
-                                var lt: str = .vTypeOf(lastArg)
-                                if lt == "string" or isStringLit(lastArg)
-                                    helper = helper + "_str"
-                            .line(jobj + " = " + helper + "(" + jobj + ", " + .argsStr(c.args) + ")")
+                        if isJsonPutMethod(m.member) and (.vTypeOf(m.object) == "&ZJson" or (isJsonOnlyMethod(m.member) and .vTypeOf(m.object) == ""))
+                            # `j.put(k, v)` -> `zjson_put(j, k, v)`: the value is a handle
+                            # (BUG-751), changed where it is -- through any expression that
+                            # reaches it, a name or not. (Until 2026-11-16 it was json2's Any
+                            # by value and this wrote `j = zjson_put(j, k, v)`.)
+                            .line(.jsonPutCall(m.member, .exprStr(m.object), c.args))
                             return
                         # (a call on a call's result: the method emitter binds the
                         # receiver when the call mutates it, with its type)
@@ -3034,7 +3043,7 @@ class VGen
                 .local_types.set(v.name, tname)
             if tname.startsWith("?") and isNilLit(ie)
                 rhs = tname + "(none)"   # `var x: T? = nil`: V types `none` alone as none
-            else if .vTypeOf(ie) == "json2.Any" and (tname == "i64" or tname == "f64" or tname == "bool" or tname == "string" or tname == "&ZList[json2.Any]")
+            else if .vTypeOf(ie) == "&ZJson" and (tname == "i64" or tname == "f64" or tname == "bool" or tname == "string" or tname == "&ZList[&ZJson]")
                 rhs = coerceRendered(rhs, tname)   # (rhs is rendered already: never render twice)
             else if tname == "i64"
                 rhs = "i64(" + rhs + ")"   # (whatever the initializer: `-1` is V's int, a call's i64 is unchanged)
@@ -3068,6 +3077,7 @@ class VGen
         if vt.startsWith("&ZMap["): return "new_zmap" + vt.substring(5, vt.len) + "()"
         if vt.startsWith("&ZSet["): return "new_zset" + vt.substring(5, vt.len) + "()"
         if vt == "&ZStringBuilder": return "new_zstring_builder()"
+        if vt == "&ZJson": return "zjson_null()"
         if vt.startsWith("&"): return vt.substring(1, vt.len) + "{}"
         return vt + "{}"
 
@@ -3326,9 +3336,9 @@ class VGen
                 .popLocal(fi.vars.at(0))
                 return
         var iter_s: str = .exprStr(fi.iter)
-        if .vTypeOf(fi.iter) == "json2.Any"
+        if .vTypeOf(fi.iter) == "&ZJson"
             iter_s = "zjson_list(" + iter_s + ")"   # a Json array iterated
-            .local_types.set(fi.vars.at(0), "json2.Any")
+            .local_types.set(fi.vars.at(0), "&ZJson")
         if not .isLocalIdent(fi.iter)
             # an expression iterated (a call, an unwrap, an orelse): bound first --
             # V's C for `(expr or { ... }).items` in a for header did not compile.
@@ -3375,6 +3385,8 @@ class VGen
         var ct: str = .vTypeOf(e)
         if ct == "rune"
             return "zchar_str(" + rendered + ")"
+        if ct == "&ZJson"
+            return "zjson_stringify(" + rendered + ")"   # a JsonValue as text is its JSON text (BUG-751's rule 14)
         if .isContainerType(ct)
             return .showContainer(ct, rendered)
         if .isShownType(ct)
@@ -3391,7 +3403,7 @@ class VGen
         if not vt.startsWith("?") or vt.len < 2
             return false
         var inner: str = vt.substring(1, vt.len)
-        return inner == "string" or inner == "rune" or inner == "i64" or inner == "u8" or inner == "byte" or inner == "bool" or inner == "f64" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
+        return inner == "string" or inner == "rune" or inner == "i64" or inner == "u8" or inner == "byte" or inner == "bool" or inner == "f64" or inner == "&ZJson" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
 
     # a class or a struct by its V type (`&Pt`, `Rgb`): what print, a hole and
     # toString() give the Zig route's text for (BUG-746)
@@ -3448,6 +3460,7 @@ class VGen
         if et == "u8" or et == "byte": return "zshow_byte"   # a List(byte)'s element is spelled `byte` (V's alias of u8)
         if et == "bool": return "zshow_bool"
         if et == "f64": return "zshow_float"
+        if et == "&ZJson": return "zjson_stringify"   # inside a container or an optional too: the JSON text
         var key: str = et
         if not quoted
             key = et + " (bare)"
@@ -3552,11 +3565,11 @@ class VGen
                 return .callStr(c)
             on Expr.index as ix
                 var ixt: str = .vTypeOf(ix.object)
-                if ixt == "json2.Any" or ixt == "!json2.Any"
+                if ixt == "&ZJson" or ixt == "!&ZJson"
                     # a chained index (`j["a"]["b"]`): the inner is a result, propagated
                     # with `!` -- the chain is one throwing expression under its one `?`
                     var jobj: str = .exprStr(ix.object)
-                    if ixt == "!json2.Any"
+                    if ixt == "!&ZJson"
                         jobj = jobj + "!"
                     var kt: str = .vTypeOf(ix.index)
                     if kt == "string"
@@ -3628,7 +3641,7 @@ class VGen
                     b = .exprStr(sp)
                 return .exprStr(sl.object) + "[int(" + a + ")..int(" + b + ")]"   # int bounds: an i64 bound panics in range under MSVC, with or without -prod (vlang/v#30352)
             on Expr.cast as ca
-                if .vTypeOf(ca.expr) == "json2.Any"
+                if .vTypeOf(ca.expr) == "&ZJson"
                     return .coerced(ca.expr, .vType(ca.target))
                 return .vType(ca.target) + "(" + .exprStr(ca.expr) + ")"
             on Expr.chained_cmp as cc
@@ -4117,6 +4130,8 @@ class VGen
                         .refused.add("a format spec (" + spec + ") on a char (mapped: none, c, x, X, d and a width)")
                         out = out + "\${zchar_str(" + .exprStr(ex) + ")}"
                         i = i + 1
+                    else if spec == "" and .vTypeOf(ex) == "&ZJson"
+                        out = out + "\${zjson_stringify(" + .exprStr(ex) + ")}"   # a JsonValue in a hole: its JSON text
                     else if spec == "" and .isContainerType(.vTypeOf(ex))
                         # a container in a hole: the Zig route's spelling (BUG-723)
                         out = out + "\${" + .showContainer(.vTypeOf(ex), .exprStr(ex)) + "}"
@@ -4386,7 +4401,7 @@ class VGen
                 .local_names.add(tn)
                 s = tn
             .narrowed_or_used = false
-        if .vTypeOf(e) == "json2.Any"
+        if .vTypeOf(e) == "&ZJson"
             return coerceRendered(s, want)
         if .isSigName(want) and isLambdaExpr(e)
             return want + "(" + s + ")"   # the named function type: V instantiates generics by the lambda's anonymous type otherwise
@@ -4619,7 +4634,7 @@ class VGen
             return obj + ".f64()"
         if rtype == "&ZStringBuilder" and name == "toString" and args.count() == 0
             return obj + ".build()"   # a builder's text, not V's struct printer
-        if rtype == "json2.Any" or (rtype == "" and isJsonOnlyMethod(name))
+        if rtype == "&ZJson" or (rtype == "" and isJsonOnlyMethod(name))
             var ja: str = .argsStr(args)
             if name == "get" and args.count() == 1: return "zjson_get(" + obj + ", " + ja + ")"
             if name == "has" and args.count() == 1: return "zjson_has(" + obj + ", " + ja + ")"
@@ -4636,10 +4651,9 @@ class VGen
             if name == "isNull": return "zjson_is_null(" + obj + ")"
             if name == "isObject": return "zjson_is_object(" + obj + ")"
             if name == "isArray": return "zjson_is_array(" + obj + ")"
-            if name == "stringify" or name == "toString": return obj + ".json_str()"
+            if name == "stringify" or name == "toString": return "zjson_stringify(" + obj + ")"
             if isJsonPutMethod(name)
-                .refuse("Json." + name + " on a value that is not a name (the put family rewrites `j.put(k, v)` as `j = zjson_put(j, k, v)`)", span)
-                return obj
+                return .jsonPutCall(name, obj, args)
         # a map's or a set's toString(): the text print gives it (BUG-723; the contract is
         # the print spelling -- BUG-743 is the Zig route catching up to it)
         if (rtype.startsWith("&ZMap[") or rtype.startsWith("&ZSet[")) and name == "toString" and args.count() == 0
@@ -4796,7 +4810,7 @@ class VGen
             if name == "parse": return "zjson_parse(" + a + ")"
             if name == "object": return "zjson_object()"
             if name == "array": return "zjson_array()"
-            if name == "stringify": return "(" + a + ").json_str()"
+            if name == "stringify": return "zjson_stringify(" + a + ")"
             .refuse("Json." + name, span)
             return "zjson_" + snakeCase(name) + "(" + a + ")"
         if ns == "Sqlite"
@@ -5466,11 +5480,11 @@ def endsWithExit(stmts: List(Stmt)): bool
 
 # a rendered Json value converted to the receiving type
 def coerceRendered(s: str, want: str): str
-    if want == "i64": return s + ".i64()"
-    if want == "f64": return s + ".f64()"
-    if want == "bool": return s + ".bool()"
+    if want == "i64": return "zjson_as_int(" + s + ")"
+    if want == "f64": return "zjson_as_float(" + s + ")"
+    if want == "bool": return "zjson_as_bool(" + s + ")"
     if want == "string": return "zjson_str(" + s + ")"
-    if want == "&ZList[json2.Any]": return "zjson_list(" + s + ")"   # a Json array as a List(JsonValue)
+    if want == "&ZList[&ZJson]": return "zjson_list(" + s + ")"   # a Json array as a List(JsonValue)
     return s
 
 def isLambdaExpr(e: Expr): bool
