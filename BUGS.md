@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-753. Next new bug: BUG-754.**
+**Last bug number generated: BUG-755. Next new bug: BUG-756.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -307,25 +307,6 @@
 
 ---
 
-### BUG-751: `var q = p` for a JsonValue shares some changes and not others
-- **Status:** OPEN (filed 2026-11-15; found writing BUG-722's fixture)
-- **Repro:** `var p = Json.object()`, `p.putInt("a", 1)`, `var q = p`, `q.putInt("a", 2)`,
-  `q.putInt("b", 3)`: `p` prints `{"a":2}` and `q` `{"a":2,"b":3}` -- the changed key is seen
-  through `p`, the new one is not. An array: `ys = xs; ys.appendInt(2)` leaves `xs` at `[1]`.
-- **Cause:** a JsonValue is a tagged union copied by value whose object/array storage is shared,
-  so a store that fits in place writes the shared entries while each copy keeps its own count.
-  Before BUG-722 a store that GREW the map also freed the storage the other copy still read (a
-  use-after-free: after 8 keys, `p.tryInt("k0")` came back nil); since BUG-722 a full map is
-  copied and the old storage left alone, so it is only the semantics that is split.
-- **Decided (Sean, 2026-11-15): a SHARED HANDLE**, like a List since BUG-501 -- every change is
-  seen through every name, and `get()` hands out a handle into the parent. `put`/`append` of a
-  JsonValue stay a snapshot (BUG-722). The V route builds its own JSON tree for it (Fable: V's
-  json2.Any cannot be shared), with BUG-722's depth and wrong-kind rules put straight into it.
-- **Control when fixing:** both `p` and `q` print `{"a":2,"b":3}`; a change through a `get()`
-  result is seen in the parent; the BUG-722 fixtures unchanged.
-
----
-
 ### BUG-753: a class field `HashMap(str, C) = {}` passes `-c` and fails inside zig
 - **Status:** OPEN (filed 2026-11-15; found by Fable on the V route's side of the engine work)
 - **Repro:** `class Reg` with `var by: HashMap(str, Node) = {}` (`Node` a class), `Reg()`, then
@@ -338,6 +319,22 @@
   route refuses `= {}` and `= []` there by name; matching the Zig route is the other option).
 - **Control when fixing:** the repro prints `1`; `= HashMap(str, Node)()` unchanged; an empty
   `= []` default on a `List(Node)` field checked the same way.
+
+---
+
+### BUG-755: a name a Zig PRIMITIVE TYPE owns, bound by `if x as NAME`, is emitted bare and zig refuses it
+- **Status:** OPEN (filed 2026-11-16; found by Fable running a BUG-751 draft that bound `as u2`)
+- **Repro:** `def f(): int?` returning 3, then `if f() as u2` / `print(u2)`. `-c` exits 0; the
+  build fails `error: name shadows primitive 'u2'` at the `if` line. The emit is
+  `if (_zbr_fn_f()) |u2| {` while the body's use is `@"u2"` -- the capture alone is not escaped.
+  A local (`var u8 = 1`) and a `for i37 in ...` variable are both escaped and work.
+- **The V route accepts the program, correctly** -- the name is legal Zebra; the refusal is
+  zig's, reached through an unescaped emit (a leak, the leakgen class), not a language rule.
+- **Fix shape:** the `if`/`elif` capture goes through `emitName` like the other binders; the
+  site map comes from emitting every binder (`if as`, `elif as`, `while as`, `branch ... as`,
+  `catch |e|`, destructuring, lambda params) with a primitive-type name, keyword_ident_check's
+  method, and the fixture joins that gate.
+- **Control when fixing:** the repro prints `3`; `var u8` / `for i37` unchanged.
 
 ---
 

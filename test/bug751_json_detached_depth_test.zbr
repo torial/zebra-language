@@ -1,0 +1,18 @@
+# BUG-751: a child detached by replacing its key is the root of its own tree, so the 256-level
+# limit counts from it: a 255-deep value under it is legal (bug751_json_handle_test), one level
+# more (256 under a root = 257) is refused with BUG-722's message.
+
+def main()
+    var deep = Json.array()
+    var level = 1
+    while level < 256
+        var next = Json.array()
+        next.append(deep)
+        deep = next
+        level += 1
+    var host = Json.object()
+    host.put("child", Json.object())
+    if host.get("child") as old
+        host.putInt("child", 0)
+        old.put("deep", deep)
+    print("SURVIVED: a 257-level tree was built under a detached handle")

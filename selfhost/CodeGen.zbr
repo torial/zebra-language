@@ -7053,40 +7053,25 @@ struct Generator
         w.emit("    " + safetyStmt() + "\n")
         w.emit("    const _v = _json_parse(_src) orelse return null;\n")
         w.emit("    if (!_json_is_object(_v)) return null;\n")
-        if f_names.len > 0
-            w.emit("    var _it = _v.object.iterator();\n")
-            w.emit("    while (_it.next()) |_e| {\n")
-            w.emit("        const _k = _e.key_ptr.*;\n")
-            w.emit("        const _known = ")
-            var i = 0
-            while i < f_names.len
-                if i > 0
-                    w.emit(" or ")
-                w.emit("std.mem.eql(u8, _k, \"")
-                w.emit(f_names.at(i))
-                w.emit("\")")
-                i = i + 1
-            w.emit(";\n")
-            w.emit("        if (!_known) return null;\n")
-            w.emit("    }\n")
-        else
-            w.emit("    if (_v.object.count() != 0) return null;\n")
+        # BUG-751: through runtime helpers -- the emitted parser named std.json.Value's
+        # fields and tags itself, which bound user code to the representation.
+        w.emit("    if (!_json_only_keys(_v, &.{")
+        var i = 0
+        while i < f_names.len
+            if i > 0
+                w.emit(", ")
+            w.emit("\"")
+            w.emit(f_names.at(i))
+            w.emit("\"")
+            i = i + 1
+        w.emit("})) return null;\n")
         var j = 0
         while j < f_names.len
-            var nm = f_names.at(j)
-            var kd = f_kinds.at(j)
-            w.emit("    { const _x = _v.object.get(\"")
-            w.emit(nm)
-            w.emit("\") orelse return null;\n      switch (_x) { ")
-            if kd == "int"
-                w.emit(".integer => {}, else => return null")
-            else if kd == "float"
-                w.emit(".float, .integer => {}, else => return null")
-            else if kd == "bool"
-                w.emit(".bool => {}, else => return null")
-            else
-                w.emit(".string => {}, else => return null")
-            w.emit(" } }\n")
+            w.emit("    if (!_json_field_is(_v, \"")
+            w.emit(f_names.at(j))
+            w.emit("\", \"")
+            w.emit(f_kinds.at(j))
+            w.emit("\")) return null;\n")
             j = j + 1
         w.emit("    const _r = _allocator.create(")
         emitTypeName(n.name)                                # BUG-281 B

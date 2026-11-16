@@ -6,6 +6,93 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-751: `var q = p` for a JsonValue shares some changes and not others -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed 2026-11-15; found writing BUG-722's fixture)
+- **Repro:** `var p = Json.object()`, `p.putInt("a", 1)`, `var q = p`, `q.putInt("a", 2)`,
+  `q.putInt("b", 3)`: `p` prints `{"a":2}` and `q` `{"a":2,"b":3}` -- the changed key is seen
+  through `p`, the new one is not. An array: `ys = xs; ys.appendInt(2)` leaves `xs` at `[1]`.
+- **Cause:** a JsonValue is a tagged union copied by value whose object/array storage is shared,
+  so a store that fits in place writes the shared entries while each copy keeps its own count.
+  Before BUG-722 a store that GREW the map also freed the storage the other copy still read (a
+  use-after-free: after 8 keys, `p.tryInt("k0")` came back nil); since BUG-722 a full map is
+  copied and the old storage left alone, so it is only the semantics that is split.
+- **Decided (Sean, 2026-11-15): a SHARED HANDLE**, like a List since BUG-501 -- every change is
+  seen through every name, and `get()` hands out a handle into the parent. `put`/`append` of a
+  JsonValue stay a snapshot (BUG-722). The V route builds its own JSON tree for it (Fable: V's
+  json2.Any cannot be shared), with BUG-722's depth and wrong-kind rules put straight into it.
+- **Control when fixing:** both `p` and `q` print `{"a":2,"b":3}`; a change through a `get()`
+  result is seen in the parent; the BUG-722 fixtures unchanged.
+- **Fix (Sean: a SHARED HANDLE; rules 1-14 agreed with Fable, C:\tmp\bug751\design.md):**
+  `JsonValue` is a pointer to `_ZbrJsonNode` -- a payload with std.json.Value's tag names, a
+  `parent` pointer, and an `own` flag (the container's storage came from `_json_alloc()` and may
+  grow there; a parsed container's storage is the parse arena's and is copied there on its first
+  growth, as BUG-722 did for maps). Children are pointers, so assignment, parameters and fields
+  share, and `get` / `tryObj` / `v[k]?` / `tryList`'s elements are handles into the parent that
+  survive its growth (`tryList`'s List is new). Replacing a key SWAPS the node in place and nils
+  the old node's `parent`: a handle to it keeps a detached tree of its own. Depth counts from the
+  ROOT through `parent` (`_json_level`), so a store through a handle cannot pass 256 levels, and a
+  detached handle counts from 1 again. `put`/`append` of a JsonValue still store a snapshot. A
+  replaced node is never freed (a handle may hold it). Parsing is std.json's Scanner built
+  straight into nodes (same grammar, `Value.parseFromNumberSlice`, allocated strings, duplicate
+  key refused) -- no std tree built and copied; writing is `Value.jsonStringify`'s calls node by
+  node, so the text is std.json's byte for byte. The builders take the handle or `&handle` (the
+  emit's old shape, so the previous-generation compiler still type-checks). `<<-` of a JsonValue
+  copies the tree below it into the parent allocator (the generic pointer arm would have copied
+  one node and followed `parent` up). The @reflectable `Json.parseStrict` emitter named
+  std.json's fields and tags in USER code; it calls `_json_only_keys` / `_json_field_is` now.
+- **Found fixing it:** `put` through a JsonValue PARAMETER (`def addTag(j: JsonValue, t: str)` /
+  `j.put("tag", t)`) passed `-c` and failed inside zig (`*const` vs `*`, measured on the 45b6a0a
+  compiler); it compiles and the caller sees the tag now.
+- **Measured before landing:** the emitted-code survey (a 70-line probe using every member,
+  `v[k]?` / `v[i]?` annotated and not, conversions, fields with and without defaults, optionals,
+  List / HashMap of JsonValue, print / hole / toString, and the compiler's own selfhost/*.zig)
+  found user code touching the representation only in the parseStrict emitter; the probe's
+  stringify output is byte-identical to the old runtime's. pocket-lab-manager rebuilt with the new
+  compiler: `plm version`, `update --check`, `status`, `models` against the device print the same
+  67 lines as the old binary (timings aside). The GameEngine's host code names no runtime
+  JsonValue (Fable, file by file).
+- **Pinned by:** `test/bug751_json_handle_test.zbr` (`smoke_run`, 20 checks: assignment of an
+  object and an array, 40 stores through an alias, a parameter, get / tryObj / tryList handles,
+  the List being new, a handle surviving 40 puts on its parent, replace-detaches + the parent's new
+  value, 255 levels under a detached handle, `v[k]?` / `v[i]?` / a List(JsonValue) conversion as
+  handles, a handle storing its own root, put still copying, key order on replace, and BUG-754's
+  three text forms). `test/bug751_json_handle_depth_test.zbr` and
+  `test/bug751_json_detached_depth_test.zbr` (`smoke_run_fail`, BUG-722's message). The same three
+  files run on the V route (Fable's `json` row, 20 checks). Red-checked with seven runtime mutants,
+  each the failure a guard exists to stop: get returning a copy (get-handle, tryObj-handle WRONG),
+  replace overwriting the node (panics "put on string"), no detach (detached-depth refused),
+  builders writing a copy (assign-* WRONG), tryList elements copied (tryList-elements WRONG), no
+  `toString` (the text checks print `_ZbrJsonNode{...}`), depth from the receiver (the depth
+  fixture prints SURVIVED).
+- **Not covered:** concurrent mutation of one JsonValue from two threads (shared now, unlocked --
+  as a List); memory of replaced nodes (kept by design).
+
+---
+
+### BUG-754: a JsonValue printed whole shows std.json's debug form, and the two routes differ -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed 2026-11-16; agreed with Fable while designing BUG-751)
+- **Repro:** `var o = Json.object()`, `o.put("a", "b")`, `o.putInt("n", 2)`; `print(o)`,
+  `print("${o}")` and `print(o.toString())` each print `object({a: string("b"), n:
+  integer(2)})` on the Zig route -- std.json.Value's debug text; a string read out with `get`
+  prints `string("b")`. Only `stringify()` is JSON. On the V route `toString()` is the JSON
+  text while `print(o)` and `"${o}"` are V's own dump of its sum type.
+- **Decided (BUG-751 rule 14, Opus + Fable, 2026-11-16):** all three are exactly `stringify()`
+  on both routes; a string node prints `"b"` WITH its quotes (it is JSON text; `tryStr` gets the
+  string). A JsonValue inside a printed List or optional prints the same way.
+- **Measured:** no program in `tools/output_baseline.txt` prints a JsonValue whole (the debug
+  spellings `object({`, `string("`, `integer(`, `array([` were grepped, control planted), so
+  the fix is expected to move no baselined output.
+- **Lands with BUG-751's Zig flip**, which replaces std.json.Value as the representation.
+- **Control when fixing:** the three forms print `{"a":"b","n":2}`; `stringify()` unchanged.
+- **Fix:** `_ZbrJsonNode.toString` returns `_json_stringify(self)`, and `_zbr_show`'s pointer arm
+  already calls a `toString` the pointee declares -- so `print(v)`, `"${v}"`, `v.toString()` and a
+  JsonValue inside a printed List or optional all give `stringify()`'s text; a string node prints
+  `"b"`. Landed with BUG-751's representation; the V route the same (Fable, 14df540/9fd4d55).
+- **Pinned by:** the text-toString / text-hole / text-string-node checks and `print(tx)` in
+  `test/bug751_json_handle_test.zbr`; red with `toString` removed.
+
+---
+
 ### BUG-750: a List grown inside an `allocate` block that it was declared outside reads freed memory after the block -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (filed 2026-11-15; found while choosing BUG-722's allocator)
 - **Repro:** `var nums: List(int) = List(int)()`, then `allocate Arena()` with `nums.add(i)` for

@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A JsonValue is a shared handle (BUG-751).** Assignment, parameters and fields share it, and
+  a value read out of an object or array (`get`, `tryObj`, `v[k]?`, `tryList`'s elements) is a
+  handle into it, so a change through it is seen in the parent -- before, a store through a
+  second name was seen or not depending on whether the container had room. `put`/`append` of a
+  JsonValue still store a copy (BUG-722). Replacing a key leaves an old handle holding the old
+  value; the 256-level limit counts from the root of the tree. `put` through a JsonValue
+  parameter now compiles (it failed inside zig). Same on the V route.
+- **A JsonValue prints as its JSON (BUG-754).** `print(v)`, `"${v}"` and `v.toString()` printed
+  std.json's debug form (`object({a: string("b")})`); they now print what `stringify()` does,
+  on both routes. A string value prints with its quotes.
 - **Growing an outer list inside an `allocate` block is a compile error (BUG-750).** A `List`
   or `StringBuilder` made outside a scoped block and grown inside it (`add`, `append`,
   `reserve`, `appendChar`) grew in the block's memory and lost its buffer at the block's end

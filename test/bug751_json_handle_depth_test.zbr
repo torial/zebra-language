@@ -1,0 +1,19 @@
+# BUG-751: with handles, a store can reach a tree through a value read out of it. The 256-level
+# limit (BUG-722) counts from the tree's ROOT, not from the receiver: storing a 255-deep value
+# under a handle that is itself the root's child makes the tree 257 deep, and is refused.
+
+def main()
+    var deep = Json.array()
+    var level = 1
+    while level < 255
+        var next = Json.array()
+        next.append(deep)
+        deep = next
+        level += 1
+    var root = Json.object()
+    root.put("child", Json.object())
+    root.put("ok", deep)
+    print("stored 255 levels under the root: tree is 256")
+    if root.get("child") as c
+        c.put("deep", deep)
+    print("SURVIVED: a 257-level tree was built through a handle")

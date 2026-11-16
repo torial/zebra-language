@@ -2553,7 +2553,41 @@ pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
     }
     return dt; // Unknown zone: return as-is (UTC)
 }
-pub const JsonValue = std.json.Value;
+// BUG-751 (Sean, 2026-11-15; rules agreed with Fable 2026-11-16, docs in BUGS_FIXED): a
+// JsonValue is a SHARED HANDLE -- a pointer to a node. Assignment and parameters share it;
+// `get`, `tryObj`, `v[k]?` and the elements of `tryList` are handles INTO the parent (the List
+// itself is new); put/append of a JsonValue store a SNAPSHOT (BUG-722). Children are pointers,
+// so a handle survives its parent growing. Replacing a key SWAPS the node: a handle to the old
+// child keeps it, detached, the root of a tree of its own (its `parent` goes nil). Depth (the
+// 256 levels Json.parse holds to) counts from the ROOT through `parent`, so a store through a
+// handle deep in a tree cannot get past it. A replaced node is never freed: a handle may still
+// hold it. As text a node is its JSON (BUG-754): `toString` makes `print`, `"${j}"` and a
+// printed List say what `stringify()` says.
+// The payload keeps std.json.Value's tag names and scalar spellings, so parsing and writing
+// follow std.json exactly (Value.parseFromNumberSlice, Value.jsonStringify's calls).
+pub const _ZbrJsonData = union(enum) {
+    null,
+    bool: bool,
+    integer: i64,
+    float: f64,
+    number_string: []const u8,
+    string: []const u8,
+    array: std.ArrayList(*_ZbrJsonNode),
+    object: std.array_hash_map.String(*_ZbrJsonNode),
+};
+pub const _ZbrJsonNode = struct {
+    data: _ZbrJsonData,
+    /// The container this node is stored in; nil for a root (made, parsed, or detached).
+    parent: ?*_ZbrJsonNode = null,
+    /// True when a container's storage came from `_json_alloc()` and may grow there. A parsed
+    /// container's storage is the parse arena's (BUG-556): growing it with another allocator
+    /// freed arena memory (BUG-722), so a full one is copied into `_json_alloc()` instead.
+    own: bool = false,
+    pub fn toString(self: *_ZbrJsonNode) []const u8 {
+        return _json_stringify(self);
+    }
+};
+pub const JsonValue = *_ZbrJsonNode;
 /// The deepest JSON document `Json.parse` accepts (BUG-734): the depth `std.json.Stringify`
 /// can write back -- its nesting stack is 256 levels and ASSERTS past that in Debug and
 /// ReleaseSafe -- so a parsed value can always be stringified. Each `[` or `{` outside a
@@ -2562,7 +2596,8 @@ pub const _json_max_depth: usize = 256;
 /// True when `src` nests no deeper than `_json_max_depth`. A scan of the TEXT, before the
 /// parser sees it, so the answer is the same whatever the parser's own limits. In text the
 /// parser will accept, brackets outside strings balance, so this is that text's real depth;
-/// in text it will refuse, the answer does not matter.
+/// in text it will refuse, the answer does not matter. (It also bounds `_json_parse_node`'s
+/// recursion.)
 pub fn _json_depth_ok(src: []const u8) bool {
     var depth: usize = 0;
     var in_str = false;
@@ -2585,59 +2620,121 @@ pub fn _json_depth_ok(src: []const u8) bool {
     }
     return true;
 }
+// BUG-722: what the BUILDER stores lives in `_zbr_scoped_backing()` -- an allocator that frees
+// and outlives every `allocate` block (the host's under --library-mode) -- so a value put
+// inside a block survives it, as a JsonValue always has.
+fn _json_alloc() std.mem.Allocator {
+    return _zbr_scoped_backing();
+}
+fn _json_new(a: std.mem.Allocator, d: _ZbrJsonData, own: bool) *_ZbrJsonNode {
+    const n = a.create(_ZbrJsonNode) catch @panic("OOM");
+    n.* = .{ .data = d, .own = own };
+    return n;
+}
+// Json.parse: std.json's Scanner, built straight into nodes -- the same grammar, number rule
+// (Value.parseFromNumberSlice), allocated strings and duplicate-key refusal as
+// `parseFromSliceLeaky(std.json.Value, ...)`, which this replaced, without building std's tree
+// first and copying it. BUG-556: built in `_allocator` -- the program arena, or the enclosing
+// `allocate` block's -- like every other value (the page allocator committed 13 GB for the
+// GameEngine's 13 MB of scenes).
+fn _json_parse_node(sc: *std.json.Scanner, a: std.mem.Allocator, tok: std.json.Token, max: usize) anyerror!*_ZbrJsonNode {
+    switch (tok) {
+        .null => return _json_new(a, .null, false),
+        .true => return _json_new(a, .{ .bool = true }, false),
+        .false => return _json_new(a, .{ .bool = false }, false),
+        .allocated_string => |s| return _json_new(a, .{ .string = s }, false),
+        .allocated_number => |s| return _json_new(a, switch (std.json.Value.parseFromNumberSlice(s)) {
+            .integer => |i| .{ .integer = i },
+            .float => |f| .{ .float = f },
+            else => .{ .number_string = s },
+        }, false),
+        .array_begin => {
+            const n = _json_new(a, .{ .array = .empty }, false);
+            while (true) {
+                const t = try sc.nextAllocMax(a, .alloc_always, max);
+                if (t == .array_end) break;
+                const c = try _json_parse_node(sc, a, t, max);
+                c.parent = n;
+                try n.data.array.append(a, c);
+            }
+            return n;
+        },
+        .object_begin => {
+            const n = _json_new(a, .{ .object = .empty }, false);
+            while (true) {
+                switch (try sc.nextAllocMax(a, .alloc_always, max)) {
+                    .object_end => break,
+                    .allocated_string => |key| {
+                        const c = try _json_parse_node(sc, a, try sc.nextAllocMax(a, .alloc_always, max), max);
+                        c.parent = n;
+                        const gop = try n.data.object.getOrPut(a, key);
+                        if (gop.found_existing) return error.DuplicateField;
+                        gop.value_ptr.* = c;
+                    },
+                    else => return error.SyntaxError,
+                }
+            }
+            return n;
+        },
+        else => return error.SyntaxError,
+    }
+}
 pub fn _json_parse(src: []const u8) ?JsonValue {
     if (!_json_depth_ok(src)) return null;
-    // BUG-556: the tree is built in `_allocator` -- the program arena, or the enclosing
-    // `allocate` block's -- like every other value. It was the std page allocator, which
-    // gives EVERY allocation its own page and was never freed: the GameEngine's 13 MB of
-    // scene JSON committed 13 GB in thirty seconds (351 MB through the program allocator).
-    // "Leaky" is now the arena's contract, not a leak: the arena frees it all at once.
-    return std.json.parseFromSliceLeaky(JsonValue, _allocator, src, .{}) catch return null;
+    const a = _allocator;
+    var sc = std.json.Scanner.initCompleteInput(a, src);
+    defer sc.deinit();
+    const first = sc.nextAllocMax(a, .alloc_always, src.len) catch return null;
+    const n = _json_parse_node(&sc, a, first, src.len) catch return null;
+    const end = sc.next() catch return null;
+    if (end != .end_of_document) return null;
+    return n;
 }
 // Object key iteration: with _json_get_opt (`get`), what lets a protocol relay COPY
 // fields it does not understand, whatever their type.
 pub fn _json_keys(v: JsonValue) _ZbrList([]const u8) {
     var _r = _zbr_new(_ZbrList([]const u8));
-    switch (v) {
+    switch (v.data) {
         .object => |o| {
-            var it = o.iterator();
-            while (it.next()) |e| _r.append(std.heap.page_allocator, e.key_ptr.*) catch {};
+            for (o.keys()) |k| _r.append(std.heap.page_allocator, k) catch @panic("OOM");
         },
         else => {},
     }
     return _r;
 }
+// Value.jsonStringify's calls, node by node, so the text is byte for byte what std.json wrote.
+fn _json_write(s: *std.json.Stringify, v: *const _ZbrJsonNode) std.Io.Writer.Error!void {
+    switch (v.data) {
+        .null => try s.write(null),
+        .bool => |b| try s.write(b),
+        .integer => |i| try s.write(i),
+        .float => |f| try s.write(f),
+        .number_string => |ns| try s.print("{s}", .{ns}),
+        .string => |str| try s.write(str),
+        .array => |arr| {
+            try s.beginArray();
+            for (arr.items) |c| try _json_write(s, c);
+            try s.endArray();
+        },
+        .object => |o| {
+            try s.beginObject();
+            var it = o.iterator();
+            while (it.next()) |e| {
+                try s.objectField(e.key_ptr.*);
+                try _json_write(s, e.value_ptr.*);
+            }
+            try s.endObject();
+        },
+    }
+}
 pub fn _json_stringify(v: JsonValue) []const u8 {
     // Its only error is OutOfMemory (BUG-734 replaced a `catch "{}"`: an answer for a
     // failure). The depth assertion inside cannot fire: `_json_parse` refuses past
-    // `_json_max_depth`, and put/append refuse a value that would nest deeper (BUG-722).
-    return std.json.Stringify.valueAlloc(std.heap.page_allocator, v, .{}) catch @panic("OOM");
-}
-// BUG-722: what the BUILDER stores lives in `_zbr_scoped_backing()` -- an allocator that frees
-// and outlives every `allocate` block (the host's under --library-mode) -- so a value put
-// inside a block survives it, as a JsonValue always has. A map is never RESIZED in place: the
-// map a put grows may be a parsed one, whose storage belongs to the arena `_json_parse` built
-// it in (BUG-556), and growing it with another allocator freed arena memory ("incorrect
-// alignment" on the 9th put). A full map is copied into the builder's allocator instead and
-// the copy grows; the old storage is left to its owner.
-fn _json_alloc() std.mem.Allocator {
-    return _zbr_scoped_backing();
-}
-fn _json_obj_room(v: *JsonValue) void {
-    if (v.object.count() < v.object.capacity()) return;
-    var m: std.json.ObjectMap = .empty;
-    m.ensureTotalCapacity(_json_alloc(), @max(8, v.object.count() * 2)) catch @panic("OOM");
-    var it = v.object.iterator();
-    while (it.next()) |e| m.putAssumeCapacity(e.key_ptr.*, e.value_ptr.*);
-    v.object = m;
-}
-fn _json_obj_set(v: *JsonValue, key: []const u8, val: JsonValue) void {
-    if (v.object.getPtr(key)) |slot| {
-        slot.* = val;
-        return;
-    }
-    _json_obj_room(v);
-    v.object.putAssumeCapacity(_json_alloc().dupe(u8, key) catch @panic("OOM"), val);
+    // `_json_max_depth`, and put/append refuse a store that would nest deeper (BUG-722/751).
+    var aw: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    var s: std.json.Stringify = .{ .writer = &aw.writer };
+    _json_write(&s, v) catch @panic("OOM");
+    return aw.toOwnedSlice() catch @panic("OOM");
 }
 // A put on anything but an object, or an append on anything but an array, did nothing: the
 // value was silently not stored (Sean, 2026-11-15: a store that cannot happen is LOUD).
@@ -2650,53 +2747,119 @@ fn _json_append_not_array(v: JsonValue) noreturn {
 fn _json_own_str(s: []const u8) []const u8 {
     return _json_alloc().dupe(u8, s) catch @panic("OOM");
 }
-pub fn _json_object() JsonValue { return .{ .object = std.json.ObjectMap.empty }; }
-pub fn _json_array() JsonValue  { return .{ .array = std.json.Array.init(_json_alloc()) }; }
-pub fn _json_is_null(v: JsonValue) bool   { return v == .null; }
-pub fn _json_is_object(v: JsonValue) bool  { return switch (v) { .object => true, else => false }; }
-pub fn _json_is_array(v: JsonValue) bool   { return switch (v) { .array  => true, else => false }; }
-pub fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
-    if (v.* != .object) _json_put_not_object(v.*);
-    _json_obj_set(v, key, .{ .string = _json_own_str(val) });
+// Room for one more child. A container the builder owns grows in place; a parsed one is copied
+// into `_json_alloc()` first (BUG-722) and owned from then on. The old storage is left to its
+// owner. The NODE does not move, so every handle to it stays good.
+fn _json_room(n: *_ZbrJsonNode) void {
+    switch (n.data) {
+        .array => |*arr| {
+            if (arr.items.len < arr.capacity) return;
+            if (n.own) {
+                arr.ensureUnusedCapacity(_json_alloc(), 1) catch @panic("OOM");
+                return;
+            }
+            var r: std.ArrayList(*_ZbrJsonNode) = .empty;
+            r.ensureTotalCapacity(_json_alloc(), @max(8, arr.items.len * 2)) catch @panic("OOM");
+            r.appendSliceAssumeCapacity(arr.items);
+            arr.* = r;
+        },
+        .object => |*o| {
+            if (o.count() < o.capacity()) return;
+            if (n.own) {
+                o.ensureUnusedCapacity(_json_alloc(), 1) catch @panic("OOM");
+                return;
+            }
+            var m: std.array_hash_map.String(*_ZbrJsonNode) = .empty;
+            m.ensureTotalCapacity(_json_alloc(), @max(8, o.count() * 2)) catch @panic("OOM");
+            var it = o.iterator();
+            while (it.next()) |e| m.putAssumeCapacity(e.key_ptr.*, e.value_ptr.*);
+            o.* = m;
+        },
+        else => unreachable,
+    }
+    n.own = true;
 }
-pub fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
-    if (v.* != .object) _json_put_not_object(v.*);
-    _json_obj_set(v, key, .{ .integer = val });
+// Rule 9: a key that is already there keeps its PLACE and gets the new node; the old node is
+// detached (its `parent` nil), so a handle to it now holds a tree of its own.
+fn _json_obj_set(n: *_ZbrJsonNode, key: []const u8, child: *_ZbrJsonNode) void {
+    child.parent = n;
+    if (n.data.object.getPtr(key)) |slot| {
+        slot.*.parent = null;
+        slot.* = child;
+        return;
+    }
+    _json_room(n);
+    n.data.object.putAssumeCapacity(_json_own_str(key), child);
 }
-pub fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
-    if (v.* != .object) _json_put_not_object(v.*);
-    _json_obj_set(v, key, .{ .float = val });
+fn _json_arr_push(n: *_ZbrJsonNode, child: *_ZbrJsonNode) void {
+    child.parent = n;
+    _json_room(n);
+    n.data.array.appendAssumeCapacity(child);
 }
-pub fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
-    if (v.* != .object) _json_put_not_object(v.*);
-    _json_obj_set(v, key, .{ .bool = val });
+fn _json_scalar(d: _ZbrJsonData) *_ZbrJsonNode {
+    return _json_new(_json_alloc(), d, true);
 }
-// An array is `std.json.Array` (managed): it grows with the allocator it was made with, so a
-// parsed array grows in its own arena and a builder array in `_json_alloc()` -- no mismatch.
-pub fn _json_arr_str(v: *JsonValue, val: []const u8) void {
-    if (v.* != .array) _json_append_not_array(v.*);
-    v.array.append(.{ .string = _json_own_str(val) }) catch @panic("OOM");
+pub fn _json_object() JsonValue { return _json_new(_json_alloc(), .{ .object = .empty }, true); }
+pub fn _json_array() JsonValue  { return _json_new(_json_alloc(), .{ .array = .empty }, true); }
+pub fn _json_is_null(v: JsonValue) bool   { return v.data == .null; }
+pub fn _json_is_object(v: JsonValue) bool  { return v.data == .object; }
+pub fn _json_is_array(v: JsonValue) bool   { return v.data == .array; }
+// The builders take the handle or a pointer to it. The emit passes `&o` -- the shape from when
+// a JsonValue was a value, kept so the compiler one generation back (which emits this
+// compiler's own source against the runtime on disk) still type-checks -- and for a parameter
+// that is a `*const JsonValue`, which a handle never needed to be writable for.
+fn _json_h(v: anytype) JsonValue {
+    return if (comptime @TypeOf(v) == JsonValue) v else v.*;
 }
-pub fn _json_arr_int(v: *JsonValue, val: i64) void {
-    if (v.* != .array) _json_append_not_array(v.*);
-    v.array.append(.{ .integer = val }) catch @panic("OOM");
+pub fn _json_put_str(v: anytype, key: []const u8, val: []const u8) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .string = _json_own_str(val) }));
 }
-pub fn _json_arr_float(v: *JsonValue, val: f64) void {
-    if (v.* != .array) _json_append_not_array(v.*);
-    v.array.append(.{ .float = val }) catch @panic("OOM");
+pub fn _json_put_int(v: anytype, key: []const u8, val: i64) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .integer = val }));
 }
-pub fn _json_arr_bool(v: *JsonValue, val: bool) void {
-    if (v.* != .array) _json_append_not_array(v.*);
-    v.array.append(.{ .bool = val }) catch @panic("OOM");
+pub fn _json_put_float(v: anytype, key: []const u8, val: f64) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .float = val }));
+}
+pub fn _json_put_bool(v: anytype, key: []const u8, val: bool) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .bool = val }));
+}
+pub fn _json_arr_str(v: anytype, val: []const u8) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .string = _json_own_str(val) }));
+}
+pub fn _json_arr_int(v: anytype, val: i64) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .integer = val }));
+}
+pub fn _json_arr_float(v: anytype, val: f64) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .float = val }));
+}
+pub fn _json_arr_bool(v: anytype, val: bool) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .bool = val }));
 }
 // BUG-722: put(k, v) / append(v) of a JsonValue store a SNAPSHOT (Sean, 2026-11-15): a deep
-// copy in `_json_alloc()`, strings included, so a later change to the original is not seen
-// and a value parsed inside an `allocate` block outlives the block once stored. Depth counts
-// as `_json_depth_ok` does -- an object or array is a level, a scalar none -- with the
-// receiver as level 1, so a value whose own depth is 256 is refused under any key.
+// copy, strings included, so a later change to the original is not seen and a value parsed
+// inside an `allocate` block outlives the block once stored. Depth counts as `_json_depth_ok`
+// does -- an object or array is a level, a scalar none. The receiver's level counts from its
+// ROOT (BUG-751 rule 10): a root is level 1, so a value whose own depth is 256 is refused under
+// any key, and one level less is refused under a child.
 pub const _json_too_deep_msg = "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to -- store a shallower value, or its text with stringify()";
-fn _json_depth(v: JsonValue) usize {
-    return switch (v) {
+fn _json_depth(v: *const _ZbrJsonNode) usize {
+    return switch (v.data) {
         .object => |o| blk: {
             var d: usize = 0;
             for (o.values()) |x| d = @max(d, _json_depth(x));
@@ -2710,37 +2873,87 @@ fn _json_depth(v: JsonValue) usize {
         else => 0,
     };
 }
-fn _json_copy(v: JsonValue) JsonValue {
-    const a = _json_alloc();
-    return switch (v) {
+fn _json_level(v: *const _ZbrJsonNode) usize {
+    var l: usize = 1;
+    var p = v.parent;
+    while (p) |q| : (p = q.parent) l += 1;
+    return l;
+}
+// A deep copy into `a`, its strings and keys included. `own` says whether `a` is
+// `_json_alloc()` (then the copy may grow in place); the copy's root has no parent.
+fn _json_copy_in(a: std.mem.Allocator, v: *const _ZbrJsonNode, own: bool) *_ZbrJsonNode {
+    const d: _ZbrJsonData = switch (v.data) {
         .object => |o| blk: {
-            var m: std.json.ObjectMap = .empty;
+            var m: std.array_hash_map.String(*_ZbrJsonNode) = .empty;
             m.ensureTotalCapacity(a, @max(8, o.count())) catch @panic("OOM");
             var it = o.iterator();
-            while (it.next()) |e| m.putAssumeCapacity(_json_own_str(e.key_ptr.*), _json_copy(e.value_ptr.*));
+            while (it.next()) |e| m.putAssumeCapacity(a.dupe(u8, e.key_ptr.*) catch @panic("OOM"), _json_copy_in(a, e.value_ptr.*, own));
             break :blk .{ .object = m };
         },
         .array => |arr| blk: {
-            var r = std.json.Array.initCapacity(a, arr.items.len) catch @panic("OOM");
-            for (arr.items) |x| r.appendAssumeCapacity(_json_copy(x));
+            var r: std.ArrayList(*_ZbrJsonNode) = .empty;
+            r.ensureTotalCapacity(a, @max(8, arr.items.len)) catch @panic("OOM");
+            for (arr.items) |x| r.appendAssumeCapacity(_json_copy_in(a, x, own));
             break :blk .{ .array = r };
         },
-        .string => |s| .{ .string = _json_own_str(s) },
-        .number_string => |s| .{ .number_string = _json_own_str(s) },
-        else => v,
+        .string => |s| .{ .string = a.dupe(u8, s) catch @panic("OOM") },
+        .number_string => |s| .{ .number_string = a.dupe(u8, s) catch @panic("OOM") },
+        else => v.data,
     };
+    const n = _json_new(a, d, own);
+    switch (n.data) {
+        .object => |o| for (o.values()) |c| { c.parent = n; },
+        .array => |arr| for (arr.items) |c| { c.parent = n; },
+        else => {},
+    }
+    return n;
 }
-pub fn _json_put_val(v: *JsonValue, key: []const u8, val: JsonValue) void {
-    if (v.* != .object) _json_put_not_object(v.*);
-    if (_json_depth(val) + 1 > _json_max_depth) @panic(_json_too_deep_msg);
-    // the copy is taken BEFORE the put: `val` may share storage with `v` (o.put("me", o))
-    _json_obj_set(v, key, _json_copy(val));
+fn _json_copy(v: JsonValue) JsonValue {
+    return _json_copy_in(_json_alloc(), v, true);
 }
-pub fn _json_arr_val(v: *JsonValue, val: JsonValue) void {
-    if (v.* != .array) _json_append_not_array(v.*);
-    if (_json_depth(val) + 1 > _json_max_depth) @panic(_json_too_deep_msg);
-    const c = _json_copy(val); // before the append: `val` may be `v` itself (a.append(a))
-    v.array.append(c) catch @panic("OOM");
+// `x <<- j` (copy out of an `allocate` block): the tree, copied into the parent allocator.
+pub fn _json_copy_out(a: std.mem.Allocator, v: JsonValue) JsonValue {
+    return _json_copy_in(a, v, false);
+}
+pub fn _json_put_val(v: anytype, key: []const u8, val: JsonValue) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    if (_json_level(n) + _json_depth(val) > _json_max_depth) @panic(_json_too_deep_msg);
+    // the copy is taken BEFORE the put: `val` may be `v` or hold it (o.put("me", o),
+    // kid.put("up", root)), and a copy cannot be part of the tree it is stored in
+    _json_obj_set(n, key, _json_copy(val));
+}
+pub fn _json_arr_val(v: anytype, val: JsonValue) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    if (_json_level(n) + _json_depth(val) > _json_max_depth) @panic(_json_too_deep_msg);
+    _json_arr_push(n, _json_copy(val));
+}
+// Json.parseStrict on a @reflectable class: the object has only these keys ...
+pub fn _json_only_keys(v: JsonValue, names: []const []const u8) bool {
+    if (v.data != .object) return false;
+    for (v.data.object.keys()) |k| {
+        var known = false;
+        for (names) |nm| {
+            if (std.mem.eql(u8, k, nm)) known = true;
+        }
+        if (!known) return false;
+    }
+    return true;
+}
+// ... and each field is present with its kind: "int" an integer, "float" a float or integer,
+// "bool" a bool, "str" a string. (The generated parser named std.json's tags itself until
+// BUG-751; the representation stays inside the runtime now.)
+pub fn _json_field_is(v: JsonValue, key: []const u8, comptime kind: []const u8) bool {
+    if (v.data != .object) return false;
+    const x = v.data.object.get(key) orelse return false;
+    return switch (x.data) {
+        .integer => comptime std.mem.eql(u8, kind, "int") or std.mem.eql(u8, kind, "float"),
+        .float => comptime std.mem.eql(u8, kind, "float"),
+        .bool => comptime std.mem.eql(u8, kind, "bool"),
+        .string => comptime std.mem.eql(u8, kind, "str"),
+        else => false,
+    };
 }
 // BUG-331: the JSON READ surface. Two forms, and nothing in between:
 //   j["k"]?         REQUIRED. Throws naming the key when it is missing or the value will
@@ -2751,7 +2964,7 @@ pub fn _json_arr_val(v: *JsonValue, val: JsonValue) void {
 // (30 and 30.0 -- JSON has one number type), float any number, str only a string, bool
 // only true/false. A string is never parsed as a number.
 fn _json_kind(v: JsonValue) []const u8 {
-    return switch (v) {
+    return switch (v.data) {
         .null => "null",
         .bool => "bool",
         .integer, .float, .number_string => "number",
@@ -2784,7 +2997,7 @@ fn _json_where(key: anytype) []const u8 {
 // string is cut at 40 bytes), the kind for a container.
 fn _json_found(v: JsonValue) []const u8 {
     const pa = _allocator;
-    return switch (v) {
+    return switch (v.data) {
         .null => "null",
         .bool => |b| if (b) "bool true" else "bool false",
         .integer => |n| std.fmt.allocPrint(pa, "number {d}", .{n}) catch "a number",
@@ -2799,17 +3012,17 @@ fn _json_found(v: JsonValue) []const u8 {
     };
 }
 // The keys an object DOES have, for a not-found message (first 8).
-fn _json_key_list(o: std.json.ObjectMap) []const u8 {
+fn _json_key_list(o: std.array_hash_map.String(*_ZbrJsonNode)) []const u8 {
     if (o.count() == 0) return " (the object is empty)";
     var buf: std.ArrayList(u8) = .empty;
     const pa = _allocator;
     buf.appendSlice(pa, " (keys: ") catch return "";
-    var it = o.iterator();
     var n: usize = 0;
-    while (it.next()) |e| : (n += 1) {
+    for (o.keys()) |k| {
         if (n == 8) { buf.appendSlice(pa, ", ...") catch {}; break; }
         if (n > 0) buf.appendSlice(pa, ", ") catch {};
-        buf.appendSlice(pa, e.key_ptr.*) catch {};
+        buf.appendSlice(pa, k) catch {};
+        n += 1;
     }
     buf.appendSlice(pa, ")") catch {};
     return buf.items;
@@ -2820,13 +3033,14 @@ pub fn _json_unwrap(recv: anytype) anyerror!JsonValue {
     if (@typeInfo(@TypeOf(recv)) == .error_union) return try recv;
     return recv;
 }
+// A child, as a handle INTO its parent (BUG-751).
 pub fn _json_lookup(v: JsonValue, key: anytype) ?JsonValue {
     if (comptime _json_key_is_str(@TypeOf(key))) {
         const k: []const u8 = key;
-        return switch (v) { .object => |o| o.get(k), else => null };
+        return switch (v.data) { .object => |o| o.get(k), else => null };
     }
     const i: i64 = @intCast(key);
-    return switch (v) {
+    return switch (v.data) {
         .array => |a| if (i >= 0 and i < @as(i64, @intCast(a.items.len))) a.items[@intCast(i)] else null,
         else => null,
     };
@@ -2836,19 +3050,19 @@ pub fn _json_idx(recv: anytype, key: anytype) anyerror!JsonValue {
     if (_json_lookup(v, key)) |it| return it;
     if (comptime _json_key_is_str(@TypeOf(key))) {
         const k: []const u8 = key;
-        return switch (v) {
+        return switch (v.data) {
             .object => |o| _json_fail("JSON key '{s}' not found{s}", .{ k, _json_key_list(o) }),
             else => _json_fail("JSON key '{s}': the value is {s}, not an object", .{ k, _json_kind(v) }),
         };
     }
     const i: i64 = @intCast(key);
-    return switch (v) {
+    return switch (v.data) {
         .array => |a| _json_fail("JSON index {d} out of range (the array has {d} element(s))", .{ i, a.items.len }),
         else => _json_fail("JSON index {d}: the value is {s}, not an array", .{ i, _json_kind(v) }),
     };
 }
 pub fn _json_as_int(v: JsonValue) ?i64 {
-    return switch (v) {
+    return switch (v.data) {
         .integer => |n| n,
         .float => |f| if (@floor(f) == f and f >= -9.2233720368547758e18 and f < 9.2233720368547758e18) @as(i64, @intFromFloat(f)) else null,
         .number_string => |s| std.fmt.parseInt(i64, s, 10) catch null,
@@ -2856,7 +3070,7 @@ pub fn _json_as_int(v: JsonValue) ?i64 {
     };
 }
 pub fn _json_as_float(v: JsonValue) ?f64 {
-    return switch (v) {
+    return switch (v.data) {
         .integer => |n| @floatFromInt(n),
         .float => |f| f,
         .number_string => |s| std.fmt.parseFloat(f64, s) catch null,
@@ -2864,17 +3078,18 @@ pub fn _json_as_float(v: JsonValue) ?f64 {
     };
 }
 pub fn _json_as_str(v: JsonValue) ?[]const u8 {
-    return switch (v) { .string => |s| s, else => null };
+    return switch (v.data) { .string => |s| s, else => null };
 }
 pub fn _json_as_bool(v: JsonValue) ?bool {
-    return switch (v) { .bool => |b| b, else => null };
+    return switch (v.data) { .bool => |b| b, else => null };
 }
 pub fn _json_as_obj(v: JsonValue) ?JsonValue {
-    return switch (v) { .object => v, else => null };
+    return switch (v.data) { .object => v, else => null };
 }
-// A REAL List(JsonValue) (BUG-337), copied into the program allocator.
+// A REAL List(JsonValue) (BUG-337), new, in the program allocator; its elements are handles
+// into the array (BUG-751 rule 3: adding to the List does not change the JSON).
 pub fn _json_as_list(v: JsonValue) ?_ZbrList(JsonValue) {
-    switch (v) {
+    switch (v.data) {
         .array => |a| {
             var out = _zbr_new(_ZbrList(JsonValue));
             out.appendSlice(_allocator, a.items) catch @panic("OOM");
@@ -5203,6 +5418,9 @@ pub fn _zbr_is_arraylist(comptime T: type) bool {
 pub fn _zbr_deep_copy(comptime T: type, alloc: std.mem.Allocator, src: T, depth: u8) anyerror!T {
     if (depth > 64) @panic("_zbr_deep_copy: cycle or excessive depth (>64)");
     if (comptime T == []const u8) return try alloc.dupe(u8, src);
+    // BUG-751: a JsonValue is a pointer to a node in a tree; the pointer arm below would copy
+    // one node and follow its `parent` UP. Copy the tree below it instead, into `alloc`.
+    if (comptime T == JsonValue) return _json_copy_out(alloc, src);
     if (comptime std.mem.containsAtLeast(u8, @typeName(T), 1, "HashMap")) {
         @compileError("HashMap copy-out via <- is not supported; iterate and rebuild manually");
     }

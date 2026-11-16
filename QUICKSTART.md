@@ -4321,9 +4321,9 @@ var present  = args.contains("--dry-run")    # bool
 
 | Call                                 | Returns       | Notes                                   |
 |--------------------------------------|---------------|-----------------------------------------|
-| `Json.parse(src)`                    | `JsonValue?`  | Parse JSON to a tagged union value; `nil` if malformed or nested deeper than 256 levels (BUG-734) |
+| `Json.parse(src)`                    | `JsonValue?`  | Parse JSON to a value (a shared handle, below); `nil` if malformed, a key appears twice, or nested deeper than 256 levels (BUG-734) |
 | `Json.parseStrict(T, src)`           | `?T`          | Strict parse to `@reflectable class T`  |
-| `Json.stringify(v)`                  | `str`         | Serialise a JsonValue                   |
+| `Json.stringify(v)` / `v.stringify()` | `str`        | Serialise a JsonValue; `print(v)`, `"${v}"` and `v.toString()` give the same text |
 | `Json.object()` / `Json.array()`     | `JsonValue`   | Empty object/array constructors         |
 | `v[k]?`                              | the slot's type | REQUIRED read; throws if `k` is missing or will not convert (below) |
 | `v.has(k)`                           | `bool`        | Is `k` present? (true for a stored JSON `null`) |
@@ -4357,6 +4357,26 @@ var messages = Json.array()
 messages.append(msg)                           # a copy of msg as it is now
 body.put("messages", messages)
 print(body.stringify())                        # {"model":"m","messages":[{"role":"user"}]}
+```
+
+**A JsonValue is a shared handle** (BUG-751, 2026-11-16), like a `List`. Every name for a
+value sees every change made through any of them: `var q = p`, a parameter, a field. A value
+read out of an object or array -- `get`, `tryObj`, `v[k]?` left as a JsonValue, and each element
+of `tryList` -- is a handle INTO it, so a change through it is seen in the parent, and it stays
+good however much the parent grows. The `List` that `tryList` returns is new: adding to it does
+not change the JSON array. `put`/`append` of a JsonValue is the one operation that copies
+(above). Replacing a key puts the new value in the same place; a handle to the OLD value keeps
+it, now a tree of its own. The 256-level limit counts from the top of the tree a value lives in,
+so a store through a handle deep in a document is checked against the whole document. As text a
+JsonValue is its JSON -- `print(v)`, `"${v}"`, `v.toString()`, inside a printed `List` -- and a
+string value prints with its quotes (`"b"`; `tryStr()` gets the string). A JsonValue sent over
+a `Chan` or captured by a thread is shared the same way, not copied.
+
+```zebra
+if Json.parse("{\"user\":{\"name\":\"a\"}}") as doc
+    if doc.get("user") as u
+        u.put("name", "b")                     # changes doc
+    print(doc)                                 # {"user":{"name":"b"}}
 ```
 
 **Two ways to read, and nothing in between** (BUG-331, 2026-09-28). A key the program

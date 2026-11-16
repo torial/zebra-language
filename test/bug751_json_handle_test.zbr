@@ -1,0 +1,162 @@
+# BUG-751 (Sean, 2026-11-15): a JsonValue is a SHARED HANDLE, like a List since BUG-501. Every
+# name for a value sees every change made through any of them, and a value read out of an
+# object or array (`get`, `tryObj`, the elements of `tryList`) is a handle INTO it. Storing a
+# JsonValue with put/append still stores a snapshot (BUG-722): that is the one copying operation.
+# Each value is checked here, so the final line prints only when all are right.
+
+var failures: int = 0
+
+def check(what: str, got: str, want: str)
+    if got == want
+        print("${what}: ok")
+    else
+        print("  WRONG: ${what}: got '${got}', want '${want}'")
+        failures += 1
+
+def addTag(j: JsonValue, t: str)
+    j.put("tag", t)
+
+def indexReads(d2: JsonValue)
+    var a = d2["a"]?
+    a.putInt("m", 5)
+    var x0 = d2["xs"][0]?
+    x0.putInt("m", 6)
+    # converted to List(JsonValue): the List is new, its elements are handles
+    var xl: List(JsonValue) = d2["xs"]?
+    var e0 = xl.at(0)
+    e0.putBool("seen", true)
+    xl.add(Json.object())
+catch |e|
+    check("index-read", "raised ${e.message}", "no raise")
+
+def main()
+    # assignment shares: a changed key AND a new key are both seen through the other name
+    var p = Json.object()
+    p.putInt("a", 1)
+    var q = p
+    q.putInt("a", 2)
+    q.putInt("b", 3)
+    check("assign-object", p.stringify(), "{\"a\":2,\"b\":3}")
+    check("assign-object-q", q.stringify(), "{\"a\":2,\"b\":3}")
+
+    var xs = Json.array()
+    xs.appendInt(1)
+    var ys = xs
+    ys.appendInt(2)
+    check("assign-array", xs.stringify(), "[1,2]")
+
+    # many stores through the second name: growth must not split the two
+    var big = Json.object()
+    var alias = big
+    var i = 0
+    while i < 40
+        alias.putInt("k${i}", i)
+        i += 1
+    check("assign-grows", "${big.keys().len} ${big.tryInt("k39") orelse -1}", "40 39")
+
+    # a parameter is the same value: a change made in a function is seen by the caller
+    var r = Json.object()
+    addTag(r, "x")
+    check("param", r.stringify(), "{\"tag\":\"x\"}")
+
+    # get() is a handle into the parent: a change through it is seen in the parent
+    if Json.parse("{\"user\":{\"name\":\"a\"},\"tags\":[\"t\"]}") as doc
+        if doc.get("user") as u
+            u.put("name", "b")
+            u.putInt("age", 7)
+        check("get-handle", doc.stringify(), "{\"user\":{\"name\":\"b\",\"age\":7},\"tags\":[\"t\"]}")
+        if doc.tryObj("user") as ub
+            ub.putBool("admin", true)
+        check("tryObj-handle", doc.stringify(), "{\"user\":{\"name\":\"b\",\"age\":7,\"admin\":true},\"tags\":[\"t\"]}")
+        # the elements of tryList are handles; the List itself is a new list (adding to it does
+        # not change the JSON array)
+        if doc.tryList("tags") as tl
+            tl.add(Json.object())
+        check("tryList-list-is-new", doc.stringify(), "{\"user\":{\"name\":\"b\",\"age\":7,\"admin\":true},\"tags\":[\"t\"]}")
+    else
+        check("parse", "parse failed", "parsed")
+
+    if Json.parse("[{\"n\":1},{\"n\":2}]") as rows
+        for row in rows.tryList() orelse List(JsonValue)()
+            var n = row.tryInt("n") orelse 0
+            row.putInt("double", n * 2)
+        check("tryList-elements", rows.stringify(), "[{\"n\":1,\"double\":2},{\"n\":2,\"double\":4}]")
+
+    # a handle survives its parent growing
+    var root = Json.object()
+    root.put("child", Json.object())
+    if root.get("child") as c
+        var k = 0
+        while k < 40
+            root.putInt("pad${k}", k)
+            k += 1
+        c.put("late", "yes")
+    check("handle-survives-growth", root.tryObj("child")?.tryStr("late") orelse "missing", "yes")
+
+    # replacing a key swaps the node: a handle to the old child keeps it, detached
+    var host = Json.object()
+    host.put("child", Json.object())
+    if host.get("child") as old
+        host.put("child", "text")
+        old.put("late", "yes")
+        check("replace-detaches-handle", old.stringify(), "{\"late\":\"yes\"}")
+    check("replace-parent", host.stringify(), "{\"child\":\"text\"}")
+
+    # detached, the old child is the root of its own tree: depth counts from 1 again, so a
+    # 255-deep value under it is legal (256 levels); under the attached child it would be 257
+    var deep = Json.array()
+    var lv = 1
+    while lv < 255
+        var nx = Json.array()
+        nx.append(deep)
+        deep = nx
+        lv += 1
+    var host2 = Json.object()
+    host2.put("child", Json.object())
+    if host2.get("child") as old2
+        host2.putInt("child", 0)
+        old2.put("deep", deep)
+        check("detached-depth-from-1", "${old2.stringify().len}", "${255 * 2 + 9}")
+
+    # a required read is a handle too: v[k]? and v[i]? with no annotation stay JsonValue
+    if Json.parse("{\"a\":{\"n\":1},\"xs\":[{\"n\":2}]}") as d2
+        indexReads(d2)
+        check("index-handles", d2.stringify(), "{\"a\":{\"n\":1,\"m\":5},\"xs\":[{\"n\":2,\"m\":6,\"seen\":true}]}")
+
+    # a handle storing its own root stays finite: the argument is copied before it is stored
+    var top = Json.object()
+    top.put("kid", Json.object())
+    if top.get("kid") as kid
+        kid.put("up", top)
+    check("handle-stores-root", top.stringify(), "{\"kid\":{\"up\":{\"kid\":{}}}}")
+
+    # put/append of a JsonValue is still a snapshot (BUG-722)
+    var m = Json.object()
+    m.put("role", "user")
+    var arr = Json.array()
+    arr.append(m)
+    m.put("role", "system")
+    check("put-still-copies", arr.stringify(), "[{\"role\":\"user\"}]")
+
+    # a key replaced keeps its position
+    var ord = Json.object()
+    ord.putInt("x", 1)
+    ord.putInt("y", 2)
+    ord.putInt("x", 3)
+    check("key-order", ord.stringify(), "{\"x\":3,\"y\":2}")
+
+    # rule 14: a JsonValue as text is its JSON -- toString, a string hole and print alike; a
+    # string node is JSON text too, quotes included (tryStr gets the string itself)
+    var tx = Json.object()
+    tx.put("a", "b")
+    tx.putInt("n", 2)
+    check("text-toString", tx.toString(), "{\"a\":\"b\",\"n\":2}")
+    check("text-hole", "${tx}", "{\"a\":\"b\",\"n\":2}")
+    if tx.get("a") as sn
+        check("text-string-node", sn.toString(), "\"b\"")
+    print(tx)
+
+    if failures == 0
+        print("bug751_json_handle: OK")
+    else
+        print("bug751_json_handle: ${failures} WRONG")
