@@ -17,7 +17,7 @@ Open bugs live in `BUGS.md`.
   `0x800b0101`.
 - **Cost:** a program built for the V route trusted any certificate: a man-in-the-middle went
   unnoticed there, while the same program on the Zig route refused the connection.
-- **Fix:** the V pin moves to vlang/v master c4dee97 (Sean's decision, 2026-11-15, relayed by Fable), whose
+- **Fix:** the V pin moves to vlang/v master c4dee97 (Sean's decision, 2026-11-15), whose
   `FetchConfig.validate` and `Request.validate` default to true (upstream 40774847a9).
   `tools/v_check.sh`'s default V and `tools/gates.sh`'s `v-check` default name
   `/c/Projects/v-c4dee97/v.exe`; `tools/v_engine_check.py` moved with them (Fable, c6ed30c).
