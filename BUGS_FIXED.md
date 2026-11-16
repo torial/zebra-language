@@ -6,6 +6,56 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-746: on the V route a class or struct prints V's own text, not the Zig route's -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; Fable, running BUG-743's fixture cases on the V route)
+- **Repro:** `class Pt` (`x = 1`, `y = 2`, no `toString` cue): `"${p}"` and `p.toString()` give
+  V's multi-line dump `&Pt{ x: 1 y: 2 }` on the V route and `Pt{x: 1, y: 2}` on the Zig route. A
+  class WITH a `toString` cue prints `&Named(own)` in a `${}` hole on the V route (V prefixes a
+  reference); its `toString()` call is right.
+- **Cost:** the same program prints different text on the two routes; the BUG-723 / BUG-743
+  contract is one spelling.
+- **Fix shape (CodeGenV, Fable):** a class / struct value in a hole or `toString()` goes through
+  the Zig route's spelling: the cue when there is one, else `Name{field: value, ...}`.
+- **Control when fixing:** `test/bug743_tostring_show_test.zbr`'s class, struct and own-cue
+  cases print alike on both routes (the v_check show row).
+- **Fix (Fable, dca872c, `CodeGenV.zbr` / `zebra_rt.v`):** a class or struct as text is
+  `Name{field: value, ...}` through a generated printer (strings quoted, optionals `nil`, nested
+  values through their own printers), or its own `toString` called by name so a hole has no
+  `&`; an enum, a class, a struct and an optional FIELD are printable inside containers; a set
+  literal maps to the runtime (`zset_of`); and a List / HashMap / Set OF an optional is refused
+  by name where the type is spelled ("V's generics take no option type") instead of failing
+  inside V.
+- **Pinned by:** `tools/v_check.sh`'s show row (`show_types`, `show_fix2` =
+  `test/bug743_tostring_show_test.zbr`, IDENTICAL on both routes) -- `# pins: BUG-746`.
+- **Not covered:** BUG-749's cycle rule on the V route -- its generated printers recurse with
+  no guard, so a cycle overflows the stack there today (Fable's next item, with
+  `test/bug749_show_self_ref_test.zbr` as the spec).
+
+---
+
+### BUG-745: on the V route a memberwise constructor zero-fills a field that has a default -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed 2026-11-15; Fable, running BUG-743's fixture cases on the V route)
+- **Repro:** `struct Rgb` with `var r: int = 3` and no `cue init`; `var c = Rgb()`; `print(c.r)`.
+  The Zig route prints `3`; the V route prints `0`. CodeGenV emits the constructor call as
+  `new_rgb(0)`, filling the argument with a zero instead of the field's declared default.
+- **Cost:** a wrong value with no message -- the program runs and computes with 0.
+- **Fix shape (CodeGenV, Fable):** a memberwise construction leaves an unpassed field at its
+  declared default, as the Zig route does.
+- **Control when fixing:** `Rgb()` gives 3 on both routes; `Rgb(7)`, if memberwise arguments are
+  accepted, gives 7; a field with no default keeps the type's zero on both.
+- **Fix (Fable, dca872c, `CodeGenV.zbr`):** wider than the filing, one mechanism: the
+  constructor overrode a declared default. A struct built with fewer arguments than fields
+  takes each missing field's declared default; and a CLASS (with or without a `cue init`)
+  whose list or class field has a declared default no longer starts empty or nil
+  (`var tags: List(str) = ["a"]` printed `[]`, `var owner: Owner = Owner()` was nil), because
+  the constructor's struct literal named every reference field and so overrode V's own field
+  default.
+- **Pinned by:** `tools/v_check.sh`'s show row (`show_types`, and `show_fix2`, which is
+  `test/bug743_tostring_show_test.zbr` as written) -- `# pins: BUG-745`. Run before the
+  commit: v_check 33 rows ok; `tools/v_engine_check.py` 367 roots, the same reading as before.
+
+---
+
 ### BUG-749: printing a class that can reach itself through a field did not build, and a cycle overflowed the stack -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed and fixed the same day; Fable, writing the V route's show row)
 - **Repro:** `class Leaf` with `var name: str = "leaf"` and `var next: Leaf? = nil`;

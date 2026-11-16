@@ -7933,8 +7933,10 @@ pub fn _zbr_zpad(x: anytype, width: usize) _ZbrZpad {
 
 pub fn _zbr_show(x: anytype) []const u8 {
     var sb: std.ArrayList(u8) = .empty;
-    _zbr_show_into(&sb, x, false) catch return "?";
-    return sb.toOwnedSlice(_allocator) catch "?";
+    // Out of memory is LOUD (Sean, 2026-11-15): a "?" in place of a value reads as the
+    // value's text, and the program would carry on printing a lie.
+    _zbr_show_into(&sb, x, false) catch @panic("OOM");
+    return sb.toOwnedSlice(_allocator) catch @panic("OOM");
 }
 fn _zbr_show_type_name(full: []const u8) []const u8 {
     // "z._zbr_ty_Raw" -> "Raw"; "main._zbr_ty_Pt" -> "Pt".

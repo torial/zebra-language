@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Running out of memory while printing a value panics ("OOM").** `print`, `${...}` and
+  `toString()` used to write `?` in the value's place and carry on, so the output looked
+  like the value's text.
 - **A class that reaches itself through a field prints (BUG-749).** `print(leaf)` for a class
   with a `next: Leaf?` field did not build ("dependency loop" inside the runtime printer). It
   prints now, and a real cycle is written `Leaf{...}` where it repeats instead of overflowing

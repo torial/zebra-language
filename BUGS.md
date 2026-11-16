@@ -303,34 +303,6 @@
 
 ---
 
-### BUG-745: on the V route a memberwise constructor zero-fills a field that has a default
-- **Status:** OPEN (filed 2026-11-15; Fable, running BUG-743's fixture cases on the V route)
-- **Repro:** `struct Rgb` with `var r: int = 3` and no `cue init`; `var c = Rgb()`; `print(c.r)`.
-  The Zig route prints `3`; the V route prints `0`. CodeGenV emits the constructor call as
-  `new_rgb(0)`, filling the argument with a zero instead of the field's declared default.
-- **Cost:** a wrong value with no message -- the program runs and computes with 0.
-- **Fix shape (CodeGenV, Fable):** a memberwise construction leaves an unpassed field at its
-  declared default, as the Zig route does.
-- **Control when fixing:** `Rgb()` gives 3 on both routes; `Rgb(7)`, if memberwise arguments are
-  accepted, gives 7; a field with no default keeps the type's zero on both.
-
----
-
-### BUG-746: on the V route a class or struct prints V's own text, not the Zig route's
-- **Status:** OPEN (filed 2026-11-15; Fable, running BUG-743's fixture cases on the V route)
-- **Repro:** `class Pt` (`x = 1`, `y = 2`, no `toString` cue): `"${p}"` and `p.toString()` give
-  V's multi-line dump `&Pt{ x: 1 y: 2 }` on the V route and `Pt{x: 1, y: 2}` on the Zig route. A
-  class WITH a `toString` cue prints `&Named(own)` in a `${}` hole on the V route (V prefixes a
-  reference); its `toString()` call is right.
-- **Cost:** the same program prints different text on the two routes; the BUG-723 / BUG-743
-  contract is one spelling.
-- **Fix shape (CodeGenV, Fable):** a class / struct value in a hole or `toString()` goes through
-  the Zig route's spelling: the cue when there is one, else `Name{field: value, ...}`.
-- **Control when fixing:** `test/bug743_tostring_show_test.zbr`'s class, struct and own-cue
-  cases print alike on both routes (the v_check show row).
-
----
-
 ### BUG-747: under load the run path and `--emit-exe` can build different executables
 - **Status:** OPEN (filed 2026-11-15; `cli-surface` red once in the QUICK tier on 8960d50)
 - **Observed:** the leg "the run path and --emit-exe build byte-identical executables (fast

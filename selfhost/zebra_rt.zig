@@ -7544,7 +7544,7 @@ pub fn _zbr_list_join(sep: []const u8, items: anytype) []const u8 {
     }
     return out.items;
 }
-fn _zbr_show_float(sb: *std.ArrayList(u8), x: anytype) !void {
+fn _zbr_show_float(sb: *std.ArrayList(u8), x: anytype) error{OutOfMemory}!void {
     try _zbr_show_fmt(sb, "{d}", .{x});
     if (std.math.isFinite(x) and @floor(x) == x) try sb.appendSlice(_allocator, ".0");
 }
@@ -7933,8 +7933,10 @@ pub fn _zbr_zpad(x: anytype, width: usize) _ZbrZpad {
 
 pub fn _zbr_show(x: anytype) []const u8 {
     var sb: std.ArrayList(u8) = .empty;
-    _zbr_show_into(&sb, x, false) catch return "?";
-    return sb.toOwnedSlice(_allocator) catch "?";
+    // Out of memory is LOUD (Sean, 2026-11-15): a "?" in place of a value reads as the
+    // value's text, and the program would carry on printing a lie.
+    _zbr_show_into(&sb, x, false) catch @panic("OOM");
+    return sb.toOwnedSlice(_allocator) catch @panic("OOM");
 }
 fn _zbr_show_type_name(full: []const u8) []const u8 {
     // "z._zbr_ty_Raw" -> "Raw"; "main._zbr_ty_Pt" -> "Pt".
@@ -7943,11 +7945,18 @@ fn _zbr_show_type_name(full: []const u8) []const u8 {
     if (std.mem.startsWith(u8, t, "_zbr_ty_")) t = t["_zbr_ty_".len..];
     return t;
 }
-fn _zbr_show_fmt(sb: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+fn _zbr_show_fmt(sb: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) error{OutOfMemory}!void {
     const t = try std.fmt.allocPrint(_allocator, fmt, args);
     try sb.appendSlice(_allocator, t);
 }
-fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
+// BUG-749: the objects on the path being printed (see the pointer arm). Per thread: two
+// threads printing at once must not see each other's path.
+threadlocal var _zbr_show_path: [256]usize = undefined;
+threadlocal var _zbr_show_path_len: usize = 0;
+// BUG-749: an EXPLICIT error set. Inferred, a class reaching itself through a field (`next: Leaf?`)
+// made each instantiation wait on its own error set -- zig refused the program with "dependency
+// loop". Every fallible call here is an allocation.
+fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) error{OutOfMemory}!void {
     const T = @TypeOf(x);
     const info = @typeInfo(T);
     if (comptime _zbr_is_u8_like(T)) {
@@ -7986,7 +7995,25 @@ fn _zbr_show_into(sb: *std.ArrayList(u8), x: anytype, quote_str: bool) !void {
                 if (@typeInfo(C) == .@"struct" and @hasDecl(C, "toString")) {
                     try sb.appendSlice(_allocator, x.toString());
                 } else if (@typeInfo(C) == .@"struct") {
-                    try _zbr_show_into(sb, x.*, quote_str);
+                    // BUG-749: a class reached again on the path being printed (`a.next = b;
+                    // b.next = a`) is written `Name{...}` -- following it recursed until the
+                    // stack overflowed. Only the current PATH counts, so an object shared by
+                    // two fields (a diamond, not a cycle) prints in full both times. Past
+                    // the stack's depth the value is cut the same way, never left unprinted.
+                    const addr = @intFromPtr(x);
+                    var seen = _zbr_show_path_len >= _zbr_show_path.len;
+                    for (_zbr_show_path[0..@min(_zbr_show_path_len, _zbr_show_path.len)]) |a| {
+                        if (a == addr) seen = true;
+                    }
+                    if (seen) {
+                        try sb.appendSlice(_allocator, _zbr_show_type_name(@typeName(C)));
+                        try sb.appendSlice(_allocator, "{...}");
+                    } else {
+                        _zbr_show_path[_zbr_show_path_len] = addr;
+                        _zbr_show_path_len += 1;
+                        defer _zbr_show_path_len -= 1;
+                        try _zbr_show_into(sb, x.*, quote_str);
+                    }
                 } else {
                     try _zbr_show_fmt(sb, "{any}", .{x});
                 }
