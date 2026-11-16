@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An unannotated `map`/`filter` result is typed, and an index on an untyped receiver is refused
+  (BUG-758).** `var ys = xs.filter(f)` is a `List` of the element type and `var ys = xs.map(f)` a
+  `List` of what the lambda returns (int, float, bool or str), so `ys[i]`, `ys.len` and `for` work
+  without an annotation. `x[i]` on a receiver whose type is unknown is now refused at -c, naming
+  it, as `.len` already was -- it used to fail inside zig about runtime code.
 - **Lists from `keys()`, `re.split`, `re.findAll` and CSV rows belong to the program (BUG-757).**
   They were built on the page allocator, so in a `--library-mode` host the first `add` freed a
   block through the host's allocator ("Invalid free" under a DebugAllocator), and every call took

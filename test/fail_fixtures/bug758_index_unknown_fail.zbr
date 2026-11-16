@@ -1,0 +1,11 @@
+# BUG-758: an index on a receiver whose type is unknown is refused at -c, as `.len` on the same
+# receiver is. Here the map's lambda builds a struct, which the inference does not name (only a
+# concrete primitive result is inferred), so `ps` is untyped; before the fix `ps[1]` reached zig
+# as "Expected pointer, slice, array or vector type, found 'List(Pt)'". Annotated, it works.
+struct Pt
+    var x: int
+
+def main()
+    var xs = [1, 2, 3]
+    var ps = xs.map(def(v) = Pt(v))
+    print(ps[1].x)

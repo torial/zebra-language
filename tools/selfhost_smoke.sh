@@ -2294,6 +2294,7 @@ smoke_run_fail test/bug751_json_handle_depth_test.zbr "Json: put/append would ne
 smoke_run_fail test/bug751_json_detached_depth_test.zbr "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to"
 smoke_golden test/json_edges_test.zbr
 smoke_run test/bug755_primitive_binders_test.zbr "bug755_primitive_binders: OK"
+smoke_run test/bug758_map_filter_result_test.zbr "bug758_map_filter_result: OK"
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:10:20: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:16:12: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:23:14: error: "
@@ -3002,6 +3003,7 @@ smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_i
 # BUG-691: JsonValue values()/entries() were known-but-unimplemented (a zig failure, `KV`); refused now
 smoke_tc_fail test/fail_fixtures/bug691_json_values_entries_fail.zbr "bug691_json_values_entries_fail.zbr:7:38: error: 'JsonValue' has no method 'values': an array's elements are"
 smoke_tc_fail test/fail_fixtures/bug691_json_values_entries_fail.zbr "bug691_json_values_entries_fail.zbr:8:19: error: 'JsonValue' has no method 'entries'"
+smoke_tc_fail test/fail_fixtures/bug758_index_unknown_fail.zbr 'bug758_index_unknown_fail.zbr:11:11: error: cannot infer the type of `ps`, so `[...]` cannot be resolved'
 # Failure locations (GameEngine, 2026-10-08): ` at <file>:<line>:` in every failure kind.
 smoke_run_fail test/fail_fixtures/assert_msg_location_fail.zbr "assert failed at test/fail_fixtures/assert_msg_location_fail.zbr:4: x must be positive"
 smoke_run_fail test/fail_fixtures/require_location_fail.zbr "require failed at test/fail_fixtures/require_location_fail.zbr:4: in 'half'"

@@ -6,6 +6,49 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-758: `var ys = xs.map(f)` unannotated, then `ys[i]`, passes `-c` and fails inside zig -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-16; found writing BUG-755's fixture))
+- **Repro:** `var xs = [1, 2, 3]` / `var ys = xs.map(def(v) = v * 2)` / `print(ys[2])`. `-c`
+  exits 0; the build fails in the runtime, `std/meta.zig: error: Expected pointer, slice, array
+  or vector type, found '*array_list.Aligned(i64,null)'`. Annotated (`var ys: List(int) = ...`)
+  it prints 6. With `ys.len` instead of `ys[2]` the front end refuses ("cannot infer the type of
+  `ys`, so `.len` cannot be resolved -- annotate it") -- so the type IS unknown to the checker and
+  the index path lets it through where the member path refuses.
+- **Cost:** a Zig diagnostic about runtime code the user never wrote (the leakgen class).
+- **Fix shape:** infer `map`'s result as `List(R)` where R is the lambda's result type (the
+  checker already types an arithmetic lambda body over a known element type); failing that,
+  refuse the index the way `.len` is refused. Probe the other untyped-receiver forms
+  (`filter`, `reduce`, a `for` over the result) in the same pass.
+- **Control when fixing:** the annotated form unchanged; `test/bug755_primitive_binders_test.zbr`
+  keeps its annotation (it tests binders, not this).
+- **Fix, inference (A):** an unannotated `xs.filter(f)` is typed `List(elem)`; `xs.map(f)` is
+  `List(R)` when R, the one-parameter lambda's result, is a concrete primitive (int, float, bool,
+  str) -- a declared return type, or the body inferred in a CHILD context with the parameter bound
+  to its declared type or the element type (`mapLambdaResult`, TypeChecker). The child context is
+  why the lambda's parameter cannot shadow an outer name: `ctx.unbind` only rebinds to unknown.
+  R is restricted because the runtime spells the element `@TypeOf(f(T))` itself, and a type
+  named wrongly here would mis-format or mis-dispatch. The index emit's name-based branch now
+  consults inference too, so such a local gets `.items`.
+- **Fix, refusal (B):** `x[i]` on a receiver whose type is still unknown is refused at -c,
+  exactly as `.len` on it is ("cannot infer the type of `x`, so `[...]` cannot be resolved ...
+  -- annotate it"). It covers what A does not type: a map building a struct, a named function
+  passed to map.
+- **Measured before landing:** `-c` over this repo's 1,369 tracked .zbr and zebra-ide's 33
+  (the compiler's own source included): 0 refusals besides the planted control. Fable swept the
+  GameEngine (1,867 tracked .zbr) with the fix built: 0 hits; the 272 regen sources all exit 0,
+  and of the other 1,595, 733 pass and 862 fail for their old reasons, with 0 verdict or
+  first-error moves against the pin (37154b3); the planted control is refused in the engine's
+  setting. Two limits he named: a file that already fails can have its first error stand in
+  front of a later refusal, and the engine has no unannotated map/filter local, so "no emission
+  change" there holds by absence. FULL tier 49/49 and leakgen 100/0 on the change.
+- **Pinned by:** `test/bug758_map_filter_result_test.zbr` (smoke_run: map index/len/for, filter
+  index/len, typed-param and declared-return lambdas, a str and a float body, a named function
+  annotated, a module variable named like the lambda parameter read after the maps) and
+  `test/fail_fixtures/bug758_index_unknown_fail.zbr` (smoke_tc_fail). Red first: the old
+  compiler refused the positive fixture's `.len` / `.join` and leaked its index to zig.
+
+---
+
 ### BUG-747: under load the run path and `--emit-exe` can build different executables -- FIXED 2026-11-16 (the gate's premise)
 - **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-15; `cli-surface` red once in the QUICK tier on 8960d50))
 - **Observed:** the leg "the run path and --emit-exe build byte-identical executables (fast

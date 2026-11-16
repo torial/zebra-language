@@ -4072,6 +4072,30 @@ def isConcatMistake(t: Type_): bool
 # Per BUG-218 a diagnostic fires on KNOWN-bad types only. The cost of being narrow
 # is a missed diagnostic; the cost of being wide is rejecting a working program —
 # so widen this when selfhost inference closes the gap, not before.
+# BUG-758: what a one-parameter lambda passed to `List.map` returns, given the element type.
+# The body is inferred in a CHILD context -- the enclosing locals inherited, the parameter bound
+# there -- so the parameter never shadows an outer name in `ctx` (unbind only rebinds to
+# unknown), and quietly, because the lambda's body is checked on its own elsewhere.
+def mapLambdaResult(f: Expr, elem: Type_, ctx: InferCtx): Type_
+    if f is Expr.lambda as ml
+        if ml.params.len != 1
+            return Type_.unknown_
+        if ml.return_type != nil
+            return typeFromRef(ml.return_type!)
+        if ml.body_ is LambdaBody.expr_ as mbody
+            var mctx = InferCtx(ctx.module_types, ctx.current_class)
+            mctx.withDepTypes(ctx.dep_types)
+            mctx.inheritLocals(ctx)
+            mctx.self_type_override = ctx.self_type_override
+            mctx.quiet_errors = true
+            var mp: Param = ml.params.at(0)
+            if mp.type_ != nil
+                mctx.bind(mp.name, typeFromRef(mp.type_!))
+            else
+                mctx.bind(mp.name, elem)
+            return inferExpr(mbody, mctx)
+    return Type_.unknown_
+
 def isConcretePrimitive(t: Type_): bool
     if isAbstractType(t)
         return false
@@ -5383,6 +5407,18 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.string_
                             if lmname == "copy"
                                 return Type_.list_(list_elem)
+                            # BUG-758: `var ys = xs.filter(f)` / `xs.map(f)` were untyped, so
+                            # `ys[i]` emitted no `.items` and failed inside zig (`.len` was
+                            # refused by name). filter keeps the element type; map's is what
+                            # its lambda returns -- only when that is a concrete primitive,
+                            # since the runtime spells the element `@TypeOf(f(T))` itself
+                            # and a type named wrongly here would mis-format or mis-dispatch.
+                            if lmname == "filter" and c.args.len == 1
+                                return Type_.list_(list_elem)
+                            if lmname == "map" and c.args.len == 1
+                                var map_r: Type_ = mapLambdaResult(c.args.at(0).value, list_elem, ctx)
+                                if isConcretePrimitive(map_r)
+                                    return Type_.list_(map_r)
                             if lmname == "reverse" or lmname == "clear" or lmname == "sort" or lmname == "sortBy" or lmname == "add" or lmname == "set" or lmname == "remove" or lmname == "reserve"
                                 return Type_.void_
                             if lmname == "count" or lmname == "len"

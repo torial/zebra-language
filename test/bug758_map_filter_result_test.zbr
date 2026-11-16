@@ -1,0 +1,58 @@
+# BUG-758: an UNANNOTATED `var ys = xs.map(f)` or `xs.filter(f)` was untyped, so `ys[i]` emitted
+# no `.items` and failed inside zig, and `ys.len` was refused ("cannot infer the type"). filter
+# keeps the element type; map's result is a List of what its lambda returns, inferred with the
+# parameter bound to the element type in a CHILD scope -- `v` below is also a module variable,
+# and reading it after the maps checks the lambda's `v` did not shadow it.
+var v = 100
+
+def double(n: int): int
+    return n * 2
+
+var failures = 0
+
+def check(what: str, got: int, want: int)
+    if got != want
+        print("${what}: WRONG ${got}, want ${want}")
+        failures += 1
+
+def checkS(what: str, got: str, want: str)
+    if got != want
+        print("${what}: WRONG ${got}, want ${want}")
+        failures += 1
+
+def main()
+    var xs = [1, 2, 3]
+    var ys = xs.map(def(v) = v * 2)
+    check("map index", ys[2], 6)
+    check("map len", ys.len, 3)
+    var sum = 0
+    for y in ys
+        sum += y
+    check("map for", sum, 12)
+
+    var fs = xs.filter(def(v) = v > 1)
+    check("filter index", fs[0], 2)
+    check("filter len", fs.len, 2)
+
+    var ts = xs.map(def(v: int) = v + 10)
+    check("map typed param", ts[0], 11)
+    var rs = xs.map(def(v): int = v - 1)
+    check("map declared return", rs[2], 2)
+
+    var ss = xs.map(def(v) = v.toString())
+    checkS("map str body", ss[1], "2")
+    checkS("map str join", ss.join("-"), "1-2-3")
+
+    var fl = xs.map(def(v) = v * 0.5)
+    if fl[1] != 1.0
+        print("map float body: WRONG ${fl[1]}")
+        failures += 1
+
+    # a named function passed to map is not inferred (yet): annotated, it works
+    var ds: List(int) = xs.map(double)
+    check("map named fn (annotated)", ds[1], 4)
+
+    check("module var not shadowed by the lambda parameter", v, 100)
+
+    if failures == 0
+        print("bug758_map_filter_result: OK")

@@ -46,24 +46,6 @@
 
 ---
 
-### BUG-758: `var ys = xs.map(f)` unannotated, then `ys[i]`, passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-16; found writing BUG-755's fixture)
-- **Repro:** `var xs = [1, 2, 3]` / `var ys = xs.map(def(v) = v * 2)` / `print(ys[2])`. `-c`
-  exits 0; the build fails in the runtime, `std/meta.zig: error: Expected pointer, slice, array
-  or vector type, found '*array_list.Aligned(i64,null)'`. Annotated (`var ys: List(int) = ...`)
-  it prints 6. With `ys.len` instead of `ys[2]` the front end refuses ("cannot infer the type of
-  `ys`, so `.len` cannot be resolved -- annotate it") -- so the type IS unknown to the checker and
-  the index path lets it through where the member path refuses.
-- **Cost:** a Zig diagnostic about runtime code the user never wrote (the leakgen class).
-- **Fix shape:** infer `map`'s result as `List(R)` where R is the lambda's result type (the
-  checker already types an arithmetic lambda body over a known element type); failing that,
-  refuse the index the way `.len` is refused. Probe the other untyped-receiver forms
-  (`filter`, `reduce`, a `for` over the result) in the same pass.
-- **Control when fixing:** the annotated form unchanged; `test/bug755_primitive_binders_test.zbr`
-  keeps its annotation (it tests binders, not this).
-
----
-
 ### BUG-702: `b.toInt()` on a byte from `s.bytes()` passes `-c` and fails inside zig
 - **Status:** OPEN (filed 2026-11-12; found by Fable in Graze's percent-decoder, reproduced on the
   batch's compiler)

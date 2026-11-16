@@ -15185,6 +15185,12 @@ struct Generator
                     is_hm_idx = fieldAwareIsHashMap(idx_nm)
                     if not is_hm_idx
                         is_list_idx = fieldAwareIsList(idx_nm)
+                    # BUG-758: a local bound to a List-returning call the name registry never
+                    # saw (`var ys = xs.map(f)`) is a List by inference; without `.items`
+                    # the checked index was handed the ArrayList itself.
+                    if not is_hm_idx and not is_list_idx and .infer_ctx != nil
+                        if inferExpr(ix.object, .infer_ctx!) is Type_.list_
+                            is_list_idx = true
                 else
                     # BUG-177: a non-name base — a List-returning call `f()[i]`, or a
                     # nested index `x[i][j]` (the element of a List(List(...))) — is
@@ -15205,6 +15211,12 @@ struct Generator
                 else
                     # BUG-313: checked. Covers BOTH the List (.items) and the
                     # string/slice receiver -- _zbr_at takes any slice.
+                    # BUG-758: with the receiver's type unknown, which of those it is was a
+                    # GUESS (no `.items`), and a List got there as a zig error about the
+                    # runtime. Refused like `.len` on the same receiver.
+                    if not is_list_idx and not isSplitIter(ix.object) and typeIsUnknown(ix.object)
+                        recordInferenceGuess("index: " + source_file + ":" + w.cur_line.toString(),
+                            guessWhere(source_file, ix.object, w.cur_line) + ": error: cannot infer the type of " + guessSubject(ix.object) + ", so `[...]` cannot be resolved (a List is indexed through `.items`, a str is not) -- annotate it (`var x: List(int) = ...`, `x: str`)")
                     w.emit("_zbr_at(")
                     # BUG-403: `s.split(" ")[1]` -- the receiver is the LAZY SplitIterator
                     # (BUG-336 handled `.at(i)`/`.len` on it, not `[i]`). Collect it

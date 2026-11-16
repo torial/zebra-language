@@ -1155,9 +1155,11 @@ var f   = items.find(def(x) = x > 2) # first match or nil (returns T?)
 var doubled: List(int) = items.map(def(x) = x * 2)      # new List, each element transformed
 var evens: List(int)   = items.filter(def(x) = x % 2 == 0)  # new List, matching elements only
 var total = items.reduce(0, def(acc, x) = acc + x)      # fold to a scalar; result type = init's type
-# Note: map/filter return a NEW List. When you bind the result and then call
-# methods on it, annotate the binding (`var doubled: List(int) = …`) — the
-# element type of a map/filter result isn't inferred through the binding yet.
+# Note: map/filter return a NEW List. An unannotated binding is typed (BUG-758):
+# filter's result is a List of the element type, map's a List of what the lambda
+# returns when that is int, float, bool or str. Anything else (a struct, a call to
+# a named function) stays unknown -- annotate it (`var ps: List(Pt) = …`), or
+# `ps[i]` and `ps.len` are refused with "cannot infer the type".
 
 # Sorting — in place. sort() takes an OPTIONAL comparator:
 items.sort()                         # natural ascending (numeric / lexicographic)
