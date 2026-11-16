@@ -9,7 +9,7 @@
 #
 # The source of truth is selfhost_smoke.sh's own registrations: a helper that asserts
 # SUCCESS (smoke / smoke_turbo / smoke_test / smoke_run /
-# smoke_warn / smoke_quine) marks a positive test; the *_fail helpers mark negatives and are excluded,
+# smoke_warn / smoke_quine / smoke_golden) marks a positive test; the *_fail helpers mark negatives and are excluded,
 # as are library-only modules that are never registered at all.
 #
 # REFUSES rather than printing an empty set: a collapsed regex would otherwise hand its
@@ -37,7 +37,7 @@ fi
 # is why full_sweep has a DEPMISS bucket at all.
 SKIP=" c_interop_test bug263_c_exposing_test forgot_parens_test "
 
-out=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_warn|smoke_quine) +test/' "$SMOKE" \
+out=$(grep -hE '^(smoke|smoke_turbo|smoke_test|smoke_run|smoke_warn|smoke_quine|smoke_golden) +test/' "$SMOKE" \
       | awk '{print $2}' | sort -u)
 
 # Drop the skips with ONE grep rather than a basename-per-file loop: 278 process

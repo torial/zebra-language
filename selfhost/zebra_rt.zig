@@ -2804,40 +2804,52 @@ pub fn _json_array() JsonValue  { return _json_new(_json_alloc(), .{ .array = .e
 pub fn _json_is_null(v: JsonValue) bool   { return v.data == .null; }
 pub fn _json_is_object(v: JsonValue) bool  { return v.data == .object; }
 pub fn _json_is_array(v: JsonValue) bool   { return v.data == .array; }
-// The builders take `*JsonValue` (the emit passes `&o`), a pointer to the handle: the shape
-// they had when a JsonValue was a value, kept so the compiler one generation back -- which
-// emits this compiler's own source against the runtime on disk -- still type-checks.
-pub fn _json_put_str(v: *JsonValue, key: []const u8, val: []const u8) void {
-    if (v.*.data != .object) _json_put_not_object(v.*);
-    _json_obj_set(v.*, key, _json_scalar(.{ .string = _json_own_str(val) }));
+// The builders take the handle or a pointer to it. The emit passes `&o` -- the shape from when
+// a JsonValue was a value, kept so the compiler one generation back (which emits this
+// compiler's own source against the runtime on disk) still type-checks -- and for a parameter
+// that is a `*const JsonValue`, which a handle never needed to be writable for.
+fn _json_h(v: anytype) JsonValue {
+    return if (comptime @TypeOf(v) == JsonValue) v else v.*;
 }
-pub fn _json_put_int(v: *JsonValue, key: []const u8, val: i64) void {
-    if (v.*.data != .object) _json_put_not_object(v.*);
-    _json_obj_set(v.*, key, _json_scalar(.{ .integer = val }));
+pub fn _json_put_str(v: anytype, key: []const u8, val: []const u8) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .string = _json_own_str(val) }));
 }
-pub fn _json_put_float(v: *JsonValue, key: []const u8, val: f64) void {
-    if (v.*.data != .object) _json_put_not_object(v.*);
-    _json_obj_set(v.*, key, _json_scalar(.{ .float = val }));
+pub fn _json_put_int(v: anytype, key: []const u8, val: i64) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .integer = val }));
 }
-pub fn _json_put_bool(v: *JsonValue, key: []const u8, val: bool) void {
-    if (v.*.data != .object) _json_put_not_object(v.*);
-    _json_obj_set(v.*, key, _json_scalar(.{ .bool = val }));
+pub fn _json_put_float(v: anytype, key: []const u8, val: f64) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .float = val }));
 }
-pub fn _json_arr_str(v: *JsonValue, val: []const u8) void {
-    if (v.*.data != .array) _json_append_not_array(v.*);
-    _json_arr_push(v.*, _json_scalar(.{ .string = _json_own_str(val) }));
+pub fn _json_put_bool(v: anytype, key: []const u8, val: bool) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    _json_obj_set(n, key, _json_scalar(.{ .bool = val }));
 }
-pub fn _json_arr_int(v: *JsonValue, val: i64) void {
-    if (v.*.data != .array) _json_append_not_array(v.*);
-    _json_arr_push(v.*, _json_scalar(.{ .integer = val }));
+pub fn _json_arr_str(v: anytype, val: []const u8) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .string = _json_own_str(val) }));
 }
-pub fn _json_arr_float(v: *JsonValue, val: f64) void {
-    if (v.*.data != .array) _json_append_not_array(v.*);
-    _json_arr_push(v.*, _json_scalar(.{ .float = val }));
+pub fn _json_arr_int(v: anytype, val: i64) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .integer = val }));
 }
-pub fn _json_arr_bool(v: *JsonValue, val: bool) void {
-    if (v.*.data != .array) _json_append_not_array(v.*);
-    _json_arr_push(v.*, _json_scalar(.{ .bool = val }));
+pub fn _json_arr_float(v: anytype, val: f64) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .float = val }));
+}
+pub fn _json_arr_bool(v: anytype, val: bool) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    _json_arr_push(n, _json_scalar(.{ .bool = val }));
 }
 // BUG-722: put(k, v) / append(v) of a JsonValue store a SNAPSHOT (Sean, 2026-11-15): a deep
 // copy, strings included, so a later change to the original is not seen and a value parsed
@@ -2903,17 +2915,19 @@ fn _json_copy(v: JsonValue) JsonValue {
 pub fn _json_copy_out(a: std.mem.Allocator, v: JsonValue) JsonValue {
     return _json_copy_in(a, v, false);
 }
-pub fn _json_put_val(v: *JsonValue, key: []const u8, val: JsonValue) void {
-    if (v.*.data != .object) _json_put_not_object(v.*);
-    if (_json_level(v.*) + _json_depth(val) > _json_max_depth) @panic(_json_too_deep_msg);
+pub fn _json_put_val(v: anytype, key: []const u8, val: JsonValue) void {
+    const n = _json_h(v);
+    if (n.data != .object) _json_put_not_object(n);
+    if (_json_level(n) + _json_depth(val) > _json_max_depth) @panic(_json_too_deep_msg);
     // the copy is taken BEFORE the put: `val` may be `v` or hold it (o.put("me", o),
     // kid.put("up", root)), and a copy cannot be part of the tree it is stored in
-    _json_obj_set(v.*, key, _json_copy(val));
+    _json_obj_set(n, key, _json_copy(val));
 }
-pub fn _json_arr_val(v: *JsonValue, val: JsonValue) void {
-    if (v.*.data != .array) _json_append_not_array(v.*);
-    if (_json_level(v.*) + _json_depth(val) > _json_max_depth) @panic(_json_too_deep_msg);
-    _json_arr_push(v.*, _json_copy(val));
+pub fn _json_arr_val(v: anytype, val: JsonValue) void {
+    const n = _json_h(v);
+    if (n.data != .array) _json_append_not_array(n);
+    if (_json_level(n) + _json_depth(val) > _json_max_depth) @panic(_json_too_deep_msg);
+    _json_arr_push(n, _json_copy(val));
 }
 // Json.parseStrict on a @reflectable class: the object has only these keys ...
 pub fn _json_only_keys(v: JsonValue, names: []const []const u8) bool {

@@ -145,7 +145,7 @@ def main()
     ord.putInt("x", 3)
     check("key-order", ord.stringify(), "{\"x\":3,\"y\":2}")
 
-    # rule 14: a JsonValue as text is its JSON -- toString, a string hole and print alike; a
+    # rule 14 (BUG-754): a JsonValue as text is its JSON -- toString, a string hole and print alike; a
     # string node is JSON text too, quotes included (tryStr gets the string itself)
     var tx = Json.object()
     tx.put("a", "b")

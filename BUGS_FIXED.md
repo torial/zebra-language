@@ -6,6 +6,51 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-756: on the V route `Json.parse` read numbers through an f64 and kept a duplicate key -- an integer past 2^53 came back changed -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed and fixed the same day; Fable, from an 84-line edge probe
+  written when BUG-751's Zig parser named "duplicate key refused"). V route only; the Zig route
+  was right on every line.
+- **Repro:** `if Json.parse("9223372036854775807") as j` then `print("${j.stringify()} ${j.tryInt() orelse -1}")`.
+  The Zig route prints `9223372036854775807 9223372036854775807`; the V route printed
+  `9223372036854776000 -1`. Likewise `Json.parse("{\"a\":1,\"a\":2}")` is nil on the Zig route
+  and was `{"a":2}` on the V route.
+- **Cause:** the V runtime parsed and kept scalars through `x.json2`, which reads every number
+  as an f64 and builds an object as a map. Four differences from the Zig route's `std.json`,
+  none asked about by any row:
+  1. an integer past 2^53 was read inexactly and was no int at all (`tryInt` nil), and
+     `-9223372036854775808` stringified as `-9223372036854776000`;
+  2. a float was written with an exponent (`1e+21`, `1e-7`) where the Zig route writes plain
+     digits (`1000000000000000000000`, `0.0000001`), for a parsed value and a `putFloat` alike;
+  3. a number that fits neither an i64 nor an f64 was lost: `1e400` parsed to nil and thirty
+     digits came back `1.2345678901234568e+29`, where the Zig route keeps the number's own text
+     and writes it back;
+  4. a duplicate key was accepted, the last value kept, where the Zig route answers nil.
+- **Cost:** silent wrong values on the V route for any id, counter or nanosecond time stamp
+  above 9007199254740992 read from JSON, and JSON text that differed between the routes for
+  large or small floats. No engine test met one (the engine ladder read the same before and
+  after).
+- **Fix (Fable, `selfhost/zebra_rt.v`):** the runtime parses for itself -- a recursive-descent
+  reader of RFC 8259 as `std.json` reads it, behind the same 256-level scan (BUG-734): no
+  leading zero, no `+`, no `1.`, no trailing comma, no text after the value, no raw control
+  character and no lone surrogate in a string, a surrogate pair as one character, a duplicate
+  key refused. A number is `std.json`'s three: an INTEGER when its text has no `.`, `e` or `E`,
+  is not `-0` and fits an i64, kept exactly; a FLOAT otherwise when finite; else its own TEXT,
+  kept and written back. `tryInt` takes an integer or a whole float, `tryFloat` any of the
+  three. A float's JSON text is the text `print` gives it less a trailing `.0`.
+  Also (`selfhost/CodeGenV.zbr`, found by the same probe): a Zebra string carrying a code point
+  in braces (backslash-u-{7f}, passed to Zig as written on the Zig route) was passed to V as
+  written and V refused the brace; `vEscape` writes V's four- or eight-digit form.
+- **Pinned by:** `tools/v_check.sh`'s `json` row, `json_edges`: 84 lines -- what parses, what a
+  number is, what stringify writes -- IDENTICAL on both routes, with the Zig run checked first
+  for the exact i64, the refused duplicate key, the plain-digit float and the kept number text
+  (a control that printed none of them would compare nothing). The same program is
+  `test/json_edges_test.zbr`, so the Zig route's parser is baselined from the one source.
+- **Seen red:** the probe before the fix (9 of the first 46 lines differed, each of the four
+  items among them); after, 84 of 84 alike, and alike again under the Zig route's new
+  node parser (BUG-751).
+
+---
+
 ### BUG-751: `var q = p` for a JsonValue shares some changes and not others -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (filed 2026-11-15; found writing BUG-722's fixture)
 - **Repro:** `var p = Json.object()`, `p.putInt("a", 1)`, `var q = p`, `q.putInt("a", 2)`,

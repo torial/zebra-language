@@ -711,6 +711,41 @@ smoke_quine() {
     rm -f "$out"
 }
 
+# smoke_golden <zbr> -- the program's STDOUT must equal <zbr minus .zbr>.expected, byte for
+# byte. For a program whose every line is the assertion (json_edges_test: 84 lines of what
+# parses, what a number is, what stringify writes), where a final "OK" line would only say the
+# program finished. The .expected comes from a REFERENCE, never from a run of the compiler
+# under test (json_edges_test.expected is the 45b6a0a runtime's output, std.json's own tree,
+# taken before BUG-751 replaced it); a missing or empty .expected FAILS, since cmp against
+# nothing would compare nothing.
+smoke_golden() {
+    local zbr="$1"
+    local want="${zbr%.zbr}.expected"
+    local label
+    label="$(basename "$zbr" .zbr)_golden"
+    if [[ ! -s "$want" ]]; then
+        echo "  FAIL: $label (no expected output at $want, or it is empty)" >&2
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    local out
+    out=$(mktemp)
+    if zbr_run_retrying "$ZEBRA" "$zbr" > "$out" 2>/dev/null; then
+        if cmp -s "$out" "$want"; then
+            echo "  PASS: $label"
+            PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $label (stdout differs from $want)" >&2
+            diff "$want" "$out" | head -12 >&2
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo "  FAIL: $label (non-zero exit)" >&2
+        FAIL=$((FAIL + 1))
+    fi
+    rm -f "$out"
+}
+
 # smoke_run_flag <zbr> <flag> <expected> -- smoke_run with one compiler flag. The file
 # comes FIRST so registration_check's `^smoke\w* test/...` pattern sees it. Not in
 # positive_set.sh on purpose: a program that needs a flag to compile is not a positive
@@ -2257,6 +2292,7 @@ smoke_run test/bug750_allocate_copyout_test.zbr "bug750_allocate_copyout: OK"
 smoke_run test/bug751_json_handle_test.zbr "bug751_json_handle: OK"
 smoke_run_fail test/bug751_json_handle_depth_test.zbr "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to"
 smoke_run_fail test/bug751_json_detached_depth_test.zbr "Json: put/append would nest a value deeper than 256 levels, the limit Json.parse holds to"
+smoke_golden test/json_edges_test.zbr
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:10:20: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:16:12: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:23:14: error: "
