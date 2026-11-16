@@ -3990,15 +3990,33 @@ class VGen
             var ch = text[i]   # (a byte: compared with a char literal, appended as a one-byte substring)
             if ch == '\\' and i + 1 < n
                 var nx = text[i + 1]
+                var step: int = 2
                 if nx == '"'
                     out = out + "\""
                 else if nx == '$'
                     out = out + "\\$"
                 else if nx == '\''
                     out = out + "\\'"
+                else if nx == 'u' and i + 2 < n and text[i + 2] == '{'
+                    # a code point in braces (the Zig route's spelling, which a Zebra
+                    # string may carry: backslash, u, {1F600}) is V's backslash-u with
+                    # four hex digits or backslash-U with eight; passed on as written,
+                    # V refused the brace (2026-11-16)
+                    var close: int = i + 3
+                    while close < n and text[close] != '}'
+                        close = close + 1
+                    var hex: str = text.substring(i + 3, close)
+                    if close < n and hex.len >= 1 and hex.len <= 4
+                        out = out + "\\u" + "0000".substring(0, 4 - hex.len) + hex
+                        step = close + 1 - i
+                    else if close < n and hex.len >= 5 and hex.len <= 8
+                        out = out + "\\U" + "00000000".substring(0, 8 - hex.len) + hex
+                        step = close + 1 - i
+                    else
+                        out = out + "\\u"   # not a code point V can spell: as written, and V's error names it
                 else
                     out = out + "\\" + text.substring(i + 1, i + 2)
-                i = i + 2
+                i = i + step
             else
                 if ch == '$'
                     out = out + "\\$"

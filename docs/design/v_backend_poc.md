@@ -3068,15 +3068,42 @@ route's seat before either side built (the shared design, fourteen rules):
    inside a printed List or optional -- is exactly `stringify()`; a string
    node's text keeps its quotes (`tryStr` is how the string is had).
 
-**The runtime.** `ZJson` is a heap struct: a kind, a scalar kept as json2's
-own `Any` (so a number's digits and a string's escapes are json2's, as
-before), a `map[string]&ZJson` (V's map keeps insertion order and a replaced
-key's position, which is rule 5's first half for free), a `[]&ZJson`, and
-the parent pointer. `zjson_parse` converts json2's tree once; `stringify` is
-this file's for the containers. Every function takes the handle as a plain
-`&ZJson` and changes it through an `unsafe` mutable alias inside, so nothing
-at a call site needs `mut` -- a temporary, an `if ... as` binding and a
-loop variable all take a put.
+**The runtime.** `ZJson` is a heap struct: a kind, the scalar's value, a
+`map[string]&ZJson` (V's map keeps insertion order and a replaced key's
+position, which is rule 5's first half for free), a `[]&ZJson`, and the
+parent pointer. Every function takes the handle as a plain `&ZJson` and
+changes it through an `unsafe` mutable alias inside, so nothing at a call
+site needs `mut` -- a temporary, an `if ... as` binding and a loop variable
+all take a put.
+
+**The parser and a number are the runtime's own** (the same day, found by
+asking both routes the same eighty-four edge questions). The first tree kept
+x.json2 for parsing and for scalars, and x.json2 reads every number as an
+f64. Against the Zig route that was four differences nobody had asked about:
+
+- an integer past 2^53 came back changed: `9223372036854775807` read
+  `9223372036854776000` and `tryInt` was nil -- an id or a nanosecond stamp
+  silently wrong on this route;
+- a float was written with an exponent (`1e+21`, `1e-7`) where the Zig route
+  writes plain digits (`1000000000000000000000`, `0.0000001`);
+- a number too big for an i64 or an f64 was lost (`1e400` was nil; thirty
+  digits came back as `1.2345678901234568e+29`), where the Zig route keeps
+  the number's own text and writes it back;
+- a duplicate key was accepted, the last one kept, where the Zig route
+  answers nil for the whole text.
+
+`zjson_parse` is a recursive-descent reader of RFC 8259 as std.json reads it
+(no leading zero, no `+`, no `1.`, no trailing comma, no text after the
+value, no raw control character and no lone surrogate in a string, a
+`\uD83D\uDE00` pair as one character, a duplicate key refused), behind the
+same 256-level scan as before. A number is std.json's three: an INTEGER when
+its text has no `.`, `e` or `E`, is not `-0` and fits an i64, kept exactly;
+a FLOAT otherwise when finite; else its TEXT, kept and written back.
+`tryInt` takes an integer or a whole float, `tryFloat` any of the three.
+A float's JSON text is the text print gives it less a trailing `.0`. A
+string's JSON text is still x.json2's encoder, which agreed with std.json on
+every escape asked (a control character as `\u0001`, a tab as `\t`, DEL and
+non-ASCII as they are).
 
 **Strings are the tree's own.** A string built inside an `allocate` block is
 the block's on this route (`zr_s` records it) and its bytes are freed at the
@@ -3099,10 +3126,18 @@ not `mut j ZJson`. A JsonValue field or local without a value is JSON null
 
 **What is not the same as the Zig route yet.** `values()` and `for x in j`
 exist here and not there (a surface difference older than this change, to be
-settled apart). The V front end accepts a local named `u2`, which the Zig
-emission refuses as a primitive's name.
+settled apart). A local named `u2` is accepted here, and that is right: the
+Zig route's refusal ("name shadows primitive") is a leak in its emission of
+an `if x as u2` binding, filed on that side with the Zig route's flip.
 
-`tools/v_check.sh`'s `json` row: BUG-722's nest fixture alike on both routes
+**A code point in braces.** The edge program wrote DEL as backslash-u-{7f},
+the Zig route's spelling, which a Zebra string may carry. `vEscape` passed it
+on as written and V refused the brace; it is V's backslash-u with four hex
+digits now, or backslash-U with eight.
+
+`tools/v_check.sh`'s `json` row: the eighty-four edge lines (`json_edges`:
+what parses, what a number is, what stringify writes) alike on both routes;
+BUG-722's nest fixture alike on both routes
 and its three refusals stopped by the same message on both; BUG-751's handle
 fixture (twenty checks) and its two depth refusals on this route against
 their own text until the Zig route's flip lands, when the row takes the

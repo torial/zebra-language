@@ -1062,7 +1062,125 @@ def main()
         old.put("deep", deep)
     print("SURVIVED: a 257-level tree was built under a detached handle")
 ZBR
-for p in json_nest json_deep json_kind json_kind2; do json_both $p; done
+# json_edges: what Json.parse accepts, what a number is, and what stringify writes, alike on
+# both routes line for line. Until 2026-11-16 this route read through x.json2, which made every
+# number an f64 -- an integer past 2^53 came back changed (9223372036854775807 read
+# 9223372036854776000 and was no int at all), a float was written with an exponent (1e+21,
+# 1e-7) where the Zig route writes plain digits, a number too big for either type was lost
+# (1e400 was nil), and a DUPLICATE KEY was accepted, the last one kept, where the Zig route
+# answers nil. The runtime parses for itself now, by std.json's rules.
+cat > "$OUT/json_edges.zbr" <<'ZBR'
+def show(what: str, text: str)
+    if Json.parse(text) as j
+        var kind = "other"
+        if j.tryInt() as i
+            kind = "int ${i}"
+        else if j.tryFloat() as f
+            kind = "float ${f}"
+        else if j.tryStr() as s
+            kind = "str ${s.len}"
+        else if j.isNull()
+            kind = "null"
+        print("${what}: ${j.stringify()} [${kind}]")
+    else
+        print("${what}: nil")
+
+def main()
+    show("int", "1")
+    show("neg", "-7")
+    show("zero", "0")
+    show("neg-zero", "-0")
+    show("float", "2.5")
+    show("whole-float", "1.0")
+    show("trailing-zeros", "2.50")
+    show("exp", "1e3")
+    show("exp-neg", "1e-3")
+    show("exp-cap", "1E3")
+    show("big-exp", "1e21")
+    show("tiny", "1e-7")
+    show("i64-max", "9223372036854775807")
+    show("i64-over", "9223372036854775808")
+    show("i64-min", "-9223372036854775808")
+    show("huge-int", "123456789012345678901234567890")
+    show("exp-overflow", "1e400")
+    show("frac-long", "0.1234567890123456789")
+    show("third", "0.3333333333333333")
+    show("leading-zero", "01")
+    show("plus", "+1")
+    show("dot-only", "1.")
+    show("hex", "0x10")
+    show("nan", "NaN")
+    show("dup-key", "{\"a\":1,\"b\":5,\"a\":2}")
+    show("empty", "")
+    show("space", "  [ 1 , 2 ]  ")
+    show("trailing-comma", "[1,2,]")
+    show("garbage-after", "{\"a\":1} x")
+    show("single-quote", "{'a':1}")
+    show("bare-key", "{a:1}")
+    show("escape-slash", "\"a\\/b\"")
+    show("escape-u", "\"\\u00e9\"")
+    show("surrogates", "\"\\ud83d\\ude00\"")
+    show("lone-surrogate", "\"\\ud83d\"")
+    show("control", "\"a\\u0001b\"")
+    show("tab-escape", "\"a\\tb\"")
+    show("quote-escape", "\"a\\\"b\"")
+    show("backslash", "\"a\\\\b\"")
+    show("utf8", "\"é😀\"")
+    show("key-escape", "{\"a\\\"b\":1}")
+    show("key-unicode", "{\"\\u00e9\":1}")
+    show("null", "null")
+    show("true", "true")
+    show("nested-empty", "{\"a\":{},\"b\":[]}")
+    show("neg-zero-float", "-0.0")
+    show("exp-plus", "1e+3")
+    show("neg-exp", "-1E-2")
+    show("zero-exp", "0e0")
+    show("one-exp0", "1.0e0")
+    show("exp-missing", "1e")
+    show("exp-sign-only", "1e+")
+    show("minus-only", "-")
+    show("double-minus", "--1")
+    show("int-as-float-big", "1e19")
+    show("float-big-frac", "123456789.123456789")
+    show("denormal", "5e-324")
+    show("underflow", "1e-400")
+    show("max-f64", "1.7976931348623157e308")
+    show("nul-escape", "\"a\\u0000b\"")
+    show("del-raw", "\"a\u{7f}b\"")
+    show("empty-key", "{\"\":1}")
+    show("nested", "[[1,[2,{\"a\":[3]}]],{}]")
+    show("ws-all", " \t\n\r{ \"a\" : [ 1 , 2 ] } \n")
+    show("unterminated", "\"abc")
+    show("bad-escape", "\"a\\qb\"")
+    show("short-u", "\"\\u12\"")
+    show("upper-hex", "\"\\u00E9\"")
+    show("low-then-high", "\"\\ude00\\ud83d\"")
+    show("high-then-text", "\"\\ud83dx\"")
+    show("raw-tab", "\"a\tb\"")
+    show("raw-newline", "\"a\nb\"")
+    show("true-prefix", "truex")
+    show("capital-true", "True")
+    show("null-long", "nulll")
+    show("two-values", "1 2")
+    show("comma-only", "[,]")
+    show("colon-missing", "{\"a\" 1}")
+    show("unclosed", "[1,2")
+    show("unclosed-object", "{\"a\":1")
+    show("key-not-string", "{1:2}")
+    show("dup-key-nested", "{\"o\":{\"k\":1,\"k\":2}}")
+    show("same-key-different-objects", "[{\"k\":1},{\"k\":2}]")
+    var o = Json.object()
+    o.putFloat("one", 1.0)
+    o.putFloat("hundred", 100.0)
+    o.putFloat("tenth", 0.1)
+    o.putFloat("big", 1.0e21)
+    o.putFloat("small", 0.000001)
+    o.putFloat("neg", -2.5)
+    o.putInt("i", 42)
+    o.put("s", "tab\there \"quoted\" back\\slash é")
+    print(o.stringify())
+ZBR
+for p in json_nest json_deep json_kind json_kind2 json_edges; do json_both $p; done
 for p in json_handle json_hdepth json_detached; do json_v $p; done
 # the nest fixture again under the region check mode: a string a tree kept but did not copy is
 # POISONED at its block's end there ("<freed at ..."), where the plain run reads it right
@@ -1075,6 +1193,9 @@ if [ "$(cat "$OUT/json_nest_zig_rc.txt")" != 0 ] || ! tail -1 "$OUT/json_nest_zi
 elif [ "$(cat "$OUT/json_nest_v_rc.txt")" != 0 ]; then json_bad="$json_bad json_nest(v exit $(cat "$OUT/json_nest_v_rc.txt"): $(grep -m1 -E 'error|panic' "$OUT/json_nest_v_err.txt" | cut -c1-120))"
 elif ! diff -q "$OUT/json_nest_v_out.txt" "$OUT/json_nest_zig_out.txt" > /dev/null; then json_bad="$json_bad json_nest(differs: $(diff "$OUT/json_nest_v_out.txt" "$OUT/json_nest_zig_out.txt" | head -3 | cut -c1-140 | tr '\n' ' '))"; fi
 if [ "$(cat "$OUT/json_nest_chk_rc.txt")" != 0 ] || ! grep -qx 'bug722_json_nest: OK' "$OUT/json_nest_chk_out.txt"; then json_bad="$json_bad json_nest(under -d zbr_region_check: $(grep -m1 -E 'WRONG|error|panic' "$OUT/json_nest_chk_out.txt" "$OUT/json_nest_chk_err.txt" | cut -c1-160))"; fi
+if [ "$(cat "$OUT/json_edges_zig_rc.txt")" != 0 ] || [ "$(wc -l < "$OUT/json_edges_zig_out.txt")" -lt 80 ] || ! grep -qxF 'i64-max: 9223372036854775807 [int 9223372036854775807]' "$OUT/json_edges_zig_out.txt" || ! grep -qxF 'dup-key: nil' "$OUT/json_edges_zig_out.txt" || ! grep -qxF 'tiny: 0.0000001 [float 0.0000001]' "$OUT/json_edges_zig_out.txt" || ! grep -qxF 'exp-overflow: 1e400 [float inf]' "$OUT/json_edges_zig_out.txt"; then json_bad="$json_bad json_edges(NO CONTROL: the Zig run did not print the eighty-odd lines, or not the exact i64, the refused duplicate key, the plain-digit float and the kept number text the program is about)"
+elif [ "$(cat "$OUT/json_edges_v_rc.txt")" != 0 ]; then json_bad="$json_bad json_edges(v exit $(cat "$OUT/json_edges_v_rc.txt"): $(grep -m1 -E 'error|panic' "$OUT/json_edges_v_err.txt" | cut -c1-140))"
+elif ! diff -q "$OUT/json_edges_v_out.txt" "$OUT/json_edges_zig_out.txt" > /dev/null; then json_bad="$json_bad json_edges(differs, V then Zig: $(diff "$OUT/json_edges_v_out.txt" "$OUT/json_edges_zig_out.txt" | head -3 | cut -c1-160 | tr '\n' ' '))"; fi
 # the three that must stop: the same message on both routes, the same lines before it
 for p in json_deep json_kind json_kind2; do
   zmsg=$(grep -m1 -oE 'Json: .*' "$OUT/${p}_zig_err.txt" | tr -d '\r')
@@ -1098,7 +1219,7 @@ if ! grep -qxF 'stored 255 levels under the root: tree is 256' "$OUT/json_hdepth
 json_refused=$(cat "$OUT"/json_*_emit.txt | grep -cE '^    ')
 if [ -n "$json_bad" ]; then echo "json: FAILED --$json_bad"; fail=1
 elif [ "$json_refused" != 0 ]; then echo "json: FAILED -- REFUSED: $(cat "$OUT"/json_*_emit.txt | grep -m1 -E '^    ' | cut -c1-140)"; fail=1
-else echo "json: ok -- BUG-722's nest fixture alike on both backends ($(wc -l < "$OUT/json_nest_zig_out.txt") lines; right under the region check mode too) and its three refusals stopped by the same message on both; BUG-751's handle fixture ($(grep -c ': ok$' "$OUT/json_handle_v_out.txt") checks) and its two depth refusals on this backend against their own text (the Zig route's flip is the other half)"; fi
+else echo "json: ok -- parse, numbers and stringify alike on both backends over $(wc -l < "$OUT/json_edges_zig_out.txt") edge lines; BUG-722's nest fixture alike on both backends ($(wc -l < "$OUT/json_nest_zig_out.txt") lines; right under the region check mode too) and its three refusals stopped by the same message on both; BUG-751's handle fixture ($(grep -c ': ok$' "$OUT/json_handle_v_out.txt") checks) and its two depth refusals on this backend against their own text (the Zig route's flip is the other half)"; fi
 echo "── three shapes the engine's ladder met: a capture's name declared again, a class's own pop(), the free-at-sweep queue ──"
 rows=$((rows + 1))
 # The four engine tests that stood red on this route until 2026-11-16 (tools/v_engine_check.py:
