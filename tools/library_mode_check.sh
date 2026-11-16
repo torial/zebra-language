@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # pins: BUG-485 a Zig host keeps its allocator across a --library-mode main (the regression test for the fix)
+# pins: the GameEngine host's reliance on _zbr_listen / _zbr_listen_addr and on _ws_serve returning when its listen is refused (leg 4)
 # pins: BUG-757 a List the runtime hands to a library (keys(), regex split/findAll, CSV header) is grown and freed through the host's allocator (leg 5)
 # THE EMBEDDING GATE (BUG-485), registered as `library-mode` (FAST tier).
 #
@@ -235,6 +236,12 @@ def onConn(c: TcpConn)
 def serveOn(port: int)
     Tcp.serve(port, onConn)
 
+def onWs(ws: WsConn)
+    ws.close()
+
+def serveWsOn(port: int)
+    Ws.serve(port, onWs)
+
 def main()
     pass
 ZEOF
@@ -260,6 +267,8 @@ pub fn main(init: std.process.Init) !void {
     if (comptime std.mem.eql(u8, "$1", "owned")) rt._zbr_main_tid = std.Thread.getCurrentId();
     lib._zbr_fn_serveOn(19986);
     std.debug.print("host alive after held port\n", .{});
+    lib._zbr_fn_serveWsOn(19986);
+    std.debug.print("host alive after held ws port\n", .{});
 }
 EOF
 }
@@ -272,6 +281,15 @@ if grep -q "host alive after held port" port_owned.log || ! grep -q "AddressInUs
 fi
 if ! grep -q "Tcp.serve: cannot listen on 127.0.0.1:19986: AddressInUse" port_host.log || ! grep -q "host alive after held port" port_host.log; then
     echo "library-mode: FAIL -- a held port in a library's Tcp.serve ended the HOST's process or did not say why"; tail -5 port_host.log; exit 1
+fi
+# THE GAMEENGINE'S CONTRACT (Fable, 2026-11-16, engine F72): its Zig host probes the port with
+# `_zbr_listen_addr` + `_zbr_listen(&addr, false)` (the calls above -- a changed shape fails this
+# leg's compile) and reads `_ws_serve` RETURNING as "the listen was refused". So `Ws.serve` on a
+# held port must print why and return to the host. Change either and tell the engine's owner
+# BEFORE the pin that carries it. (`_ws_serve` also returns on an out-of-range port; once it is
+# listening it never returns.)
+if ! grep -q "Ws.serve: cannot listen on 127.0.0.1:19986: AddressInUse" port_host.log || ! grep -q "host alive after held ws port" port_host.log; then
+    echo "library-mode: FAIL -- a held port in a library's Ws.serve did not print why and RETURN to the host (the GameEngine reads that return as 'listen refused')"; tail -5 port_host.log; exit 1
 fi
 # --- leg 5: Lists the runtime hands out (2026-11-16, BUG-757) ----------------------------------
 # `j.keys()`, `re.split(s)`, `re.findAll(s)` and a CSV header were built on page_allocator, so

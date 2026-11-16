@@ -1468,6 +1468,12 @@ bash tools/library_mode_check.sh  # THE EMBEDDING GATE, registered as `library-m
                                 #   print AddressInUse and return. The runtime decides by
                                 #   `_zbr_main_tid` (no library-mode emit sets it, also asserted);
                                 #   control: the same host with it set must exit 1.
+                                #   The same host then calls a library's Ws.serve on the held port
+                                #   (2026-11-16): it must print why and RETURN, because the
+                                #   GameEngine's host reads that return as "listen refused" and
+                                #   probes with `_zbr_listen_addr` / `_zbr_listen(&addr, false)`,
+                                #   which this host also calls -- change either and tell the engine's
+                                #   owner before the pin. Red-checked with `_ws_serve` exiting.
                                 #   LEG 5 (2026-11-16, BUG-757): a list from `keys()`, `re.split`,
                                 #   `re.findAll` or a CSV header, grown 40 times in the library and freed
                                 #   by the host with `_zbr_free`, under a DebugAllocator. They were built
