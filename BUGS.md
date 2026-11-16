@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-747. Next new bug: BUG-748.**
+**Last bug number generated: BUG-748. Next new bug: BUG-749.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -357,9 +357,10 @@
   BUG-720's "one link decision" says cannot differ between the two paths.
 - **Cost:** a gate red that does not reproduce, and, if the hypothesis holds, a build whose
   bytes depend on the machine's load.
-- **What the next occurrence needs:** the leg deletes its scratch dir, so both binaries and the
-  compiler's messages for each build are gone. Keep them on failure (and print which backend
-  each build used) before chasing it.
+- **What the next occurrence needs:** since 2026-11-15 the leg keeps both binaries and each
+  build's stdout/stderr on failure, in a `zbr_cli_bug747.*` dir under TMPDIR named on its FAIL
+  line (red-checked with one appended byte). It does not yet print which backend each build
+  used; read the kept messages, then diff the PE headers and sections.
 - **Control when fixing:** the leg red-checked against a forced fallback on one path.
 
 ---

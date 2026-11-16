@@ -2846,7 +2846,7 @@ bare (the 29-line program differs), the limit at 255 and the scan removed
 ## The pin is vlang/v master c4dee97, and the certs row (2026-11-15)
 
 Sean's word, after the evaluation recorded in the engine's
-`docs/V_HOST_PORT.md` (every V host row and this file's `tools/v_check.sh`
+`docs/V_HOST_PORT.md` (every V host row and this file's `tools/v_check.sh` <!-- doc-lint-ok: the GameEngine repo's document, not this one -->
 green under it). `tools/v_check.sh` and `tools/v_engine_check.py` default to
 `/c/Projects/v-c4dee97/v.exe`; the engine ladder's default had still been
 V 0.5.2, under which 103 of its roots fail on `uint`.

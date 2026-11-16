@@ -859,9 +859,10 @@ run_daily "node-addon"   "node-addon tests: PASS" bash tools/node_addon_test.sh
 # place; stdin polled without blocking; and the V-built compiler answering the LSP. It was
 # in no tier until 2026-10-30, and that is how the V route sat broken from 9bc1796 until
 # the corpus census happened to build it. Built under the V the engine pins (master
-# b399a50 since 2026-11-08, was ee6d62a -- engine docs/V_HOST_PORT.md, "The V pin moved");
+# c4dee97 since 2026-11-15 -- its net.http checks certificates by default, BUG-748; b399a50
+# from 2026-11-08, ee6d62a before -- engine docs/V_HOST_PORT.md, "The V pin moved");
 # V=<v.exe> overrides, and the gate REFUSES (exit 2) when that V is not installed.
-run_v "v-check" "v_check: ok" env V="${V:-/c/Projects/v-b399a50/v.exe}" bash tools/v_check.sh
+run_v "v-check" "v_check: ok" env V="${V:-/c/Projects/v-c4dee97/v.exe}" bash tools/v_check.sh
 # -- Did every gate actually RUN? ---------------------------------------------
 #
 # The summary used to print "$PASSED/$PASSED PASS" -- both numbers the same, which is a

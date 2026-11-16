@@ -547,11 +547,21 @@ if [ "$(uname -m)" = "x86_64" ]; then
     mkdir -p "$W/bi"
     run --emit-exe=bi/hello.zig.fast.exe --output-dir bi hello.zbr
     cp "$W/bi/hello.zig.fast.exe" "$W/bi/emitted.bin" 2>/dev/null
+    printf 'exit=%s\n--- stdout\n%s\n--- stderr\n%s\n' "$RC" "$OUT" "$ERR" > "$W/bi/emit-exe.messages"
     rm -f "$W/bi/hello.zig.fast.exe"
     run --output-dir bi hello.zbr
+    printf 'exit=%s\n--- stdout\n%s\n--- stderr\n%s\n' "$RC" "$OUT" "$ERR" > "$W/bi/run-path.messages"
+    bi_rc=$([ -s "$W/bi/emitted.bin" ] && cmp -s "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" && echo 0 || echo 1)
+    bi_kept=""
+    if [ "$bi_rc" != 0 ]; then
+        # BUG-747: this leg went red once under load (SizeOfImage differed, so two different
+        # builds) and the scratch dir took both binaries with it. Keep them, with each build's
+        # messages, OUTSIDE $W, which the EXIT trap removes.
+        bi_kept=$(mktemp -d "${TMPDIR:-/tmp}/zbr_cli_bug747.XXXXXX") && cp -r "$W/bi/." "$bi_kept/"
+    fi
     chk "the run path and --emit-exe build byte-identical executables (fast backend, one output path)" \
-        "$([ -s "$W/bi/emitted.bin" ] && cmp -s "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" && echo 0 || echo 1)" \
-        "files=[$(ls "$W/bi" | tr "\n" " ")] cmp=[$(cmp "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" 2>&1 | head -1)]"
+        "$bi_rc" \
+        "files=[$(ls "$W/bi" | tr "\n" " ")] cmp=[$(cmp "$W/bi/emitted.bin" "$W/bi/hello.zig.fast.exe" 2>&1 | head -1)] kept=[${bi_kept:-nothing}]"
 else
     echo "  skip   byte-identity: $(uname -m) has no fast backend, and zig's LLVM output is not reproducible"
 fi

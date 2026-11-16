@@ -6,6 +6,31 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-748: the V route accepted HTTPS certificates the Zig route refuses -- FIXED 2026-11-15
+- **Status:** FIXED 2026-11-15 (filed and fixed the same day; Fable, evaluating V master c4dee97)
+- **Repro:** `Http.get("https://self-signed.badssl.com/")` and `https://expired.badssl.com/`
+  built for the V route answered 200. `zebra_rt.v`'s `zhttp_get` / `zhttp_post` call V's
+  `http.get` / `http.post` with no config, so they took V's default, which under the pin
+  (vlang/v master b399a50) did not validate certificates. The Zig route refuses both. Measured by
+  Fable on Windows (a three-line V program, clang): under b399a50, example.com, self-signed and
+  expired all 200; under c4dee97, 200, then `http: vschannel request failed: 0x800b0109` and
+  `0x800b0101`.
+- **Cost:** a program built for the V route trusted any certificate: a man-in-the-middle went
+  unnoticed there, while the same program on the Zig route refused the connection.
+- **Fix:** the V pin moves to vlang/v master c4dee97 (Sean's decision, 2026-11-15, relayed by Fable), whose
+  `FetchConfig.validate` and `Request.validate` default to true (upstream 40774847a9).
+  `tools/v_check.sh`'s default V and `tools/gates.sh`'s `v-check` default name
+  `/c/Projects/v-c4dee97/v.exe`; `tools/v_engine_check.py` moved with them (Fable, c6ed30c).
+- **Pinned by:** `tools/v_check.sh`'s certs row: it reads the `validate bool` fields in
+  `vlib/net/http/http.v` and `request.v` beside the V it is given, and every one must default to
+  `true`. Red-checked by Fable: against b399a50 it FAILS (0 of 1 in each file); on altered copies
+  of c4dee97's files it fails when the field is renamed away ("the file's shape changed and this
+  leg can no longer tell"), when `http.v` is missing, and when one of the two defaults is removed.
+- **Not covered:** nothing makes a network request in a gate, so the row pins V's DEFAULT, not
+  the behaviour; a V route that passed an explicit `validate: false` config would not be seen.
+
+---
+
 ### BUG-709: `zebra -c` accepts a `str` or `int` where a class is expected -- FIXED 2026-11-15
 - **Status:** FIXED 2026-11-15 (filed 2026-11-13; Fable from Graze, reproduced on 0aaf714)
 - **Repro:** `class SafeHtml` and `def html(body: SafeHtml)`; then `html("<p>")`, `return name`
