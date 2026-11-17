@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-777. Next new bug: BUG-778.**
+**Last bug number generated: BUG-778. Next new bug: BUG-779.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -78,6 +78,25 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+
+---
+
+### BUG-778: a refusal made in CodeGen reaches neither `--target v` nor `zebra diagnostics`
+- **Status:** OPEN (filed 2026-11-17; found by Fable writing BUG-777, which runs the checker on the
+  V route: eight files `-c` refuses are still written by `--target v`)
+- **Repro:** the eight -- `bug467`, `bug728`, `bug729_nested` (a throws call needs `?`),
+  `bug729_optchain`, `bug730`, `bug764`, `bug767`, `infer_guess_hatch`. Each is refused by
+  `zebra -c` and `zebra file.zbr`; `--target v` writes the `.v` (after BUG-777 too), and
+  `zebra diagnostics` -- the strict view the LSP shares -- answers `[]`, so the editor shows no
+  error on a file that will not build.
+- **Cause:** those rules are checked in CodeGen.zbr at emit time (`-c` runs the Zig emit to see
+  them), not in the checker, so a consumer that runs only the front end never sees them. BUG-764
+  and BUG-767 (2026-11-17) were added there, which grew the set.
+- **Fix shape:** move each rule into the checker (a rule there reaches all three consumers); do not
+  copy CodeGen's rules into the V route. Measure each with `-c` before and after over test/,
+  examples/, selfhost/, zebra-ide and the GameEngine.
+- **Control when fixing:** each of the eight refused by `--target v` and listed by
+  `zebra diagnostics` at the same line and column as `-c`; a clean file unchanged on all three.
 
 ---
 
