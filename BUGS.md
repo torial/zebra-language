@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-778. Next new bug: BUG-779.**
+**Last bug number generated: BUG-780. Next new bug: BUG-781.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -78,6 +78,41 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+
+---
+
+### BUG-780: `g.text(s)` on libui_ng cuts the text at 511 bytes, silently
+- **Status:** OPEN (filed 2026-11-17; reported by Fable porting the GameEngine's GUI client, whose
+  33,000-character line showed its first 511 characters)
+- **Repro:** an MVU `view` calling `g.text(s)` with `s` over 511 bytes, `--gui-backend=libui_ng`:
+  the label shows the first 511 bytes and nothing says it was cut.
+- **Cause:** `_lui_text` (selfhost/gui_libui_ng_section.zig ~1963) formats into
+  `var _tb: [512]u8` through `_lui_z`. Old behaviour (the May 2026 runtime cut at 510); not a
+  regression. Check `_lui_text_colored` and every other `[N]u8` + `_lui_z` site for the same cut,
+  and whether a cut can land inside a UTF-8 sequence.
+- **Fix shape:** allocate the zero-terminated copy at the text's length (or keep the buffer and
+  fall back to an allocation past it); if a cap is kept on purpose, it is documented and the cut
+  is marked (an ellipsis) rather than silent.
+- **Control when fixing:** a 33,000-byte label shown whole (or visibly marked as cut); a short
+  label unchanged. Only a human run proves rendering; a section test can prove the copy.
+
+---
+
+### BUG-779: a `Gui` method call with an argument missing passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-17; reported by Fable porting game/devtools.zbr; reproduced here
+  on the stub backend at d283723)
+- **Repro:** an MVU `view` with `g.beginHBox("x")` / `g.text("hi")` / `g.endHBox()` (QUICKSTART
+  §30 documents `g.beginHBox("row", stretch: false)`). `-c` exits 0; the build fails inside zig,
+  "member function expected 2 argument(s), found 1", against `pub fn beginHBox(self: GuiContext,
+  id: []const u8, stretch: bool)` -- on the stub backend and on libui_ng.
+- **Cause:** the checker knows Gui's method NAMES (`guiMethodKnown`, BUG-369; `'Gui' has no method
+  'panel'`) but not their arity or argument types.
+- **Fix shape:** derive each verb's parameter list from GuiContext's `pub fn` signatures (the
+  table `gui_surface_drift.py` already reads and holds identical across the three regions) and
+  check the count -- and the primitive argument types -- at the call, naming the documented
+  form. Deriving it keeps the checker from being a fourth hand-kept copy of the surface.
+- **Control when fixing:** the repro refused at its line naming `beginHBox(id, stretch)`; every
+  GUI example and fixture unchanged (sweep `-c` over examples/, test/ and zebra-ide first).
 
 ---
 
