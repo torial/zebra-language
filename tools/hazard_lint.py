@@ -367,10 +367,20 @@ def check_h10(path, text, lines, tree=None):
 COLLATION_TOOL = re.compile(r"(?<![\w-])(comm|join)\s")
 
 
+# 2026-11-17: the word inside a quoted STRING is data, not a command -- BUG-761's smoke line
+# and v_check row grep for a printed `join  100 ...` and were flagged. A string that holds a
+# command substitution (`"$(comm -23 a b)"`) still runs the command, so it is kept.
+def _strip_shell_strings(s):
+    def keep_subst(m):
+        return m.group(0) if "$(" in m.group(0) or "`" in m.group(0) else '""'
+    s = re.sub(r'"(?:[^"\\]|\\.)*"', keep_subst, s)
+    return re.sub(r"'[^']*'", "''", s)
+
+
 def check_h11(path, text, lines, tree=None):
     out = []
     for i, ln in enumerate(lines, 1):
-        s = re.sub(r"#.*$", "", ln)
+        s = _strip_shell_strings(re.sub(r"#.*$", "", ln))
         if not COLLATION_TOOL.search(s):
             continue
         if "LC_ALL=C" in s:
@@ -568,6 +578,7 @@ CONTROLS = {
     "H9": ("ctl_h9.py", 'import pathlib  # hazard-ok\n'),
     "H10": ("ctl_h10.sh", 'bash gates.sh | tail -5\nrc=$?\n'),
     "H11": ("ctl_h11.sh", 'comm -23 a.txt b.txt\n'),
+    "H11subst": ("ctl_h11s.sh", 'x="$(comm -23 a.txt b.txt)"\n'),
     "H12": ("ctl_h12.sh", 'BS_PRE=/tmp/bs-pre\nrm -rf "$BS_PRE"\n'),
     "H13": ("ctl_h13.sh", 'smoke_tc_fail t.zbr "has no field named `z`"\n'),
     "H14": ("ctl_h14.sh", 'ZEBRA="$REPO/' + _COMPILER_PATH + '.exe"\n"$ZEBRA" t.zbr\n' + _ZIG_BUILD + '-exe x.zig\n'),
@@ -603,6 +614,8 @@ def selftest(verbose=False):
 
 
 CLEAN_CONTROLS = [
+    # the word inside a quoted string is data (BUG-761's smoke line and v_check row)
+    ("H11", "ctl_h11_string.sh", 'smoke_run t.zbr "join  100 4999930000"\ngrep -qxF \'join  100\' f.txt\n'),
     # the planted H14 lines, with the pin sourced first
     ("H14", "ctl_h14_pinned.sh",
      'source "$REPO/tools/zig_toolchain.sh"\nZEBRA="$REPO/' + _COMPILER_PATH + '.exe"\n"$ZEBRA" t.zbr\n' + _ZIG_BUILD + '-exe x.zig\n'),
