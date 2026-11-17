@@ -250,7 +250,9 @@ came in with the slice:
   match without `else` and an `else` on an exhaustive one);
 - **format specs** spliced into V's own `${x:.4f}` (a format part follows
   its expression in the AST's parts, which the run showed before the
-  builder's source did).
+  builder's source did). (Superseded 2026-11-16: V drops a spec it does not
+  know, so a spec'd hole of a known type is the runtime's text -- "A format
+  spec in a hole", below.)
 
 `examples/v_poc4.zbr` (a struct with defaults, named arguments, methods and
 a formatted `toString`; an enum and a branch on it; a union with payload and
@@ -3149,6 +3151,78 @@ engine runs: the same build with only the runtime swapped, 25 s of the
 autoplay): 24.2 MB live before, 27.6 MB after, paid at startup and flat from
 there -- the JSON trees the engine keeps are a heap node each now. The whole
 suite reads the same (367 roots), and no engine module's emission changed.
+
+## A format spec in a hole (2026-11-16)
+
+**What was wrong.** The emitter spliced a Zebra format spec into V's own
+interpolation verbatim (`${n:>3}` became V's `${n:>3}`), on the belief that
+the two spellings agree. They agree for a bare width, `0N`, `+`, `d`, `x`
+and `.Nf`. V's interpolation knows no `>`, `<`, `^`, no fill character and no
+space sign, and it does not refuse them: the emitted program compiled and
+printed the value with the WHOLE spec dropped. Measured against the Zig route
+at f6c266e (each hole printed on both routes, the 24 of
+`test/bug725_int_width_sign_test.zbr` and 13 more): 21 of 37 differed --
+`${n:>3}`, `${n:<3}`, `${n:^5}`, `${n:*^5}`, `${n:>5x}`, `${f:>6}`,
+`${s:*^6}` all printed unpadded, `${n: }` lost its space, and `${f:8.2f}`
+did not compile (the emitter wrapped the float in `zshow_f` and V refused a
+precision on a string) under "nothing refused". Found the day BUG-725 fixed
+the Zig route's `+`, when the Zebra seat asked whether this route needed a
+matching row; it is older than that fix and wider.
+
+**What it is now.** `CodeGenV.vSpecHole` takes every spec'd hole whose V type
+the emitter knows (an int, a byte, a float, a str, a char with a width). The
+spec is read by the Zig route's own `parseFmtSpec` (`use CodeGen exposing
+parseFmtSpec`: one grammar, so the two routes cannot drift on the parse), and
+the decisions are CodeGen's, in its order:
+
+| hole | Zig route | V route |
+|---|---|---|
+| a signed int, decimal, a width or a `+` / space sign, no `0` flag | `_zbr_itext` under `{s:fill align width}` (BUG-725) | `zfmt_pad(zfmt_itext(i64(x), sign), ...)` |
+| a number with the `0` flag | `_zbr_zpad` / `_zbr_ffmt` with `=`: zeros after the sign (BUG-631) | `zfmt_zpad(text, width)` |
+| a float with a precision | `_zbr_ffmt`: the exact binary value, ties to even | `zfmt_one(f64(x), N)`, then the pad |
+| a float with a spec and no precision | Zig's `{d}`: no ".0" on a whole value | `zfmt_dtext`, then the pad |
+| an int under `x` `X` `o` `b` | the bits, unsigned | `zfmt_radix(u64(x), base, upper)`, then the pad |
+| a str, a char with a width | `{s:fill align width}`, bytes counted | `zfmt_pad` |
+
+Numbers and text both align right by default, a centred pad puts its odd
+byte on the right, a fill is one byte. What the checker warns as ignored
+(`#`, digit grouping, a sign on a float or with the `0` flag, `%`) is ignored
+on this route too, because the shared parser skips it and the warning is the
+shared checker's. `zstr_align` and the emitter's `alignWidth` / `alignKind`
+are gone (`zfmt_pad` is their general form).
+
+**Refused by name** (never spliced): an exponent type (`e`, `E`), a float
+precision over 9 (`zfmt_one`'s digits), a precision or a float type on an
+integer, a type letter on a str, and an alignment, a fill or a space sign on
+a value whose type this route does not know -- V would drop it without a
+word. Any other spec on an untyped value is spliced as V's own, as before
+(a bare width and `.Nf` agree).
+
+**The witness.** `test/v_format_specs_test.zbr` prints 60 lines of holes
+(ints, a str's bytes, floats, strs, a char; widths, the three alignments,
+fills, the three sign flags, the `0` flag, the four radixes, precisions) and
+`tools/v_check.sh` compares the two routes line for line; its `fmt` row holds
+the controls (the Zig run printed a padded int; the emitted V reaches
+`zfmt_pad(zfmt_itext(`; four unwritable specs are refused by name). The red:
+the same file through the emitter from before this change does not compile
+as V at all (60 of 60 lines missing).
+
+**Not covered, and said.**
+- The sized ints (`int8` .. `uint64`) and a declared `byte` are not mapped on
+  this route (BUG-534's family; a `byte` parameter is emitted as V's removed
+  `byte`, an `int8` local as a V `int`), so a spec'd hole over one is refused
+  as an unknown type and the file's unsigned values are a str's bytes.
+  `test/bug725_int_width_sign_test.zbr` is not in the V lane for that reason
+  (an `int8`, and an untyped `var n = sys.args().count()`).
+- `zfmt_dtext` copies a Zig-route bug on purpose: `${h:>6}` over 2.0 is
+  "     2" where the bare hole prints "2.0" (BUG-760, filed from this
+  work). When 760 lands, that one function changes in step and the matrix's
+  `f >6`, `f <6`, `f ^7`, `f 8`, `f *^9` and `f 06` lines move with it.
+- An int literal under `:x` does not build on the Zig route (BUG-759, filed
+  from this work), so the matrix has no such hole.
+- V itself accepting and dropping an unknown format character is a V
+  matter: vlang/v#32420, filed from this work (an unknown LETTER is already
+  an error there; `>`, `<`, `^`, a fill and a space are not looked at).
 
 ## If the branch ever merges to main
 

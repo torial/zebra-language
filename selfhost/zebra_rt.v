@@ -3425,22 +3425,75 @@ pub fn zstr_center(zr_s string, zr_width i64, zr_pad string) string {
 	return zr_pad[..1].repeat(zr_left) + zr_s + zr_pad[..1].repeat(zr_total - zr_left)
 }
 
-// A width in an interpolation over a str or a char -- `"${s:>8}"`, `"${c:^5}"`, `"${s:8}"`:
-// padded with spaces to zr_width BYTES, as the Zig route's {s:>8} is. zr_kind is `<`, `>` or
-// `^`. (V's own `${s:8}` counts visible characters and has no `>` / `^` spelling at all.)
-pub fn zstr_align(zr_s string, zr_width i64, zr_kind rune) string {
+// The text of a hole with a format spec (CodeGenV.vSpecHole writes these calls; V's own
+// interpolation knows no `>`, `<`, `^`, no fill and no space sign, and drops a spec that
+// carries one without a word). test/v_format_specs_test.zbr compares them with the Zig route.
+//
+// zfmt_pad: zr_s padded to zr_width BYTES with the byte zr_fill, aligned by zr_kind (`<`, `>`
+// or `^`; the odd byte of a centred pad goes on the right), as the Zig route's {s:*^8} pads.
+pub fn zfmt_pad(zr_s string, zr_width i64, zr_kind rune, zr_fill u8) string {
 	if i64(zr_s.len) >= zr_width {
 		return zr_s
 	}
 	zr_total := int(zr_width) - zr_s.len
+	zr_f := [zr_fill].bytestr()
 	if zr_kind == `<` {
-		return zr_s + ' '.repeat(zr_total)
+		return zr_s + zr_f.repeat(zr_total)
 	}
 	if zr_kind == `^` {
 		zr_left := zr_total / 2
-		return ' '.repeat(zr_left) + zr_s + ' '.repeat(zr_total - zr_left)
+		return zr_f.repeat(zr_left) + zr_s + zr_f.repeat(zr_total - zr_left)
 	}
-	return ' '.repeat(zr_total) + zr_s
+	return zr_f.repeat(zr_total) + zr_s
+}
+
+// zfmt_zpad: the `0` flag over a number's text -- zeros to zr_width bytes AFTER a leading
+// sign (`-005`, never `00-5`), the Zig route's _zbr_zpad (BUG-631).
+pub fn zfmt_zpad(zr_s string, zr_width i64) string {
+	if i64(zr_s.len) >= zr_width {
+		return zr_s
+	}
+	zr_zeros := '0'.repeat(int(zr_width) - zr_s.len)
+	if zr_s.len > 0 && (zr_s[0] == `-` || zr_s[0] == `+`) {
+		return zr_s[..1] + zr_zeros + zr_s[1..]
+	}
+	return zr_zeros + zr_s
+}
+
+// zfmt_itext: a signed integer's text under a sign flag -- zr_sign is `-` (a sign only when
+// negative), `+` or a space (written before a value that is not negative), the Zig route's
+// _zbr_itext (BUG-725).
+pub fn zfmt_itext(zr_x i64, zr_sign u8) string {
+	if zr_x < 0 || zr_sign == `-` {
+		return zr_x.str()
+	}
+	return [zr_sign].bytestr() + zr_x.str()
+}
+
+// zfmt_dtext: a float's text in a spec'd hole with no precision -- Zig's {d}, which is the
+// shortest digits with no ".0" on a whole value ("2" where a bare hole prints "2.0").
+pub fn zfmt_dtext(zr_x f64) string {
+	zr_t := zshow_f(zr_x)
+	if zr_t.ends_with('.0') {
+		return zr_t[..zr_t.len - 2]
+	}
+	return zr_t
+}
+
+// zfmt_radix: an integer's bits in base 16, 8 or 2 (`x`, `X`, `o`, `b`), no prefix.
+pub fn zfmt_radix(zr_x u64, zr_base int, zr_upper bool) string {
+	if zr_x == 0 {
+		return '0'
+	}
+	zr_digits := if zr_upper { '0123456789ABCDEF' } else { '0123456789abcdef' }
+	mut zr_out := []u8{}
+	mut zr_v := zr_x
+	zr_b := u64(zr_base)
+	for zr_v > 0 {
+		zr_out << zr_digits[int(zr_v % zr_b)]
+		zr_v = zr_v / zr_b
+	}
+	return zr_out.reverse().bytestr()
 }
 
 // `"${n:c}"` on an int: ONE BYTE, the int as `n.toUint8()` would take it (BUG-713: this

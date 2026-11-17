@@ -21,6 +21,7 @@
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
 use TypeChecker exposing namespaceMembers, intLitSuffix, floatLitSuffix, sqliteOpenParamName
+use CodeGen exposing parseFmtSpec
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtAllocate, StmtCopyOut, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
 # a callee's parameters, for named arguments and defaults at the call
@@ -4092,6 +4093,109 @@ class VGen
             i = i + 1
         return "zfmt_f('" + fmt + "', [" + vals + "])"
 
+    # A hole with a format spec whose V type the emitter knows (an integer, a float, a str,
+    # a char with a width): the V expression that is the hole's text, built by the runtime.
+    # V's own interpolation knows no `>`, `<`, `^`, no fill character and no space sign, and
+    # it does not refuse them (vlang/v#32420): `'${n:>3}'` compiles and prints n, spec dropped
+    # (2026-11-16: 21 of 37 holes differed from the Zig route that way, and `${f:8.2f}` did
+    # not compile). So the spec is read here by the Zig route's own parser (parseFmtSpec:
+    # one grammar, not two) and the same decisions are taken as CodeGen takes --
+    # floatPrecArgs, zeroPadArgs, intSignArg, zigFmtSpec -- over runtime functions that
+    # write the Zig route's text: zfmt_itext (BUG-725's sign), zfmt_zpad (BUG-631's zeros
+    # after the sign), zfmt_one (the exact fixed-point digits), zfmt_dtext (Zig's {d} of a
+    # float: "2", not "2.0"), zfmt_radix, zfmt_pad. What the checker warns as ignored (`#`,
+    # digit grouping, a sign on a float, `%`) is ignored here too, since the parser skips
+    # it. What this route cannot write is refused by name: an exponent type, a float
+    # precision over 9, a precision or a float type on an integer.
+    # Returns "" for a hole the branches of vInterp own: a char's `c` / `x` / `X` / `d`, an
+    # int's bare `c`, and a value whose type the emitter does not know -- where a spec V
+    # would drop is refused, and any other is spliced as V's own, as before.
+    # test/v_format_specs_test.zbr is the witness, compared line for line across the routes.
+    def vSpecHole(ex: Expr, spec: str): str
+        var t: str = .vTypeOf(ex)
+        var e: str = .exprStr(ex)
+        var parts = parseFmtSpec(spec)
+        var fill: str = parts.at(0)
+        var align: str = parts.at(1)
+        var width: str = specWidth(parts.at(2))
+        var prec: str = parts.at(3)
+        var ty: str = parts.at(4)
+        var sign: str = parts.at(5)
+        var zero: bool = align == "="
+        # the integer types this route has: int (i64) and byte (u8). The sized ints are not
+        # mapped on this route at all (BUG-534's family): a hole over one has no known type
+        var signed: bool = t == "i64"
+        var unsigned: bool = t == "u8" or t == "byte"
+        var body: str = ""
+        var sign_aware: bool = false   # the `0` flag puts its zeros after a sign
+        if signed or unsigned
+            if spec == "c"
+                return ""
+            if prec != ""
+                return .specRefused(spec, e, "a precision on an integer")
+            if ty == "" or ty == "d" or ty == "i" or ty == "n"
+                sign_aware = true
+                if unsigned
+                    body = "u64(" + e + ").str()"
+                else if not zero and (width != "" or sign == "+" or sign == " ")
+                    body = "zfmt_itext(i64(" + e + "), " + specSignCode(sign) + ")"
+                else
+                    body = "i64(" + e + ").str()"   # with the 0 flag a sign flag is dropped, as the Zig route's _zbr_zpad drops it (the checker warns)
+            else if ty == "x" or ty == "X" or ty == "o" or ty == "b"
+                var base: str = "16"
+                if ty == "o"
+                    base = "8"
+                else if ty == "b"
+                    base = "2"
+                var upper: str = "false"
+                if ty == "X"
+                    upper = "true"
+                body = "zfmt_radix(u64(" + e + "), " + base + ", " + upper + ")"   # the bits, unsigned, as the Zig route's @bitCast prints them (-1 is ffffffffffffffff)
+            else
+                return .specRefused(spec, e, "the type `" + ty + "` on an integer (mapped: none, d, i, n, x, X, o, b, and a bare c)")
+        else if t == "f64" or t == "f32"
+            if ty == "e" or ty == "E"
+                return .specRefused(spec, e, "the exponent type `" + ty + "` on a float")
+            if ty == "s" or ty == "c" or ty == "u" or ty == "x" or ty == "X" or ty == "o" or ty == "b"
+                return .specRefused(spec, e, "the type `" + ty + "` on a float")
+            sign_aware = true
+            if prec.len >= 2
+                if prec.len != 2
+                    return .specRefused(spec, e, "a float precision over 9")
+                body = "zfmt_one(f64(" + e + "), " + prec.substring(1, 2) + ")"
+            else
+                body = "zfmt_dtext(f64(" + e + "))"
+        else if t == "string"
+            if prec != "" or sign != "" or (ty != "" and ty != "s")
+                return .specRefused(spec, e, "on a str (mapped: a fill, an alignment, a width, s)")
+            body = e
+        else if t == "rune"
+            if width == "" or prec != "" or sign != "" or (ty != "" and ty != "c" and ty != "u")
+                return ""
+            body = "zchar_str(" + e + ")"
+        else
+            if align == "<" or align == ">" or align == "^" or sign == " "
+                return .specRefused(spec, e, "on a value whose type this route does not know (V's interpolation would drop the spec without a word: annotate the value; a sized int is not mapped on this route)")
+            return ""
+        if zero and sign_aware
+            if width == ""
+                return body
+            return "zfmt_zpad(" + body + ", " + width + ")"
+        if width == ""
+            return body
+        var kind: str = align
+        if kind == "" or kind == "="
+            kind = ">"
+        var fill_code: str = "32"
+        if fill != ""
+            fill_code = fill[0].toString()
+        return "zfmt_pad(" + body + ", " + width + ", `" + kind + "`, " + fill_code + ")"
+
+    # a spec this route cannot write: said in the refusals, the hole left bare
+    def specRefused(spec: str, e: str, why: str): str
+        .refused.add("a format spec (" + spec + "): " + why)
+        return e
+
     # an interpolation with a hole is a string V builds: the open allocate
     # block's (zr_s); a literal with no hole is static and is not
     def vInterp(si: ExprStringInterp): str
@@ -4119,8 +4223,13 @@ class VGen
                                 spec = f0
                             else
                                 pass
-                    if spec != "" and isFixedFloatSpec(spec) and .vTypeOf(ex) == "f64"
-                        out = out + "\${zfmt_one(f64(" + .exprStr(ex) + "), " + spec.substring(1, 2) + ")}"
+                    # a spec'd hole of a known number, str or char type is text the runtime
+                    # builds (vSpecHole): V's own interpolation drops a spec it does not know
+                    var held: str = ""
+                    if spec != ""
+                        held = .vSpecHole(ex, spec)
+                    if held != ""
+                        out = out + "\${" + held + "}"
                         i = i + 1   # the spec, taken with its hole
                     else if .vTypeOf(ex) == "f64"
                         # a bare float hole: the Zig backend's _zbr_show_float spelling (the
@@ -4137,12 +4246,6 @@ class VGen
                             i = i + 1
                     else if .vTypeOf(ex) == "rune" and (spec == "x" or spec == "X" or spec == "d")
                         out = out + "\${i64(" + .exprStr(ex) + "):" + spec + "}"   # the codepoint, as a number (i64: V refuses :d on a u32)
-                        i = i + 1
-                    else if alignWidth(spec) > 0 and (.vTypeOf(ex) == "rune" or .vTypeOf(ex) == "string")
-                        # a width over text counts BYTES and pads with spaces, as the Zig
-                        # route's {s:>8} (V's `${s:8}` counts visible characters and has no
-                        # `>` / `^` spelling)
-                        out = out + "\${zstr_align(" + .charText(ex, .exprStr(ex)) + ", " + alignWidth(spec).toString() + ", `" + alignKind(spec) + "`)}"
                         i = i + 1
                     else if .vTypeOf(ex) == "rune"
                         .refused.add("a format spec (" + spec + ") on a char (mapped: none, c, x, X, d and a width)")
@@ -5346,27 +5449,23 @@ def isJsonOnlyMethod(name: str): bool
     # (not tryInt / tryFloat: a string has them)
     return name == "tryStr" or name == "tryBool" or name == "tryObj" or name == "tryList" or name == "isNull" or name == "isObject" or name == "isArray" or name == "putInt" or name == "putFloat" or name == "putBool" or name == "appendInt" or name == "appendFloat" or name == "appendBool"
 
-# A width spec over text: `>8`, `<8`, `^8`, or a bare `8` (right-aligned, as Zig's {s:8}).
-# 0 when the spec is anything else (a fill character, a precision, a type letter).
-def alignWidth(spec: str): int
-    var digits: str = spec
-    if spec.startsWith(">") or spec.startsWith("<") or spec.startsWith("^")
-        digits = spec.substring(1, spec.len)
-    if digits == "" or digits.startsWith("0")
-        return 0
-    for b in digits.bytes()
-        if b < 48 or b > 57
-            return 0
-    if digits.tryInt() as n
-        return n
-    return 0
+# A spec's width digits as a V integer literal: leading zeros off (`>05` is width 5; V
+# reads a literal with a leading zero as something else). "" stays "": no width.
+def specWidth(digits: str): str
+    var out: str = digits
+    while out.len > 1 and out.startsWith("0")
+        out = out.substring(1, out.len)
+    if out == "0"
+        return ""
+    return out
 
-def alignKind(spec: str): str
-    if spec.startsWith("<")
-        return "<"
-    if spec.startsWith("^")
-        return "^"
-    return ">"
+# The sign flag as the byte zfmt_itext takes: `+` 43, a space 32, none or `-` 45.
+def specSignCode(sign: str): str
+    if sign == "+"
+        return "43"
+    if sign == " "
+        return "32"
+    return "45"
 
 # the stdlib methods whose result is a string, whatever the receiver
 def isStringReturningMethod(name: str): bool

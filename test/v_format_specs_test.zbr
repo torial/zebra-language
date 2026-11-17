@@ -1,0 +1,89 @@
+# The interpolation format specs, printed hole by hole: the V lane (tools/v_check.sh) runs this
+# on both routes and compares the output line for line. V's own interpolation knows no `>`,
+# `<`, `^` or fill character and DROPS a spec that carries one without a word (`${n:>3}` was
+# "1" on the V route, 2026-11-16), so every spec'd hole on that route goes through the
+# runtime; this file is what holds the two routes together. Values are runtime values (from
+# sys.args().count(), which is 1), never comptime literals, except where a line says so.
+
+def ints(n: int, m: int, z: int, big: int)
+    print("i >3    [${n:>3}] [${m:>3}] [${z:>3}] [${big:>3}]")
+    print("i <3    [${n:<3}] [${m:<3}] [${z:<3}] [${big:<3}]")
+    print("i ^5    [${n:^5}] [${m:^5}] [${z:^5}] [${big:^5}]")
+    print("i ^6    [${n:^6}] [${m:^6}] [${z:^6}]")
+    print("i 3     [${n:3}] [${m:3}] [${z:3}] [${big:3}]")
+    print("i 9     [${n:9}] [${m:9}] [${big:9}]")
+    print("i *^5   [${n:*^5}] [${m:*^5}]")
+    print("i 0>5   [${n:0>5}] [${m:0>5}]")
+    print("i x<4   [${n:x<4}] [${m:x<4}]")
+    print("i +>4   [${n:+>4}] [${m:+>4}]")
+    print("i >+4   [${n:>+4}] [${m:>+4}] [${z:>+4}]")
+    print("i <+5   [${n:<+5}] [${m:<+5}]")
+    print("i ^+5   [${n:^+5}] [${m:^+5}]")
+    print("i +     [${n:+}] [${m:+}] [${z:+}]")
+    print("i space [${n: }] [${m: }] [${z: }]")
+    print("i -     [${n:-}] [${m:-}]")
+    print("i +5    [${n:+5}] [${m:+5}]")
+    print("i sp4   [${n: 4}] [${m: 4}]")
+    print("i d     [${n:d}] [${m:d}] [${n:3d}] [${m:>4d}] [${n:<4d}|]")
+    print("i 03    [${n:03}] [${m:03}] [${z:03}] [${big:03}]")
+    print("i 05d   [${n:05d}] [${m:05d}]")
+    print("i x     [${n:x}] [${big:x}] [${big:X}] [${big:o}] [${big:b}]")
+    print("i >5x   [${n:>5x}] [${big:>9x}] [${big:<9X}|] [${big:^11x}]")
+    print("i 08x   [${n:08x}] [${big:08X}] [${n:06b}] [${big:*>9o}]")
+    print("i neg x [${m:x}] [${m:X}]")
+    print("i lit   [${7:>3}] [${-7:>4}] [${7:+}] [${7:03}] [${7:<3}|]")   # comptime literals (a literal under :x does not build on the Zig route)
+    print("i plain [${n}] [${m}] [${big}]")
+
+# a str's bytes are this file's unsigned integers: the sized ints (int8 .. uint64) and a
+# declared `byte` are not mapped on the V route (a hole over one is refused there by name)
+def bytes_(s: str)
+    for u in s.bytes()
+        print("u >4    [${u:>4}] [${u:<4}|] [${u:^5}] [${u:*^5}] [${u:4}]")
+        print("u 03    [${u:03}] [${u:05d}] [${u:+}] [${u:d}]")
+        print("u x     [${u:x}] [${u:X}] [${u:>4x}] [${u:08b}] [${u:o}] [${u:04x}]")
+
+def floats(f: float, g: float, h: float, k: float, q: float)
+    print("f >6    [${f:>6}] [${g:>8}] [${h:>6}] [${k:>6}] [${q:>12}]")
+    print("f <6    [${f:<6}|] [${g:<8}|] [${h:<6}|]")
+    print("f ^7    [${f:^7}] [${g:^9}] [${h:^7}]")
+    print("f 8     [${f:8}] [${g:8}] [${h:8}]")
+    print("f *^9   [${f:*^9}] [${h:_<6}]")
+    print("f .2f   [${f:.2f}] [${g:.2f}] [${h:.2f}] [${k:.2f}] [${q:.2f}]")
+    print("f .0f   [${f:.0f}] [${g:.0f}] [${q:.0f}]")
+    print("f .3    [${f:.3}] [${g:.3}] [${g:.1}]")
+    print("f 8.2f  [${f:8.2f}] [${g:8.2f}] [${h:8.2f}]")
+    print("f >8.2f [${f:>8.2f}] [${g:>9.3f}]")
+    print("f <8.2f [${f:<8.2f}|] [${g:<9.1f}|]")
+    print("f ^9.2f [${f:^9.2f}] [${g:^10.2f}]")
+    print("f *>8.1f [${f:*>8.1f}] [${g:#<9.2f}]")
+    print("f 08.2f [${f:08.2f}] [${g:08.2f}] [${h:07.1f}]")
+    print("f 06    [${f:06}] [${g:08}] [${h:06}]")
+    print("f .2g   [${f:.2g}] [${g:.2g}]")
+    print("f plain [${f}] [${g}] [${h}] [${k}] [${q}]")
+
+def texts(s: str, e: str, t: str, c: char)
+    print("t >5    [${s:>5}] [${e:>3}] [${t:>6}]")
+    print("t <5    [${s:<5}|] [${e:<3}|] [${t:<6}|]")
+    print("t ^6    [${s:^6}] [${s:^5}] [${e:^2}]")
+    print("t 5     [${s:5}] [${t:6}]")
+    print("t *^6   [${s:*^6}] [${s:-<5}] [${s:.>5}]")
+    print("t s     [${s:s}] [${s:>5s}] [${s:<5s}|]")
+    print("t long  [${t:>2}] [${t:<1}] [${t:^3}]")
+    print("c >3    [${c:>3}] [${c:<3}|] [${c:^5}] [${c:*^5}] [${c:3}]")
+    print("c c     [${c:c}] [${c:x}] [${c:d}] [${c}]")
+
+def main()
+    var n = sys.args().count()          # 1 at run time
+    var m: int = 0 - n
+    var z: int = n - 1
+    var big: int = n * 1234567
+    ints(n, m, z, big)
+    bytes_("a~")
+    var f: float = n * 1.5
+    var g: float = 0.0 - n * 2.675
+    var h: float = n * 2.0
+    var k: float = n * 0.0
+    var q: float = n * 123456.789
+    floats(f, g, h, k, q)
+    texts("ab", "", "abcdef", c'x')
+    print("v_format_specs: OK")

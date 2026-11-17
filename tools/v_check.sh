@@ -89,6 +89,35 @@ echo "── import names a program may use, and Crypto / Hash.hmac256, on both 
 for t in v_import_names_test v_crypto_test; do
   compare "$t" "$WT" "test/$t.zbr" "$OUT/control_$t.txt" "$WT/test/${t}_prog.v"
 done
+echo "── format specs in a hole, on both routes (2026-11-16) ──"
+# V's own interpolation knows no `>`, `<`, `^`, no fill character and no space sign, and it
+# DROPS a spec that carries one without a word (`'${n:>3}'` prints "1", vlang/v#32420): until
+# this row 21 of 37 holes differed from the Zig route, and `${f:8.2f}` did not compile. Every
+# spec'd hole of a known type now goes through the runtime (CodeGenV.vSpecHole, read by the
+# Zig route's own parseFmtSpec). v_format_specs: the holes over ints, bytes, floats, strs
+# and chars, printed and compared line for line. (test/bug725_int_width_sign_test.zbr is not
+# in this lane: its holes are over an int8 and an untyped local, neither of which this route
+# types.) The refusals: what this route cannot write, each by name, never a spliced spec.
+compare v_format_specs_test "$WT" test/v_format_specs_test.zbr "$OUT/control_v_format_specs_test.txt" "$WT/test/v_format_specs_test_prog.v"
+rows=$((rows + 1))
+cat > "$OUT/fmt_refuse.zbr" <<'ZBR'
+def main()
+    var n = sys.args().count()
+    var k: int = n + 0
+    var f: float = n * 1.5
+    print("${f:.2e}")
+    print("${f:.12f}")
+    print("${k:.2f}")
+    print("${f:x}")
+ZBR
+(cd "$OUT" && "$ZEBRA" --target v fmt_refuse.zbr > "$OUT/fmt_refuse_emit.txt" 2>&1)
+fmt_refused=$(grep -cE '^    a format spec \((\.2e|\.12f|\.2f|x)\): ' "$OUT/fmt_refuse_emit.txt")
+# the controls: the Zig run printed a padded int (a program with no spec'd hole would compare
+# clean), and the emitted V reaches the runtime's pad over the sign text
+if ! grep -qxF 'i >3    [  1] [ -1] [  0] [1234567]' "$OUT/control_v_format_specs_test.txt"; then echo "fmt: FAILED -- NO CONTROL: the Zig run did not print the padded ints the row is about"; fail=1
+elif ! grep -q 'zfmt_pad(zfmt_itext(' "$WT/test/v_format_specs_test_prog.v"; then echo "fmt: FAILED -- the emitted V does not reach zfmt_pad over zfmt_itext: the comparison ran V's own interpolation"; fail=1
+elif [ "$fmt_refused" != 4 ]; then echo "fmt: FAILED -- $fmt_refused of 4 unwritable specs refused by name (an exponent type, a precision over 9, a precision on an int, x on a float)"; grep -E '^    |error' "$OUT/fmt_refuse_emit.txt" | head -4 | cut -c1-160; fail=1
+else echo "fmt: ok (the Zig control printed padded ints; the emitted V reaches zfmt_pad over zfmt_itext; 4 unwritable specs refused by name)"; fi
 echo "── the selfhost dumps ──"
 for d in lexer_dump parser_dump ast_dump resolver_dump codegen_dump; do
   compare "$d" "$WT/selfhost" "$d.zbr" "$OUT/control_$d.txt" "$WT/selfhost/$d.v"
