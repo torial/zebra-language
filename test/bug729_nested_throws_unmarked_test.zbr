@@ -1,0 +1,23 @@
+# BUG-729: with NO catch, an unmarked throwing call nested in an expression is refused at
+# its own line. The interpolation hole was refused at the PREVIOUS statement's line: an
+# interpolated string had a zero span, so a `print` of one carried line 0.
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "refused ${n}"
+    var xs = List(int)()
+    xs.add(n)
+    return xs
+
+def one(n: int)
+    var k = 5
+    print("count ${risky(n).count()} ${k}")
+
+def two(n: int): int
+    var c = 0
+    for x in risky(n)
+        c = c + x
+    return c + risky(n).count()
+
+def main()
+    one(1)
+    print(two(1))

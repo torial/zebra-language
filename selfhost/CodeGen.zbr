@@ -4130,6 +4130,15 @@ def recordCannotFail(site: str)
 def cannotFailSites(): List(str)
     return _cannot_fail_sites
 
+# BUG-729: `f()?.m()` on a throwing `f` reads as OPTIONAL CHAINING on an error union, which
+# zig refuses ("expected optional type"). It is refused through the cannot-fail list (a
+# full message naming `(f(...)?).m()`), and its statement's "file:line" is kept here so the
+# driver does not ALSO print the generic "add '?'" for the same call -- the user wrote one.
+var _oc_throw_lines: List(str) = List(str)()
+
+def optChainThrowLines(): List(str)
+    return _oc_throw_lines
+
 # `--single-threaded` (2026-09-26): every call that STARTS A THREAD, as "file:line  what".
 # Recorded at the emit site (like _implicit_try_sites) so main.zbr can refuse the build in
 # Zebra's words; without it the user got Zig's "Cannot spawn thread when building in
@@ -9848,6 +9857,43 @@ struct Generator
                 cf_fix = "drop the `?`"
             recordCannotFail(source_file + ":" + span.line.toString() + ":" + span.col.toString() +
                 ": error: `" + cf_name + "` cannot fail (it does not throw), so this `" + op + "` has nothing to handle: " + cf_fix)
+
+    # BUG-729: the name of a THROWING callee when `e` is a call to one -- the receiver of
+    # `f()?.m()` -- or nil. The callees the implicit-try refusal knows: a free function of
+    # this module or one it takes with `exposing`, a bare owner method, `this.m()` /
+    # `obj.m()` on a class inference resolves, and a qualified `mod.f()`. An unrecognised
+    # callee answers nil and keeps whatever it got before (zig's refusal).
+    def optChainThrowingCallee(e: Expr): str?
+        if e is Expr.call as c
+            if c.callee is Expr.ident as id
+                if in_method and owner != "" and isOwnerMethod(id.name)
+                    if isOwnerMethodThrows(id.name)
+                        return id.name
+                    return nil
+                if isTopLevelMethodThrows(id.name)
+                    return id.name
+                return nil
+            if c.callee is Expr.member as mm
+                if mm.object is Expr.this_
+                    if isOwnerMethodThrows(mm.member)
+                        return mm.member
+                    return nil
+                if mm.object is Expr.ident as mo
+                    if import_aliases.contains_(mo.name) and not isLocalOrParamName(mo.name)
+                        var dep_fns_opt = .dep_types.classOf("$fns:" + mo.name)
+                        if dep_fns_opt as dep_fns
+                            if dep_fns.methodThrows(mm.member)
+                                return mo.name + "." + mm.member
+                            if dep_fns.fnBody(mm.member) as ocd_body
+                                if bodyHasRaise(ocd_body)
+                                    return mo.name + "." + mm.member
+                        return nil
+                if .infer_ctx != nil
+                    var ocr_t: Type_ = inferExpr(mm.object, .infer_ctx!)
+                    if ocr_t is Type_.named as ocr_cn
+                        if isClassMethodThrows(ocr_cn, mm.member)
+                            return mm.member
+        return nil
 
     def isStringBuilderCtor(e: Expr): bool
         if e is Expr.call as c
@@ -15863,6 +15909,16 @@ struct Generator
                 # Method: (if (base) |_oc_val_N| _oc_blk_N: { var _oc_N = _oc_val_N; break :_oc_blk_N _oc_N.method(args); } else null)
                 var oc_uid = w.nextUid()
                 var oc_u = oc_uid.toString()
+                # BUG-729: `f()?.m()` with a throwing `f` (see _oc_throw_lines).
+                if optChainThrowingCallee(oc.base) as oct_name
+                    var oct_key: str = source_file + ":" + w.cur_line.toString()
+                    _oc_throw_lines.add(oct_key)
+                    var oct_m: str = oc.member
+                    if oc.has_args
+                        oct_m = oct_m + "()"
+                    recordCannotFail(source_file + ":" + w.cur_line.toString() + ":" + oc.span.col.toString() +
+                        ": error: `" + oct_name + "` throws, so `" + oct_name + "(...)?." + oct_m + "` is not `?` then `." +
+                        oct_m + "`: `?.` is optional chaining. Write `(" + oct_name + "(...)?)." + oct_m + "` to propagate the error")
                 # BUG-331: a JsonValue's reads are runtime functions, not Zig methods --
                 # `j.tryObj("a")?.tryInt("b")` emitted `.tryInt(` on a std.json.Value.
                 var oc_json_fn: str = ""
@@ -17771,6 +17827,8 @@ struct Generator
                 if callee_throws and try_block_label == nil and not in_try_expr
                     recordImplicitTry(source_file + ":" + w.cur_line.toString())
                     w.emit("try ")
+                else if callee_throws and try_block_label != nil and not in_try_expr
+                    w.emit("(")                            # BUG-729: catch binds looser than `.m()`
                 if isOwnerSharedMethod(id.name)
                     emitTypeName(owner)                     # BUG-281 B
                     w.emit(".")
@@ -17787,6 +17845,7 @@ struct Generator
                 w.emit(")")
                 if callee_throws and try_block_label != nil and not in_try_expr
                     emitTryBlockCatch()
+                    w.emit(")")
                 return
         if genBorrowedClosureCall(c)
             return
@@ -17803,6 +17862,8 @@ struct Generator
         if reg_throws and try_block_label == nil and not in_try_expr
             recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("try ")
+        else if reg_throws and try_block_label != nil and not in_try_expr
+            w.emit("(")                            # BUG-729: catch binds looser than `.m()`
         genCalleeExpr(c.callee)
         w.emit("(")
         var reg_params: List(Param)? = nil
@@ -17812,6 +17873,7 @@ struct Generator
         w.emit(")")
         if reg_throws and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()
+            w.emit(")")
 
     # Returns true if `e` is `catch_var.details` — used to detect e.details.toString() pattern.
     def isDetailsMemberOnCatchVar(e: Expr, cv: str): bool
@@ -17851,11 +17913,14 @@ struct Generator
                         if dep_throws and try_block_label == nil and not in_try_expr
                             recordImplicitTry(source_file + ":" + w.cur_line.toString())
                             w.emit("try ")
+                        else if dep_throws and try_block_label != nil and not in_try_expr
+                            w.emit("(")                            # BUG-729: catch binds looser than `.m()`
                         w.emit(modAliasSymbol(mod_id.name) + "." + zbrFnSymbol(mname, false) + "(")
                         genArgListFull(args, dep_ps)
                         w.emit(")")
                         if dep_throws and try_block_label != nil and not in_try_expr
                             emitTryBlockCatch()
+                            w.emit(")")
                         return
         # `obj.cb(x)` where `cb` is a FIELD of sig type (not a method): invoke the value.
         if .infer_ctx != nil
@@ -18735,11 +18800,14 @@ struct Generator
                         if try_block_label == nil and not in_try_expr
                             recordImplicitTry(source_file + ":" + w.cur_line.toString())
                             w.emit("try ")
+                        else if try_block_label != nil and not in_try_expr
+                            w.emit("(")                            # BUG-729: catch binds looser than `.m()`
                         w.emit("_zbr_list_pop(")
                         genExpr(m.object)
                         w.emit(")")
                         if try_block_label != nil and not in_try_expr
                             emitTryBlockCatch()
+                            w.emit(")")
                         return
                     if mname == "reserve"
                         # BUG-435: `xs.reserve(n)` -- capacity for n items up front. Growth
@@ -19427,6 +19495,8 @@ struct Generator
                     if isClassMethodThrows(um_cname, mname) and try_block_label == nil and not in_try_expr
                         recordImplicitTry(source_file + ":" + w.cur_line.toString())
                         w.emit("try ")
+                    else if isClassMethodThrows(um_cname, mname) and try_block_label != nil and not in_try_expr
+                        w.emit("(")                            # BUG-729: catch binds looser than `.m()`
                     genExpr(m.object)
                     # BUG-281 E: the EARLY user-method dispatch. It fires whenever the
                     # receiver's class method is known to inference, which is the common
@@ -19460,6 +19530,7 @@ struct Generator
                         w.emit(")")
                         if isClassMethodThrows(um_cname, mname) and try_block_label != nil and not in_try_expr
                             emitTryBlockCatch()
+                            w.emit(")")
                         return
                     var um_ai: int = 0
                     while um_ai < args.len
@@ -19497,6 +19568,7 @@ struct Generator
                     # is ignored" (throws_autoprop_test).
                     if isClassMethodThrows(um_cname, mname) and try_block_label != nil and not in_try_expr
                         emitTryBlockCatch()
+                        w.emit(")")
                     return
         # §28a step 1 (measure): reaching the name-based heuristic below means no
         # typed arm matched — the receiver type was not proven.  If the method name
@@ -20828,6 +20900,8 @@ struct Generator
         if callee_throws2 and try_block_label == nil and not in_try_expr
             recordImplicitTry(source_file + ":" + w.cur_line.toString())
             w.emit("try ")
+        else if callee_throws2 and try_block_label != nil and not in_try_expr
+            w.emit("(")                            # BUG-729: catch binds looser than `.m()`
         genExpr(m.object)
         w.emit(".")
         # BUG-281 E: the generic USER-method dispatch — `obj.m()` and `Type.m()` both
@@ -20923,6 +20997,7 @@ struct Generator
         w.emit(")")
         if callee_throws2 and try_block_label != nil and not in_try_expr
             emitTryBlockCatch()
+            w.emit(")")
 
     # ── SIMD helpers ─────────────────────────────────────────────────────────
 

@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Under a method-level `catch`, a throwing call nested in an expression reaches the catch
+  (BUG-729).** `for x in f(n)`, `"${f(n).count()}"` and `1 + f(n).count()` emitted Zig that
+  did not parse. `f(n)?.count()` on a throwing `f` is refused by name: `?.` is optional
+  chaining; write `(f(n)?).count()`. A `print` of an interpolated string now carries its line,
+  so a refusal there names it and `zebra debug` can stop on it.
 - **A throwing function from another module is a throwing callee (BUG-728).** With
   `use m exposing f`, an unmarked `f()` is refused for want of `?` (zig refused it before, about
   code you never wrote), and under a method-level `catch` its error reaches the catch, as in one

@@ -1,0 +1,83 @@
+# BUG-729: under a method-level `catch`, an unmarked throwing call NESTED in an expression
+# -- a `for` operand, an interpolation hole, a receiver of `.m()`, an operand of `+`, an
+# `if` / `while` condition -- routes its error to the catch (QUICKSTART: "wherever the call
+# sits", BUG-467). The routed call was emitted `f() catch |e| {...}.m()`, which is not Zig:
+# `catch` binds looser than a postfix. Free functions of this module and of a `use`d one,
+# a class's own method, `obj.m()` and `List.pop` are each covered.
+use bug728_xmod_throws_lib exposing riskyInferred
+
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "refused ${n}"
+    var xs = List(int)()
+    xs.add(n)
+    return xs
+
+class Box
+    var k: int
+    cue init(k: int)
+        .k = k
+    def vals(n: int): List(int) throws
+        if n < 0
+            raise "box ${n}"
+        var xs = List(int)()
+        xs.add(n + .k)
+        return xs
+    def total(n: int): int
+        var s = 0
+        for x in .vals(n)
+            s = s + x
+        return s + .vals(n).count()
+    catch |e|
+        print("box caught: ${e}")
+        return -1
+
+def walk(n: int)
+    var c = 0
+    for x in risky(n)
+        c = c + x
+    print("walked ${c}")
+catch |e|
+    print("caught: ${e}")
+
+def show(n: int)
+    print("count ${risky(n).count()}")
+catch |e|
+    print("caught: ${e}")
+
+def mixed(n: int): int
+    var b = Box(10)
+    var t = 1 + risky(n).count()
+    if risky(n).count() > 0
+        t = t + 100
+    while risky(n).count() > 5
+        t = 0
+    t = t + b.vals(n).count() + bug728_xmod_throws_lib.risky(n).count() + riskyInferred(n) - n * 10
+    var ys = List(int)()
+    ys.add(3)
+    var p = ys.pop()
+    return t + p + risky(n).at(0)
+catch |e|
+    print("mixed caught: ${e}")
+    return -9
+
+def marked(n: int)
+    var c = 0
+    for x in risky(n)?
+        c = c + x
+    print("marked ${c} ${(risky(n)?).count()}")
+catch |e|
+    print("marked caught: ${e}")
+
+def main()
+    walk(2)
+    walk(-2)
+    show(1)
+    show(-2)
+    assert mixed(4) == 111
+    assert mixed(-1) == -9
+    assert Box(1).total(2) == 4
+    assert Box(1).total(-2) == -1
+    marked(2)
+    marked(-2)
+    print("bug729: OK")

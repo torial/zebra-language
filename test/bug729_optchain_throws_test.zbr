@@ -1,0 +1,22 @@
+# BUG-729: `f()?.m()` on a throwing `f` is OPTIONAL CHAINING on an error union, not `?`
+# then `.m()`; zig refused it ("expected optional type"), and with no catch the compiler
+# said "add '?'" to a user who had written one. Refused by name with the working spelling,
+# `(f(...)?).m()`, with or without a catch. `?.` on an OPTIONAL result is unaffected.
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "refused ${n}"
+    var xs = List(int)()
+    xs.add(n)
+    return xs
+
+def a(n: int): int throws
+    return risky(n)?.count()
+
+def b(n: int)
+    print("${risky(n)?.count()}")
+catch |e|
+    print("caught ${e}")
+
+def main()
+    print(a(1)?)
+    b(1)

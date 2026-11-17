@@ -2876,6 +2876,12 @@ smoke_run test/bug728_xmod_throws_test.zbr "bug728: OK"
 smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:7: error: throws call needs '?'"
 smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:8: error: throws call needs '?'"
 smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:9: error: throws call needs '?'"
+smoke_run test/bug729_nested_throws_catch_test.zbr "bug729: OK"
+smoke_run test/bug729_nested_throws_catch_test.zbr "marked caught: refused -2"
+smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:13: error: throws call needs '?'"
+smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:17: error: throws call needs '?'"
+smoke_tc_fail test/bug729_optchain_throws_test.zbr "bug729_optchain_throws_test.zbr:13:12: error: \`risky\` throws"
+smoke_tc_fail test/bug729_optchain_throws_test.zbr "bug729_optchain_throws_test.zbr:16:14: error: \`risky\` throws"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.

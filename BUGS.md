@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-761. Next new bug: BUG-762.**
+**Last bug number generated: BUG-765. Next new bug: BUG-766.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -92,30 +92,6 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
-
----
-
-### BUG-729: an unmarked throwing call nested in an expression, under a method-level `catch`, passes `-c` and emits Zig that does not parse
-- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session in zebra-sprocket's check_crud
-  driver; reproduced on d9067e4)
-- **Repro:** one module, `def risky(n: int): List(int) throws`, and a def ending in `catch |e|`
-  that uses the call without `?` as a `for` operand (`for x in risky(n)`) -> zig "expected ','
-  after for operand"; or inside an interpolation (`"count ${risky(n).count()}"`) -> zig "expected
-  ',' after argument". `-c` passes both.
-- **Why it matters:** DESIGN-001 says a throwing call nested in an expression needs an explicit
-  `?`, and with it both positions work (`for x in risky(n)?` and `"${(risky(n)?).count()}"` print
-  the right values and route a raise to the catch). So the front end owes a refusal here and
-  emits text that is not Zig instead.
-- **A trap in the fix's wording:** `risky(n)?.count()` is read as optional chaining (`?.`) and
-  fails inside zig ("expected optional type, found 'List(int)'"); only `(risky(n)?).count()` or a
-  temp works. A refusal that suggests "add `?`" must say where, or it sends the user into a
-  second zig error.
-- **Fix shape:** refuse an unmarked throws call in a non-statement position at `-c`, naming the
-  call and the parenthesised form; separately, decide whether `f()?.m()` on a throws call should
-  parse as propagate-then-call.
-- **Control when fixing:** both unmarked positions are refused at their lines; the marked forms
-  still print "walked 2 / caught: refused -2 / count 1 / caught: refused -2"; a call bound to a
-  var is unchanged.
 
 ---
 
@@ -282,6 +258,51 @@
   is fixed.
 - **Control when fixing:** BUG-725's fixture prints the same on both routes under `v-check`; an
   `int8` local that overflows traps on V as it does on Zig (BUG-667's message).
+
+---
+
+### BUG-762: `for x in .items(n)` on a user method named `items` types `x` as `str`
+- **Status:** OPEN (filed 2026-11-16; found writing BUG-729's probe)
+- **Repro:** a class with `def items(n: int): List(int)` and, in another method,
+  `for x in .items(n)` / `s = s + x` -> `-c` refuses "cannot concatenate 'int' and 'str'" at the
+  `+`. The same code with the method named `vals` prints 3. A false refusal: the loop
+  variable is typed by the NAME `items` (a map's `entries`-style iteration), not by the
+  method's declared return.
+- **Control when fixing:** the repro prints 3; `for k, v in m.items()` on a Map unchanged.
+
+---
+
+### BUG-763: a local named like the method-level `catch` binding, read in the catch, fails inside zig
+- **Status:** OPEN (filed 2026-11-16; found writing BUG-729's probe; reproduced on the pre-fix
+  compiler)
+- **Repro:** `def g(n: int): int` with `var t = f(n)` (f throws), `var e = List(int)()`, and
+  `catch |e|` whose body does `print("caught ${e}")` -> zig "use of undeclared identifier 'e'"
+  at the print. With the catch body not reading `e`, or the local renamed, it builds.
+- **Control when fixing:** the repro prints `caught ...` for a raising `f` and the sum
+  otherwise; the catch reads the ERROR, not the local (or the shadowing is refused by name).
+
+---
+
+### BUG-764: a method-level `catch` on a body that cannot fail passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-16; found writing BUG-729's probe; reproduced on the pre-fix
+  compiler)
+- **Repro:** `def g(): int` / `var e = 5` / `return e` / `catch |e|` / `return -1` -> zig "unused
+  block label" at the `def`. BUG-546 refuses a postfix `catch` / `?` on a call that cannot fail;
+  this is the method-level form of the same thing.
+- **Control when fixing:** refused in Zebra's words at the `catch` ("nothing in the body can
+  fail -- drop the `catch`"), or accepted and built; a body with one throwing call unchanged.
+
+---
+
+### BUG-765: `?.count()` on an optional `List` fails inside zig
+- **Status:** OPEN (filed 2026-11-16; found writing BUG-729's probe; reproduced on the pre-fix
+  compiler)
+- **Repro:** `def maybe(n: int): List(int)?` and `var m = maybe(n)?.count()` -> zig "no field
+  or member function named 'count' in 'List(int)'". The opt-chain arm emits the method name
+  raw on the unwrapped value, so a builtin receiver method (whose emit is not `.count()`)
+  never goes through its own dispatch.
+- **Control when fixing:** the repro yields 1 for `maybe(1)` and nil for `maybe(-1)`; a user
+  class method through `?.` unchanged.
 
 ---
 

@@ -1356,7 +1356,16 @@ class ASTBuilder
                             const part_expr = .buildExpr(part)?
                             parts.add(StringPart.expr_(part_expr))
                     part_ix = part_ix + 1
-                return Expr.string_interp(ExprStringInterp(zspan(), parts))
+                # BUG-729: the span is the string's opening token (part 0 is always the
+                # start segment). It was zspan(), so a `print("${f()}")` -- whose span is
+                # its first argument's (BUG-329) -- had line 0: genStmt emitted no
+                # `// zbr:` marker, and an unmarked throwing call in the hole was refused at
+                # the PREVIOUS statement's line.
+                var si_span: Span = zspan()
+                if psi.parts.len > 0
+                    if psi.parts.at(0) is PNode.expr_str as si_l0
+                        si_span = Span(si_l0.line, si_l0.col, si_l0.line, si_l0.col)
+                return Expr.string_interp(ExprStringInterp(si_span, parts))
 
             on PNode.expr_lambda as pl
                 # BUG-595: a lambda's parameters and captures shadow a mixin field.

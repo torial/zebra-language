@@ -6,6 +6,53 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-729: an unmarked throwing call nested in an expression, under a method-level `catch`, passes `-c` and emits Zig that does not parse -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-14; found by the GameEngine session in zebra-sprocket's check_crud)
+  driver; reproduced on d9067e4)
+- **Repro:** one module, `def risky(n: int): List(int) throws`, and a def ending in `catch |e|`
+  that uses the call without `?` as a `for` operand (`for x in risky(n)`) -> zig "expected ','
+  after for operand"; or inside an interpolation (`"count ${risky(n).count()}"`) -> zig "expected
+  ',' after argument". `-c` passes both.
+- **Why it matters:** DESIGN-001 says a throwing call nested in an expression needs an explicit
+  `?`, and with it both positions work (`for x in risky(n)?` and `"${(risky(n)?).count()}"` print
+  the right values and route a raise to the catch). So the front end owes a refusal here and
+  emits text that is not Zig instead.
+- **A trap in the fix's wording:** `risky(n)?.count()` is read as optional chaining (`?.`) and
+  fails inside zig ("expected optional type, found 'List(int)'"); only `(risky(n)?).count()` or a
+  temp works. A refusal that suggests "add `?`" must say where, or it sends the user into a
+  second zig error.
+- **Fix shape:** refuse an unmarked throws call in a non-statement position at `-c`, naming the
+  call and the parenthesised form; separately, decide whether `f()?.m()` on a throws call should
+  parse as propagate-then-call.
+- **Control when fixing:** both unmarked positions are refused at their lines; the marked forms
+  still print "walked 2 / caught: refused -2 / count 1 / caught: refused -2"; a call bound to a
+  var is unchanged.
+- **Fix:** the front end was not owed a refusal here: QUICKSTART (BUG-467) says that under a
+  method-level `catch` a throwing call needs no `?` "wherever the call sits", and the routed
+  call was simply emitted wrong -- `f() catch |_tc_e| { ... }.m()`, where `catch` binds looser
+  than the postfix (the explicit `?` path had parenthesised itself since BUG-163). Every
+  implicit routing site in CodeGen now wraps the routed call in parentheses: a free function
+  of this module or one taken with `exposing`, `mod.f()`, a bare owner method, `obj.m()` (both
+  dispatch paths) and `List.pop`. So `for x in f(n)`, `"${f(n).count()}"`, `1 + f(n).count()`
+  and an `if` / `while` condition all reach the catch.
+- **The `?.` trap, refused:** `f(n)?.count()` on a throwing `f` is optional chaining on an
+  error union. It is now refused by name, with or without a catch: "`f` throws, so
+  `f(...)?.count()` is not `?` then `.count()`: `?.` is optional chaining. Write
+  `(f(...)?).count()`", and the generic "add '?'" is no longer printed for that statement.
+  Whether `f()?.m()` should PARSE as propagate-then-call is still open (a language call).
+- **A line number fixed on the way:** an interpolated string had a zero span (AstBuilder), so
+  a `print("${...}")` -- whose span is its first argument's (BUG-329) -- had line 0: no
+  `// zbr:` marker (`zebra debug` could not stop there), and an unmarked call in the hole was
+  refused at the PREVIOUS statement's line. The span is the string's opening token.
+- **Pinned by:** `test/bug729_nested_throws_catch_test.zbr` (smoke_run x2: each position and
+  callee kind under a catch, raising and not), `test/bug729_nested_throws_unmarked_test.zbr`
+  (smoke_tc_fail x2: the interpolation refused at its own line 13, a `for` operand at 17) and
+  `test/bug729_optchain_throws_test.zbr` (smoke_tc_fail x2: `?.` refused at line:col, with and
+  without a catch). Red first on the pre-fix compiler: "expected ',' after for operand"
+  inside zig, the hole reported at line 12, and "add '?'" for the `?.` form.
+
+---
+
 ### BUG-728: an imported function's `throws` is invisible to the front end -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-14; found by the GameEngine session moving procgen's generated)
   clients to `throws`; repros `C:\tmp\conc\optprobe\xmod`, reproduced on d9067e4)

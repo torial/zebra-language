@@ -1405,7 +1405,10 @@ var got = someObj.method()?          # propagates if method throws
   they wrap the entire body.  Multiple `catch` clauses are allowed; each has an
   optional `|binding|` and typed variant `|e: ErrorType|`. Inside the body a throwing
   call needs no `?` -- its error goes to the catch wherever the call sits (a bare
-  statement, a `var` init, a `print` argument; BUG-467).
+  statement, a `var` init, a `print` argument, a `for` operand, a receiver of `.m()`;
+  BUG-467, BUG-729).
+- **`f()?.m()` is optional chaining, not `?` then `.m()`.** On a throwing `f` it is a
+  compile error naming the fix: write `(f()?).m()` to propagate and then call (BUG-729).
 - **Postfix `catch |e|`** binds the error: `var n = f() catch |e| e.message.len` reads the
   raised message, and `"${e}"` the error's name. A capture the fallback never reads is a
   compile error at the `catch` -- write `catch 0`, or `catch |_| 0` (2026-10-09, BUG-526).
