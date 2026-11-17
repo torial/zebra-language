@@ -4177,8 +4177,9 @@ class VGen
     # one grammar, not two) and the same decisions are taken as CodeGen takes --
     # floatPrecArgs, zeroPadArgs, intSignArg, zigFmtSpec -- over runtime functions that
     # write the Zig route's text: zfmt_itext (BUG-725's sign), zfmt_zpad (BUG-631's zeros
-    # after the sign), zfmt_one (the exact fixed-point digits), zfmt_dtext (Zig's {d} of a
-    # float: "2", not "2.0"), zfmt_radix, zfmt_pad. What the checker warns as ignored (`#`,
+    # after the sign), zfmt_one (the exact fixed-point digits), zshow_f (a float with a
+    # spec and no precision is the bare hole's text, "2.0": BUG-760), zfmt_radix, zfmt_pad.
+    # What the checker warns as ignored (`#`,
     # digit grouping, a sign on a float, `%`) is ignored here too, since the parser skips
     # it. What this route cannot write is refused by name: an exponent type, a float
     # precision over 9, a precision or a float type on an integer.
@@ -4242,7 +4243,7 @@ class VGen
                     return .specRefused(spec, e, "a float precision over 9")
                 body = "zfmt_one(f64(" + e + "), " + prec.substring(1, 2) + ")"
             else
-                body = "zfmt_dtext(f64(" + e + "))"
+                body = "zshow_f(f64(" + e + "))"   # BUG-760: the bare hole's text, then the pad (until then Zig's {d}, which dropped a whole value's ".0")
         else if t == "string"
             if prec != "" or sign != "" or (ty != "" and ty != "s")
                 return .specRefused(spec, e, "on a str (mapped: a fill, an alignment, a width, s)")

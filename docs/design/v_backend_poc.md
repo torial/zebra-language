@@ -3180,7 +3180,7 @@ the decisions are CodeGen's, in its order:
 | a signed int, decimal, a width or a `+` / space sign, no `0` flag | `_zbr_itext` under `{s:fill align width}` (BUG-725) | `zfmt_pad(zfmt_itext(i64(x), sign), ...)` |
 | a number with the `0` flag | `_zbr_zpad` / `_zbr_ffmt` with `=`: zeros after the sign (BUG-631) | `zfmt_zpad(text, width)` |
 | a float with a precision | `_zbr_ffmt`: the exact binary value, ties to even | `zfmt_one(f64(x), N)`, then the pad |
-| a float with a spec and no precision | Zig's `{d}`: no ".0" on a whole value | `zfmt_dtext`, then the pad |
+| a float with a spec and no precision | the bare hole's text: "2.0" for a whole value (BUG-760; Zig's `{d}`, "2", until then) | `zshow_f`, then the pad |
 | an int under `x` `X` `o` `b` | the bits, unsigned | `zfmt_radix(u64(x), base, upper)`, then the pad |
 | a str, a char with a width | `{s:fill align width}`, bytes counted | `zfmt_pad` |
 
@@ -3213,10 +3213,12 @@ as V at all (60 of 60 lines missing).
   (`int8` .. `uint64`) and a declared `byte` were not mapped on this route, so
   a spec'd hole over one was refused as an unknown type and this file's
   unsigned values are a str's bytes.
-- `zfmt_dtext` copies a Zig-route bug on purpose: `${h:>6}` over 2.0 is
-  "     2" where the bare hole prints "2.0" (BUG-760, filed from this
-  work). When 760 lands, that one function changes in step and the matrix's
-  `f >6`, `f <6`, `f ^7`, `f 8`, `f *^9` and `f 06` lines move with it.
+- (Resolved 2026-11-17 with BUG-760.) A `zfmt_dtext` copied a Zig-route bug on
+  purpose: `${h:>6}` over 2.0 was "     2" where the bare hole prints "2.0".
+  BUG-760 fixed the Zig route, and in the same step this route writes
+  `zshow_f` there and the helper is gone; the matrix's `f >6`, `f <6`, `f ^7`,
+  `f 8`, `f *^9` and `f 06` lines moved on both routes together (the whole
+  values 2.0 and 0.0 only).
 - An int literal under `:x` does not build on the Zig route (BUG-759, filed
   from this work), so the matrix has no such hole.
 - V itself accepting and dropping an unknown format character is a V

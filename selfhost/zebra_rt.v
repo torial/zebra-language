@@ -3555,15 +3555,8 @@ pub fn zfmt_itext(zr_x i64, zr_sign u8) string {
 	return [zr_sign].bytestr() + zr_x.str()
 }
 
-// zfmt_dtext: a float's text in a spec'd hole with no precision -- Zig's {d}, which is the
-// shortest digits with no ".0" on a whole value ("2" where a bare hole prints "2.0").
-pub fn zfmt_dtext(zr_x f64) string {
-	zr_t := zshow_f(zr_x)
-	if zr_t.ends_with('.0') {
-		return zr_t[..zr_t.len - 2]
-	}
-	return zr_t
-}
+// (A float in a spec'd hole with no precision is zshow_f, the bare hole's text, since
+// BUG-760; until then a zfmt_dtext here copied Zig's {d}, which wrote "2" for 2.0.)
 
 // zfmt_radix: an integer's bits in base 16, 8 or 2 (`x`, `X`, `o`, `b`), no prefix.
 pub fn zfmt_radix(zr_x u64, zr_base int, zr_upper bool) string {
