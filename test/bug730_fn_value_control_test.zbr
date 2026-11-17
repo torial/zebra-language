@@ -1,0 +1,29 @@
+# BUG-730 control: function values that cannot fail are passed exactly as before -- a plain
+# function, one that handles its own error with a method-level `catch`, and a `use`d
+# module's non-throwing function, qualified.
+use bug728_xmod_throws_lib
+
+def plain(n: int): str
+    return "plain ${n}"
+
+def handled(n: int): str
+    var xs = bug728_xmod_throws_lib.risky(n)?
+    return "handled ${xs.count()}"
+catch |e|
+    return "handled error"
+
+def dispatch(h: def(int): str, n: int): str
+    return h(n)
+
+def apply(h: def(int): int, n: int): int
+    return h(n)
+
+def main()
+    print(dispatch(plain, 3))
+    print(dispatch(handled, 4))
+    print(dispatch(handled, -4))
+    var hv: def(int): str = plain
+    print(hv(5))
+    # BUG-766: `lib.f` as a VALUE (not called) emits `_zbr_fn_f`, the call path's name.
+    print(apply(bug728_xmod_throws_lib.safe, 6))
+    print("bug730 control: OK")

@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A function that can fail is refused as a function value (BUG-730).** No `def(...)` type
+  can raise, so passing a throwing function as an argument, a var init or a list element was
+  refused by zig inside `zebra_rt.zig`, with no `.zbr` line. It is refused at the value now,
+  naming the function: handle the error inside it (a method-level `catch`) or call it and pass
+  the result. `lib.f` as a function value -- not called -- compiles now; it emitted a name
+  zig could not find (BUG-766).
 - **Under a method-level `catch`, a throwing call nested in an expression reaches the catch
   (BUG-729).** `for x in f(n)`, `"${f(n).count()}"` and `1 + f(n).count()` emitted Zig that
   did not parse. `f(n)?.count()` on a throwing `f` is refused by name: `?.` is optional

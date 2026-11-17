@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-765. Next new bug: BUG-766.**
+**Last bug number generated: BUG-766. Next new bug: BUG-767.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -92,19 +92,6 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
-
----
-
-### BUG-730: a throwing function passed where a non-throwing `def` type is expected is refused only by zig, inside zebra_rt.zig
-- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; repro
-  `C:\tmp\conc\optprobe\t_value.zbr`, reproduced on d9067e4)
-- **Repro:** `def propagates(n: int): str` calls `risky(n)?` (so it throws), and is passed to
-  `def dispatch(h: def(int): str, n: int)`. `-c` passes; zig: "expected type '[]const u8', found
-  'anyerror![]const u8'" at `zebra_rt.zig:3794`, with no .zbr line at all.
-- **Fix shape:** the checker compares the argument's throwing-ness against the `def` type and
-  refuses at the call site, naming the function and the parameter.
-- **Control when fixing:** refused at `-c` at the call's line; a non-throwing handler passed the
-  same way is unchanged.
 
 ---
 

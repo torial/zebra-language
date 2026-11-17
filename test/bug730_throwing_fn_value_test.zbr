@@ -1,0 +1,28 @@
+# BUG-730: a function that throws, handed over as a `def(...)` value. A `def` type cannot
+# raise, so the error had nowhere to go: `-c` passed and zig refused inside zebra_rt.zig
+# ("expected type '[]const u8', found 'anyerror![]const u8'") with no .zbr line. Each is
+# refused where the function value is written: an argument, a var init, a qualified dep.
+use bug728_xmod_throws_lib
+
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "refused ${n}"
+    var out: List(int) = []
+    out.add(n)
+    return out
+
+def propagates(n: int): str
+    var xs = risky(n)?
+    return "ok ${xs.count()}"
+
+def dispatch(h: def(int): str, n: int): str
+    return h(n)
+
+def apply(h: def(int): int, n: int): int
+    return h(n)
+
+def main()
+    print(dispatch(propagates, 3))
+    var hv: def(int): str = propagates
+    print(hv(1))
+    print(apply(bug728_xmod_throws_lib.riskyInferred, 2))

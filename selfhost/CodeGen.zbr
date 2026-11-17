@@ -9895,6 +9895,28 @@ struct Generator
                             return mm.member
         return nil
 
+    # BUG-730: the name of a function that can fail, if `e` names one as a VALUE -- a
+    # free function of this module or exposed from a used one, or `mod.f` on a used
+    # module. A local or parameter of that name is a value already and is not asked.
+    def sigValueThrowingFn(e: Expr): str?
+        if e is Expr.ident as id
+            if isLocalOrParamName(id.name)
+                return nil
+            if isTopLevelMethodThrows(id.name)
+                return id.name
+            return nil
+        if e is Expr.member as mm
+            if mm.object is Expr.ident as mo
+                if import_aliases.contains_(mo.name) and not isLocalOrParamName(mo.name)
+                    var sv_fns_opt = .dep_types.classOf("$fns:" + mo.name)
+                    if sv_fns_opt as sv_fns
+                        if sv_fns.methodThrows(mm.member)
+                            return mo.name + "." + mm.member
+                        if sv_fns.fnBody(mm.member) as sv_body
+                            if bodyHasRaise(sv_body)
+                                return mo.name + "." + mm.member
+        return nil
+
     def isStringBuilderCtor(e: Expr): bool
         if e is Expr.call as c
             if c.args.len == 0
@@ -11139,6 +11161,13 @@ struct Generator
         if e is Expr.nil_
             genExpr(e)
             return
+        # BUG-730: a `def(...)` type cannot raise, so a throwing function handed over as a
+        # value had nowhere to send its error. `-c` passed and zig refused inside
+        # zebra_rt.zig, with no .zbr line. Refused here, at the value, naming the function.
+        if sigValueThrowingFn(e) as tv_name
+            recordCannotFail(source_file + ":" + exprSpanLine(e).toString() + ":" + exprSpanCol(e).toString() +
+                ": error: `" + tv_name + "` throws, so it cannot be passed as a function value: a `def(...)` type cannot raise. Handle the error inside `" +
+                tv_name + "` (a method-level `catch`), or call it and pass the result")
         if .infer_ctx != nil
             if inferExpr(e, .infer_ctx!) is Type_.optional
                 genExpr(e)
@@ -15246,6 +15275,15 @@ struct Generator
                         else
                             w.emit(modAliasSymbol(xm_alias.name) + "._zbr_mv_" + m.member)
                         return
+                    # BUG-766: `lib.f` as a VALUE (handed to a `def(...)` slot, not called).
+                    # The defining module declares `_zbr_fn_f`; the call path above has named
+                    # it that way since BUG-498, the value path emitted the bare member and zig
+                    # said "has no member named 'f'". Same table, same naming rule as the call.
+                    if import_aliases.contains_(xm_alias.name) and not unwrapped_imports.contains_(xm_alias.name) and not isLocalOrParamName(xm_alias.name)
+                        if .dep_types.classOf("$fns:" + xm_alias.name) as xm_fns
+                            if xm_fns.fnParamList(m.member) != nil
+                                w.emit(modAliasSymbol(xm_alias.name) + "." + zbrFnSymbol(m.member, false))
+                                return
                 genExpr(m.object)
                 w.emit(".")
                 # BUG-280: a field may be named for a ZIG keyword (align, volatile,

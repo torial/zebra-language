@@ -2462,6 +2462,12 @@ As a **closure factory's** return type (§19.2), `def(): R` also accepts a retur
 capture closure — the compiler hoists the closure struct and returns it.  A named
 `sig` and the inline `def(): R` form are interchangeable in that position.
 
+A function type cannot raise. A function that can fail -- declared `throws`, or raising in
+its body, or calling a throwing function with `?` -- is refused as a function value, at the
+value, with both fixes named: handle the error inside it with a method-level `catch` (§12),
+or call it and pass the result. A used module's function is passed qualified, `lib.f`.
+(BUG-730, BUG-766.)
+
 ### §19.4 Lambda as a call argument
 
 A statement-body lambda can be passed **directly as a call argument** without first

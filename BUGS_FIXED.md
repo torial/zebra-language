@@ -6,6 +6,43 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-730: a throwing function passed where a non-throwing `def` type is expected is refused only by zig, inside zebra_rt.zig -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-14; found by the GameEngine session; repro
+  `C:\tmp\conc\optprobe\t_value.zbr`, reproduced on d9067e4)
+- **Repro:** `def propagates(n: int): str` calls `risky(n)?` (so it throws), and is passed to
+  `def dispatch(h: def(int): str, n: int)`. `-c` passes; zig: "expected type '[]const u8', found
+  'anyerror![]const u8'" at `zebra_rt.zig:3794`, with no .zbr line at all.
+- **Fix shape:** the checker compares the argument's throwing-ness against the `def` type and
+  refuses at the call site, naming the function and the parameter.
+- **Control when fixing:** refused at `-c` at the call's line; a non-throwing handler passed the
+  same way is unchanged.
+- **Fix:** no `def(...)` type can raise (neither `FnTypeRef` nor a `sig` carries a throws
+  flag), so the refusal sits in `genSigValue`, the one path every value into a function-typed
+  slot takes: an argument, a var init, an assignment, a list element. A free function of this
+  module or exposed from a used one, or `lib.f` on a used module, that can fail (declared
+  `throws` or raising in its body) is refused at the value's line and column, naming it and
+  both fixes: handle the error inside it with a method-level `catch`, or call it and pass the
+  result. The fix shape asked for the PARAMETER to be named too; a var init has none, so the
+  message names the function and the rule instead. Red-checked: on 3720a47 the repro passes
+  `-c` with exit 0; fixed, both lines are refused. Fixtures
+  `test/bug730_throwing_fn_value_test.zbr` (three values: argument, var init, `lib.f`) and
+  `test/bug730_fn_value_control_test.zbr`. NOT covered: a throwing LAMBDA (its body is
+  checked where it is written) and a bare owner-method name used as a value inside a class.
+
+---
+
+### BUG-766: `lib.f` as a function VALUE emits the bare member, and zig finds no `f` in the module -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (filed and fixed the same day; found writing BUG-730's control)
+- **Repro:** `use lib`, then `apply(lib.safe, 6)` where `apply(h: def(int): int, n: int)`.
+  `-c` passed; zig: "root source file struct 'lib' has no member named 'safe'". A used
+  module declares its free functions `_zbr_fn_<name>` (BUG-220); the CALL `lib.safe(6)` has
+  spelled it that way since BUG-498, the value path emitted `lib.safe`.
+- **Fix:** the member emit names a function of a used module (`$fns:<mod>` has it) through
+  `zbrFnSymbol`, the call path's rule, beside BUG-660's module-var branch. Red-checked: the
+  control fails inside zig on 3720a47 and prints `7` fixed (`smoke_run` "bug730 control: OK").
+
+---
+
 ### BUG-729: an unmarked throwing call nested in an expression, under a method-level `catch`, passes `-c` and emits Zig that does not parse -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-14; found by the GameEngine session in zebra-sprocket's check_crud)
   driver; reproduced on d9067e4)

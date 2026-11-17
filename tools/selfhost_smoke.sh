@@ -2885,6 +2885,16 @@ smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_
 smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:17: error: throws call needs '?'"
 smoke_tc_fail test/bug729_optchain_throws_test.zbr "bug729_optchain_throws_test.zbr:13:12: error: \`risky\` throws"
 smoke_tc_fail test/bug729_optchain_throws_test.zbr "bug729_optchain_throws_test.zbr:16:14: error: \`risky\` throws"
+# BUG-730: a throwing function handed over as a `def(...)` value -- an argument, a var init,
+# a qualified function of a used module -- is refused at the value, not inside zebra_rt.zig.
+smoke_tc_fail test/bug730_throwing_fn_value_test.zbr "bug730_throwing_fn_value_test.zbr:25:20: error: \`propagates\` throws, so it cannot be passed as a function value"
+smoke_tc_fail test/bug730_throwing_fn_value_test.zbr "bug730_throwing_fn_value_test.zbr:26:29: error: \`propagates\` throws"
+smoke_tc_fail test/bug730_throwing_fn_value_test.zbr "bug730_throwing_fn_value_test.zbr:28:40: error: \`bug728_xmod_throws_lib.riskyInferred\` throws"
+# The control: functions that cannot fail pass exactly as before, including one that handles
+# its own error with a method-level `catch`, and (BUG-766) `lib.safe` as a value.
+smoke_run test/bug730_fn_value_control_test.zbr "plain 3"
+smoke_run test/bug730_fn_value_control_test.zbr "handled error"
+smoke_run test/bug730_fn_value_control_test.zbr "bug730 control: OK"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.
