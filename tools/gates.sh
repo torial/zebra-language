@@ -925,11 +925,12 @@ fi
 # Zig never evicts. Every tier compiles hundreds of freshly emitted programs, and their ZIR
 # and build products stay forever: this checkout's .zig-cache reached 48 GB by 2026-10-09
 # (the engine's 67 GB) with the disk at 60 GB free. The daily is the once-a-day closing
-# move, so it is where the cleanup belongs. Entries untouched for 7 days go; the gate
+# move, so it is where the cleanup belongs. Entries untouched for 3 days go (7 until 2026-11-16, when
+# the cache had reached 84 GB at ~20 GB a day; Sean chose 3); the gate
 # caches beside them (zbr-verdicts/, zbr-outputs/) are left alone. Runs pass or fail, and
 # before the terminal line so that line stays last.
 if [[ "$MODE" == "daily" && -d .zig-cache ]]; then
-    bash tools/prune_zig_cache.sh .zig-cache --days 7 || echo "  (cache prune refused -- see above; the tier result is unaffected)"
+    bash tools/prune_zig_cache.sh .zig-cache --days 3 || echo "  (cache prune refused -- see above; the tier result is unaffected)"
 fi
 
 echo

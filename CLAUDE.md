@@ -455,8 +455,9 @@ above.
 Zig never evicts: every tier compiles hundreds of freshly emitted programs and keeps their
 ZIR (`z/`) and build products (`o/`) for good. This checkout's `.zig-cache` reached 48 GB, the
 engine's 67 GB, with the disk at 60 GB free. So after the RAN-N-OF-M check and before the
-terminal line, a daily run calls `tools/prune_zig_cache.sh .zig-cache --days 7`. That script
-deletes Zig's own entries untouched for a week, leaves the gate caches (`zbr-verdicts/`,
+terminal line, a daily run calls `tools/prune_zig_cache.sh .zig-cache --days 3`. That script
+deletes Zig's own entries untouched for three days (a week until 2026-11-16: the cache had
+reached 84 GB, growing ~20 GB a day; Sean chose 3), leaves the gate caches (`zbr-verdicts/`,
 `zbr-outputs/`) alone, and refuses a directory that does not look like a Zig cache. It never
 fails the tier. Point it at another project's cache by hand; the directory is always named,
 never assumed.
