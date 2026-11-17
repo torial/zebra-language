@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`x.hash()` on a builtin is `Hash.fnv64`** (surface: `str +hash`). A user type answers
+  `x.hash()` with its `cue hash`; now `str`, every integer width, `char` and `bool` answer it too.
+  On a `str` it is `Hash.fnv64(s)`; on the others, FNV-1a 64 of the value as eight little-endian
+  bytes of an `int`. Stable across releases, and not the hash a `HashMap` uses internally. This
+  reverses BUG-738's removal of `s.hash()`, which never worked; `bool` / `char` `.hash()` failed
+  inside zig before (BUG-773). QUICKSTART's `Hash` table also gains `fnv64`, `xxHash64`, `crc32`
+  and `hmac512`, which existed and were not documented.
+- **`@derive(Hash)` returns an `int`**, as a hand-written `cue hash` does; it returned an
+  unsigned value larger than any `int` (BUG-776). Same bits, read as signed.
+
 - **Four more programs refused in Zebra's words instead of inside zig.** A `\u` escape without
   braces (`\u00eb`, the Python spelling) or with an unclosed `\u{` (BUG-705); a `withHeader`
   whose result is dropped -- it returns a new response (BUG-742); a method-level `catch` over a

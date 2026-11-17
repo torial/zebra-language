@@ -1,0 +1,20 @@
+# BUG-776: @derive(Hash) wrote `hash()` returning u64 (typed uint), while the cue table and a
+# hand-written `cue hash` return int -- so `P(1, "a").hash()` printed 9752650328310461974,
+# larger than any int, and `var h: int = p.hash()` was a sign mismatch. It returns the same
+# 64 bits as an int now. The expected value is the pre-fix compiler's 9752650328310461974
+# less 2^64 (the same Wyhash, read as a signed integer).
+# Control: the struct is still a HashMap key, found by hash and confirmed by equals.
+
+@derive(Eq, Hash)
+struct P
+    var x: int
+    var s: str
+
+def main()
+    var h: int = P(1, "a").hash()
+    print("derived [${h}] [${h == P(1, "a").hash()}] [${h != P(2, "a").hash()}]")
+    var m = HashMap(P, str)()
+    m[P(1, "a")] = "one"
+    m[P(2, "b")] = "two"
+    print("map [${m[P(1, "a")]}] [${m[P(2, "b")]}] [${m.count()}]")
+    print("bug776: OK")

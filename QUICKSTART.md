@@ -738,6 +738,9 @@ def main()
 - Shapes are checked at the declaration (`cue compare` returning `bool` is an error
   there, not inside the emitted Zig). `cue hash` without `cue equals` is refused: a
   key is found by hash and *confirmed* by equals.
+- A `cue hash` over a `str` (or `int`, `char`, `bool`) field calls the field's own
+  `.hash()`, which is `Hash.fnv64` (§ `Hash`): `cue hash(): int` / `return .name.hash()`.
+  A user type's `x.hash()` calls its `cue hash` directly, the same spelling.
 - Structs get the same cues, by value. `@derive(Debug, Eq, Hash)` (§43) writes
   `toString` / `equals` / `hash` for you — a hand-written cue wins over the derived one.
 - There is **no `cue deinit`** in 1.0 (decided 2026-10-10, `docs/design/stability_policy.md`
@@ -1730,6 +1733,7 @@ An `extend str` block adds methods the checker then accepts.
 | `tryInt()` | `(): int?` | Parse as decimal integer; **nil** on bad input |
 | `tryFloat()` | `(): float?` | Parse as float; **nil** on bad input |
 | `codePointCount()` | `(): int` | Count the items `chars()` yields: codepoints, plus one per byte that is not UTF-8 |
+| `hash()` | `(): int` | `Hash.fnv64(s)` -- FNV-1a 64 of the bytes (see `Hash`) |
 | `toFloat()` | `(): float` | Parse as float (**0.0** on bad input — use `tryFloat`) |
 
 > `toFloat()` / `toInt()` return `0.0` / `0` on unparseable input (they cannot
@@ -4458,6 +4462,17 @@ for elem in j.tryList("tags") orelse List(JsonValue)()
 | `Hash.md5(s)`                     | `str`   |                                     |
 | `Hash.blake3(s)`                  | `str`   |                                     |
 | `Hash.hmac256(key, msg)`          | `str`   | HMAC-SHA256 hex. KEY FIRST (pinned to RFC 4231 in test/hash_test.zbr) |
+| `Hash.hmac512(key, msg)`          | `str`   | HMAC-SHA512 hex. Key first          |
+| `Hash.fnv64(s)`                   | `int`   | FNV-1a 64, its 64 bits as an `int` (may be negative). Fast, not cryptographic |
+| `Hash.xxHash64(s)`                | `int`   | xxHash64, seed 0, as an `int`. Fast, not cryptographic |
+| `Hash.crc32(s)`                   | `int`   | CRC-32 (IEEE), 0 .. 2^32-1          |
+
+**`x.hash()` on a builtin is `Hash.fnv64`** (BUG-773), the same call a user type answers
+with its `cue hash`: `s.hash()` on a `str` is `Hash.fnv64(s)`; on an integer of any width,
+a `char` (its codepoint) or a `bool` (0 / 1) it is FNV-1a 64 of the value as the eight
+little-endian bytes of an `int`, so `b.hash() == 255.hash()` for a `byte` 255. The values
+are stable across releases. Neither is the hash a `HashMap` uses internally. `float` has no
+`hash()` (and is not a `HashMap` key). In a `cue hash`, hash a `str` field with `.name.hash()`.
 
 ### `Random` — random numbers
 

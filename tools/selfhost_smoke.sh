@@ -2916,7 +2916,14 @@ smoke_run test/bug732_exposing_own_name_test.zbr "other 2"
 smoke_run test/bug732_exposing_own_name_test.zbr "pt 8 origin 0"
 smoke_run test/bug732_exposing_own_name_test.zbr "bug732: OK"
 # BUG-738: `s.hash()` never worked (a checker entry with no codegen arm); refused by name.
-smoke_tc_fail test/bug738_str_hash_refused_test.zbr "bug738_str_hash_refused_test.zbr:4:15: error: 'str' has no method 'hash'"
+smoke_run test/bug773_builtin_hash_test.zbr "str [-5808556873153909620] [-6615550055289275125] [-3750763034362895579] [true]"
+smoke_run test/bug773_builtin_hash_test.zbr "int [1000385178204227360] [-8289690350564177859] [-8064062821143829734] [true] [true]"
+smoke_run test/bug773_builtin_hash_test.zbr "char/bool [true] [-6284781860667377211] [true]"
+smoke_run test/bug773_builtin_hash_test.zbr "user [7]"
+smoke_run test/bug773_builtin_hash_test.zbr "bug773: OK"
+smoke_run test/bug776_derive_hash_int_test.zbr "derived [-8694093745399089642] [true] [true]"
+smoke_run test/bug776_derive_hash_int_test.zbr "map [one] [two] [2]"
+smoke_run test/bug776_derive_hash_int_test.zbr "bug776: OK"
 # BUG-739: a non-optional class / enum / runtime object compared with nil is refused; Uri.parse
 # is `UriResult?` (nil when the text does not parse).
 smoke_tc_fail test/bug739_never_nil_refused_test.zbr "bug739_never_nil_refused_test.zbr:16:11: error: 'Bug739P' is never nil"

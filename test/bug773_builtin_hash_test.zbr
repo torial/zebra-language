@@ -1,0 +1,32 @@
+# BUG-773: `x.hash()` on a builtin is sugar for Hash.fnv64, as `x.hash()` on a user type calls
+# its `cue hash`. BUG-738 had removed `s.hash()` from str (it passed -c and failed inside zig);
+# it is back with an arm, and `b.hash()` on a bool / char, which also failed inside zig, has one.
+#   str            -> Hash.fnv64 of its bytes
+#   int (any width), char, bool -> Hash.fnv64 of the value as 8 little-endian bytes of an i64
+# The expected values below were computed OUTSIDE the compiler (a Python FNV-1a 64 over the
+# same bytes); "a" is the published FNV-1a 64 vector 0xaf63dc4c8601ec8c.
+# Controls: a user `cue hash` and an `extend str` `hash` are still the user's.
+
+class Tag
+    var name: str
+    cue init(name: str)
+        .name = name
+    cue equals(o: Tag): bool
+        return .name == o.name
+    cue hash(): int
+        return 7
+
+def main()
+    var s = "hello"
+    print("str [${"a".hash()}] [${s.hash()}] [${"".hash()}] [${"a".hash() == Hash.fnv64("a")}]")
+    var n: int = -1
+    var b: byte = 255
+    var u: uint64 = 5
+    var c: char = 'a'
+    print("int [${5.hash()}] [${n.hash()}] [${b.hash()}] [${b.hash() == 255.hash()}] [${u.hash() == 5.hash()}]")
+    print("char/bool [${c.hash() == 97.hash()}] [${false.hash()}] [${true.hash() == 1.hash()}]")
+    print("user [${Tag("x").hash()}]")
+    var m = HashMap(str, int)()
+    m[s] = s.hash()
+    print("map [${m["hello"] == "hello".hash()}]")
+    print("bug773: OK")

@@ -6,6 +6,43 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-776: `@derive(Hash)`'s `hash()` returns an unsigned value, a hand-written `cue hash` an int -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (filed and fixed the same day; found probing BUG-773, on 227b5b5)
+- **Repro:** `@derive(Eq, Hash) struct P` / `var x: int` / `var s: str`, then
+  `print(P(1, "a").hash())` printed 9752650328310461974, larger than any `int`; the cue table
+  says `cue hash(): int`.
+- **Cause:** genDeriveHash emitted `fn hash(...) u64` returning Wyhash's `final()`, and the
+  checker typed it `uint`.
+- **Fix:** the derived `hash()` returns the same 64 bits as an `i64` (`@bitCast`), typed `int`.
+  The map's key context already accepted either signedness. Fixture
+  `test/bug776_derive_hash_int_test.zbr`: `var h: int = p.hash()` prints -8694093745399089642
+  (the pre-fix value less 2^64, measured on 227b5b5), equal values hash alike, and the struct
+  still keys a HashMap. No corpus file, zebra-ide or GameEngine source printed a derived hash
+  (they compare them), so no output moved.
+
+---
+
+### BUG-773: `x.hash()` on a builtin: `str` refused (BUG-738), `bool` / `char` failed inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (filed and fixed the same day, at Sean's request: "if we could
+  treat that as some syntactic sugar for builtin types I think it would not be jarring")
+- **Repro:** `print("a".hash())` was refused at `-c` (BUG-738's fix); `print(true.hash())` and
+  a `char`'s passed `-c` and failed inside zig ("no field or member function named 'hash' in
+  'bool'"); `5.hash()` was refused naming the int methods. A user type answers `x.hash()` with
+  its `cue hash`, so the builtin key types were the odd ones out.
+- **Fix:** `x.hash()` is sugar for `Hash.fnv64`. On a `str`, `Hash.fnv64(s)`. On an integer of
+  any width, a `char` (its codepoint) or a `bool` (0 / 1), FNV-1a 64 of the value as the eight
+  little-endian bytes of an i64 (runtime `_zbr_hash_int`), so equal values hash alike at every
+  width. Typed `int`, takes no arguments (`str.hash expects 0 arguments`). Codegen decides by
+  the receiver's inferred TYPE, so a user `cue hash` and an `extend str` declaring `hash` are
+  untouched (both controlled). `float` is still refused by name. Documented as stable and as
+  NOT the map's internal hash. SURFACE.md: str +hash (54 -> 55). Fixture
+  `test/bug773_builtin_hash_test.zbr`, its expected values computed OUTSIDE the compiler (a
+  Python FNV-1a 64 over the same bytes; "a" is the published vector 0xaf63dc4c8601ec8c);
+  `test/bug738_str_hash_refused_test.zbr` retired with its `smoke_tc_fail`. The V route
+  refuses `.hash()` by name ("no mapping for `hash`"); a mapping is Fable's to decide.
+
+---
+
 ### BUG-768: the V route does not map `float32` -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17, V route (was OPEN (filed 2026-11-17 by Fable, the V route's owner, fixing BUG-761; 767 is the
   Zig side's, the throwing lambda). **V route only; Fable's to fix** (CodeGenV.zbr /
@@ -356,6 +393,8 @@ Open bugs live in `BUGS.md`.
   `Hash.fnv64(s)` (the reasoning that retired the `String` alias). SURFACE.md re-derived:
   str 55 -> 54. A class's `cue hash` is untouched. Fixture
   `test/bug738_str_hash_refused_test.zbr`; red-checked: on d46646c it passes `-c`.
+- **Later (2026-11-17):** reversed by BUG-773 at Sean's request -- `s.hash()` is back, as
+  sugar for `Hash.fnv64(s)` with a real arm; the fixture above was retired.
 
 ---
 

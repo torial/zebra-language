@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-772. Next new bug: BUG-773.**
+**Last bug number generated: BUG-777. Next new bug: BUG-778.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -78,6 +78,47 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+
+---
+
+### BUG-777: `zebra --target v` does not run the type checker
+- **Status:** OPEN (filed 2026-11-17; reported by Fable on 227b5b5. Fable is writing the fix in
+  his worktree)
+- **Repro:** `def f(n: int): int` / `return n + 1` / `def main()` / `var x: int = "a"` /
+  `print(f("b"))`. `-c` reports both type mismatches; `--target v` writes the `.v`, reports
+  "nothing refused: the whole file is in the subset" and exits 0. `xs.isEmpty()` on a List is
+  refused at `-c` and emitted and RUN on V (it printed `true`).
+- **Cause:** vTarget / vCollect / vLoadModule in `selfhost/main.zbr` resolve (an undefined name
+  IS refused) and never call checkModule, so no front-end refusal reaches a V-only build --
+  BUG-764's, BUG-767's and BUG-772's among them. No v_check row is affected: every compared
+  program also builds on the Zig route, which checks.
+- **Fix shape:** vTarget checks each collected module the way MultiCompiler's step 4 does (dep
+  types, the reserved / public runtime names), on the ORIGINAL sources before the collision
+  rename, printing errors and exiting 1 before anything is written.
+- **Control when fixing:** the repro refused on `--target v` with `-c`'s messages and nothing
+  written; a clean program still emits.
+
+---
+
+### BUG-775: an `extend str` method that does not use its receiver fails inside zig
+- **Status:** OPEN (filed 2026-11-17; found writing BUG-773's `extend str` control)
+- **Repro:** `extend str` / `def foo(): int` / `return 42`, then `print("a".foo())`. `-c` exits 0;
+  zig: "unused function parameter" at `fn _ext_str_foo(self: []const u8) i64`.
+- **Fix shape:** the extension's emitted function discards `self` (`_ = self;`) when the body
+  does not reference the receiver, as a method that does not use `this` already does.
+- **Control when fixing:** the repro prints 42; an extension that uses `.len()` is unchanged.
+  Check `extend int` / `extend List(T)` for the same shape.
+
+---
+
+### BUG-774: `HashMap(float, V)` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-17; found choosing BUG-773's receivers)
+- **Repro:** `var m = HashMap(float, int)()` / `m[1.5] = 2`. `-c` exits 0; zig: "unable to hash
+  type f64" in std/hash/auto_hash.zig. An empty map with no put compiles.
+- **Fix shape:** refuse a float key type (and a Set(float) element) at the constructor and at an
+  annotation, naming why -- the BUG-447 reasoning for `@derive(Hash)` on a float field (`0.0 ==
+  -0.0` with different bits, `NaN != NaN`) -- and the fix (key on an int or str form).
+- **Control when fixing:** the repro refused at its line; `HashMap(int, int)` unchanged.
 
 ---
 

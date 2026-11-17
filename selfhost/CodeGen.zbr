@@ -6325,7 +6325,7 @@ struct Generator
         writeIndent()
         w.emit("pub fn hash(self: *const ")
         emitTypeName(n.name)                                # BUG-281 B
-        w.emit(") u64 {\n")
+        w.emit(") i64 {\n")                                 # BUG-776: an int, as `cue hash(): int`
         var ig_h = indented()
         ig_h.writeIndent()
         w.emit(safetyStmt() + "\n")
@@ -6340,7 +6340,7 @@ struct Generator
                 emitName(fld.name)                          # BUG-281 A
                 w.emit(", .Deep);\n")
         ig_h.writeIndent()
-        w.emit("return hasher.final();\n")
+        w.emit("return @as(i64, @bitCast(hasher.final()));\n")
         writeIndent()
         w.emit("}\n")
 
@@ -20502,6 +20502,22 @@ struct Generator
                 genExpr(m.object)
                 w.emit("))")
             return
+        # BUG-773: `x.hash()` on a builtin is sugar for Hash.fnv64 -- of a str's bytes, or of
+        # an integer / char / bool's value as eight little-endian bytes. Decided by the
+        # receiver's TYPE (never the name), so a user class's `hash` and an `extend str`'s
+        # are untouched.
+        if mname == "hash" and args.len == 0 and .infer_ctx != nil
+            var hs_t: Type_ = inferExpr(m.object, .infer_ctx!)
+            var hs_fn: str = ""
+            if hs_t is Type_.string_
+                hs_fn = "_hash_fnv64("
+            else if hs_t is Type_.int_ or hs_t is Type_.uint_ or hs_t is Type_.int_n or hs_t is Type_.uint_n or hs_t is Type_.char_ or hs_t is Type_.bool_
+                hs_fn = "_zbr_hash_int("
+            if hs_fn != ""
+                w.emit(hs_fn)
+                genExpr(m.object)
+                w.emit(")")
+                return
         # BUG-431: `int.toByte()` -- the narrowing that had no spelling. Truncating
         # (low 8 bits, like `${n:c}`), through the same preamble helper.
         if mname == "toByte" and args.len == 0 and .infer_ctx != nil

@@ -7803,6 +7803,23 @@ pub fn _hash_fnv64(s: []const u8) i64 {
 pub fn _hash_xxhash64(s: []const u8) i64 {
     return @as(i64, @bitCast(std.hash.XxHash64.hash(0, s)));
 }
+// BUG-773: `x.hash()` on an integer, char or bool -- FNV-1a 64 (`Hash.fnv64`) of the value
+// as the eight little-endian bytes of its two's-complement i64 (a bool is 0 / 1, a char its
+// codepoint), so equal values hash alike at every width. `s.hash()` on a str is
+// `_hash_fnv64(s)` itself. Neither is the hash a HashMap uses internally.
+pub fn _zbr_hash_int(v: anytype) i64 {
+    const T = @TypeOf(v);
+    const w: i64 = if (T == bool)
+        @intFromBool(v)
+    else if (T == comptime_int)
+        v
+    else if (@typeInfo(T).int.bits <= 64)
+        @truncate(@as(i128, v))
+    else
+        @bitCast(@as(u64, @truncate(@as(u128, @bitCast(v)))));
+    const bytes = std.mem.toBytes(std.mem.nativeToLittle(i64, w));
+    return _hash_fnv64(&bytes);
+}
 pub fn _hash_hmac512(key: []const u8, data: []const u8) []const u8 {
     var out: [std.crypto.auth.hmac.sha2.HmacSha512.mac_length]u8 = undefined;
     std.crypto.auth.hmac.sha2.HmacSha512.create(&out, data, key);

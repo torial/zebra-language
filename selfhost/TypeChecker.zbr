@@ -1214,7 +1214,7 @@ def populateModuleTypes(mt: ModuleTypes, m: Module)
                     ct2.setMethodReturn("equals", Type_.bool_)
                     mt.addCue(s.name, "equals")
                 if s.mods.is_derive_hash
-                    ct2.setMethodReturn("hash", Type_.uint_)
+                    ct2.setMethodReturn("hash", Type_.int_)   # BUG-776: `cue hash(): int`, as a hand-written one
                     mt.addCue(s.name, "hash")
                 mt.addClass(ct2)
                 if s.ifaces.len > 0
@@ -2253,7 +2253,7 @@ def checkNamespaceMember(ns: str, mem: ExprMember, ctx: InferCtx)
     ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'" + ns + "' has no static function '" + mem.member + "' (it has: " + shown + hint + ")")
 
 def strMethodKnown(name: str): bool
-    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "toValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "len"
+    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "toValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
 
 # List(T): the documented set (QUICKSTART §10) plus what the probe showed compiling
 # (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
@@ -2464,6 +2464,9 @@ def chanMethodKnown(name: str): bool
 def stringMethodReturn(name: str): Type_?
     if name == "trim" or name == "trimLeft" or name == "trimRight"
         return Type_.string_
+    # BUG-773: `s.hash()` is `Hash.fnv64(s)`, an int.
+    if name == "hash"
+        return Type_.int_
     if name == "replace" or name == "replaceAll" or name == "reverse" or name == "repeat"
         return Type_.string_
     if name == "concat" or name == "format" or name == "upper" or name == "lower"
@@ -2768,6 +2771,10 @@ def stdlibArityError(recv_kind: str, name: str, argc: int): str
         if name == "join"
             lo = 1
             hi = 1
+    # BUG-773: `x.hash()` on str, an integer, a char or a bool takes no arguments.
+    if name == "hash" and (recv_kind == "str" or recv_kind == "int" or recv_kind == "char" or recv_kind == "bool")
+        lo = 0
+        hi = 0
     if lo < 0
         return ""
     if argc >= lo and argc <= hi
@@ -5023,8 +5030,10 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.unknown_
                             if ctx.methodReturnAny("$extend:int", mem.member) as iext_ret   # BUG-573
                                 return iext_ret
+                            if mem.member == "hash"
+                                return Type_.int_   # BUG-773: Hash.fnv64 of the value's 8 bytes
                             ctx.addErr(ctx.file, mem.span.line, mem.span.col,
-                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString, the checked toInt8..toInt64/toUint/toUint8..toUint64; abs, min, max, pow are Math.* functions)")
+                                       "'int' has no method '" + mem.member + "' (to/toFloat/toFloat32/toByte/toString/hash, the checked toInt8..toInt64/toUint/toUint8..toUint64; abs, min, max, pow are Math.* functions)")
                             return Type_.unknown_
                         # BUG-534: a SIZED integer receiver converts the same way. Only the
                         # conversion names are typed here; anything else falls through to
@@ -5049,6 +5058,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(Type_.int_)
                             if mem.member == "toString"
                                 return Type_.string_
+                            if mem.member == "hash"
+                                return Type_.int_   # BUG-773
+                        on Type_.bool_
+                            if mem.member == "hash"
+                                return Type_.int_   # BUG-773
                         on Type_.float_
                             if mem.member == "toInt"
                                 return Type_.int_
@@ -6946,6 +6960,19 @@ def intConvTarget(name: str): Type_
 
 # The methods a sized integer receiver (int32, uint64, uint, byte...) answers to: the same
 # conversions as `int`, plus toInt / toFloat / toString. `unresolved` for anything else.
+# BUG-773: the receivers `x.hash()` is defined on besides str -- every integer width, char
+# and bool -- named for stdlibArityError; "" for anything else.
+def hashableScalarKind(t: Type_): str
+    if t is Type_.int_ or t is Type_.uint_
+        return "int"
+    if t is Type_.int_n or t is Type_.uint_n
+        return "int"
+    if t is Type_.char_
+        return "char"
+    if t is Type_.bool_
+        return "bool"
+    return ""
+
 def sizedIntMethodType(name: str): Type_
     if name == "toInt"
         return Type_.int_
@@ -6953,6 +6980,8 @@ def sizedIntMethodType(name: str): Type_
         return Type_.float_
     if name == "toString"
         return Type_.string_
+    if name == "hash"
+        return Type_.int_   # BUG-773
     return intConvTarget(name)
 
 # BUG-534: a NAMED integer value flowing into an integer slot zig will not coerce it to at
@@ -9125,6 +9154,8 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
                 var sk: str = ""
                 if isString(recv)
                     sk = "str"
+                else if mem.member == "hash" and hashableScalarKind(recv) != ""
+                    sk = hashableScalarKind(recv)   # BUG-773
                 else if recv is Type_.list_ as rle
                     if isString(rle)
                         sk = "List(str)"
