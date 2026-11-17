@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-768. Next new bug: BUG-769.**
+**Last bug number generated: BUG-771. Next new bug: BUG-772.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -246,6 +246,53 @@
 - **Control when fixing:** bug445's fixture prints the same on both routes under `v-check`;
   a `float32` sum that differs from the `float` sum of the same operands (0.1 + 0.2) prints
   the float32 digits on both.
+
+---
+
+### BUG-769: a `float32` receiver's methods are untyped by the checker; `-c` passes, zig refuses
+- **Status:** OPEN (filed 2026-11-17; found by Fable while fixing BUG-768 on the V route.
+  Zig route; mine.)
+- **Repro:** `var n = sys.args().count()` / `var one: float32 = n.toFloat32()` /
+  `var w = one.toFloat() * 2` / `print(w)`. `-c` exits 0; zig: "a.zbr:4: error: expected type
+  'i64', found 'f64'". `print((one.toFloat() * 2).toFloat32())` fails the same way ("expected
+  integer type, found 'f64'"). `${one.toFloat()}` alone in a hole works.
+- **Where:** TypeChecker's member typing has an arm for `Type_.float_` (~5041) and none for
+  `float_n`, so a sized float's `toFloat()` comes back unknown and the `* 2` is typed as int.
+- **Fix shape:** the `float_` arm's methods for `float_n` too (or a shared predicate), with the
+  receiver's own width where the method keeps it.
+- **Control when fixing:** the repro prints 2.0 (or the arg count times 2); the same program
+  with `var one: float` unchanged.
+
+---
+
+### BUG-770: a constant float expression folds at comptime_float precision, unlike the same sum at run time
+- **Status:** OPEN (filed 2026-11-17; found by Fable comparing the routes. Zig route; mine.)
+- **Repro:** `var a = 0.1` / `print(0.1 + 0.2)` / `print(a + 0.2)` / `print(0.1 + 0.2 == a + 0.2)`
+  prints `0.3`, `0.30000000000000004`, `false`. Zig folds a literal-only expression as an
+  arbitrary-precision `comptime_float` and rounds once at the end; the run-time sum rounds each
+  operand to f64 first. The V route prints `0.30000000000000004` twice and `true` (C folds in
+  double), so v_check cannot compare this shape until the routes agree.
+- **Why it matters:** `float` is documented as f64, and a program's answer should not depend on
+  whether an operand happened to be a literal. An `==` that is false between two spellings of
+  one sum is the worst form of it.
+- **Fix shape (to measure first):** type float literals as `f64` at an arithmetic operator
+  (`@as(f64, 0.1) + 0.2`), so folding happens in f64. Needs an emit sweep and an output_sweep
+  diff before landing: any baselined program printing a literal-only float expression moves.
+- **Control when fixing:** the repro prints the same value twice and `true`; an int constant
+  expression and a `const` float used as a comptime value unchanged.
+
+---
+
+### BUG-771: `var g: float32 = 16777217` passes `-c` and is refused by zig
+- **Status:** OPEN (filed 2026-11-17; found by Fable. Zig route; mine. Minor.)
+- **Repro:** `var g: float32 = 16777217`. `-c` exits 0; zig: "type 'f32' cannot represent
+  integer value '16777217'", at the .zbr line. The words are good; the refusal is the back
+  end's, so `-c` and the LSP do not see it.
+- **Fix shape:** the front end refuses an int literal assigned to `float32` (or `float16`) that
+  the float type cannot represent exactly, naming the nearest values; same check in a call
+  argument and a return.
+- **Control when fixing:** the repro refused at its line; `16777216` and `0.1` into a
+  `float32` unchanged.
 
 ---
 
