@@ -3284,8 +3284,9 @@ print the joined sums; the emitted V must reach `zfit(zadd(` and `zuadd(`; a
 128-bit type and a conversion on an untyped value must be refused by name.
 
 **Not covered, and said.**
-- `float32` is not mapped on this route (`test/bug445_mixed_numeric_test.zbr`
-  does not build as V for that reason).
+- `float32` was not mapped on this route when this was written
+  (`test/bug445_mixed_numeric_test.zbr` did not build as V for that reason):
+  superseded by the next section (BUG-768).
 - Saturating operators (`+| -| *|`) are mapped for `int` only, as before; on
   a sized operand they are refused by name.
 - A `>>` on a narrow type is V's own operator, and a `<<` on a 64-bit value
@@ -3293,6 +3294,89 @@ print the joined sums; the emitted V must reach `zfit(zadd(` and `zuadd(`; a
 - An operand whose type the emitter does not know is still V's wrapping
   operator, and still counted on the emit's "not overflow-checked" line, which
   the row requires to read zero for its own programs.
+
+## float32, and a float's edges (BUG-768, 2026-11-17)
+
+**What was wrong.** `vNamed` mapped `float` to `f64` and passed `float32`
+through as written, which is no V type. The emitter knew one float type: an
+operation with a float operand was V's own operator on whatever the operands
+were, which happened to work for an `f64` beside an `i64` (V promotes) and did
+not compile for an `f32` beside one; `%` on a float is refused by V; and the
+type of `1 + 2.0` was its left operand's, an `i64`, so `(1 + 2.0) * a` went to
+the integer helper `zmul`.
+
+**The mapping.** `float32` and `f32` are V's `f32`; `float`, `float64` and
+`f64` are `f64`; `f16` is refused by name (V has no 16-bit float). A suffixed
+literal is V's cast (`1.5_f32` is `f32(1.5)`).
+
+**The join.** The float half of the checker's `numericJoin` is restated beside
+`vIntJoin` as `vFloatJoin`, over V's type names: a float with a float is the
+wider; a float with an integer is that float (float32 with int stays float32);
+a bare literal takes the other side's type, except that a float literal beside
+an integer makes a `float`; two literals are a `float`. A literal is what the
+checker's own `isNumLit` says (a negated literal and a sum of literals
+included), imported rather than restated. `vTypeOf` answers the join for
+`+ - * / %`, and `floatBinStr` writes arithmetic and comparisons in it, each
+operand cast where its type differs (`(f + f32(a))`, `(f64(f) < d)`). An
+integer or a narrower float going into a float slot (a local, an argument, a
+field, a return) is cast there.
+
+**The edges, found by attacking the first green comparison.**
+- `%` is the runtime's `zfmod`: C's fmod (the dividend's sign, as the Zig
+  route's `@rem`), and for the cases with no remainder (a zero divisor, an
+  infinite dividend, a NaN) the expression compiler-rt uses, `(x*y)/(x*y)`,
+  so the NaN is the hardware's and prints with the same sign. V's `math.fmod`
+  answers `nan` there; the Zig route printed `-nan` on this machine.
+- A float's `toInt()` is the runtime's `zfloat_int`: a value whose integer
+  part an `int` cannot hold traps with the Zig route's words ("integer part of
+  floating point value out of bounds"). V's cast is C's: it answered
+  -9223372036854775808 and carried on, for `float` as well as `float32`. A NaN
+  is that number on the Zig route too (its check compares, and a NaN compares
+  false) and is written out as such.
+- A float32's text is its own shortest digits (`zshow_f32`, over the same
+  layout as `zshow_f`): in a hole, in `print(x)`, in `toString()`, in a
+  container and an optional. Widened first, 0.1 reads 0.10000000149011612.
+- `print(x)` of a float was V's `println`, which writes `1.e+20`; it is the
+  hole's text now, for `float` too.
+- `if(c, a, b)` had no type, so a float there was V's own text and an integer
+  sum beside it went unchecked: typed when the arms agree, or when one is a
+  bare numeric literal beside a typed number. Anything else stays unknown.
+- A Math result is typed `f64` where the checker's table says a float (`pow`,
+  `atan2`, `log` always; the rest for float arguments), so its text is the
+  route's own.
+
+**Refused by name.** `Math.*` on a float32 argument: the Zig route's builtins
+compute in the argument's type (`Math.sqrt` of a float32 is a float32), this
+route's math is `f64`, and the digits would differ. The message names the
+spelling that is the same computation on both routes: widen into a `float`
+first, narrow the result with `toFloat32()`.
+
+**The witness.** `tools/v_check.sh`, the `float32` row:
+`test/v_float32_test.zbr` (51 lines: float32 beside float arithmetic on the
+same operands, and a float32 through a field, a list element, a map value, a
+tuple, an optional, a method's result, a lambda's and `if(...)`), bug445's
+fixture (the entry's control) and bug471's, compared line for line; eight edge
+programs (five conversions out of range must die on both routes with the same
+message; three remainders with no value must print the same NaN); the Zig
+control must print a float32 sum beside the float sum of the same operands;
+the emitted V must reach `zshow_f32`, `zfmod` in f32 and `zfloat_int`; `f16`
+and `Math.sqrt` of a float32 must be refused by name. Watched red: with the
+three runtime guards removed from `selfhost/zebra_rt.v` the fixture DIFFERS
+and all eight edges fail by name. (The first attempt at that red was green:
+it had edited the copy of the runtime beside `zebra.exe`, and the emitter
+reads the checkout's `selfhost/zebra_rt.v` first.)
+
+**Not covered, and said.**
+- A constant float expression: `print(0.1 + 0.2)` is 0.3 on the Zig route
+  (folded at Zig's comptime precision) and 0.30000000000000004 here (C folds
+  in double, which is also what both routes print for the same sum at run
+  time). The Zig side's BUG-770; the fixture has no such line.
+- `x.toFloat()` on a float32 inside a larger expression does not build on the
+  Zig route (the checker has no type for a float32 receiver's methods:
+  BUG-769), so the fixture widens by assignment.
+- A float precision over 9 in a spec, the `e` type, and a sort of a
+  `List(float32)` are as they were (refused, refused, unmapped).
+- Float division by zero is `inf` on both routes and is not a trap on either.
 
 ## If the branch ever merges to main
 

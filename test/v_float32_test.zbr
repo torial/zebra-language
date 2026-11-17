@@ -1,0 +1,242 @@
+# BUG-768: float32 on both routes. Every value that matters arrives at run time (n is 1),
+# so nothing here is folded by either back end. The lines are chosen so that float32 and
+# float arithmetic print different digits (0.1 + 0.2, a third, 16777216 + 1), and so that a
+# float32 reaches a print through every position the emitters type separately: a field, a
+# list element, a map value, a tuple, an optional, a method's result, a lambda's, `if(...)`.
+# tools/v_check.sh's `float32` row compares the two routes on it.
+struct Pt
+    var x: float32
+    var y: float32
+
+def lenSq(p: Pt): float32
+    return p.x * p.x + p.y * p.y
+
+def half(a: float32): float32
+    return a / 2
+
+def widen(a: float32): float
+    return a
+
+def maybeSmall(a: float32): float32?
+    if a > 100.0
+        return nil
+    return a
+
+def mixed(f: float32, d: float, a: int, k: byte)
+    var s = f + a
+    var t = a * f
+    var u = f + d
+    var v = d - f
+    var w = f * k
+    var x = f / 3
+    var y = 2.5 * f
+    var z = f + 0.1
+    print("mix   ${s} ${t} ${u} ${v} ${w} ${x} ${y} ${z}")
+    print("cmp   ${f < a} ${a > f} ${f == 1.5} ${f != d} ${f <= d} ${k > f}")
+    print("mod   ${(f + 6.0) % a} ${f % 1.0} ${d % a} ${(0.0 - d) % a} ${(0.0 - f) % 2}")
+    var h = f
+    h += a
+    h *= 2
+    h -= 0.25
+    h /= k
+    print("cmpd  ${h}")
+
+def part1(n: int)
+    var one: float32 = n.toFloat32()
+    var a: float32 = 0.1
+    var b: float32 = 0.2
+    var da: float = 0.1
+    var db: float = 0.2
+    print("sum   ${a + b} ${da + db} ${a + b == 0.3} ${one / 3}")
+    print("lit   ${1.5_f32} ${1.5_f32 + a} ${2.0_f64 * one} ${-one} ${0.0 - a}")
+    mixed(1.5 * one, 2.25, 3 * n, (n * 4).toUint8())
+    var p = Pt(x: 3.0, y: 4.0)
+    print("fld   ${lenSq(p)} ${p.x} ${half(p.y)} ${widen(a)} ${half(1.0)}")
+    var xs: List(float32) = []
+    xs.add(a)
+    xs.add(1.5)
+    xs.add(one * 1000000.0)
+    xs.add(one / 1000000.0)
+    print("list  ${xs} ${xs.at(0) + xs.at(1)}")
+    print("opt   ${maybeSmall(a)} ${maybeSmall(200.0)}")
+    print("str   " + a.toString() + " " + (a + b).toString() + " " + one.toString())
+    print("conv  ${a.toFloat()} ${one.toInt()} ${(one * 2.7).toInt()} ${da.toFloat32()} ${(7 * n).toFloat32()}")
+    print("spec  [${a:.3f}] [${a + b:.9f}] [${one * 2.675:.2f}] [${a:>8}] [${one * 1234.5:10.1f}]")
+    print("big   ${one * 16777216.0} ${one * 1.0e10} ${one * 1.0e-7} ${one * 3.4e38} ${one * 123456789.0}")
+    var total: float32 = 0.0
+    for i in 0 .. 10
+        total = total + a
+    print("loop  ${total}")
+
+const SCALE: float32 = 0.1
+var acc: float32 = 0.0
+
+struct Cell
+    var v: float32 = 0.25
+    var w: float = 0.25
+
+class Tank
+    var level: float32 = 0.1
+    var cap: float32
+
+    cue init(cap: float32)
+        .cap = cap
+
+    def fill(by: float32): float32
+        .level = .level + by
+        .level += SCALE
+        return .level
+
+    def ratio(): float32
+        return .level / .cap
+
+def third(a: float32): float32
+    return a / 3
+
+def fromInt(a: int): float32
+    return a + 1
+
+def pick(flag: bool, a: float32, b: float32): float32
+    return if(flag, a, b)
+
+def pair(a: float32, d: float): (float32, float)
+    return (a, d)
+
+def chain(f: float32, k: byte, d: float, n: int)
+    var x = f + k + n
+    var y = f + k + d
+    var z = (1 + 2.0) * f
+    var u = -2.5 * f
+    var t = f * f * f
+    var big = f + 16777216
+    print("chain ${x} ${y} ${z} ${u} ${t} ${big} ${f + 16777216 == 16777216} ${f + 16777216.0}")
+
+def part2(n: int)
+    var one: float32 = n.toFloat32()
+    var tenth: float32 = 0.1
+    var c = Cell()
+    c.v = c.v + tenth
+    c.v *= 3
+    c.w = c.w + tenth
+    var c7 = Cell(v: 0.7)
+    print("cell  ${c.v} ${c.w} ${c.v + c.w} ${c.v == 1.05} ${c7.v + tenth}")
+    var t = Tank(3.0)
+    print("tank  ${t.fill(tenth)} ${t.ratio()} ${t.level + t.cap} ${third(one)} ${third(1.0)} ${fromInt(2 * n)}")
+    acc = acc + tenth
+    acc += tenth * 2
+    print("glob  ${acc} ${SCALE} ${SCALE + SCALE + SCALE} ${acc == 0.3} ${acc * SCALE}")
+    var xs: List(float32) = [0.1, 0.2, 0.7]
+    xs[0] += tenth
+    xs[1] = xs[1] * 3
+    xs[2] %= 0.5
+    var sum: float32 = 0.0
+    for x in xs
+        sum = sum + x
+    print("list  ${xs} ${sum} ${xs.count()} ${xs.at(0) + xs.at(1)} ${xs.contains(0.2)}")
+    var m: HashMap(str, float32) = HashMap()
+    m.set("a", tenth)
+    m.set("b", one / 3)
+    print("map   ${m.fetch("a") + m.fetch("b")} ${m.get("a")} ${m.get("zz")} ${m.fetch("b") * 3}")
+    var p = pair(tenth, 0.1)
+    print("tuple ${p.0} ${p.1} ${p.0 + p.1} ${p.0 + tenth}")
+    var o: float32? = nil
+    print("opt   ${o}")
+    o = tenth + tenth
+    if o as got
+        print("opt+  ${got} ${got + tenth} ${got * 2}")
+    print("pick  ${pick(n == 1, tenth, 0.5)} ${pick(n == 2, tenth, 0.5) + tenth}")
+    chain(tenth, (n * 2).toUint8(), 0.2, n * 3)
+    var wide: float = one
+    print("math  ${Math.sqrt(wide * 2).toFloat32()} ${Math.pow(10.0, 20.0)} ${Math.floor(n * 2.7)} ${Math.sqrt(n * 2.0)} ${Math.max(n * 1.0e20, 2.5)}")
+    var g: float32 = 16777216
+    var h: float32 = 7
+    var w: float = tenth
+    print("slot  ${g} ${h} ${w} ${h / 2} ${h % 4} ${(0.0 - h) % 4}")
+    var r = h
+    r %= 2.5
+    r -= one
+    print("cmpd  ${r} ${r * 3}")
+    print(tenth)
+    print(tenth + tenth + tenth)
+    print(one * 1.0e20)
+    print(n * 1.0e20)
+    print(tenth, one, w)
+    print("cmp   ${tenth < 0.1} ${tenth == 0.1} ${w == 0.1} ${tenth < w} ${g > 16777216} ${g == 16777216}")
+    print("str   " + (tenth + tenth + tenth).toString() + " " + (third(one) * 3).toString())
+
+struct Inner
+    var f: float32 = 0.0
+    var d: float = 0.0
+
+struct Outer
+    var inner: Inner = Inner()
+    var fs: List(float32)
+
+class Probe
+    var f: float32 = 0.0
+
+    cue init(f: float32)
+        .f = f
+
+    def get(): float32
+        return .f
+
+    def maybe(yes: bool): float32?
+        if yes
+            return .f
+        return nil
+
+sig F32Fn(x: float32): float32
+
+def twice(f: F32Fn, x: float32): float32
+    return f(f(x))
+
+def kind(n: int, big: float32): float32
+    branch n
+        on 1
+            return big
+        else
+            return 0.0
+
+def part3(n: int)
+    var big: float32 = n.toFloat32() * 1.0e20
+    var bigd: float = n * 1.0e20
+    var tiny: float32 = n.toFloat32() * 1.0e-7
+    var fs0: List(float32) = []
+    var o = Outer(inner: Inner(), fs: fs0)
+    o.inner.f = big
+    o.inner.d = bigd
+    o.fs.add(big)
+    o.fs.add(tiny)
+    print("field ${o.inner.f} ${o.inner.d} ${o.inner.f + o.inner.f} ${o.inner.f + o.inner.d}")
+    print("index ${o.fs[0]} ${o.fs.at(1)} ${o.fs[0] + o.fs[1]}")
+    var p = Probe(big)
+    print("meth  ${p.get()} ${p.get() + tiny} ${p.maybe(true)} ${p.maybe(false)} ${p.maybe(true) orelse tiny} ${p.maybe(false) orelse tiny}")
+    var got = p.maybe(true)
+    print("unwr  ${got!} ${got! + got!} ${-big} ${-(big + big)} ${(big)}")
+    print("ifx   ${if(n == 1, big, tiny)} ${if(n == 2, big, tiny)} ${kind(n, big)} ${kind(n + 1, big)}")
+    print("lam   ${twice(def(x: float32): float32 = x * 10.0, big)} ${twice(def(x: float32): float32 = x / 10.0, tiny)}")
+    var t = (big, bigd, tiny)
+    print("tuple ${t.0} ${t.1} ${t.2} ${t.0 + t.2}")
+    var m: HashMap(str, float32) = HashMap()
+    m.set("b", big)
+    print("map   ${m.fetch("b")} ${m.get("b")} ${m.get("b") orelse tiny} ${m.fetch("b") + tiny}")
+    var local = p.get()
+    var sum = local + o.inner.f
+    var mixed = local + o.inner.d
+    var viaInt = local + n
+    print("infer ${local} ${sum} ${mixed} ${viaInt}")
+    print(big)
+    print(p.get())
+    print(o.inner.f)
+    print(o.fs[0])
+    print(big, tiny, bigd)
+    print(big.toString() + " " + p.get().toString() + " " + o.inner.f.toString() + " " + o.fs.at(0).toString())
+    print("${bigd} ${o.inner.d + bigd} ${Math.pow(10.0, 20.0)} ${Math.abs(0.0 - bigd)} ${Math.floor(bigd)}")
+
+def main()
+    var n = sys.args().count()
+    part1(n)
+    part2(n)
+    part3(n)
+    print("v_float32: OK")

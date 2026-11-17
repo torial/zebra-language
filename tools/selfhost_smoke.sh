@@ -2196,6 +2196,9 @@ smoke_run test/v_format_specs_test.zbr "i >3    [  1] [ -1] [  0] [1234567]"
 # v_sized_ints: the Zig side of v_check's sized-integer row (BUG-761) -- the joined sums are
 # what the row compares the V route against; the Zig route must keep printing them.
 smoke_run test/v_sized_ints_test.zbr "join  100 4999930000 9000000000 5000000200 30000 60200"
+# v_float32: the Zig side of v_check's float32 row (BUG-768) -- a float32 sum beside the
+# float sum of the same operands is what the row compares the V route against.
+smoke_run test/v_float32_test.zbr "sum   0.3 0.30000000000000004 true 0.33333334"
 smoke_tc_fail test/http_request_bad_args_test.zbr "req.header takes one argument"
 # BUG-697: Http.json / Http.postJson are typed JsonValue? -- the getters pass -c and run.
 smoke_run_bounded test/bug697_http_json_type_test.zbr "bug697: OK" 120

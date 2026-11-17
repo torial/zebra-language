@@ -1286,6 +1286,31 @@ pub fn zfit(zr_x i64, zr_lo i64, zr_hi i64) i64 {
 	return zr_x
 }
 
+// A float's toInt() (BUG-768): truncated toward zero; a value whose integer part an int
+// cannot hold traps with the Zig route's words (V's own cast is C's, which answers
+// -9223372036854775808 for it and carries on). A NaN is that same number on the Zig
+// route's x86-64 (its check compares, and a NaN compares false), so it is written out here.
+pub fn zfloat_int(zr_x f64) i64 {
+	if zr_x >= 9223372036854775808.0 || zr_x < -9223372036854775808.0 {
+		zbr_panic('integer part of floating point value out of bounds')
+	}
+	if zr_x != zr_x {
+		return i64(-9223372036854775807) - 1
+	}
+	return i64(zr_x)
+}
+
+// `x % y` on floats (BUG-768): C's fmod, the dividend's sign. The cases with no remainder
+// (y zero, x infinite, either a NaN) are computed as the Zig route's compiler-rt computes
+// them, (x*y)/(x*y), so the NaN is the hardware's own and prints with the same sign.
+pub fn zfmod(zr_x f64, zr_y f64) f64 {
+	if zr_y == 0 || zr_y != zr_y || zr_x != zr_x || math.is_inf(zr_x, 0) {
+		zr_p := zr_x * zr_y
+		return zr_p / zr_p
+	}
+	return math.fmod(zr_x, zr_y)
+}
+
 // uint / uint64: unsigned wrapping is defined, so the check reads the wrapped result.
 @[inline]
 pub fn zuadd(zr_a u64, zr_b u64) u64 {
@@ -4053,7 +4078,28 @@ pub fn zshow_f(zf_x f64) string {
 	if zf_x < -1.7976931348623157e308 {
 		return '-inf'
 	}
-	zf_s := zf_x.str()
+	return zshow_fdigits(zf_x.str())
+}
+
+// A float32's text (BUG-768): its own shortest digits -- the fewest that read back as the
+// same f32 -- laid out as zshow_f lays a float's. Widened to f64 first, 0.1 would read
+// 0.10000000149011612, which is the f64 nearest that f32 and not what the Zig route prints.
+pub fn zshow_f32(zf_x f32) string {
+	if zf_x != zf_x {
+		return if zfmt_signbit(f64(zf_x)) { '-nan' } else { 'nan' }
+	}
+	if zf_x > 3.4028234663852886e38 {
+		return 'inf'
+	}
+	if zf_x < -3.4028234663852886e38 {
+		return '-inf'
+	}
+	return zshow_fdigits(zf_x.str())
+}
+
+// V's shortest digits (`1.5`, `2.`, `1.e+20`, `1.2345679e+08`) as the Zig route writes
+// them: never an exponent, ".0" on a whole value.
+fn zshow_fdigits(zf_s string) string {
 	zf_epos := zf_s.index_u8(`e`)
 	if zf_epos < 0 {
 		// no exponent: V's digits are the plain digits; make sure a whole value ends in ".0"

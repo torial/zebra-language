@@ -20,7 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
-use TypeChecker exposing namespaceMembers, intLitSuffix, intLitDigits, floatLitSuffix, sqliteOpenParamName
+use TypeChecker exposing namespaceMembers, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, isNumLit, sqliteOpenParamName
 use CodeGen exposing parseFmtSpec
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtAllocate, StmtCopyOut, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
@@ -548,7 +548,13 @@ class VGen
             .refused.add("the type " + name + " (V has no 128-bit integer)")
             return "i64"
         if sized != "": return sized
-        if name == "float": return "f64"
+        if name == "float" or name == "float64" or name == "f64": return "f64"
+        # BUG-768: float32 is V's f32 (it was passed through as written, an unknown type
+        # there). V has no 16-bit float: refused by name rather than widened.
+        if name == "float32" or name == "f32": return "f32"
+        if name == "f16"
+            .refused.add("the type " + name + " (V has no 16-bit float)")
+            return "f32"
         if name == "str": return "string"
         if name == "bool": return "bool"
         if name == "char": return "rune"   # a codepoint (BUG-712: it was u8, and chars() yielded bytes)
@@ -1512,7 +1518,7 @@ class VGen
     def zeroExpr(f: DeclVar): Expr
         var t = .vType(f.type_)
         if t == "i64": return Expr.int_lit(ExprIntLit(f.span, "0", IntBase.decimal))
-        if t == "f64": return Expr.float_lit(ExprFloatLit(f.span, "0.0"))
+        if t == "f64" or t == "f32": return Expr.float_lit(ExprFloatLit(f.span, "0.0"))
         if t == "string": return Expr.string_lit(ExprStringLit(f.span, StringKind.plain, ""))
         if t == "bool": return Expr.bool_lit(ExprBoolLit(f.span, false))
         return Expr.nil_(f.span)
@@ -2048,6 +2054,15 @@ class VGen
                             return "&ZRandom"
                         if jowner == "Timer" and cm.member == "start"
                             return "ZTimer"
+                        if jowner == "Math"
+                            # BUG-768: a float result is typed, so its text is the route's own
+                            # (untyped, `${Math.pow(10.0, 20.0)}` was V's `1.e+20`). The
+                            # checker's table: these three always a float, the rest a float
+                            # for float arguments; an integer argument stays untyped here.
+                            if cm.member == "pow" or cm.member == "atan2" or cm.member == "log"
+                                return "f64"
+                            if (cm.member == "sqrt" or cm.member == "abs" or cm.member == "floor" or cm.member == "ceil" or cm.member == "round" or cm.member == "sin" or cm.member == "cos" or cm.member == "tan" or cm.member == "exp" or cm.member == "min" or cm.member == "max" or cm.member == "clamp") and .mathArgsAllFloat(c.args)
+                                return "f64"
                         if ot == "ZTimer"
                             if cm.member == "elapsed"
                                 return "f64"
@@ -2160,6 +2175,10 @@ class VGen
                                 return conv_rt
                             if cm.member == "toByte"
                                 return "u8"
+                            if cm.member == "toFloat32"
+                                return "f32"   # BUG-768
+                            if cm.member == "toFloat" and (vIsFloat(ot) or vIntKind(ot) != 0)
+                                return "f64"
                             if cm.member == "count" and (ot.startsWith("&ZList[") or ot.startsWith("&ZMap[") or ot.startsWith("&ZSet["))
                                 return "i64"   # a container's count is an int (an untyped `var n = xs.count()` had no type here: BUG-761's fixture)
                             if cm.member == "copy"
@@ -2192,7 +2211,9 @@ class VGen
                 if til_t != ""
                     return til_t
                 return "i64"
-            on Expr.float_lit
+            on Expr.float_lit as flt
+                if floatLitSuffix(flt.text) == "float32"
+                    return "f32"   # `1.5_f32` carries its own type (BUG-768)
                 return "f64"
             on Expr.bool_lit
                 return "bool"
@@ -2246,6 +2267,12 @@ class VGen
                 if bn.op == BinaryOp.dotdot
                     return ""
                 var blt: str = .vTypeOf(bn.left)
+                if bn.op == BinaryOp.add or bn.op == BinaryOp.sub or bn.op == BinaryOp.mul or bn.op == BinaryOp.div or bn.op == BinaryOp.mod
+                    # a float with a float or an integer: the float join (BUG-768; until then
+                    # the left's type, so `1 + 2.0` was an i64 and `a * f` an int)
+                    var bfj: str = vFloatJoin(blt, .vTypeOf(bn.right), isNumLit(bn.left), isNumLit(bn.right))
+                    if bfj != ""
+                        return bfj
                 if vIntKind(blt) != 0 and bn.op != BinaryOp.shl and bn.op != BinaryOp.shr
                     # two integers: the join (BUG-761); a shift keeps its left operand's type
                     var bjoin: str = vIntJoin(blt, .vTypeOf(bn.right), isIntLit(bn.left), isIntLit(bn.right))
@@ -2256,6 +2283,23 @@ class VGen
                 var brt: str = .vTypeOf(bn.right)
                 if brt != "&ZJson"
                     return brt
+                return ""
+            on Expr.if_expr as ife
+                # `if(c, a, b)`: the arms' type when they agree, or the typed arm's beside
+                # a bare numeric literal (BUG-768: untyped, a float there was V's own text,
+                # `1e+20`, and an integer sum beside it went unchecked). Anything else stays
+                # unknown: an arm of nil makes the value an optional this does not spell.
+                var ift: str = .vTypeOf(ife.then_expr)
+                var ife_t: str = .vTypeOf(ife.else_expr)
+                if ift == ife_t
+                    return ift
+                var ifnum_t: bool = vIsFloat(ift) or vIntKind(ift) != 0
+                var ifnum_e: bool = vIsFloat(ife_t) or vIntKind(ife_t) != 0
+                if ifnum_t and ifnum_e
+                    if isNumLit(ife.else_expr) and not isNumLit(ife.then_expr) and (vIsFloat(ift) or not vIsFloat(ife_t))
+                        return ift
+                    if isNumLit(ife.then_expr) and not isNumLit(ife.else_expr) and (vIsFloat(ife_t) or not vIsFloat(ift))
+                        return ife_t
                 return ""
             on Expr.tuple_lit as tl
                 var tparts: str = ""
@@ -2582,6 +2626,9 @@ class VGen
                                 arhs = acfn + "(" + aobj + ".at(" + aidx + "), " + arhs + ")"   # BUG-667
                             else if asized != ""
                                 arhs = asized   # BUG-761: an element of a sized type, checked in the join
+                            else if aop != "=" and vIsFloat(tt) and compoundBase(a.op) == BinaryOp.mod
+                                .needs_math = true
+                                arhs = floatModStr(aobj + ".at(" + aidx + ")", arhs, tt)   # BUG-768: V has no `%` on a float
                             else if aop != "="
                                 if acfn != "" and (tt == "" or vIntKind(tt) != 0)
                                     .arith_unchecked = .arith_unchecked + 1
@@ -2616,6 +2663,9 @@ class VGen
                             csized = intArithStr(cfn, tt, cvt, .exprStr(a.target), rhs, false, isIntLit(a.value))
                         if csized != ""
                             .line(.exprStr(a.target) + " = " + csized)
+                        else if vIsFloat(tt) and compoundBase(a.op) == BinaryOp.mod and isPlainPlace(a.target)
+                            .needs_math = true
+                            .line(.exprStr(a.target) + " = " + floatModStr(.exprStr(a.target), rhs, tt))   # BUG-768: V has no `%` on a float
                         else
                             if cfn != "" and (tt == "" or vIntKind(tt) != 0)
                                 .arith_unchecked = .arith_unchecked + 1
@@ -2686,6 +2736,17 @@ class VGen
                         else
                             .line("return ZOpt[" + wt + "]{ has: true, val: " + rvs + " }")
                     else
+                        # BUG-768: an integer or a narrower float returned from a float
+                        # function, said (V refuses an i64 where an f32 is returned)
+                        var fret: str = .current_ret
+                        if fret.startsWith("!")
+                            fret = fret.substring(1, fret.len)
+                        if fret.startsWith("?")
+                            fret = fret.substring(1, fret.len)
+                        if vIsFloat(fret)
+                            var fhave: str = .vTypeOf(rv)
+                            if fhave != fret and (vIsFloat(fhave) or vIntKind(fhave) != 0)
+                                rvs = fret + "(" + rvs + ")"
                         .line("return " + .asChar(rv, rvs, .current_ret))
                 else
                     .popRegions(.fn_region_base)
@@ -3114,8 +3175,8 @@ class VGen
                 rhs = "i64(" + rhs + ")"   # (whatever the initializer: `-1` is V's int, a call's i64 is unchanged)
             else if vIntKind(tname) != 0
                 rhs = tname + "(" + rhs + ")"   # BUG-761: a sized local is its type (a literal or a narrower value: the checker let nothing else in)
-            else if tname == "f64"
-                rhs = "f64(" + rhs + ")"
+            else if vIsFloat(tname)
+                rhs = tname + "(" + rhs + ")"
             else if tname == "rune"
                 rhs = .asChar(ie, rhs, tname)
             else if tname == "" and isIntLit(ie)
@@ -3136,6 +3197,7 @@ class VGen
     def zeroOf(vt: str): str
         if vt == "i64": return "i64(0)"
         if vt == "f64": return "f64(0)"
+        if vt == "f32": return "f32(0)"
         if vt == "string": return "''"
         if vt == "bool": return "false"
         if vt == "rune": return "rune(0)"
@@ -3460,6 +3522,10 @@ class VGen
             return .showValue(ct, rendered)
         if .isShownOptional(ct)
             return .showFn(ct, false) + "(" + rendered + ")"
+        if ct == "f64"
+            return "zshow_f(" + rendered + ")"   # BUG-768: print(x) of a float is the hole's text (it was V's str(): `1.e+20`)
+        if ct == "f32"
+            return "zshow_f32(" + rendered + ")"
         return rendered
 
     # An optional of something this route prints (BUG-746's ground: until 2026-11-15 one
@@ -3470,7 +3536,7 @@ class VGen
         if not vt.startsWith("?") or vt.len < 2
             return false
         var inner: str = vt.substring(1, vt.len)
-        return inner == "string" or inner == "rune" or vIntKind(inner) != 0 or inner == "byte" or inner == "bool" or inner == "f64" or inner == "&ZJson" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
+        return inner == "string" or inner == "rune" or vIntKind(inner) != 0 or inner == "byte" or inner == "bool" or inner == "f64" or inner == "f32" or inner == "&ZJson" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
 
     # a class or a struct by its V type (`&Pt`, `Rgb`): what print, a hole and
     # toString() give the Zig route's text for (BUG-746)
@@ -3528,6 +3594,7 @@ class VGen
         if vIntKind(et) != 0: return "zshow_" + et   # BUG-761: the other sized integers, by their number
         if et == "bool": return "zshow_bool"
         if et == "f64": return "zshow_float"
+        if et == "f32": return "zshow_f32"   # BUG-768: a float32's own shortest digits
         if et == "&ZJson": return "zjson_stringify"   # inside a container or an optional too: the JSON text
         var key: str = et
         if not quoted
@@ -3603,8 +3670,13 @@ class VGen
                     return lit_t + "(" + intLitDigits(il.text) + ")"
                 return il.text
             on Expr.float_lit as fl
-                if floatLitSuffix(fl.text) != ""
-                    .refuse("a suffixed literal `" + fl.text + "` (the V route maps no literal suffix)", fl.span)
+                var fsfx: str = floatLitSuffix(fl.text)
+                if fsfx == "float32"
+                    return "f32(" + floatLitDigits(fl.text) + ")"   # BUG-768: the suffix is V's cast
+                if fsfx == "float"
+                    return "f64(" + floatLitDigits(fl.text) + ")"
+                if fsfx != ""
+                    .refuse("a suffixed literal `" + fl.text + "` (its suffix names no float type this route maps)", fl.span)
                 return fl.text
             on Expr.bool_lit as bl
                 if bl.value
@@ -4244,6 +4316,8 @@ class VGen
                 body = "zfmt_one(f64(" + e + "), " + prec.substring(1, 2) + ")"
             else
                 body = "zshow_f(f64(" + e + "))"   # BUG-760: the bare hole's text, then the pad (until then Zig's {d}, which dropped a whole value's ".0")
+                if t == "f32"
+                    body = "zshow_f32(" + e + ")"   # BUG-768: a float32's own digits (widened, 0.1 reads 0.10000000149011612)
         else if t == "string"
             if prec != "" or sign != "" or (ty != "" and ty != "s")
                 return .specRefused(spec, e, "on a str (mapped: a fill, an alignment, a width, s)")
@@ -4314,6 +4388,8 @@ class VGen
                         # a bare float hole: the Zig backend's _zbr_show_float spelling (the
                         # shortest digits, never an exponent, ".0" when whole), not V's str()
                         out = out + "\${zshow_f(" + .exprStr(ex) + ")}"
+                    else if .vTypeOf(ex) == "f32"
+                        out = out + "\${zshow_f32(" + .exprStr(ex) + ")}"   # BUG-768: the float32's own shortest digits
                     else if spec == "c" and .vTypeOf(ex) == "i64"
                         # `${n:c}` on an int: ONE byte, n as toUint8 would take it (BUG-713:
                         # V's own :c writes the int as a codepoint, UTF-8 encoded)
@@ -4609,6 +4685,12 @@ class VGen
             var have: str = .vTypeOf(e)
             if vIntKind(have) != 0 and have != want0
                 return want0 + "(" + s + ")"   # BUG-761: a narrower integer into a wider slot, said (the checker let only a widening in)
+        if vIsFloat(want0)
+            # BUG-768: an integer or a narrower float into a float slot, said (V takes an i64
+            # where an f64 is wanted, and refuses one where an f32 is)
+            var fhave: str = .vTypeOf(e)
+            if fhave != want0 and (vIsFloat(fhave) or vIntKind(fhave) != 0)
+                return want0 + "(" + s + ")"
         return .asChar(e, s, want0)
 
     def sigFits(args: List(Arg), fsig: FnSig): bool
@@ -4781,6 +4863,14 @@ class VGen
             return owner + "(" + owner + "_" + name + "{ payload: " + .exprStr(args.at(0).value) + " })"
         if isMath
             .needs_math = true
+            for ma in args
+                if .vTypeOf(ma.value) == "f32"
+                    # BUG-768: the Zig route computes Math.* of a float32 in float32 (its
+                    # builtins take the argument's type); this route's math is f64, whose
+                    # result would carry other digits. Refused, with the spelling that is
+                    # the same computation on both routes.
+                    .refuse("Math." + name + " on a float32 argument (the Zig route computes it in float32, this route's math is f64: pass `x.toFloat()`, and narrow the result with `toFloat32()` where a float32 is wanted)", span)
+                    break
             if name == "sqrt" or name == "abs" or name == "floor" or name == "ceil" or name == "sin" or name == "cos" or name == "tan" or name == "pow" or name == "min" or name == "max" or name == "atan2"
                 return "math." + name + "(" + .argsStr(args) + ")"
             if name == "round": return .rtFree("zmath_round(" + .argsStr(args) + ")", span)
@@ -4832,6 +4922,8 @@ class VGen
                 return "u8(u64(" + obj + ") & 255)"   # the low eight bits: toByte on an int truncates (BUG-431)
             if name == "toFloat"
                 return "f64(" + obj + ")"
+            if name == "toFloat32"
+                return "f32(" + obj + ")"   # BUG-768
             if name == "toString" and rtype != "i64"
                 return obj + ".str()"
         if rtype == "" and args.count() == 0 and name != "toInt" and vConvTarget(name) != ""
@@ -5085,10 +5177,13 @@ class VGen
             if name == "close" and args.count() == 0: return obj + ".close()"
         if name == "toString" and args.count() == 0
             if rtype == "f64": return "zshow_f(" + obj + ")"   # a float's toString: the Zig backend's spelling
+            if rtype == "f32": return "zshow_f32(" + obj + ")"
             return obj + ".str()"
         if name == "concat" and args.count() == 1: return "(" + obj + " + " + .argsStr(args) + ")"
         if name == "isNumeric" and args.count() == 0: return "zstr_is_numeric(" + obj + ")"
         if name == "toFloat" and args.count() == 0: return "f64(" + obj + ")"
+        if name == "toFloat32" and args.count() == 0 and vIsFloat(rtype): return "f32(" + obj + ")"   # BUG-768
+        if name == "toInt" and args.count() == 0 and vIsFloat(rtype): return "zfloat_int(f64(" + obj + "))"   # BUG-768: out of an int's range traps, as on the Zig route (V's cast answered i64's minimum)
         if name == "toInt" and args.count() == 0: return "i64(" + obj + ")"
         # the containers: the runtime's ZList / ZMap methods, by their names
         if name == "count" and args.count() == 0: return obj + ".count()"
@@ -5179,6 +5274,9 @@ class VGen
         var ck: str = .checkedArith(b)
         if ck != ""
             return ck
+        var fl: str = .floatBinStr(b)
+        if fl != ""
+            return fl
         if b.op == BinaryOp.or_ or b.op == BinaryOp.and_ or b.op == BinaryOp.add
             # decided before any operand is rendered: rendering binds temporaries,
             # and the chain renders its operands itself
@@ -5258,6 +5356,43 @@ class VGen
     # with a bare literal is made in i64, where a literal the narrow side cannot hold
     # (`k < 300` on a byte) still compares; a narrow `<<` is computed in u64 and cut back
     # to the left operand's width, as the Zig route's is. "" when there is nothing to do.
+    # BUG-768: arithmetic and a comparison with a float operand, written in the checker's
+    # float join (vFloatJoin) with each operand cast to it where its type differs. Until
+    # then the operator was V's own on whatever the operands were: an f64 with an i64
+    # happened to promote, an f32 with one did not compile, and `%` on a float is refused
+    # by V (the runtime's zfmod here: the dividend's sign, as the Zig route's @rem). "" when
+    # neither operand is a float, when the other is no number the route knows, or for a
+    # constant V folds itself.
+    def floatBinStr(b: ExprBinary): str
+        var is_arith: bool = b.op == BinaryOp.add or b.op == BinaryOp.sub or b.op == BinaryOp.mul or b.op == BinaryOp.div or b.op == BinaryOp.mod
+        var is_cmp: bool = b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
+        if not is_arith and not is_cmp
+            return ""
+        var lt: str = .vTypeOf(b.left)
+        var rt: str = .vTypeOf(b.right)
+        var l_lit: bool = isNumLit(b.left)
+        var r_lit: bool = isNumLit(b.right)
+        var j: str = vFloatJoin(lt, rt, l_lit, r_lit)
+        if j == ""
+            return ""
+        if l_lit and r_lit and b.op != BinaryOp.mod
+            return ""
+        var ls: str = vFloatAs(.exprStr(b.left), lt, j)
+        var rs: str = vFloatAs(.exprStr(b.right), rt, j)
+        if b.op == BinaryOp.mod
+            .needs_math = true
+            return floatModStr(ls, rs, j)
+        return "(" + ls + " " + binaryOpV(b.op) + " " + rs + ")"
+
+    # every argument a float (f64), or a bare float literal: what makes a Math result a float
+    def mathArgsAllFloat(args: List(Arg)): bool
+        if args.count() == 0
+            return false
+        for a in args
+            if .vTypeOf(a.value) != "f64"
+                return false
+        return true
+
     def intMixedStr(b: ExprBinary, l: str, r: str): str
         var lt: str = .vTypeOf(b.left)
         var rt: str = .vTypeOf(b.right)
@@ -5359,7 +5494,7 @@ class VGen
         if sized != ""
             return sized   # BUG-761: two integers of any mapped width, in their join
         if lt == "" or rt == ""
-            if lt != "f64" and rt != "f64" and lt != "string" and rt != "string"
+            if not vIsFloat(lt) and not vIsFloat(rt) and lt != "string" and rt != "string"
                 .arith_unchecked = .arith_unchecked + 1
         return ""
 
@@ -5511,6 +5646,52 @@ def vIntJoin(lt: str, rt: str, l_lit: bool, r_lit: bool): str
     if sw > need
         need = sw
     return "i" + need.toString()
+
+# BUG-768: the float half of the checker's numericJoin, over V's type names. A float with
+# a float is the wider; a float with an integer is that float (float32 with int stays
+# float32); a bare literal takes the other side's type, except that a float literal beside
+# an integer makes a float; two literals fold to a float. "" when neither side is a float,
+# or when the other side is no number this route knows.
+def vIsFloat(t: str): bool
+    return t == "f64" or t == "f32"
+
+def vFloatJoin(lt: str, rt: str, l_lit: bool, r_lit: bool): str
+    var lf: bool = vIsFloat(lt)
+    var rf: bool = vIsFloat(rt)
+    if not lf and not rf
+        return ""
+    if (not lf and vIntKind(lt) == 0) or (not rf and vIntKind(rt) == 0)
+        return ""
+    if l_lit and r_lit
+        return "f64"
+    if l_lit
+        if lf and not rf
+            return "f64"
+        return rt
+    if r_lit
+        if rf and not lf
+            return "f64"
+        return lt
+    if lf and rf
+        if lt == "f64" or rt == "f64"
+            return "f64"
+        return "f32"
+    if lf
+        return lt
+    return rt
+
+# an operand of a float operation, in the join's type
+def vFloatAs(s: str, t: str, j: str): str
+    if t == j
+        return s
+    return j + "(" + s + ")"
+
+# `l % r` on floats of type j: C's fmod (the dividend's sign), computed in f64 -- exact for
+# two float32 operands, whose remainder is a float32
+def floatModStr(ls: str, rs: str, j: str): str
+    if j == "f32"
+        return "f32(zfmod(f64(" + ls + "), f64(" + rs + ")))"
+    return "zfmod(" + ls + ", " + rs + ")"
 
 # The Zebra spelling of a V integer type, as the Zig route's conversion message names it.
 def zebraIntName(t: str): str

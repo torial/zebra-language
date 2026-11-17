@@ -199,6 +199,77 @@ elif ! grep -qE '^  0 integer operation' "$OUT/v_sized_ints_test_emit.txt"; then
 elif ! grep -q 'zfit(zadd(' "$WT/test/v_sized_ints_test_prog.v" || ! grep -q 'zuadd(' "$WT/test/v_sized_ints_test_prog.v"; then echo "sized: FAILED -- the emitted V does not reach zfit over zadd, or zuadd: the comparison ran V's own wrapping operators"; fail=1
 elif [ "$sz_ref128" = 0 ] || [ "$sz_refconv" = 0 ]; then echo "sized: FAILED -- not refused by name: int128 ($sz_ref128 lines), a conversion on an untyped value ($sz_refconv lines)"; grep -E '^    |error' "$OUT/sz_refuse_emit.txt" | head -4 | cut -c1-160; fail=1
 else echo "sized: ok -- $sz_n programs that overflow or convert out of range die on both backends with the Zig route's message, none survives and none has an unchecked operation (the conversions said:${sz_msgs#;}); int128 and a conversion on an untyped value are refused by name"; fi
+echo "── float32, and a float's edges, on both routes (BUG-768, 2026-11-17) ──"
+# Until this row the V route passed `float32` through as written (no V type), knew one float
+# type in arithmetic, wrote V's `%` on a float (which V refuses) and V's cast for a float's
+# toInt() (which answers i64's minimum for a value no int holds, where the Zig route traps).
+# float32 is V's f32 now; an operation with a float operand is written in the checker's join
+# with each operand cast to it; `%` is the runtime's zfmod; toInt() is the runtime's checked
+# zfloat_int; a float32's text is its own shortest digits (zshow_f32), in a hole, in print(x)
+# and in toString(). v_float32: 51 lines chosen so that float32 and float arithmetic print
+# different digits and so that a float32 reaches a print through every position the emitter
+# types separately. bug445 is the entry's stated control; bug471 returns an int from a
+# float32 function. Then the EDGES, each its own program: five float-to-int conversions out
+# of range must die on both routes with the Zig route's message, and a remainder by zero
+# must print the same NaN on both (the sign differed: V's fmod answers nan, the Zig route's
+# compiler-rt -nan on this machine).
+compare v_float32_test "$WT" test/v_float32_test.zbr "$OUT/control_v_float32_test.txt" "$WT/test/v_float32_test_prog.v"
+for t in bug445_mixed_numeric_test bug471_return_int_as_float_test; do
+  compare "$t" "$WT" "test/$t.zbr" "$OUT/control_$t.txt" "$WT/test/${t}_prog.v"
+done
+rows=$((rows + 1))
+fl_body() {   # <name> -> the expression bound to `y`
+  case $1 in
+    toint32)  printf '(one * 1.0e30).toInt()' ;;
+    toint64)  printf '(d * 1.0e30).toInt()' ;;
+    tointtop) printf '(d * 9223372036854775807.0).toInt()' ;;
+    tointlow) printf '(d * -9223372036854777856.0).toInt()' ;;
+    tointinf) printf '(d / dz).toInt()' ;;
+    mod32)    printf 'one %% zero' ;;
+    mod64)    printf 'd %% dz' ;;
+    modinf)   printf '(d / dz) %% d' ;;
+  esac
+}
+fl_bad=""; fl_n=0
+for p in toint32 toint64 tointtop tointlow tointinf mod32 mod64 modinf; do
+  fl_n=$((fl_n + 1))
+  { printf 'def main()\n    var n = sys.args().count()\n    var one: float32 = n.toFloat32()\n    var zero: float32 = one - one\n    var d: float = n * 1.0\n    var dz: float = d - d\n    var y = '; fl_body $p; printf '\n    print("SURVIVED %s: ${y}")\n' $p; } > "$OUT/fl_$p.zbr"
+  (cd "$OUT" && "$ZEBRA" fl_$p.zbr > "$OUT/fl_${p}_zig_out.txt" 2> "$OUT/fl_${p}_zig_err.txt"); zrc=$?
+  rm -f "$OUT/fl_$p.v"
+  (cd "$OUT" && "$ZEBRA" --target v fl_$p.zbr > "$OUT/fl_${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/fl_$p.v" > "$OUT/fl_${p}_v_out.txt" 2> "$OUT/fl_${p}_v_err.txt"); vrc=$?
+  case $p in
+    toint*)
+      zmsg=$(grep -o 'panic: .*' "$OUT/fl_${p}_zig_err.txt" | head -1 | sed 's/^panic: //' | tr -d '\r')
+      if [ "$zrc" = 0 ] || [ "$zmsg" != 'integer part of floating point value out of bounds' ]; then fl_bad="$fl_bad $p(zig exit $zrc, no out-of-bounds trap: NO CONTROL)"
+      elif [ "$vrc" = 0 ] || grep -q SURVIVED "$OUT/fl_${p}_v_out.txt" || ! grep -qF "$zmsg" "$OUT/fl_${p}_v_err.txt"; then fl_bad="$fl_bad $p(v exit $vrc, wanted '$zmsg': $(head -c 90 "$OUT/fl_${p}_v_out.txt" | tr '\n' ' '))"; fi ;;
+    mod*)
+      if [ "$zrc" != 0 ] || ! grep -q 'SURVIVED .*nan' "$OUT/fl_${p}_zig_out.txt"; then fl_bad="$fl_bad $p(zig exit $zrc and no NaN printed: NO CONTROL)"
+      elif [ "$vrc" != 0 ] || ! diff -q "$OUT/fl_${p}_zig_out.txt" "$OUT/fl_${p}_v_out.txt" > /dev/null; then fl_bad="$fl_bad $p(v exit $vrc printed '$(head -c 60 "$OUT/fl_${p}_v_out.txt" | tr -d '\r\n')', zig '$(head -c 60 "$OUT/fl_${p}_zig_out.txt" | tr -d '\r\n')')"; fi ;;
+  esac
+done
+# what this route cannot write the Zig route's way is refused by name: a 16-bit float, and
+# Math.* on a float32 argument (the Zig route's builtins compute in the argument's type;
+# this route's math is f64, and its digits would differ).
+cat > "$OUT/fl_refuse.zbr" <<'ZBR'
+def small(x: f16): f16
+    return x
+
+def main()
+    var n = sys.args().count()
+    var one: float32 = n.toFloat32()
+    print(Math.sqrt(one))
+    print(small(1.5))
+ZBR
+(cd "$OUT" && "$ZEBRA" --target v fl_refuse.zbr > "$OUT/fl_refuse_emit.txt" 2>&1)
+fl_ref16=$(grep -cE '^    the type f16 \(V has no 16-bit float\)' "$OUT/fl_refuse_emit.txt")
+fl_refmath=$(grep -cE '^    Math\.sqrt on a float32 argument' "$OUT/fl_refuse_emit.txt")
+if [ -n "$fl_bad" ]; then echo "float32: FAILED -- an edge did not behave alike on both backends:$fl_bad"; fail=1
+elif ! grep -qxF 'sum   0.3 0.30000000000000004 true 0.33333334' "$OUT/control_v_float32_test.txt"; then echo "float32: FAILED -- NO CONTROL: the Zig run did not print a float32 sum beside the float sum of the same operands"; fail=1
+elif ! grep -qE '^  0 integer operation' "$OUT/v_float32_test_emit.txt"; then echo "float32: FAILED -- the fixture's emit left an integer operation unchecked: $(grep 'not overflow-checked' "$OUT/v_float32_test_emit.txt")"; fail=1
+elif ! grep -q 'zshow_f32(' "$WT/test/v_float32_test_prog.v" || ! grep -q 'f32(zfmod(' "$WT/test/v_float32_test_prog.v" || ! grep -q 'zfloat_int(' "$WT/test/v_float32_test_prog.v"; then echo "float32: FAILED -- the emitted V does not reach zshow_f32, zfmod in f32 or zfloat_int: the comparison ran something else"; fail=1
+elif [ "$fl_ref16" = 0 ] || [ "$fl_refmath" = 0 ]; then echo "float32: FAILED -- not refused by name: f16 ($fl_ref16 lines), Math.sqrt on a float32 ($fl_refmath lines)"; grep -E '^    |error' "$OUT/fl_refuse_emit.txt" | head -4 | cut -c1-160; fail=1
+else echo "float32: ok -- $fl_n edge programs behave alike on both backends (five float-to-int conversions out of range die with the Zig route's message; three remainders with no value print the same NaN); f16 and Math.* on a float32 are refused by name"; fi
 echo "── the selfhost dumps ──"
 for d in lexer_dump parser_dump ast_dump resolver_dump codegen_dump; do
   compare "$d" "$WT/selfhost" "$d.zbr" "$OUT/control_$d.txt" "$WT/selfhost/$d.v"
