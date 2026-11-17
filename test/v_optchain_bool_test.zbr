@@ -1,0 +1,113 @@
+# The V route: a builtin receiver's predicate is a bool (CodeGenV.vBuiltinBoolMethod), so the
+# option of one -- `xs?.contains(5)` -- prints `true` / `nil` as on the Zig route; untyped, it
+# was shown as V's `Option(true)` (found by BUG-765's fixture once the Zig route built it).
+# And a string's isEmpty(), which was emitted as `.is_empty()`: no V string method, so the
+# emitted V did not compile.
+# The same receivers' calls were typed by ANY declaration of the program's with the method's
+# name: with the class below, a list's contains and a string's indexOf were typed `string`,
+# and the emitted V did not compile. A builtin receiver's method is typed by the runtime's
+# own signature or not at all.
+# Control: a class of the program's own with a `contains` and an `indexOf` that answer a
+# str, through `?.` and plain.
+
+class Shelf
+    var label: str = "top"
+    def contains(what: str): str
+        return .label + ":" + what
+    def indexOf(what: str): str
+        return what + "@" + .label
+
+def shelf(n: int): Shelf?
+    if n < 0
+        return nil
+    return Shelf()
+
+def ls(n: int): List(int)?
+    if n < 0
+        return nil
+    var xs = List(int)()
+    xs.add(n)
+    xs.add(n + 1)
+    return xs
+
+def st(n: int): str?
+    if n < 0
+        return nil
+    return "ab-cd"
+
+def mp(n: int): HashMap(str, int)?
+    if n < 0
+        return nil
+    var m = HashMap(str, int)()
+    m.set("a", n)
+    return m
+
+def se(n: int): Set(int)?
+    if n < 0
+        return nil
+    var s = Set(int)()
+    s.add(n)
+    return s
+
+def main()
+    var a1 = ls(5)?.contains(5)
+    var a2 = ls(5)?.contains(9)
+    var a3 = ls(-1)?.contains(5)
+    print("list ${a1} ${a2} ${a3}")
+    var c1 = st(1)?.contains("b-")
+    var c2 = st(1)?.startsWith("ab")
+    var c3 = st(1)?.endsWith("ab")
+    var c4 = st(-1)?.contains("b-")
+    print("str  ${c1} ${c2} ${c3} ${c4}")
+    var d1 = st(1)?.isEmpty()
+    var d3 = st(1)?.isNumeric()
+    var d4 = st(1)?.isValidUtf8()
+    var d5 = st(-1)?.isEmpty()
+    var e1 = st(1)?.eqlIgnoreCase("AB-CD")
+    print("str2 ${d1} ${d3} ${d4} ${d5} ${e1}")
+    var f1 = mp(1)?.contains("a")
+    var f2 = mp(1)?.contains("z")
+    var f3 = mp(-1)?.contains("a")
+    print("map  ${f1} ${f2} ${f3}")
+    var g1 = se(1)?.contains(1)
+    var g2 = se(1)?.contains(2)
+    var g3 = se(-1)?.contains(1)
+    print("set  ${g1} ${g2} ${g3}")
+    var j = Json.parse("{\"a\": 1, \"b\": null}")
+    var nj = Json.parse("{not json")
+    var h1 = j?.has("a")
+    var h2 = j?.has("z")
+    var h3 = j?.isObject()
+    var h4 = j?.isArray()
+    var h5 = nj?.has("a")
+    print("json ${h1} ${h2} ${h3} ${h4} ${h5}")
+    # the value in other places than a hole
+    print(a1)
+    print(a3)
+    if a1 as yes
+        print("narrowed ${yes}")
+    var t = a3 orelse false
+    print("orelse ${t}")
+    var s2: str = "${c1}" + "/" + "${c4}"
+    print(s2)
+    # a string's isEmpty, plain and after a method
+    var full: str = "ab"
+    var none_: str = ""
+    print("empty ${full.isEmpty()} ${none_.isEmpty()} ${full.trim().isEmpty()} ${" ".trim().isEmpty()}")
+    if not none_.isEmpty() or full.isEmpty()
+        print("WRONG")
+    # the control: the program's own `contains`, a str
+    var k1 = shelf(1)?.contains("cup")
+    var k2 = shelf(-1)?.contains("cup")
+    print("own  ${k1} ${k2} ${Shelf().indexOf("cup")}")
+    # a string's own, beside the class's of the same name
+    var i1 = st(1)?.indexOf("-")
+    var i2 = st(-1)?.indexOf("-")
+    var i3 = st(1)?.lastIndexOf("d")
+    var i4 = st(1)?.count("-")
+    var i5 = st(1)?.tryInt()
+    var i6 = "42".tryInt()
+    print("idx  ${i1} ${i2} ${i3} ${i4} ${i5} ${i6}")
+    var at: int = full.indexOf("b")
+    print("plain ${at + 1} ${ls(5)?.count()}")
+    print("v_optchain_bool: OK")

@@ -3378,6 +3378,59 @@ reads the checkout's `selfhost/zebra_rt.v` first.)
   `List(float32)` are as they were (refused, refused, unmapped).
 - Float division by zero is `inf` on both routes and is not a trap on either.
 
+## A builtin receiver's method: its own type, never a namesake's (2026-11-17)
+
+**How it was found.** BUG-765 made the Zig route build `xs?.contains(5)` on an
+optional list (it emitted the method name raw on the unwrapped value). Its
+fixture, `test/bug765_optchain_builtin_method_test.zbr`, was then the first
+program of that shape either route could run, and the first comparison of it
+differed in one line: `true` on the Zig route, `Option(true)` on V.
+
+**What was wrong, three things.**
+
+1. `vTypeOf` had no type for a builtin receiver's predicate (`contains`,
+   `startsWith`, `isEmpty`, a Json value's `has` ...). A plain bool prints the
+   same typed or not, so nothing showed until the value was an option: a hole
+   holding an option of unknown inner type is V's own text. `vBuiltinBoolMethod`
+   answers `bool` for the checker's bool rows on a string, `contains` on the
+   three containers, `any` / `all` on a list, and a Json value's four tests.
+2. A string's `isEmpty()` was emitted as `.is_empty()`, which is the runtime's
+   ZList method and no V string method: the emitted V did not compile, with no
+   refusal from the emitter. It is `(s.len == 0)` on a receiver typed `string`.
+3. `vTypeOf`'s last resort for a method call is `retOf`, whose member arm reads
+   the table of the program's own declarations BY BARE NAME. So a program with
+   `class Shelf` / `def contains(what: str): str` had every list's and string's
+   `contains` typed `string`, and one with `def indexOf(...): str` every
+   string's `indexOf`; the option of one went to the string printer and V
+   refused the file (`cannot use ?bool as ?string`). A receiver typed as a
+   string, a list, a map, a set or a Json value no longer reaches that table:
+   its method is typed by the rows above, by `vStringMethodRet` (indexOf,
+   lastIndexOf, count of a substring: `i64`; tryInt `?i64`; tryFloat `?f64`,
+   the runtime's own signatures), or is unknown.
+
+**Witness.** `tools/v_check.sh`'s `optchain` row: BUG-765's fixture and
+`test/v_optchain_bool_test.zbr` (16 lines), both IDENTICAL; the second has a
+class whose `contains` and `indexOf` answer a str, as the control that the
+program's own methods are still typed by their declarations. The row requires
+the string's length test and `zlist_contains(` in the emitted V and no
+`Option(` in either output. Watched red with the emitter from before the
+change: the first fixture DIFFERS at `Option(true)`, the second does not
+compile as V.
+
+**Not covered.** The string predicates the V route does not map (`isAlpha`,
+`isAlphanumeric`, `isPrintable`, the three `*IgnoreCase` searches) and a
+list's `any` / `all` through `?.` are refused by name, as before. Other
+receivers' calls (an Arg result, a channel, an atomic) still fall through to
+the by-name table when no row types them.
+
+**Found beside it, not fixed here.** `zebra --target v` runs the resolver and
+not the type checker: a program `-c` refuses for a type mismatch, or for
+`xs.isEmpty()` on a List, is emitted with "nothing refused" and may run. Every
+comparison in `v_check.sh` and the engine ladder also builds on the Zig route,
+which checks, so no row is affected; a program built for V alone is not
+checked. Reported to the Zig side; the driver (`vTarget` in `main.zbr`) is
+where the check belongs.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

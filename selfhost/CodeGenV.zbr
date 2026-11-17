@@ -2047,6 +2047,11 @@ class VGen
                                 return orr   # the receiver's own method's type
                         if isStringReturningMethod(cm.member)
                             return "string"
+                        # a builtin receiver's predicate is a bool (untyped, the option of one
+                        # -- `xs?.contains(5)` -- was shown as V's `Option(true)`; found by
+                        # BUG-765's fixture once the Zig route built it)
+                        if vBuiltinBoolMethod(ot, cm.member)
+                            return "bool"
                         var jowner: str = .staticOwner(cm.object)
                         if jowner == "Arg" and cm.member == "parse"
                             return "ZArgs"
@@ -2192,6 +2197,14 @@ class VGen
                                     if cm.member == "keys"
                                         return "&ZList[" + inner.substring(0, cut) + "]"
                                     return "&ZList[" + inner.substring(cut + 2, inner.len) + "]"
+                        if ot == "string"
+                            return vStringMethodRet(cm.member, c.args.count())
+                        if ot.startsWith("&ZList[") or ot.startsWith("&ZMap[") or ot.startsWith("&ZSet[") or ot == "&ZJson"
+                            # a builtin receiver: its method is not a declaration of the
+                            # program's, so the by-name table below does not speak for it
+                            # (a class with `def indexOf(...): str` typed a string's
+                            # indexOf as a string: the emitted V did not compile)
+                            return ""
                         return .retOf(c)
                     else
                         return .retOf(c)
@@ -5197,6 +5210,7 @@ class VGen
         if name == "remove" and args.count() == 1: return obj + ".remove(" + .argsStr(args) + ")"
         if name == "copy" and args.count() == 0: return obj + ".copy()"
         if name == "last" and args.count() == 0: return obj + ".last()"
+        if name == "isEmpty" and args.count() == 0 and rtype == "string": return "(" + obj + ".len == 0)"   # a V string has no is_empty (the emitted V did not compile)
         if name == "isEmpty" and args.count() == 0: return obj + ".is_empty()"
         if name == "values" and args.count() == 0: return obj + ".values()"
         if name == "put" and args.count() == 2: return obj + ".set(" + .argsStr(args) + ")"
@@ -5961,6 +5975,33 @@ def specSignCode(sign: str): str
     if sign == " "
         return "32"
     return "45"
+
+# a string's method with a scalar result, where no row above typed it: the runtime's
+# own signatures (zstr_index_of, zstr_last_index_of, V's count cast, zstr_try_int,
+# zstr_try_float). "" for the rest: unknown, never another declaration's type.
+def vStringMethodRet(name: str, argc: int): str
+    if argc == 1 and (name == "indexOf" or name == "lastIndexOf" or name == "count")
+        return "i64"
+    if argc == 0 and name == "tryInt"
+        return "?i64"
+    if argc == 0 and name == "tryFloat"
+        return "?f64"
+    return ""
+
+# the predicates of the builtin receivers, by the checker's tables (stringMethodReturn's
+# bool rows; contains on the containers, any / all on a list; a Json value's tests).
+# The receiver's type is asked first: a class of the program's own with a method of one
+# of these names is typed by its declaration before this is reached.
+def vBuiltinBoolMethod(ot: str, name: str): bool
+    if ot == "string"
+        return name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase"
+    if ot.startsWith("&ZList[")
+        return name == "contains" or name == "any" or name == "all"
+    if ot.startsWith("&ZMap[") or ot.startsWith("&ZSet[")
+        return name == "contains"
+    if ot == "&ZJson"
+        return name == "has" or name == "isNull" or name == "isObject" or name == "isArray"
+    return false
 
 # the stdlib methods whose result is a string, whatever the receiver
 def isStringReturningMethod(name: str): bool

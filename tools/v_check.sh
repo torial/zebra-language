@@ -270,6 +270,24 @@ elif ! grep -qE '^  0 integer operation' "$OUT/v_float32_test_emit.txt"; then ec
 elif ! grep -q 'zshow_f32(' "$WT/test/v_float32_test_prog.v" || ! grep -q 'f32(zfmod(' "$WT/test/v_float32_test_prog.v" || ! grep -q 'zfloat_int(' "$WT/test/v_float32_test_prog.v"; then echo "float32: FAILED -- the emitted V does not reach zshow_f32, zfmod in f32 or zfloat_int: the comparison ran something else"; fail=1
 elif [ "$fl_ref16" = 0 ] || [ "$fl_refmath" = 0 ]; then echo "float32: FAILED -- not refused by name: f16 ($fl_ref16 lines), Math.sqrt on a float32 ($fl_refmath lines)"; grep -E '^    |error' "$OUT/fl_refuse_emit.txt" | head -4 | cut -c1-160; fail=1
 else echo "float32: ok -- $fl_n edge programs behave alike on both backends (five float-to-int conversions out of range die with the Zig route's message; three remainders with no value print the same NaN); f16 and Math.* on a float32 are refused by name"; fi
+echo "── a builtin receiver's method through ?. and beside a class's of the same name (2026-11-17) ──"
+# BUG-765 made the Zig route build `xs?.contains(5)`; its fixture was the first comparison of
+# one, and it differed: the V route had no type for a builtin receiver's predicate, so the
+# option of one was shown as V's `Option(true)`. Three things in CodeGenV since: a builtin
+# receiver's predicate is a bool (vBuiltinBoolMethod); a string's isEmpty() is `.len == 0`
+# (it was `.is_empty()`, no V string method: the V did not compile); and a builtin receiver's
+# method is never typed by a declaration of the program's with the same name (with a class
+# that has `def contains(...): str`, a list's contains was typed `string` and the V did not
+# compile). v_optchain_bool has that class as its control: its own contains / indexOf answer
+# a str on both routes, the string's and the containers' their own types.
+for t in bug765_optchain_builtin_method_test v_optchain_bool_test; do
+  compare "$t" "$WT" "test/$t.zbr" "$OUT/control_$t.txt" "$WT/test/${t}_prog.v"
+done
+rows=$((rows + 1))
+if ! grep -qxF 'idx  2 nil 4 1 nil 42' "$OUT/control_v_optchain_bool_test.txt" || ! grep -qxF 'own  top:cup nil cup@top' "$OUT/control_v_optchain_bool_test.txt"; then echo "optchain: FAILED -- NO CONTROL: the Zig run did not print the string's indexOf beside the class's of the same name"; fail=1
+elif ! grep -qF '.len == 0)' "$WT/test/v_optchain_bool_test_prog.v" || ! grep -qF 'zlist_contains(' "$WT/test/v_optchain_bool_test_prog.v"; then echo "optchain: FAILED -- the emitted V reaches neither the string's length test nor the list's contains: the comparison ran something else"; fail=1
+elif grep -qF 'Option(' "$OUT/v_optchain_bool_test_v_out.txt" "$OUT/bug765_optchain_builtin_method_test_v_out.txt"; then echo "optchain: FAILED -- an option printed as V's own text"; fail=1
+else echo "optchain: ok -- an optional predicate, an optional index and a string's isEmpty print alike on both backends, beside a class whose methods share the names"; fi
 echo "── the selfhost dumps ──"
 for d in lexer_dump parser_dump ast_dump resolver_dump codegen_dump; do
   compare "$d" "$WT/selfhost" "$d.zbr" "$OUT/control_$d.txt" "$WT/selfhost/$d.v"
