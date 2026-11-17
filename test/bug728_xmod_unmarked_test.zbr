@@ -1,0 +1,13 @@
+# BUG-728 (refusal): with no `catch` in reach, an unmarked call to a throwing function from
+# ANOTHER module is refused for want of `?`, as it is in one module -- bound (line 7), bare
+# (line 8), and one that throws only by raising in its body (line 9). zig used to refuse
+# these instead, about code the user never wrote. A non-throwing call (line 10) is fine.
+use bug728_xmod_throws_lib exposing risky, riskyInferred, safe
+def handler(n: int): str
+    var xs = risky(n)
+    risky(n)
+    var v = riskyInferred(n)
+    return "${xs.count()} ${v} ${safe(n)}"
+
+def main()
+    print(handler(2))

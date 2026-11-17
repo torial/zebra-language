@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A throwing function from another module is a throwing callee (BUG-728).** With
+  `use m exposing f`, an unmarked `f()` is refused for want of `?` (zig refused it before, about
+  code you never wrote), and under a method-level `catch` its error reaches the catch, as in one
+  module.
 - **A runtime `int` with a width no longer prints a `+`, and its sign flag is honoured (BUG-725).**
   `${n:>3}` is `  1` (it was ` +1`), `${n:+}` is `+1` and `${n: }` is ` 1` (the flag was dropped),
   as in Python. A float's `+`, and `+` with the `0` flag, are still ignored with a warning.

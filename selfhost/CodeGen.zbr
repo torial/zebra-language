@@ -9764,6 +9764,17 @@ struct Generator
                     # The same rule genMethod uses for the `anyerror!` in the signature, so a
                     # function that throws by inference is a throwing callee (BUG-467).
                     return methodEmitsErrorUnion(m)
+        # BUG-728: a free function this file takes from another module (`use m exposing f`)
+        # is called bare too, and only this module's decls were asked -- so an unmarked
+        # call was not refused for want of `?` (zig refused it instead) and a method-level
+        # `catch` never saw its error. The table lookupFnParams reads (BUG-604), with the
+        # rule a qualified `m.f()` call uses (genMemberCall): declared, or raises in its body.
+        if .infer_ctx != nil and not isLocalOrParamName(name)
+            if (.infer_ctx!).freeFnTypes(name) as xf
+                if xf.methodThrows(name)
+                    return true
+                if xf.fnBody(name) as xf_body
+                    return bodyHasRaise(xf_body)
         return false
 
     # genMethod's rule for `anyerror!` in a signature, plus the `test_*` harness rule

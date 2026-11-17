@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-758. Next new bug: BUG-759.**
+**Last bug number generated: BUG-761. Next new bug: BUG-762.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -92,28 +92,6 @@
   the OS. Say "UTC" in the `DateTime.now()` row.
 - **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
   `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
-
----
-
-### BUG-728: an imported function's `throws` is invisible to the front end
-- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session moving procgen's generated
-  clients to `throws`; repros `C:\tmp\conc\optprobe\xmod`, reproduced on d9067e4)
-- **Repro:** `riskmod.zbr` declares `def risky(n: int): List(int) throws`; a caller does
-  `use riskmod exposing risky`. `-c` passes all five shapes. (1) An unmarked call is not refused
-  for want of `?`; zig refuses it instead: `var xs = risky(n)` then `xs.count()` -> "type
-  'anyerror!List(int)' does not support field access", and a bare `risky(n)` statement -> "error
-  union is discarded". (2) Under a method-level `catch |e|` the unmarked call is not routed to the
-  catch: zig reports "unused block label" at the def's line. The marked form, `risky(n)?`, under
-  the same catch works ("ok 1" / "caught: refused -2"), and so does the same program in one module.
-- **Why it matters:** QUICKSTART §12 says the `?` rule holds across modules. The user gets a zig
-  diagnostic about code they never wrote, and the catch they wrote does nothing until they add `?`.
-- **Fix shape:** carry `throws` on the imported signature the checker sees (the table that already
-  carries the return type), so the unmarked-call refusal and the method-catch routing both fire.
-- **Control when fixing:** both unmarked repros are refused at `-c`, naming `risky` and `?`; the
-  marked form is unchanged; a same-module throws call is unchanged.
-- **Downstream when fixed:** graze's `check_gate.py` (GameEngine session, graze ec70545) builds five
-  ways of ignoring a refusal and expects each refused; today that rests on zig's errors, so those
-  five expectations change to this refusal's wording when it lands -- tell that session.
 
 ---
 
@@ -262,6 +240,48 @@
   route refuses `= {}` and `= []` there by name; matching the Zig route is the other option).
 - **Control when fixing:** the repro prints `1`; `= HashMap(str, Node)()` unchanged; an empty
   `= []` default on a `List(Node)` field checked the same way.
+
+---
+
+### BUG-759: an int LITERAL under `:x` (`${255:x}`) passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-16; found by Fable taking the Zig route's reference output
+  for the V format-spec work)
+- **Repro:** `print("[${255:x}]")`. `-c` exits 0; the build fails `cannot @bitCast from
+  'comptime_int'`, reported at the line of the enclosing `def`, not the `print`. A runtime int
+  (`var n = 255`, `${n:x}`) prints `ff`.
+- **Also seen once (not reproduced):** in a larger file whose only bad line was this hole, Fable
+  saw `zebra file.zbr` exit 1 with no error line and leave a `.fast.exe` whose entry point was
+  the image base. Two runs of the same file here printed the error each time; recorded so a
+  second sighting can be matched to it.
+- **Control when fixing:** the repro prints `[ff]`; a runtime int unchanged; `${255:08x}`
+  and `${-1:x}` checked the same way.
+
+---
+
+### BUG-760: a float in a hole with a spec but no precision drops its `.0`
+- **Status:** OPEN (filed 2026-11-16; found by Fable comparing the Zig and V routes)
+- **Repro:** `var h = 2.0`, then `${h}` is `2.0` but `${h:>6}` is `     2`, `${h:06}` is
+  `000002`, `${h:+}` is `2`, and with `z = 0.0`, `${z:>4}` is `   0`. Python prints `   2.0`,
+  `0002.0`, `+2.0`, `    0.0`. The plain hole goes through `_zbr_show` (BUG rc5: a whole
+  float prints `6.0`); a spec'd one is Zig's `{d}`, which does not.
+- **Fix shape:** a float hole with a width/align/fill and no precision formats the shown text
+  (`_zbr_show`) and pads that, as BUG-725 did for a signed int. The V route copies the Zig
+  output exactly (Fable's `zfmt_dtext`), so the fix lands on both -- tell that session.
+- **Control when fixing:** the four repro values match Python; `${h:.1f}` and `${h:>8.2f}`
+  unchanged; a non-whole float (`1.5`, `${f:>6}`) unchanged.
+
+---
+
+### BUG-761: the V route does not map Zebra's sized ints or `byte`
+- **Status:** OPEN (filed 2026-11-16; reported by Fable, the V route's owner, while bringing
+  BUG-725's fixture to the V lane). **V route only; Fable's to fix** (CodeGenV.zbr / zebra_rt.v).
+- **What:** CodeGenV emits an `int8` parameter as `int8` (V's is `i8`), a `byte` parameter as
+  `byte` (an alias V has removed; `u8`), and an `int8` LOCAL as V `int`, so the width is lost
+  rather than refused. The Zig route maps all of them.
+- **Consequence:** `test/bug725_int_width_sign_test.zbr` cannot join `v-check`'s lane until this
+  is fixed.
+- **Control when fixing:** BUG-725's fixture prints the same on both routes under `v-check`; an
+  `int8` local that overflows traps on V as it does on Zig (BUG-667's message).
 
 ---
 

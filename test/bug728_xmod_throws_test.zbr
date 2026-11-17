@@ -1,0 +1,55 @@
+# BUG-728: a free function from ANOTHER module (`use m exposing f`) that throws is a throwing
+# callee here as it is in its own module: under a method-level `catch` its error reaches the
+# catch, marked (`?`) or not, bound or bare -- and a non-throwing one is called as before.
+use bug728_xmod_throws_lib exposing risky, riskyInferred, safe
+
+def bound(n: int): str
+    var xs = risky(n)
+    return "ok ${xs.count()}"
+catch |e|
+    return "caught: ${e.message}"
+
+def bare(n: int): str
+    risky(n)
+    return "ok"
+catch |e|
+    return "caught: ${e.message}"
+
+def marked(n: int): str
+    var xs = risky(n)?
+    return "ok ${xs.count()}"
+catch |e|
+    return "caught: ${e.message}"
+
+def inferred(n: int): str
+    var v = riskyInferred(n)
+    return "ok ${v}"
+catch |e|
+    return "caught: ${e.message}"
+
+class Runner
+    var last: str
+    cue init()
+        .last = ""
+    def go(n: int)
+        risky(n)
+        .last = "ran ${n}"
+    catch |e|
+        .last = e.message
+
+def main()
+    assert bound(2) == "ok 1", bound(2)
+    assert bound(-2) == "caught: refused -2", bound(-2)
+    assert bare(2) == "ok"
+    assert bare(-3) == "caught: refused -3", bare(-3)
+    assert marked(4) == "ok 1"
+    assert marked(-4) == "caught: refused -4", marked(-4)
+    assert inferred(3) == "ok 30", inferred(3)
+    assert inferred(-5) == "caught: inferred -5", inferred(-5)
+    var r = Runner()
+    r.go(1)
+    assert r.last == "ran 1", r.last
+    r.go(-6)
+    assert r.last == "refused -6", r.last
+    assert safe(1) == 2
+    print("bug728: OK")

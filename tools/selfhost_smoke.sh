@@ -2872,6 +2872,10 @@ smoke_run test/bug478_479_481_self_optstr_raw_test.zbr "bug478_479_481: OK"
 smoke_run test/bug483_module_alias_shadow_test.zbr "bug483: OK"
 # BUG-484: a cross-module throws method under a method-level catch.
 smoke_run test/bug484_crossmod_throws_catch_test.zbr "bug484: OK"
+smoke_run test/bug728_xmod_throws_test.zbr "bug728: OK"
+smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:7: error: throws call needs '?'"
+smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:8: error: throws call needs '?'"
+smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:9: error: throws call needs '?'"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.

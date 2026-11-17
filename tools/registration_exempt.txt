@@ -46,6 +46,7 @@ bug476_sig_import_lib  # helper module imported by bug476_sig_import_test; has n
 bug496_module_init_lib  # helper module imported by bug496_module_runtime_init_test; has no main()
 bug483_module_alias_lib  # helper module imported by bug483_module_alias_shadow_test; has no main()
 bug484_crossmod_throws_lib  # helper module imported by bug484_crossmod_throws_catch_test; has no main()
+bug728_xmod_throws_lib  # helper module imported by the bug728 tests; has no main()
 bug489_stdlib_shadow_lib  # helper module (the shim class) for bug489_stdlib_shadow_test; has no main()
 bug489_stdlib_shadow_mid  # helper module imported by bug489_stdlib_shadow_test; has no main()
 bug490_iface_lib  # helper module (the interfaces) for bug490_crossmod_iface_test; has no main()

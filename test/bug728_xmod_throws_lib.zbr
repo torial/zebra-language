@@ -1,0 +1,16 @@
+# Helper module for the BUG-728 tests: a declared-throws function, one that throws only by
+# raising in its body, and one that cannot fail.
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "refused ${n}"
+    var out: List(int) = []
+    out.add(n)
+    return out
+
+def riskyInferred(n: int): int
+    if n < 0
+        raise "inferred ${n}"
+    return n * 10
+
+def safe(n: int): int
+    return n + 1

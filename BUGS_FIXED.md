@@ -6,6 +6,41 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-728: an imported function's `throws` is invisible to the front end -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-14; found by the GameEngine session moving procgen's generated)
+  clients to `throws`; repros `C:\tmp\conc\optprobe\xmod`, reproduced on d9067e4)
+- **Repro:** `riskmod.zbr` declares `def risky(n: int): List(int) throws`; a caller does
+  `use riskmod exposing risky`. `-c` passes all five shapes. (1) An unmarked call is not refused
+  for want of `?`; zig refuses it instead: `var xs = risky(n)` then `xs.count()` -> "type
+  'anyerror!List(int)' does not support field access", and a bare `risky(n)` statement -> "error
+  union is discarded". (2) Under a method-level `catch |e|` the unmarked call is not routed to the
+  catch: zig reports "unused block label" at the def's line. The marked form, `risky(n)?`, under
+  the same catch works ("ok 1" / "caught: refused -2"), and so does the same program in one module.
+- **Why it matters:** QUICKSTART §12 says the `?` rule holds across modules. The user gets a zig
+  diagnostic about code they never wrote, and the catch they wrote does nothing until they add `?`.
+- **Fix shape:** carry `throws` on the imported signature the checker sees (the table that already
+  carries the return type), so the unmarked-call refusal and the method-catch routing both fire.
+- **Control when fixing:** both unmarked repros are refused at `-c`, naming `risky` and `?`; the
+  marked form is unchanged; a same-module throws call is unchanged.
+- **Downstream when fixed:** graze's `check_gate.py` (GameEngine session, graze ec70545) builds five
+  ways of ignoring a refusal and expects each refused; today that rests on zig's errors, so those
+  five expectations change to this refusal's wording when it lands -- tell that session.
+- **Fix:** `isTopLevelMethodThrows` (CodeGen) asked only this module's decls, so a function
+  taken with `use m exposing f` and called bare was never a throwing callee. It now also asks
+  the table `lookupFnParams` reads for the same call (`freeFnTypes`, BUG-604), with the rule a
+  qualified `m.f()` call already used (genMemberCall): declared `throws`, or raises in its body.
+  Both halves follow from the one predicate: an unmarked call is refused for want of `?`, and
+  under a method-level `catch` the error reaches the catch, bound or bare, as in one module.
+- **Not done:** the refusal does not name the callee (`throws call needs '?'`); that is the
+  shared wording for every implicit-try site, same-module ones included.
+- **Pinned by:** `test/bug728_xmod_throws_test.zbr` (smoke_run: bound, bare, marked and
+  raise-only callees under a function `catch`, a class method's `catch`, and a non-throwing
+  callee) and `test/bug728_xmod_unmarked_test.zbr` (smoke_tc_fail x3: bound, bare and
+  raise-only unmarked calls refused at their lines). Red first: the pre-fix compiler failed
+  both inside zig ("unused block label", "error union is discarded").
+
+---
+
 ### BUG-725: a runtime `int` formatted with a width prints a `+` sign -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-13; found building the Pocket Lab manager's dialogue report))
 - **Repro:** `var n = sys.args().count()` (1), then
