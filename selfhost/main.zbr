@@ -1875,7 +1875,7 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
             print("  nothing refused: the whole file is in the subset")
         # printed at zero too: a count that only appears when it is bad has no baseline
         print("  " + res.unverified.toString() + " method call(s) on a receiver whose type the emitter did not know: not checked against the runtime")
-        print("  " + res.unchecked_arith.toString() + " integer operation(s) on an operand of unknown or byte type: not overflow-checked (V wraps there)")
+        print("  " + res.unchecked_arith.toString() + " integer operation(s) on an operand of unknown type: not overflow-checked (V wraps there)")
         if res.uses_gui and gui_backend == ""
             # the Zig target's default section is the tui's headless Gui; the V
             # target has none, so the file names types nothing defines

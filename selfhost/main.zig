@@ -3322,7 +3322,7 @@ pub fn _zbr_fn_vTarget(path: []const u8, gc_on: bool, module_path: []const u8, g
 // zbr:selfhost/main.zbr:1877
                 _zbr_print("{s}\n", .{_str_concat(_str_concat("  ", _zbr_show(res.unverified), _zbr_rt._allocator), " method call(s) on a receiver whose type the emitter did not know: not checked against the runtime", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:1878
-                _zbr_print("{s}\n", .{_str_concat(_str_concat("  ", _zbr_show(res.unchecked_arith), _zbr_rt._allocator), " integer operation(s) on an operand of unknown or byte type: not overflow-checked (V wraps there)", _zbr_rt._allocator)});
+                _zbr_print("{s}\n", .{_str_concat(_str_concat("  ", _zbr_show(res.unchecked_arith), _zbr_rt._allocator), " integer operation(s) on an operand of unknown type: not overflow-checked (V wraps there)", _zbr_rt._allocator)});
 // zbr:selfhost/main.zbr:1879
                 if ((res.uses_gui and std.mem.eql(u8, gui_backend, ""))) {
 // zbr:selfhost/main.zbr:1882

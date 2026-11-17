@@ -3208,12 +3208,11 @@ the same file through the emitter from before this change does not compile
 as V at all (60 of 60 lines missing).
 
 **Not covered, and said.**
-- The sized ints (`int8` .. `uint64`) and a declared `byte` are not mapped on
-  this route (BUG-534's family; a `byte` parameter is emitted as V's removed
-  `byte`, an `int8` local as a V `int`), so a spec'd hole over one is refused
-  as an unknown type and the file's unsigned values are a str's bytes.
-  `test/bug725_int_width_sign_test.zbr` is not in the V lane for that reason
-  (an `int8`, and an untyped `var n = sys.args().count()`).
+- (Superseded 2026-11-17 by "The sized integers" below: they are mapped, and
+  `test/bug725_int_width_sign_test.zbr` is in the V lane.) The sized ints
+  (`int8` .. `uint64`) and a declared `byte` were not mapped on this route, so
+  a spec'd hole over one was refused as an unknown type and this file's
+  unsigned values are a str's bytes.
 - `zfmt_dtext` copies a Zig-route bug on purpose: `${h:>6}` over 2.0 is
   "     2" where the bare hole prints "2.0" (BUG-760, filed from this
   work). When 760 lands, that one function changes in step and the matrix's
@@ -3223,6 +3222,75 @@ as V at all (60 of 60 lines missing).
 - V itself accepting and dropping an unknown format character is a V
   matter: vlang/v#32420, filed from this work (an unknown LETTER is already
   an error there; `>`, `<`, `^`, a fill and a space are not looked at).
+
+## The sized integers (BUG-761, 2026-11-17)
+
+**What was wrong.** `vNamed` passed `int8`, `uint64` and `byte` through as
+written. V knows none of those names (`byte` was an alias it has removed), so
+a parameter of one did not compile; a LOCAL declared `int8` was initialised
+from a bare literal and became V's `int`, its width lost without a word; a
+suffixed literal (`300_i16`) and every checked conversion (`n.toInt8()`,
+BUG-534's family) were refused; and arithmetic that touched a byte was V's own
+operator, which wraps where the Zig route traps. Six of the compiler's own
+tests of these rules did not build as V.
+
+**The mapping.** `int8/16/32/64` are V's `i8/i16/i32/i64`, `byte` and
+`uint8` are `u8`, `uint16/32` are `u16/u32`, `uint` and `uint64` are `u64`;
+`int(8)` / `uint(16)` by their width. `int128` / `uint128` are refused by
+name: V has no such integer.
+
+**One rule, restated once.** The emitter knows an expression by its V type
+name, not by the checker's `Type_`, so the checker's `numericJoin` is restated
+over those names in one place (`vIntJoin`, with `vIntKind` / `vIntBits`), and
+every site asks it:
+
+| What | How it is written |
+|---|---|
+| `+ - * / %` on two integers | in their join. Below 64 bits both operands and every true result fit an i64, so the existing i64 helper computes and `zfit(x, lo, hi)` traps on what the join cannot hold; `u64` has `zuadd` / `zusub` / `zumul` |
+| a compound assignment, a list element's, a field's | the same expression, assigned back |
+| negation of a narrow signed value | `zfit(zneg(i64(x)), lo, hi)` |
+| a comparison or `& \| ^` on two different widths | both operands cast to the join; against a bare literal the typed side is compared as an i64, so `k < 300` on a byte still compares |
+| `<<` on a narrow type | computed in u64 and cut back to the left operand's width, as the Zig route's is |
+| `+% -% *%` | in u64 (wrapping is defined there, and a narrower operand widens into it with its sign), cast back to the join |
+| `n.toInt8()` and its family | `zint_conv` / `zuint_conv` with the target's bounds; out of range is the Zig route's trap, word for word, naming the Zebra type |
+| a suffixed literal | V's cast: `i16(300)` |
+| a narrower value into a wider slot (an argument, an assignment, a return) | V's cast, written out by `coerced` |
+| a format spec | signed and unsigned by kind; a narrow signed value's hex is its own bits (`fd` for an int8 -3) |
+| printing inside a container or an optional | `zshow_i8` .. `zshow_u64` |
+
+**Two things the first draft got wrong, and what found them.** The printed
+comparison was IDENTICAL on its first run and proved less than it looked. The
+eighteen attacker programs were written next (each overflows or converts out
+of range exactly once and prints a `SURVIVED` line if it gets past it), and
+eight of them survived on V: a conversion's RESULT had no type in `vTypeOf`,
+so `a + n.toInt8()` had an untyped operand and was emitted as V's wrapping
+`+`. The fix is three lines; without the attackers the route would have
+shipped a silent wrap in the most common way a sized value is made. Then a
+loop over `0 .. top` called `i.toInt16()` on a loop variable the emitter had
+not typed and the fall-through guessed a V method `i.to_int16()`, which V does
+not have: the loop variable is recorded as the int it always is, and a
+conversion on a value whose type the emitter does not know is now refused by
+name instead of guessed.
+
+**The witness.** `tools/v_check.sh`, the `sized` row:
+`test/v_sized_ints_test.zbr` (40 lines over every mapped width) and five of
+the compiler's own fixtures compared with the Zig route line for line, BUG-725's
+among them (the entry's control); the eighteen attackers, each of which must
+die on both routes with the same message, print no `SURVIVED` line and leave
+no integer operation unchecked in the emit's own count; the Zig control must
+print the joined sums; the emitted V must reach `zfit(zadd(` and `zuadd(`; a
+128-bit type and a conversion on an untyped value must be refused by name.
+
+**Not covered, and said.**
+- `float32` is not mapped on this route (`test/bug445_mixed_numeric_test.zbr`
+  does not build as V for that reason).
+- Saturating operators (`+| -| *|`) are mapped for `int` only, as before; on
+  a sized operand they are refused by name.
+- A `>>` on a narrow type is V's own operator, and a `<<` on a 64-bit value
+  is as it was before this change.
+- An operand whose type the emitter does not know is still V's wrapping
+  operator, and still counted on the emit's "not overflow-checked" line, which
+  the row requires to read zero for its own programs.
 
 ## If the branch ever merges to main
 

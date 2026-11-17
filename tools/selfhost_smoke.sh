@@ -2193,6 +2193,9 @@ smoke_run test/v_import_names_test.zbr "v_import_names: OK"
 # v_format_specs: the Zig side of v_check's format-spec row -- the padded-ints line is what
 # the V route used to drop (vlang/v#32420); the Zig route must keep printing it.
 smoke_run test/v_format_specs_test.zbr "i >3    [  1] [ -1] [  0] [1234567]"
+# v_sized_ints: the Zig side of v_check's sized-integer row (BUG-761) -- the joined sums are
+# what the row compares the V route against; the Zig route must keep printing them.
+smoke_run test/v_sized_ints_test.zbr "join  100 4999930000 9000000000 5000000200 30000 60200"
 smoke_tc_fail test/http_request_bad_args_test.zbr "req.header takes one argument"
 # BUG-697: Http.json / Http.postJson are typed JsonValue? -- the getters pass -c and run.
 smoke_run_bounded test/bug697_http_json_type_test.zbr "bug697: OK" 120

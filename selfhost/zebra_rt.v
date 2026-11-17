@@ -1273,6 +1273,91 @@ pub fn zmod(zr_a i64, zr_b i64) i64 {
 	return zr_a % zr_b
 }
 
+// BUG-761: the sized integers (int8..int32, byte, uint16, uint32). Both operands of any of
+// them fit an i64, and so does every true sum, difference, product, quotient and negation
+// the i64 helpers above let through; CodeGenV computes there and passes the result through
+// zfit with the result type's bounds, which traps on what that type cannot hold -- the Zig
+// route's safety-checked arithmetic, and its message.
+@[inline]
+pub fn zfit(zr_x i64, zr_lo i64, zr_hi i64) i64 {
+	if zr_x < zr_lo || zr_x > zr_hi {
+		zbr_panic('integer overflow')
+	}
+	return zr_x
+}
+
+// uint / uint64: unsigned wrapping is defined, so the check reads the wrapped result.
+@[inline]
+pub fn zuadd(zr_a u64, zr_b u64) u64 {
+	zr_r := zr_a + zr_b
+	if zr_r < zr_a {
+		zbr_panic('integer overflow')
+	}
+	return zr_r
+}
+
+@[inline]
+pub fn zusub(zr_a u64, zr_b u64) u64 {
+	if zr_b > zr_a {
+		zbr_panic('integer overflow')
+	}
+	return zr_a - zr_b
+}
+
+@[inline]
+pub fn zumul(zr_a u64, zr_b u64) u64 {
+	if zr_a == 0 || zr_b == 0 {
+		return 0
+	}
+	zr_r := zr_a * zr_b
+	if zr_r / zr_b != zr_a {
+		zbr_panic('integer overflow')
+	}
+	return zr_r
+}
+
+// The checked conversions (`n.toInt8()`, `u.toInt()`, BUG-534's family): the value when it
+// is within the target's bounds, else the Zig route's trap, naming the Zebra type. A source
+// that is not a u64 arrives as an i64 (every such value fits one); a u64 has its own.
+pub fn zint_conv(zr_x i64, zr_lo i64, zr_hi i64, zr_name string) i64 {
+	if zr_x < zr_lo || zr_x > zr_hi {
+		zbr_panic('integer conversion out of range: ${zr_x} does not fit in ${zr_name}')
+	}
+	return zr_x
+}
+
+pub fn zuint_conv(zr_x u64, zr_hi u64, zr_name string) u64 {
+	if zr_x > zr_hi {
+		zbr_panic('integer conversion out of range: ${zr_x} does not fit in ${zr_name}')
+	}
+	return zr_x
+}
+
+// a sized integer inside a printed container or optional: its number
+pub fn zshow_i8(zr_x i8) string {
+	return zr_x.str()
+}
+
+pub fn zshow_i16(zr_x i16) string {
+	return zr_x.str()
+}
+
+pub fn zshow_i32(zr_x i32) string {
+	return zr_x.str()
+}
+
+pub fn zshow_u16(zr_x u16) string {
+	return zr_x.str()
+}
+
+pub fn zshow_u32(zr_x u32) string {
+	return zr_x.str()
+}
+
+pub fn zshow_u64(zr_x u64) string {
+	return zr_x.str()
+}
+
 // the compiler's own version string (`zig"_zbr_version"` on the Zig backend)
 // Zebra's DateTime: the epoch milliseconds (the Zig backend's _DateTime)
 pub struct ZDateTime {

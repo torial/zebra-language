@@ -95,9 +95,10 @@ echo "── format specs in a hole, on both routes (2026-11-16) ──"
 # this row 21 of 37 holes differed from the Zig route, and `${f:8.2f}` did not compile. Every
 # spec'd hole of a known type now goes through the runtime (CodeGenV.vSpecHole, read by the
 # Zig route's own parseFmtSpec). v_format_specs: the holes over ints, bytes, floats, strs
-# and chars, printed and compared line for line. (test/bug725_int_width_sign_test.zbr is not
-# in this lane: its holes are over an int8 and an untyped local, neither of which this route
-# types.) The refusals: what this route cannot write, each by name, never a spliced spec.
+# and chars, printed and compared line for line. (test/bug725_int_width_sign_test.zbr joined
+# the lane with BUG-761, in the `sized` row below: its holes are over an int8 and a local
+# bound to a count, which this route did not type before.) The refusals: what this route
+# cannot write, each by name, never a spliced spec.
 compare v_format_specs_test "$WT" test/v_format_specs_test.zbr "$OUT/control_v_format_specs_test.txt" "$WT/test/v_format_specs_test_prog.v"
 rows=$((rows + 1))
 cat > "$OUT/fmt_refuse.zbr" <<'ZBR'
@@ -118,6 +119,86 @@ if ! grep -qxF 'i >3    [  1] [ -1] [  0] [1234567]' "$OUT/control_v_format_spec
 elif ! grep -q 'zfmt_pad(zfmt_itext(' "$WT/test/v_format_specs_test_prog.v"; then echo "fmt: FAILED -- the emitted V does not reach zfmt_pad over zfmt_itext: the comparison ran V's own interpolation"; fail=1
 elif [ "$fmt_refused" != 4 ]; then echo "fmt: FAILED -- $fmt_refused of 4 unwritable specs refused by name (an exponent type, a precision over 9, a precision on an int, x on a float)"; grep -E '^    |error' "$OUT/fmt_refuse_emit.txt" | head -4 | cut -c1-160; fail=1
 else echo "fmt: ok (the Zig control printed padded ints; the emitted V reaches zfmt_pad over zfmt_itext; 4 unwritable specs refused by name)"; fi
+echo "── the sized integers and byte, on both routes (BUG-761, 2026-11-17) ──"
+# Until this row the V route passed `int8`, `uint64`, `byte` through as written (unknown
+# types in V), typed an int8 local as V's int, and had no mapping for a suffixed literal or
+# a checked conversion. They are V's i8..u64 now; an operation on two of them is carried out
+# in the checker's join and checked there, and a conversion traps as the Zig route's does.
+# v_sized_ints: 40 lines over every mapped width (printing, arithmetic, joins, comparisons,
+# bitwise, conversions, wrapping, compound assignment, suffixed literals, format specs,
+# fields, lists, maps, sets, optionals, tuples, a module var, loops). The six fixtures after
+# it are the compiler's own tests of these rules, which did not build as V before, and
+# BUG-725's, the entry's stated control. Then the ATTACKERS: a matching printout proves
+# nothing about a result that does not fit, so eighteen programs each overflow or convert
+# out of range once, and each must die on BOTH routes with the Zig route's message and
+# never print its SURVIVED line. (Written first as a comparison alone, the row was green
+# while eight of these wrapped silently on V: a conversion's result had no type there, so
+# the sum beside it went unchecked.)
+compare v_sized_ints_test "$WT" test/v_sized_ints_test.zbr "$OUT/control_v_sized_ints_test.txt" "$WT/test/v_sized_ints_test_prog.v"
+for t in bug534_sized_conversions_test bug672_673_join_fits_test bug674_bitwise_join_test numeric_types_test bug725_int_width_sign_test; do
+  compare "$t" "$WT" "test/$t.zbr" "$OUT/control_$t.txt" "$WT/test/${t}_prog.v"
+done
+rows=$((rows + 1))
+sz_body() {   # <name> -> the statements after `var n` (1 at run time); each leaves a `y`
+  case $1 in
+    i8add)    printf '    var a: int8 = (n * 127).toInt8()\n    var y: int8 = a + n.toInt8()\n' ;;
+    u8sub)    printf '    var k: byte = n.toUint8()\n    var y: byte = k - (n * 2).toUint8()\n' ;;
+    i16mul)   printf '    var s: int16 = (n * 300).toInt16()\n    var y: int16 = s * s\n' ;;
+    u32add)   printf '    var u: uint32 = (n * 4000000000).toUint32()\n    var y: uint32 = u + u\n' ;;
+    u64add)   printf '    var h: uint64 = 18446744073709551615\n    var y: uint64 = h + n.toUint64()\n' ;;
+    u64sub)   printf '    var h: uint64 = n.toUint64()\n    var y: uint64 = h - (n * 2).toUint64()\n' ;;
+    u64mul)   printf '    var h: uint64 = (n * 5000000000).toUint64()\n    var y: uint64 = h * h\n' ;;
+    i8neg)    printf '    var a: int8 = (0 - n * 128).toInt8()\n    var y: int8 = -a\n' ;;
+    i8pluseq) printf '    var y: int8 = 127\n    y += n.toInt8()\n' ;;
+    i8div)    printf '    var a: int8 = (0 - n * 128).toInt8()\n    var y: int8 = a / (0 - n).toInt8()\n' ;;
+    elem)     printf '    var xs: List(int8) = []\n    xs.add(127)\n    xs[0] += n.toInt8()\n    var y: int8 = xs.at(0)\n' ;;
+    field)    printf '    var c = Cell(v: 65535)\n    c.v = c.v + n.toUint16()\n    var y: uint16 = c.v\n' ;;
+    conv8)    printf '    var y: int8 = (n * 300).toInt8()\n' ;;
+    convneg)  printf '    var y: uint64 = (0 - n).toUint64()\n' ;;
+    convbyte) printf '    var y: byte = (n * 256).toUint8()\n' ;;
+    convdown) printf '    var h: uint64 = (n * 70000).toUint64()\n    var y: uint16 = h.toUint16()\n' ;;
+    convint)  printf '    var h: uint64 = 18446744073709551615\n    var y: int = h.toInt() + n\n' ;;
+    convi8u)  printf '    var a: int8 = (0 - n).toInt8()\n    var y: uint32 = a.toUint32()\n' ;;
+  esac
+}
+sz_bad=""; sz_n=0; sz_msgs=""
+for p in i8add u8sub i16mul u32add u64add u64sub u64mul i8neg i8pluseq i8div elem field conv8 convneg convbyte convdown convint convi8u; do
+  sz_n=$((sz_n + 1))
+  { printf 'struct Cell\n    var v: uint16\n\ndef main()\n    var n: int = sys.args().count()\n'; sz_body $p; printf '    print("SURVIVED %s: " + y.toString())\n' $p; } > "$OUT/sz_$p.zbr"
+  (cd "$OUT" && "$ZEBRA" sz_$p.zbr > "$OUT/sz_${p}_zig_out.txt" 2> "$OUT/sz_${p}_zig_err.txt"); zrc=$?
+  rm -f "$OUT/sz_$p.v"
+  (cd "$OUT" && "$ZEBRA" --target v sz_$p.zbr > "$OUT/sz_${p}_emit.txt" 2>&1)
+  (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/sz_$p.v" > "$OUT/sz_${p}_v_out.txt" 2> "$OUT/sz_${p}_v_err.txt"); vrc=$?
+  zmsg=$(grep -o 'panic: .*' "$OUT/sz_${p}_zig_err.txt" | head -1 | sed 's/^panic: //' | tr -d '\r')
+  case $p in conv*) want='integer conversion out of range' ;; *) want='integer overflow' ;; esac
+  if [ "$zrc" = 0 ] || [ "${zmsg#"$want"}" = "$zmsg" ]; then sz_bad="$sz_bad $p(zig exit $zrc, no '$want' trap: NO CONTROL)"
+  elif [ "$vrc" = 0 ] || grep -q SURVIVED "$OUT/sz_${p}_v_out.txt" || ! grep -qF "$zmsg" "$OUT/sz_${p}_v_err.txt"; then sz_bad="$sz_bad $p(v exit $vrc, wanted '$zmsg': $(head -c 90 "$OUT/sz_${p}_v_out.txt" | tr '\n' ' '))"
+  elif ! grep -qE '^  0 integer operation' "$OUT/sz_${p}_emit.txt"; then sz_bad="$sz_bad $p(the emit left an integer operation unchecked: $(grep 'not overflow-checked' "$OUT/sz_${p}_emit.txt"))"; fi
+  case $p in conv*) sz_msgs="$sz_msgs; ${zmsg#integer conversion out of range: }" ;; esac
+done
+# what this route cannot write is refused by name: a 128-bit type, and a conversion on a
+# value whose type the emitter does not know (it would have guessed a V method). The
+# untyped value is a str's `.len` bound to an unannotated local; on the day the emitter
+# types that, this leg needs another untyped value, not a weaker check.
+cat > "$OUT/sz_refuse.zbr" <<'ZBR'
+def wide(x: int128): int128
+    return x
+
+def main()
+    var parts = "1,2".split(",")
+    var first = parts.at(0).len
+    print(first.toInt16())
+    print(wide(5))
+ZBR
+(cd "$OUT" && "$ZEBRA" --target v sz_refuse.zbr > "$OUT/sz_refuse_emit.txt" 2>&1)
+sz_ref128=$(grep -cE '^    the type int128 \(V has no 128-bit integer\)' "$OUT/sz_refuse_emit.txt")
+sz_refconv=$(grep -cE '^    `toInt16\(\)` on a value whose type this route does not know' "$OUT/sz_refuse_emit.txt")
+if [ -n "$sz_bad" ]; then echo "sized: FAILED -- did not trap alike on both backends:$sz_bad"; fail=1
+elif ! grep -qxF 'join  100 4999930000 9000000000 5000000200 30000 60200' "$OUT/control_v_sized_ints_test.txt"; then echo "sized: FAILED -- NO CONTROL: the Zig run did not print the joined sums the row is about"; fail=1
+elif ! grep -qE '^  0 integer operation' "$OUT/v_sized_ints_test_emit.txt"; then echo "sized: FAILED -- the fixture's emit left an integer operation unchecked: $(grep 'not overflow-checked' "$OUT/v_sized_ints_test_emit.txt")"; fail=1
+elif ! grep -q 'zfit(zadd(' "$WT/test/v_sized_ints_test_prog.v" || ! grep -q 'zuadd(' "$WT/test/v_sized_ints_test_prog.v"; then echo "sized: FAILED -- the emitted V does not reach zfit over zadd, or zuadd: the comparison ran V's own wrapping operators"; fail=1
+elif [ "$sz_ref128" = 0 ] || [ "$sz_refconv" = 0 ]; then echo "sized: FAILED -- not refused by name: int128 ($sz_ref128 lines), a conversion on an untyped value ($sz_refconv lines)"; grep -E '^    |error' "$OUT/sz_refuse_emit.txt" | head -4 | cut -c1-160; fail=1
+else echo "sized: ok -- $sz_n programs that overflow or convert out of range die on both backends with the Zig route's message, none survives and none has an unchecked operation (the conversions said:${sz_msgs#;}); int128 and a conversion on an untyped value are refused by name"; fi
 echo "── the selfhost dumps ──"
 for d in lexer_dump parser_dump ast_dump resolver_dump codegen_dump; do
   compare "$d" "$WT/selfhost" "$d.zbr" "$OUT/control_$d.txt" "$WT/selfhost/$d.v"

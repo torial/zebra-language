@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-766. Next new bug: BUG-767.**
+**Last bug number generated: BUG-768. Next new bug: BUG-769.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -271,6 +271,26 @@
   never goes through its own dispatch.
 - **Control when fixing:** the repro yields 1 for `maybe(1)` and nil for `maybe(-1)`; a user
   class method through `?.` unchanged.
+
+---
+
+### BUG-768: the V route does not map `float32`
+- **Status:** OPEN (filed 2026-11-17 by Fable, the V route's owner, fixing BUG-761; 767 is the
+  Zig side's, the throwing lambda). **V route only; Fable's to fix** (CodeGenV.zbr /
+  zebra_rt.v).
+- **What:** CodeGenV's `vNamed` maps `float` to `f64` and passes `float32` through as written,
+  which is no V type, and its arithmetic knows one float type: `test/bug445_mixed_numeric_test.zbr`
+  emits with nothing refused and then fails in V ("cannot use `float literal` as `float32`",
+  "mismatched types `float32` and `i64`", "float modulo not allowed", and an `f64` handed to
+  the i64 helper `zmul`). The width is lost in the type name rather than refused, as the sized
+  ints' was before BUG-761.
+- **Fix shape:** `float32` is V's `f32`; the checker's float half of `numericJoin` restated
+  beside BUG-761's `vIntJoin` (float32 with an int stays float32, float32 with float is
+  float); `%` on floats through `math.fmod`; a float operand never reaches the i64 helpers.
+  `float16` / `float128` refused by name (V has neither).
+- **Control when fixing:** bug445's fixture prints the same on both routes under `v-check`;
+  a `float32` sum that differs from the `float` sum of the same operands (0.1 + 0.2) prints
+  the float32 digits on both.
 
 ---
 

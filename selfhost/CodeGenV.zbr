@@ -20,7 +20,7 @@
 # &Name`, a method is `fn (mut self Name) m()`.
 
 use AstWalk exposing mightUseName, mightUseNameInExpr, mightUseNameStmt
-use TypeChecker exposing namespaceMembers, intLitSuffix, floatLitSuffix, sqliteOpenParamName
+use TypeChecker exposing namespaceMembers, intLitSuffix, intLitDigits, floatLitSuffix, sqliteOpenParamName
 use CodeGen exposing parseFmtSpec
 use Ast exposing Module, Decl, DeclClass, DeclStruct, DeclEnum, EnumMember, DeclUnion, UnionVariant, DeclMethod, DeclVar, DeclInit, Param, TypeRef, NamedTypeRef, GenericTypeRef, Stmt, StmtIf, ElseIf, StmtWhile, StmtAllocate, StmtCopyOut, StmtForIn, StmtForNum, StmtReturn, StmtAssert, StmtAssign, AssignOp, StmtPrint, StmtBranch, BranchOn, StmtRaise, StmtTryCatch, StmtIn, CatchClause, ExprTry, ExprCatch, Expr, ExprIntLit, IntBase, ExprFloatLit, ExprBoolLit, ExprCharLit, ExprSlice, ExprCast, ExprChainedCmp, ExprLambda, LambdaBody, DeclSig, ExprExcept, DeclInterface, DeclTypeAlias, ExprStringLit, StringKind, ExprStringInterp, StringPart, ExprIdent, ExprMember, ExprCall, Arg, ExprIndex, ExprBinary, BinaryOp, ExprUnary, UnaryOp, ExprListLit, ExprIf, ExprTypeCheck, Span
 
@@ -490,6 +490,17 @@ class VGen
                     return "chan " + .vType(g.args.at(0))   # V's own channel
                 if g.name == "Atomic" and g.args.count() == 1
                     return "&ZAtomic[" + .vType(g.args.at(0)) + "]"   # the runtime's value under a mutex
+                if (g.name == "int" or g.name == "uint") and g.args.count() == 1
+                    # `int(8)`, `uint(16)`: the sized type by its width, where V has one
+                    branch g.args.at(0)
+                        on TypeRef.named as wn
+                            var wsized: str = vSizedIntName(g.name + wn.name)
+                            if wsized != "" and wsized != "?"
+                                return wsized
+                        else
+                            pass
+                    .refused.add("the type " + g.name + "(N) of a width V has no integer for (8, 16, 32 and 64 are mapped)")
+                    return "i64"
                 .refused.add("generic type " + g.name)
                 return "voidptr"
             on TypeRef.void_
@@ -529,6 +540,14 @@ class VGen
         var segs: List(str) = qualified.split(".")
         var name: str = segs.at(segs.count() - 1)
         if name == "int": return "i64"
+        # BUG-761: the sized integers and `byte` by V's names (they were passed through as
+        # written: `int8` and V's removed `byte` are unknown types there). V has no 128-bit
+        # integer, so those are refused by name rather than narrowed.
+        var sized: str = vSizedIntName(name)
+        if sized == "?"
+            .refused.add("the type " + name + " (V has no 128-bit integer)")
+            return "i64"
+        if sized != "": return sized
         if name == "float": return "f64"
         if name == "str": return "string"
         if name == "bool": return "bool"
@@ -2133,6 +2152,16 @@ class VGen
                                     return "?" + vt
                                 return vt
                         if c.args.count() == 0
+                            # BUG-761: a conversion's result is its target type, whatever the
+                            # receiver (untyped, `(n + 1).toInt8()` left the sum beside it
+                            # unchecked: eight of the `sized` row's traps wrapped on V)
+                            var conv_rt: str = vConvTarget(cm.member)
+                            if conv_rt != ""
+                                return conv_rt
+                            if cm.member == "toByte"
+                                return "u8"
+                            if cm.member == "count" and (ot.startsWith("&ZList[") or ot.startsWith("&ZMap[") or ot.startsWith("&ZSet["))
+                                return "i64"   # a container's count is an int (an untyped `var n = xs.count()` had no type here: BUG-761's fixture)
                             if cm.member == "copy"
                                 return ot
                             if cm.member == "items" and ot.startsWith("&ZSet[")
@@ -2158,7 +2187,10 @@ class VGen
                 return "string"
             on Expr.string_interp
                 return "string"
-            on Expr.int_lit
+            on Expr.int_lit as til
+                var til_t: str = intLitVType(til.text)   # a suffixed literal has its suffix's type
+                if til_t != ""
+                    return til_t
                 return "i64"
             on Expr.float_lit
                 return "f64"
@@ -2214,6 +2246,11 @@ class VGen
                 if bn.op == BinaryOp.dotdot
                     return ""
                 var blt: str = .vTypeOf(bn.left)
+                if vIntKind(blt) != 0 and bn.op != BinaryOp.shl and bn.op != BinaryOp.shr
+                    # two integers: the join (BUG-761); a shift keeps its left operand's type
+                    var bjoin: str = vIntJoin(blt, .vTypeOf(bn.right), isIntLit(bn.left), isIntLit(bn.right))
+                    if bjoin != ""
+                        return bjoin
                 if blt != "" and blt != "&ZJson"
                     return blt
                 var brt: str = .vTypeOf(bn.right)
@@ -2533,10 +2570,20 @@ class VGen
                             var arhs: str = .coerced(a.value, tt)
                             var aop: str = assignOpV(a.op)
                             var acfn: str = checkedFnFor(compoundBase(a.op))
+                            var asized: str = ""
+                            if aop != "=" and acfn != ""
+                                # (arhs is rendered and, when the value is an integer, already of
+                                # the target's type: coerced() widened it -- never render twice)
+                                var avt: str = .vTypeOf(a.value)
+                                if vIntKind(avt) != 0
+                                    avt = tt
+                                asized = intArithStr(acfn, tt, avt, aobj + ".at(" + aidx + ")", arhs, false, isIntLit(a.value))
                             if aop != "=" and acfn != "" and tt == "i64" and .vTypeOf(a.value) == "i64"
                                 arhs = acfn + "(" + aobj + ".at(" + aidx + "), " + arhs + ")"   # BUG-667
+                            else if asized != ""
+                                arhs = asized   # BUG-761: an element of a sized type, checked in the join
                             else if aop != "="
-                                if acfn != "" and (tt == "" or tt == "u8")
+                                if acfn != "" and (tt == "" or vIntKind(tt) != 0)
                                     .arith_unchecked = .arith_unchecked + 1
                                 arhs = aobj + ".at(" + aidx + ") " + aop.substring(0, aop.len - 1) + " " + arhs
                             .line(aobj + ".set(" + aidx + ", " + arhs + ")")
@@ -2558,9 +2605,21 @@ class VGen
                         var tgt: str = .exprStr(a.target)
                         .line(tgt + " = " + cfn + "(" + tgt + ", " + rhs + ")")
                     else
-                        if cfn != "" and (tt == "" or tt == "u8")
-                            .arith_unchecked = .arith_unchecked + 1
-                        .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + rhs)
+                        var csized: str = ""
+                        if cfn != "" and isPlainPlace(a.target)
+                            # BUG-761: `x += e` on a sized x, or with a sized e: checked in the join
+                            # (rhs is rendered and, when the value is an integer, already of the
+                            # target's type: coerced() widened it -- never render twice)
+                            var cvt: str = .vTypeOf(a.value)
+                            if vIntKind(cvt) != 0
+                                cvt = tt
+                            csized = intArithStr(cfn, tt, cvt, .exprStr(a.target), rhs, false, isIntLit(a.value))
+                        if csized != ""
+                            .line(.exprStr(a.target) + " = " + csized)
+                        else
+                            if cfn != "" and (tt == "" or vIntKind(tt) != 0)
+                                .arith_unchecked = .arith_unchecked + 1
+                            .line(.exprStr(a.target) + " " + assignOpV(a.op) + " " + rhs)
             on Stmt.expr as e
                 .genExprStmt(e)
             on Stmt.if_ as i
@@ -2588,7 +2647,12 @@ class VGen
                 var step: str = "++"
                 if fnum.step != nil
                     step = " += " + .exprStr(fnum.step!)
-                .line("for " + v + " := i64(" + .exprStr(fnum.start) + "); " + v + " < " + .exprStr(fnum.stop_) + "; " + v + step + " {")
+                .local_types.set(fnum.var_, "i64")   # the loop variable is always an int (the checker's rule): `i.toInt16()` in the body is typed by it
+                var stop_s: str = .exprStr(fnum.stop_)
+                var stop_t: str = .vTypeOf(fnum.stop_)
+                if vIntKind(stop_t) != 0 and stop_t != "i64" and stop_t != "u64" and not isIntLit(fnum.stop_)
+                    stop_s = "i64(" + stop_s + ")"   # BUG-761: a sized bound, compared as the int the variable is
+                .line("for " + v + " := i64(" + .exprStr(fnum.start) + "); " + v + " < " + stop_s + "; " + v + step + " {")
                 .depth = .depth + 1
                 var nlb: int = .loop_region_base
                 .loop_region_base = .region_depth
@@ -3048,6 +3112,8 @@ class VGen
                 rhs = coerceRendered(rhs, tname)   # (rhs is rendered already: never render twice)
             else if tname == "i64"
                 rhs = "i64(" + rhs + ")"   # (whatever the initializer: `-1` is V's int, a call's i64 is unchanged)
+            else if vIntKind(tname) != 0
+                rhs = tname + "(" + rhs + ")"   # BUG-761: a sized local is its type (a literal or a narrower value: the checker let nothing else in)
             else if tname == "f64"
                 rhs = "f64(" + rhs + ")"
             else if tname == "rune"
@@ -3073,7 +3139,7 @@ class VGen
         if vt == "string": return "''"
         if vt == "bool": return "false"
         if vt == "rune": return "rune(0)"
-        if vt == "u8": return "u8(0)"
+        if vIntKind(vt) != 0: return vt + "(0)"
         if vt.startsWith("&ZList["): return "new_zlist" + vt.substring(6, vt.len) + "()"
         if vt.startsWith("&ZMap["): return "new_zmap" + vt.substring(5, vt.len) + "()"
         if vt.startsWith("&ZSet["): return "new_zset" + vt.substring(5, vt.len) + "()"
@@ -3404,7 +3470,7 @@ class VGen
         if not vt.startsWith("?") or vt.len < 2
             return false
         var inner: str = vt.substring(1, vt.len)
-        return inner == "string" or inner == "rune" or inner == "i64" or inner == "u8" or inner == "byte" or inner == "bool" or inner == "f64" or inner == "&ZJson" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
+        return inner == "string" or inner == "rune" or vIntKind(inner) != 0 or inner == "byte" or inner == "bool" or inner == "f64" or inner == "&ZJson" or .isContainerType(inner) or .isShownType(inner) or .isEnumName(inner)
 
     # a class or a struct by its V type (`&Pt`, `Rgb`): what print, a hole and
     # toString() give the Zig route's text for (BUG-746)
@@ -3458,7 +3524,8 @@ class VGen
                 return "zshow_q_char"
             return "zshow_raw_char"
         if et == "i64": return "zshow_int"
-        if et == "u8" or et == "byte": return "zshow_byte"   # a List(byte)'s element is spelled `byte` (V's alias of u8)
+        if et == "u8" or et == "byte": return "zshow_byte"   # (`byte` was this route's spelling of the element until BUG-761)
+        if vIntKind(et) != 0: return "zshow_" + et   # BUG-761: the other sized integers, by their number
         if et == "bool": return "zshow_bool"
         if et == "f64": return "zshow_float"
         if et == "&ZJson": return "zjson_stringify"   # inside a container or an optional too: the JSON text
@@ -3528,7 +3595,12 @@ class VGen
         branch e
             on Expr.int_lit as il
                 if intLitSuffix(il.text) != ""
-                    .refuse("a suffixed literal `" + il.text + "` (the V route maps no literal suffix)", il.span)
+                    # BUG-761: `300_i16`, `5_u8`, `7u` -- a value of that type, by V's cast
+                    var lit_t: str = intLitVType(il.text)
+                    if lit_t == ""
+                        .refuse("a suffixed literal `" + il.text + "` (V has no integer of that width)", il.span)
+                        return intLitDigits(il.text)
+                    return lit_t + "(" + intLitDigits(il.text) + ")"
                 return il.text
             on Expr.float_lit as fl
                 if floatLitSuffix(fl.text) != ""
@@ -3587,6 +3659,9 @@ class VGen
                 if u.op == UnaryOp.neg
                     if .vTypeOf(u.operand) == "i64" and not isIntLit(u.operand)
                         return "zneg(" + .exprStr(u.operand) + ")"   # BUG-667: -min traps
+                    var nt: str = .vTypeOf(u.operand)
+                    if vIntKind(nt) == 1 and nt != "i64" and not isIntLit(u.operand)
+                        return nt + "(zfit(zneg(i64(" + .exprStr(u.operand) + ")), " + vIntBounds(nt) + "))"   # BUG-761: -min of a narrow type traps too
                     return "(-" + .exprStr(u.operand) + ")"
                 if u.op == UnaryOp.not_
                     return "(!" + .exprStr(u.operand) + ")"
@@ -4124,8 +4199,8 @@ class VGen
         var zero: bool = align == "="
         # the integer types this route has: int (i64) and byte (u8). The sized ints are not
         # mapped on this route at all (BUG-534's family): a hole over one has no known type
-        var signed: bool = t == "i64"
-        var unsigned: bool = t == "u8" or t == "byte"
+        var signed: bool = vIntKind(t) == 1      # BUG-761: every mapped width, not int and byte alone
+        var unsigned: bool = vIntKind(t) == 2
         var body: str = ""
         var sign_aware: bool = false   # the `0` flag puts its zeros after a sign
         if signed or unsigned
@@ -4150,7 +4225,10 @@ class VGen
                 var upper: str = "false"
                 if ty == "X"
                     upper = "true"
-                body = "zfmt_radix(u64(" + e + "), " + base + ", " + upper + ")"   # the bits, unsigned, as the Zig route's @bitCast prints them (-1 is ffffffffffffffff)
+                var bits_of: str = "u64(" + e + ")"
+                if signed and t != "i64"
+                    bits_of = "u64(u" + vIntBits(t).toString() + "(" + e + "))"   # a narrow signed value's own bits: an int8 -3 is fd, not ffff...fd
+                body = "zfmt_radix(" + bits_of + ", " + base + ", " + upper + ")"   # the bits, unsigned, as the Zig route's @bitCast prints them (-1 is ffffffffffffffff)
             else
                 return .specRefused(spec, e, "the type `" + ty + "` on an integer (mapped: none, d, i, n, x, X, o, b, and a bare c)")
         else if t == "f64" or t == "f32"
@@ -4175,7 +4253,7 @@ class VGen
             body = "zchar_str(" + e + ")"
         else
             if align == "<" or align == ">" or align == "^" or sign == " "
-                return .specRefused(spec, e, "on a value whose type this route does not know (V's interpolation would drop the spec without a word: annotate the value; a sized int is not mapped on this route)")
+                return .specRefused(spec, e, "on a value whose type this route does not know (V's interpolation would drop the spec without a word: annotate the value)")
             return ""
         if zero and sign_aware
             if width == ""
@@ -4526,6 +4604,10 @@ class VGen
             return coerceRendered(s, want)
         if .isSigName(want) and isLambdaExpr(e)
             return want + "(" + s + ")"   # the named function type: V instantiates generics by the lambda's anonymous type otherwise
+        if vIntKind(want0) != 0 and not isIntLit(e)
+            var have: str = .vTypeOf(e)
+            if vIntKind(have) != 0 and have != want0
+                return want0 + "(" + s + ")"   # BUG-761: a narrower integer into a wider slot, said (the checker let only a widening in)
         return .asChar(e, s, want0)
 
     def sigFits(args: List(Arg), fsig: FnSig): bool
@@ -4739,6 +4821,23 @@ class VGen
             return "zchar_escaped_byte(" + obj + ")"
         if rtype == "u8" and name == "toString" and args.count() == 0
             return obj + ".str()"   # a byte's toString is its number, as on the Zig route (until BUG-712 this route's char WAS a u8 and this printed the character)
+        if vIntKind(rtype) != 0 and args.count() == 0
+            # BUG-761: the checked conversions (`n.toInt8()`, `u.toInt()`, BUG-534's family)
+            # on an integer of any mapped width; out of range traps with the Zig route's words
+            var conv_t: str = vConvTarget(name)
+            if conv_t != ""
+                return intConvStr(obj, rtype, conv_t, zebraConvName(name))
+            if name == "toByte" and rtype == "i64"
+                return "u8(u64(" + obj + ") & 255)"   # the low eight bits: toByte on an int truncates (BUG-431)
+            if name == "toFloat"
+                return "f64(" + obj + ")"
+            if name == "toString" and rtype != "i64"
+                return obj + ".str()"
+        if rtype == "" and args.count() == 0 and name != "toInt" and vConvTarget(name) != ""
+            # the checked conversion is written from the receiver's type; without it the
+            # fall-through below would guess a V method (`x.to_int16()`), which V has not
+            .refuse("`" + name + "()` on a value whose type this route does not know (annotate the value: the conversion's range check is written from its type)", span)
+            return obj
         if rtype == "&ZSqliteDb" and name == "journalMode" and args.count() == 0
             return obj + ".journal_mode()"
         if rtype == "&ZSqliteDb" and name == "lastError" and args.count() == 0   # BUG-716: the last call's refusal, nil after a success
@@ -5147,7 +5246,49 @@ class VGen
         # rendered: flat, and past thirty terms through zany / zall -- V's
         # checker gives up at forty nested levels, and every term is evaluated
         # there, no short-circuit)
+        var mixed: str = .intMixedStr(b, l, r)
+        if mixed != ""
+            return mixed
         return "(" + l + " " + binaryOpV(b.op) + " " + r + ")"
+
+    # BUG-761: a comparison, a bitwise operator or a shift on two integers that are not
+    # both `int`. V will not compare or combine every pair of widths as Zebra does, so the
+    # operands are brought to the join first (the checker's rule, vIntJoin); a comparison
+    # with a bare literal is made in i64, where a literal the narrow side cannot hold
+    # (`k < 300` on a byte) still compares; a narrow `<<` is computed in u64 and cut back
+    # to the left operand's width, as the Zig route's is. "" when there is nothing to do.
+    def intMixedStr(b: ExprBinary, l: str, r: str): str
+        var lt: str = .vTypeOf(b.left)
+        var rt: str = .vTypeOf(b.right)
+        if vIntKind(lt) == 0 or vIntKind(rt) == 0
+            return ""
+        var l_lit: bool = isIntLit(b.left)
+        var r_lit: bool = isIntLit(b.right)
+        var op: str = binaryOpV(b.op)
+        if b.op == BinaryOp.shl or b.op == BinaryOp.shr
+            if l_lit or lt == "i64"
+                return ""
+            if b.op == BinaryOp.shl
+                return lt + "(u64(" + l + ") << " + r + ")"
+            return "(" + l + " >> " + r + ")"
+        var is_cmp: bool = b.op == BinaryOp.eq or b.op == BinaryOp.ne or b.op == BinaryOp.lt or b.op == BinaryOp.le or b.op == BinaryOp.gt or b.op == BinaryOp.ge
+        var is_bit: bool = b.op == BinaryOp.bit_and or b.op == BinaryOp.bit_or or b.op == BinaryOp.bit_xor
+        if not is_cmp and not is_bit
+            return ""
+        if l_lit and r_lit
+            return ""
+        if is_cmp and (l_lit or r_lit)
+            if l_lit and rt != "u64" and rt != "i64"
+                return "(" + l + " " + op + " i64(" + r + "))"
+            if r_lit and lt != "u64" and lt != "i64"
+                return "(i64(" + l + ") " + op + " " + r + ")"
+            return ""
+        if lt == rt
+            return ""
+        var j: str = vIntJoin(lt, rt, l_lit, r_lit)
+        if j == ""
+            return ""
+        return "(" + vIntAs(l, lt, j, l_lit) + " " + op + " " + vIntAs(r, rt, j, r_lit) + ")"
 
     # Wrapping (`+% -% *%`) and saturating (`+| -| *|`) arithmetic. Wrapping is computed in
     # u64 and cast back: a signed overflow in the C that V emits is undefined, and a narrow
@@ -5177,11 +5318,13 @@ class VGen
         if b.op == BinaryOp.mul_wrap
             wop = "*"
         if wop != ""
-            if t == "byte"
-                t = "u8"   # V spells Zebra's byte both ways
-            if t == "i64" or t == "u8"
-                return t + "(u64(" + ls + ") " + wop + " u64(" + rs + "))"
-            .refused.add("a wrapping operator on an operand of V type `" + t + "` (only int and byte are mapped)")
+            # BUG-761: every mapped width, in the operands' join (`int16 *% byte` is an
+            # int16): u64 arithmetic wraps by definition, a narrower operand widens into
+            # it with its sign, and the cast back keeps the join's low bits
+            var wj: str = vIntJoin(.vTypeOf(b.left), .vTypeOf(b.right), isIntLit(b.left), isIntLit(b.right))
+            if wj != ""
+                return wj + "(u64(" + .exprStr(b.left) + ") " + wop + " u64(" + .exprStr(b.right) + "))"
+            .refused.add("a wrapping operator on an operand of V type `" + t + "` (an integer of 8 to 64 bits is mapped)")
             return "0"
         var sfn: str = ""
         if b.op == BinaryOp.add_sat
@@ -5211,7 +5354,10 @@ class VGen
             if isIntLit(b.left) and isIntLit(b.right)
                 return ""   # a constant: V folds it at compile time
             return fn_ + "(" + .exprStr(b.left) + ", " + .exprStr(b.right) + ")"
-        if lt == "" or rt == "" or lt == "u8" or rt == "u8"
+        var sized: str = intArithStr(fn_, lt, rt, .exprStr(b.left), .exprStr(b.right), isIntLit(b.left), isIntLit(b.right))
+        if sized != ""
+            return sized   # BUG-761: two integers of any mapped width, in their join
+        if lt == "" or rt == ""
             if lt != "f64" and rt != "f64" and lt != "string" and rt != "string"
                 .arith_unchecked = .arith_unchecked + 1
         return ""
@@ -5303,6 +5449,160 @@ def isWrapSatV(op: BinaryOp): bool
 
 # BUG-667: integer overflow TRAPS (Sean, 2026-10-30) and V's integer operators wrap, so
 # an i64 +, -, *, / and % go through the runtime's checked helpers. "" for any other op.
+# ── BUG-761: the sized integers ─────────────────────────────────────────────────────────
+# The emitter knows an integer by its V type name. These are the checker's own rules
+# (TypeChecker.numericJoin, numTypeName, intConvTarget) restated over those names, since
+# vTypeOf answers in V's names and the checker's Type_ is not kept per expression here.
+# tools/v_check.sh's `sized` row compares their result with the Zig route's, line by line.
+
+# A Zebra integer type name as V's: "" when it is not one, "?" for a width V has no type for.
+def vSizedIntName(name: str): str
+    if name == "byte" or name == "uint8": return "u8"
+    if name == "uint" or name == "uint64": return "u64"
+    if name == "uint16": return "u16"
+    if name == "uint32": return "u32"
+    if name == "int8": return "i8"
+    if name == "int16": return "i16"
+    if name == "int32": return "i32"
+    if name == "int64": return "i64"
+    if name == "int128" or name == "uint128": return "?"
+    return ""
+
+# 1 signed, 2 unsigned, 0 not an integer the route maps
+def vIntKind(t: str): int
+    if t == "i8" or t == "i16" or t == "i32" or t == "i64": return 1
+    if t == "u8" or t == "u16" or t == "u32" or t == "u64": return 2
+    return 0
+
+def vIntBits(t: str): int
+    if t == "i8" or t == "u8": return 8
+    if t == "i16" or t == "u16": return 16
+    if t == "i32" or t == "u32": return 32
+    return 64
+
+# The type one operation on two integers is carried out in: the wider of two of one
+# signedness, a signed type that holds both for a signed with a narrower unsigned, and ""
+# for a signed with a 64-bit unsigned (the checker refuses that before any emitter runs).
+# A bare literal takes the other side's type. "" too when either side is not an integer.
+def vIntJoin(lt: str, rt: str, l_lit: bool, r_lit: bool): str
+    var lk: int = vIntKind(lt)
+    var rk: int = vIntKind(rt)
+    if lk == 0 or rk == 0
+        return ""
+    if l_lit and r_lit
+        return "i64"
+    if l_lit
+        return rt
+    if r_lit
+        return lt
+    if lk == rk
+        if vIntBits(lt) >= vIntBits(rt)
+            return lt
+        return rt
+    var sw: int = vIntBits(lt)
+    var uw: int = vIntBits(rt)
+    if lk == 2
+        sw = vIntBits(rt)
+        uw = vIntBits(lt)
+    if uw >= 64
+        return ""
+    var need: int = uw * 2
+    if sw > need
+        need = sw
+    return "i" + need.toString()
+
+# The Zebra spelling of a V integer type, as the Zig route's conversion message names it.
+def zebraIntName(t: str): str
+    if t == "i64": return "int"
+    if t == "u8": return "byte"
+    if t == "u64": return "uint64"
+    if vIntKind(t) == 1: return "int" + vIntBits(t).toString()
+    if vIntKind(t) == 2: return "uint" + vIntBits(t).toString()
+    return t
+
+# The V type a checked conversion method names: "" when the name is not one of them.
+def vConvTarget(name: str): str
+    if name == "toInt": return "i64"
+    if name == "toInt8": return "i8"
+    if name == "toInt16": return "i16"
+    if name == "toInt32": return "i32"
+    if name == "toInt64": return "i64"
+    if name == "toUint" or name == "toUint64": return "u64"
+    if name == "toUint8": return "u8"
+    if name == "toUint16": return "u16"
+    if name == "toUint32": return "u32"
+    return ""
+
+# The Zebra type a conversion method names, for the trap's message (`toUint8` is `byte`,
+# `toUint` is `uint`: TypeChecker.numTypeName's spellings).
+def zebraConvName(method: str): str
+    if method == "toUint8": return "byte"
+    if method.startsWith("toUint"): return "uint" + method.substring(6, method.len)
+    if method.startsWith("toInt"): return "int" + method.substring(5, method.len)
+    return method
+
+# The bounds of a V integer type narrower than 64 bits, as V literals: "lo, hi".
+def vIntBounds(t: str): str
+    if t == "i8": return "-128, 127"
+    if t == "i16": return "-32768, 32767"
+    if t == "i32": return "-2147483648, 2147483647"
+    if t == "u8": return "0, 255"
+    if t == "u16": return "0, 65535"
+    if t == "u32": return "0, 4294967295"
+    return ""
+
+# The largest value of a V integer type, as a V literal (for a conversion from a u64).
+def vIntMax(t: str): str
+    if t == "i8": return "127"
+    if t == "i16": return "32767"
+    if t == "i32": return "2147483647"
+    if t == "i64": return "9223372036854775807"
+    if t == "u8": return "255"
+    if t == "u16": return "65535"
+    if t == "u32": return "4294967295"
+    return ""
+
+# A checked `+ - * / %` (the runtime helper `cfn`: zadd, zsub, zmul, zdiv, zmod) on two
+# integers, carried out in their join and trapping when the result does not fit it, as the
+# Zig route's safety-checked arithmetic does. Below 64 bits both operands and every true
+# result fit an i64, so the i64 helper computes and `zfit` refuses what the join cannot
+# hold; a u64 has helpers of its own. "" when the operands are not two mapped integers.
+def intArithStr(cfn: str, lt: str, rt: str, ls: str, rs: str, l_lit: bool, r_lit: bool): str
+    var j: str = vIntJoin(lt, rt, l_lit, r_lit)
+    if j == ""
+        return ""
+    if j == "i64"
+        return cfn + "(" + vIntAs(ls, lt, "i64", l_lit) + ", " + vIntAs(rs, rt, "i64", r_lit) + ")"
+    if j == "u64"
+        var ul: str = vIntAs(ls, lt, "u64", l_lit)
+        var ur: str = vIntAs(rs, rt, "u64", r_lit)
+        if cfn == "zdiv": return "(" + ul + " / " + ur + ")"
+        if cfn == "zmod": return "(" + ul + " % " + ur + ")"
+        return "zu" + cfn.substring(1, cfn.len) + "(" + ul + ", " + ur + ")"   # zuadd, zusub, zumul
+    return j + "(zfit(" + cfn + "(i64(" + ls + "), i64(" + rs + ")), " + vIntBounds(j) + "))"
+
+# A checked conversion of an integer of V type `src` to `want` (`n.toInt8()`): the value
+# when it fits, the Zig route's trap otherwise. `name` is the Zebra type for the message.
+def intConvStr(obj: str, src: str, want: str, name: str): str
+    if src == want
+        return obj
+    if src == "u64"
+        return want + "(zuint_conv(" + obj + ", " + vIntMax(want) + ", '" + name + "'))"
+    if want == "i64"
+        return "i64(" + obj + ")"   # every other integer fits an int
+    if want == "u64"
+        return "u64(zint_conv(i64(" + obj + "), 0, 9223372036854775807, '" + name + "'))"
+    return want + "(zint_conv(i64(" + obj + "), " + vIntBounds(want) + ", '" + name + "'))"
+
+# An operand rendered as `want`: as it is when it already has that type, cast otherwise (a
+# bare literal into an i64 slot is left bare: V reads it as the parameter's type).
+def vIntAs(s: str, have: str, want: str, lit: bool): str
+    if have == want and not lit
+        return s
+    if lit and want == "i64"
+        return s
+    return want + "(" + s + ")"
+
 def checkedFnFor(op: BinaryOp): str
     if op == BinaryOp.add: return "zadd"
     if op == BinaryOp.sub: return "zsub"
@@ -5437,12 +5737,25 @@ def tupleElemType(vt: str, n: str): str
         return parts.at(want)
     return ""
 
+# a BARE integer literal: one that takes the type of what it meets. A suffixed literal
+# (`5_u8`) is a value of its own type, like a variable of it (BUG-761).
 def isIntLit(e: Expr): bool
     branch e
-        on Expr.int_lit
-            return true
+        on Expr.int_lit as il
+            return intLitSuffix(il.text) == ""
         else
             return false
+
+# The V type of an integer literal's text: i64 for a bare one, the suffix's type for a
+# suffixed one, "" for a suffix V has no integer for (`_i128`).
+def intLitVType(text: str): str
+    var sfx: str = intLitSuffix(text)
+    if sfx == "" or sfx == "int"
+        return "i64"
+    var t: str = vSizedIntName(sfx)
+    if t == "?"
+        return ""
+    return t
 
 # the Json methods no other type has (dispatched without the receiver's type)
 def isJsonOnlyMethod(name: str): bool

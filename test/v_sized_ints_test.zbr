@@ -1,0 +1,196 @@
+# BUG-761: the sized integers and `byte` on the V route. Every line is printed by both
+# routes and compared (tools/v_check.sh, the `sized` row); the values are what the Zig
+# route prints. Each function takes its values as parameters, so nothing is a constant
+# the compiler could fold.
+
+struct Pixel
+    var r: byte
+    var g: byte
+    var depth: int16
+
+class Meter
+    var count: uint32
+    var bias: int8
+
+    cue init(count: uint32, bias: int8)
+        .count = count
+        .bias = bias
+
+    def bump(by: uint32): uint32
+        .count = .count + by
+        return .count
+
+def widen32(x: int32): int
+    return x
+
+def keep8(x: int8): int8
+    return x
+
+def keep_u64(x: uint64): uint64
+    return x
+
+def shows(a: int8, b: int16, c: int32, d: int64, e: uint8, f: uint16, g: uint32, h: uint64, k: byte, u: uint)
+    print("show  ${a} ${b} ${c} ${d} ${e} ${f} ${g} ${h} ${k} ${u}")
+    print(a)
+    print(e)
+    print(k)
+    print(h)
+    print("text  " + a.toString() + " " + k.toString() + " " + h.toString() + " " + g.toString())
+
+def same(a: int8, b: int8, c: int16, d: int16, e: uint16, f: uint16, g: uint64, h: uint64)
+    print("same  ${a + b} ${a - b} ${a * b} ${c / d} ${c % d} ${e + f} ${e * f} ${g + h} ${g - h} ${g * h} ${g / h} ${g % h}")
+    var s: int8 = a + b
+    var t: uint16 = e - f
+    print("kept  ${s} ${t}")
+
+def joins(a: int8, k: byte, c: int32, n: int, u: uint32, w: uint16, s: int16)
+    # the wider of the two; signed with a narrower unsigned is a signed type that holds both
+    var j1 = a + k
+    var j2 = c + n
+    var j3 = u + n
+    var j4 = k + n
+    var j5 = w + s
+    var j6 = k + w
+    print("join  ${j1} ${j2} ${j3} ${j4} ${j5} ${j6}")
+    print("join- ${a - k} ${k - n} ${s - w} ${w / k}")
+    # a literal takes the other side's type
+    print("lit   ${a + 1} ${k + 1} ${u - 1} ${s / 2} ${k / 2} ${w % 7}")
+
+def compares(a: int8, k: byte, n: int, u: uint32, h: uint64, s: int16)
+    print("cmp   ${a < k} ${k > n} ${u == n} ${a != s} ${h > 5} ${k < 300} ${a <= 0 - 1} ${u >= k}")
+
+def bits(k: byte, w: uint16, a: int8, n: int, u: uint32)
+    print("bits  ${k & 15} ${k | w} ${k ^ w} ${a & n} ${u >> 4} ${k << 1} ${w >> 3}")
+
+def converts(n: int, neg: int, big: int, h: uint64, a: int8, k: byte)
+    print("conv  ${n.toInt8()} ${n.toInt16()} ${n.toInt32()} ${n.toInt64()} ${n.toUint8()} ${n.toUint16()} ${n.toUint32()} ${n.toUint64()} ${n.toUint()}")
+    print("conv- ${neg.toInt8()} ${neg.toInt16()} ${neg.toInt32()} ${neg.toInt64()}")
+    print("back  ${h.toInt()} ${a.toInt()} ${k.toInt()} ${a.toInt16()} ${k.toUint32()} ${h.toUint16()}")
+    print("byte  ${big.toByte()} ${n.toByte()}")
+    print("wide  ${widen32(n.toInt32())} ${keep8(a)} ${keep_u64(h)} ${keep_u64(n.toUint64())}")
+
+def wraps(s: int16, k: byte, a: int8, n: int)
+    var p: int16 = 300
+    print("wrap  ${p *% 200} ${k +% 200} ${a -% 100} ${s +% s}")
+
+def compound(a0: int8, k0: byte, u0: uint32, h0: uint64)
+    var a = a0
+    var k = k0
+    var u = u0
+    var h = h0
+    a += 1
+    k -= 2
+    u *= 3
+    h += 10
+    a -= 4
+    print("cmpd  ${a} ${k} ${u} ${h}")
+
+def suffixes()
+    var a = 300_i16
+    var b = 5_u8
+    var c = 7u
+    var d = 1_000_u32
+    var e = 0 - 100_i8
+    print("sufx  ${a} ${b} ${c} ${d} ${e}")
+    print("sufx+ ${a + a} ${b + 5_u8} ${c * 3} ${d - 1}")
+
+def specs(a: int8, k: byte, h: uint64, c: int8, w: uint16, g: int32)
+    print("spec  [${a:>4}] [${k:<4}|] [${h:^9}] [${a:+}] [${k:03}] [${c:04}] [${w:*>7}] [${g: }]")
+    print("radix [${k:x}] [${c:x}] [${w:X}] [${h:x}] [${k:b}] [${k:o}] [${c:b}]")
+
+def holders(k: byte, s: int16)
+    var px = Pixel(r: k, g: 7, depth: s)
+    px.r = px.r + 1
+    px.depth = px.depth - 5
+    print("strct ${px.r} ${px.g} ${px.depth} ${px.r + px.g} ${px.depth * 2}")
+    var m = Meter(40, 0 - 3)
+    print("class ${m.bump(2)} ${m.count} ${m.bias} ${m.count + 1} ${m.bias - 1}")
+    var xs: List(int32) = []
+    xs.add(5)
+    xs.add(0 - 6)
+    var total: int32 = 0
+    for x in xs
+        total = total + x
+    print("list  ${xs.count()} ${xs.at(0)} ${xs.at(1)} ${total} ${xs}")
+    var bs: List(byte) = []
+    bs.add(k)
+    bs.add(255)
+    print("bytes ${bs.count()} ${bs.at(0)} ${bs.at(1)} ${bs}")
+    var us: List(uint64) = []
+    us.add(9)
+    print("u64s  ${us.at(0) + 1} ${us}")
+
+const LIMIT: uint16 = 500
+var tally: int32 = 0
+
+def pick(flag: bool, a: int16, b: int16): int16
+    return if(flag, a, b)
+
+def widen(a: int8): int32
+    return a
+
+def maybe(k: byte): byte?
+    if k > 100
+        return nil
+    return k
+
+def pair(a: int8, w: uint16): (int8, uint16)
+    return (a, w)
+
+def chained(k: byte, n: int): bool
+    return 0 < k < 300 and 1 <= n <= k
+
+def loops(top: uint8, lim: int16)
+    var total: int16 = 0
+    for i in 0 .. top
+        total = total + i.toInt16()
+    var j: int16 = 0
+    while j < lim
+        j = j + 3
+    print("loop  ${total} ${j}")
+
+def holders2(k: byte, s: int16, u: uint32)
+    var m: HashMap(byte, int16) = HashMap()
+    m.set(k, s)
+    m.set(7, 0 - 2)
+    var got = m.get(k)
+    print("map   ${m.count()} ${got} ${m.fetch(7) + s}")
+    var seen: Set(uint32) = Set()
+    seen.add(u)
+    seen.add(u)
+    print("set   ${seen.count()} ${seen.contains(u)}")
+    var opt: int8? = nil
+    print("opt   ${opt} ${maybe(k)} ${maybe(200)}")
+    opt = (0 - 4).toInt8()
+    if opt as o
+        print("opt+  ${o + 1} ${o}")
+    var t = pair((0 - 9).toInt8(), 65000)
+    print("tuple ${t.0} ${t.1} ${t.0 + 1}")
+
+def extras(n: int)
+    tally = tally + (n * 5).toInt32()
+    tally += 2
+    print("glob  ${tally} ${LIMIT} ${LIMIT + 1} ${tally * 2}")
+    print("pick  ${pick(n == 1, 11, 22)} ${pick(n == 2, 11, 22)} ${widen((0 - n * 3).toInt8())}")
+    print("chain ${chained((n * 200).toUint8(), n * 50)} ${chained((n * 20).toUint8(), n * 50)}")
+    loops((n * 5).toUint8(), (n * 10).toInt16())
+    holders2((n * 9).toUint8(), (n * 100).toInt16(), (n * 4000000000).toUint32())
+    var text = "n=" + (n * 3).toInt8().toString() + " k=" + (n * 250).toUint8().toString()
+    print("text2 " + text)
+
+def main()
+    var n = sys.args().count()          # 1 at run time, never a constant
+    var neg: int = 0 - n * 5            # -5
+    shows((n * 100).toInt8(), (0 - n * 30000).toInt16(), (n * 2000000000).toInt32(), 0 - n * 9000000000, (n * 200).toUint8(), (n * 60000).toUint16(), (n * 4000000000).toUint32(), (n * 9000000000).toUint64(), (n * 250).toUint8(), (n * 77).toUint())
+    same((n * 50).toInt8(), (n * 2).toInt8(), (n * 1000).toInt16(), (n * 7).toInt16(), (n * 300).toUint16(), (n * 100).toUint16(), (n * 5000000000).toUint64(), (n * 3).toUint64())
+    joins((0 - n * 100).toInt8(), (n * 200).toUint8(), (0 - n * 70000).toInt32(), n * 5000000000, (n * 4000000000).toUint32(), (n * 60000).toUint16(), (0 - n * 30000).toInt16())
+    compares((0 - n).toInt8(), (n * 200).toUint8(), n * 200, (n * 200).toUint32(), (n * 6).toUint64(), (0 - n).toInt16())
+    bits((n * 204).toUint8(), (n * 4080).toUint16(), (0 - n * 2).toInt8(), n * 255, (n * 4000000000).toUint32())
+    converts(n * 100, neg, n * 513, (n * 60000).toUint64(), (0 - n * 7).toInt8(), (n * 250).toUint8())
+    wraps((n * 30000).toInt16(), (n * 100).toUint8(), (0 - n * 100).toInt8(), n)
+    compound((n * 10).toInt8(), (n * 10).toUint8(), (n * 10).toUint32(), (n * 10).toUint64())
+    suffixes()
+    specs((n * 5).toInt8(), (n * 9).toUint8(), (n * 12345).toUint64(), (0 - n * 3).toInt8(), (n * 255).toUint16(), (n * 42).toInt32())
+    holders((n * 9).toUint8(), (n * 100).toInt16())
+    extras(n)
+    print("v_sized_ints: OK")
