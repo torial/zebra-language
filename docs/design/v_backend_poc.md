@@ -3423,13 +3423,110 @@ list's `any` / `all` through `?.` are refused by name, as before. Other
 receivers' calls (an Arg result, a channel, an atomic) still fall through to
 the by-name table when no row types them.
 
-**Found beside it, not fixed here.** `zebra --target v` runs the resolver and
-not the type checker: a program `-c` refuses for a type mismatch, or for
-`xs.isEmpty()` on a List, is emitted with "nothing refused" and may run. Every
+**Found beside it.** `zebra --target v` ran the resolver and not the type
+checker: BUG-777, the next section.
+
+## The V target runs the type check (BUG-777, 2026-11-17)
+
+**What was wrong.** `vTarget` parsed, resolved and built each module and
+handed them to the emitter; `checkModule` was never called. A program `-c`
+refuses for a type mismatch was written out with "nothing refused: the whole
+file is in the subset", and what V made of it was V's business: `xs.isEmpty()`
+on a List, a method the language does not have, printed `true`. Every
 comparison in `v_check.sh` and the engine ladder also builds on the Zig route,
-which checks, so no row is affected; a program built for V alone is not
-checked. Reported to the Zig side; the driver (`vTarget` in `main.zbr`) is
-where the check belongs.
+which checks, so no row was a false green; a program built for V alone was not
+checked at all.
+
+**The fix, in `main.zbr`.** `vCheckModules` runs after the modules are
+collected and before the collision rename, so on the sources as written. It
+gives the checker the context a compile gives it at step 4.5 of
+`MultiCompiler.compileDep`: the dependencies' types (each module's `use`s
+scanned by `scanDepForTypes` just before it is checked; `vCollect` lists
+dependencies first), the runtime's reserved and public names, and `--strict`
+/ `--warn-non-exhaustive` when asked. Every module's errors are printed, then
+one line naming the check and exit 1, before anything is written. Warnings are
+printed; `--warnings-as-errors` refuses on them.
+
+Two things a compile does before it checks came with it, because the check
+made their absence visible:
+
+- **Partial sibling files** (`Foo.extra.zbr`) were never read on this route. A
+  method declared in one was "nothing refused" here and `unknown function` to
+  V; with the check it became a false refusal ("has no method"). `vLoadModule`
+  merges them as `compileDep`'s step 3b does. `test/partial_test.zbr` and
+  `partial_shared_test.zbr` are IDENTICAL on both routes now; neither built as
+  V before.
+- **A `use` is found by its exact name** (BUG-450's rule). `vCollect` asked
+  `File.exists`, which ignores case on Windows: `use Bug450_helper` found
+  `bug450_helper.zbr` here and on no other system. It is refused with the
+  compile's words, naming the file that is there.
+
+**Does the check change what is emitted?** No: with the call replaced by
+`pass` and the compiler rebuilt, `lexer_dump.v`, `CodeGen.v` and `main.v`
+(2.18 MB, 13 modules) are byte-identical but for the line of `main.zbr` that
+differs between the two builds. The cost on `main.zbr` is about four seconds
+on a 27 s emit.
+
+**Witness.** `tools/v_check.sh`'s `typecheck` row: eleven cases. Six programs
+the checker refuses (in the root; in a module beside it; against a module on
+`--module-path`; a method the receiver does not have; a deprecation under
+`--warnings-as-errors`; a gap under `--strict`) and a module used in the wrong
+case must exit 1 with the compile's own line and leave no `.v`. The controls:
+the well-typed twins are written, the warning and the gap are written without
+their flags, and `-c` agrees with every verdict. The two partial fixtures are
+compared in the same row. Watched red: with the call replaced by `pass` and
+the compiler rebuilt, every case the checker refuses is written, exit 0; and
+with the compiler from before the merge and the exact-name lookup,
+`partial_test` is "nothing refused" and does not compile as V, and BUG-450's
+fixture is written.
+
+**The sweep that was the attacker.** Every file of `test/` (1058), `-c`
+against `--target v`: the V target's type check refuses 101; none of those is
+a file `-c` accepts (the first run had two, the partial fixtures, which is how
+the missing merge was found).
+
+**What the check did to the instruments.** Both `v_check.sh` and
+`v_engine_check.py` counted the emitter's refusals as "a line of the emit
+output that starts with four spaces". A warning from the checker is printed
+with its source line and a caret, and a source line inside a `def` is indented
+by four or more: on the first full run with the check, `v_format_specs_test`
+(which carries a deliberate `${u:+}` warning) read `REFUSED 2` with nothing
+refused. A marker belongs to the tool that prints it; the count is now taken
+from the emitter's report alone, the part after its `wrote` line
+(`refusal_lines` in `v_check.sh`, stdout after that line in the ladder), and
+`v_check.sh` proves the helper before it judges anything: a sample with a
+warning ahead of a clean report must count 0, a sample report with one refusal
+1, both files together 1, or the run exits 3. The old count reads 2 on the
+first sample.
+
+The ladder has a verdict of its own for a root the type check refuses: it runs
+`-c` on the root and prints `the type check refuses it (-c too)` with the
+first error, or `FALSE REFUSAL` when `-c` accepts what the V route's check
+refused (none). One engine root has it: `zebra-engine-devtools`
+(`game/devtools.zbr:70`, `'Gui' has no method 'panel'`), which read "refused 2
+kind(s)" (Gui.run, Tcp.connect) while nothing checked it. The file does not
+type-check under the engine's own pinned compiler either; its checked-in
+`.zig` is from May and the engine's regen does not cover `game/*.zbr`. The
+ladder's summary is `check-refused 1, host 261, identical 104, refused 1`
+where it was `host 261, identical 104, refused 2`.
+
+**Not covered: the refusals the Zig emitter makes (BUG-778).** Eight files `-c` refuses
+are still written by `--target v`, because the rule that refuses them is not
+in the checker but in `CodeGen.zbr`, at emit time: an unmarked throwing call
+(`throws call needs '?'`: bug467, bug728, bug729_nested), `f()?.m()` on a
+throwing `f` (bug729_optchain), a throwing function passed as a value
+(bug730), a `catch` over a body that cannot fail (BUG-764), `?` inside a
+lambda (BUG-767), and an operand of `+` whose type cannot be inferred
+(infer_guess_hatch). `zebra diagnostics` answers `[]` for the same files: the
+editor's check is the checker too. A rule moved from the emitter to the
+checker reaches both; this route has no copy of the emitter's rules and should
+not grow one.
+
+**Also not covered.** A type two modules both declare is renamed in each
+module's source text and parsed again; a partial sibling of such a module is
+merged from disk as written, not renamed. Eight fixtures that use a native
+Zig or C dependency or a dotted `use a.b` are refused at collection ("no
+a.zbr beside it"), as before.
 
 ## If the branch ever merges to main
 

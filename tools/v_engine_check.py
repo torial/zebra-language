@@ -73,6 +73,7 @@ def main():
     refusals = collections.Counter(); refusal_roots = collections.defaultdict(list)
     verrs = collections.Counter(); verr_roots = collections.defaultdict(list)
     host = []
+    check_refused = {}
     t0 = time.time()
     for i, name in enumerate(names):
         root_zig = tests[name]
@@ -88,10 +89,26 @@ def main():
         if os.path.isfile(emitted):
             shutil.move(emitted, vfile)
         else:
-            status[name] = 'emit-failed'
             with open(os.path.join(OUT, stem + '_emit.txt'), 'w', encoding='utf-8') as f: f.write(log)
+            if 'the type check refused' in log:
+                # BUG-777: the root does not type-check. Not an emitter failure, and judged
+                # against the check a compile makes: `-c` must refuse it too, or the V
+                # route's check is refusing a program the language accepts.
+                first = next((l for l in log.splitlines() if ': error' in l), '(no error line)')[:150]
+                crc, _, _ = run([ZEBRA, '-c', '--module-path', 'zbra', root_zbr], ENGINE, 300)
+                if crc == 0:
+                    status[name] = 'check-false-refusal'
+                    print(f'[{i+1}/{len(names)}] {name}: FALSE REFUSAL (the V type check refuses, -c accepts): {first}'); continue
+                status[name] = 'check-refused'
+                check_refused[name] = first
+                print(f'[{i+1}/{len(names)}] {name}: the type check refuses it (-c too): {first}'); continue
+            status[name] = 'emit-failed'
             print(f'[{i+1}/{len(names)}] {name}: EMIT FAILED'); continue
-        refs = [norm_refusal(l) for l in log.splitlines() if l.startswith('    ')]
+        # the emitter's refusal lines are its REPORT's: stdout, after its "wrote" line. Since
+        # BUG-777 the type check's warnings are printed too (stderr), each with its source line,
+        # and a source line is indented: read over the whole log, a warning was a refusal.
+        rep = so.split('zebra --target v: wrote ', 1)
+        refs = [norm_refusal(l) for l in (rep[1].splitlines()[1:] if len(rep) == 2 else []) if l.startswith('    ')]
         if refs:
             status[name] = 'refused'
             for r in sorted(set(refs)):
@@ -155,7 +172,11 @@ def main():
         print('  V build errors by roots touched:')
         for e, n in verrs.most_common(25):
             print(f'    {n:3d}  {e[:110]}   e.g. {", ".join(verr_roots[e][:3])}')
-    for k in ('differs', 'no-control', 'emit-failed'):
+    if check_refused:
+        print('  refused by the type check (as `zebra -c` refuses them):')
+        for n, first in check_refused.items():
+            print(f'    {n}: {first}')
+    for k in ('differs', 'no-control', 'emit-failed', 'check-false-refusal'):
         names_k = [n for n, s in status.items() if s == k]
         if names_k: print(f'  {k}: {", ".join(names_k)}')
     exits = [n for n, s in status.items() if s.startswith('v-exit')]

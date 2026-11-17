@@ -1656,7 +1656,12 @@ def vLoadModuleText(src: str, path: str): Module throws
     if resolver.errorCount() > 0
         raise resolver.allErrorMessages()
     if pm_node is PNode.module_ as pm
-        return ASTBuilder.build(pm, path)?
+        # the partial sibling files (Foo.extra.zbr), merged as a compile merges them
+        # (compileDep's step 3b). Until BUG-777 they were not read on this route: a
+        # method declared in one was "nothing refused" here and an unknown function to V.
+        var merger = MultiCompiler(defaultPreamblePath(), "")
+        var merged_pm = merger.mergePartials_pmodule(pm, path)?
+        return ASTBuilder.build(merged_pm, path)?
     raise path + ": not a module"
 
 # the used modules, transitively, each once: the file beside the root, else
@@ -1673,10 +1678,20 @@ def vCollect(path: str, module_path: str, visited: List(str), out: List(Module))
     for d in m.decls
         branch d
             on Decl.use_ as u
+                # (by the exact name, as a compile finds it -- BUG-450: on a filesystem
+                # that ignores case `use Helper` found helper.zbr here and nowhere else)
                 var dep: str = dir + "/" + u.path + ".zbr"
-                if not File.exists(dep) and module_path != ""
-                    dep = module_path + "/" + u.path + ".zbr"
-                if not File.exists(dep)
+                var near: str = ""
+                if not fileExistsExact(dep)
+                    near = caseOnlyMatch(dep)
+                    if module_path != ""
+                        dep = module_path + "/" + u.path + ".zbr"
+                        if not fileExistsExact(dep) and near == ""
+                            near = caseOnlyMatch(dep)
+                if not fileExistsExact(dep)
+                    if near != ""
+                        sys.errln("zebra --target v: `use " + u.path + "` in " + path + ": module not found -- module names are case-sensitive, and the file here is " + near + "; did you mean `use " + near.substring(0, near.len - 4) + "`?: nothing written")
+                        sys.exit(1)
                     var where_: str = " beside it"
                     if module_path != ""
                         where_ = where_ + " nor under --module-path " + module_path
@@ -1815,7 +1830,61 @@ def vRenameCollisions(modules: List(Module)): List(Module) throws
             out.add(vLoadModuleText(renamed, m.file)?)
     return out
 
-def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", also: str = "")
+# BUG-777: the type check, for a program built for V. Until this, `--target v` ran the
+# parser and the resolver and never checkModule: a program `-c` refuses for a type
+# mismatch was emitted with "nothing refused", and could run. The check is the one
+# MultiCompiler.compileDep makes before it emits Zig (step 4.5) -- the same context: the
+# dependencies' types, the runtime's reserved and public names, --strict and
+# --warn-non-exhaustive when asked -- on the modules AS WRITTEN, before the collision
+# rename. Dependencies come first in `modules` (vCollect), so each module's uses are
+# scanned for their types just before it is checked, as a compile meets them. Every
+# module's errors are printed, then exit 1: nothing has been written yet.
+def vCheckModules(modules: List(Module), module_path: str, strict_check: bool, warn_ne: bool, werror: bool) throws
+    var drv = MultiCompiler(defaultPreamblePath(), "")
+    drv.module_path = module_path
+    var reserved = rtReservedNames(defaultPreamblePath())
+    var publics = rtPublicNames(defaultPreamblePath())
+    var refused: int = 0
+    var warned: int = 0
+    for m in modules
+        var dir: str = drv.dirOf(m.file)
+        for d in m.decls
+            branch d
+                on Decl.use_ as u
+                    var dep: str = useFilePath(u.path) + ".zbr"
+                    if dir != ""
+                        dep = dir + "/" + dep
+                    if not fileExistsExact(dep) and module_path != ""
+                        dep = module_path + "/" + useFilePath(u.path) + ".zbr"
+                    if fileExistsExact(dep)
+                        drv.scanDepForTypes(dep)?
+                else
+                    pass
+        var mt: ModuleTypes = buildModuleTypes(m)
+        var ctx: InferCtx = InferCtx(mt, "")
+        ctx.withSource(File.read(m.file))
+        ctx.withDepTypes(drv.dep_types)
+        if warn_ne
+            ctx.enableWarnNonExhaustive()
+        if strict_check
+            ctx.enableStrict()
+        ctx.withReservedRuntimeNames(reserved)
+        ctx.withRuntimePublicNames(publics)
+        checkModule(m, m.file, ctx)
+        if ctx.hasErrors()
+            sys.errln(ctx.errorMessages())
+            refused = refused + 1
+        if ctx.hasWarnings()
+            sys.errln(ctx.warningMessages())
+            warned = warned + ctx.warningCount()
+    if refused > 0
+        sys.errln("zebra --target v: the type check refused " + refused.toString() + " module(s) (the check `zebra -c` makes): nothing written")
+        sys.exit(1)
+    if werror and warned > 0
+        sys.errln("error: " + warned.toString() + " warning(s) with --warnings-as-errors: nothing written")
+        sys.exit(1)
+
+def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", also: str = "", strict_check: bool = false, warn_ne: bool = false, werror: bool = false)
     var modules = List(Module)()
     var visited = List(str)()
     # --also=a.zbr,b.zbr: modules a host calls that the root does not use
@@ -1829,6 +1898,7 @@ def vTarget(path: str, gc_on: bool, module_path: str, gui_backend: str = "", als
                     sys.exit(1)
                 vCollect(extra, module_path, visited, modules)?
     vCollect(path, module_path, visited, modules)?
+    vCheckModules(modules, module_path, strict_check, warn_ne, werror)?
     modules = vRenameCollisions(modules)?
     if modules.count() > 0
         # the V runtime (the boxed containers), inlined into the emitted file:
@@ -5297,7 +5367,7 @@ def main()
     # emitter, the .v written beside the source; what the subset refused is
     # printed by name and line. No Zig, no runtime module, no build.
     if mode_v
-        vTarget(path, not args.contains("--no-gc"), module_path, gui_backend, args.option("--also", ""))
+        vTarget(path, not args.contains("--no-gc"), module_path, gui_backend, args.option("--also", ""), strict_ck, warn_ne, werror)
         sys.exit(0)
     var mc = MultiCompiler(preamble_path, output_dir)
     mc.strip_contracts = turbo

@@ -61,15 +61,28 @@ cp "$WT/selfhost/zebra_rt.v" "$WT/zig-out/bin/zebra_rt.v" 2>/dev/null
 cp "$WT/selfhost/gui_libui_ng_section.v" "$WT/zig-out/bin/gui_libui_ng_section.v" 2>/dev/null
 echo "v_check: $("$V" version), emitter $ZEBRA"
 fail=0; rows=0
+# refusal_lines <emit-output>...: the emitter's refusal lines, which are the four-space lines of
+# its REPORT -- the part after its "wrote" line. Since BUG-777 the type check's warnings are
+# printed before that line, each with its source line and its caret, and a source line is
+# indented too: counted over the whole output, a warning read as a refusal
+# (v_format_specs_test, on the day the check landed). Several files: each has its own report.
+refusal_lines() { awk 'FNR == 1 { on = 0 } /^zebra --target v: wrote / { on = 1; next } on && /^    /' "$@"; }
+# its own control, before it judges anything: a warning's source line ahead of the report is
+# no refusal, a report's line is one, and a second file starts afresh.
+printf 'x.zbr:1:1: warning: w\n        print(x)\n        ^\nzebra --target v: wrote x.v\n  nothing refused: the whole file is in the subset\n' > "$OUT/refusal_lines_warn.txt"
+printf 'zebra --target v: wrote y.v\n  refused 1 construct(s)\n    a thing (y.zbr:3)\n' > "$OUT/refusal_lines_ref.txt"
+if [ "$(refusal_lines "$OUT/refusal_lines_warn.txt" | wc -l)" != 0 ] || [ "$(refusal_lines "$OUT/refusal_lines_ref.txt" | wc -l)" != 1 ] || [ "$(refusal_lines "$OUT/refusal_lines_ref.txt" "$OUT/refusal_lines_warn.txt" | wc -l)" != 1 ]; then
+  echo "v_check: refusal_lines cannot tell a warning's source line from a refusal line: nothing judged"; exit 3
+fi
 # compare <name> <emit-dir> <zbr-path-relative-to-emit-dir> <control-file> <v-file>
 compare() {
   local name=$1 dir=$2 zbr=$3 ctl=$4 vfile=$5
   rows=$((rows + 1))
   (cd "$dir" && "$ZEBRA" "$zbr" > "$ctl" 2> "$OUT/${name}_zig_err.txt"); local zrc=$?
   (cd "$dir" && "$ZEBRA" --target v "$zbr" > "$OUT/${name}_emit.txt" 2>&1)
-  local refusals; refusals=$(grep -cE '^    ' "$OUT/${name}_emit.txt")
+  local refusals; refusals=$(refusal_lines "$OUT/${name}_emit.txt" | wc -l)
   if [ ! -f "$vfile" ]; then echo "$name: EMIT FAILED"; grep -E "error" "$OUT/${name}_emit.txt" | head -2 | cut -c1-160; fail=1; return; fi
-  if [ "$refusals" != 0 ]; then echo "$name: REFUSED $refusals (an example or a dump is the subset by definition)"; grep -E '^    ' "$OUT/${name}_emit.txt" | head -3 | cut -c1-160; fail=1; return; fi
+  if [ "$refusals" != 0 ]; then echo "$name: REFUSED $refusals (an example or a dump is the subset by definition)"; refusal_lines "$OUT/${name}_emit.txt" | head -3 | cut -c1-160; fail=1; return; fi
   (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$vfile" > "$OUT/${name}_v_out.txt" 2> "$OUT/${name}_v_err.txt"); local vrc=$?
   if [ ! -s "$ctl" ]; then echo "$name: NO CONTROL (the Zig run exited $zrc and printed nothing; nothing compared)"; grep -m2 "error" "$OUT/${name}_zig_err.txt" | cut -c1-160; fail=1; return; fi
   if [ "$vrc" != 0 ]; then echo "$name: V FAILED (exit $vrc)"; grep -E "error|panic" "$OUT/${name}_v_err.txt" | head -3 | cut -c1-160; fail=1; return; fi
@@ -288,6 +301,74 @@ if ! grep -qxF 'idx  2 nil 4 1 nil 42' "$OUT/control_v_optchain_bool_test.txt" |
 elif ! grep -qF '.len == 0)' "$WT/test/v_optchain_bool_test_prog.v" || ! grep -qF 'zlist_contains(' "$WT/test/v_optchain_bool_test_prog.v"; then echo "optchain: FAILED -- the emitted V reaches neither the string's length test nor the list's contains: the comparison ran something else"; fail=1
 elif grep -qF 'Option(' "$OUT/v_optchain_bool_test_v_out.txt" "$OUT/bug765_optchain_builtin_method_test_v_out.txt"; then echo "optchain: FAILED -- an option printed as V's own text"; fail=1
 else echo "optchain: ok -- an optional predicate, an optional index and a string's isEmpty print alike on both backends, beside a class whose methods share the names"; fi
+echo "── the V target runs the type check (BUG-777, 2026-11-17) ──"
+# Until BUG-777 `--target v` ran the parser and the resolver and never checkModule: a program
+# `-c` refuses for a type mismatch was written out with "nothing refused" and could run (a
+# List's `isEmpty()`, which the language does not have, printed `true`). vTarget checks every
+# collected module now, as written, with the context a compile gives the checker. Six
+# programs the checker refuses -- in the root, in a module beside it, against a module found
+# on --module-path, a warning under --warnings-as-errors, a gap under --strict, a method the
+# receiver does not have -- must each exit 1 with the checker's own line and the refusal
+# line, and leave NO .v. The controls: the same shapes well typed must be written (the row
+# can see a pass), `-c` must agree with every verdict, and the warning and the gap must be
+# WRITTEN without their flag (the flags are what refuses them).
+# Two things a compile does before it checks, which this route did not: the partial sibling
+# files (Foo.extra.zbr) are merged into the module -- they were never read here, so a method
+# declared in one was an unknown function to V; partial_test and partial_shared_test are
+# compared now -- and a `use` is found by its exact name (BUG-450: `use Dep_ok` found
+# dep_ok.zbr on a filesystem that ignores case, and nowhere else).
+# NOT covered, and said in the doc: the refusals the Zig emitter makes at emit time (BUG-546,
+# BUG-764, BUG-767 ...) are not the checker's and do not reach this route.
+for t in partial_test partial_shared_test; do
+  compare "$t" "$WT" "test/$t.zbr" "$OUT/control_$t.txt" "$WT/test/${t}_prog.v"
+done
+rows=$((rows + 1))
+TC="$OUT/tc777"; rm -rf "$TC"; mkdir -p "$TC/lib"
+printf 'def half(n: int): int\n    return n / 2\n\nclass Box\n    var w: int = 3\n    def area(k: int): int\n        return .w * k\n' > "$TC/dep_ok.zbr"
+printf 'def half(n: int): int\n    var s: str = n\n    return n / 2\n' > "$TC/dep_bad.zbr"
+printf 'def far(n: int): str\n    return "far${n}"\n' > "$TC/lib/farmod.zbr"
+printf 'use dep_ok exposing half, Box\n\ndef main()\n    print(half(8))\n    print(Box().area(2))\n' > "$TC/ok_root.zbr"
+printf 'use farmod exposing far\n\ndef main()\n    print(far(2))\n' > "$TC/ok_mp.zbr"
+printf 'use dep_ok exposing half, Box\n\ndef main()\n    print(half("eight"))\n    print(Box().area("two"))\n' > "$TC/bad_call.zbr"
+printf 'use dep_bad exposing half\n\ndef main()\n    print(half(8))\n' > "$TC/bad_dep.zbr"
+printf 'use farmod exposing far\n\ndef main()\n    var n: int = far(2)\n    print(n)\n' > "$TC/bad_mp.zbr"
+printf 'def main()\n    var xs = List(int)()\n    print(xs.isEmpty())\n' > "$TC/bad_method.zbr"
+printf 'use Dep_ok exposing half\n\ndef main()\n    print(half(8))\n' > "$TC/bad_case.zbr"
+printf '@deprecated("use g2")\ndef g(): int\n    return 1\ndef main()\n    print(g())\n' > "$TC/warned.zbr"
+printf 'def main()\n    var x: int = Math\n    print(x)\n' > "$TC/gap.zbr"
+tc_bad=""; tc_n=0
+# tc_case <name> <want: refused|written> <expected text in the output, "" for none> [flags...]
+tc_case() {
+  local name=$1 want=$2 text=$3; shift 3
+  tc_n=$((tc_n + 1))
+  rm -f "$TC/$name.v"
+  (cd "$TC" && "$ZEBRA" -c "$@" "$name.zbr" > "$TC/${name}_c.txt" 2>&1); local crc=$?
+  (cd "$TC" && "$ZEBRA" --target v "$@" "$name.zbr" > "$TC/${name}_v.txt" 2>&1); local vrc=$?
+  if [ "$want" = refused ]; then
+    [ "$crc" != 0 ] || tc_bad="$tc_bad $name(NO-CONTROL:-c-accepts-it)"
+    [ "$vrc" = 1 ] || tc_bad="$tc_bad $name(exit-$vrc-not-1)"
+    [ ! -f "$TC/$name.v" ] || tc_bad="$tc_bad $name(a-.v-was-written)"
+    grep -qF 'nothing written' "$TC/${name}_v.txt" || tc_bad="$tc_bad $name(no-refusal-line)"
+    grep -qF "$text" "$TC/${name}_v.txt" || tc_bad="$tc_bad $name(not-the-checker's-line)"
+  else
+    [ "$crc" = 0 ] || tc_bad="$tc_bad $name(NO-CONTROL:-c-refuses-it)"
+    [ "$vrc" = 0 ] && [ -f "$TC/$name.v" ] || tc_bad="$tc_bad $name(not-written:exit-$vrc)"
+    if [ -n "$text" ]; then grep -qF "$text" "$TC/${name}_v.txt" || tc_bad="$tc_bad $name(lost:$text)"; fi
+  fi
+}
+tc_case ok_root    written ""
+tc_case ok_mp      written "" --module-path lib
+tc_case warned     written "warning: 'g' is deprecated"
+tc_case gap        written ""
+tc_case bad_call   refused "bad_call.zbr:4:16: error: type mismatch"
+tc_case bad_dep    refused "dep_bad.zbr:2:18: error: type mismatch"
+tc_case bad_mp     refused "bad_mp.zbr:4:18: error: type mismatch" --module-path lib
+tc_case bad_method refused "'List' has no method 'isEmpty'"
+tc_case bad_case   refused "module names are case-sensitive, and the file here is dep_ok.zbr"
+tc_case warned     refused "warning(s) with --warnings-as-errors" --warnings-as-errors
+tc_case gap        refused "strict check" --strict
+if [ -n "$tc_bad" ]; then echo "typecheck: FAILED --$tc_bad"; fail=1
+else echo "typecheck: ok -- $tc_n cases: six programs the checker refuses and a module used in the wrong case are refused by --target v with the compile's own line and nothing written; their well-typed twins, and the warning and the gap without their flags, are written; -c agrees with each"; fi
 echo "── the selfhost dumps ──"
 for d in lexer_dump parser_dump ast_dump resolver_dump codegen_dump; do
   compare "$d" "$WT/selfhost" "$d.zbr" "$OUT/control_$d.txt" "$WT/selfhost/$d.v"
@@ -296,7 +377,7 @@ echo "── the route (refusals against the baseline, v -check) ──"
 for m in CodeGen Checker main; do
   rows=$((rows + 1))
   (cd "$WT" && "$ZEBRA" --target v "selfhost/$m.zbr" > "$OUT/${m}_emit.txt" 2>&1)
-  refusals=$(grep -cE '^    ' "$OUT/${m}_emit.txt")
+  refusals=$(refusal_lines "$OUT/${m}_emit.txt" | wc -l)
   "$V" -check -enable-globals "$WT/selfhost/$m.v" > "$OUT/${m}_check.txt" 2>&1; crc=$?
   errs=$(grep -c 'error:' "$OUT/${m}_check.txt")
   verdict="ok"
@@ -304,7 +385,7 @@ for m in CodeGen Checker main; do
   if [ "$m" != main ] && [ "$refusals" != 0 ]; then verdict="REFUSED"; fail=1; fi
   if [ "$crc" != 0 ]; then verdict="$verdict, v -check FAILED ($errs error lines)"; fail=1; fi
   echo "$m: refusals $refusals, v -check exit $crc -- $verdict"
-  [ "$fail" = 1 ] && { grep -E '^    ' "$OUT/${m}_emit.txt" | sed -E 's/ \([^)]*:[0-9]+\)//' | sort | uniq -c | sort -rn | head -4; grep "error:" "$OUT/${m}_check.txt" | head -3 | cut -c1-160; }
+  [ "$fail" = 1 ] && { refusal_lines "$OUT/${m}_emit.txt" | sed -E 's/ \([^)]*:[0-9]+\)//' | sort | uniq -c | sort -rn | head -4; grep "error:" "$OUT/${m}_check.txt" | head -3 | cut -c1-160; }
 done
 echo "── a nil unwrapped names its place (the Zig side's runtime faults do; the V side's did not until 2026-10-20) ──"
 rows=$((rows + 1))
@@ -477,7 +558,7 @@ for p in sq_fix sq_more; do
   grep -E '^(sqlite: |Sqlite\.open: )' "$OUT/${p}_zig_err.txt" > "$OUT/${p}_zig_said.txt"
   grep -E '^(sqlite: |Sqlite\.open: )' "$OUT/${p}_v_err.txt" > "$OUT/${p}_v_said.txt"
   if [ "$zrc" != 0 ] || ! tail -1 "$OUT/${p}_zig_out.txt" | grep -q ': OK$'; then sq_bad="$sq_bad $p(NO CONTROL: the Zig run exited $zrc: $(tail -c 160 "$OUT/${p}_zig_err.txt" | tr '\n' ' '))"
-  elif [ "$(grep -cE '^    ' "$OUT/${p}_emit.txt")" != 0 ]; then sq_bad="$sq_bad $p(REFUSED: $(grep -m1 -E '^    ' "$OUT/${p}_emit.txt" | cut -c1-140))"
+  elif [ "$(refusal_lines "$OUT/${p}_emit.txt" | wc -l)" != 0 ]; then sq_bad="$sq_bad $p(REFUSED: $(refusal_lines "$OUT/${p}_emit.txt" | head -1 | cut -c1-140))"
   elif [ "$vrc" != 0 ]; then sq_bad="$sq_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
   elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then sq_bad="$sq_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"
   elif ! diff -q "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" > /dev/null; then sq_bad="$sq_bad $p(the refusal lines differ, V then Zig: $(diff "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
@@ -519,7 +600,7 @@ for p in nr_fix nr_more; do
   grep -E '^net: cannot resolve ".*": [A-Za-z]+ \(not a host name or an IP address\)' "$OUT/${p}_zig_err.txt" > "$OUT/${p}_zig_said.txt"
   grep -E '^net: cannot resolve ".*": [A-Za-z]+ \(not a host name or an IP address\)' "$OUT/${p}_v_err.txt" > "$OUT/${p}_v_said.txt"
   if [ "$zrc" != 0 ] || ! tail -1 "$OUT/${p}_zig_out.txt" | grep -q ': OK$'; then nr_bad="$nr_bad $p(NO CONTROL: the Zig run exited $zrc: $(tail -c 160 "$OUT/${p}_zig_err.txt" | tr '\n' ' '))"
-  elif [ "$(grep -cE '^    ' "$OUT/${p}_emit.txt")" != 0 ]; then nr_bad="$nr_bad $p(REFUSED: $(grep -m1 -E '^    ' "$OUT/${p}_emit.txt" | cut -c1-140))"
+  elif [ "$(refusal_lines "$OUT/${p}_emit.txt" | wc -l)" != 0 ]; then nr_bad="$nr_bad $p(REFUSED: $(refusal_lines "$OUT/${p}_emit.txt" | head -1 | cut -c1-140))"
   elif [ "$vrc" != 0 ]; then nr_bad="$nr_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
   elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then nr_bad="$nr_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"
   elif ! diff -q "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" > /dev/null; then nr_bad="$nr_bad $p(the refusal lines differ, V then Zig: $(diff "$OUT/${p}_v_said.txt" "$OUT/${p}_zig_said.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
@@ -942,7 +1023,7 @@ for p in show_fix jd_fix show_more show_fix2 show_types show_fix3 show_cycle sho
   (cd "$OUT" && "$ZEBRA" --target v $p.zbr > "$OUT/${p}_emit.txt" 2>&1)
   (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$p.v" > "$OUT/${p}_v_out.txt" 2> "$OUT/${p}_v_err.txt"); vrc=$?
   if [ "$zrc" != 0 ] || ! tail -1 "$OUT/${p}_zig_out.txt" | grep -q ': OK$'; then show_bad="$show_bad $p(NO CONTROL: the Zig run exited $zrc and ended '$(tail -1 "$OUT/${p}_zig_out.txt" | cut -c1-80)': $(tail -c 160 "$OUT/${p}_zig_err.txt" | tr '\n' ' '))"
-  elif [ "$(grep -cE '^    ' "$OUT/${p}_emit.txt")" != 0 ]; then show_bad="$show_bad $p(REFUSED: $(grep -m1 -E '^    ' "$OUT/${p}_emit.txt" | cut -c1-140))"
+  elif [ "$(refusal_lines "$OUT/${p}_emit.txt" | wc -l)" != 0 ]; then show_bad="$show_bad $p(REFUSED: $(refusal_lines "$OUT/${p}_emit.txt" | head -1 | cut -c1-140))"
   elif [ "$vrc" != 0 ]; then show_bad="$show_bad $p(v exit $vrc: $(grep -m2 -E 'error|panic|assert' "$OUT/${p}_v_err.txt" | cut -c1-200 | tr '\n' ' '))"
   elif ! diff -q "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" > /dev/null; then show_bad="$show_bad $p(stdout differs, V then Zig: $(diff "$OUT/${p}_v_out.txt" "$OUT/${p}_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' '))"; fi
 done
@@ -963,7 +1044,7 @@ elif ! grep -qxF 'Box{hue: cold, rgb: Rgb{r: 3, g: 4}, tags: ["a"], tagged: Tagg
 elif ! grep -qE '^fn zshow_h[0-9]+\(zr_e &Leaf\) string' "$OUT/show_types.v" || ! grep -q 'zset_of\[' "$OUT/show_types.v"; then echo "show: FAILED -- the emitted V has no class printer or no set literal: show_types compared something else"; fail=1
 elif ! grep -qxF 'class Leaf{name: "leaf"} nil' "$OUT/show_opt_zig_out.txt" || ! grep -qxF 'Owner<Held{o: Owner<Held{...}>}>' "$OUT/show_opt_zig_out.txt"; then echo "show: FAILED -- NO CONTROL: the Zig run did not print the optional and the cue-toString cycle show_opt is about"; fail=1
 elif ! grep -q 'if !zshow_enter(voidptr(zr_e))' "$OUT/show_cycle.v" || ! grep -q 'if !zshow_enter(voidptr(zr_e))' "$OUT/show_fix3.v"; then echo "show: FAILED -- the emitted class printers do not ask the path (zshow_enter): the cycle programs compared something else"; fail=1
-elif [ "$show_refused" != 2 ]; then echo "show: FAILED -- a list of an optional and a printed interface must each be refused by name ($show_refused of 2): $(grep -E '^    ' "$OUT/show_refuse_emit.txt" | head -2 | cut -c1-120 | tr '\n' ' ')"; fail=1
+elif [ "$show_refused" != 2 ]; then echo "show: FAILED -- a list of an optional and a printed interface must each be refused by name ($show_refused of 2): $(refusal_lines "$OUT/show_refuse_emit.txt" | head -2 | cut -c1-120 | tr '\n' ' ')"; fail=1
 else echo "show: ok -- eight programs alike on both backends ($(wc -l < "$OUT/show_fix_zig_out.txt") + $(wc -l < "$OUT/jd_fix_zig_out.txt") + $(wc -l < "$OUT/show_more_zig_out.txt") + $(wc -l < "$OUT/show_fix2_zig_out.txt") + $(wc -l < "$OUT/show_types_zig_out.txt") + $(wc -l < "$OUT/show_fix3_zig_out.txt") + $(wc -l < "$OUT/show_cycle_zig_out.txt") + $(wc -l < "$OUT/show_opt_zig_out.txt") lines); a list of an optional and a printed interface refused by name"; fi
 echo "── a program name V's builtin module keeps privately is moved aside (vlang/v#32404: class Node was built by the sorted map's new_node) ──"
 rows=$((rows + 1))
@@ -1025,7 +1106,7 @@ ls "$names_root"/vlib/builtin/*.v 2>/dev/null | grep -v '_test\.v$' | xargs -r g
 grep -A3 '^def vBuiltinPrivateNames' "$WT/selfhost/CodeGenV.zbr" | grep -oE 'return " [^"]*"' | tr ' ' '\n' | grep -E '^[a-z_0-9]+$' | LC_ALL=C sort -u > "$OUT/names_emitter.txt"
 names_missing=$(LC_ALL=C comm -23 "$OUT/names_v_private.txt" "$OUT/names_emitter.txt" | tr '\n' ' ')
 if [ "$zrc" != 0 ] || ! tail -1 "$OUT/names_zig_out.txt" | grep -qx 'names: OK'; then echo "names: FAILED -- NO CONTROL: the Zig run exited $zrc and ended '$(tail -1 "$OUT/names_zig_out.txt" | cut -c1-80)'"; fail=1
-elif [ "$(grep -cE '^    ' "$OUT/names_emit.txt")" != 0 ]; then echo "names: FAILED -- REFUSED: $(grep -m1 -E '^    ' "$OUT/names_emit.txt" | cut -c1-140)"; fail=1
+elif [ "$(refusal_lines "$OUT/names_emit.txt" | wc -l)" != 0 ]; then echo "names: FAILED -- REFUSED: $(refusal_lines "$OUT/names_emit.txt" | head -1 | cut -c1-140)"; fail=1
 elif [ "$vrc" != 0 ]; then echo "names: FAILED -- v exit $vrc: $(grep -m2 -E 'error|panic|Unhandled' "$OUT/names_v_err.txt" | cut -c1-200 | tr '\n' ' ')"; fail=1
 elif ! diff -q "$OUT/names_v_out.txt" "$OUT/names_zig_out.txt" > /dev/null; then echo "names: FAILED -- stdout differs, V then Zig: $(diff "$OUT/names_v_out.txt" "$OUT/names_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' ')"; fail=1
 elif ! grep -q '^fn new_node_() &Node' "$OUT/names.v" || ! grep -q '^fn is_terminal_() bool' "$OUT/names.v"; then echo "names: FAILED -- the emitted V does not move new_node / is_terminal aside: the program met no private name and compared nothing"; fail=1
@@ -1109,9 +1190,9 @@ for p in json_hdepth json_detached; do
   if ! grep -q 'Json: put/append would nest a value deeper than 256 levels' "$OUT/${p}_zig_err.txt"; then json_bad="$json_bad $p(NO CONTROL: the Zig run was not stopped by the depth message)"; fi
 done
 if ! grep -qxF 'stored 255 levels under the root: tree is 256' "$OUT/json_hdepth_zig_out.txt"; then json_bad="$json_bad json_hdepth(NO CONTROL: the 256-level tree it starts from was not built)"; fi
-json_refused=$(cat "$OUT"/json_*_emit.txt | grep -cE '^    ')
+json_refused=$(refusal_lines "$OUT"/json_*_emit.txt | wc -l)
 if [ -n "$json_bad" ]; then echo "json: FAILED --$json_bad"; fail=1
-elif [ "$json_refused" != 0 ]; then echo "json: FAILED -- REFUSED: $(cat "$OUT"/json_*_emit.txt | grep -m1 -E '^    ' | cut -c1-140)"; fail=1
+elif [ "$json_refused" != 0 ]; then echo "json: FAILED -- REFUSED: $(refusal_lines "$OUT"/json_*_emit.txt | head -1 | cut -c1-140)"; fail=1
 else echo "json: ok -- parse, numbers and stringify alike on both backends over $(wc -l < "$OUT/json_edges_zig_out.txt") edge lines; BUG-722's nest fixture alike on both backends ($(wc -l < "$OUT/json_nest_zig_out.txt") lines; right under the region check mode too) and its three refusals stopped by the same message on both; BUG-751's handle fixture alike on both ($(grep -c ': ok$' "$OUT/json_handle_zig_out.txt") checks) and its two depth refusals stopped by the same message on both"; fi
 echo "── three shapes the engine's ladder met: a capture's name declared again, a class's own pop(), the free-at-sweep queue ──"
 rows=$((rows + 1))
@@ -1216,7 +1297,7 @@ ZBR
 (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/ladder.v" > "$OUT/ladder_v_out.txt" 2> "$OUT/ladder_v_err.txt"); vrc=$?
 if [ "$zrc" != 0 ] || ! tail -1 "$OUT/ladder_zig_out.txt" | grep -qx 'ladder: OK'; then echo "ladder: FAILED -- NO CONTROL: the Zig run exited $zrc and ended '$(tail -1 "$OUT/ladder_zig_out.txt" | cut -c1-80)'"; fail=1
 elif ! grep -qxF 'pending 0 1 2 0' "$OUT/ladder_zig_out.txt" || ! grep -qxF 'bumped 2' "$OUT/ladder_zig_out.txt" || ! grep -qxF 'one' "$OUT/ladder_zig_out.txt"; then echo "ladder: FAILED -- NO CONTROL: the Zig run did not print the queue's four counts, the two bumps and the popped text the row is about"; fail=1
-elif [ "$(grep -cE '^    ' "$OUT/ladder_emit.txt")" != 0 ]; then echo "ladder: FAILED -- REFUSED: $(grep -m1 -E '^    ' "$OUT/ladder_emit.txt" | cut -c1-140)"; fail=1
+elif [ "$(refusal_lines "$OUT/ladder_emit.txt" | wc -l)" != 0 ]; then echo "ladder: FAILED -- REFUSED: $(refusal_lines "$OUT/ladder_emit.txt" | head -1 | cut -c1-140)"; fail=1
 elif [ "$vrc" != 0 ]; then echo "ladder: FAILED -- v exit $vrc: $(grep -m2 -E 'error|panic|Unhandled' "$OUT/ladder_v_err.txt" | cut -c1-200 | tr '\n' ' ')"; fail=1
 elif ! diff -q "$OUT/ladder_v_out.txt" "$OUT/ladder_zig_out.txt" > /dev/null; then echo "ladder: FAILED -- stdout differs, V then Zig: $(diff "$OUT/ladder_v_out.txt" "$OUT/ladder_zig_out.txt" | head -4 | cut -c1-160 | tr '\n' ' ')"; fail=1
 elif ! grep -qE '^[[:space:]]*mut c_r[0-9]+ := ' "$OUT/ladder.v"; then echo "ladder: FAILED -- the emitted V declares no renamed local c_rN: the later local met no capture of its name and the row compared nothing"; fail=1
@@ -1237,7 +1318,7 @@ grep -q 'Regex.compile (the V runtime has no Regex' "$OUT/rt_names_emit.txt" || 
 grep -q '`ZList.any_` (the emitter writes it; zebra_rt.v declares no such method)' "$OUT/rt_names_emit.txt" || missing="$missing ZList.any"
 grep -q 'string.tokenize (no mapping' "$OUT/rt_names_emit.txt" || missing="$missing str.tokenize"
 if [ -n "$missing" ]; then echo "rt_names: FAILED -- not refused:$missing"; grep -E '^  |^    ' "$OUT/rt_names_emit.txt" | head -5 | cut -c1-160; fail=1
-elif ! grep -q 'nothing refused' "$OUT/rt_names_ok_emit.txt"; then echo "rt_names: FAILED -- the mapped control was refused (a false positive):"; grep -E '^    ' "$OUT/rt_names_ok_emit.txt" | head -3 | cut -c1-160; fail=1
+elif ! grep -q 'nothing refused' "$OUT/rt_names_ok_emit.txt"; then echo "rt_names: FAILED -- the mapped control was refused (a false positive):"; refusal_lines "$OUT/rt_names_ok_emit.txt" | head -3 | cut -c1-160; fail=1
 else echo "rt_names: ok -- the three unmapped names refused by name, the mapped control clean"; fi
 echo "── free-at-sweep on V (the GameEngine's release paths): the three runtime calls mapped, a list rebuilt mid-walk walked to the end (BUG-681), an unknown zig literal still refused ──"
 rows=$((rows + 1))
@@ -1251,7 +1332,7 @@ printf 'def main()\n    zig"_zbr_not_a_runtime_call()"\n' > "$OUT/sweep_v_bad.zb
 (cd "$OUT" && "$ZEBRA" --target v sweep_v_bad.zbr > "$OUT/sweep_v_bad_emit.txt" 2>&1)
 (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/sweep_v.v" > "$OUT/sweep_v_v_out.txt" 2> "$OUT/sweep_v_v_err.txt")   # stdout only: V prints notices on stderr
 if ! grep -qx '45 9 0 15' "$OUT/sweep_v_zig_out.txt"; then echo "sweep_v: NO CONTROL -- the Zig run did not print '45 9 0 15': $(head -c 120 "$OUT/sweep_v_zig_out.txt" "$OUT/sweep_v_zig_err.txt" | tr '\n' ' ')"; fail=1
-elif grep -qE '^    ' "$OUT/sweep_v_emit.txt"; then echo "sweep_v: FAILED -- the V emit refused something:"; grep -E '^    ' "$OUT/sweep_v_emit.txt" | head -3 | cut -c1-160; fail=1
+elif [ -n "$(refusal_lines "$OUT/sweep_v_emit.txt")" ]; then echo "sweep_v: FAILED -- the V emit refused something:"; refusal_lines "$OUT/sweep_v_emit.txt" | head -3 | cut -c1-160; fail=1
 elif ! diff -q "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" > /dev/null; then echo "sweep_v: DIFFERS (V vs Zig):"; diff "$OUT/sweep_v_v_out.txt" "$OUT/sweep_v_zig_out.txt" | head -4 | cut -c1-160; fail=1
 elif ! grep -q 'a zig literal (Zig-backend code; no V for it)' "$OUT/sweep_v_bad_emit.txt"; then echo "sweep_v: FAILED -- an unknown zig literal was not refused (the mapping is too wide)"; fail=1
 else echo "sweep_v: ok -- the free-at-sweep calls map, a rebuilt module list and field are walked to the end on both backends ($(cat "$OUT/sweep_v_zig_out.txt")), an unknown zig literal is still refused"; fi
