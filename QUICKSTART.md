@@ -2046,6 +2046,11 @@ var v: math_utils.Vec2 = math_utils.Vec2(1.0, 2.0)
 var v: Vec2 = Vec2(1.0, 2.0)
 ```
 
+A module may expose a name equal to its own (`use Shade exposing Shade`). A type or
+namespace exposed that way is what the name means -- `Shade.dark` is the enum's member --
+exactly as `use Lexer` (no `exposing`) means the class `Lexer` when the module declares one.
+A function exposed that way is called bare, and `risky.other()` still names the module.
+
 **Subdirectory modules** — a dotted `use` names a file in a subdirectory, relative to
 the importing file (or to `--module-path`):
 
@@ -4828,7 +4833,7 @@ r.close()
 |-----------------------------------|--------------|----------------------------------------------|
 | `Mime.fromExt(".png")`            | str          | MIME type by extension (with the dot)        |
 | `Mime.toExt("image/png")`         | str          | Extension for a MIME type                    |
-| `Uri.parse(s)`                    | `UriResult?` | Scheme/host/path/query/fragment              |
+| `Uri.parse(s)`                    | `UriResult?` | nil if `s` does not parse; fields `scheme` `host` `path` `query` (str), `port` (int, 0 when absent) |
 | `Terminal.isTty()` / `.width()` / `.height()` | bool / int | Is stdout a terminal; its size  |
 | `Terminal.write(s)` / `.writeln(s)` | void       | Write to the terminal                        |
 | `Timer.start()`                   | `Timer`      | `t.elapsed()` ms as float; `t.elapsedMicros()` int; `t.reset()` |

@@ -23,6 +23,18 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A value that cannot be nil is refused in a nil comparison; `Uri.parse` is optional
+  (BUG-739).** `mk() != nil` with `mk` returning a class, enum or union (or a runtime object
+  such as `CsvTable`) is refused at `-c`, as for an `int`. `Uri.parse(s)` returns
+  `UriResult?` as documented: nil when the text does not parse, where it returned a result
+  of empty fields. Unwrap it (`Uri.parse(s)!`, `if Uri.parse(s) as u`).
+- **`s.hash()` is removed from `str` (BUG-738).** It was accepted by the checker and had no
+  implementation, so every use failed inside zig. It is refused by name now; hash a string
+  with `Hash.fnv64(s)`. Surface: `str: -hash`.
+- **A module can expose a name equal to its own (BUG-732).** `use risky exposing risky`,
+  `use Shade exposing Shade` and the same for a class or namespace left every reference to
+  that name undeclared inside zig. They bind now, and a type or namespace exposed this way is
+  what the name means (`Shade.dark` is the enum's member), as for a plain `use Lexer`.
 - **An optional list where a list is required is refused at the value; the `else` of
   `if x == nil` narrows (BUG-731).** `for it in f()`, `g(f())` and `var xs: List(T) = f()`
   with `f` returning `List(T)?` passed `-c` and failed inside zig; each is refused now, naming

@@ -2906,6 +2906,22 @@ smoke_tc_fail test/bug731_optional_list_refused_test.zbr "bug731_optional_list_r
 smoke_run test/bug731_else_narrow_test.zbr "ys count 3 first 5"
 smoke_run test/bug731_else_narrow_test.zbr "n1+n2"
 smoke_run test/bug731_else_narrow_test.zbr "bug731 else: OK"
+# BUG-732: a module exposing a name equal to its own (a function, an enum, a class, a
+# namespace) binds it; a type or namespace so exposed is what the name means.
+smoke_run test/bug732_exposing_own_name_test.zbr "fn 42"
+smoke_run test/bug732_exposing_own_name_test.zbr "other 2"
+smoke_run test/bug732_exposing_own_name_test.zbr "pt 8 origin 0"
+smoke_run test/bug732_exposing_own_name_test.zbr "bug732: OK"
+# BUG-738: `s.hash()` never worked (a checker entry with no codegen arm); refused by name.
+smoke_tc_fail test/bug738_str_hash_refused_test.zbr "bug738_str_hash_refused_test.zbr:4:15: error: 'str' has no method 'hash'"
+# BUG-739: a non-optional class / enum / runtime object compared with nil is refused; Uri.parse
+# is `UriResult?` (nil when the text does not parse).
+smoke_tc_fail test/bug739_never_nil_refused_test.zbr "bug739_never_nil_refused_test.zbr:16:11: error: 'Bug739P' is never nil"
+smoke_tc_fail test/bug739_never_nil_refused_test.zbr "bug739_never_nil_refused_test.zbr:18:11: error: 'Bug739Tone' is never nil"
+smoke_tc_fail test/bug739_never_nil_refused_test.zbr "bug739_never_nil_refused_test.zbr:19:15: error: 'CsvTable' is never nil"
+smoke_run test/bug739_uri_optional_test.zbr "bad is nil true"
+smoke_run test/bug739_uri_optional_test.zbr "parsed https x.org 8443 /a b=1"
+smoke_run test/bug739_uri_optional_test.zbr "bug739: OK"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.

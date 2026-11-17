@@ -1,0 +1,19 @@
+# BUG-732: a module exposing a name EQUAL to its own -- a function, an enum, a class, a
+# namespace -- binds that name. Every reference to it was "use of undeclared identifier"
+# inside zig. A type or namespace so exposed is what the name means (`Bug732Shade.dark` is
+# the enum's member); a function so exposed is called bare, and `mod.f()` still reaches the
+# module's other functions.
+use bug732_risky exposing bug732_risky
+use Bug732Shade exposing Bug732Shade
+use Bug732Pt exposing Bug732Pt
+use Bug732Geo exposing Bug732Geo
+
+def main()
+    print("fn ${bug732_risky(21)}")
+    print("other ${bug732_risky.other(1)}")
+    var s: Bug732Shade = Bug732Shade.dark
+    print("shade dark ${s == Bug732Shade.dark}")
+    var p = Bug732Pt(4)
+    print("pt ${p.twice()} origin ${Bug732Pt.origin().x}")
+    print("geo ${Bug732Geo.sq(5)}")
+    print("bug732: OK")

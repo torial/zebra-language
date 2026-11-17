@@ -2253,7 +2253,7 @@ def checkNamespaceMember(ns: str, mem: ExprMember, ctx: InferCtx)
     ctx.addErr(ctx.file, mem.span.line, mem.span.col, "'" + ns + "' has no static function '" + mem.member + "' (it has: " + shown + hint + ")")
 
 def strMethodKnown(name: str): bool
-    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "toValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "hash" or name == "len"
+    return name == "trim" or name == "trimLeft" or name == "trimRight" or name == "upper" or name == "lower" or name == "reverse" or name == "repeat" or name == "replace" or name == "replaceAll" or name == "concat" or name == "format" or name == "toHex" or name == "fromHex" or name == "padLeft" or name == "padRight" or name == "center" or name == "substring" or name == "charAt" or name == "join" or name == "toString" or name == "tokenize" or name == "split" or name == "lines" or name == "chars" or name == "bytes" or name == "encodeBase64" or name == "decodeBase64" or name == "count" or name == "indexOf" or name == "lastIndexOf" or name == "indexOfFrom" or name == "indexOfIgnoreCase" or name == "codePointCount" or name == "toInt" or name == "toIntBase" or name == "toFloat" or name == "toFloat32" or name == "tryInt" or name == "tryFloat" or name == "contains" or name == "startsWith" or name == "endsWith" or name == "isEmpty" or name == "isAlpha" or name == "isNumeric" or name == "isValidUtf8" or name == "toValidUtf8" or name == "eqlIgnoreCase" or name == "isAlphanumeric" or name == "isPrintable" or name == "startsWithIgnoreCase" or name == "endsWithIgnoreCase" or name == "containsIgnoreCase" or name == "len"
 
 # List(T): the documented set (QUICKSTART §10) plus what the probe showed compiling
 # (`pop`, `toString`, `fetch`). `first`/`last`/`isEmpty`/`insert`/`push` do NOT exist --
@@ -2334,6 +2334,8 @@ def runtimeObjFields(tn: str): str
         return " status text headers "
     if tn == "CalendarView"
         return " year month day weekday monthName era "
+    if tn == "UriResult"                 # BUG-739
+        return " scheme host path query port "
     return ""
 
 # BUG-721: the Zebra type of a runtime object's field, as the runtime declares it, or nil
@@ -2351,6 +2353,11 @@ def runtimeObjFieldType(tn: str, f: str): Type_?
         if f == "year" or f == "month" or f == "day" or f == "weekday"
             return Type_.int_
         if f == "monthName" or f == "era"
+            return Type_.string_
+    if tn == "UriResult"                 # BUG-739: the runtime's []const u8 x4 and i64
+        if f == "port"
+            return Type_.int_
+        if f == "scheme" or f == "host" or f == "path" or f == "query"
             return Type_.string_
     return nil
 
@@ -4064,6 +4071,20 @@ def compareOperandCheck(lt: Type_, rt: Type_, b: ExprBinary, op: str, ctx: Infer
                 nil_hint = "; `s.tryInt()` is the optional form of `s.toInt()`"
             ctx.addErr(ctx.file, eln0, ecl0,
                        "'" + typeTag(other_t) + "' is never nil -- only an optional (`" + typeTag(other_t) + "?`) can be compared with nil" + nil_hint)
+        # BUG-739: the same for a value of a DECLARED class / struct / enum / union, or a
+        # runtime object (`mk() != nil` with `def mk(): P`): zig said "comparison of '*P' with
+        # null". Only a name the checker knows the declaration of -- a generic `T`, an alias
+        # or an interface is left alone, so an inference gap cannot turn into a refusal.
+        else if other_t is Type_.named as nn_cls
+            var nn_known: bool = ctx.hasClassAny(nn_cls) or ctx.hasEnumAny(nn_cls) or ctx.hasUnion(nn_cls) or runtimeObjCovered(nn_cls)
+            if nn_known and not ctx.isTypeAlias(nn_cls) and not ctx.module_types.isInterface(nn_cls) and not ctx.dep_types.isInterface(nn_cls)
+                var eln1: int = b.span.line
+                var ecl1: int = b.span.col
+                if eln1 == 0
+                    eln1 = exprSpanLine(b.left)
+                    ecl1 = exprSpanCol(b.left)
+                ctx.addErr(ctx.file, eln1, ecl1,
+                           "'" + nn_cls + "' is never nil -- only an optional (`" + nn_cls + "?`) can be compared with nil")
         return
     var bad: bool = false
     if isString(lt) and isConcatMistake(rt)
@@ -4813,6 +4834,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                                 return Type_.optional(Type_.json_value)
                             if mem.member == "serve"
                                 return Type_.void_
+                        # BUG-739: `Uri.parse` is nil when the text does not parse (it returned
+                        # a UriResult of empty fields). Typed, so `u.host` without an unwrap is
+                        # refused and `u!.hots` names the fields.
+                        if bname == "Uri" and mem.member == "parse" and not ctx.hasClassAny("Uri") and not ctx.hasClassAny("UriResult")
+                            return Type_.optional(Type_.named("UriResult"))
                         if bname == "Ws"
                             if mem.member == "connect"
                                 return Type_.optional(Type_.ws_conn)

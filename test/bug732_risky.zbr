@@ -1,0 +1,6 @@
+# BUG-732 helper: a module whose function has the module's own name.
+def bug732_risky(n: int): int
+    return n * 2
+
+def other(n: int): int
+    return n + 1

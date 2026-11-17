@@ -6,6 +6,100 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-761: the V route does not map Zebra's sized ints or `byte` -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 by Fable, 86c8871 picked as f799e74 (was OPEN (filed 2026-11-16; reported by Fable, the V route's owner, while bringing
+  BUG-725's fixture to the V lane). **V route only; Fable's to fix** (CodeGenV.zbr / zebra_rt.v).
+- **What:** CodeGenV emits an `int8` parameter as `int8` (V's is `i8`), a `byte` parameter as
+  `byte` (an alias V has removed; `u8`), and an `int8` LOCAL as V `int`, so the width is lost
+  rather than refused. The Zig route maps all of them.
+- **Consequence:** `test/bug725_int_width_sign_test.zbr` cannot join `v-check`'s lane until this
+  is fixed.
+- **Control when fixing:** BUG-725's fixture prints the same on both routes under `v-check`; an
+  `int8` local that overflows traps on V as it does on Zig (BUG-667's message).
+- **Fix (Fable's account, from the commit):** int8/16/32/64 map to V's i8..i64, byte and
+  uint8 to u8, uint16/32 to u16/u32, uint/uint64 to u64, `int(8)` / `uint(16)` by width;
+  int128 / uint128 refused by name. The checker's numericJoin is restated over V's names
+  (`vIntJoin`): arithmetic, compound assignment, list elements and fields compute in the
+  join and `zfit` traps on what it cannot hold; u64 has zuadd / zusub / zumul; the BUG-534
+  conversions trap with the Zig route's words. `test/v_sized_ints_test.zbr` (40 lines over
+  every width) is IDENTICAL on both routes, as are bug534, bug672_673, bug674, numeric_types
+  and bug725 (the control); eighteen attackers die on both routes with the same message.
+  Gates in Fable's worktree: round-trip OK, v_check 46 rows, v_engine_check 367 roots (104
+  identical, the two standing refusals). NOT covered: float32 (BUG-768), saturating
+  operators on a sized operand (refused by name).
+
+---
+
+### BUG-739: `x == nil` on a non-optional class or runtime struct passes `-c`; `Uri.parse` is documented as optional and is not -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `print(mk() != nil)` where `def mk(): P` returns a class -> zig: "comparison of '*P'
+  with null"; `print(Uri.parse(s) != nil)` -> "comparison of 'zebra_rt.UriResult' with null". The
+  same test on an `int` is refused at `-c` ("'int' is never nil").
+- **Second half:** QUICKSTART's table says `Uri.parse(s)` returns `UriResult?`. It returns a
+  `UriResult` whose fields are all empty (port 0) when the text does not parse -- a made-up value,
+  and the reason a reader writes the `!= nil` above.
+- **Fix shape:** the "is never nil" refusal for every non-optional type; `Uri.parse` returns
+  `UriResult?` as documented (a surface change) or the table says what it does.
+- **Control when fixing:** both comparisons refused at `-c` at their lines; an optional class
+  still compares.
+- **Fix:** (1) `compareOperandCheck`'s "is never nil" refusal (BUG-391, primitives) also
+  covers a value of a DECLARED class, struct, enum or union, or a runtime object type (the
+  BUG-680 tables): `mk() != nil` is refused at `-c`. A generic `T`, an alias and an interface
+  are left alone, so an inference gap cannot become a refusal. (2) `Uri.parse` returns
+  `UriResult?` as QUICKSTART documents: the runtime returns null when `std.Uri.parse` fails
+  (it returned a UriResult of empty fields, port 0), and the checker types the call
+  `UriResult?` with a field table (scheme/host/path/query str, port int), so `u.host` without
+  an unwrap is refused and an unknown field is named. `test/uri_test.zbr` unwraps with `!`
+  (its output is unchanged). Measured before landing: `-c` over 6,611 files (this repo's
+  test/ and examples/, zebra-ide, the GameEngine) gave 0 new refusals, with the pipeline
+  shown to catch the fixture (3) and the pre-edit uri_test (8). Red-checked: on d46646c the
+  refused fixture passes `-c`. Fixtures `test/bug739_never_nil_refused_test.zbr`,
+  `test/bug739_uri_optional_test.zbr`. NOT covered: a container (`xs == nil` on a
+  `List(T)`), a `^T` field, and `UriResult` named in an annotation (no Zebra spelling).
+
+---
+
+### BUG-738: `s.hash()` passes `-c` and fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `print("a".hash())` -> zig: "no field or member function named 'hash' in 'str'".
+- **Cause:** `hash` is in TypeChecker's str method list (since BUG-369) with no CodeGen arm. It is
+  in SURFACE.md's str list and in no QUICKSTART table.
+- **Fix shape (decision pending):** remove it from the list (it never worked; a `str: -hash`
+  surface line), or give it an arm (`Hash.fnv64` already exists).
+- **Control when fixing:** either `-c` refuses `"a".hash()` naming the method, or it prints a value.
+- **Fix (the decision: remove):** `hash` left TypeChecker's str method list, so `"a".hash()` is
+  refused at `-c` naming the method ("'str' has no method 'hash'"). Removed rather than given
+  an arm: it never worked, so nothing depends on it, and an arm would be a second spelling of
+  `Hash.fnv64(s)` (the reasoning that retired the `String` alias). SURFACE.md re-derived:
+  str 55 -> 54. A class's `cue hash` is untouched. Fixture
+  `test/bug738_str_hash_refused_test.zbr`; red-checked: on d46646c it passes `-c`.
+
+---
+
+### BUG-732: `use risky exposing risky` (a module and a function it exposes sharing a name) fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-14; found by the GameEngine session; reproduced on d9067e4)
+- **Repro:** `risky.zbr` is `def risky(n: int): int` / `return n * 2`; `main.zbr` is
+  `use risky exposing risky` / `def main()` / `print(risky(21))`. `-c` passes; zig: "use of
+  undeclared identifier '_zbr_fn_risky'" at main.zbr:4.
+- **Fix shape:** resolve the exposed name to the module's function, not to the module; if that is
+  ambiguous by design, refuse at `-c` naming both.
+- **Control when fixing:** the repro prints 42; `use riskmod exposing risky` is unchanged.
+- **Fix:** not a function-only bug: a TYPE (class, enum) or a namespace exposed under the
+  module's own name was undeclared the same way. `genExposedAliases` skipped any exposed name
+  equal to the module (`ename != alias`), a guard from when the module was bound under its bare
+  name and `const risky = risky.risky` collided; it is `_zbr_mod_<alias>` since BUG-483, so the
+  skip only left every reference undeclared. Removed. And a type or namespace so exposed is
+  what the name MEANS -- `Shade.dark` is the enum's member, `Pt.origin()` the class's static --
+  as for `use Lexer` with no `exposing` (the existing unwrap): `genUse` adds the alias to
+  `unwrapped_imports`. A same-named function needs no unwrap: `risky(n)` is a call and
+  `risky.other(1)` still reaches the module. Red-checked: on 5b941c9 the fixture fails inside
+  zig at its line 12, the original message. Fixture `test/bug732_exposing_own_name_test.zbr`
+  with four helper modules (function, enum, class, namespace). NOT covered: an interface or
+  sig exposed under its module's name used in MEMBER position (it has no members to reach);
+  in a type position it works.
+
+---
+
 ### BUG-731: an optional list used as a list is refused only by zig, and the `else` of `if x == nil` does not narrow -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-14; found by the GameEngine session; repros
   `C:\tmp\conc\optprobe\p_for.zbr`, `p_pass.zbr`, `n_narrow.zbr`, reproduced on d9067e4)
@@ -58,8 +152,9 @@ Open bugs live in `BUGS.md`.
   message names the function and the rule instead. Red-checked: on 3720a47 the repro passes
   `-c` with exit 0; fixed, both lines are refused. Fixtures
   `test/bug730_throwing_fn_value_test.zbr` (three values: argument, var init, `lib.f`) and
-  `test/bug730_fn_value_control_test.zbr`. NOT covered: a throwing LAMBDA (its body is
-  checked where it is written) and a bare owner-method name used as a value inside a class.
+  `test/bug730_fn_value_control_test.zbr`. NOT covered: a throwing LAMBDA (CORRECTED
+  2026-11-17: this said "its body is checked where it is written"; for a `?`-marked call it is
+  not -- BUG-767) and a bare owner-method name used as a value inside a class.
 
 ---
 

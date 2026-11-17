@@ -1,0 +1,4 @@
+# BUG-732 helper: a module whose enum has the module's own name.
+enum Bug732Shade
+    light
+    dark

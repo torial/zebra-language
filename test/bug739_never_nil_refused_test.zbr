@@ -1,0 +1,19 @@
+# BUG-739: a value of a declared class, enum or union, or a runtime object, is never nil;
+# comparing one with nil is refused at -c (zig said "comparison of '*P' with null").
+class Bug739P
+    var x: int
+    cue init(x: int)
+        .x = x
+
+enum Bug739Tone
+    hi
+    lo
+
+def mk(): Bug739P
+    return Bug739P(1)
+
+def main()
+    print(mk() != nil)
+    var t = Bug739Tone.hi
+    print(t == nil)
+    print(Csv.parse("a,b\n1,2") == nil)

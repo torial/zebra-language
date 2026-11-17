@@ -1,0 +1,20 @@
+# BUG-739: `Uri.parse` is `UriResult?`, as documented: text that does not parse is nil, not
+# a UriResult of empty fields. Controls: an optional class still compares with nil, and a
+# parsed URI's fields read through an unwrap.
+class Bug739Q
+    var x: int
+    cue init(x: int)
+        .x = x
+
+def maybe(n: int): Bug739Q?
+    if n < 0
+        return nil
+    return Bug739Q(n)
+
+def main()
+    print("bad is nil ${Uri.parse("not a uri") == nil}")
+    if Uri.parse("https://x.org:8443/a?b=1") as u
+        print("parsed ${u.scheme} ${u.host} ${u.port} ${u.path} ${u.query}")
+    var q = maybe(-1)
+    print("optional class nil ${q == nil}")
+    print("bug739: OK")

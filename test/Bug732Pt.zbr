@@ -1,0 +1,9 @@
+# BUG-732 helper: a module whose class has the module's own name.
+class Bug732Pt
+    var x: int
+    cue init(x: int)
+        .x = x
+    def twice(): int
+        return .x * 2
+    static def origin(): Bug732Pt
+        return Bug732Pt(0)

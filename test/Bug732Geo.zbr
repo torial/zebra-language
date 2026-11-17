@@ -1,0 +1,4 @@
+# BUG-732 helper: a module whose namespace has the module's own name.
+namespace Bug732Geo
+    def sq(n: int): int
+        return n * n

@@ -7008,8 +7008,10 @@ pub const UriResult = struct {
     query:  []const u8,
     port:   i64,
 };
-pub fn _uri_parse(url: []const u8) UriResult {
-    const _u = std.Uri.parse(url) catch return UriResult{ .scheme="", .host="", .path="", .query="", .port=0 };
+pub fn _uri_parse(url: []const u8) ?UriResult {
+    // BUG-739: text that does not parse is nil, as documented (`UriResult?`) -- not a
+    // UriResult of empty fields, a made-up value no caller could tell from a real one.
+    const _u = std.Uri.parse(url) catch return null;
     const _host: []const u8 = if (_u.host) |h| switch (h) {
         .raw => |r| r, .percent_encoded => |p| p,
     } else "";

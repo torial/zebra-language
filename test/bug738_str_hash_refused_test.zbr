@@ -1,0 +1,4 @@
+# BUG-738: `s.hash()` was in the checker's str method list with no codegen arm, so it passed
+# -c and failed inside zig. It never worked and is removed: hash a string with Hash.fnv64(s).
+def main()
+    print("a".hash())

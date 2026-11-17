@@ -5680,6 +5680,14 @@ struct Generator
                 w.emit(imp)
                 w.emit(";\n")
             genExposedAliases(n, alias, isNativeZigUse(alias))
+            # BUG-732: a TYPE exposed under the module's own name (`use Color exposing
+            # Color`) is what that name means, as for `use Lexer` with no `exposing` (the
+            # unwrap above): `Color.red` is the enum's member, not the module's. A
+            # same-named FUNCTION needs no unwrap -- `risky(n)` is a call, `risky.f()` the
+            # module.
+            for ux_name in n.exposed
+                if ux_name == alias and ((isUserTypeName(ux_name) and not isSigName(ux_name) and not isIfaceName(ux_name)) or isNamespaceName(ux_name))
+                    unwrapped_imports.add(alias)
 
     # `use Mod exposing a, b`: bind each exposed name in this file. The LOCAL binding is
     # spelled the way this module's own references are (`_zbr_fn_` / `_zbr_ty_`, BUG-220 /
@@ -5693,7 +5701,12 @@ struct Generator
             # BUG-158: an exposed cross-module module var has no plain `alias.name`
             # symbol (it's `alias._zbr_mv_name`, and a deferred var is undefined at
             # import) — genIdent rewrites each reference, so emit no `const` here.
-            if ename != alias and not .exposed_module_vars.contains(ename)
+            # BUG-732: an exposed name EQUAL to the module's (`use risky exposing risky`,
+            # `use Point exposing Point`) is bound too. The old `ename != alias` skip dates
+            # from when the module was bound under its bare name and `const risky =
+            # risky.risky` collided; it is `_zbr_mod_<alias>` since BUG-483, so nothing does,
+            # and the skip left every reference to the exposed name undeclared.
+            if not .exposed_module_vars.contains(ename)
                 # BUG-220: an exposed top-level `def` is emitted by its defining module
                 # under the reserved `_zbr_fn_` prefix, so the alias must name the
                 # prefixed symbol. The alias binding is ALSO a file-scope declaration,

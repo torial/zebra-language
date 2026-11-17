@@ -114,7 +114,7 @@ Test: `test/log_test.zbr`
 ### 6. `Uri` — URL parsing ✅ DONE
 **Zig backing:** `std.Uri`
 ```zebra
-var u = Uri.parse("https://api.example.com/v1/users?page=2")
+var u = Uri.parse("https://api.example.com/v1/users?page=2")!   # nil if the text does not parse (BUG-739)
 print(u.scheme)    # "https"
 print(u.host)      # "api.example.com"
 print(u.path)      # "/v1/users"

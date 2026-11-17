@@ -95,43 +95,6 @@
 
 ---
 
-### BUG-732: `use risky exposing risky` (a module and a function it exposes sharing a name) fails inside zig
-- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; reproduced on d9067e4)
-- **Repro:** `risky.zbr` is `def risky(n: int): int` / `return n * 2`; `main.zbr` is
-  `use risky exposing risky` / `def main()` / `print(risky(21))`. `-c` passes; zig: "use of
-  undeclared identifier '_zbr_fn_risky'" at main.zbr:4.
-- **Fix shape:** resolve the exposed name to the module's function, not to the module; if that is
-  ambiguous by design, refuse at `-c` naming both.
-- **Control when fixing:** the repro prints 42; `use riskmod exposing risky` is unchanged.
-
----
-
-### BUG-738: `s.hash()` passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
-- **Repro:** `print("a".hash())` -> zig: "no field or member function named 'hash' in 'str'".
-- **Cause:** `hash` is in TypeChecker's str method list (since BUG-369) with no CodeGen arm. It is
-  in SURFACE.md's str list and in no QUICKSTART table.
-- **Fix shape (decision pending):** remove it from the list (it never worked; a `str: -hash`
-  surface line), or give it an arm (`Hash.fnv64` already exists).
-- **Control when fixing:** either `-c` refuses `"a".hash()` naming the method, or it prints a value.
-
----
-
-### BUG-739: `x == nil` on a non-optional class or runtime struct passes `-c`; `Uri.parse` is documented as optional and is not
-- **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
-- **Repro:** `print(mk() != nil)` where `def mk(): P` returns a class -> zig: "comparison of '*P'
-  with null"; `print(Uri.parse(s) != nil)` -> "comparison of 'zebra_rt.UriResult' with null". The
-  same test on an `int` is refused at `-c` ("'int' is never nil").
-- **Second half:** QUICKSTART's table says `Uri.parse(s)` returns `UriResult?`. It returns a
-  `UriResult` whose fields are all empty (port 0) when the text does not parse -- a made-up value,
-  and the reason a reader writes the `!= nil` above.
-- **Fix shape:** the "is never nil" refusal for every non-optional type; `Uri.parse` returns
-  `UriResult?` as documented (a surface change) or the table says what it does.
-- **Control when fixing:** both comparisons refused at `-c` at their lines; an optional class
-  still compares.
-
----
-
 ### BUG-741: `HttpResponse(status, text)` passes `-c`, then `.withHeader` on it fails inside zig
 - **Status:** OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
 - **Repro:** `var r = HttpResponse(200, "body")` / `return r.withHeader("X", "1")` -> zig: "no
@@ -216,19 +179,6 @@
 
 ---
 
-### BUG-761: the V route does not map Zebra's sized ints or `byte`
-- **Status:** OPEN (filed 2026-11-16; reported by Fable, the V route's owner, while bringing
-  BUG-725's fixture to the V lane). **V route only; Fable's to fix** (CodeGenV.zbr / zebra_rt.v).
-- **What:** CodeGenV emits an `int8` parameter as `int8` (V's is `i8`), a `byte` parameter as
-  `byte` (an alias V has removed; `u8`), and an `int8` LOCAL as V `int`, so the width is lost
-  rather than refused. The Zig route maps all of them.
-- **Consequence:** `test/bug725_int_width_sign_test.zbr` cannot join `v-check`'s lane until this
-  is fixed.
-- **Control when fixing:** BUG-725's fixture prints the same on both routes under `v-check`; an
-  `int8` local that overflows traps on V as it does on Zig (BUG-667's message).
-
----
-
 ### BUG-762: `for x in .items(n)` on a user method named `items` types `x` as `str`
 - **Status:** OPEN (filed 2026-11-16; found writing BUG-729's probe)
 - **Repro:** a class with `def items(n: int): List(int)` and, in another method,
@@ -259,6 +209,9 @@
   this is the method-level form of the same thing.
 - **Control when fixing:** refused in Zebra's words at the `catch` ("nothing in the body can
   fail -- drop the `catch`"), or accepted and built; a body with one throwing call unchanged.
+- **Second witness (2026-11-17, the GameEngine session):** `C:/tmp/graze_probe/p2_idle_catch.zbr`
+  -- the catch over a body whose only call is a non-throwing function of a `use`d module; zig
+  "p2_idle_catch.zbr:4: error: unused block label". A row in graze's table since 11-14.
 
 ---
 
@@ -271,6 +224,22 @@
   never goes through its own dispatch.
 - **Control when fixing:** the repro yields 1 for `maybe(1)` and nil for `maybe(-1)`; a user
   class method through `?.` unchanged.
+
+---
+
+### BUG-767: a `?`-marked throwing call inside a lambda passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-17; found by the GameEngine session writing graze's gate;
+  repro `C:/tmp/graze_probe/p3_lambda.zbr` with `riskclient.zbr`, reproduced on d46646c)
+- **Repro:** `var hs: List(def(int): str) = []`, then `hs.add(def(n: int): str` /
+  `var xs = risky(n)?` / `return "lambda ${xs.count()}")` with `risky` throwing. `-c` exits 0;
+  zig: "p3_lambda.zbr:7: error: expected type 'str', found 'anyerror'". The UNMARKED form is
+  refused at `-c` ("throws call needs '?'"), so only the marked one slips: a `?` inside a
+  lambda propagates out of a body whose `def(...)` type cannot raise.
+- **Fix shape:** the BUG-730 rule applied to a lambda body -- a `?` that would propagate out of
+  a lambda is refused at the `?`, naming that a function type cannot raise and the fixes
+  (handle it in the lambda, or `orelse`/`catch` the call).
+- **Control when fixing:** the repro refused at 7; a lambda that calls a non-throwing function,
+  and one that handles the error itself, unchanged.
 
 ---
 
