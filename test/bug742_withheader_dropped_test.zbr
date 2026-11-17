@@ -1,0 +1,12 @@
+# BUG-742: `withHeader` returns a NEW response and leaves its receiver as it was, so as a
+# statement it did nothing -- the header was never sent and nothing said so. Refused at -c.
+# The two forms the message names (`r = r.withHeader(..)`, `return r.withHeader(..)`) are
+# bug741_httpresponse_ctor_header_test's.
+
+def mk(): HttpResponse
+    var r = HttpResponse.new(200, "body")
+    r.withHeader("X", "1")
+    return r
+
+def main()
+    print(mk().status)

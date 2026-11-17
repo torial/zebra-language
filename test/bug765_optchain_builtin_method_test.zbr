@@ -1,0 +1,40 @@
+# BUG-765: `?.m()` on an optional builtin value (a List, a str) emitted the method name raw
+# on the unwrapped value (`.count()` on an ArrayList), so a receiver method whose emit is not
+# a Zig method failed inside zig. It goes through the receiver's own dispatch now.
+# Control: a user class method through `?.`.
+
+class Ctr
+    var n: int = 4
+    def twice(): int
+        return .n * 2
+
+def maybe(n: int): List(int)?
+    if n < 0
+        return nil
+    var xs = List(int)()
+    xs.add(n)
+    return xs
+
+def name(n: int): str?
+    if n < 0
+        return nil
+    return "ab-cd"
+
+def ctr(n: int): Ctr?
+    if n < 0
+        return nil
+    return Ctr()
+
+def main()
+    var a = maybe(1)?.count()
+    var b = maybe(-1)?.count()
+    print("${a} ${b}")
+    var c = maybe(5)?.contains(5)
+    print("${c}")
+    var u = name(1)?.upper()
+    var v = name(-1)?.upper()
+    print("${u} ${v}")
+    var t = ctr(1)?.twice()
+    var t2 = ctr(-1)?.twice()
+    print("${t} ${t2}")
+    print("bug765: OK")

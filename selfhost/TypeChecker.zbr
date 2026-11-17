@@ -4612,6 +4612,11 @@ def inferExpr(e: Expr, ctx: InferCtx): Type_
                     # ThreadPool(2)` has its methods checked (`pool.submitt(...)` reached zig).
                     if cname == "ThreadPool" and not ctx.hasClassAny("ThreadPool")
                         return Type_.named(cname)
+                    # BUG-741: `HttpResponse(status, text)` is `HttpResponse.new(...)`
+                    # (BUG-250), and typed as one -- untyped, `r.withHeader(..)` on it reached
+                    # zig as a method the struct does not have.
+                    if cname == "HttpResponse" and not ctx.hasClassAny("HttpResponse") and not ctx.hasLocal(cname)
+                        return Type_.named(cname)
                     # BUG-287's rule, in inference too: inside a class, a bare `Widget()`
                     # naming one of ITS methods is that method, even where a class
                     # `Widget` exists (codegen already dispatched it so; the type did not).
@@ -7113,6 +7118,13 @@ def forInElemType(fi: StmtForIn, ctx: InferCtx): Type_
     if isCharsCallExpr(fi.iter)
         return Type_.char_
     if isStrListCallExpr(fi.iter)
+        # BUG-762: the guess is by NAME, so a user method called `items` (or `split`...)
+        # returning `List(int)` typed its loop variable as str and `s + x` was falsely
+        # refused. A call the checker types as a List with a known element wins.
+        var sl_t: Type_ = inferExpr(fi.iter, ctx)
+        if sl_t is Type_.list_ as sl_e
+            if not (sl_e is Type_.unknown_)
+                return sl_e
         return Type_.string_
     if isSqliteQueryCallExpr(fi.iter, ctx)
         return Type_.sqlite_row
@@ -9954,6 +9966,17 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         bare_ps = ctx.fnParamListAny("", bare_id.name)
                     if bare_ps != nil
                         ctx.addWarn(file, bare_id.span.line, bare_id.span.col, "'" + bare_id.name + "' is a function used as a value — did you mean to call it: '" + bare_id.name + "()'?")
+                # BUG-742: `withHeader` returns a NEW response and leaves its receiver as it
+                # was, so as a statement it did nothing -- the header was never sent, and
+                # nothing said so.
+                if se is Expr.call as wh_c
+                    if wh_c.callee is Expr.member as wh_m
+                        if wh_m.member == "withHeader" and not ctx.hasClassAny("HttpResponse")
+                            var wh_t: Type_ = inferExpr(wh_m.object, ctx)
+                            if wh_t is Type_.named as wh_n
+                                if wh_n == "HttpResponse"
+                                    ctx.addErr(file, anchorLine(se, 0), anchorCol(se, 0),
+                                               "`withHeader` returns a new HttpResponse and leaves its receiver unchanged, so this statement drops the header -- write `r = r.withHeader(..)` or `return r.withHeader(..)`")
             on Stmt.print_ as sp
                 for pa in sp.args  # BUG-142: print(...) is a statement, not a call
                     checkCallsInExpr(pa, file, sp.span.line, ctx)

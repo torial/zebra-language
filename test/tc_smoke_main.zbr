@@ -7,8 +7,6 @@ def testOptionalTypes()
     assert TcTypes.describe(opt) == "?str"
     var nested = TcType.optional(TcType.optional(TcType.int_()))
     assert TcTypes.describe(nested) == "??int"
-catch |e|
-    print("FAIL: " + e.message)
 
 def main()
     assert TcTypes.describe(TcType.int_())    == "int"

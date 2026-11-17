@@ -1,0 +1,6 @@
+# BUG-705: `\u` must be `\u{HEX}`. The Python / JSON spelling passed -c and failed inside
+# zig ("expected '{', found '0'"); refused at the escape's column now.
+# (bug705_u_escape_ok_test is the braced control.)
+
+def main()
+    print("caf\u00eb")

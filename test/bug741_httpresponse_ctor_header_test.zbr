@@ -1,0 +1,26 @@
+# BUG-741: `HttpResponse(status, text)` is `HttpResponse.new(status, text)` (BUG-250), and
+# typed as one: `.withHeader` on it passed -c and then failed inside zig ("no field or member
+# function named 'withHeader' in 'zebra_rt.HttpResponse'"). Control: the `.new` form, and a
+# chained header, print the same.
+
+def bare(): HttpResponse
+    var r = HttpResponse(200, "body")
+    return r.withHeader("X", "1")
+
+def viaNew(): HttpResponse
+    var r = HttpResponse.new(200, "body")
+    return r.withHeader("X", "1")
+
+def chained(): HttpResponse
+    var r = HttpResponse(404, "gone")
+    r = r.withHeader("A", "1").withHeader("B", "2")
+    return r
+
+def main()
+    var a = bare()
+    var b = viaNew()
+    var c = chained()
+    print("bare ${a.status} ${a.headers.len} ${a.headers[0][0]}=${a.headers[0][1]}")
+    print("new ${b.status} ${b.headers.len}")
+    print("chained ${c.status} ${c.headers.len} ${c.text}")
+    print("bug741: OK")

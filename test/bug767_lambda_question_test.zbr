@@ -1,0 +1,18 @@
+# BUG-767: a `?` inside a lambda propagates the error out of the lambda, and a function type
+# cannot raise: it passed -c and zig refused the `try` ("expected type 'str', found
+# 'anyerror'"). Refused at the `?`. bug767_lambda_handled_test is the control.
+
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "neg"
+    var xs = List(int)()
+    xs.add(n)
+    return xs
+
+def main()
+    var hs: List(def(int): str) = []
+    hs.add(def(n: int): str
+        var xs = risky(n)?
+        return "lambda ${xs.count()}"
+    )
+    print(hs.at(0)(1))

@@ -870,7 +870,7 @@ class ASTBuilder
                 var binding_opt: str? = nil
                 if ptc.catch_binding != ""
                     binding_opt = ptc.catch_binding
-                var clause = CatchClause(zspan(), binding_opt, nil, catch_stmts)
+                var clause = CatchClause(Span(ptc.catch_line, ptc.catch_col, ptc.catch_line, ptc.catch_col), binding_opt, nil, catch_stmts)
                 var clauses: List(CatchClause) = List(CatchClause)()
                 clauses.add(clause)
                 return Stmt.try_catch(StmtTryCatch(Span(ptc.line, ptc.col, ptc.line, ptc.col), body_stmts, clauses))

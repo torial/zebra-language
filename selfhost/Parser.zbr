@@ -699,12 +699,16 @@ struct PTryCatch
     var catch_stmts: List(PNode)
     var line: int
     var col: int
-    cue init(body_stmts: List(PNode), catch_binding: str, catch_stmts: List(PNode), line: int, col: int)
+    var catch_line: int     # BUG-764: the `catch` keyword, where a refusal about the clause points
+    var catch_col: int
+    cue init(body_stmts: List(PNode), catch_binding: str, catch_stmts: List(PNode), line: int, col: int, catch_line: int, catch_col: int)
         .body_stmts = body_stmts
         .catch_binding = catch_binding
         .catch_stmts = catch_stmts
         .line = line
         .col = col
+        .catch_line = catch_line
+        .catch_col = catch_col
 
 struct PMember
     var base: List(PNode)
@@ -2313,6 +2317,8 @@ class Parser
             # Method-level catch: optional catch clause(s) after the body block.
             if .textIs("catch")
                 var catch_binding = ""
+                const kw_line = .peek().line
+                const kw_col = .peek().col
                 .advance()
                 if .textIs("|")
                     .advance()
@@ -2325,7 +2331,7 @@ class Parser
                 .skipEol()
                 var catch_stmts = .parseBlock()?
                 var wrapped = List(PNode)()
-                wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line, col)))
+                wrapped.add(PNode.stmt_try_catch(PTryCatch(stmts, catch_binding, catch_stmts, line, col, kw_line, kw_col)))
                 stmts = wrapped
         # BUG-270: `int` / `uint` are AMBIGUOUS across a C boundary, so refuse them in an
         # extern signature rather than guessing.

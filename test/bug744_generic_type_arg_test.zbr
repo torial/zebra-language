@@ -1,0 +1,21 @@
+# BUG-744: a class, struct or container as a generic function's type argument emitted a bare
+# name zig could not find (`_zbr_fn_same(Box, b)`, `List`): the type-argument position now
+# spells a type as every other type position does. Control: `same(int)(5)`.
+
+class Box
+    var s: str = "boxed"
+
+struct Pt
+    var x: int = 7
+
+def same(T)(x: T): T
+    return x
+
+def main()
+    var b = Box()
+    print(same(Box)(b).s)
+    print(same(Pt)(Pt()).x)
+    print(same(int)(5))
+    var xs: List(int) = [1, 2]
+    print(same(List(int))(xs))
+    print("bug744: OK")

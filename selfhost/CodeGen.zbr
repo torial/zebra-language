@@ -4381,9 +4381,14 @@ class Writer
     # genCalleeExpr, consumed by the very next genExpr, so a method read as a value binds
     # (`_zbr_bind`) and a method called does not.
     var callee_next: bool
+    # BUG-764: how many error routes into a try block's label have been emitted (a raise,
+    # or a throwing call's `catch |_tc_e| { ...; break :_try_blk; }`). genTryCatch compares
+    # it before and after the body: unchanged means nothing in the body can fail.
+    var try_label_uses: int
 
     cue init()
         _buf = StringBuilder()
+        try_label_uses = 0
         _uid = 0
         cur_line = 0
         suppress_once_field = false
@@ -4499,6 +4504,7 @@ struct Generator
     var generic_type_params  : str      # BUG-418: `|K|V|` inside a generic class body, "" elsewhere
     var try_block_label      : str?     # non-nil inside a `try` block
     var catch_var            : str      # catch clause binding name ("" if none)
+    var catch_var_local      : bool     # BUG-763: the catch body itself declares that name
     var source_file          : str      # source path for comment markers
     var library_mode         : bool     # --library-mode: omit `defer _arena.deinit()` from the main entry
     var class_names          : StrSet  # names of classes → emit *ClassName in genType
@@ -4647,6 +4653,7 @@ struct Generator
         .generic_type_params   = ""
         .try_block_label       = try_block_label
         .catch_var             = catch_var
+        .catch_var_local       = false
         .source_file           = source_file
         .library_mode          = false
         .class_names           = class_names
@@ -4821,6 +4828,15 @@ struct Generator
     def withCatchVar(name: str): Generator
         var g = this except
             catch_var = name
+        return g
+
+    # BUG-763: a catch clause's binding. A local of the same name wins only where the catch
+    # body declares it; otherwise the name is the error even if the method has a local
+    # `e` (out of scope in the catch) or an earlier `for e in ...` left one behind.
+    def withCatchBinding(name: str, local: bool): Generator
+        var g = this except
+            catch_var = name
+            catch_var_local = local
         return g
 
     def withCaptureFields(cf: StrSet): Generator
@@ -5179,6 +5195,7 @@ struct Generator
         w.emit(try_err_var!)
         w.emit(" = _tc_e; break :")
         w.emit(try_block_label!)
+        w.try_label_uses += 1   # BUG-764
         w.emit("; }")
 
     def writeIndent
@@ -5798,6 +5815,19 @@ struct Generator
         if tr != nil
             if emitEmptyListForParam(fexpr, tr!)
                 return
+        # BUG-753: the same for an empty `{}` on a HashMap / Set field -- it lowered to the
+        # expression-position `_ZbrAutoMap([]const u8, []const u8)` whatever the declaration
+        # said. As for a local (`var m: HashMap(K,V) = {}`, §28f / BUG-240), the declared
+        # type is the only source.
+        if tr != nil
+            if fexpr is Expr.dict_lit as fdl
+                if fdl.entries.len == 0
+                    if tr! is TypeRef.generic as fgt
+                        if fgt.name == "HashMap" or fgt.name == "Set"
+                            w.emit("_zbr_new(")
+                            genType(tr!)
+                            w.emit(")")
+                            return
         if tr != nil and isBareCollectionCtor(fexpr)
             genCallWithTypeHint(fexpr, tr!)
         else
@@ -14109,6 +14139,7 @@ struct Generator
                 w.emit(try_err_var!)
                 w.emit(" = error.ZebraError; break :")
                 w.emit(try_block_label!)
+                w.try_label_uses += 1   # BUG-764
                 w.emit("; ")
             else
                 w.emit("return error.ZebraError; ")
@@ -14121,6 +14152,7 @@ struct Generator
                 w.emit(try_err_var!)
                 w.emit(" = error.ZebraError; break :")
                 w.emit(try_block_label!)
+                w.try_label_uses += 1   # BUG-764
                 w.emit("; ")
             else
                 w.emit("return error.ZebraError; ")
@@ -14130,6 +14162,7 @@ struct Generator
                 w.emit(try_err_var!)
                 w.emit(" = error.ZebraError; break :")
                 w.emit(try_block_label!)
+                w.try_label_uses += 1   # BUG-764
                 w.emit("; ")
             else
                 w.emit("return error.ZebraError; ")
@@ -14168,7 +14201,15 @@ struct Generator
         ig.w.emit("_try_blk: {\n")
         var iig = ig.indented()
         var try_gen = iig.withTryLabel("_try_blk", "_try_err")
+        var uses_before: int = w.try_label_uses
         try_gen.genStmts(tc.stmts)
+        # BUG-764: a catch over a body that cannot fail never fires -- and when the body ends
+        # in `return`, zig refused the label nothing jumps to ("unused block label"). Refused
+        # in Zebra's words, as BUG-546 refuses a postfix `catch` on a call that cannot fail.
+        if w.try_label_uses == uses_before and tc.clauses.len > 0
+            var cf_sp: Span = tc.clauses.at(0).span
+            recordCannotFail(source_file + ":" + cf_sp.line.toString() + ":" + cf_sp.col.toString() +
+                ": error: nothing in the body before this `catch` can fail, so it never runs -- drop the `catch`")
         if not last_is_return
             iig.writeIndent()
             iig.w.emit("break :_try_blk;\n")
@@ -14181,11 +14222,27 @@ struct Generator
             # discard needed. Named bindings (not starting with `_`) wire through
             # withCatchVar so the catch body can reference the error object.
             var catch_gen = iig
+            # BUG-763: a binding the catch body does not declare itself is the ERROR there,
+            # so a stale type for the name (an earlier `for e in [1, 2]` left `e: int`) must
+            # not reach inference -- it chose `{}` for `${e}`. Rebound to unknown for the
+            # clause and restored after, as a union capture is.
+            var cb_name: str = ""
+            var cb_had: bool = false
+            var cb_prev: Type_ = Type_.unknown_
             if cl.binding != nil
                 var bname: str = cl.binding!
                 if not bname.startsWith("_")
-                    catch_gen = iig.withCatchVar(bname)
+                    var cb_local = nameReassignedIn(bname, cl.stmts)
+                    catch_gen = iig.withCatchBinding(bname, cb_local)
+                    if not cb_local and .infer_ctx != nil
+                        cb_had = (.infer_ctx!).hasLocal(bname)
+                        if cb_had
+                            cb_name = bname
+                            cb_prev = (.infer_ctx!).localType(bname)
+                            (.infer_ctx!).unbind(bname)
             catch_gen.genStmts(cl.stmts)
+            if cb_name != ""
+                (.infer_ctx!).bind(cb_name, cb_prev)
         ig.writeIndent()
         ig.w.emit("}\n")
         if last_is_return
@@ -15529,9 +15586,15 @@ struct Generator
                     emitName(ca2.err_var!)
                     w.emit("); break :" + ca2_lbl + " ")
                     var ca2_saved_cv: str = catch_var
+                    var ca2_saved_cvl: bool = catch_var_local
                     catch_var = ca2.err_var!
+                    # BUG-763 made a METHOD-level catch binding strict (catch_var_local
+                    # false); a postfix binding is a Zig capture the checker binds as a
+                    # local, so it keeps the old rule -- a known local is the capture.
+                    catch_var_local = true
                     genExpr(ca2.fallback)
                     catch_var = ca2_saved_cv
+                    catch_var_local = ca2_saved_cvl
                     w.emit("; }")
                 else
                     genExpr(ca2.fallback)
@@ -15845,6 +15908,12 @@ struct Generator
                     emitTryBlockCatch()
                     w.emit(")")
                 else
+                    # BUG-767: a `?` in a lambda body propagates out of the LAMBDA, and a
+                    # function type cannot raise (BUG-730), so zig refused the `try` ("expected
+                    # type 'str', found 'anyerror'"). Refused here, naming the fixes.
+                    if in_lambda_body
+                        recordCannotFail(source_file + ":" + tr.span.line.toString() + ":" + tr.span.col.toString() +
+                            ": error: this `?` would propagate the error out of a lambda, and a function type cannot raise -- handle it inside the lambda (`catch |e| ...` on the call, or `orelse` / `catch` with a fallback)")
                     # BUG-163: self-parenthesize (`1 + try f()` is invalid Zig).
                     w.emit("(try ")
                     in_try_expr = true
@@ -16051,6 +16120,24 @@ struct Generator
                         genExpr(oca.value)
                     w.emit(") else null)")
                     return
+                # BUG-765: on an optional BUILTIN value (a List, a map, a str) a method's emit
+                # is not a Zig method of the payload (`xs.count()` is not ArrayList's), and the
+                # raw `.member(` below failed inside zig. The unwrapped payload is bound as a
+                # typed local and the call goes through the ordinary member-call dispatch.
+                if oc.has_args and .infer_ctx != nil
+                    var ocb765: Type_ = inferExpr(oc.base, .infer_ctx!)
+                    if ocb765 is Type_.optional as ocb765_in
+                        if optChainBuiltinRecv(ocb765_in)
+                            var ocv765: str = "_oc_v" + oc_u
+                            .infer_ctx!.bind(ocv765, ocb765_in)
+                            var oc_recv: Expr = Expr.ident(ExprIdent(oc.span, ocv765))
+                            var oc_call: Expr = Expr.call(ExprCall(oc.span, Expr.member(ExprMember(oc.span, oc_recv, oc.member)), oc.args))
+                            w.emit("(if (")
+                            genExpr(oc.base)
+                            w.emit(") |" + ocv765 + "| ")
+                            genExpr(oc_call)
+                            w.emit(" else null)")
+                            return
                 # BUG-570: `mc?.bump()` on an optional VALUE struct called the method on a COPY
                 # (`var _oc_N = _oc_val_N`), so a mutating method's update never reached `mc` --
                 # a silent wrong answer: two calls returned the same number. When the base is a
@@ -16181,7 +16268,7 @@ struct Generator
         # is the error's message. Only `e.message`/`e.details` were handled (member
         # emit); a bare `e` reached Zig as an undeclared identifier.
         if catch_var != "" and id.name == catch_var
-            if not (.infer_ctx != nil and (.infer_ctx!).hasLocal(id.name))
+            if not (catch_var_local and .infer_ctx != nil and (.infer_ctx!).hasLocal(id.name))
                 w.emit("_zbr_error_msg()")
                 return
         # BUG-187: a nil-narrowed local emits `x.?` at every value use.
@@ -16764,7 +16851,7 @@ struct Generator
             on Expr.ident as id
                 # BUG-400: the catch binding as a value is the error message (str).
                 if catch_var != "" and id.name == catch_var
-                    if not (.infer_ctx != nil and (.infer_ctx!).hasLocal(id.name))
+                    if not (catch_var_local and .infer_ctx != nil and (.infer_ctx!).hasLocal(id.name))
                         return true
                 # Parameter or local typed: str
                 if str_params.contains_(id.name)
@@ -17258,11 +17345,15 @@ struct Generator
                         genExpr(e)
                         w.emit(")")
                     else
+                        # BUG-759: the value is given its signed type first -- a LITERAL
+                        # (`${255:x}`) is a comptime_int, which @bitCast refuses. Every cast
+                        # here is `uN` from bitCastType over a signed `iN` (Type_.int_ / int_n;
+                        # unsigned values print natively and never reach it).
                         w.emit("@as(")
                         w.emit(cast)
-                        w.emit(", @bitCast(")
+                        w.emit(", @bitCast(@as(i" + cast.substring(1, cast.len) + ", ")
                         genExpr(e)
-                        w.emit("))")
+                        w.emit(")))")
                 else if ts
                     genExpr(e)
                     w.emit(".toString()")
@@ -17287,13 +17378,28 @@ struct Generator
                 arg_idx = arg_idx + 1
         w.emit("}) catch @panic(\"OOM\"))")
 
+    # BUG-765: a `?.` receiver whose methods are dispatched by the member-call machinery
+    # rather than being Zig methods of the payload.
+    def optChainBuiltinRecv(t: Type_): bool
+        branch t
+            on Type_.list_ as _
+                return true
+            on Type_.hashmap_ as _
+                return true
+            on Type_.string_
+                return true
+            on Type_.str_set
+                return true
+            else
+                return false
+
     # Emit a type argument expression as a Zig type name.
     # Used for generic function call sites: identity(int)(42) → identity(i64, 42).
+    # BUG-744: through genTypeFromExpr, the spelling every other type-argument position
+    # uses -- a class or struct is `_zbr_ty_<name>` (BUG-281 B) and `List(int)` the runtime's
+    # list; `zigPrimitive` / `genExpr` wrote a bare `Box` / `List` zig could not find.
     def genTypeArg(e: Expr)
-        if e is Expr.ident as id
-            w.emit(zigPrimitive(id.name))
-        else
-            genExpr(e)
+        genTypeFromExpr(e)
 
     # ── closure-shaped arguments ─────────────────────────────────────────────
 

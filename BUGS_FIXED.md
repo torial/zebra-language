@@ -6,6 +6,260 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-768: the V route does not map `float32` -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17, V route (was OPEN (filed 2026-11-17 by Fable, the V route's owner, fixing BUG-761; 767 is the
+  Zig side's, the throwing lambda). **V route only; Fable's to fix** (CodeGenV.zbr /
+  zebra_rt.v).
+- **What:** CodeGenV's `vNamed` maps `float` to `f64` and passes `float32` through as written,
+  which is no V type, and its arithmetic knows one float type: `test/bug445_mixed_numeric_test.zbr`
+  emits with nothing refused and then fails in V ("cannot use `float literal` as `float32`",
+  "mismatched types `float32` and `i64`", "float modulo not allowed", and an `f64` handed to
+  the i64 helper `zmul`). The width is lost in the type name rather than refused, as the sized
+  ints' was before BUG-761.
+- **Fix shape:** `float32` is V's `f32`; the checker's float half of `numericJoin` restated
+  beside BUG-761's `vIntJoin` (float32 with an int stays float32, float32 with float is
+  float); `%` on floats through `math.fmod`; a float operand never reaches the i64 helpers.
+  `float16` / `float128` refused by name (V has neither).
+- **Control when fixing:** bug445's fixture prints the same on both routes under `v-check`;
+  a `float32` sum that differs from the `float` sum of the same operands (0.1 + 0.2) prints
+  the float32 digits on both.
+
+- **Fix (Fable, 5616dea, picked as f4f22ed):** `float32` / `f32` are V's `f32`, `float` / `float64`
+  / `f64` are `f64`, `float16` is refused by name; a suffixed literal is V's cast. The float half of
+  the checker's `numericJoin` is restated beside `vIntJoin` (`vFloatJoin`), and the checker's own
+  `isNumLit` says what a literal is, so `+ - * / %` take the join and each operand is cast where its
+  type differs; an int or narrower float into a float slot is cast. `%` on floats is the runtime's
+  `zfmod` (C's fmod, with compiler-rt's no-remainder cases). Attacking the first IDENTICAL row
+  found and fixed four more divergences: an out-of-range `toInt()` now traps with the Zig route's
+  words (`zfloat_int`); `x % 0.0` prints the same NaN; `print(x)` of a float is the hole's text;
+  a float32's text is its own shortest digits (`zshow_f32`). `Math.*` on a float32 is refused by
+  name (the Zig route computes it in float32). Witness: v_check's `float32` row (50 rows, was 46):
+  `test/v_float32_test.zbr` IDENTICAL on both routes with bug445's and bug471's fixtures, eight
+  edge programs dying or printing alike, and both refusals; watched red with the three runtime
+  guards removed. Not covered: a constant float expression (BUG-770) and a float32 receiver's
+  methods inside an expression (BUG-769), both the Zig side's.
+
+---
+
+### BUG-767: a `?`-marked throwing call inside a lambda passes `-c` and fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-17; found by the GameEngine session writing graze's gate;
+  repro `C:/tmp/graze_probe/p3_lambda.zbr` with `riskclient.zbr`, reproduced on d46646c)
+- **Repro:** `var hs: List(def(int): str) = []`, then `hs.add(def(n: int): str` /
+  `var xs = risky(n)?` / `return "lambda ${xs.count()}")` with `risky` throwing. `-c` exits 0;
+  zig: "p3_lambda.zbr:7: error: expected type 'str', found 'anyerror'". The UNMARKED form is
+  refused at `-c` ("throws call needs '?'"), so only the marked one slips: a `?` inside a
+  lambda propagates out of a body whose `def(...)` type cannot raise.
+- **Fix shape:** the BUG-730 rule applied to a lambda body -- a `?` that would propagate out of
+  a lambda is refused at the `?`, naming that a function type cannot raise and the fixes
+  (handle it in the lambda, or `orelse`/`catch` the call).
+- **Control when fixing:** the repro refused at 7; a lambda that calls a non-throwing function,
+  and one that handles the error itself, unchanged.
+
+- **Fix:** a `?` inside a lambda body is refused at the `?` (a function type cannot raise,
+  BUG-730), naming the fixes. Fixture `test/bug767_lambda_question_test.zbr` (15:18); control
+  `test/bug767_lambda_handled_test.zbr` (a lambda catching the error itself, and one calling a
+  non-throwing function) runs. Swept over the same corpus as 742 and 764 first: no other site.
+
+---
+
+### BUG-765: `?.count()` on an optional `List` fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-16; found writing BUG-729's probe; reproduced on the pre-fix
+  compiler)
+- **Repro:** `def maybe(n: int): List(int)?` and `var m = maybe(n)?.count()` -> zig "no field
+  or member function named 'count' in 'List(int)'". The opt-chain arm emits the method name
+  raw on the unwrapped value, so a builtin receiver method (whose emit is not `.count()`)
+  never goes through its own dispatch.
+- **Control when fixing:** the repro yields 1 for `maybe(1)` and nil for `maybe(-1)`; a user
+  class method through `?.` unchanged.
+
+- **Fix:** `?.` on an optional List / HashMap / str / Set unwraps into a named capture and
+  emits the method as an ordinary call on it, so the builtin's own dispatch runs. Fixture
+  `test/bug765_optchain_builtin_method_test.zbr` (`count`, `contains`, `upper` on present and nil
+  values, and a user class's method, unchanged). Writing it found BUG-772: an unknown name after
+  `?.` on a builtin receiver is still refused only by zig.
+
+---
+
+### BUG-764: a method-level `catch` on a body that cannot fail passes `-c` and fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-16; found writing BUG-729's probe; reproduced on the pre-fix
+  compiler)
+- **Repro:** `def g(): int` / `var e = 5` / `return e` / `catch |e|` / `return -1` -> zig "unused
+  block label" at the `def`. BUG-546 refuses a postfix `catch` / `?` on a call that cannot fail;
+  this is the method-level form of the same thing.
+- **Control when fixing:** refused in Zebra's words at the `catch` ("nothing in the body can
+  fail -- drop the `catch`"), or accepted and built; a body with one throwing call unchanged.
+- **Second witness (2026-11-17, the GameEngine session):** `C:/tmp/graze_probe/p2_idle_catch.zbr`
+  -- the catch over a body whose only call is a non-throwing function of a `use`d module; zig
+  "p2_idle_catch.zbr:4: error: unused block label". A row in graze's table since 11-14.
+
+- **Fix:** CodeGen counts jumps to the method-level catch's label; a body that emits none
+  cannot fail, and the catch is refused at the `catch` keyword ("nothing in the body before this
+  `catch` can fail, so it never runs -- drop the `catch`"). The parser now records the keyword's
+  line and column on the clause (it was 0:0; the shadow check's message for a re-declared
+  binding gains the line too). Fixture `test/bug764_catch_cannot_fail_test.zbr` (8:1). Swept with
+  `-c` over test/, examples/, selfhost/, zebra-ide and the GameEngine (6,657 files) first: two
+  corpus files had a catch that could never run -- `test/tc_smoke_main.zbr` (a catch over
+  `assert`s, which panic) and `test/error_prop.zbr` (over a `print`). The first lost its dead
+  catch; the second, whose subject is the method-level catch, now calls a throwing method
+  under it. Both print what they did.
+
+---
+
+### BUG-763: a local named like the method-level `catch` binding, read in the catch, fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-16; found writing BUG-729's probe; reproduced on the pre-fix
+  compiler)
+- **Repro:** `def g(n: int): int` with `var t = f(n)` (f throws), `var e = List(int)()`, and
+  `catch |e|` whose body does `print("caught ${e}")` -> zig "use of undeclared identifier 'e'"
+  at the print. With the catch body not reading `e`, or the local renamed, it builds.
+- **Control when fixing:** the repro prints `caught ...` for a raising `f` and the sum
+  otherwise; the catch reads the ERROR, not the local (or the shadowing is refused by name).
+
+- **Fix:** a method-level catch binding is strict: `${e}` / `e.message` in the catch body is
+  the error unless the catch body itself declares the name, and the stale type of a local of that
+  name (an earlier `for e in [1, 2]` left `e: int`) is set aside for the clause and restored after,
+  so the hole's format is the error's. The wider shape (the `for` loop) was found writing the
+  fixture. Fixture `test/bug763_catch_binding_local_test.zbr` (a body-local `e` and a loop `e`);
+  "undeclared identifier" and then "cannot format slice" before. A postfix `catch |e|` keeps
+  its rule (the capture is a checker-bound local): the first draft's new flag defaulted to
+  strict everywhere, and the FULL tier caught it on `test/bug525_zig_keyword_bindings_test.zbr`
+  -- `${e}` in a postfix fallback became the message string under the error's `{}` format.
+
+---
+
+### BUG-762: `for x in .items(n)` on a user method named `items` types `x` as `str` -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-16; found writing BUG-729's probe)
+- **Repro:** a class with `def items(n: int): List(int)` and, in another method,
+  `for x in .items(n)` / `s = s + x` -> `-c` refuses "cannot concatenate 'int' and 'str'" at the
+  `+`. The same code with the method named `vals` prints 3. A false refusal: the loop
+  variable is typed by the NAME `items` (a map's `entries`-style iteration), not by the
+  method's declared return.
+- **Control when fixing:** the repro prints 3; `for k, v in m.items()` on a Map unchanged.
+
+- **Fix:** the loop-variable typing that guesses `str` by method NAME (`items`, `split`, ...)
+  first asks the checker for the call's type, and a List with a known element wins. Fixture
+  `test/bug762_user_items_method_test.zbr` (a user `items` returning `List(int)` and one returning
+  `List(str)`); the false refusal before.
+
+---
+
+### BUG-759: an int LITERAL under `:x` (`${255:x}`) passes `-c` and fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-16; found by Fable taking the Zig route's reference output
+  for the V format-spec work)
+- **Repro:** `print("[${255:x}]")`. `-c` exits 0; the build fails `cannot @bitCast from
+  'comptime_int'`, reported at the line of the enclosing `def`, not the `print`. A runtime int
+  (`var n = 255`, `${n:x}`) prints `ff`.
+- **Also seen once (not reproduced):** in a larger file whose only bad line was this hole, Fable
+  saw `zebra file.zbr` exit 1 with no error line and leave a `.fast.exe` whose entry point was
+  the image base. Two runs of the same file here printed the error each time; recorded so a
+  second sighting can be matched to it.
+- **Control when fixing:** the repro prints `[ff]`; a runtime int unchanged; `${255:08x}`
+  and `${-1:x}` checked the same way.
+
+- **Fix:** the `:x` / `:X` / `:b` path bitcasts through the hole's own width,
+  `@as(uN, @bitCast(@as(iN, expr)))`, so a literal (comptime_int) gets a type before the cast.
+  Fixture `test/bug759_literal_hex_test.zbr`: literals with width, zero pad, `:X` and `:b`, and
+  `${-1:x}` beside a runtime `-1` (both `ffffffffffffffff`); the bitcast error before. The "also
+  seen once" exit-1-without-a-message was not seen in any run here.
+
+---
+
+### BUG-753: a class field `HashMap(str, C) = {}` passes `-c` and fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-15; found by Fable on the V route's side of the engine work)
+- **Repro:** `class Reg` with `var by: HashMap(str, Node) = {}` (`Node` a class), `Reg()`, then
+  `r.by.set("a", Node())`. `-c` exits 0; the build fails `expected type
+  '*hash_map.HashMap([]const u8,*_zbr_ty_Node,...)', found '*hash_map.HashMap([]const
+  u8,[]const u8,hash_map.AutoContext([]const u8),80)'` -- the `{}` default is emitted as
+  `_ZbrAutoMap([]const u8, []const u8)` whatever the field's declared type.
+- **Workaround:** `= HashMap(str, Node)()`.
+- **Fix shape:** the empty-literal default takes its type from the field's declaration (the V
+  route refuses `= {}` and `= []` there by name; matching the Zig route is the other option).
+- **Control when fixing:** the repro prints `1`; `= HashMap(str, Node)()` unchanged; an empty
+  `= []` default on a `List(Node)` field checked the same way.
+
+- **Fix:** CodeGen's field initialiser (`genFieldInitExprIn`, which every field-default site
+  calls) emits an empty `{}` on a `HashMap` / `Set` field as `_zbr_new(<declared type>)`, as BUG-648
+  did for `[]` on a List field. Fixture `test/bug753_empty_map_field_default_test.zbr` (a map of a
+  class, a map of str, a Set, each set and read back); the zig type error before.
+
+---
+
+### BUG-744: a class or container as a generic function's type argument emits a name zig cannot find -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-15; found writing BUG-709's ok fixture; reproduced on 718330a)
+- **Repro:** `class Box` with a field, `def same(T)(x: T): T` returning `x`, then
+  `print(same(Box)(b).s)`. `-c` passes; the build fails `use of undeclared identifier 'Box'` at
+  the call's `.zbr` line. The emit is `_zbr_fn_same(Box, b)`: since BUG-281 B a Zebra type is
+  `_zbr_ty_Box` in the generated Zig, and the type-argument position was not given the prefix.
+  A struct (`same(Pt)(Pt())`) fails the same way, and so does a container type argument:
+  `same(List(int))(xs)` emits a bare `List` ("undeclared identifier 'List'"). `same(int)(5)` works.
+- **Cost:** a generic function can be instantiated only with scalar built-in types; with a class,
+  struct or container the program cannot be built, and the message is about generated code.
+- **Fix shape:** the emit of a generic call's type arguments goes through the same type-name
+  spelling as every other type position (the `_zbr_ty_` prefix for a user type, a qualified one
+  for a `use`d module's).
+- **Control when fixing:** `same(Box)(b).s` and `same(Pt)(Pt()).x` build and print; `same(int)(5)`
+  unchanged; `same(List(int))(xs)` builds and prints `[1, 2]`.
+
+- **Fix:** a generic call's type arguments are emitted through `genTypeFromExpr`, the spelling
+  every other type position uses (`_zbr_ty_` for a user type, `_ZbrList(...)` for a container).
+  Fixture `test/bug744_generic_type_arg_test.zbr`: a class, a struct, `List(int)` and `int` as type
+  arguments; the first three were "undeclared identifier" before.
+
+---
+
+### BUG-742: `r.withHeader(...)` as a statement silently does nothing -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `var r = HttpResponse.new(200, "body")` / `r.withHeader("X", "1")` / `return r` --
+  builds and runs, and the response has no `X` header. `withHeader` returns a NEW response
+  (QUICKSTART), and the statement drops it with no word.
+- **Fix shape:** refuse at `-c` a `withHeader` whose result is discarded, naming the
+  `return r.withHeader(..)` / `r = r.withHeader(..)` forms.
+- **Control when fixing:** the repro is refused at its line; both suggested forms compile.
+
+- **Fix:** the checker refuses a `withHeader` call on an HttpResponse receiver used as a
+  statement, at the call, naming `r = r.withHeader(..)` and `return r.withHeader(..)`. Fixture
+  `test/bug742_withheader_dropped_test.zbr` (8:7); it built and dropped the header before. Swept
+  with `-c` over test/, examples/, selfhost/, zebra-ide and the GameEngine first: no other site.
+
+---
+
+### BUG-741: `HttpResponse(status, text)` passes `-c`, then `.withHeader` on it fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-15; found writing the BUG-701 option A sweep; reproduced on e4045ec)
+- **Repro:** `var r = HttpResponse(200, "body")` / `return r.withHeader("X", "1")` -> zig: "no
+  field or member function named 'withHeader' in 'zebra_rt.HttpResponse'". With
+  `HttpResponse.new(200, "body")` the same code works.
+- **Fix shape:** route `withHeader` on any HttpResponse-typed receiver, or refuse the bare
+  constructor at `-c` naming `HttpResponse.new`.
+- **Control when fixing:** the repro sends the header, or `-c` refuses it at its line.
+
+- **Fix:** the checker types a constructor call `HttpResponse(...)` as `HttpResponse` (unless a
+  user class or local has that name), so `.withHeader` on it routes through the runtime's dispatch
+  as it did for `HttpResponse.new`. Fixture `test/bug741_httpresponse_ctor_header_test.zbr`: the bare
+  constructor, `.new` and a chain each carry their headers; the repro was the zig error before.
+
+---
+
+### BUG-705: an unbraced `ë` in a string passes `-c` and fails inside zig -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-12; found writing the Crypto batch's fixtures, reproduced on 8ac485e)
+- **Repro:** `print("cafë")` (the Python/JSON spelling). `zebra -c` exits 0; the build fails in
+  the emitted Zig with `error: expected '{', found '0'` -- the escape is passed through verbatim.
+- **Why it is a leak, not a typo:** the lexer already refuses an unknown escape at its column --
+  `"a\wb"` gives `unknown escape \w in a string -- the escapes are ... \u{N}` -- but it accepts
+  `\u` without checking that `{` follows.
+- **Fix shape:** refuse `\u` not followed by `{` at the escape's column, naming the braced form
+  (`\u{00eb}`); the same check for an unterminated `\u{`.
+- **Control when fixing:** the repro is refused by `-c` with a column; `print("caf\u{00eb}")` still
+  prints `cafë`. Write the fixture from Python or an editor: bash `printf` rewrites `\u` itself.
+
+- **Fix:** the lexer checks `\u` where it already refused an unknown escape: a `\u` not
+  followed by `{` is refused at the escape's column naming the braced form, and a `\u{` without
+  hex digits and a closing `}` likewise. Fixtures `test/bug705_u_escape_unbraced_test.zbr` (6:15)
+  and `test/bug705_u_escape_unclosed_test.zbr` (4:15), both of which built into the zig error on the
+  pre-fix compiler; control `test/bug705_u_escape_ok_test.zbr` (braced escapes and an escaped
+  backslash, unchanged). The fixture's `\u00eb` had to be written from octal: both bash `printf`
+  and the agent's file tools rewrite the escape to the character.
+
+---
+
 ### BUG-760: a float in a hole with a spec but no precision drops its `.0` -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17, both routes (was OPEN (filed 2026-11-16; found by Fable comparing the Zig and V routes)
 - **Repro:** `var h = 2.0`, then `${h}` is `2.0` but `${h:>6}` is `     2`, `${h:06}` is

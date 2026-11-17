@@ -1,0 +1,7 @@
+# BUG-705's control: the braced escape prints the codepoint, and an escaped backslash
+# before a `u` is text, not an escape.
+
+def main()
+    print("caf\u{00eb} \u{1F600}")
+    print("lit \\u00eb")
+    print("bug705: OK")

@@ -23,6 +23,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Four more programs refused in Zebra's words instead of inside zig.** A `\u` escape without
+  braces (`\u00eb`, the Python spelling) or with an unclosed `\u{` (BUG-705); a `withHeader`
+  whose result is dropped -- it returns a new response (BUG-742); a method-level `catch` over a
+  body in which nothing can fail (BUG-764); a `?` inside a lambda, which cannot raise (BUG-767).
+- **Six programs that passed `-c` and failed inside zig now build.** `.withHeader` on a
+  response made with `HttpResponse(status, text)` (BUG-741); a class, struct or container as a
+  generic function's type argument (BUG-744); a `= {}` default on a `HashMap` / `Set` field
+  (BUG-753); an int literal under `:x` / `:X` / `:b` (BUG-759); a catch binding sharing its
+  name with a local, or with an earlier loop variable (BUG-763); `?.count()` and other builtin
+  methods on an optional List / str / Set / map (BUG-765). And a user method named `items`
+  keeps its declared element type in a `for` loop (BUG-762).
 - **A whole float in a spec'd hole keeps its `.0` (BUG-760).** `${2.0:>6}` is `   2.0`,
   `${2.0:06}` is `0002.0` and `${2.0:+}` is `+2.0` (it printed `     2`, `000002`, `2`, and
   warned the `+` was ignored): a float hole with no precision or type letter pads the plain

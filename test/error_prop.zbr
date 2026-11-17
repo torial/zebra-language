@@ -1,7 +1,12 @@
 class App
     static
+        def checked(n: int): int throws
+            if n < 0
+                raise "negative"
+            return n
+
         def main
-            var x: int = 42
+            var x: int = App.checked(42)?
             print(x)
         catch
             print("caught error")

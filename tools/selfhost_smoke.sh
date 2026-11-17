@@ -2933,6 +2933,52 @@ smoke_run test/bug760_float_spec_show_test.zbr "keep  [2.0] [    2.00] [   1.5] 
 smoke_run test/bug760_float_spec_show_test.zbr "lit   [   2.0] [+4.0]"
 smoke_run test/bug760_float_spec_show_test.zbr "f32   [   2.0] [   1.1] [0002.0]"
 smoke_run test/bug760_float_spec_show_test.zbr "bug760: OK"
+# BUG-705: `\u` takes braces; the Python / JSON spelling and an unclosed brace are refused
+# in the lexer (expectations avoid spelling the escape itself).
+smoke_run test/bug705_u_escape_ok_test.zbr "cafë 😀"
+smoke_run test/bug705_u_escape_ok_test.zbr "bug705: OK"
+smoke_tc_fail test/bug705_u_escape_unbraced_test.zbr "bug705_u_escape_unbraced_test.zbr:6:15: error: "
+smoke_tc_fail test/bug705_u_escape_unbraced_test.zbr "in a string needs braces: write"
+smoke_tc_fail test/bug705_u_escape_unclosed_test.zbr "bug705_u_escape_unclosed_test.zbr:4:15: error: "
+smoke_tc_fail test/bug705_u_escape_unclosed_test.zbr "in a string takes hex digits and a closing"
+# BUG-741 / 742: a constructed HttpResponse is typed; a dropped withHeader is refused.
+smoke_run test/bug741_httpresponse_ctor_header_test.zbr "bare 200 1 X=1"
+smoke_run test/bug741_httpresponse_ctor_header_test.zbr "new 200 1"
+smoke_run test/bug741_httpresponse_ctor_header_test.zbr "chained 404 2 gone"
+smoke_run test/bug741_httpresponse_ctor_header_test.zbr "bug741: OK"
+smoke_tc_fail test/bug742_withheader_dropped_test.zbr "bug742_withheader_dropped_test.zbr:8:7: error: \`withHeader\` returns a new HttpResponse and leaves its receiver unchanged"
+# BUG-744: a class or container as a generic function's type argument.
+smoke_run test/bug744_generic_type_arg_test.zbr "boxed"
+smoke_run test/bug744_generic_type_arg_test.zbr "[1, 2]"
+smoke_run test/bug744_generic_type_arg_test.zbr "bug744: OK"
+# BUG-753: an empty `{}` default on a HashMap / Set field takes the declared type.
+smoke_run test/bug753_empty_map_field_default_test.zbr "1 3 four true 1 1"
+smoke_run test/bug753_empty_map_field_default_test.zbr "bug753: OK"
+# BUG-759: an int literal under `:x` / `:X` / `:b`, including a negative one.
+smoke_run test/bug759_literal_hex_test.zbr "[ff] [ff] [000000ff] [000000ff] [FF] [10] [101]"
+smoke_run test/bug759_literal_hex_test.zbr "[ffffffffffffffff] [ffffffffffffffff]"
+smoke_run test/bug759_literal_hex_test.zbr "bug759: OK"
+# BUG-762: a user method named `items` keeps its own element type.
+smoke_run test/bug762_user_items_method_test.zbr "3 3"
+smoke_run test/bug762_user_items_method_test.zbr "hi ann"
+smoke_run test/bug762_user_items_method_test.zbr "bug762: OK"
+# BUG-763: the method-level catch binding is the error, whatever locals share its name.
+smoke_run test/bug763_catch_binding_local_test.zbr "caught neg -1"
+smoke_run test/bug763_catch_binding_local_test.zbr "caught neg -3"
+smoke_run test/bug763_catch_binding_local_test.zbr "bug763: OK"
+# BUG-764: a method-level catch over a body that cannot fail is refused at the `catch`.
+smoke_tc_fail test/bug764_catch_cannot_fail_test.zbr "bug764_catch_cannot_fail_test.zbr:8:1: error: nothing in the body before this \`catch\` can fail, so it never runs"
+# BUG-765: `?.` on an optional List / str / Set calls the builtin method.
+smoke_run test/bug765_optchain_builtin_method_test.zbr "1 nil"
+smoke_run test/bug765_optchain_builtin_method_test.zbr "AB-CD nil"
+smoke_run test/bug765_optchain_builtin_method_test.zbr "8 nil"
+smoke_run test/bug765_optchain_builtin_method_test.zbr "bug765: OK"
+# BUG-767: a `?` that would propagate out of a lambda is refused; a handled one runs.
+smoke_tc_fail test/bug767_lambda_question_test.zbr "bug767_lambda_question_test.zbr:15:18: error: this \`?\` would propagate the error out of a lambda"
+smoke_run test/bug767_lambda_handled_test.zbr "handled 20"
+smoke_run test/bug767_lambda_handled_test.zbr "handled -1"
+smoke_run test/bug767_lambda_handled_test.zbr "safe 3"
+smoke_run test/bug767_lambda_handled_test.zbr "bug767: OK"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.

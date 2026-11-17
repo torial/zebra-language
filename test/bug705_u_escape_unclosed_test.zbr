@@ -1,0 +1,4 @@
+# BUG-705: an unterminated `\u{` is refused at the escape's column too.
+
+def main()
+    print("caf\u{00eb and more")

@@ -1,0 +1,12 @@
+# BUG-764: a method-level `catch` over a body in which nothing can fail never runs, and when
+# the body ended in `return` zig refused the label nothing jumped to ("unused block label").
+# Refused at the `catch`. (bug763_catch_binding_local_test has a catch over a throwing body.)
+
+def g(): int
+    var e = 5
+    return e
+catch |e|
+    return -1
+
+def main()
+    print(g())

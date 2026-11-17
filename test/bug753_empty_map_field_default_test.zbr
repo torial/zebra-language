@@ -1,0 +1,24 @@
+# BUG-753: an empty `{}` default on a HashMap / Set field took the expression-position
+# lowering (`_ZbrAutoMap([]const u8, []const u8)`) whatever the field declared, and the build
+# failed inside zig. It takes the declared type now, as a local's does. Controls: the
+# `= HashMap(str, Node)()` spelling, and an empty `[]` on a `List(Node)` field (BUG-648).
+
+class Node
+    var id: int = 3
+
+class Reg
+    var by: HashMap(str, Node) = {}
+    var ids: HashMap(int, str) = {}
+    var seen: Set(str) = {}
+    var alt: HashMap(str, Node) = HashMap(str, Node)()
+    var nodes: List(Node) = []
+
+def main()
+    var r = Reg()
+    r.by.set("a", Node())
+    r.ids.set(4, "four")
+    r.seen.add("x")
+    r.alt.set("b", Node())
+    r.nodes.add(Node())
+    print("${r.by.len} ${r.by.get("a")!.id} ${r.ids.get(4)!} ${r.seen.contains("x")} ${r.alt.len} ${r.nodes.len}")
+    print("bug753: OK")

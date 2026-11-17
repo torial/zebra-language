@@ -611,6 +611,20 @@ class Lexer
                     if esc_end > src.len
                         esc_end = src.len
                     raise line.toString() + ":" + (pos - lineStart + 1).toString() + ": error: unknown escape `" + src[pos..esc_end] + "` in a string -- the escapes are \\n \\r \\t \\\\ \\\" \\' \\$ \\xNN \\u{N}; for a regex, write a raw string: r\"...\""
+                # BUG-705: `\u` must be `\u{HEX}`. The Python / JSON spelling `\u00eb` passed
+                # the front end and failed inside zig ("expected '{', found '0'").
+                if esc == c'u'
+                    var u_col: str = line.toString() + ":" + (pos - lineStart + 1).toString()
+                    var u_k: int = pos + 2
+                    if u_k >= src.len or src[u_k] != c'{'
+                        raise u_col + ": error: `\\u` in a string needs braces: write `\\u{00eb}`, not `\\u00eb` (the Python / JSON spelling)"
+                    u_k = u_k + 1
+                    var u_digits: int = 0
+                    while u_k < src.len and isHexDigit(src[u_k])
+                        u_k = u_k + 1
+                        u_digits = u_digits + 1
+                    if u_digits == 0 or u_k >= src.len or src[u_k] != c'}'
+                        raise u_col + ": error: `\\u{` in a string takes hex digits and a closing `}`: `\\u{00eb}`"
                 pos = pos + 2
                 continue
             pos = pos + 1

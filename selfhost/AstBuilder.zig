@@ -1727,7 +1727,7 @@ pub const _zbr_ty_ASTBuilder = struct {
                     binding_opt = ptc.catch_binding;
                 }
 // zbr:selfhost/AstBuilder.zbr:873
-                const clause = _zbr_ty_CatchClause.init(_zbr_fn_zspan(), binding_opt, null, catch_stmts);
+                const clause = _zbr_ty_CatchClause.init(_zbr_ty_Span.init(ptc.catch_line, ptc.catch_col, ptc.catch_line, ptc.catch_col), binding_opt, null, catch_stmts);
 // zbr:selfhost/AstBuilder.zbr:874
                 var clauses = _zbr_new(_ZbrList(_zbr_ty_CatchClause));
 // zbr:selfhost/AstBuilder.zbr:875

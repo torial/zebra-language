@@ -1,0 +1,36 @@
+# BUG-763: a catch binding named like a local of the method -- declared in the guarded body,
+# or left behind by an earlier `for e in ...` -- read in the catch emitted that local, which is
+# out of scope there ("use of undeclared identifier 'e'"). The binding is the ERROR in the
+# catch body now (re-declaring it inside the catch is already refused).
+
+def f(n: int): int throws
+    if n < 0
+        raise "neg ${n}"
+    return n
+
+def g(n: int): int
+    var t = f(n)
+    var e = List(int)()
+    e.add(t)
+    e.add(t)
+    return e.count()
+catch |e|
+    print("caught ${e}")
+    return -1
+
+def h(n: int): int
+    var s = 0
+    for e in [1, 2]
+        s = s + e
+    var t = f(n)
+    return s + t
+catch |e|
+    print("caught ${e}")
+    return -2
+
+def main()
+    print(g(1))
+    print(g(-1))
+    print(h(5))
+    print(h(-3))
+    print("bug763: OK")

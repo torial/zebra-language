@@ -1381,6 +1381,9 @@ def risky()
     print(r)
 catch |e|
     print("Error: ${e.message}")
+# In the catch, `e` is the error even if the method has a local named `e` (BUG-763).
+# A method-level catch over a body in which nothing can fail is refused at the `catch`
+# (BUG-764): it would never run.
 
 # Inline postfix catch — fallback value on error:
 var safe = divide(10, 0) catch 0
@@ -1674,7 +1677,9 @@ var result = sb.build()              # str; the builder keeps its text (clear() 
 - To include a literal `${` in a string, escape the dollar sign: `"\${"`.
 - The escapes are `\n \r \t \\ \" \' \$ \xNN \u{N}`. Any other backslash pair (`"\w"`, `"\d"`)
   is a compile error at its column -- for a regex, write a raw string, `r"\w+"`
-  (2026-10-09, BUG-533).
+  (2026-10-09, BUG-533). `\u` takes braces: `"caf\u{00eb}"`. The Python / JSON spelling
+  `\u00eb`, and a `\u{` without hex digits and a closing `}`, are refused at the escape
+  (BUG-705).
 
 ### String method reference
 
@@ -2478,7 +2483,9 @@ A function type cannot raise. A function that can fail -- declared `throws`, or 
 its body, or calling a throwing function with `?` -- is refused as a function value, at the
 value, with both fixes named: handle the error inside it with a method-level `catch` (§12),
 or call it and pass the result. A used module's function is passed qualified, `lib.f`.
-(BUG-730, BUG-766.)
+(BUG-730, BUG-766.) For the same reason a `?` inside a lambda's body is refused: the error
+would propagate out of the lambda. Handle it there (`f(n) catch -1`, or a `catch |e|` on the
+call) (BUG-767).
 
 ### §19.4 Lambda as a call argument
 
@@ -4985,7 +4992,10 @@ BUG-685): `HttpResponse.ok(body)`,
 `resp.withHeader(name, value)` returns a NEW response with one more header line (the
 response is a value; the original is unchanged), e.g.
 `return HttpResponse.new(303, "").withHeader("Location", "/tasks")`, on a local or chained
-onto the constructor (BUG-700, fixed 2026-11-12). The server sends
+onto the constructor (BUG-700, fixed 2026-11-12); `HttpResponse(status, body)` is the same
+constructor as `HttpResponse.new` (BUG-741). Because the original is unchanged, a
+`r.withHeader(..)` standing alone as a statement would drop the header and is refused:
+write `r = r.withHeader(..)` or `return r.withHeader(..)` (BUG-742). The server sends
 `Content-Type: text/html; charset=utf-8` unless the handler sets its own Content-Type
 (BUG-698). Read a request header with `req.header(name)`.
 

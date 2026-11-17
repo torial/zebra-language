@@ -1,0 +1,10 @@
+# BUG-759: an int LITERAL under `:x` / `:o` / `:b` (`${255:x}`) passed -c and failed inside zig,
+# "cannot @bitCast from 'comptime_int'": the literal is given its signed type first now.
+# Control: a runtime int prints the same.
+
+def main()
+    var n = 255
+    var m = -1
+    print("[${255:x}] [${n:x}] [${255:08x}] [${n:08x}] [${255:X}] [${8:o}] [${5:b}]")
+    print("[${-1:x}] [${m:x}]")
+    print("bug759: OK")
