@@ -2190,6 +2190,9 @@ smoke_run_bounded test/crypto_password_test.zbr "crypto_password: OK" 120
 # own verdicts over hashes made by OpenSSL, by this route and by the V route.
 smoke_run_bounded test/v_crypto_test.zbr "v_crypto: OK" 120
 smoke_run test/v_import_names_test.zbr "v_import_names: OK"
+# v_format_specs: the Zig side of v_check's format-spec row -- the padded-ints line is what
+# the V route used to drop (vlang/v#32420); the Zig route must keep printing it.
+smoke_run test/v_format_specs_test.zbr "i >3    [  1] [ -1] [  0] [1234567]"
 smoke_tc_fail test/http_request_bad_args_test.zbr "req.header takes one argument"
 # BUG-697: Http.json / Http.postJson are typed JsonValue? -- the getters pass -c and run.
 smoke_run_bounded test/bug697_http_json_type_test.zbr "bug697: OK" 120
