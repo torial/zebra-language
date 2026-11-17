@@ -8264,13 +8264,39 @@ pub fn _zbr_zpad(x: anytype, width: usize) _ZbrZpad {
 // writes `+` for a runtime value >= 0 whenever a width is given; this writes the sign only
 // for a negative value or when the spec asked for one (`+` -> "+1", ' ' -> " 1"), and the
 // hole pads the result as text.
+//
+// BUG-760: a float hole with a width or sign and no type char comes here too. Its text is
+// the plain hole's (`_zbr_show`, so a whole float keeps its `.0`), with the asked-for sign
+// put in front unless the text already has a minus (`-0.0`, `-2.5`).
 pub fn _zbr_itext(x: anytype, sign: u8) []const u8 {
-    const v: i128 = x;
-    const s = if (v < 0 or sign == '-')
-        std.fmt.allocPrint(_allocator, "{d}", .{v})
-    else
-        std.fmt.allocPrint(_allocator, "{c}{d}", .{ sign, v });
-    return s catch @panic("OOM");
+    const ti = @typeInfo(@TypeOf(x));
+    if (comptime ti == .float or ti == .comptime_float) {
+        // a literal is comptime_float; an f32 stays f32 (widening would print its binary noise)
+        const xf = if (comptime ti == .comptime_float) @as(f64, x) else x;
+        const t = _zbr_show(xf);
+        if (sign == '-' or (t.len > 0 and t[0] == '-')) return t;
+        return std.fmt.allocPrint(_allocator, "{c}{s}", .{ sign, t }) catch @panic("OOM");
+    } else {
+        const v: i128 = x;
+        const s = if (v < 0 or sign == '-')
+            std.fmt.allocPrint(_allocator, "{d}", .{v})
+        else
+            std.fmt.allocPrint(_allocator, "{c}{d}", .{ sign, v });
+        return s catch @panic("OOM");
+    }
+}
+
+// BUG-760: `${2.0:06}` -- a zero-padded float with no type char pads the plain hole's text,
+// so a whole float keeps its `.0` (`0002.0`), as `_zbr_show_float` does for `${x}`.
+pub fn _zbr_zpad_shown(x: anytype, width: usize) _ZbrZpad {
+    var r = _zbr_zpad(x, width);
+    const xf: f64 = x;
+    if (std.math.isFinite(xf) and @floor(xf) == xf and r.len + 2 <= r.buf.len) {
+        r.buf[r.len] = '.';
+        r.buf[r.len + 1] = '0';
+        r.len += 2;
+    }
+    return r;
 }
 
 pub fn _zbr_show(x: anytype) []const u8 {

@@ -3029,16 +3029,22 @@ def fmtSpecIgnored(spec: str, sign_ok: bool): str
 # BUG-725: the holes CodeGen.intSignArg sends through `_zbr_itext`, which writes the sign
 # flag (`+`, ` `, `-`): a signed int, no `0` flag (zeroPadArgs takes that, and drops the
 # sign), no precision, and a decimal type. Walks the spec as fmtSpecIgnored does.
+# BUG-760: a float with no type char takes the same route (`${x:+}` is `+2.0`).
 def fmtSignHonoured(spec: str, t: Type_): bool
     var is_sint: bool = false
+    var is_float: bool = false
     branch t
         on Type_.int_
             is_sint = true
         on Type_.int_n as _
             is_sint = true
+        on Type_.float_
+            is_float = true
+        on Type_.float_n as _
+            is_float = true
         else
             pass
-    if not is_sint
+    if not is_sint and not is_float
         return false
     var i: int = 0
     var n: int = spec.len
@@ -3065,7 +3071,7 @@ def fmtSignHonoured(spec: str, t: Type_): bool
         return false
     if i < n
         var tc: str = spec[i..i+1]
-        if not (tc == "d" or tc == "i" or tc == "n")
+        if is_float or not (tc == "d" or tc == "i" or tc == "n")
             return false
         i = i + 1
     return i == n

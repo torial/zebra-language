@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A whole float in a spec'd hole keeps its `.0` (BUG-760).** `${2.0:>6}` is `   2.0`,
+  `${2.0:06}` is `0002.0` and `${2.0:+}` is `+2.0` (it printed `     2`, `000002`, `2`, and
+  warned the `+` was ignored): a float hole with no precision or type letter pads the plain
+  hole's text. On the V route too.
 - **A value that cannot be nil is refused in a nil comparison; `Uri.parse` is optional
   (BUG-739).** `mk() != nil` with `mk` returning a class, enum or union (or a runtime object
   such as `CsvTable`) is refused at `-c`, as for an `int`. `Uri.parse(s)` returns

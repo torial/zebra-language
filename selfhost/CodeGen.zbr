@@ -129,23 +129,34 @@ def parseFmtSpec(spec: str): List(str)
 # for. Returns the sign argument (`'-'`, `'+'`, `' '`), or "" when the hole keeps
 # Zig's formatting. Numbers align right by default, as in Python; `{s}` aligns left,
 # so the alignment is always spelt out.
+#
+# BUG-760: a FLOAT hole with a width or a sign and no type char or precision takes the
+# same route, so its text is the plain hole's (`_zbr_show`: a whole float keeps its `.0`)
+# and `${2.0:>6}` is `   2.0`, not Zig's `{d:>6}` `     2`. `f` / `g` keep Zig's text.
 def intSignArg(spec: str, ex_type: Type_): str
     if spec.len == 0
         return ""
     var is_sint: bool = false
+    var is_float: bool = false
     branch ex_type
         on Type_.int_
             is_sint = true
         on Type_.int_n as _
             is_sint = true
+        on Type_.float_
+            is_float = true
+        on Type_.float_n as _
+            is_float = true
         else
             pass
-    if not is_sint
+    if not is_sint and not is_float
         return ""
     var parts = parseFmtSpec(spec)
     if parts.at(1) == "=" or parts.at(3) != ""
         return ""
     var type_s: str = parts.at(4)
+    if is_float and type_s != ""
+        return ""
     if not (type_s == "" or type_s == "d" or type_s == "i" or type_s == "n")
         return ""
     var sign_s: str = parts.at(5)
@@ -307,6 +318,21 @@ def zeroPadArgs(spec: str, ex_type: Type_): str
     if width_s == ""
         width_s = "0"
     return ", " + width_s + ")"
+
+# BUG-760: a zero-padded FLOAT hole with no type char (`${2.0:06}`) pads the plain hole's
+# text, which keeps a whole float's `.0` (`0002.0`, as Python); `_zbr_zpad_shown` does that.
+def zeroPadShown(spec: str, ex_type: Type_): bool
+    var is_float: bool = false
+    branch ex_type
+        on Type_.float_
+            is_float = true
+        on Type_.float_n as _
+            is_float = true
+        else
+            pass
+    if not is_float
+        return false
+    return parseFmtSpec(spec).at(4) == ""
 
 # BUG-301. `:c` renders one BYTE, and Zig's {c} takes a u8. An int literal coerced at
 # comptime so `"${206:c}"` worked; a COMPUTED value did not, and the user got a raw Zig
@@ -17090,6 +17116,7 @@ struct Generator
         var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
         var zpad_args: List(str) = List(str)()        # a number with the `0` flag: _zbr_zpad(arg + these)
         var itext_args: List(str) = List(str)()       # a signed int with a width/sign: _zbr_itext(arg, sign) (BUG-725)
+        var zpad_shown: List(bool) = List(bool)()     # a zero-padded float with no type char: _zbr_zpad_shown (BUG-760)
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -17134,6 +17161,7 @@ struct Generator
                                 cast_trunc.add(fmt_spec.endsWith("c"))
                         ffmt_args.add(fpa)
                         zpad_args.add(zpa)
+                        zpad_shown.add(zpa != "" and zeroPadShown(fmt_spec, ex_type))
                         itext_args.add(isa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
@@ -17181,6 +17209,7 @@ struct Generator
                         cast_trunc.add(false)
                         ffmt_args.add("")
                         zpad_args.add("")
+                        zpad_shown.add(false)
                         itext_args.add("")
                         needs_tostring.add(ts)
                         char_wraps.add(cwrap)
@@ -17208,7 +17237,10 @@ struct Generator
                     genExpr(e)
                     w.emit(fpa)
                 else if zpa != ""
-                    w.emit("_zbr_zpad(")
+                    if zpad_shown.at(arg_idx)
+                        w.emit("_zbr_zpad_shown(")
+                    else
+                        w.emit("_zbr_zpad(")
                     genExpr(e)
                     w.emit(zpa)
                 else if itext_args.at(arg_idx) != ""

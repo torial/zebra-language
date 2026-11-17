@@ -165,20 +165,6 @@
 
 ---
 
-### BUG-760: a float in a hole with a spec but no precision drops its `.0`
-- **Status:** OPEN (filed 2026-11-16; found by Fable comparing the Zig and V routes)
-- **Repro:** `var h = 2.0`, then `${h}` is `2.0` but `${h:>6}` is `     2`, `${h:06}` is
-  `000002`, `${h:+}` is `2`, and with `z = 0.0`, `${z:>4}` is `   0`. Python prints `   2.0`,
-  `0002.0`, `+2.0`, `    0.0`. The plain hole goes through `_zbr_show` (BUG rc5: a whole
-  float prints `6.0`); a spec'd one is Zig's `{d}`, which does not.
-- **Fix shape:** a float hole with a width/align/fill and no precision formats the shown text
-  (`_zbr_show`) and pads that, as BUG-725 did for a signed int. The V route copies the Zig
-  output exactly (Fable's `zfmt_dtext`), so the fix lands on both -- tell that session.
-- **Control when fixing:** the four repro values match Python; `${h:.1f}` and `${h:>8.2f}`
-  unchanged; a non-whole float (`1.5`, `${f:>6}`) unchanged.
-
----
-
 ### BUG-762: `for x in .items(n)` on a user method named `items` types `x` as `str`
 - **Status:** OPEN (filed 2026-11-16; found writing BUG-729's probe)
 - **Repro:** a class with `def items(n: int): List(int)` and, in another method,

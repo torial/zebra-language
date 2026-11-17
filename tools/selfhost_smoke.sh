@@ -2922,6 +2922,14 @@ smoke_tc_fail test/bug739_never_nil_refused_test.zbr "bug739_never_nil_refused_t
 smoke_run test/bug739_uri_optional_test.zbr "bad is nil true"
 smoke_run test/bug739_uri_optional_test.zbr "parsed https x.org 8443 /a b=1"
 smoke_run test/bug739_uri_optional_test.zbr "bug739: OK"
+# BUG-760: a float hole with a width / sign / `0` flag and no precision or type letter is the
+# plain hole's text, padded (a whole float keeps `.0`); lines computed with Python's format().
+smoke_run test/bug760_float_spec_show_test.zbr "repro [   2.0] [0002.0] [+2.0] [ 0.0]"
+smoke_run test/bug760_float_spec_show_test.zbr "neg   [-3.0] [-003.0] [   -3.0] [  -0.0] [-0.0]"
+smoke_run test/bug760_float_spec_show_test.zbr "keep  [2.0] [    2.00] [   1.5] [0001.5] [000002]"
+smoke_run test/bug760_float_spec_show_test.zbr "lit   [   2.0] [+4.0]"
+smoke_run test/bug760_float_spec_show_test.zbr "f32   [   2.0] [   1.1] [0002.0]"
+smoke_run test/bug760_float_spec_show_test.zbr "bug760: OK"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.

@@ -1,0 +1,22 @@
+# BUG-760: a float hole with a width, alignment or sign and no type char or precision prints
+# the plain hole's text (`${2.0}` is `2.0`), padded -- it printed Zig's `{d}`, which drops a
+# whole float's `.0` (`${2.0:>6}` was `     2`). Every expected line was computed with
+# Python's format() before the fix; Python is the reference QUICKSTART names.
+# Controls: a non-whole value, a precision (`.1f`, `>8.2f`) and the `g` type (`06g` drops
+# the `.0`, as Python's does) are unchanged; a float32 keeps its own shortest text.
+
+def main()
+    var h = 2.0
+    var z = 0.0
+    var f = 1.5
+    var n = -3.0
+    var nz = n * 0.0
+    print("repro [${h:>6}] [${h:06}] [${h:+}] [${z:>4}]")
+    print("align [${h:<6}|] [${h:^7}] [${h:*^9}]")
+    print("neg   [${n:+}] [${n:06}] [${n:>7}] [${nz:>6}] [${nz:+}]")
+    print("keep  [${h:.1f}] [${h:>8.2f}] [${f:>6}] [${f:06}] [${h:06g}]")
+    print("lit   [${2.0:>6}] [${4.0:+}]")
+    var s: float32 = 2.0_f32
+    var t: float32 = 1.1_f32
+    print("f32   [${s:>6}] [${t:>6}] [${s:06}]")
+    print("bug760: OK")

@@ -464,7 +464,9 @@ with `int8` always is.
 a float in a list or struct, and `@derive(Debug)` all show `6.0`, so a float never prints
 like an int -- `print(1 + 2.0)` is `3.0`. Other values print in the shortest form that reads
 back as the same number (`2.5`, `0.1`, `1.0 / 3.0` is `0.3333333333333333`); `nan` and `inf`
-print as they are. An explicit format spec wins: `"${x:.2}"` is `6.00`.
+print as they are. An explicit format spec wins: `"${x:.2}"` is `6.00`. A spec with a width,
+alignment, sign or `0` flag and no precision or type letter pads that same text: `${x:>6}` is
+`   6.0`, `${x:06}` is `0006.0`, `${x:+}` is `+6.0` (BUG-760).
 
 ### §3.1c Compound assignment
 
@@ -1653,8 +1655,10 @@ var result = sb.build()              # str; the builder keeps its text (clear() 
   the sign: `${-5:04d}` → `-005`, `${-2.5:06.1f}` → `-002.5`. An explicit fill and
   alignment is a plain fill: `${-5:0>4}` → `00-5`.  On an `int`, a sign flag is honoured
   and a width never adds one: `${n:>3}` → `  1`, `${n:+}` → `+1`, `${n: }` → ` 1`, `${-1:>3}` →
-  ` -1` (BUG-725).  A part the formatter does not support -- a sign (`+`) on a float or with the
-  `0` flag, `#`, digit
+  ` -1` (BUG-725).  A float with no precision or type letter is the plain hole's text, padded:
+  `${2.0:>6}` → `   2.0`, `${2.0:+}` → `+2.0`, `${2.0:06}` → `0002.0` (BUG-760).  A part the
+  formatter does not support -- a sign (`+`) on a float with a precision or type letter, or with
+  the `0` flag, `#`, digit
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
 - **How a float is rounded to a precision** (`.2f`, `.2`, `.2e`): Zebra rounds the

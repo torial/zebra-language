@@ -6,6 +6,35 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-760: a float in a hole with a spec but no precision drops its `.0` -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17, both routes (was OPEN (filed 2026-11-16; found by Fable comparing the Zig and V routes)
+- **Repro:** `var h = 2.0`, then `${h}` is `2.0` but `${h:>6}` is `     2`, `${h:06}` is
+  `000002`, `${h:+}` is `2`, and with `z = 0.0`, `${z:>4}` is `   0`. Python prints `   2.0`,
+  `0002.0`, `+2.0`, `    0.0`. The plain hole goes through `_zbr_show` (BUG rc5: a whole
+  float prints `6.0`); a spec'd one is Zig's `{d}`, which does not.
+- **Fix shape:** a float hole with a width/align/fill and no precision formats the shown text
+  (`_zbr_show`) and pads that, as BUG-725 did for a signed int. The V route copies the Zig
+  output exactly (Fable's `zfmt_dtext`), so the fix lands on both -- tell that session.
+- **Control when fixing:** the four repro values match Python; `${h:.1f}` and `${h:>8.2f}`
+  unchanged; a non-whole float (`1.5`, `${f:>6}`) unchanged.
+- **Fix (Zig route):** CodeGen's `intSignArg` (BUG-725) also takes a FLOAT hole with a
+  width, alignment or sign and no type letter or precision, so it goes through
+  `_zbr_itext(x, sign)`, which for a float writes `_zbr_show`'s text (the plain hole's) and
+  puts the asked-for sign in front unless the text has a minus. A zero-padded float with no
+  type letter (`${h:06}`) goes through the new `_zbr_zpad_shown`, which appends `.0` to a
+  finite whole value as `_zbr_show_float` does. The checker's `fmtSignHonoured` follows, so
+  `${h:+}` no longer warns that the sign was ignored. A literal (`${2.0:>6}`) is a
+  comptime_float and is shown as an f64; an f32 keeps its own shortest text (`1.1`). `f`, `g`
+  and any precision keep Zig's / `_zbr_ffmt`'s text: `${h:06g}` is `000002`, as Python's.
+  **V route (Fable, 94a4062, picked in the same tree):** `vSpecHole` writes `zshow_f` before the
+  pad, and `zfmt_dtext` is gone; `test/v_format_specs_test.zbr`'s six float rows moved on both
+  routes together. Fixture `test/bug760_float_spec_show_test.zbr` (every line computed with
+  Python's format() first): on the pre-fix compiler its five repro lines print `     2`,
+  `000002`, `2`, `   0`, `-00003`, and its control lines are identical. NOT covered: `f` with
+  no precision (`${2.0:>6f}` is `     2`; Python's default precision is 6, `2.000000`).
+
+---
+
 ### BUG-761: the V route does not map Zebra's sized ints or `byte` -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17 by Fable, 86c8871 picked as f799e74 (was OPEN (filed 2026-11-16; reported by Fable, the V route's owner, while bringing
   BUG-725's fixture to the V lane). **V route only; Fable's to fix** (CodeGenV.zbr / zebra_rt.v).
