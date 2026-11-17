@@ -12,7 +12,7 @@
 # Roadmap: see selfhost/TYPECHECKER_ROADMAP.md.
 
 use Ast exposing Span, ExprIntLit, StmtYield, StringPart, ExprZigLit, Module, Decl, DeclClass, DeclStruct, DeclVar, DeclMethod, DeclInit, DeclUnion, UnionVariant, Param, TypeRef, NamedTypeRef, GenericTypeRef, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprIndex, ExprTry, ExprToNonNil, ExprOrelse, ExprCatch, ExprExcept, IntBase, ExprIf, ExprCast, Arg, BinaryOp, UnaryOp, Stmt, StmtIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, StmtReturn, StmtAssert, StmtAssign, StmtWith, StmtIn, StmtRaise, StmtTryCatch, StmtDestruct, StmtPrint, StmtContract, BranchOn, ElseIf, CatchClause, AssignOp, ExprOld, ExprLambda, LambdaBody
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, nilElseNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter
 
 # ── internString — storage-boundary copy ─────────────────────────────────────
 # Every string stored in Type_ / ClassTypes / ModuleTypes / CrossModuleType
@@ -6457,7 +6457,21 @@ def walkStmt(s: Stmt, ctx: InferCtx)
                     ctx.bind(ei_cap_name, ifCaptureType(ei.cond, ctx))
                 walkStmts(ei.stmts, ctx)
             if si.else_stmts as se
+                # BUG-731: the else of `if x == nil` narrows x, as the then of `!= nil` does.
+                var ne_names = List(str)()
+                var ne_saved = List(Type_)()
+                for ne_nm in nilElseNames(si)
+                    if ctx.hasLocal(ne_nm) and not nameReassignedIn(ne_nm, se)
+                        var ne_cur: Type_ = ctx.localType(ne_nm)
+                        if ne_cur is Type_.optional as ne_inner
+                            ne_names.add(ne_nm)
+                            ne_saved.add(ne_cur)
+                            ctx.bind(ne_nm, ne_inner)
                 walkStmts(se, ctx)
+                var nei: int = ne_names.len - 1
+                while nei >= 0
+                    ctx.bind(ne_names.at(nei), ne_saved.at(nei))
+                    nei -= 1
         on Stmt.while_ as sw
             walkExpr(sw.cond, ctx)
             walkStmts(sw.stmts, ctx)
@@ -7157,6 +7171,9 @@ def checkExpr(e: Expr, expected: Type_?, file: str, line: int, col: int, ctx: In
     if containerMismatch(exp, inferred, e)
         ctx.addErr(file, d_line, d_col, "type mismatch: expected " + userTypeName(exp) + ", got " + userTypeName(inferred))
         return exp
+    if optionalContainerIntoPlain(exp, inferred)   # BUG-731
+        ctx.addErr(file, d_line, d_col, "type mismatch: expected " + userTypeName(exp) + ", got " + userTypeName(inferred) + " " + UNWRAP_HINT)
+        return exp
     if not isPrimitive(exp)
         return inferred
     if optionalIntoPlain(exp, inferred)
@@ -7189,6 +7206,17 @@ def optionalIntoPlain(declared: Type_, inferred: Type_): bool
     if inferred is Type_.optional as inner
         if isPrimitive(inner)
             return typesCompatible(declared, inner)
+    return false
+
+# BUG-731: the same for a container -- `List(T)?` passed for a `List(T)` (or a var
+# initialised from one) reached zig as "expected type 'T', found '?T'". Only the SAME kind
+# with no definite element difference counts; a difference is containerMismatch's to name.
+def optionalContainerIntoPlain(declared: Type_, inferred: Type_): bool
+    if not isContainerType(declared)
+        return false
+    if inferred is Type_.optional as inner
+        if isContainerType(inner) and containerKind(inner) == containerKind(declared)
+            return not containersDiffer(declared, inner)
     return false
 
 # BUG-626: a container whose ELEMENT type differs from the slot's -- `List(int)` passed for a
@@ -9249,6 +9277,8 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
             var nd_inferred: Type_ = inferExpr(dv.init_expr!, ctx)
             if containerMismatch(declared, nd_inferred, dv.init_expr!)   # BUG-626
                 ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + userTypeName(declared) + ", found " + userTypeName(nd_inferred))
+            else if optionalContainerIntoPlain(declared, nd_inferred)   # BUG-731
+                ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "type mismatch: expected " + userTypeName(declared) + ", found " + userTypeName(nd_inferred) + " " + UNWRAP_HINT)
         return
     if dv.init_expr == nil
         return
@@ -9704,7 +9734,21 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     else
                         checkStmts(ei.stmts, file, ctx)
                 if si.else_stmts as cse
+                    # BUG-731: the same else-narrowing walkStmts applies.
+                    var c_ne_names = List(str)()
+                    var c_ne_saved = List(Type_)()
+                    for c_ne_nm in nilElseNames(si)
+                        if ctx.hasLocal(c_ne_nm) and not nameReassignedIn(c_ne_nm, cse)
+                            var c_ne_cur: Type_ = ctx.localType(c_ne_nm)
+                            if c_ne_cur is Type_.optional as c_ne_inner
+                                c_ne_names.add(c_ne_nm)
+                                c_ne_saved.add(c_ne_cur)
+                                ctx.bind(c_ne_nm, c_ne_inner)
                     checkStmts(cse, file, ctx)
+                    var c_nei: int = c_ne_names.len - 1
+                    while c_nei >= 0
+                        ctx.bind(c_ne_names.at(c_nei), c_ne_saved.at(c_nei))
+                        c_nei -= 1
             on Stmt.while_ as sw
                 checkCallsInExpr(sw.cond, file, sw.span.line, ctx)  # BUG-142
                 checkStmts(sw.stmts, file, ctx)
@@ -9737,6 +9781,17 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                 if inferExpr(sfi.iter, ctx) is Type_.string_
                     ctx.addErr(file, sfi.span.line, sfi.span.col,
                                "cannot iterate a 'str' directly -- use s.chars() for codepoints, or index s[i] over its bytes")
+                # BUG-731: an OPTIONAL container as the loop operand (`for it in gone(d)`,
+                # gone returning `List(T)?`) reached zig as "type '?List(T)' does not
+                # support field access". Refused at the operand, naming the three ways out.
+                if inferExpr(sfi.iter, ctx) is Type_.optional as sfi_opt
+                    if isContainerType(sfi_opt)
+                        var sfi_ol: int = exprSpanLine(sfi.iter)
+                        var sfi_oc: int = exprSpanCol(sfi.iter)
+                        if sfi_ol == 0
+                            sfi_ol = sfi.span.line
+                            sfi_oc = sfi.span.col
+                        ctx.addErr(file, sfi_ol, sfi_oc, "the loop operand is a " + userTypeName(inferExpr(sfi.iter, ctx)) + " and may be nil here, so it cannot be iterated -- check it first (if xs != nil ...), unwrap it (xs!), or bind it (if xs as v ...)")
                 # BUG-552: a class or struct is iterable only through `cue next` (or a
                 # `cue iter` returning a type with one); a `def next` is an ordinary method,
                 # and the loop reached zig as "no field named 'items'".

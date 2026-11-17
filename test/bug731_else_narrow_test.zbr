@@ -1,0 +1,44 @@
+# BUG-731: the `else` of `if x == nil` runs only when x is not nil, so x is narrowed
+# there, as the then-branch of `if x != nil` always was. Controls: the or-chain form, the
+# guarded unwraps that already worked, and the early-return narrowing, unchanged.
+def gone(n: int): List(int)?
+    if n < 0
+        return nil
+    return [n, n + 1, n + 2]
+
+def label(n: int): str?
+    if n == 0
+        return nil
+    return "n${n}"
+
+def describe(n: int): str
+    var ys = gone(n)
+    if ys == nil
+        return "ys is nil"
+    else
+        return "ys count ${ys.count()} first ${ys[0]}"
+
+def both(a: int, b: int): str
+    var la = label(a)
+    var lb = label(b)
+    if la == nil or lb == nil
+        return "one missing"
+    else
+        return la + "+" + lb
+
+def early(n: int): int
+    var ys = gone(n)
+    if ys == nil
+        return -1
+    return ys.count()
+
+def main()
+    print(describe(-1))
+    print(describe(5))
+    print(both(1, 0))
+    print(both(1, 2))
+    print(early(-3))
+    print(early(1))
+    for x in gone(7)!
+        print("x ${x}")
+    print("bug731 else: OK")

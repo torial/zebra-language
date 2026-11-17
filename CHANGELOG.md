@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An optional list where a list is required is refused at the value; the `else` of
+  `if x == nil` narrows (BUG-731).** `for it in f()`, `g(f())` and `var xs: List(T) = f()`
+  with `f` returning `List(T)?` passed `-c` and failed inside zig; each is refused now, naming
+  `!`, a nil check and `if ... as`. The `else` branch of `if x == nil` (or an or-chain of them)
+  treats every name as non-nil, as the then-branch of `!= nil` already did.
 - **A function that can fail is refused as a function value (BUG-730).** No `def(...)` type
   can raise, so passing a throwing function as an argument, a var init or a list element was
   refused by zig inside `zebra_rt.zig`, with no `.zbr` line. It is refused at the value now,

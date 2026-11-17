@@ -1,0 +1,19 @@
+# BUG-731: an optional list used where a list is required is refused at -c, at the value,
+# rather than by zig ("does not support field access", "expected type 'T', found '?T'").
+def gone(n: int): List(int)?
+    if n < 0
+        return nil
+    return [n, n + 1]
+
+def total(xs: List(int)): int
+    var t = 0
+    for x in xs
+        t += x
+    return t
+
+def main()
+    for it in gone(2)
+        print(it)
+    print(total(gone(3)))
+    var ys: List(int) = gone(4)
+    print(ys.count())

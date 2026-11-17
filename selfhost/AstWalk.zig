@@ -24,6 +24,7 @@ const _zbr_ty_DictEntry = _zbr_mod_Ast._zbr_ty_DictEntry;
 const _zbr_ty_StringPart = _zbr_mod_Ast._zbr_ty_StringPart;
 const _zbr_ty_LambdaBody = _zbr_mod_Ast._zbr_ty_LambdaBody;
 const _zbr_ty_Stmt = _zbr_mod_Ast._zbr_ty_Stmt;
+const _zbr_ty_StmtIf = _zbr_mod_Ast._zbr_ty_StmtIf;
 const _zbr_ty_BinaryOp = _zbr_mod_Ast._zbr_ty_BinaryOp;
 // zbr:selfhost/AstWalk.zbr:64
 pub fn _zbr_fn_collectOldNodesInto(expr: _zbr_ty_Expr, out: _ZbrList(_zbr_ty_ExprOld)) void {
@@ -1525,214 +1526,228 @@ pub fn _zbr_fn_collectNilGuarded(e: _zbr_ty_Expr, out: _ZbrList([]const u8)) voi
     }
 }
 
-// zbr:selfhost/AstWalk.zbr:764
+// zbr:selfhost/AstWalk.zbr:767
+pub fn _zbr_fn_nilElseNames(s: _zbr_ty_StmtIf) _ZbrList([]const u8) {
+    @setRuntimeSafety(true);
+// zbr:selfhost/AstWalk.zbr:768
+    const out = _zbr_new(_ZbrList([]const u8));
+// zbr:selfhost/AstWalk.zbr:769
+    if ((((s.is_capture == null) and (@as(i64, @intCast(s.else_ifs.items.len)) == 0)) and (s.else_stmts != null))) {
+// zbr:selfhost/AstWalk.zbr:770
+        _zbr_fn_collectNilGuarded(s.cond.*, out);
+    }
+// zbr:selfhost/AstWalk.zbr:771
+    return out;
+}
+
+// zbr:selfhost/AstWalk.zbr:774
 pub fn _zbr_fn_stmtsAlwaysExit(ss: _ZbrList(_zbr_ty_Stmt)) bool {
     @setRuntimeSafety(true);
-// zbr:selfhost/AstWalk.zbr:765
+// zbr:selfhost/AstWalk.zbr:775
     if ((@as(i64, @intCast(ss.items.len)) == 0)) {
-// zbr:selfhost/AstWalk.zbr:766
+// zbr:selfhost/AstWalk.zbr:776
         return false;
     }
-// zbr:selfhost/AstWalk.zbr:767
+// zbr:selfhost/AstWalk.zbr:777
     const last: _zbr_ty_Stmt = _zbr_at(ss.items, (@as(i64, @intCast(ss.items.len)) - 1));
-// zbr:selfhost/AstWalk.zbr:768
+// zbr:selfhost/AstWalk.zbr:778
     return ((((_zbr_val(last) == .return_) or (_zbr_val(last) == .raise_)) or (_zbr_val(last) == .break_)) or (_zbr_val(last) == .continue_));
 }
 
-// zbr:selfhost/AstWalk.zbr:772
+// zbr:selfhost/AstWalk.zbr:782
 pub fn _zbr_fn_earlyExitNilNames(s: _zbr_ty_Stmt) _ZbrList([]const u8) {
     @setRuntimeSafety(true);
-// zbr:selfhost/AstWalk.zbr:773
+// zbr:selfhost/AstWalk.zbr:783
     const out = _zbr_new(_ZbrList([]const u8));
-// zbr:selfhost/AstWalk.zbr:774
+// zbr:selfhost/AstWalk.zbr:784
     if (_zbr_val(s) == .if_) {
         const si_ptr = s.if_;
         const si = si_ptr.*;
-// zbr:selfhost/AstWalk.zbr:775
+// zbr:selfhost/AstWalk.zbr:785
         if ((((@as(i64, @intCast(si.else_ifs.items.len)) == 0) and (si.else_stmts == null)) and (si.is_capture == null))) {
-// zbr:selfhost/AstWalk.zbr:776
+// zbr:selfhost/AstWalk.zbr:786
             if (_zbr_fn_stmtsAlwaysExit(si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:777
+// zbr:selfhost/AstWalk.zbr:787
                 _zbr_fn_collectNilGuarded(si.cond.*, out);
             }
         }
     }
-// zbr:selfhost/AstWalk.zbr:778
+// zbr:selfhost/AstWalk.zbr:788
     return out;
 }
 
-// zbr:selfhost/AstWalk.zbr:787
+// zbr:selfhost/AstWalk.zbr:797
 pub fn _zbr_fn_nameReassignedIn(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt)) bool {
     @setRuntimeSafety(true);
-// zbr:selfhost/AstWalk.zbr:788
+// zbr:selfhost/AstWalk.zbr:798
     for (stmts.items) |st| {
-// zbr:selfhost/AstWalk.zbr:789
+// zbr:selfhost/AstWalk.zbr:799
         if (_zbr_fn_stmtRebinds(name, st)) {
-// zbr:selfhost/AstWalk.zbr:790
+// zbr:selfhost/AstWalk.zbr:800
             return true;
         }
     }
-// zbr:selfhost/AstWalk.zbr:791
+// zbr:selfhost/AstWalk.zbr:801
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:797
+// zbr:selfhost/AstWalk.zbr:807
 pub fn _zbr_fn_nameReassignedAfter(name: []const u8, stmts: _ZbrList(_zbr_ty_Stmt), guard_idx: i64) bool {
     @setRuntimeSafety(true);
-// zbr:selfhost/AstWalk.zbr:798
+// zbr:selfhost/AstWalk.zbr:808
     var k: i64 = (guard_idx + 1);
-// zbr:selfhost/AstWalk.zbr:799
+// zbr:selfhost/AstWalk.zbr:809
     while (_zebra_lt(k, @as(i64, @intCast(stmts.items.len)))) {
-// zbr:selfhost/AstWalk.zbr:800
+// zbr:selfhost/AstWalk.zbr:810
         if (_zbr_fn_stmtRebinds(name, _zbr_at(stmts.items, k))) {
-// zbr:selfhost/AstWalk.zbr:801
+// zbr:selfhost/AstWalk.zbr:811
             return true;
         }
-// zbr:selfhost/AstWalk.zbr:802
+// zbr:selfhost/AstWalk.zbr:812
         k += 1;
     }
-// zbr:selfhost/AstWalk.zbr:803
+// zbr:selfhost/AstWalk.zbr:813
     return false;
 }
 
-// zbr:selfhost/AstWalk.zbr:805
+// zbr:selfhost/AstWalk.zbr:815
 pub fn _zbr_fn_stmtRebinds(name: []const u8, st: _zbr_ty_Stmt) bool {
     @setRuntimeSafety(true);
-// zbr:selfhost/AstWalk.zbr:806
+// zbr:selfhost/AstWalk.zbr:816
     switch (_zbr_val(st)) {
         .assign => |_ptr_a| {
             const a = _ptr_a.*;
-// zbr:selfhost/AstWalk.zbr:808
+// zbr:selfhost/AstWalk.zbr:818
             if (_zbr_val(a.target.*) == .ident) {
                 const aid = a.target.*.ident;
-// zbr:selfhost/AstWalk.zbr:809
+// zbr:selfhost/AstWalk.zbr:819
                 return std.mem.eql(u8, aid.name, name);
             }
         },
         .copy_out => |_ptr_co| {
             const co = _ptr_co.*;
-// zbr:selfhost/AstWalk.zbr:811
+// zbr:selfhost/AstWalk.zbr:821
             if (co.deep) {
-// zbr:selfhost/AstWalk.zbr:812
+// zbr:selfhost/AstWalk.zbr:822
                 if (_zbr_val(co.target) == .ident) {
                     const cid = co.target.ident;
-// zbr:selfhost/AstWalk.zbr:813
+// zbr:selfhost/AstWalk.zbr:823
                     return std.mem.eql(u8, cid.name, name);
                 }
             }
         },
         .var_ => |_ptr_dv| {
             const dv = _ptr_dv.*;
-// zbr:selfhost/AstWalk.zbr:815
+// zbr:selfhost/AstWalk.zbr:825
             return std.mem.eql(u8, dv.name, name);
         },
         .destruct => |_ptr_dd| {
             const dd = _ptr_dd.*;
-// zbr:selfhost/AstWalk.zbr:817
+// zbr:selfhost/AstWalk.zbr:827
             for (dd.names.items) |dn| {
-// zbr:selfhost/AstWalk.zbr:818
+// zbr:selfhost/AstWalk.zbr:828
                 if (std.mem.eql(u8, dn, name)) {
-// zbr:selfhost/AstWalk.zbr:819
+// zbr:selfhost/AstWalk.zbr:829
                     return true;
                 }
             }
         },
         .if_ => |_ptr_si| {
             const si = _ptr_si.*;
-// zbr:selfhost/AstWalk.zbr:821
+// zbr:selfhost/AstWalk.zbr:831
             if (_zbr_fn_nameReassignedIn(name, si.then_stmts)) {
-// zbr:selfhost/AstWalk.zbr:822
+// zbr:selfhost/AstWalk.zbr:832
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:823
+// zbr:selfhost/AstWalk.zbr:833
             for (si.else_ifs.items) |ei| {
-// zbr:selfhost/AstWalk.zbr:824
+// zbr:selfhost/AstWalk.zbr:834
                 if (_zbr_fn_nameReassignedIn(name, ei.stmts)) {
-// zbr:selfhost/AstWalk.zbr:825
+// zbr:selfhost/AstWalk.zbr:835
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:826
+// zbr:selfhost/AstWalk.zbr:836
             if (si.else_stmts) |se| {
-// zbr:selfhost/AstWalk.zbr:827
+// zbr:selfhost/AstWalk.zbr:837
                 return _zbr_fn_nameReassignedIn(name, se);
             }
         },
         .while_ => |_ptr_w| {
             const w = _ptr_w.*;
-// zbr:selfhost/AstWalk.zbr:829
+// zbr:selfhost/AstWalk.zbr:839
             return _zbr_fn_nameReassignedIn(name, w.stmts);
         },
         .for_in => |_ptr_f| {
             const f = _ptr_f.*;
-// zbr:selfhost/AstWalk.zbr:831
+// zbr:selfhost/AstWalk.zbr:841
             if (_zbr_fn_nameReassignedIn(name, f.stmts)) {
-// zbr:selfhost/AstWalk.zbr:832
+// zbr:selfhost/AstWalk.zbr:842
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:833
+// zbr:selfhost/AstWalk.zbr:843
             if (f.else_) |fe| {
-// zbr:selfhost/AstWalk.zbr:834
+// zbr:selfhost/AstWalk.zbr:844
                 return _zbr_fn_nameReassignedIn(name, fe);
             }
         },
         .for_num => |_ptr_fnum| {
             const fnum = _ptr_fnum.*;
-// zbr:selfhost/AstWalk.zbr:836
+// zbr:selfhost/AstWalk.zbr:846
             return _zbr_fn_nameReassignedIn(name, fnum.stmts);
         },
         .branch_ => |_ptr_b| {
             const b = _ptr_b.*;
-// zbr:selfhost/AstWalk.zbr:838
+// zbr:selfhost/AstWalk.zbr:848
             for (b.cases.items) |c| {
-// zbr:selfhost/AstWalk.zbr:839
+// zbr:selfhost/AstWalk.zbr:849
                 if (_zbr_fn_nameReassignedIn(name, c.stmts)) {
-// zbr:selfhost/AstWalk.zbr:840
+// zbr:selfhost/AstWalk.zbr:850
                     return true;
                 }
             }
-// zbr:selfhost/AstWalk.zbr:841
+// zbr:selfhost/AstWalk.zbr:851
             if (b.else_) |be| {
-// zbr:selfhost/AstWalk.zbr:842
+// zbr:selfhost/AstWalk.zbr:852
                 return _zbr_fn_nameReassignedIn(name, be);
             }
         },
         .try_catch => |_ptr_tc| {
             const tc = _ptr_tc.*;
-// zbr:selfhost/AstWalk.zbr:844
+// zbr:selfhost/AstWalk.zbr:854
             if (_zbr_fn_nameReassignedIn(name, tc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:845
+// zbr:selfhost/AstWalk.zbr:855
                 return true;
             }
-// zbr:selfhost/AstWalk.zbr:846
+// zbr:selfhost/AstWalk.zbr:856
             for (tc.clauses.items) |cc| {
-// zbr:selfhost/AstWalk.zbr:847
+// zbr:selfhost/AstWalk.zbr:857
                 if (_zbr_fn_nameReassignedIn(name, cc.stmts)) {
-// zbr:selfhost/AstWalk.zbr:848
+// zbr:selfhost/AstWalk.zbr:858
                     return true;
                 }
             }
         },
         .with_ => |_ptr_sw| {
             const sw = _ptr_sw.*;
-// zbr:selfhost/AstWalk.zbr:850
+// zbr:selfhost/AstWalk.zbr:860
             return _zbr_fn_nameReassignedIn(name, sw.stmts);
         },
         .in_scope => |_ptr_sn| {
             const sn = _ptr_sn.*;
-// zbr:selfhost/AstWalk.zbr:852
+// zbr:selfhost/AstWalk.zbr:862
             return _zbr_fn_nameReassignedIn(name, sn.stmts);
         },
         .allocate_ => |_ptr_sa| {
             const sa = _ptr_sa.*;
-// zbr:selfhost/AstWalk.zbr:854
+// zbr:selfhost/AstWalk.zbr:864
             return _zbr_fn_nameReassignedIn(name, sa.stmts);
         },
         else => {
             // pass
         },
     }
-// zbr:selfhost/AstWalk.zbr:857
+// zbr:selfhost/AstWalk.zbr:867
     return false;
 }
 

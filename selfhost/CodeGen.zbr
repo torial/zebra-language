@@ -24,7 +24,7 @@
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
+use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, nilElseNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
 use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex, serveRestartArgIndex
 
 
@@ -11819,7 +11819,28 @@ struct Generator
         if si.else_stmts != nil
             var es = si.else_stmts!
             w.emit(" else {\n")
-            ig.genStmts(es)
+            # BUG-731: the else of `if x == nil` narrows x exactly as the then of
+            # `x != nil` does above (nilElseNames gives nothing for any other shape).
+            var else_g = ig
+            var ne_names = List(str)()
+            var ne_saveds = List(Type_)()
+            var ne_assigned = StrSet()
+            collectAssignedIdents(es, ne_assigned)
+            for ne_nm in nilElseNames(si)
+                if not ne_assigned.contains_(ne_nm) and not nameReassignedIn(ne_nm, es)
+                    else_g = else_g.withNilNarrowed(ne_nm)
+                    if .infer_ctx != nil
+                        if .infer_ctx!.hasLocal(ne_nm)
+                            var ne_saved: Type_ = .infer_ctx!.localType(ne_nm)
+                            if ne_saved is Type_.optional as ne_inner
+                                .infer_ctx!.bind(ne_nm, ne_inner)
+                                ne_names.add(ne_nm)
+                                ne_saveds.add(ne_saved)
+            else_g.genStmts(es)
+            var nei: int = ne_names.len - 1
+            while nei >= 0
+                .infer_ctx!.bind(ne_names.at(nei), ne_saveds.at(nei))
+                nei -= 1
             writeIndent()
             w.emit("}")
         w.emit("\n")

@@ -24,7 +24,7 @@
 #
 # Keep it that way — a dependency added here can re-create the cycle from a distance.
 
-use Ast exposing Expr, ExprOld, Arg, DictEntry, StringPart, LambdaBody, Stmt, BinaryOp
+use Ast exposing Expr, ExprOld, Arg, DictEntry, StringPart, LambdaBody, Stmt, StmtIf, BinaryOp
 
 # ── collectOldNodes ───────────────────────────────────────────────────────────
 # TWO functions on purpose, and the split is forced by a compiler bug rather than
@@ -759,6 +759,16 @@ def collectNilGuarded(e: Expr, out: List(str))
             else if b.left is Expr.nil_
                 if b.right is Expr.ident as rid
                     out.add(rid.name)
+
+# BUG-731: the ELSE of `if a == nil` (or `a == nil or b == nil ...`, whose negation is the
+# and-chain of `!=`) runs only when every named value is non-nil. Only a plain `if`/`else`
+# with no `else if` and no capture: an `else if` condition is emitted outside the narrowing,
+# and the three walks must agree on exactly where it applies.
+def nilElseNames(s: StmtIf): List(str)
+    var out = List(str)()
+    if s.is_capture == nil and s.else_ifs.len == 0 and s.else_stmts != nil
+        collectNilGuarded(s.cond, out)
+    return out
 
 # A block that cannot fall through: it ENDS in return, raise, break or continue.
 def stmtsAlwaysExit(ss: List(Stmt)): bool

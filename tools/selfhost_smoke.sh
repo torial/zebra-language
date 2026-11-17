@@ -2895,6 +2895,14 @@ smoke_tc_fail test/bug730_throwing_fn_value_test.zbr "bug730_throwing_fn_value_t
 smoke_run test/bug730_fn_value_control_test.zbr "plain 3"
 smoke_run test/bug730_fn_value_control_test.zbr "handled error"
 smoke_run test/bug730_fn_value_control_test.zbr "bug730 control: OK"
+# BUG-731: an optional list where a list is required -- a `for` operand, an argument, a var
+# init -- is refused at the value; the else of `if x == nil` narrows x.
+smoke_tc_fail test/bug731_optional_list_refused_test.zbr "bug731_optional_list_refused_test.zbr:15:15: error: the loop operand is a List(int)? and may be nil here"
+smoke_tc_fail test/bug731_optional_list_refused_test.zbr "bug731_optional_list_refused_test.zbr:17:17: error: type mismatch: expected List(int), got List(int)?"
+smoke_tc_fail test/bug731_optional_list_refused_test.zbr "bug731_optional_list_refused_test.zbr:18:25: error: type mismatch: expected List(int), found List(int)?"
+smoke_run test/bug731_else_narrow_test.zbr "ys count 3 first 5"
+smoke_run test/bug731_else_narrow_test.zbr "n1+n2"
+smoke_run test/bug731_else_narrow_test.zbr "bug731 else: OK"
 # BUG-488: `.add` on a captured class inside a closure is the class's method.
 smoke_run test/bug488_captured_class_add_test.zbr "bug488: OK"
 # BUG-480: a bare throwing method call from a non-throwing caller is refused.

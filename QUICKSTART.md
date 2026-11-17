@@ -1305,7 +1305,8 @@ def area(w: int?, h: int?): int
     return w * h                      # w and h are int here
 
 # An optional cannot be an operand: `x + 1` with `x: int?` is refused ("'x' may be nil
-# here") -- narrow it (above), unwrap it (`x!`), or default it (`x orelse 0`).
+# here") -- narrow it (above), unwrap it (`x!`), or default it (`x orelse 0`). The same
+# holds for an optional list as a `for` operand or passed where a `List(T)` is wanted.
 #
 # Auto-narrowing scope: applies to a LOCAL (or parameter) that is NOT rebound in the
 # narrowed region -- a `x = ...` anywhere in it, even in a nested loop, branch arm or
@@ -1315,9 +1316,11 @@ def area(w: int?, h: int?): int
 #   - EARLY EXIT (2026-09-30): after `if x == nil` (or `x == nil or y == nil`) with no
 #     else, whose body always leaves (ends in `return`, `raise`, `break` or `continue`),
 #     the names are non-optional for the REST of the enclosing block.
+#   - `if x == nil` / `else` (BUG-731): the else-block, and every name of an
+#     `x == nil or y == nil` chain -- when there is no `else if`.
 # NOT narrowed -- use explicit `x!` for these:
 #   - inside the condition itself: `if x != nil and x.ok` (write `x!.ok`)
-#   - the `== nil` else-branch; non-local receivers (`if obj.field != nil`)
+#   - an `else if` after `if x == nil`; non-local receivers (`if obj.field != nil`)
 # A narrowed name is not optional, so comparing it with nil again is refused.
 
 # Optional-unwrap binding form (also non-optional inside):

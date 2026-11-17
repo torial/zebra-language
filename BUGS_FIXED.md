@@ -6,6 +6,38 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-731: an optional list used as a list is refused only by zig, and the `else` of `if x == nil` does not narrow -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-14; found by the GameEngine session; repros
+  `C:\tmp\conc\optprobe\p_for.zbr`, `p_pass.zbr`, `n_narrow.zbr`, reproduced on d9067e4)
+- **Repro:** `def gone(d: SqliteDb): List(ItemRow)?`. (1) `for it in gone(d)` passes `-c`; zig:
+  "type '?List(ItemRow)' does not support field access". (2) `page(gone(d))` where
+  `page(xs: List(ItemRow))` passes `-c`; zig: "expected type 'T', found '?T'". (3)
+  `if ys == nil` / `print("ys is nil")` / `else` / `print("ys count ${ys.count()}")` is refused
+  at `-c` (n_narrow.zbr:26:27, "'ys' may be nil here"), although the `else` branch can only run
+  when `ys` is not nil; the early-return form of the same test narrows.
+- **Why it matters:** (1) and (2) are the nil-safety rule failing open into zig's words; (3)
+  refuses code the language says is safe.
+- **Fix shape:** the checker refuses an optional where a non-optional list is required (`for`
+  operand, argument), naming `!` and `if ... as`; narrowing applies to the `else` of `== nil` as
+  it does to the `then` of `!= nil`.
+- **Control when fixing:** (1) and (2) refused at `-c` at their lines; (3) prints "ys is nil";
+  the early-return narrowing is unchanged.
+- **Fix:** (1) the checker's `for` arm refuses an operand whose type is an optional
+  container, at the operand, naming `!`, a nil check and `if ... as`. (2)
+  `optionalContainerIntoPlain` beside BUG-379's primitive check: a `List(T)?` (or Set / Chan /
+  HashMap) into a slot of the same kind -- an argument, a return, a var init -- is refused with
+  the same UNWRAP_HINT; a definite element difference stays BUG-626's message. (3)
+  `AstWalk.nilElseNames`: the else of a plain `if a == nil` / `a == nil or b == nil ...` narrows
+  every name, at the three sites the then-narrowing already shares (both checker walks and
+  `genIf`, which emits `x.?` there), under the same not-rebound guard. Red-checked: on
+  5b941c9 the refused fixture passes `-c` with exit 0 and the narrowing fixture is refused at
+  19:28 / 27:16 / 27:27. Fixtures `test/bug731_optional_list_refused_test.zbr` and
+  `test/bug731_else_narrow_test.zbr` (with the early-return control). NOT covered: an
+  `if x == nil` with an `else if` (the else-if condition is emitted outside any narrowing, so
+  nothing narrows there), and an optional CLASS as a `for` operand (left to zig).
+
+---
+
 ### BUG-730: a throwing function passed where a non-throwing `def` type is expected is refused only by zig, inside zebra_rt.zig -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-14; found by the GameEngine session; repro
   `C:\tmp\conc\optprobe\t_value.zbr`, reproduced on d9067e4)

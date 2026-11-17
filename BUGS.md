@@ -95,25 +95,6 @@
 
 ---
 
-### BUG-731: an optional list used as a list is refused only by zig, and the `else` of `if x == nil` does not narrow
-- **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; repros
-  `C:\tmp\conc\optprobe\p_for.zbr`, `p_pass.zbr`, `n_narrow.zbr`, reproduced on d9067e4)
-- **Repro:** `def gone(d: SqliteDb): List(ItemRow)?`. (1) `for it in gone(d)` passes `-c`; zig:
-  "type '?List(ItemRow)' does not support field access". (2) `page(gone(d))` where
-  `page(xs: List(ItemRow))` passes `-c`; zig: "expected type 'T', found '?T'". (3)
-  `if ys == nil` / `print("ys is nil")` / `else` / `print("ys count ${ys.count()}")` is refused
-  at `-c` (n_narrow.zbr:26:27, "'ys' may be nil here"), although the `else` branch can only run
-  when `ys` is not nil; the early-return form of the same test narrows.
-- **Why it matters:** (1) and (2) are the nil-safety rule failing open into zig's words; (3)
-  refuses code the language says is safe.
-- **Fix shape:** the checker refuses an optional where a non-optional list is required (`for`
-  operand, argument), naming `!` and `if ... as`; narrowing applies to the `else` of `== nil` as
-  it does to the `then` of `!= nil`.
-- **Control when fixing:** (1) and (2) refused at `-c` at their lines; (3) prints "ys is nil";
-  the early-return narrowing is unchanged.
-
----
-
 ### BUG-732: `use risky exposing risky` (a module and a function it exposes sharing a name) fails inside zig
 - **Status:** OPEN (filed 2026-11-14; found by the GameEngine session; reproduced on d9067e4)
 - **Repro:** `risky.zbr` is `def risky(n: int): int` / `return n * 2`; `main.zbr` is
