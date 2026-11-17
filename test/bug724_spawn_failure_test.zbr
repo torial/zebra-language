@@ -1,0 +1,22 @@
+# BUG-724: a program that cannot be started was reported as the bare text "spawn failed"
+# (sys.run) or as a silent -1 (sys.exec_inherit) -- naming neither the program nor why.
+# Both now name argv[0] and the error; "spawn failed" stays the first words.
+
+def main()
+    if sys.args().contains("--zz-724-child")
+        print("child ran")
+        return
+    var r = sys.run(["zz_no_such_program_724", "--x"])
+    assert r.exit_code == -1
+    assert r.stderr.startsWith("spawn failed: ")
+    assert r.stderr.contains("'zz_no_such_program_724'")
+    assert r.stderr.contains("FileNotFound")
+    # exec_inherit prints the same account on stderr; the smoke harness reads it there.
+    var rc = sys.exec_inherit(["zz_no_such_inherit_724"])
+    assert rc == -1
+    # Control: a program that does start reports no failure and its output arrives.
+    var ok = sys.run([sys.selfExe(), "--zz-724-child"])
+    assert ok.exit_code == 0
+    assert ok.stdout.contains("child ran")
+    assert not ok.stderr.contains("spawn failed")
+    print("bug724_spawn_failure: OK")

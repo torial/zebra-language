@@ -6,6 +6,71 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-725: a runtime `int` formatted with a width prints a `+` sign -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-13; found building the Pocket Lab manager's dialogue report))
+- **Repro:** `var n = sys.args().count()` (1), then
+  `print("[${n:>3}] [${n:3}] [${n:<3}] [${7:>3}] [${n:03}] [${-n:>3}]")` prints
+  `[ +1] [ +1] [+1 ] [  7] [001] [ -1]`. A width on a RUNTIME signed int adds a `+` the program
+  never asked for; the literal `7` and the zero-padded form are right. Python prints
+  `[  1] [  1] [1  ] [  7] [001] [ -1]` for the same specs, and QUICKSTART's format-spec section
+  describes Python's meaning.
+- **Likely cause:** the hole emits Zig's `{d:>3}` over an `i64`; Zig's integer formatting shows the
+  sign of a signed value when a width is given. A `comptime_int` (the literal) takes another path.
+- **Fix shape:** format a signed int with a width the way `_zbr_zpad` already does for the `0`
+  flag -- through a runtime helper that writes the sign only when negative (or when the spec has
+  `+`) -- and pin every alignment.
+- **Control when fixing:** the repro prints `[  1] [  1] [1  ] [  7] [001] [ -1]`; `${n:+>3}` and
+  `${n:+}` still show the sign where the spec asks for it.
+- **Fix:** a signed-int hole (`int`, `intN`) with a width or a sign flag, no `0` flag and no
+  precision becomes `{s:<fill><align><width>}` over the runtime's `_zbr_itext(x, sign)`, which
+  writes the sign only for a negative value or when the spec asks (`+` -> `+1`, ` ` -> ` 1`);
+  the alignment is always spelt out because `{s}` aligns left and numbers right
+  (`intSignArg` / `intSignFmt`, CodeGen; `parseFmtSpec` now returns the sign as parts[5]).
+  The sign flag was parsed and DROPPED before, so `${n:+}` printed `1`; BUG-432's warning now
+  stays quiet for a sign the hole honours (`fmtSignHonoured`, TypeChecker) and still fires for
+  a float, or with the `0` flag.
+- **Not done:** `${n:+04}` still prints `0001` -- `_zbr_zpad` (the `0` flag) has no sign
+  argument -- and still warns that the `+` was ignored, so it is said, not silent.
+- **Pinned by:** `test/bug725_int_width_sign_test.zbr` (smoke_run, and smoke_run_flag
+  --warnings-as-errors: 24 holes, every expected value checked against Python 3.11's `format`).
+  Red first: the probe on the old compiler printed `[ +1] [ +1] [+1 ] ... [*+1**] ... [ +3]`
+  and `${n:+}` -> `[1]`.
+
+---
+
+### BUG-724: a zig the compiler cannot start is reported as "spawn failed", naming nothing -- FIXED 2026-11-16
+- **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-13; found running the Pocket Lab manager's tools))
+- **Repro (Git Bash):** `source tools/zig_toolchain.sh` (exports `ZEBRA_ZIG=/c/Users/.../zig.exe`,
+  a POSIX-style path), then `MSYS_NO_PATHCONV=1 zebra prog.zbr`. Git Bash normally rewrites that
+  path to Windows form for a native program; `MSYS_NO_PATHCONV=1` turns the rewrite off for the
+  environment too, so the compiler tries to start a zig at a path Windows cannot find. All it
+  prints is `spawn failed` -- not which program, not the path, not that the path came from
+  `ZEBRA_ZIG`. It took six runs to isolate, two of them misread (one success came from a shell
+  that had not sourced the toolchain, so `ZEBRA_ZIG` was unset).
+- **Where:** `_sys_run` turns `error.FileNotFound` into the bare text "spawn failed"; main's zig
+  resolution (`getenv("ZEBRA_ZIG")`) takes the variable without checking that it exists.
+- **Fix shape:** check `ZEBRA_ZIG` when it is resolved and refuse naming it ("ZEBRA_ZIG names
+  /c/... which does not exist"; on Windows add that a /c/... path is Git Bash's spelling); and
+  make the spawn failure name argv[0].
+- **Control when fixing:** `ZEBRA_ZIG=/nonexistent/zig.exe zebra hello.zbr` says ZEBRA_ZIG and the
+  path; a valid `ZEBRA_ZIG` unchanged.
+- **Fix:** `zigExe()` (main.zbr) checks an explicit `ZEBRA_ZIG` when it is resolved: a path
+  (one with a separator) that exists neither as given nor with `.exe` is refused, exit 2,
+  "zebra: ZEBRA_ZIG names <path>, which does not exist", and on Windows a `/c/...` spelling is
+  named as Git Bash's, with `MSYS_NO_PATHCONV=1` as the reason. A bare name stays a PATH lookup.
+  The runtime's `_sys_run` reports a child that never started as
+  `spawn failed: could not start '<argv[0]>' (<error>)` for EVERY error, not only FileNotFound,
+  and `_sys_exec_inherit`, which returned -1 and said nothing, prints the same line on stderr
+  (`_sys_spawn_failure`, stdlib_preamble.zig).
+- **Pinned by:** `tools/cli_check.sh` (a relative ZEBRA_ZIG that does not exist; the `/c/...`
+  repro under MSYS_NO_PATHCONV=1 on Windows; the pinned ZEBRA_ZIG still runs a program) and
+  `test/bug724_spawn_failure_test.zbr` (smoke_run x2: sys.run's stderr names the program and
+  the error, exec_inherit's line reaches stderr, a child that starts reports nothing). Red
+  first: the old compiler printed the bare `spawn failed`, and the old runtime failed the
+  fixture's assert at line 11.
+
+---
+
 ### BUG-758: `var ys = xs.map(f)` unannotated, then `ys[i]`, passes `-c` and fails inside zig -- FIXED 2026-11-16
 - **Status:** FIXED 2026-11-16 (was OPEN (filed 2026-11-16; found writing BUG-755's fixture))
 - **Repro:** `var xs = [1, 2, 3]` / `var ys = xs.map(def(v) = v * 2)` / `print(ys[2])`. `-c`

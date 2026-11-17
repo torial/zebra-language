@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# pins: BUG-724 a ZEBRA_ZIG that does not exist is refused naming the variable (and Git Bash's /c/... spelling on Windows)
 # pins: BUG-706 the run mode passes the program's exit code through (fast and LLVM paths); a zig refusal stays 1
 # pins: BUG-720 `zebra build` builds a SQLite program that runs alone, through --emit-exe (the run path's link step); --release reaches the targets
 # pins: BUG-671 a front-end refusal (post-emit, or raised by a later dep) leaves no .zig in --output-dir; a zig failure keeps its .zig
@@ -894,6 +895,31 @@ chk "...this checkout's zebra run inside a clone takes ITS OWN runtime, not the 
     "$(case "$R_DEV" in "") echo 0;; *) echo 1;; esac)" "markers=[$R_DEV]"
 chk "...an installed zebra run inside a clone takes the runtime BESIDE it" \
     "$(case "$R_INST" in "ZZ543_INSTALLED ") echo 0;; *) echo 1;; esac)" "markers=[$R_INST]"
+
+# ---- ZEBRA_ZIG that names nothing (BUG-724, 2026-11-16) -----------------------------
+# A ZEBRA_ZIG that did not exist surfaced as a bare "spawn failed" from the first zig
+# call -- no program, no path, no variable. It is refused when resolved now. The path is
+# RELATIVE on purpose: Git Bash rewrites an absolute /x/... in the environment of a native
+# program, and the leg must see the same string on every OS.
+( cd "$W" && ZEBRA_ZIG="no_such_dir_724/zig.exe" timeout "$TMO" "$ZEBRA" hello.zbr >"$O" 2>"$E" </dev/null ); RC=$?
+ERR=$(tr -d '\r' < "$E")
+chk "a ZEBRA_ZIG that does not exist is refused, naming the variable and the path (BUG-724)" \
+    "$([ "$RC" = 2 ] && case "$ERR" in *"ZEBRA_ZIG names no_such_dir_724/zig.exe, which does not exist"*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$RC stderr=[$(echo "$ERR" | head -2 | tr '\n' ' ')]"
+if [ -n "$EXE_EXT" ]; then
+    # The repro itself: MSYS_NO_PATHCONV=1 keeps Git Bash from rewriting /c/... for zebra.exe.
+    ( cd "$W" && MSYS_NO_PATHCONV=1 ZEBRA_ZIG="/c/no_such_dir_724/zig.exe" timeout "$TMO" "$ZEBRA" hello.zbr >"$O" 2>"$E" </dev/null ); RC=$?
+    ERR=$(tr -d '\r' < "$E")
+    chk "...and a /c/... spelling on Windows is named as Git Bash's (the BUG-724 repro)" \
+        "$([ "$RC" = 2 ] && case "$ERR" in *"Git Bash's spelling"*) echo 0;; *) echo 1;; esac || echo 1)" \
+        "exit=$RC stderr=[$(echo "$ERR" | head -2 | tr '\n' ' ')]"
+else
+    echo "  skip   the /c/... Git Bash leg (not Windows)"
+fi
+# Control: the pinned ZEBRA_ZIG this gate runs under still builds and runs a program.
+( cd "$W" && timeout "$TMO" "$ZEBRA" hello.zbr >"$O" 2>"$E" </dev/null ); RC=$?
+chk "...control: a ZEBRA_ZIG that exists ($(basename "${ZEBRA_ZIG:-unset}")) still runs a program" \
+    "$([ "$RC" = 0 ] && [ "$(tr -d '\r' < "$O")" = "hi" ] && echo 0 || echo 1)" "exit=$RC out=[$(tr -d '\r' < "$O")]"
 
 echo
 printf '  %s passed, %s pinned (known-broken), %s FAILED\n' "$pass" "$xfail" "$fail"

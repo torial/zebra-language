@@ -95,43 +95,6 @@
 
 ---
 
-### BUG-724: a zig the compiler cannot start is reported as "spawn failed", naming nothing
-- **Status:** OPEN (filed 2026-11-13; found running the Pocket Lab manager's tools)
-- **Repro (Git Bash):** `source tools/zig_toolchain.sh` (exports `ZEBRA_ZIG=/c/Users/.../zig.exe`,
-  a POSIX-style path), then `MSYS_NO_PATHCONV=1 zebra prog.zbr`. Git Bash normally rewrites that
-  path to Windows form for a native program; `MSYS_NO_PATHCONV=1` turns the rewrite off for the
-  environment too, so the compiler tries to start a zig at a path Windows cannot find. All it
-  prints is `spawn failed` -- not which program, not the path, not that the path came from
-  `ZEBRA_ZIG`. It took six runs to isolate, two of them misread (one success came from a shell
-  that had not sourced the toolchain, so `ZEBRA_ZIG` was unset).
-- **Where:** `_sys_run` turns `error.FileNotFound` into the bare text "spawn failed"; main's zig
-  resolution (`getenv("ZEBRA_ZIG")`) takes the variable without checking that it exists.
-- **Fix shape:** check `ZEBRA_ZIG` when it is resolved and refuse naming it ("ZEBRA_ZIG names
-  /c/... which does not exist"; on Windows add that a /c/... path is Git Bash's spelling); and
-  make the spawn failure name argv[0].
-- **Control when fixing:** `ZEBRA_ZIG=/nonexistent/zig.exe zebra hello.zbr` says ZEBRA_ZIG and the
-  path; a valid `ZEBRA_ZIG` unchanged.
-
----
-
-### BUG-725: a runtime `int` formatted with a width prints a `+` sign
-- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's dialogue report)
-- **Repro:** `var n = sys.args().count()` (1), then
-  `print("[${n:>3}] [${n:3}] [${n:<3}] [${7:>3}] [${n:03}] [${-n:>3}]")` prints
-  `[ +1] [ +1] [+1 ] [  7] [001] [ -1]`. A width on a RUNTIME signed int adds a `+` the program
-  never asked for; the literal `7` and the zero-padded form are right. Python prints
-  `[  1] [  1] [1  ] [  7] [001] [ -1]` for the same specs, and QUICKSTART's format-spec section
-  describes Python's meaning.
-- **Likely cause:** the hole emits Zig's `{d:>3}` over an `i64`; Zig's integer formatting shows the
-  sign of a signed value when a width is given. A `comptime_int` (the literal) takes another path.
-- **Fix shape:** format a signed int with a width the way `_zbr_zpad` already does for the `0`
-  flag -- through a runtime helper that writes the sign only when negative (or when the spec has
-  `+`) -- and pin every alignment.
-- **Control when fixing:** the repro prints `[  1] [  1] [1  ] [  7] [001] [ -1]`; `${n:+>3}` and
-  `${n:+}` still show the sign where the spec asks for it.
-
----
-
 ### BUG-728: an imported function's `throws` is invisible to the front end
 - **Status:** OPEN (filed 2026-11-14; found by the GameEngine session moving procgen's generated
   clients to `throws`; repros `C:\tmp\conc\optprobe\xmod`, reproduced on d9067e4)

@@ -2975,7 +2975,8 @@ def numTypeName(t: Type_): str
 # grouping, .precision, type) and names what that parser skips or cannot express, so
 # `${d:+.1f}` still prints (Sean, 2026-09-26: ignore, don't break) but no longer prints
 # a different number than asked for SILENTLY.
-def fmtSpecIgnored(spec: str): str
+# `sign_ok`: the hole honours a sign flag (BUG-725 -- a signed int, see fmtSignHonoured).
+def fmtSpecIgnored(spec: str, sign_ok: bool): str
     var why: List(str) = List(str)()
     var i: int = 0
     var n: int = spec.len
@@ -2984,7 +2985,9 @@ def fmtSpecIgnored(spec: str): str
     else if n >= 1 and (spec[0] == c'<' or spec[0] == c'>' or spec[0] == c'^')
         i = 1
     if i < n and (spec[i] == c'+' or spec[i] == c'-' or spec[i] == c' ')
-        if spec[i] == c'+'
+        if sign_ok
+            pass
+        else if spec[i] == c'+'
             why.add("the sign `+`")
         else if spec[i] == c' '
             why.add("the space sign flag")
@@ -3015,6 +3018,50 @@ def fmtSpecIgnored(spec: str): str
     if why.len == 0
         return ""
     return why.join(", ")
+
+# BUG-725: the holes CodeGen.intSignArg sends through `_zbr_itext`, which writes the sign
+# flag (`+`, ` `, `-`): a signed int, no `0` flag (zeroPadArgs takes that, and drops the
+# sign), no precision, and a decimal type. Walks the spec as fmtSpecIgnored does.
+def fmtSignHonoured(spec: str, t: Type_): bool
+    var is_sint: bool = false
+    branch t
+        on Type_.int_
+            is_sint = true
+        on Type_.int_n as _
+            is_sint = true
+        else
+            pass
+    if not is_sint
+        return false
+    var i: int = 0
+    var n: int = spec.len
+    var has_align: bool = false
+    if n >= 2 and (spec[1] == c'<' or spec[1] == c'>' or spec[1] == c'^') and not (spec[0] == c'<' or spec[0] == c'>' or spec[0] == c'^')
+        i = 2
+        has_align = true
+    else if n >= 1 and (spec[0] == c'<' or spec[0] == c'>' or spec[0] == c'^')
+        i = 1
+        has_align = true
+    if i < n and (spec[i] == c'+' or spec[i] == c'-' or spec[i] == c' ')
+        i = i + 1
+    # `#` and grouping are skipped by CodeGen's parser too (and warned about on their own),
+    # so they do not stop the sign from being written.
+    if i < n and spec[i] == c'#'
+        i = i + 1
+    if i < n and spec[i] == c'0' and not has_align
+        return false
+    while i < n and spec[i] >= c'0' and spec[i] <= c'9'
+        i = i + 1
+    if i < n and (spec[i] == c'_' or spec[i] == c',')
+        i = i + 1
+    if i < n and spec[i] == c'.'
+        return false
+    if i < n
+        var tc: str = spec[i..i+1]
+        if not (tc == "d" or tc == "i" or tc == "n")
+            return false
+        i = i + 1
+    return i == n
 
 # A numeric constant: a literal, a negated one, or arithmetic made only of them
 # (`(1 + 2)`, `1 + 2.0`). Zig folds these at comptime, so they adapt to the other
@@ -8792,7 +8839,10 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                                     cbs = cbv.val.toString()
                                 ctx.addErr(file, anchorLine(last_fe!, line), anchorCol(last_fe!, 0),
                                            "`:c` on an int writes one byte (0..255), and " + cbs + " does not fit -- for a codepoint, format a char (c'\\u{...}')")
-                    var fig: str = fmtSpecIgnored(fsp)
+                    var sgn_ok: bool = false
+                    if last_fe != nil
+                        sgn_ok = fmtSignHonoured(fsp, inferExpr(last_fe!, ctx))
+                    var fig: str = fmtSpecIgnored(fsp, sgn_ok)
                     if fig != ""
                         var fln: int = line
                         var fcl: int = 0

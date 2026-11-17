@@ -85,8 +85,10 @@ def parseFmtSpec(spec: str): List(str)
     else if i < spec.len and isAlignChar(spec[i])
         align_s = spec[i..i+1]
         i = i + 1
-    # Skip sign (+ - space)
+    # Sign (+ - space): kept as parts[5] for intSignArg (BUG-725)
+    var sign_s: str = ""
     if i < spec.len and (spec[i] == c'+' or spec[i] == c'-' or spec[i] == c' ')
+        sign_s = spec[i..i+1]
         i = i + 1
     # Skip alternate form #
     if i < spec.len and spec[i] == c'#'
@@ -116,7 +118,53 @@ def parseFmtSpec(spec: str): List(str)
     # Type char
     if i < spec.len
         type_s = spec[i..i+1]
-    return [fill_s, align_s, width_s, prec_s, type_s]
+    return [fill_s, align_s, width_s, prec_s, type_s, sign_s]
+
+# BUG-725. Zig's `{d:>3}` over a runtime SIGNED integer writes a `+` for a value >= 0
+# whenever a width is given (`[ +1]`; a comptime literal took another path and was
+# right), and the spec's own sign flag (`+`, ` `) was parsed and dropped, so `${n:+}`
+# printed `1`. A signed-int hole with a width or a sign flag (and no `0` flag, which
+# zeroPadArgs owns, and no precision) becomes `{s:<fill><align><width>}` over the
+# runtime's `_zbr_itext(x, sign)`, which writes the sign only when negative or asked
+# for. Returns the sign argument (`'-'`, `'+'`, `' '`), or "" when the hole keeps
+# Zig's formatting. Numbers align right by default, as in Python; `{s}` aligns left,
+# so the alignment is always spelt out.
+def intSignArg(spec: str, ex_type: Type_): str
+    if spec.len == 0
+        return ""
+    var is_sint: bool = false
+    branch ex_type
+        on Type_.int_
+            is_sint = true
+        on Type_.int_n as _
+            is_sint = true
+        else
+            pass
+    if not is_sint
+        return ""
+    var parts = parseFmtSpec(spec)
+    if parts.at(1) == "=" or parts.at(3) != ""
+        return ""
+    var type_s: str = parts.at(4)
+    if not (type_s == "" or type_s == "d" or type_s == "i" or type_s == "n")
+        return ""
+    var sign_s: str = parts.at(5)
+    if parts.at(2) == "" and (sign_s == "" or sign_s == "-")
+        return ""
+    if sign_s == ""
+        sign_s = "-"
+    return "'" + sign_s + "'"
+
+# The `{s...}` placeholder for an intSignArg hole.
+def intSignFmt(spec: str): str
+    var parts = parseFmtSpec(spec)
+    var width_s: str = parts.at(2)
+    if width_s == ""
+        return "{s}"
+    var align_s: str = parts.at(1)
+    if align_s == ""
+        align_s = ">"
+    return "{s:" + parts.at(0) + align_s + width_s + "}"
 
 def zigFmtSpec(spec: str, ex_type: Type_): str
     if spec.len == 0
@@ -16902,6 +16950,7 @@ struct Generator
         var char_texts: List(bool) = List(bool)()
         var ffmt_args: List(str) = List(str)()        # a float with a precision: _zbr_ffmt(arg + these)
         var zpad_args: List(str) = List(str)()        # a number with the `0` flag: _zbr_zpad(arg + these)
+        var itext_args: List(str) = List(str)()       # a signed int with a width/sign: _zbr_itext(arg, sign) (BUG-725)
         var i: int = 0
         while i < si.parts.len
             var part = si.parts.at(i)
@@ -16923,9 +16972,14 @@ struct Generator
                             ex_type = inferExpr(e, .infer_ctx!)
                         var fpa: str = floatPrecArgs(fmt_spec, ex_type)
                         var zpa: str = zeroPadArgs(fmt_spec, ex_type)
+                        var isa: str = intSignArg(fmt_spec, ex_type)
                         var ctext: bool = false
                         if fpa != "" or zpa != ""
                             fmt_str = fmt_str + "{f}"
+                            cast_types.add("")
+                            cast_trunc.add(false)
+                        else if isa != ""
+                            fmt_str = fmt_str + intSignFmt(fmt_spec)
                             cast_types.add("")
                             cast_trunc.add(false)
                         else
@@ -16941,6 +16995,7 @@ struct Generator
                                 cast_trunc.add(fmt_spec.endsWith("c"))
                         ffmt_args.add(fpa)
                         zpad_args.add(zpa)
+                        itext_args.add(isa)
                         needs_tostring.add(false)
                         show_wraps.add(false)
                         char_wraps.add(false)
@@ -16987,6 +17042,7 @@ struct Generator
                         cast_trunc.add(false)
                         ffmt_args.add("")
                         zpad_args.add("")
+                        itext_args.add("")
                         needs_tostring.add(ts)
                         char_wraps.add(cwrap)
                         char_texts.add(false)
@@ -17016,6 +17072,10 @@ struct Generator
                     w.emit("_zbr_zpad(")
                     genExpr(e)
                     w.emit(zpa)
+                else if itext_args.at(arg_idx) != ""
+                    w.emit("_zbr_itext(")
+                    genExpr(e)
+                    w.emit(", " + itext_args.at(arg_idx) + ")")
                 else if cast != ""
                     if cast_trunc.at(arg_idx)
                         # BUG-301. One preamble helper rather than an inline cast: the

@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A runtime `int` with a width no longer prints a `+`, and its sign flag is honoured (BUG-725).**
+  `${n:>3}` is `  1` (it was ` +1`), `${n:+}` is `+1` and `${n: }` is ` 1` (the flag was dropped),
+  as in Python. A float's `+`, and `+` with the `0` flag, are still ignored with a warning.
+- **A `ZEBRA_ZIG` that does not exist is refused by name, and a program that cannot start is
+  named (BUG-724).** It was a bare `spawn failed`. `sys.run` now reports
+  `spawn failed: could not start '<program>' (<error>)`, and `sys.exec_inherit` prints that line
+  instead of returning -1 silently.
 - **An unannotated `map`/`filter` result is typed, and an index on an untyped receiver is refused
   (BUG-758).** `var ys = xs.filter(f)` is a `List` of the element type and `var ys = xs.map(f)` a
   `List` of what the lambda returns (int, float, bool or str), so `ys[i]`, `ys.len` and `for` work

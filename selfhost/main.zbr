@@ -4659,6 +4659,17 @@ def zigExe(): str
     var env_zig: str? = sys.getenv("ZEBRA_ZIG")
     if env_zig as ez
         if ez != ""
+            # BUG-724: an explicit ZEBRA_ZIG was taken on trust, so a path that does not
+            # exist surfaced only as a bare "spawn failed" from the first zig call. It is
+            # checked here, once, and refused naming the variable. A bare name (no
+            # separator) is a PATH lookup and is left to the spawn.
+            if (ez.contains("/") or ez.contains("\\")) and not File.exists(ez) and not File.exists(ez + ".exe")
+                sys.errln("zebra: ZEBRA_ZIG names " + ez + ", which does not exist")
+                if dbgIsWindows() and ez.startsWith("/")
+                    sys.errln("  " + ez + " is Git Bash's spelling of a Windows path; Git Bash rewrites it for a native program unless MSYS_NO_PATHCONV=1 is set. Spell it C:/... or unset MSYS_NO_PATHCONV.")
+                else
+                    sys.errln("  unset ZEBRA_ZIG to use the bundled or PATH zig, or point it at a zig executable")
+                sys.exit(2)
             _zig_exe_cache = ez
             return ez
     var d: str = Path.dirname(sys.selfExe())

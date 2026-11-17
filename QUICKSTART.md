@@ -1645,7 +1645,10 @@ var result = sb.build()              # str; the builder keeps its text (clear() 
   `${s:>20}` right-aligns in a 20-char field, `${s:-<15}` left-aligns with
   `-` fill.  A `0` before the width is the zero-pad flag, and it puts the zeros after
   the sign: `${-5:04d}` → `-005`, `${-2.5:06.1f}` → `-002.5`. An explicit fill and
-  alignment is a plain fill: `${-5:0>4}` → `00-5`.  A part the formatter does not support -- a sign (`+`), `#`, digit
+  alignment is a plain fill: `${-5:0>4}` → `00-5`.  On an `int`, a sign flag is honoured
+  and a width never adds one: `${n:>3}` → `  1`, `${n:+}` → `+1`, `${n: }` → ` 1`, `${-1:>3}` →
+  ` -1` (BUG-725).  A part the formatter does not support -- a sign (`+`) on a float or with the
+  `0` flag, `#`, digit
   grouping (`,` `_`), the `%` type, an unknown type letter -- is **ignored with a
   compile-time warning** naming it (`${d:+.1f}` prints `65.0` and says so).
 - **How a float is rounded to a precision** (`.2f`, `.2`, `.2e`): Zebra rounds the

@@ -1396,6 +1396,12 @@ fn _child_env_map() ?*const std.process.Environ.Map {
     return m;
 }
 pub const SysRunResult = struct { exit_code: i64, stdout: []const u8, stderr: []const u8 };
+// The account of a child that never started: the program, as given, and the error.
+// "spawn failed" stays the first words so a reader (or a grep) still recognises it.
+pub fn _sys_spawn_failure(items: anytype, e: anyerror) []const u8 {
+    const prog: []const u8 = if (items.len > 0) items[0] else "";
+    return std.fmt.allocPrint(_allocator, "spawn failed: could not start '{s}' ({s})\n", .{ prog, @errorName(e) }) catch "spawn failed\n";
+}
 pub fn _sys_run(argv: anytype) SysRunResult {
     // BUG-219: this used to spawn with two pipes and drain them SEQUENTIALLY —
     // stdout to EOF first, then stderr. A child that fills its stderr buffer blocks
@@ -1414,7 +1420,9 @@ pub fn _sys_run(argv: anytype) SysRunResult {
     }) catch |e| return SysRunResult{
         .exit_code = -1,
         .stdout = "",
-        .stderr = if (e == error.FileNotFound) "spawn failed" else @errorName(e),
+        // BUG-724: this was the bare text "spawn failed" -- not which program, not the
+        // path -- and a mis-spelt ZEBRA_ZIG took six runs to find. Name argv[0] and why.
+        .stderr = _sys_spawn_failure(argv.items, e),
     };
     const _ec: i64 = switch (r.term) {
         .exited => |code| @intCast(code),
@@ -1429,7 +1437,11 @@ pub fn _sys_exec_inherit(argv: anytype) i64 {
         .stdin  = .inherit,
         .stdout = .inherit,
         .stderr = .inherit,
-    }) catch return -1;
+    }) catch |e| {
+        // BUG-724: a program that could not be started returned -1 and said nothing.
+        std.debug.print("{s}", .{_sys_spawn_failure(argv.items, e)});
+        return -1;
+    };
     const term = child.wait(_io) catch return -1;
     return switch (term) {
         .exited => |code| @intCast(code),
@@ -8244,6 +8256,19 @@ pub fn _zbr_zpad(x: anytype, width: usize) _ZbrZpad {
     const s: []const u8 = std.fmt.bufPrint(&r.buf, "{d}", .{x}) catch "";
     r.len = s.len;
     return r;
+}
+
+// BUG-725: a signed integer's text for a hole with a width or a sign flag. Zig's `{d:>3}`
+// writes `+` for a runtime value >= 0 whenever a width is given; this writes the sign only
+// for a negative value or when the spec asked for one (`+` -> "+1", ' ' -> " 1"), and the
+// hole pads the result as text.
+pub fn _zbr_itext(x: anytype, sign: u8) []const u8 {
+    const v: i128 = x;
+    const s = if (v < 0 or sign == '-')
+        std.fmt.allocPrint(_allocator, "{d}", .{v})
+    else
+        std.fmt.allocPrint(_allocator, "{c}{d}", .{ sign, v });
+    return s catch @panic("OOM");
 }
 
 pub fn _zbr_show(x: anytype) []const u8 {

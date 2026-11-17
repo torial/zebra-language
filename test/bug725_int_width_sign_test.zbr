@@ -1,0 +1,38 @@
+# BUG-725: a runtime signed int formatted with a width printed a `+` (Zig's `{d:>3}` signs a
+# value >= 0 when a width is given), and the spec's own sign flag was dropped (`${n:+}` -> 1).
+# Expected values are Python's for the same specs.
+
+def main()
+    var n = sys.args().count()          # 1 at run time, so never a comptime literal
+    var m: int = 0 - n                  # -1
+    var b: int8 = 3
+    var z: int = n - 1                  # 0
+    var big: int = n * 1234567
+    assert "[${n:>3}]" == "[  1]"
+    assert "[${n:3}]" == "[  1]"
+    assert "[${n:<3}]" == "[1  ]"
+    assert "[${n:^5}]" == "[  1  ]"
+    assert "[${n:*^5}]" == "[**1**]"
+    assert "[${7:>3}]" == "[  7]"
+    assert "[${n:03}]" == "[001]"
+    assert "[${m:>3}]" == "[ -1]"
+    assert "[${m:<4}]" == "[-1  ]"
+    assert "[${b:>3}]" == "[  3]"
+    assert "[${z:>2}]" == "[ 0]"
+    assert "[${big:>9}]" == "[  1234567]"
+    assert "[${n:d}]" == "[1]"
+    assert "[${n:3d}]" == "[  1]"
+    # The sign flag, which was parsed and dropped.
+    assert "[${n:+}]" == "[+1]"
+    assert "[${m:+}]" == "[-1]"
+    assert "[${n:+>4}]" == "[+++1]"    # `+` before `>` is the FILL, not a sign
+    assert "[${n:>+4}]" == "[  +1]"
+    assert "[${n: }]" == "[ 1]"
+    assert "[${m: }]" == "[-1]"
+    assert "[${n:-}]" == "[1]"
+    # Neighbours that must not move: a float, hex, and a plain hole.
+    var f: float = n * 1.5
+    assert "[${f:>6}]" == "[   1.5]"
+    assert "[${n:x}]" == "[1]"
+    assert "[${n}]" == "[1]"
+    print("bug725_int_width_sign: OK")

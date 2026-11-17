@@ -2295,6 +2295,10 @@ smoke_run_fail test/bug751_json_detached_depth_test.zbr "Json: put/append would 
 smoke_golden test/json_edges_test.zbr
 smoke_run test/bug755_primitive_binders_test.zbr "bug755_primitive_binders: OK"
 smoke_run test/bug758_map_filter_result_test.zbr "bug758_map_filter_result: OK"
+smoke_run test/bug724_spawn_failure_test.zbr "bug724_spawn_failure: OK"
+smoke_run test/bug724_spawn_failure_test.zbr "spawn failed: could not start 'zz_no_such_inherit_724' (FileNotFound)"
+smoke_run test/bug725_int_width_sign_test.zbr "bug725_int_width_sign: OK"
+smoke_run_flag test/bug725_int_width_sign_test.zbr --warnings-as-errors "bug725_int_width_sign: OK"
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:10:20: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:16:12: error: "
 smoke_tc_fail test/bug750_allocate_growth_fail_test.zbr "bug750_allocate_growth_fail_test.zbr:23:14: error: "
