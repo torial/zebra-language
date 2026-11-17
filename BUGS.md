@@ -100,25 +100,6 @@
 
 ---
 
-### BUG-777: `zebra --target v` does not run the type checker
-- **Status:** OPEN (filed 2026-11-17; reported by Fable on 227b5b5. Fable is writing the fix in
-  his worktree)
-- **Repro:** `def f(n: int): int` / `return n + 1` / `def main()` / `var x: int = "a"` /
-  `print(f("b"))`. `-c` reports both type mismatches; `--target v` writes the `.v`, reports
-  "nothing refused: the whole file is in the subset" and exits 0. `xs.isEmpty()` on a List is
-  refused at `-c` and emitted and RUN on V (it printed `true`).
-- **Cause:** vTarget / vCollect / vLoadModule in `selfhost/main.zbr` resolve (an undefined name
-  IS refused) and never call checkModule, so no front-end refusal reaches a V-only build --
-  BUG-764's, BUG-767's and BUG-772's among them. No v_check row is affected: every compared
-  program also builds on the Zig route, which checks.
-- **Fix shape:** vTarget checks each collected module the way MultiCompiler's step 4 does (dep
-  types, the reserved / public runtime names), on the ORIGINAL sources before the collision
-  rename, printing errors and exiting 1 before anything is written.
-- **Control when fixing:** the repro refused on `--target v` with `-c`'s messages and nothing
-  written; a clean program still emits.
-
----
-
 ### BUG-775: an `extend str` method that does not use its receiver fails inside zig
 - **Status:** OPEN (filed 2026-11-17; found writing BUG-773's `extend str` control)
 - **Repro:** `extend str` / `def foo(): int` / `return 42`, then `print("a".foo())`. `-c` exits 0;

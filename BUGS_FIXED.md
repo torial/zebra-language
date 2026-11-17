@@ -6,6 +6,34 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-777: `zebra --target v` does not run the type checker -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-17; reported by Fable on 227b5b5))
+- **Repro:** `def f(n: int): int` / `return n + 1` / `def main()` / `var x: int = "a"` /
+  `print(f("b"))`. `-c` reports both type mismatches; `--target v` writes the `.v`, reports
+  "nothing refused: the whole file is in the subset" and exits 0. `xs.isEmpty()` on a List is
+  refused at `-c` and emitted and RUN on V (it printed `true`).
+- **Cause:** vTarget / vCollect / vLoadModule in `selfhost/main.zbr` resolve (an undefined name
+  IS refused) and never call checkModule, so no front-end refusal reaches a V-only build --
+  BUG-764's, BUG-767's and BUG-772's among them. No v_check row is affected: every compared
+  program also builds on the Zig route, which checks.
+- **Fix shape:** vTarget checks each collected module the way MultiCompiler's step 4 does (dep
+  types, the reserved / public runtime names), on the ORIGINAL sources before the collision
+  rename, printing errors and exiting 1 before anything is written.
+- **Control when fixing:** the repro refused on `--target v` with `-c`'s messages and nothing
+  written; a clean program still emits.
+
+- **Fix (Fable, 83707d7, picked as 3feafd0):** vCheckModules runs after vCollect and before the
+  collision rename, on the sources as written, with compileDep step 4.5's context (dependency types
+  via scanDepForTypes, the runtime's reserved / public names, --strict, --warn-non-exhaustive,
+  --warnings-as-errors): every module's errors printed, exit 1, nothing written. Two seams came
+  with it: vLoadModule merges partial sibling files (never read on this route), and vCollect finds
+  a `use` by its exact name (BUG-450). Emitted V is byte-identical with the check on and off.
+  Witness: v_check's `typecheck` row (eleven cases, 56 rows). Attacker: all 1058 files of test/,
+  `-c` against `--target v` -- the V check refuses 101, none of which `-c` accepts. Not covered:
+  the eight refusals made in CodeGen (BUG-778).
+
+---
+
 ### BUG-776: `@derive(Hash)`'s `hash()` returns an unsigned value, a hand-written `cue hash` an int -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17 (filed and fixed the same day; found probing BUG-773, on 227b5b5)
 - **Repro:** `@derive(Eq, Hash) struct P` / `var x: int` / `var s: str`, then
