@@ -58,20 +58,6 @@
 
 ---
 
-### BUG-785: an `int` CALL result initialising a `float` local passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-18; reported by Fable; reproduced here on 257a9c3)
-- **Repro:** `var xs = [1, 2, 3]` / `var fl: float = xs.count()` -> zig's "expected type 'f64',
-  found 'i64'" after "resolved OK". The same with a user `def three(): int` (`var g: float =
-  three()`). An identifier is widened (`var n = 2` / `var g: float = n` prints 2.0, as does
-  `var g: float? = n`), so the int->float coercion is written for some initialiser kinds and not
-  for a call's result. The V route writes `f64(xs.count())` and prints 3.0.
-- **Possibly one family with BUG-784:** an initialiser needs a coercion to the declared type and
-  only some expression kinds get it.
-- **Control when fixing:** both repros print 3.0; an identifier initialiser, an int local, and a
-  float call result unchanged.
-
----
-
 ### BUG-784: an implementing class constructed into an interface-typed OPTIONAL local fails inside zig
 - **Status:** OPEN (filed 2026-11-18; reported by Fable, found writing BUG-783's row; reproduced
   here on 257a9c3)

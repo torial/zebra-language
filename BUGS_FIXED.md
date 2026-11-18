@@ -6,6 +6,30 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-785: an `int` CALL result initialising a `float` local passes `-c` and fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable; reproduced here on 257a9c3)
+- **Repro:** `var xs = [1, 2, 3]` / `var fl: float = xs.count()` -> zig's "expected type 'f64',
+  found 'i64'" after "resolved OK". The same with a user `def three(): int` (`var g: float =
+  three()`). An identifier is widened (`var n = 2` / `var g: float = n` prints 2.0, as does
+  `var g: float? = n`), so the int->float coercion is written for some initialiser kinds and not
+  for a call's result. The V route writes `f64(xs.count())` and prints 3.0.
+- **Possibly one family with BUG-784:** an initialiser needs a coercion to the declared type and
+  only some expression kinds get it.
+- **Control when fixing:** both repros print 3.0; an identifier initialiser, an int local, and a
+  float call result unchanged.
+- **Root, wider than filed:** no int->float conversion in a var-init or a plain assignment for ANY
+  runtime int. The identifier case "worked" only because `var n = 2` is emitted as a comptime int,
+  which zig converts by itself; `var n = xs.count()` / `var g: float = n` failed the same way. Plain
+  `g = xs.count()` failed too; `g += n` widened already (BUG-445). The BUG-471 comment that said the
+  var-init widened was wrong and is corrected.
+- **Fix:** `genLocalVar` and `genAssign` (CodeGen.zbr) convert through BUG-471's `emitAsNum` when
+  the target is a float (a `float?` by its payload) and the value an int by inference; a literal is
+  left to zig. Fixture `test/bug785_int_init_widens_float_test.zbr` (call, method count, runtime
+  and comptime ident, `float?`, `float32`, assignment to a local, a `float?` and a field, plus an
+  int local and a float expression unchanged), red on the pre-fix compiler at its first line.
+
+---
+
 ### BUG-781: a tuple indexed with brackets (`t[1]`) passes `-c` and fails inside zig -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (filed 2026-11-17; reported by Fable; reproduced here on 76b6095)
 - **Repro:** `var t = (1, "a")` / `print(t[1])`. `-c` exits 0; the build fails in std/meta.zig,

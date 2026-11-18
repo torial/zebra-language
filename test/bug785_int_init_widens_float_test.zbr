@@ -1,0 +1,32 @@
+# BUG-785: an int initialiser for a `float` (or `float?`) local reached zig unconverted
+# ("expected type 'f64', found 'i64'") unless it was a literal or a literal-initialised
+# local (both comptime ints in the emit, which zig converts by itself). Plain assignment
+# had the same gap; `+=` already widened (BUG-445).
+
+class Acc
+    var total: float = 0.5
+
+def three(): int
+    return 3
+
+def main()
+    var xs = [1, 2, 3]
+    var fl: float = xs.count()
+    var g: float = three()
+    var n = xs.count()
+    var h: float = n
+    var o: float? = three()
+    var k: float = 2.5 * 2.0
+    var m: int = three()
+    var lit: float = 4
+    var c = 2
+    var cw: float = c
+    var f32: float32 = xs.count()
+    print("bug785: ${fl} ${g} ${h} ${o!} ${k} ${m} ${lit} ${cw} ${f32}")
+    var a: float = 1.5
+    a = xs.count()
+    var oa: float? = nil
+    oa = three()
+    var acc = Acc()
+    acc.total = n
+    print("bug785 assign: ${a} ${oa!} ${acc.total}")

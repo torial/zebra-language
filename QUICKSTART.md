@@ -370,7 +370,8 @@ fine) and a literal with digit separators (`k + 1_000`). A comparison is not ref
 does not narrow on its own, so `b = b + n` with a byte `b` and an int `n` is refused, as
 `b += n` is -- convert it (`(b + n).toByte()`, `.toInt16()`, ...). A compound assignment
 stores the result back, so `f += n` (float with int) is fine and `n += f` is refused -- the
-result would be a float.
+result would be a float. An int value initialising or assigned to a float widens the same
+way: `var f: float = xs.count()`, `f = n`, and into a `float?` or `float32` (BUG-785).
 
 **Integer overflow TRAPS, in every build** (BUG-667, decided 2026-10-30). `+ - *`, unary
 `-`, the compound forms, `minimum / -1` and `minimum % -1` panic with `integer overflow`

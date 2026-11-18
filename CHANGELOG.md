@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An `int` value initialising or assigned to a `float` widens** (BUG-785): `var f: float =
+  xs.count()`, `= three()`, `= n` for a runtime `n`, the same into `float?` and `float32`, and
+  `g = n`. They passed `-c` and failed inside zig ("expected type 'f64', found 'i64'"); only a
+  literal, or a local initialised from one, was converted. `g += n` already widened (BUG-445).
 - **`t[1]` on a tuple is refused at `-c`** (BUG-781), naming `.1` for a literal index and
   explaining that a computed index has no single type. It used to pass the front end and fail
   inside zig's std ("Expected pointer, slice, array or vector type"). Read elements with `t.1`.

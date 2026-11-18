@@ -9737,6 +9737,11 @@ struct Generator
         else if n.init_expr != nil
             if n.type_ != nil and isSigTypeRef(n.type_!)
                 genSigValue(n.init_expr!)
+            else if n.type_ != nil and returnWidensToFloat(n.init_expr!, floatTargetRef(n.type_!))
+                # BUG-785: a runtime int initialising a `float` (or `float?`) local widens,
+                # as a return does (BUG-471). Only a literal, or a local initialised from
+                # one (a comptime int in the emit), was converted before -- by zig itself.
+                emitAsNum(n.init_expr!, typeFromRef(floatTargetRef(n.type_!)))
             else
                 genExpr(n.init_expr!)       # a throwing call routes its own error (BUG-467, genCall)
         else
@@ -10784,6 +10789,10 @@ struct Generator
             w.emit("_intern(")
             genExpr(a.value)
             w.emit(")")
+        else if a.op == AssignOp.assign and assignWidensToFloat(a.target, a.value)
+            # BUG-785: `g = n` with an int value and a `float` (or `float?`) target
+            # widens, as `g += n` does (BUG-445) and the var-init does.
+            emitAsNum(a.value, assignFloatTarget(a.target))
         else if a.op == AssignOp.assign
             genExpr(a.value)
         else if (a.op == AssignOp.plus_eq or a.op == AssignOp.minus_eq or a.op == AssignOp.star_eq or a.op == AssignOp.slash_eq) and .infer_ctx != nil and numKind(inferExpr(a.target, .infer_ctx!)) == 3
@@ -11540,8 +11549,8 @@ struct Generator
             w.emit("return ")
             if method_return_type != nil and returnWidensToFloat(r.value!, method_return_type!)
                 # BUG-471: an int expression returned from a `float` function widens, as
-                # it already did in a `var x: float = ...` init and a float argument
-                # (BUG-445's rule). It reached Zig as "expected type 'f64', found 'i64'".
+                # a float argument does (BUG-445's rule) and, since BUG-785, a
+                # `var x: float = ...` init. It reached Zig as "expected type 'f64', found 'i64'".
                 emitAsNum(r.value!, typeFromRef(method_return_type!))
             else if method_return_type != nil
                 genCallWithTypeHint(r.value!, method_return_type!)
@@ -11550,6 +11559,34 @@ struct Generator
             w.emit(";\n")
         else
             w.emit("return;\n")
+
+    # BUG-785: the numeric type a declared `T?` holds is `T` -- an int initialising a
+    # `float?` local widens to f64 and zig wraps it in the optional itself.
+    def floatTargetRef(tr: TypeRef): TypeRef
+        if tr is TypeRef.nilable as inner
+            return inner
+        return tr
+
+    # BUG-785: the float type an assignment target holds -- its own type, or the
+    # payload of a `float?` -- or `unknown_` when it is not a float at all.
+    def assignFloatTarget(target: Expr): Type_
+        if .infer_ctx == nil
+            return Type_.unknown_
+        var tt: Type_ = inferExpr(target, .infer_ctx!)
+        if tt is Type_.optional as inner
+            tt = inner
+        if numKind(tt) == 3
+            return tt
+        return Type_.unknown_
+
+    def assignWidensToFloat(target: Expr, value: Expr): bool
+        if .infer_ctx == nil or isNumLit(value)
+            return false
+        var want: Type_ = assignFloatTarget(target)
+        if numKind(want) != 3
+            return false
+        var got: Type_ = inferExpr(value, .infer_ctx!)
+        return numKind(got) != 0 and numKind(got) != 3
 
     # BUG-471: the declared return type is a float and the value is an int by inference.
     def returnWidensToFloat(e: Expr, tr: TypeRef): bool
