@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-783. Next new bug: BUG-784.**
+**Last bug number generated: BUG-785. Next new bug: BUG-786.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -58,6 +58,33 @@
 
 ---
 
+### BUG-785: an `int` CALL result initialising a `float` local passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-18; reported by Fable; reproduced here on 257a9c3)
+- **Repro:** `var xs = [1, 2, 3]` / `var fl: float = xs.count()` -> zig's "expected type 'f64',
+  found 'i64'" after "resolved OK". The same with a user `def three(): int` (`var g: float =
+  three()`). An identifier is widened (`var n = 2` / `var g: float = n` prints 2.0, as does
+  `var g: float? = n`), so the int->float coercion is written for some initialiser kinds and not
+  for a call's result. The V route writes `f64(xs.count())` and prints 3.0.
+- **Possibly one family with BUG-784:** an initialiser needs a coercion to the declared type and
+  only some expression kinds get it.
+- **Control when fixing:** both repros print 3.0; an identifier initialiser, an int local, and a
+  float call result unchanged.
+
+---
+
+### BUG-784: an implementing class constructed into an interface-typed OPTIONAL local fails inside zig
+- **Status:** OPEN (filed 2026-11-18; reported by Fable, found writing BUG-783's row; reproduced
+  here on 257a9c3)
+- **Repro:** `interface Namer` with `def name(): str`, `class Dog implements Namer`, then
+  `var i: Namer? = Dog("ifc")` / `if i as nm` / `print(nm.name())` -> zig's "expected type
+  '?Namer', found '*Dog'" after "resolved OK". Through a typed local it works
+  (`var i0: Namer = Dog("ifc")` / `var i: Namer? = i0` prints ifc). A parameter, field or return
+  of type `Namer?` is untried.
+- **Control when fixing:** the repro prints ifc; `var i: Namer = Dog(...)` and a nil-initialised
+  `Namer?` unchanged; the parameter / field / return positions tried and pinned or filed.
+
+---
+
 ### BUG-783: `--target v` drops the `?` of an optional local with a non-nil initialiser
 - **Status:** OPEN (filed 2026-11-17; reported by Fable, who is fixing it on the V route)
 - **Repro:** `var o: str? = "a"` is emitted `mut o := 'a'`, so `if o as s` fails inside V
@@ -83,20 +110,6 @@
 - **Fix direction (Fable):** (a) refused on V by name -- Wyhash is not ported, so the derived hash
   VALUE stays the Zig route's; (b)-(d) made to agree with the Zig route.
 - **Control when fixing:** each part's program agrees on both routes or is refused on V by name.
-
----
-
-### BUG-781: a tuple indexed with brackets (`t[1]`) passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-17; reported by Fable; reproduced here on 76b6095)
-- **Repro:** `var t = (1, "a")` / `print(t[1])`. `-c` exits 0; the build fails in std/meta.zig,
-  "Expected pointer, slice, array or vector type, found 'struct { comptime comptime_int = 1, ...
-  }'", from zebra_rt.zig's `_zbr_at`. The same with an `(int, str)` returned from a def.
-  QUICKSTART documents `t.1`; `t[1]` is neither refused nor built.
-- **Fix shape:** refuse `[]` on a tuple-typed receiver in the checker, naming `t.1` (a literal
-  index could be rewritten to `.1`, but a computed one has no single type, so a refusal is the
-  honest answer for both).
-- **Control when fixing:** the repro refused at its line naming `t.1`; `t.1` and list indexing
-  unchanged.
 
 ---
 

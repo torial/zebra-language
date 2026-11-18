@@ -23,6 +23,9 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`t[1]` on a tuple is refused at `-c`** (BUG-781), naming `.1` for a literal index and
+  explaining that a computed index has no single type. It used to pass the front end and fail
+  inside zig's std ("Expected pointer, slice, array or vector type"). Read elements with `t.1`.
 - **`dt.inZone(name)` returns `DateTime?`; `DateTime.local()` is new** (BUG-711; surface:
   `DateTime +local`, and the 82 IANA zones `inZone` knows are listed in SURFACE.md). A zone the
   runtime does not know was answered in UTC, silently, so a typo printed the UTC time beside the

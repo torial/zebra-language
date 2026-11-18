@@ -5420,7 +5420,8 @@ def main()
 - Tuple return type: `(T1, T2, …)` with two or more elements.
 - Tuple literal: `(expr1, expr2, …)` — same syntax as grouped-expression but with a comma.
 - Positional destructure: `var (x, y) = f()` — binds each name to the matching element.
-- Index access: `t.0`, `t.1` — integer literal after `.`, zero-based.
+- Index access: `t.0`, `t.1` — integer literal after `.`, zero-based. `t[1]` is refused at
+  compile time (BUG-781): each element has its own type, so there is no `[...]`, literal or computed.
 - Mixed types are supported: `(str, int)`, `(float, bool)`, etc.
 - `List((T1, T2))` stores tuples in a list; iterate with `for a, b in list` (see §10).
   - The list variable must have an explicit `List((T1, T2))` type annotation — inferred types do not trigger destructuring.

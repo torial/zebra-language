@@ -1599,6 +1599,10 @@ smoke_tc_fail test/fail_fixtures/bug670_opt_int_tostring_test.zbr "bug670_opt_in
 smoke_tc_fail test/fail_fixtures/bug670_opt_field_read_test.zbr "bug670_opt_field_read_test.zbr:12:11: error: 'f' may be nil here, so \`.n\` cannot be read from it"
 smoke_run test/bug670_opt_receiver_unwrapped_test.zbr "bug670: [3,3][3][3][3][2][a]"
 smoke_tc_fail test/fail_fixtures/bug555_index_user_type_test.zbr "bug555_index_user_type_test.zbr:12:11: error: 'V' has no index operator"
+# BUG-781: a tuple indexed with brackets went to zig through _zbr_at; refused at -c, literal and computed index.
+smoke_tc_fail test/fail_fixtures/bug781_tuple_bracket_index_fail_test.zbr "bug781_tuple_bracket_index_fail_test.zbr:10:11: error: a tuple's elements are read with a dot"
+smoke_tc_fail test/fail_fixtures/bug781_tuple_bracket_index_fail_test.zbr "bug781_tuple_bracket_index_fail_test.zbr:12:11: error: a tuple cannot be indexed with"
+smoke_tc_fail test/fail_fixtures/bug781_tuple_bracket_index_fail_test.zbr "bug781_tuple_bracket_index_fail_test.zbr:13:11: error: a tuple's elements are read with a dot"
 smoke_run test/bug553_struct_literal_equals_test.zbr "bug553: true true true"
 smoke_tc_fail test/fail_fixtures/bug552_def_next_not_iterable_test.zbr "bug552_def_next_not_iterable_test.zbr:17:5: error: 'Ticker' is not iterable"
 smoke_tc_fail test/fail_fixtures/bug551_order_no_compare_test.zbr "bug551_order_no_compare_test.zbr:11:11: error: 'V' has no ordering"

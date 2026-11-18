@@ -6,6 +6,27 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-781: a tuple indexed with brackets (`t[1]`) passes `-c` and fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-17; reported by Fable; reproduced here on 76b6095)
+- **Repro:** `var t = (1, "a")` / `print(t[1])`. `-c` exits 0; the build fails in std/meta.zig,
+  "Expected pointer, slice, array or vector type, found 'struct { comptime comptime_int = 1, ...
+  }'", from zebra_rt.zig's `_zbr_at`. The same with an `(int, str)` returned from a def.
+  QUICKSTART documents `t.1`; `t[1]` is neither refused nor built.
+- **Fix shape:** refuse `[]` on a tuple-typed receiver in the checker, naming `t.1` (a literal
+  index could be rewritten to `.1`, but a computed one has no single type, so a refusal is the
+  honest answer for both).
+- **Control when fixing:** the repro refused at its line naming `t.1`; `t.1` and list indexing
+  unchanged.
+
+- **Fix:** the checker's `Expr.index` arm (beside BUG-555's class/struct refusal) refuses `[]` on a
+  tuple-typed receiver: a literal index is told to write `.1` instead of `[1]`, a computed one that
+  each element has its own type. Guarded on a non-empty tuple type (BUG-218). Pinned by
+  test/fail_fixtures/bug781_tuple_bracket_index_fail_test.zbr (a literal, a computed, and a returned
+  tuple, three smoke_tc_fail rows at their columns). `-c` over this repo, zebra-ide and the
+  GameEngine found no other site.
+
+---
+
 ### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17 (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
 - **Repro:** `DateTime.of(2026, 1, 15, 12, 0, 0).inZone("America/Phonix")` (a typo) and

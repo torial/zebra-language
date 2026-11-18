@@ -8781,6 +8781,16 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             if ix_t is Type_.named as ix_cn
                 if ctx.hasClassAny(ix_cn) and not ctx.module_types.isInterface(ix_cn) and not ctx.dep_types.isInterface(ix_cn)
                     ctx.addErr(file, ix.span.line, ix.span.col, "'" + ix_cn + "' has no index operator: a class or struct cannot be indexed with `[...]` -- give it a method and call that (`v.at(i)`, `v.get(i)`)")
+            # BUG-781: `t[1]` on a tuple reached zig's std through `_zbr_at` the same way.
+            # A tuple's elements are read with a dot; a computed index has no single type,
+            # so `[]` is refused for both. Guarded on a non-empty tuple type (BUG-218: a
+            # zero-element tuple is more likely an inference artifact than a real `()`).
+            if ix_t is Type_.tuple_ as ix_tup
+                if ix_tup.len > 0
+                    if ix.index is Expr.int_lit as ix_il
+                        ctx.addErr(file, ix.span.line, ix.span.col, "a tuple's elements are read with a dot, not `[...]` -- write `.${ix_il.text}` instead of `[${ix_il.text}]`")
+                    else
+                        ctx.addErr(file, ix.span.line, ix.span.col, "a tuple cannot be indexed with `[...]`: its elements are read with a dot and a literal position (`t.0`, `t.1`), because each element has its own type and a computed index has no single one")
             checkCallsInExpr(ix.object, file, line, ctx)
             checkCallsInExpr(ix.index, file, line, ctx)
         on Expr.binary as b

@@ -1,0 +1,13 @@
+# BUG-781: a tuple indexed with brackets (`t[1]`) passed -c and failed inside zig's std
+# ("Expected pointer, slice, array or vector type") from the runtime's `_zbr_at`. A tuple's
+# elements are read with a dot (`t.1`); a computed index has no single type, so `[]` is
+# refused for both a literal and a computed index.
+def pair(): (int, str)
+    return (7, "b")
+
+def main()
+    var t = (1, "a")
+    print(t[1])
+    var i = 0
+    print(t[i])
+    print(pair()[0])
