@@ -572,18 +572,86 @@ fn _zbr_cont_ptr(comptime T: type) bool {
     return @typeInfo(T) == .pointer and @typeInfo(T).pointer.size == .one and
         _zbr_is_container(@typeInfo(T).pointer.child);
 }
+// Does T (a struct/union, or a single pointer to one -- a class instance) declare `equals`
+// (a hand-written `cue equals`, or the one @derive(Eq) writes)?
+fn _zbr_has_equals(comptime T: type) bool {
+    const ti = @typeInfo(T);
+    if (ti == .@"struct" or ti == .@"union") return @hasDecl(T, "equals");
+    if (ti == .pointer and ti.pointer.size == .one) {
+        const C = ti.pointer.child;
+        const ci = @typeInfo(C);
+        if (ci == .@"struct" or ci == .@"union") return @hasDecl(C, "equals");
+    }
+    return false;
+}
+// `==` on two Zebra values, as the language defines it, whatever the static types are
+// (BUG-787/789/790 -- one decision shared by `==` with an optional side, a @derive(Eq)
+// field, and `contains`/`in`):
+//   - an optional side: both nil -> equal, one nil -> not, else compare the values
+//     (either side may be the optional one, or both);
+//   - strings by content; containers structurally (BUG-506);
+//   - a type declaring `equals` (struct, union, or class) -> its `equals`;
+//   - a tagged union -> same tag, then the payloads by this rule;
+//   - a struct with no `equals` -> field by field by this rule;
+//   - a slice or array -> same length, element-wise;
+//   - everything else (numbers, bools, enums, a class with no `equals`) -> `==`, which
+//     for a class is identity.
 pub fn _zbr_val_eql(x: anytype, y: anytype) bool {
     const T = @TypeOf(x);
+    const U = @TypeOf(y);
+    if (comptime T == @TypeOf(null)) {
+        if (comptime @typeInfo(U) == .optional) return y == null;
+        return U == @TypeOf(null);
+    }
+    if (comptime U == @TypeOf(null)) {
+        if (comptime @typeInfo(T) == .optional) return x == null;
+        return false;
+    }
+    if (comptime @typeInfo(T) == .optional) {
+        if (x) |xv| return _zbr_val_eql(xv, y);
+        if (comptime @typeInfo(U) == .optional) return y == null;
+        return false;
+    }
+    if (comptime @typeInfo(U) == .optional) {
+        if (y) |yv| return _zbr_val_eql(x, yv);
+        return false;
+    }
     if (comptime T == void) return true;
     if (comptime _zbr_is_bytes(T)) return std.mem.eql(u8, x, y);
     if (comptime _zbr_is_container(T) or _zbr_cont_ptr(T)) return _zbr_cont_eql(x, y);
-    if (comptime @typeInfo(T) == .optional) {
-        if (x == null and y == null) return true;
-        if (x == null or y == null) return false;
-        return _zbr_val_eql(x.?, y.?);
+    if (comptime _zbr_has_equals(T)) return x.equals(y);
+    switch (comptime @typeInfo(T)) {
+        .@"union" => |info| {
+            if (comptime info.tag_type == null) return std.meta.eql(x, y);
+            if (std.meta.activeTag(x) != std.meta.activeTag(y)) return false;
+            switch (x) {
+                inline else => |xv, tag| return _zbr_val_eql(xv, @field(y, @tagName(tag))),
+            }
+        },
+        .@"struct" => |info| {
+            inline for (info.fields) |f| {
+                if (!_zbr_val_eql(@field(x, f.name), @field(y, f.name))) return false;
+            }
+            return true;
+        },
+        .array => {
+            for (x, y) |xe, ye| {
+                if (!_zbr_val_eql(xe, ye)) return false;
+            }
+            return true;
+        },
+        .pointer => |info| {
+            if (comptime info.size == .slice) {
+                if (x.len != y.len) return false;
+                for (x, y) |xe, ye| {
+                    if (!_zbr_val_eql(xe, ye)) return false;
+                }
+                return true;
+            }
+            return x == y;
+        },
+        else => return x == y,
     }
-    if (comptime @typeInfo(T) == .@"struct") return std.meta.eql(x, y);
-    return x == y;
 }
 pub fn _zbr_cont_eql(a: anytype, b: anytype) bool {
     if (comptime _zbr_cont_ptr(@TypeOf(a))) return _zbr_cont_eql(a.*, b);
@@ -621,7 +689,8 @@ pub fn _zebra_in(item: anytype, container: anytype) bool {
             if (comptime _zbr_is_bytes(I)) {
                 if (std.mem.eql(u8, elem, item)) return true;
             } else {
-                if (elem == item) return true;
+                // BUG-790: as `==` decides it (a struct, a `cue equals`, an optional).
+                if (_zbr_val_eql(elem, item)) return true;
             }
         }
         return false;
@@ -632,12 +701,13 @@ pub fn _zebra_in(item: anytype, container: anytype) bool {
             for (container.items) |elem| {
                 if (comptime _zbr_is_bytes(I)) {
                     if (std.mem.eql(u8, elem, item)) return true;
-                } else if (comptime _zbr_is_container(@TypeOf(elem)) or _zbr_cont_ptr(@TypeOf(elem))) {
-                    // A list of collections: `in` compares contents, as `==` does (BUG-506).
-                    // It compared the element POINTERS, so `[1, 2] in [[1, 2], [3]]` was false.
-                    if (_zbr_cont_eql(elem, item)) return true;
                 } else {
-                    if (elem == item) return true;
+                    // `contains` / `in` is `==` on each element: a list of collections
+                    // compares contents (BUG-506), a struct field by field or through its
+                    // `equals`, a class through its `cue equals` (identity without one),
+                    // an optional nil-aware (BUG-790; it was `elem == item`, which zig
+                    // refuses on a struct and which skipped a class's cue).
+                    if (_zbr_val_eql(elem, item)) return true;
                 }
             }
             return false;
