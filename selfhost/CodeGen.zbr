@@ -5820,6 +5820,11 @@ struct Generator
         if tr != nil
             if emitEmptyListForParam(fexpr, tr!)
                 return
+        # BUG-784: `var k: Namer = Dog(..)` (or `Namer?`) as a field default -- the fat
+        # pointer every other interface slot takes; the bare `*Dog` reached zig.
+        if tr != nil
+            if genInterfaceArgCoercion(fexpr, tr!)
+                return
         # BUG-753: the same for an empty `{}` on a HashMap / Set field -- it lowered to the
         # expression-position `_ZbrAutoMap([]const u8, []const u8)` whatever the declaration
         # said. As for a local (`var m: HashMap(K,V) = {}`, §28f / BUG-240), the declared
@@ -6686,7 +6691,23 @@ struct Generator
             genExpr(value)
             w.emit(", .vtable = &_vtable_" + cn + "_" + ir.vt + " }")
 
-    def genInterfaceArgCoercion(arg: Expr, param_type: TypeRef): bool
+    # BUG-784: whether genInterfaceArgCoercion would coerce `value` into `tr` -- the
+    # decision alone, so a caller can pick a statement shape before writing anything.
+    def ifaceCoerces(value: Expr, tr: TypeRef): bool
+        var t: TypeRef = tr
+        if t is TypeRef.nilable as tn
+            t = tn
+        if ifaceRef(t) as cir
+            if ifaceCoercionClass(value, cir.name) != nil
+                return true
+        return isDepIfaceRef(t) and isConcreteForDepIface(value)
+
+    # BUG-784: an OPTIONAL interface (`Namer?`) takes the same fat pointer (or `.from`);
+    # zig coerces it into the optional. Only the declared type's `?` is looked through.
+    def genInterfaceArgCoercion(arg: Expr, param_type_in: TypeRef): bool
+        var param_type: TypeRef = param_type_in
+        if param_type is TypeRef.nilable as ptn
+            param_type = ptn
         if ifaceRef(param_type) as pir
             if ifaceCoercionClass(arg, pir.name) as cn
                 genFatPtr(arg, cn, pir)
@@ -9313,6 +9334,20 @@ struct Generator
         if n.init_expr != nil
             if n.type_ != nil
                 var iinit = n.init_expr!
+                # BUG-784: `var i: Namer? = Dog(..)` (or a Dog-typed ident / call) --
+                # the fat pointer every other site builds, typed as the optional.
+                if n.type_! is TypeRef.nilable
+                    if ifaceCoerces(iinit, n.type_!)
+                        var onkw: str = "const"
+                        if is_mut
+                            onkw = "var"
+                        writeIndent()
+                        w.emit(onkw + " " + zigSafeName(n.name) + ": ")
+                        genType(n.type_!)
+                        w.emit(" = ")
+                        genInterfaceArgCoercion(iinit, n.type_!)
+                        w.emit(";\n")
+                        return
                 if iinit is Expr.call as ic
                     if ic.callee is Expr.ident as iid
                         var iclass_name = iid.name
@@ -10679,6 +10714,15 @@ struct Generator
                                 ift_ft2 = ift_fo
                             if ift_ft2 is Type_.named as ift_fn
                                 ift_name = ift_fn
+            # BUG-784: a LOCAL target (`i = Dog(..)` with `var i: Namer` or `Namer?`) --
+            # only fields were looked up, so the bare `*Dog` reached zig.
+            if ift_name == "" and .infer_ctx != nil
+                if a.target is Expr.ident
+                    var ift_lt: Type_ = inferExpr(a.target, .infer_ctx!)
+                    if ift_lt is Type_.optional as ift_lo
+                        ift_lt = ift_lo
+                    if ift_lt is Type_.named as ift_ln
+                        ift_name = ift_ln
             # BUG-515 (Fable, GameEngine): an interface declared in ANOTHER module is a
             # target too -- genInterfaceArgCoercion emits `.from(value)` for it (BUG-490),
             # which the parameter path already used; only this gate was module-local.
@@ -19110,7 +19154,10 @@ struct Generator
                                 # BUG-388: List(Iface).add(concrete) takes the fat
                                 # pointer, as every other interface-typed slot does.
                                 var t_iface_done = false
-                                if list_elem_t is Type_.named as t_en
+                                var t_elem: Type_ = list_elem_t
+                                if t_elem is Type_.optional as t_eo
+                                    t_elem = t_eo           # BUG-784: List(Namer?)
+                                if t_elem is Type_.named as t_en
                                     if findInterfaceDecl(t_en) != nil or isIfaceName(t_en)   # BUG-574: a dep's interface too
                                         var t_sp: Span = Span(0, 0, 0, 0)
                                         t_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(t_sp, t_en)))
@@ -19968,7 +20015,11 @@ struct Generator
                             var add_lt: Type_ = inferExpr(m.object, .infer_ctx!)
                             if add_lt is Type_.ref_to as add_lrt
                                 add_lt = add_lrt
-                            if add_lt is Type_.list_ as add_elem
+                            if add_lt is Type_.list_ as add_elem0
+                                var add_elem: Type_ = add_elem0
+                                # BUG-784: a `List(Namer?)` takes the same fat pointer.
+                                if add_elem is Type_.optional as add_eo
+                                    add_elem = add_eo
                                 if add_elem is Type_.named as add_en
                                     # BUG-574: a dep module's interface too.
                                     if findInterfaceDecl(add_en) != nil or isIfaceName(add_en)

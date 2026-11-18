@@ -1,0 +1,40 @@
+# BUG-784: a class from a USED module converts to that module's interface held OPTIONALLY
+# (`Show?`) at every site -- each failed inside zig ("expected type '?...Show', found
+# '*...Dog'") after `-c` accepted it. A dep interface goes through `.from(value)`.
+use bug784_optional_dep_iface_lib exposing Show, Dog
+
+class Box
+    var s: Show? = nil
+
+def take(s: Show?): str
+    if s as v
+        return v.show()
+    return "none"
+
+def mk(): Show?
+    return Dog("ret")
+
+def main()
+    var d = Dog("rex")
+    var a: Show? = d
+    var b: Show? = Dog("ctor")
+    var c: Show? = nil
+    c = Dog("assign")
+    var xs = List(Show?)()
+    xs.add(Dog("listed"))
+    var bx = Box()
+    bx.s = Dog("field")
+    var out = ""
+    if a as av
+        out = out + av.show() + " | "
+    if b as bv
+        out = out + bv.show() + " | "
+    if c as cv
+        out = out + cv.show() + " | "
+    if xs.at(0) as xv
+        out = out + xv.show() + " | "
+    if bx.s as fv
+        out = out + fv.show() + " | "
+    if mk() as mv
+        out = out + mv.show() + " | "
+    print("bug784 dep: " + out + take(Dog("param")) + " | " + take(nil))

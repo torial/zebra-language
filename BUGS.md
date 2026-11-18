@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-791. Next new bug: BUG-792.**
+**Last bug number generated: BUG-792. Next new bug: BUG-793.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -55,6 +55,20 @@
 - **Fix shape:** the receiver's numeric kind decides the lowering: an integer receiver of any
   width is `@as(i64, b)`, never `@intFromFloat`.
 - **Control when fixing:** the repro prints 65 and 66; `3.7.toInt()` keeps truncating.
+
+---
+
+### BUG-792: a `Dog?` value into an interface-OPTIONAL slot (`Namer?`) fails inside zig
+- **Status:** OPEN (filed 2026-11-18; found widening BUG-784's probes)
+- **Repro:** `def find(ok: bool): Dog?` returning `Dog("found")` or nil, then `var md: Dog? =
+  find(true)` / `var i: Namer? = md` / `if i as v` / `print(v.name())`. `-c` exits 0; zig:
+  "expected type '?Namer', found '?*Dog'". BUG-784's coercion boxes a value the checker types as
+  a concrete CLASS; an optional class is a different type and passes through unconverted.
+- **Fix shape:** unwrap, box, rewrap: `if (md) |p| <fat pointer of p> else null`, in one helper
+  every coercion site shares (genInterfaceArgCoercion), for this module's interfaces and a dep's
+  (`.from`).
+- **Control when fixing:** the repro prints found; a nil `md` gives a nil `i`; BUG-784's
+  fixtures unchanged.
 
 ---
 
@@ -130,19 +144,6 @@
   BUG-790 needs.
 - **Control when fixing:** all three repros print `[true] [false]`; a flat int/str/float struct
   unchanged.
-
----
-
-### BUG-784: an implementing class constructed into an interface-typed OPTIONAL local fails inside zig
-- **Status:** OPEN (filed 2026-11-18; reported by Fable, found writing BUG-783's row; reproduced
-  here on 257a9c3)
-- **Repro:** `interface Namer` with `def name(): str`, `class Dog implements Namer`, then
-  `var i: Namer? = Dog("ifc")` / `if i as nm` / `print(nm.name())` -> zig's "expected type
-  '?Namer', found '*Dog'" after "resolved OK". Through a typed local it works
-  (`var i0: Namer = Dog("ifc")` / `var i: Namer? = i0` prints ifc). A parameter, field or return
-  of type `Namer?` is untried.
-- **Control when fixing:** the repro prints ifc; `var i: Namer = Dog(...)` and a nil-initialised
-  `Namer?` unchanged; the parameter / field / return positions tried and pinned or filed.
 
 ---
 

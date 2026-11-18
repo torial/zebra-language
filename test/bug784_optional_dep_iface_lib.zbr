@@ -1,0 +1,11 @@
+# Helper module for bug784_optional_dep_iface_test: the interface and the class live HERE;
+# the conversions into an OPTIONAL of the interface happen in the module that uses this one.
+interface Show
+    def show(): str
+
+class Dog implements Show
+    var name: str
+    cue init(name: str)
+        .name = name
+    def show(): str
+        return "dog " + .name

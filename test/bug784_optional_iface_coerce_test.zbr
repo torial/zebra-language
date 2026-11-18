@@ -1,0 +1,46 @@
+# BUG-784: a class value converts to an OPTIONAL interface (`Namer?`) everywhere a
+# `Namer` takes it -- each line below failed inside zig ("expected type '?Namer',
+# found '*Dog'") after `-c` accepted it. The plain `i = Dog(..)` into a `Namer` local
+# failed the same way (only fields were looked up on assignment).
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return .nm
+
+class Box
+    var n: Namer? = nil
+    var k: Namer? = Dog("default")
+    cue init(n: Namer?)
+        .n = n
+    def set(n: Namer?)
+        .n = n
+
+def show(n: Namer?): str
+    if n as v
+        return v.name()
+    return "none"
+
+def mk(): Namer?
+    return Dog("ret")
+
+def main()
+    var d = Dog("ident")
+    var a: Namer? = Dog("ctor")
+    var b: Namer? = d
+    var c: Namer? = nil
+    c = Dog("assign")
+    var p: Namer = Dog("first")
+    p = Dog("plain")
+    var xs = List(Namer?)()
+    xs.add(Dog("list"))
+    var bx = Box(Dog("ctorarg"))
+    var b1 = show(bx.n)
+    bx.set(Dog("method"))
+    var b2 = show(bx.n)
+    print("bug784: ${show(a)} ${show(b)} ${show(c)} ${p.name()} ${show(xs.at(0))}")
+    print("bug784: ${b1} ${b2} ${show(bx.k)} ${show(mk())} ${show(Dog("param"))} ${show(nil)}")

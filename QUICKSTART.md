@@ -2126,6 +2126,10 @@ if obj is Printable
 
 - `implements` declares interface conformance — the compiler verifies all
   required methods exist via `comptime { Iface.check(@This()); }`.
+- A class instance converts to an interface it implements wherever one is expected -- a
+  local, a parameter, a return, a field and its default, an assignment, `List(I).add` --
+  and the same holds for the interface held optionally (`var s: Printable? = Dog("rex")`,
+  BUG-784). A `Dog?` into a `Printable?` slot is not converted yet (BUG-792).
 - `adds Mixin` includes methods from a mixin declaration. A generic class `adds` one the
   same way (`class Box(T) adds Tagged`); each instantiation has its own copy of the state.
 - **A mixin may keep state.** A `var` in a mixin becomes a field of every class that `adds`

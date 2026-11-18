@@ -1607,6 +1607,10 @@ smoke_run test/bug553_struct_literal_equals_test.zbr "bug553: true true true"
 # BUG-785: a runtime int initialising or assigned to a float / float? / float32 widens.
 smoke_run test/bug785_int_init_widens_float_test.zbr "bug785: 3.0 3.0 3.0 3.0 5.0 3 4.0 2.0 3.0"
 smoke_run test/bug785_int_init_widens_float_test.zbr "bug785 assign: 3.0 3.0 3.0"
+# BUG-784: a class value into an OPTIONAL interface (and a plain local assignment, a field default) -- zig refused the bare *Dog.
+smoke_run test/bug784_optional_iface_coerce_test.zbr "bug784: ctor ident assign plain list"
+smoke_run test/bug784_optional_iface_coerce_test.zbr "bug784: ctorarg method default ret param none"
+smoke_run test/bug784_optional_dep_iface_test.zbr "bug784 dep: dog rex | dog ctor | dog assign | dog listed | dog field | dog ret | dog param | none"
 smoke_tc_fail test/fail_fixtures/bug552_def_next_not_iterable_test.zbr "bug552_def_next_not_iterable_test.zbr:17:5: error: 'Ticker' is not iterable"
 smoke_tc_fail test/fail_fixtures/bug551_order_no_compare_test.zbr "bug551_order_no_compare_test.zbr:11:11: error: 'V' has no ordering"
 smoke_tc_fail test/fail_fixtures/bug551_struct_eq_no_equals_test.zbr "bug551_struct_eq_no_equals_test.zbr:10:11: error: struct 'P' has no equality"

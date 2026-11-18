@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A class converts to an OPTIONAL interface it implements** (BUG-784): `var s: Show? =
+  Dog(..)` (or a `Dog`-typed local or call), a `Show?` parameter, a `List(Show?)`'s `add`, and
+  a `Show?` assignment, for an interface of this module or a used one. Two non-optional sites
+  were broken the same way and are fixed with it: `s = Dog(..)` into a `Show` LOCAL (only a
+  field was converted) and a `Show` field's default initialiser. All passed `-c` and failed
+  inside zig ("expected type '?Show', found '*Dog'"). A `Dog?` into a `Show?` is BUG-792.
 - **An `int` value initialising or assigned to a `float` widens** (BUG-785): `var f: float =
   xs.count()`, `= three()`, `= n` for a runtime `n`, the same into `float?` and `float32`, and
   `g = n`. They passed `-c` and failed inside zig ("expected type 'f64', found 'i64'"); only a

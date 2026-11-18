@@ -6,6 +6,32 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-784: an implementing class constructed into an interface-typed OPTIONAL local fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable, found writing BUG-783's row;
+  reproduced here on 257a9c3)
+- **Repro:** `interface Namer` with `def name(): str`, `class Dog implements Namer`, then
+  `var i: Namer? = Dog("ifc")` / `if i as nm` / `print(nm.name())` -> zig's "expected type
+  '?Namer', found '*Dog'" after "resolved OK".
+- **Root, wider than filed:** every interface coercion site asked `ifaceRef(type)` /
+  `isDepIfaceRef(type)` of the DECLARED type, which answers nil for `TypeRef.nilable`, so an
+  optional slot took the bare `*Dog`: a `Namer?` local from a ctor, an ident or a call, a `Namer?`
+  parameter (and so a ctor or method argument), `List(Namer?).add`, and assignment. A field and a
+  return already unwrapped. Probing the positions found two NON-optional sites broken the same
+  way: `i = Dog(..)` into a `Namer` LOCAL (genAssign looked up field targets only) and a `Namer`
+  field's default initialiser (genFieldInitExpr never coerced). An interface from a used module
+  failed at all the same sites (`.from(value)` was never reached).
+- **Fix:** genInterfaceArgCoercion looks through the declared type's `?` (zig converts the fat
+  pointer, or `.from`'s decl literal, into the optional); `ifaceCoerces` is its decision alone,
+  which the var-init uses to choose its statement shape; both `List.add` emitters unwrap an
+  optional element; genAssign infers an ident target's type; genFieldInitExpr, which all seven
+  field-initialiser sites share, coerces.
+- **Not fixed here:** a `Dog?` VALUE into a `Namer?` slot -> BUG-792.
+- **Fixtures:** test/bug784_optional_iface_coerce_test.zbr (every position, this module) and
+  test/bug784_optional_dep_iface_test.zbr (+ _lib, a used module's interface); both red on the
+  pre-fix compiler (37154b3's), green after.
+
+---
+
 ### BUG-785: an `int` CALL result initialising a `float` local passes `-c` and fails inside zig -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable; reproduced here on 257a9c3)
 - **Repro:** `var xs = [1, 2, 3]` / `var fl: float = xs.count()` -> zig's "expected type 'f64',

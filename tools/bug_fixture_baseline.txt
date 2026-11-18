@@ -121,7 +121,6 @@
 197	SIMD `f32x8` islanded — cannot ingest computed / collection data ✅ FIX
 204	/205/206: bootstrap (LLVM) lags the selfhost on `except` — blocks GUI/
 208	`zebra run` hangs when the program prints more than ~4 KB ✅ FIXED 2026
-209	`uses_sqlite` false-positive disabled the fast run path + linked sqlit
 210	`zig build update-selfhost` can skip regeneration after a `.zbr`-only 
 211	selfhost `nameUsedInStmt` ignored `using` blocks → spurious param disc
 213	selfhost `typeFromName` missing `SysProcess` → `proc.isRunning()` mis-
