@@ -6,6 +6,36 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-795: `--target v` writes a class value into an interface-typed field default or declared local as the class -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, running BUG-784's
+  fixture there; the Zig route was right once BUG-784 landed)
+- **Repro (a):** `class Box` with `var k: Namer? = Dog("d")` (or plain `var j: Namer = Dog("d")`,
+  in a class or a struct) is emitted `k ?Namer = new_dog('d')`, and V refuses the file: "field
+  is not reference but default value is reference".
+- **Repro (b):** `var p: Namer = Dog("a")` / `p = Cat("b")` is emitted `mut p := new_dog('a')`,
+  a `&Dog` to V, so the assignment does not compile: "cannot assign to `p`: expected `&Dog`,
+  not `&Cat`". Both under "nothing refused".
+- **Cause:** V types a `:=` by its value and a field default by its own rule; the emitter wrote
+  the class reference as it stood at both sites. A parameter, a return, an assignment, a
+  module-level variable and a container's element were already right (V converts there).
+- **Fix:** `CodeGenV.fieldDefault` and the local declaration cast a value the emitter knows to
+  be a class reference (a constructor call, or an expression typed `&C`) to the slot's
+  interface: `k ?Namer = ?Namer(new_dog('d'))`, `mut p := Namer(new_dog('a'))`. The cast
+  shares the object (the interface holds the reference). The declared OPTIONAL local was
+  BUG-783's arm already. A value the emitter has no type for is written as before.
+- **Pinned by:** `tools/v_check.sh`'s `iface_slot` row: eight lines written by hand, both
+  routes held to them -- a declared local from a constructor and from a named object (renamed
+  through its own name, read through the interface), each then given another implementing
+  class; field defaults plain and optional in a class, plain in a struct; a declared local
+  returned as the interface; the module-level control. Watched red on the compiler before the
+  change (61c0028's build: V refuses the file on the three errors above, all eight lines
+  missing).
+- **Found beside it:** BUG-796 (a method called on an interface value that is not a name).
+  `List(Namer?)` is refused by name on this route (a list of an optional: a standing limit),
+  which is why BUG-784's two fixtures do not run there as written.
+
+---
+
 ### BUG-791: `@derive` on a `class` is accepted and half-applied, though QUICKSTART §43 says it is struct-only -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (filed 2026-11-18; found from Fable's eq_dclass probe, reproduced here on c383407)
 - **Repro:** `@derive(Eq) class D` (`var id: int`, `var s: str`, a `cue init`), then

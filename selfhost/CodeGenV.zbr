@@ -702,6 +702,20 @@ class VGen
             else
                 return false
 
+    # BUG-795: a V type that is an interface, plain or optional (`Namer`, `?Namer`)
+    def isIfaceSlot(vt: str): bool
+        if vt.startsWith("?")
+            return .isIfaceName(vt.substring(1, vt.len))
+        return .isIfaceName(vt)
+
+    # BUG-795: an expression this emitter knows to be a class reference (a constructor
+    # call, or a value whose type is a class's `&C`). False for one it has no type for.
+    def isClassValue(e: Expr): bool
+        var et: str = .ctorTypeOf(e)
+        if et == ""
+            et = .vTypeOf(e)
+        return et.startsWith("&") and .isClassName(et.substring(1, et.len))
+
     def isIfaceName(name: str): bool
         for n in .iface_names
             if n == name
@@ -1613,6 +1627,12 @@ class VGen
     # a class without an init was `&Model{}` before, every default zeroed
     def fieldDefault(f: DeclVar): str
         if f.init_expr as ie
+            # BUG-795: `var k: Namer? = Dog("a")` -- V refuses a class reference as the
+            # default of an interface-typed field ("field is not reference but default value
+            # is reference"), plain or optional: the value is cast to the field's type
+            var fdt: str = .vType(f.type_)
+            if .isIfaceSlot(fdt) and .isClassValue(ie)
+                return " = " + fdt + "(" + .exprStr(ie) + ")"
             return " = " + .exprStr(ie)
         # a container field without an initializer: the empty container, as
         # Zebra's zero value (V wants every reference field initialized; the
@@ -3228,6 +3248,12 @@ class VGen
                 rhs = "zopt_id[" + opt_decl.substring(1, opt_decl.len) + "](" + rhs + ")"
             else if opt_decl != ""
                 rhs = opt_decl + "(" + rhs + ")"
+            else if v.type_ != nil and .isIfaceName(tname) and .isClassValue(ie)
+                # BUG-795: `var p: Namer = Dog("a")` -- V types `mut p := new_dog('a')` by the
+                # value, a &Dog, so the local lost its interface and the next `p = Cat("b")`
+                # did not compile. A DECLARED interface local is made its type. (The optional
+                # `var p: Namer? = Dog("a")` is the arm above: BUG-783.)
+                rhs = tname + "(" + rhs + ")"
             .line("mut " + name + " := " + rhs)
         else
             if v.type_ as t

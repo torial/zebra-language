@@ -1,6 +1,7 @@
 #!/bin/bash
 # pins: BUG-777 `--target v` runs the type check: a program -c refuses is refused there in the compile's words with no .v written, its well-typed twin is written, partial files are merged and a `use` is found by its exact name (the typecheck row)
 # pins: BUG-773 x.hash() on a str, an integer, a bool and a char, and Hash.fnv64, answer the Zig route's FNV-1a 64 on the V route, held to values computed outside both; a derived or untyped hash() is refused by name (the hash row)
+# pins: BUG-795 a class value into an interface-typed field default (plain or optional, class or struct) or a declared plain interface local is cast to the interface on the V route: the field compiles, the local takes another implementing class, and the cast shares the object (the iface_slot row)
 # pins: BUG-783 a declared optional local keeps its `?` on the V route whatever its initialiser; module-level and field optionals, a plain local and a nil-initialised optional unchanged (the optlocal row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
@@ -588,6 +589,114 @@ if [ -f "$OUT/optlocal_shapes.v" ]; then
 else ol_bad="$ol_bad no-optlocal_shapes.v"; fi
 if [ -n "$ol_bad" ]; then echo "optlocal: FAILED --$ol_bad"; fail=1
 else echo "optlocal: ok -- a declared optional local is an option on the V route for thirty-two initialisers (scalars and their edges, a call, an option, an untyped value, a class, an interface, a struct, an enum, a union, a list, a JsonValue, a catch, an untyped option of a sum type, another optional, inside a loop), read by as / orelse / !, set to nil and set again; module-level and field optionals, a plain local and a nil-initialised optional unchanged; both routes print the lines written by hand"; fi
+echo "── a class value into an interface-typed field default or declared local (BUG-795) ──"
+# Found running BUG-784's fixture on this route. `var k: Namer? = Dog("d")` as a FIELD
+# default (plain `Namer` too, in a class or a struct) was written `k ?Namer = new_dog(..)`,
+# which V refuses ("field is not reference but default value is reference"); and a DECLARED
+# plain interface local, `var p: Namer = Dog("a")`, was written `mut p := new_dog(..)`, a
+# &Dog to V, so the next `p = Cat("b")` did not compile -- both under "nothing refused".
+# The value is cast to the slot's interface. iface_slot: a declared local from a
+# constructor and from a named object (which the interface must SHARE: the object is
+# renamed through its own name and read through the interface), each then given another
+# implementing class; field defaults plain and optional in a class and plain in a struct,
+# reassigned; a declared local inside a function returned as the interface; a module-level
+# interface variable (unchanged: it was right); a list of the interface filled from one
+# local holding two classes in turn. Both routes are held to lines written by hand.
+cat > "$OUT/iface_slot.zbr" <<'ZBR'
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return "dog " + .nm
+
+class Cat implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return "cat " + .nm
+
+class Box
+    var j: Namer = Dog("plainfield")
+    var k: Namer? = Dog("optfield")
+    var e: Namer? = nil
+
+struct Pair
+    var a: Namer = Cat("structfield")
+    var n: int = 0
+
+var top: Namer = Dog("top")
+
+def pick(first: bool): Namer
+    var r: Namer = Dog("picked")
+    if not first
+        r = Cat("picked")
+    return r
+
+def main()
+    var p: Namer = Dog("first")
+    var s1 = p.name()
+    p = Cat("second")
+    print("local [${s1}] [${p.name()}]")
+    var d = Dog("ident")
+    var q: Namer = d
+    d.nm = "shared"
+    var s2 = q.name()
+    q = Cat("third")
+    d.nm = "renamed"
+    print("ident [${s2}] [${q.name()}] [${d.name()}]")
+    var bx = Box()
+    var s3 = bx.j.name()
+    bx.j = Cat("j2")
+    var s4 = "none"
+    if bx.k as kv
+        s4 = kv.name()
+    bx.k = Cat("k2")
+    var s5 = "none"
+    if bx.k as kv2
+        s5 = kv2.name()
+    print("field [${s3}] [${bx.j.name()}] [${s4}] [${s5}] [${bx.e == nil}]")
+    var pr = Pair()
+    print("struct [${pr.a.name()}] [${pr.n}]")
+    var r1 = pick(true)
+    var r2 = pick(false)
+    print("call [${r1.name()}] [${r2.name()}]")
+    var t1 = top.name()
+    top = Cat("top2")
+    print("module [${t1}] [${top.name()}]")
+    var xs = List(Namer)()
+    var w: Namer = Dog("listed")
+    xs.add(w)
+    w = Cat("listed")
+    xs.add(w)
+    for x in xs
+        print("walk [${x.name()}]")
+ZBR
+compare iface_slot "$OUT" iface_slot.zbr "$OUT/control_iface_slot.txt" "$OUT/iface_slot.v"
+rows=$((rows + 1))
+is_bad=""
+for o in "$OUT/control_iface_slot.txt" "$OUT/iface_slot_v_out.txt"; do
+  [ -f "$o" ] || { is_bad="$is_bad no-$(basename "$o")"; continue; }
+  while IFS= read -r want; do
+    grep -qxF "$want" "$o" || is_bad="$is_bad $(basename "$o"):$(echo "$want" | cut -d'[' -f1 | tr ' ' '_')"
+  done <<'WANT'
+local [dog first] [cat second]
+ident [dog shared] [cat third] [dog renamed]
+field [dog plainfield] [cat j2] [dog optfield] [cat k2] [true]
+struct [cat structfield] [0]
+call [dog picked] [cat picked]
+module [dog top] [cat top2]
+walk [dog listed]
+walk [cat listed]
+WANT
+  [ "$(wc -l < "$o")" = 8 ] || is_bad="$is_bad $(basename "$o"):$(wc -l < "$o")-lines-not-8"
+done
+if [ -n "$is_bad" ]; then echo "iface_slot: FAILED --$is_bad"; fail=1
+else echo "iface_slot: ok -- a class value into an interface-typed field default (plain and optional, class and struct) and into a declared plain interface local is the interface on the V route: eight lines written by hand, the local taking another implementing class and sharing the object it was made from"; fi
 echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
 # BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
 # an integer or a bool as the eight little-endian bytes of its i64, a char as its

@@ -3614,6 +3614,26 @@ untyped option of a sum type; the module-level and field controls), both routes 
 lines written by hand, and the emitted V asked that a plain local and a nil-initialised
 optional are written as before.
 
+## A class value into an interface-typed slot (BUG-795, 2026-11-18)
+
+V converts a class reference to an interface it implements at a parameter, a return, an
+assignment to a typed target and a container's element. Two sites it does not, and the
+emitter wrote the bare reference at both:
+
+| the Zebra | was | is |
+|---|---|---|
+| a field's default, `var k: Namer? = Dog("d")` (plain `Namer` too; class or struct) | `k ?Namer = new_dog('d')` -- V: "field is not reference but default value is reference" | `k ?Namer = ?Namer(new_dog('d'))` |
+| a declared local, `var p: Namer = Dog("a")` | `mut p := new_dog('a')` -- a `&Dog`, so `p = Cat("b")` did not compile | `mut p := Namer(new_dog('a'))` |
+
+The cast is written only for a value the emitter knows to be a class reference (a
+constructor call, or an expression its tables type `&C`); the interface value holds that
+reference, so the object is shared, as on the Zig route. The declared optional local
+(`var p: Namer? = Dog("a")`) is BUG-783's arm. `List(Namer?)` stays refused by name (a list
+of an optional).
+
+**Witness.** `tools/v_check.sh`'s `iface_slot` row, both routes held to eight lines written
+by hand.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
