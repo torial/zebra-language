@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-796. Next new bug: BUG-797.** (BUG-795, BUG-796 reserved 2026-11-18 for Fable's V-route entries: interface field default / declared interface local; method on an interface-typed call result.)
+**Last bug number generated: BUG-797. Next new bug: BUG-798.** (BUG-795, BUG-796, BUG-797 reserved 2026-11-18 for Fable's V-route entries: interface field default / declared interface local; method on an interface-typed value that is not a name (a call's result, an element, a method's result); CodeGenV's nested emitter (cloneContext) not sharing the printer-helper tables, so a lambda body's or `else if` probe's show helper is renumbered from 0 -- V refuses `zshow_h0`, or prints the wrong helper's text.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
