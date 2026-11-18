@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-805. Next new bug: BUG-806.** (Reserved 2026-11-18 for Fable's V-route entries: BUG-795 interface field default / declared interface local; BUG-796 method on an interface-typed value that is not a name (a call's result, an element, a method's result); BUG-797 CodeGenV's nested emitter (cloneContext) not sharing the printer-helper tables, so a lambda body's or `else if` probe's show helper is renumbered from 0; BUG-804 an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-798..803 were filed and fixed the same day, Zig route. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-805. Next new bug: BUG-806.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
