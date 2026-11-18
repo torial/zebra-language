@@ -58,9 +58,10 @@ Open bugs live in `BUGS.md`.
   'bool'"); `5.hash()` was refused naming the int methods. A user type answers `x.hash()` with
   its `cue hash`, so the builtin key types were the odd ones out.
 - **Fix:** `x.hash()` is sugar for `Hash.fnv64`. On a `str`, `Hash.fnv64(s)`. On an integer of
-  any width, a `char` (its codepoint) or a `bool` (0 / 1), FNV-1a 64 of the value as the eight
+  any width or a `bool` (0 / 1), FNV-1a 64 of the value as the eight
   little-endian bytes of an i64 (runtime `_zbr_hash_int`), so equal values hash alike at every
-  width. Typed `int`, takes no arguments (`str.hash expects 0 arguments`). Codegen decides by
+  width. A `char` hashes as the one-character string it stands for (runtime `_zbr_hash_char`,
+  Sean's call the same day), so `'a'.hash() == "a".hash()`. Typed `int`, takes no arguments (`str.hash expects 0 arguments`). Codegen decides by
   the receiver's inferred TYPE, so a user `cue hash` and an `extend str` declaring `hash` are
   untouched (both controlled). `float` is still refused by name. Documented as stable and as
   NOT the map's internal hash. SURFACE.md: str +hash (54 -> 55). Fixture

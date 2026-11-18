@@ -7803,10 +7803,15 @@ pub fn _hash_fnv64(s: []const u8) i64 {
 pub fn _hash_xxhash64(s: []const u8) i64 {
     return @as(i64, @bitCast(std.hash.XxHash64.hash(0, s)));
 }
-// BUG-773: `x.hash()` on an integer, char or bool -- FNV-1a 64 (`Hash.fnv64`) of the value
-// as the eight little-endian bytes of its two's-complement i64 (a bool is 0 / 1, a char its
-// codepoint), so equal values hash alike at every width. `s.hash()` on a str is
-// `_hash_fnv64(s)` itself. Neither is the hash a HashMap uses internally.
+// BUG-773: `x.hash()` on an integer or bool -- FNV-1a 64 (`Hash.fnv64`) of the value as the
+// eight little-endian bytes of its two's-complement i64 (a bool is 0 / 1), so equal values
+// hash alike at every width. `s.hash()` on a str is `_hash_fnv64(s)` itself, and a char hashes
+// as the one-character string it stands for (`_zbr_hash_char`, Sean 2026-11-17), so
+// `'a'.hash() == "a".hash()`. None of these is the hash a HashMap uses internally.
+pub fn _zbr_hash_char(c: u21) i64 {
+    var buf: [4]u8 = undefined;
+    return _hash_fnv64(_zbr_char_text(c, &buf));
+}
 pub fn _zbr_hash_int(v: anytype) i64 {
     const T = @TypeOf(v);
     const w: i64 = if (T == bool)

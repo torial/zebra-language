@@ -2,7 +2,8 @@
 # its `cue hash`. BUG-738 had removed `s.hash()` from str (it passed -c and failed inside zig);
 # it is back with an arm, and `b.hash()` on a bool / char, which also failed inside zig, has one.
 #   str            -> Hash.fnv64 of its bytes
-#   int (any width), char, bool -> Hash.fnv64 of the value as 8 little-endian bytes of an i64
+#   int (any width), bool -> Hash.fnv64 of the value as 8 little-endian bytes of an i64
+#   char           -> the one-character string's hash: 'a'.hash() == "a".hash() (Sean, 2026-11-17)
 # The expected values below were computed OUTSIDE the compiler (a Python FNV-1a 64 over the
 # same bytes); "a" is the published FNV-1a 64 vector 0xaf63dc4c8601ec8c.
 # Controls: a user `cue hash` and an `extend str` `hash` are still the user's.
@@ -23,8 +24,11 @@ def main()
     var b: byte = 255
     var u: uint64 = 5
     var c: char = 'a'
+    var e: char = c'é'
+    var z: char = c'中'
     print("int [${5.hash()}] [${n.hash()}] [${b.hash()}] [${b.hash() == 255.hash()}] [${u.hash() == 5.hash()}]")
-    print("char/bool [${c.hash() == 97.hash()}] [${false.hash()}] [${true.hash() == 1.hash()}]")
+    print("char [${c.hash()}] [${c.hash() == "a".hash()}] [${e.hash() == "é".hash()}] [${z.hash() == "中".hash()}] [${c.hash() == 97.hash()}]")
+    print("bool [${false.hash()}] [${true.hash() == 1.hash()}]")
     print("user [${Tag("x").hash()}]")
     var m = HashMap(str, int)()
     m[s] = s.hash()

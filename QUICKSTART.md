@@ -4469,8 +4469,9 @@ for elem in j.tryList("tags") orelse List(JsonValue)()
 
 **`x.hash()` on a builtin is `Hash.fnv64`** (BUG-773), the same call a user type answers
 with its `cue hash`: `s.hash()` on a `str` is `Hash.fnv64(s)`; on an integer of any width,
-a `char` (its codepoint) or a `bool` (0 / 1) it is FNV-1a 64 of the value as the eight
-little-endian bytes of an `int`, so `b.hash() == 255.hash()` for a `byte` 255. The values
+or a `bool` (0 / 1) it is FNV-1a 64 of the value as the eight little-endian bytes of an
+`int`, so `b.hash() == 255.hash()` for a `byte` 255; a `char` hashes as the one-character
+string it stands for, so `c'é'.hash() == "é".hash()`. The values
 are stable across releases. Neither is the hash a `HashMap` uses internally. `float` has no
 `hash()` (and is not a `HashMap` key). In a `cue hash`, hash a `str` field with `.name.hash()`.
 

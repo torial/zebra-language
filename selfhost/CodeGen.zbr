@@ -20511,7 +20511,9 @@ struct Generator
             var hs_fn: str = ""
             if hs_t is Type_.string_
                 hs_fn = "_hash_fnv64("
-            else if hs_t is Type_.int_ or hs_t is Type_.uint_ or hs_t is Type_.int_n or hs_t is Type_.uint_n or hs_t is Type_.char_ or hs_t is Type_.bool_
+            else if hs_t is Type_.char_
+                hs_fn = "_zbr_hash_char("
+            else if hs_t is Type_.int_ or hs_t is Type_.uint_ or hs_t is Type_.int_n or hs_t is Type_.uint_n or hs_t is Type_.bool_
                 hs_fn = "_zbr_hash_int("
             if hs_fn != ""
                 w.emit(hs_fn)
