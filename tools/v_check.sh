@@ -3,6 +3,7 @@
 # pins: BUG-773 x.hash() on a str, an integer, a bool and a char, and Hash.fnv64, answer the Zig route's FNV-1a 64 on the V route, held to values computed outside both; a derived or untyped hash() is refused by name (the hash row)
 # pins: BUG-795 a class value into an interface-typed field default (plain or optional, class or struct) or a declared plain interface local is cast to the interface on the V route: the field compiles, the local takes another implementing class, and the cast shares the object (the iface_slot row)
 # pins: BUG-797 the V route's nested emitter (a statement-bodied lambda's body, an `else if` condition) shares the outer one's printer helpers, own-toString / field / derived-hash tables and module-variable spellings: a container, a class and a colliding module variable inside print what they print outside (the nested_emit row)
+# pins: BUG-796 on the V route a method called on an interface value that is not a name (a call's result, an element, a method's result) goes through a by-value helper: it compiles, shares the object, and keeps a short-circuit and a loop condition in order (the iface_recv row)
 # pins: BUG-783 a declared optional local keeps its `?` on the V route whatever its initialiser; module-level and field optionals, a plain local and a nil-initialised optional unchanged (the optlocal row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
@@ -830,6 +831,163 @@ done
 grep -qF 'the hash() that @derive(Hash) writes for K' "$OUT/nested_dhash_emit.txt" || ne_bad="$ne_bad derived-hash-in-a-lambda-not-refused"
 if [ -n "$ne_bad" ]; then echo "nested_emit: FAILED --$ne_bad"; fail=1
 else echo "nested_emit: ok -- inside a lambda's body and an else-if condition a container, a class, an optional and a colliding module variable print what they print outside: ten lines written by hand on both routes, and a derived hash() there is refused by name"; fi
+echo "── a method on an interface value that is not a name (BUG-796) ──"
+# An interface's methods are all under V's `mut:` (a class's methods are `mut self`), so V
+# refuses one on a value that is no lvalue: `pick(x).name()`, `xs[0].name()`,
+# `k.get().name()` -- "cannot pass expression as `mut`", twenty-two times in this program,
+# under "nothing refused". Each such call goes through a helper that takes the interface by
+# value (one per interface method, made at its first use, after the program). A line bound
+# before the statement, which is what a mutating call on a class gets, would have run the
+# receiver ahead of a short-circuit: the `short` line walks i up to xs.count() INCLUSIVE with
+# `i < xs.count() and xs[i].name() == ..` (an element read at i == count traps), and the
+# `skipped` line counts the calls a false left side must not make. Also: the receiver as an
+# element by [] and by at(), a method's result, a call's result in a statement, an `if`, a
+# `while` condition, a concatenation, an `else if` condition and a lambda's body; a void
+# method that renames the object (read back through its own name: the helper shares it); an
+# optional and a throwing return; an interface-typed argument; a method the interface
+# embeds from another; an optional interface local narrowed by `if opn != nil` (its read is
+# an unwrap expression). Both routes are held to lines written by hand.
+cat > "$OUT/iface_recv.zbr" <<'ZBR'
+interface Namer
+    def name(): str
+    def rename(nn: str)
+    def greet(times: int): str
+    def find(key: str): str?
+    def risky(key: str): str throws
+    def meet(other: Namer): str
+
+interface Pet implements Namer
+    def legs(): int
+
+class Dog implements Pet
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return "dog " + .nm
+    def rename(nn: str)
+        .nm = nn
+    def greet(times: int): str
+        var out = ""
+        for i in 0..times
+            out = out + "woof"
+        return out
+    def find(key: str): str?
+        if key == .nm
+            return "found " + key
+        return nil
+    def risky(key: str): str throws
+        if key == "bad"
+            raise "bad key"
+        return "ok " + key
+    def meet(other: Namer): str
+        return .nm + " meets " + other.name()
+    def legs(): int
+        return 4
+
+class Kennel
+    var d: Namer
+    cue init()
+        .d = Dog("kept")
+    def get(): Namer
+        return .d
+
+var picks: int = 0
+
+def pick(s: str): Namer
+    picks = picks + 1
+    return Dog(s)
+
+def pet(s: str): Pet
+    return Dog(s)
+
+def chain(n: int): str
+    if n < 0
+        return "neg"
+    else if pick("e").name() == "dog e"
+        return "elif"
+    return "other"
+
+def main()
+    var xs = List(Namer)()
+    xs.add(pick("a"))
+    xs.add(pick("b"))
+    print("index [${xs[0].name()}] [${xs.at(1).name()}]")
+    var k = Kennel()
+    print("method [${k.get().name()}] [${k.get().greet(1)}] [${k.get().greet(2)}]")
+    var s = pick("stmt").name()
+    print("stmt [${s}]")
+    if pick("c").name() == "dog c"
+        print("cond ok")
+    var hits = ""
+    var i = 0
+    while i <= xs.count()
+        if i < xs.count() and xs[i].name() == "dog b"
+            hits = hits + "b@${i} "
+        i = i + 1
+    print("short [${hits}] [${i}]")
+    var before = picks
+    if i < 0 and pick("never").name() == "dog never"
+        print("wrong")
+    print("skipped [${picks - before}]")
+    var n = 0
+    while pick("w").name().len > n
+        n = n + 1
+    print("while [${n}]")
+    print("arg [" + pick("arg").name() + "]")
+    var d = Dog("own")
+    var held = List(Namer)()
+    held.add(d)
+    held[0].rename("renamed")
+    print("shared [${d.name()}] [${held[0].name()}]")
+    print("opt [${pick("q").find("q") orelse "none"}] [${pick("q").find("z") orelse "none"}]")
+    var r1 = pick("t").risky("good") catch "caught"
+    var r2 = pick("t").risky("bad") catch "caught"
+    print("throws [${r1}] [${r2}]")
+    var dn: Namer = d
+    print("refarg [${pick("x").meet(dn)}]")
+    print("embed [${pet("p").name()}] [${pet("p").legs()}]")
+    print("elif [${chain(1)}]")
+    var f = def(t: str): str
+        var inner = pick(t).name()
+        return inner
+    print("lambda [${f("lam")}]")
+    var opn: Namer? = pick("n")
+    if opn != nil
+        print("narrow [${opn.name()}]")
+ZBR
+compare iface_recv "$OUT" iface_recv.zbr "$OUT/control_iface_recv.txt" "$OUT/iface_recv.v"
+rows=$((rows + 1))
+ir_bad=""
+for o in "$OUT/control_iface_recv.txt" "$OUT/iface_recv_v_out.txt"; do
+  [ -f "$o" ] || { ir_bad="$ir_bad no-$(basename "$o")"; continue; }
+  while IFS= read -r want; do
+    grep -qxF "$want" "$o" || ir_bad="$ir_bad $(basename "$o"):$(echo "$want" | cut -d'[' -f1 | tr ' ' '_')"
+  done <<'WANT'
+index [dog a] [dog b]
+method [dog kept] [woof] [woofwoof]
+stmt [dog stmt]
+cond ok
+short [b@1 ] [3]
+skipped [0]
+while [5]
+arg [dog arg]
+shared [dog renamed] [dog renamed]
+opt [found q] [none]
+throws [ok good] [caught]
+refarg [x meets dog renamed]
+embed [dog p] [4]
+elif [elif]
+lambda [dog lam]
+narrow [dog n]
+WANT
+  [ "$(wc -l < "$o")" = 16 ] || ir_bad="$ir_bad $(basename "$o"):$(wc -l < "$o")-lines-not-16"
+done
+# the helpers are made only where such a call is written: a program without one carries none
+grep -q "^fn zifc_" "$OUT/iface_recv.v" 2>/dev/null || ir_bad="$ir_bad no-helper-in-iface_recv.v"
+grep -q "^fn zifc_" "$OUT/iface_slot.v" 2>/dev/null && ir_bad="$ir_bad a-helper-in-iface_slot.v-which-calls-none"
+if [ -n "$ir_bad" ]; then echo "iface_recv: FAILED --$ir_bad"; fail=1
+else echo "iface_recv: ok -- a method on an interface value that is not a name compiles and answers on the V route: sixteen lines written by hand, the short-circuit and the loop condition in order, the object shared, and no helper in a program that makes no such call"; fi
 echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
 # BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
 # an integer or a bool as the eight little-endian bytes of its i64, a char as its

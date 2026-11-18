@@ -3647,6 +3647,33 @@ sibling. **A table added to `VGen` goes into `cloneContext` in the same change**
 the outer emitter reports goes into `absorb()`. The row (`nested_emit`) holds both routes
 to lines written by hand, since two of the shapes compiled and printed wrong text.
 
+## A method on an interface value that is not a name (BUG-796, 2026-11-18)
+
+An interface's methods are under V's `mut:` here (a class's are `mut self`), and V takes a
+`mut` method on an lvalue only: `pick("a").name()`, `xs[0].name()` and `k.get().name()`
+did not compile. The call is written through a by-value helper:
+
+```v
+fn zifc_namer_name(zifc_r Namer) string {
+	mut zifc_m := zifc_r
+	return zifc_m.name()
+}
+```
+
+`pick("a").name()` is `zifc_namer_name(pick('a'))`. The interface value holds the object's
+reference, so the helper's copy is the same object (a void method that renames it is seen
+through every other name). The helper is an expression, so `i < n and xs[i].name() == ..`
+keeps its short-circuit and a loop's condition needs no line before it -- a receiver bound
+on a line before the statement, the mutating-call hoist, would break both. Helpers are made
+at first use, one per (interface, method), and appended after the program beside the
+printers; the tables are shared with the nested emitter (`cloneContext`). A receiver that
+is a name (a local, a parameter, a field chain) is written as before -- except an optional
+local narrowed by `if o != nil`, whose read is an unwrap expression and goes through the
+helper too.
+
+**Witness.** `tools/v_check.sh`'s `iface_recv` row, both routes held to sixteen lines
+written by hand.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

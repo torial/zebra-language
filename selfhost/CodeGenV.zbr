@@ -242,6 +242,9 @@ class VGen
     var tmpN: int                 # the temporaries bound for mutating calls on call results
     var show_names: HashMap(str, str)    # BUG-723: a nested container's printer, by its V type and quoting -> the helper's name
     var show_helpers: List(str)          # those helpers' V text, appended after the program (a top-level fn each)
+    var iface_decls: HashMap(str, DeclInterface)   # BUG-796: every interface by name (its methods' signatures, for ifaceHelper)
+    var ifc_names: HashMap(str, str)     # BUG-796: "Iface.method" -> its by-value call helper's name ("" when it has none)
+    var ifc_helpers: List(str)           # those helpers' V text, appended after the program
     var show_fields: HashMap(str, List(str))   # BUG-746: a class's / struct's fields in declared order, for its printed text
     var own_tostring: HashMap(str, bool)       # the classes and structs that declare `cue toString()`
     var refused_once: HashMap(str, bool)       # a refusal said once however often its cause is met (a type is spelled many times)
@@ -317,6 +320,9 @@ class VGen
         .tmpN = 0
         .show_names = HashMap(str, str)()
         .show_helpers = List(str)()
+        .iface_decls = HashMap(str, DeclInterface)()
+        .ifc_names = HashMap(str, str)()
+        .ifc_helpers = List(str)()
         .show_fields = HashMap(str, List(str))()
         .own_tostring = HashMap(str, bool)()
         .refused_once = HashMap(str, bool)()
@@ -716,6 +722,74 @@ class VGen
             et = .vTypeOf(e)
         return et.startsWith("&") and .isClassName(et.substring(1, et.len))
 
+    # BUG-796: the method `mname` of interface `iname`, its own or one of the interfaces it
+    # embeds (sixteen levels: a cycle is the checker's to refuse, not a hang here)
+    def ifaceMethod(iname: str, mname: str, depth: int): DeclMethod?
+        if depth > 16
+            return nil
+        if .iface_decls.get(iname) as di
+            for mem in di.members
+                branch mem
+                    on Decl.method as mth
+                        if mth.name == mname
+                            return mth
+                    else
+                        pass
+            for base in di.ifaces
+                var up: DeclMethod? = .ifaceMethod(.vType(base), mname, depth + 1)
+                if up != nil
+                    return up
+        return nil
+
+    # BUG-796: an interface's methods are all under V's `mut:` (a class's methods are
+    # `mut self`), so V refuses one on a value that is no lvalue -- `pick(x).name()`,
+    # `xs[0].name()`, `k.get().name()`: "cannot pass expression as `mut`", under "nothing
+    # refused". Binding the receiver on a line before the statement (what a mutating call on
+    # a class does) would run it ahead of a short-circuit (`i < n and xs[i].name() == ..`)
+    # and has no place in a loop's condition. So the call goes through a function that takes
+    # the interface BY VALUE and calls the method on its own mutable copy: the interface
+    # value holds the object's reference, so the copy is the same object, and the call is an
+    # expression where it stood. One helper per (interface, method), made at its first use
+    # and appended after the program; "" when the interface has no such method here (the
+    # call is written as before).
+    def ifaceHelper(iname: str, mname: str, span: Span): str
+        var key: str = iname + "." + mname
+        if .ifc_names.get(key) as known
+            return known
+        var hn: str = ""
+        if .ifaceMethod(iname, mname, 0) as mth
+            if mth.type_params.count() > 0
+                .refuse("a method with type parameters called on an interface value that is not a name (" + iname + "." + mname + ": bind the value to a local first)", span)
+            else
+                hn = "zifc_" + snakeCase(iname) + "_" + vSafe(mname)
+                var ps: str = "zifc_r " + iname
+                var fw: str = ""
+                for p in mth.params
+                    # (genParams' spelling, without its rename table: this is no body of the
+                    # function being emitted)
+                    var pt: str = .vType(p.type_)
+                    var mut_: str = ""
+                    if .isRefType(p.type_)
+                        mut_ = "mut "
+                        if pt.startsWith("&")
+                            pt = pt.substring(1, pt.len)
+                    var pn: str = "zifc_" + vSafe(p.name)
+                    ps = ps + ", " + mut_ + pn + " " + pt
+                    if fw != ""
+                        fw = fw + ", "
+                    fw = fw + mut_ + pn
+                var ret: str = .retType(mth)
+                var text: str = "fn " + hn + "(" + ps + ")"
+                if ret != ""
+                    text = text + " " + ret
+                text = text + " {\n\tmut zifc_m := zifc_r\n\t"
+                if ret != ""
+                    text = text + "return "
+                text = text + "zifc_m." + vSafe(mname) + "(" + fw + ")\n}\n"
+                .ifc_helpers.add(text)
+        .ifc_names.set(key, hn)
+        return hn
+
     def isIfaceName(name: str): bool
         for n in .iface_names
             if n == name
@@ -891,6 +965,7 @@ class VGen
                     .member_counts.set(un.name, un.variants.count())
                 on Decl.interface_ as di
                     .iface_names.add(di.name)
+                    .iface_decls.set(di.name, di)
                 on Decl.sig_ as sgn
                     .sig_names.add(sgn.name)
                 on Decl.type_alias_ as ta
@@ -1203,6 +1278,9 @@ class VGen
         g.loop_region_base = .loop_region_base
         g.global_modules = .global_modules
         g.iface_names = .iface_names
+        g.iface_decls = .iface_decls
+        g.ifc_names = .ifc_names
+        g.ifc_helpers = .ifc_helpers
         g.sig_names = .sig_names
         g.sig_canon = .sig_canon
         g.emitted_globals = .emitted_globals
@@ -4977,6 +5055,18 @@ class VGen
             return .rtFree(statics, span)
         var obj = .exprStr(m.object)
         var rtype: str = .vTypeOf(m.object)
+        if .isIfaceName(rtype) and (not isNameExpr(m.object) or .isNarrowedIdent(m.object)) and not (name == "toString" and args.count() == 0)
+            # BUG-796: an interface value that is no lvalue -- through its by-value helper
+            # (a flow-narrowed optional local is one: its read is an unwrap expression)
+            var ifh: str = .ifaceHelper(rtype, name, span)
+            if ifh != ""
+                var hkey: str = "." + vSafe(name)
+                if .sigs.get(rtype + "." + vSafe(name)) != nil
+                    hkey = rtype + "." + vSafe(name)
+                var hargs: str = .argsStr(args, hkey)
+                if hargs != ""
+                    return ifh + "(" + obj + ", " + hargs + ")"
+                return ifh + "(" + obj + ")"
         if (not isNameExpr(m.object) or .isNarrowedIdent(m.object)) and not .in_cond and .mutatesReceiver(rtype, name)
             # V takes a mutating call on an lvalue only: the receiver (a call's
             # result, an unwrap) is bound first, on a line before the statement
@@ -6486,4 +6576,10 @@ def generateV(ms: List(Module), runtime: str): VResult
         show_tail = show_tail + "\n" + sh
     if show_tail != ""
         show_tail = "\n// -- the printers of the nested containers this program prints --" + show_tail
+    # BUG-796: the by-value call helpers of the interface methods called on a value that is no name
+    var ifc_tail: str = ""
+    for ih in g.ifc_helpers
+        ifc_tail = ifc_tail + "\n" + ih
+    if ifc_tail != ""
+        show_tail = show_tail + "\n// -- interface methods called on a value that is no name: by-value helpers (BUG-796) --" + ifc_tail
     return VResult(source: head + body + show_tail, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)

@@ -101,6 +101,44 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-796: `--target v` writes a method on an interface value that is not a name as a call V refuses -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, running BUG-784's
+  fixture there; the Zig route was right)
+- **Repro:** with `def pick(s: str): Namer`, a `List(Namer)` `xs` and a class method
+  `get(): Namer`: `pick("a").name()`, `xs[0].name()`, `xs.at(1).name()` and
+  `k.get().name()` -- in a statement, an `if`, a `while` condition, a hole, a concatenation --
+  are each refused by V ("cannot pass expression as `mut`"), under "nothing refused".
+- **Cause:** a class's methods are `mut self` on this route, so an interface's methods are
+  declared under V's `mut:`, and V takes such a call on an lvalue only.
+- **Fix:** `CodeGenV.methodCallStr` writes the call through a helper that takes the interface
+  BY VALUE and calls the method on its own mutable copy (`fn zifc_namer_name(zifc_r Namer)
+  string { mut zifc_m := zifc_r  return zifc_m.name() }`). The interface value holds the
+  object's reference, so the copy is the same object. One helper per (interface, method),
+  made at its first use and appended after the program (`ifaceHelper`); a method the
+  interface embeds from another is found through it. A program that makes no such call is
+  emitted as before.
+- **Why not the receiver bound on a line before the statement** (what a mutating call on a
+  class's result gets, and the first draft here): it runs the receiver ahead of a
+  short-circuit -- `i < n and xs[i].name() == ..` would read the element at `i == n` and trap
+  -- and a loop's condition has no line before it. The helper is an expression where the
+  call stood.
+- **Refused by name:** a method with type parameters called so (no helper is written for it).
+- **Pinned by:** `tools/v_check.sh`'s `iface_recv` row: sixteen lines written by hand on both
+  routes -- every receiver shape and position above, the short-circuit with `i == count`
+  reached, a call a false left side must not make (counted), a void method renaming a
+  shared object, an optional and a throwing return, an interface-typed argument, an embedded
+  interface's method, an `else if` condition, a lambda's body and a flow-narrowed optional
+  local (`if opn != nil` / `opn.name()`: its read is an unwrap expression); and no helper in a program
+  that calls none. Watched red on the compiler before the change (V refuses the file,
+  twenty-two errors).
+- **Found beside it, the Zig route's (BUG-798, BUG-799; and BUG-801, 802, 803):** a default argument on
+  an interface's method, left out in a call through the interface, passes `-c` and fails
+  inside zig ("member function expected 1 argument(s), found 0"); a class passed where an
+  interface's method takes the interface, the receiver itself an interface value, the same
+  ("expected type 'Namer', found '*Dog'"). The V route answers both.
+
+---
+
 ### BUG-795: `--target v` writes a class value into an interface-typed field default or declared local as the class -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, running BUG-784's
   fixture there; the Zig route was right once BUG-784 landed)
