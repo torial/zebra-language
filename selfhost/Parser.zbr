@@ -1509,6 +1509,9 @@ class Parser
         var pending_unordered: bool = false
         var unordered_line: int = 0
         var unordered_col: int = 0
+        var derive_seen: bool = false
+        var derive_line: int = 0
+        var derive_col: int = 0
         var saw_directive: bool = true
         while saw_directive
             saw_directive = false
@@ -1555,6 +1558,9 @@ class Parser
                             .expectText(")")?
                         .skipEol()
                     else if dtext == "@derive"
+                        derive_seen = true
+                        derive_line = dline
+                        derive_col = dcol
                         # Parse @derive(Debug, Eq, Hash) — extract identifier names.
                         if .textIs("(")
                             .advance()
@@ -1599,6 +1605,14 @@ class Parser
         # ignored, and an ignored directive reads as if it worked.
         if pending_unordered and not .textIs("enum")
             raise .errorAtPos(unordered_line, unordered_col, "`@unordered` applies to an `enum` (its values then have no order): put it on the line before `enum Name`")
+        # BUG-791: `@derive` writes members for a STRUCT (QUICKSTART §43). On a class it was
+        # accepted and half-applied -- `==` on a class stayed identity while a derived
+        # `equals` sat unused -- so a reader got something other than what the line says.
+        if derive_seen and not .textIs("struct")
+            var dkind: str = .peek().text
+            if dkind == "class"
+                raise .errorAtPos(derive_line, derive_col, "`@derive` applies only to a `struct`; on a class write the cue itself (`cue equals(other: T): bool`, `cue hash(): int`, `cue toString(): str`)")
+            raise .errorAtPos(derive_line, derive_col, "`@derive` applies only to a `struct` (it was placed before `" + dkind + "`)")
         if .textIs("use")
             return .parseUseDecl()?
         else if .textIs("namespace")

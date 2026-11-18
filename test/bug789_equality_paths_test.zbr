@@ -1,0 +1,99 @@
+# BUG-787 / BUG-789 / BUG-790: `==` decides equality one way wherever it is asked --
+# a @derive(Eq) field, an optional operand in either position, and `contains`. Each
+# shape below failed inside zig or gave the wrong answer before the shared runtime rule.
+
+@derive(Eq)
+struct In
+    var s: str
+
+@derive(Eq)
+struct Out
+    var x: int
+    var i: In
+
+@derive(Eq)
+struct WithOpt
+    var s: str?
+
+union Sh
+    circle: int
+    square: int
+
+@derive(Eq)
+struct Holder
+    var sh: Sh
+
+@derive(Eq)
+struct P
+    var x: int
+    var s: str
+
+# A struct with a hand-written equals: only `id` counts.
+struct K
+    var id: int
+    var tag: str
+    cue equals(other: K): bool
+        return .id == other.id
+
+# A class with a hand-written equals: only `id` counts.
+class C
+    var id: int
+    var tag: str
+    cue init(id: int, tag: str)
+        .id = id
+        .tag = tag
+    cue equals(other: C): bool
+        return .id == other.id
+
+# A class with no equals: identity.
+class Plain
+    var v: int
+    cue init(v: int)
+        .v = v
+
+def b(x: bool): str
+    if x
+        return "T"
+    return "F"
+
+def main()
+    # BUG-787: derive(Eq) over a nested struct, a `str?`, a union.
+    var o1 = Out(1, In("a"))
+    var o2 = Out(1, In("a"))
+    var o3 = Out(1, In("b"))
+    var w1 = WithOpt("q")
+    var w2 = WithOpt("q")
+    var w3 = WithOpt(nil)
+    var w4 = WithOpt(nil)
+    var h1 = Holder(Sh.circle(2))
+    var h2 = Holder(Sh.circle(2))
+    var h3 = Holder(Sh.square(2))
+    print("787: ${b(o1 == o2)}${b(o1 == o3)} ${b(w1 == w2)}${b(w1 == w3)}${b(w3 == w4)} ${b(h1 == h2)}${b(h1 == h3)}")
+
+    # BUG-789: an optional operand, either side or both, struct and class.
+    var k1 = K(1, "a")
+    var ko: K? = K(1, "zzz")
+    var kn: K? = nil
+    var ko2: K? = K(1, "b")
+    var c1 = C(1, "a")
+    var c2 = C(1, "zzz")
+    var co: C? = c1
+    var co2: C? = c2
+    var cn: C? = nil
+    print("789 struct: ${b(ko == k1)}${b(k1 == ko)}${b(ko == ko2)}${b(kn == k1)}${b(k1 != kn)}")
+    print("789 class: ${b(co == c2)}${b(c2 == co)}${b(co == co2)}${b(cn == c1)}${b(cn == nil)}")
+    var p1 = Plain(1)
+    var p2 = Plain(1)
+    var po: Plain? = p1
+    print("789 identity: ${b(po == p1)}${b(po == p2)}")
+
+    # BUG-790: contains on structs (derived and cue) and on classes (cue and identity).
+    var ps = List(P)()
+    ps.add(P(1, "a"))
+    var ks = List(K)()
+    ks.add(K(1, "a"))
+    var cs = List(C)()
+    cs.add(C(1, "a"))
+    var pls = List(Plain)()
+    pls.add(p1)
+    print("790: ${b(ps.contains(P(1, "a")))}${b(ps.contains(P(1, "b")))} ${b(ks.contains(K(1, "x")))}${b(ks.contains(K(2, "a")))} ${b(cs.contains(C(1, "zzz")))}${b(cs.contains(C(2, "a")))} ${b(pls.contains(p1))}${b(pls.contains(p2))}")

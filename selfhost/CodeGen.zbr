@@ -6235,6 +6235,14 @@ struct Generator
             return n.name == "float" or n.name == "num"
         return false
 
+    def isCharFieldType(tr: TypeRef?): bool
+        if tr == nil
+            return false
+        var t = tr!
+        if t is TypeRef.named as n
+            return n.name == "char"
+        return false
+
     def genDeriveToString(n: DeclStruct)
         writeIndent()
         w.emit("pub fn toString(self: *const ")
@@ -6257,6 +6265,8 @@ struct Generator
                     fmt_str = fmt_str + "{s}"
                 else if .isFloatFieldType(fld.type_)
                     fmt_str = fmt_str + "{s}"                 # through _zbr_show: `6.0`
+                else if .isCharFieldType(fld.type_)
+                    fmt_str = fmt_str + "{u}"                 # BUG-794: the character, as print shows it
                 else
                     fmt_str = fmt_str + "{}"
                 field_count = field_count + 1
@@ -6322,9 +6332,12 @@ struct Generator
                         emitName(fld.name)
                         w.emit(")")
                     else
-                        w.emit("(self.")
+                        # BUG-787: a field compares as `==` on its type does -- a nested
+                        # struct or union, a `str?`, a container, a type with `equals`.
+                        # `(self.f == other.f)` was refused by zig for all of those.
+                        w.emit("_zbr_val_eql(self.")
                         emitName(fld.name)                  # BUG-281 A
-                        w.emit(" == other.")
+                        w.emit(", other.")
                         emitName(fld.name)
                         w.emit(")")
             w.emit(";\n")
@@ -16879,6 +16892,19 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
+            # BUG-789: an OPTIONAL side holding a struct, union or class -- in either
+            # position, or both. Both nil -> equal, one nil -> not, else as the two values
+            # compare (the cue when the type has one, identity for a class without). Zig
+            # refused `?K == ?K` and `*C == ?*C`, and `?*C == ?*C` was identity past a cue.
+            if not either_nil and (.isOptionalNamedExpr(b.left) or .isOptionalNamedExpr(b.right))
+                if b.op == BinaryOp.ne
+                    w.emit("!")
+                w.emit("_zbr_val_eql(")
+                genExpr(b.left)
+                w.emit(", ")
+                genExpr(b.right)
+                w.emit(")")
+                return
             # `cue equals` (hand-written, or the one @derive(Eq) writes): route == / !=
             # through it. Classes are pointers and structs pass by value; either way the
             # call is `left.equals(right)`.
@@ -17054,6 +17080,19 @@ struct Generator
                 w.emit("{ .")
                 w.emit(um2.member)
                 w.emit(" = {} }")
+
+    # True iff `e` infers as an OPTIONAL of a named type (a struct, union, class or enum),
+    # the operands BUG-789 routes through `_zbr_val_eql`.
+    def isOptionalNamedExpr(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.optional as inner
+            var it: Type_ = inner
+            if it is Type_.ref_to as rt
+                it = rt
+            return it is Type_.named
+        return false
 
     # True iff `e` is a value whose type answers `==` through `equals`: a @derive(Eq)
     # struct or any class/struct declaring `cue equals` (this module or a dep).
@@ -17446,8 +17485,12 @@ struct Generator
                         genExpr(e)
                         w.emit(")))")
                 else if ts
+                    # BUG-793: parenthesised -- a struct LITERAL receiver (`${One(4)}`)
+                    # emitted `_zbr_ty_One{ .x = 4 }.toString()`, which zig does not parse
+                    # (BUG-553's shape, there for `==`).
+                    w.emit("(")
                     genExpr(e)
-                    w.emit(".toString()")
+                    w.emit(").toString()")
                 else if show_wraps.at(arg_idx)
                     w.emit("_zbr_show(")
                     genExpr(e)

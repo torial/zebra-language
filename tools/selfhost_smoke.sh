@@ -1611,6 +1611,20 @@ smoke_run test/bug785_int_init_widens_float_test.zbr "bug785 assign: 3.0 3.0 3.0
 smoke_run test/bug784_optional_iface_coerce_test.zbr "bug784: ctor ident assign plain list"
 smoke_run test/bug784_optional_iface_coerce_test.zbr "bug784: ctorarg method default ret param none"
 smoke_run test/bug784_optional_dep_iface_test.zbr "bug784 dep: dog rex | dog ctor | dog assign | dog listed | dog field | dog ret | dog param | none"
+# BUG-787/789/790: one equality rule for a derive(Eq) field, an optional operand and contains.
+smoke_run test/bug789_equality_paths_test.zbr "787: TF TFT TF"
+smoke_run test/bug789_equality_paths_test.zbr "789 struct: TTTFT"
+smoke_run test/bug789_equality_paths_test.zbr "789 class: TTTFT"
+smoke_run test/bug789_equality_paths_test.zbr "789 identity: TF"
+smoke_run test/bug789_equality_paths_test.zbr "790: TF TF TF TF"
+# BUG-794: a derive(Debug) char field prints the character, not its number.
+smoke_run test/bug794_derive_debug_char_test.zbr "P(c=q, s=hi, n=3)"
+smoke_run test/bug794_derive_debug_char_test.zbr "P(c=é, s=x, n=0)"
+smoke_run test/bug794_derive_debug_char_test.zbr "P(c=z, s=y, n=1)"
+# BUG-793: a constructor (struct, class) or a call in an interpolation hole -- zig refused the bare struct-literal receiver.
+smoke_run test/bug793_ctor_in_interp_hole_test.zbr "a One(x=4) b Named(s=hi) c Box<3> d Named(s=q) e One(x=7)"
+# BUG-791: @derive on a class is refused at the @derive, naming the cue spelling.
+smoke_tc_fail test/fail_fixtures/bug791_derive_on_class_test.zbr "bug791_derive_on_class_test.zbr:3:1: error: \`@derive\` applies only to a \`struct\`; on a class write the cue itself"
 smoke_tc_fail test/fail_fixtures/bug552_def_next_not_iterable_test.zbr "bug552_def_next_not_iterable_test.zbr:17:5: error: 'Ticker' is not iterable"
 smoke_tc_fail test/fail_fixtures/bug551_order_no_compare_test.zbr "bug551_order_no_compare_test.zbr:11:11: error: 'V' has no ordering"
 smoke_tc_fail test/fail_fixtures/bug551_struct_eq_no_equals_test.zbr "bug551_struct_eq_no_equals_test.zbr:10:11: error: struct 'P' has no equality"

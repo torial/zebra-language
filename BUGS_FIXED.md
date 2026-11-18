@@ -6,6 +6,143 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-791: `@derive` on a `class` is accepted and half-applied, though QUICKSTART §43 says it is struct-only -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found from Fable's eq_dclass probe, reproduced here on c383407)
+- **Repro:** `@derive(Eq) class D` (`var id: int`, `var s: str`, a `cue init`), then
+  `D(1, "a") == D(1, "a")` prints **false**: `==` on a class is identity, while the derive wrote a
+  content `equals()` that `==` never calls. `-c` and the build both accept it.
+- **Spec:** QUICKSTART §43 -- "`@derive` applies only to `struct` -- not `class`, `enum`, or
+  `union`." So the declaration should be refused where it is written, naming `cue equals` as the
+  class spelling; today it is silently accepted and means something different from what it says.
+- **Control when fixing:** the repro is refused at `-c` with the line of the `@derive`; a class with
+  `cue equals` keeps value `==`; a struct's `@derive` unchanged. Check the corpus and the
+  GameEngine for a class carrying `@derive` before landing (a refusal breaks it).
+- **Measured before landing:** 9,890 `.zbr` files across this repo, zebra-ide and the
+  GameEngine: `@derive` before a `struct` 23 times (the control), before a `class` 0 times.
+- **Fix:** the parser records the `@derive`'s position and refuses it unless the declaration
+  that follows is a `struct`; on a class the message names the three cues to write instead.
+- **Fixture:** test/fail_fixtures/bug791_derive_on_class_test.zbr (`smoke_tc_fail`, 3:1).
+
+---
+
+### BUG-794: `@derive(Debug)` prints a `char` field as its number -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable from the BUG-782c mapping, reproduced here
+  on 3ec7d0f)
+- **Repro:** `@derive(Debug) struct P` with `var c: char` / `var s: str`, then `print(P('q', "hi"))`
+  prints `P(c=113, s=hi)`. `print('q')` prints `q`, and the same struct without the derive
+  (BUG-746's default text) prints `Q{c: 'q', s: "hi"}`.
+- **Root:** genDeriveToString sends every field that is not `str` or `float` through Zig's `{}`,
+  and a `char` is a `u21` there.
+- **Spec:** a derived field prints as `print` prints that value, so a `char` prints as the
+  character, unquoted, as a `str` field already does: `P(c=q, s=hi)`.
+- **Control when fixing:** the repro prints `P(c=q, s=hi)`; a non-ASCII char (`'é'`) prints the
+  character; int, bool, str and float fields unchanged.
+- **Fix:** genDeriveToString formats a `char` field with `{u}` (`isCharFieldType`).
+- **Note:** the char literal is `c'x'`; a bare `'é'` is a two-byte single-quoted STRING (only a
+  one-byte one, `'q'`, converts to a char), so the fixture spells the non-ASCII case `c'é'`.
+- **Fixture:** test/bug794_derive_debug_char_test.zbr; the pre-fix compiler prints `P(c=113, ...)`.
+
+---
+
+### BUG-793: a struct constructor inside an interpolation hole fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable from the BUG-782c mapping, reproduced here
+  on 3ec7d0f)
+- **Repro:** `@derive(Debug) struct One` with `var x: int`, then `print("${One(4)}")`. `-c` exits 0;
+  zig: "expected ',' after initializer". `print(One(4))` and `var o = One(4)` / `"${o}"` work.
+- **Root:** the hole emits `_zbr_ty_One{ .x = 4 }.toString()`, a struct LITERAL as a method
+  receiver without parentheses, which zig does not parse -- BUG-553's shape (fixed for `==`)
+  in another position.
+- **Control when fixing:** the repro prints `One(x=4)`; a class constructor and a call taking a
+  string argument in a hole also work; `"${o}"` unchanged.
+- **Fix:** the interpolation's toString arm emits `(<expr>).toString()`.
+- **Fixture:** test/bug793_ctor_in_interp_hole_test.zbr (a struct constructor, a class
+  constructor, a call taking a string, and a local); red on the pre-fix compiler.
+
+---
+
+### BUG-790: `List(S).contains(x)` on a struct element fails inside zig, and ignores a class's `cue equals` -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable from the s782b equality probes, reproduced
+  here on c383407)
+- **Repro (refused):** `@derive(Eq) struct P` with `var x: int` / `var s: str`, a `List(P)` holding
+  `P(1, "a")`, then `xs.contains(P(1, "a"))`. `-c` exits 0; the build fails at zebra_rt.zig:640
+  "operator == not allowed for type '_zbr_ty_P'" -- `_zebra_in` compares a non-bytes, non-container
+  element with `elem == item`. A struct with a `cue equals` instead of the derive fails the same way.
+- **Repro (wrong answer):** `class C` with `cue equals(other: C): bool` comparing `.id` only, a
+  `List(C)` holding `C(1, "a")`, then `xs.contains(C(1, "zzz"))` prints **false** while
+  `C(1, "a") == C(1, "zzz")` prints true. Containment is identity; `==` is the cue.
+- **Fix shape:** `_zebra_in` decides equality the way `==` does for the element type: a type
+  declaring `equals` calls it, a struct with none goes through `_zbr_val_eql`.
+- **Control when fixing:** both repros print true/false correctly; a `List(int)` / `List(str)`
+  `contains` and a class without `equals` (identity) unchanged.
+- **Fix (shared by BUG-787, 789, 790):** `_zbr_val_eql` (selfhost/stdlib_preamble.zig) is
+  the language's `==` at run time: an optional side nil-aware in either position, strings by
+  content, containers structurally, a type declaring `equals` (struct, union or class) through
+  it, a tagged union by tag then payload, a struct with no `equals` field by field, a slice or
+  array element-wise, anything else `==` (identity for a class).
+- **Here:** `_zebra_in` (List and tuple paths) compares each element with `_zbr_val_eql`.
+  Container `==` (`_zbr_cont_eql`) already used it, so an element class's cue now counts there
+  too.
+- **Fixture:** test/bug789_equality_paths_test.zbr (all three bugs, five smoke lines); red on
+  the pre-fix compiler (37154b3's), green after.
+
+---
+
+### BUG-789: `==` between an optional and a value of a type with `cue equals` fails or ignores the cue -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable, reproduced here on c383407)
+- **Repro (refused):** `struct K` with `cue equals(other: K): bool` comparing `.id`, `var ko: K? = k1`,
+  then `ko == K(1, "zzz")`. `-c` exits 0; zig: "operator == not allowed for type '?K'".
+- **Repro (wrong answer):** the class form -- `var ao: C? = a` then `ao == b` -- prints **false**
+  where `a == b` prints true: through the optional, `==` is identity and the cue is not called.
+- **Three more pairings (Fable, 2026-11-18), the same root:** `C == C?` (the plain value on the
+  LEFT) fails inside zig, "expected type '*C', found '?*C'"; `C? == C?` is identity (two objects
+  with equal ids compare false); `K? == K?` fails inside zig, "operator == not allowed for type
+  '?K'". So the order of the operands and whether both sides are optional each matter today.
+- **The V route's rule (BUG-786), which this fix should match:** for a type with `cue equals`, in
+  every pairing and either order: both nil -> equal, one nil -> not, otherwise the cue. For a class
+  without the cue: both nil, or the same object.
+- **Fix shape:** `==` with an optional side unwraps (nil == nil true, nil vs value false) and then
+  compares as the two non-optional values would, cue included.
+- **Control when fixing:** both print true; `ao == nil` and a nil `ao` against a value unchanged in
+  meaning; `C? == C` for a class with no cue stays identity.
+- **Fix (shared by BUG-787, 789, 790):** `_zbr_val_eql` (selfhost/stdlib_preamble.zig) is
+  the language's `==` at run time: an optional side nil-aware in either position, strings by
+  content, containers structurally, a type declaring `equals` (struct, union or class) through
+  it, a tagged union by tag then payload, a struct with no `equals` field by field, a slice or
+  array element-wise, anything else `==` (identity for a class).
+- **Here:** binary `==` / `!=` routes through `_zbr_val_eql` when either operand infers as an
+  optional of a named type (`isOptionalNamedExpr`), before the `cue equals` branch -- so
+  `k == ko` no longer emits `k.equals(ko)`.
+- **Fixture:** test/bug789_equality_paths_test.zbr (all three bugs, five smoke lines); red on
+  the pre-fix compiler (37154b3's), green after.
+
+---
+
+### BUG-787: `@derive(Eq)` compares every non-`str` field with `==`, so nested structs and `str?` fields fail inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable, reproduced here on c383407)
+- **Repro:** `@derive(Eq) struct In` (`var s: str`) inside `@derive(Eq) struct Out` (`var x: int`,
+  `var i: In`), then `Out(1, In("a")) == Out(1, In("a"))` -> zig "operator == not allowed for type
+  '_zbr_ty_In'". Likewise a `@derive(Eq)` struct with a `var s: str?` field -> "operator == not
+  allowed for type '?[]const u8'". A UNION-typed field (`union Sh` with `circle: int` /
+  `square: int`, held as `var s: Sh`) fails the same way: "operator == not allowed for type
+  '_zbr_ty_Sh'" (Fable's eq_union probe). `-c` exits 0 on all three.
+- **Root:** `genDeriveEql` (selfhost/CodeGen.zbr) writes `(self.f == other.f)` for every field that
+  is not `str`; it does not route a struct, a union, an optional, a container, or a type with
+  `equals`.
+- **Fix shape:** one field comparison that matches `==` on that field's type -- the same helper
+  BUG-790 needs.
+- **Control when fixing:** all three repros print `[true] [false]`; a flat int/str/float struct
+  unchanged.
+- **Fix (shared by BUG-787, 789, 790):** `_zbr_val_eql` (selfhost/stdlib_preamble.zig) is
+  the language's `==` at run time: an optional side nil-aware in either position, strings by
+  content, containers structurally, a type declaring `equals` (struct, union or class) through
+  it, a tagged union by tag then payload, a struct with no `equals` field by field, a slice or
+  array element-wise, anything else `==` (identity for a class).
+- **Here:** genDeriveEql writes `_zbr_val_eql(self.f, other.f)` for every non-`str` field.
+- **Fixture:** test/bug789_equality_paths_test.zbr (all three bugs, five smoke lines); red on
+  the pre-fix compiler (37154b3's), green after.
+
+---
+
 ### BUG-784: an implementing class constructed into an interface-typed OPTIONAL local fails inside zig -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (filed 2026-11-18; reported by Fable, found writing BUG-783's row;
   reproduced here on 257a9c3)

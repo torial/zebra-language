@@ -1,0 +1,10 @@
+# BUG-791: @derive on a class was accepted and half-applied (== stayed identity while a
+# derived equals sat unused). It is refused at the @derive, naming the cue spelling.
+@derive(Eq)
+class D
+    var id: int
+    cue init(id: int)
+        .id = id
+
+def main()
+    print(D(1) == D(1))

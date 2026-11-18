@@ -1,0 +1,13 @@
+# BUG-794: @derive(Debug) printed a char field as its number (`P(c=113, s=hi)`); it prints
+# the character, as print does and as a str field already did.
+@derive(Debug)
+struct P
+    var c: char
+    var s: str
+    var n: int
+
+def main()
+    print(P('q', "hi", 3))
+    print(P(c'é', "x", 0))
+    var p = P(c'z', "y", 1)
+    print("${p}")

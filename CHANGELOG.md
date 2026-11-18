@@ -23,6 +23,22 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`@derive` on anything but a `struct` is refused** at the `@derive` (BUG-791). On a class it
+  was accepted and half-applied: `==` stayed identity while the derived `equals` sat unused. The
+  message names the cues to write instead.
+- **A constructor inside an interpolation hole** (`"${One(4)}"`) builds (BUG-793); it passed `-c`
+  and zig refused the struct literal it emitted as a method receiver.
+- **`@derive(Debug)` prints a `char` field as the character** (`P(c=q)`), as `print` does, not
+  its code point (`P(c=113)`) (BUG-794).
+- **`==` decides equality one way wherever it is asked** (BUG-787, BUG-789, BUG-790). A
+  `@derive(Eq)` struct compares each field as `==` would, so a nested struct or union, a `str?`
+  or a container field no longer fails inside zig. `==` with an optional operand -- either side,
+  or both -- is nil-aware (both nil equal, one nil not) and otherwise compares the values,
+  through `cue equals` when the type has one; `C == C?` and `K? == K?` failed inside zig and
+  `C? == C?` was identity past the cue. `List.contains` / `in` compare each element the same
+  way: a struct element compiled nowhere, and a class's `cue equals` was ignored (identity).
+  Container `==` also uses an element class's cue now. A class without `cue equals` still
+  compares by identity everywhere. One runtime helper, `_zbr_val_eql`, carries the rule.
 - **A class converts to an OPTIONAL interface it implements** (BUG-784): `var s: Show? =
   Dog(..)` (or a `Dog`-typed local or call), a `Show?` parameter, a `List(Show?)`'s `add`, and
   a `Show?` assignment, for an interface of this module or a used one. Two non-optional sites

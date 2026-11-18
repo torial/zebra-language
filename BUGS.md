@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-792. Next new bug: BUG-793.**
+**Last bug number generated: BUG-796. Next new bug: BUG-797.** (BUG-795, BUG-796 reserved 2026-11-18 for Fable's V-route entries: interface field default / declared interface local; method on an interface-typed call result.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -72,50 +72,6 @@
 
 ---
 
-### BUG-791: `@derive` on a `class` is accepted and half-applied, though QUICKSTART §43 says it is struct-only
-- **Status:** OPEN (filed 2026-11-18; found from Fable's eq_dclass probe, reproduced here on c383407)
-- **Repro:** `@derive(Eq) class D` (`var id: int`, `var s: str`, a `cue init`), then
-  `D(1, "a") == D(1, "a")` prints **false**: `==` on a class is identity, while the derive wrote a
-  content `equals()` that `==` never calls. `-c` and the build both accept it.
-- **Spec:** QUICKSTART §43 -- "`@derive` applies only to `struct` -- not `class`, `enum`, or
-  `union`." So the declaration should be refused where it is written, naming `cue equals` as the
-  class spelling; today it is silently accepted and means something different from what it says.
-- **Control when fixing:** the repro is refused at `-c` with the line of the `@derive`; a class with
-  `cue equals` keeps value `==`; a struct's `@derive` unchanged. Check the corpus and the
-  GameEngine for a class carrying `@derive` before landing (a refusal breaks it).
-
----
-
-### BUG-790: `List(S).contains(x)` on a struct element fails inside zig, and ignores a class's `cue equals`
-- **Status:** OPEN (filed 2026-11-18; reported by Fable from the s782b equality probes, reproduced
-  here on c383407)
-- **Repro (refused):** `@derive(Eq) struct P` with `var x: int` / `var s: str`, a `List(P)` holding
-  `P(1, "a")`, then `xs.contains(P(1, "a"))`. `-c` exits 0; the build fails at zebra_rt.zig:640
-  "operator == not allowed for type '_zbr_ty_P'" -- `_zebra_in` compares a non-bytes, non-container
-  element with `elem == item`. A struct with a `cue equals` instead of the derive fails the same way.
-- **Repro (wrong answer):** `class C` with `cue equals(other: C): bool` comparing `.id` only, a
-  `List(C)` holding `C(1, "a")`, then `xs.contains(C(1, "zzz"))` prints **false** while
-  `C(1, "a") == C(1, "zzz")` prints true. Containment is identity; `==` is the cue.
-- **Fix shape:** `_zebra_in` decides equality the way `==` does for the element type: a type
-  declaring `equals` calls it, a struct with none goes through `_zbr_val_eql`.
-- **Control when fixing:** both repros print true/false correctly; a `List(int)` / `List(str)`
-  `contains` and a class without `equals` (identity) unchanged.
-
----
-
-### BUG-789: `==` between an optional and a value of a type with `cue equals` fails or ignores the cue
-- **Status:** OPEN (filed 2026-11-18; reported by Fable, reproduced here on c383407)
-- **Repro (refused):** `struct K` with `cue equals(other: K): bool` comparing `.id`, `var ko: K? = k1`,
-  then `ko == K(1, "zzz")`. `-c` exits 0; zig: "operator == not allowed for type '?K'".
-- **Repro (wrong answer):** the class form -- `var ao: C? = a` then `ao == b` -- prints **false**
-  where `a == b` prints true: through the optional, `==` is identity and the cue is not called.
-- **Fix shape:** `==` with an optional side unwraps (nil == nil true, nil vs value false) and then
-  compares as the two non-optional values would, cue included.
-- **Control when fixing:** both print true; `ao == nil` and a nil `ao` against a value unchanged in
-  meaning; `C? == C` for a class with no cue stays identity.
-
----
-
 ### BUG-788: `==` on two interface-typed values fails inside zig
 - **Status:** OPEN (filed 2026-11-18; reported by Fable, reproduced here on c383407)
 - **Repro:** `interface Namer`, `class Dog implements Namer`, `var d1: Namer = Dog("a")`,
@@ -126,24 +82,6 @@
   identity is not wanted.
 - **Control when fixing:** whichever rule, `d1 == d3` and `d1 == d2` print what the rule says and
   `-c` agrees with the build.
-
----
-
-### BUG-787: `@derive(Eq)` compares every non-`str` field with `==`, so nested structs and `str?` fields fail inside zig
-- **Status:** OPEN (filed 2026-11-18; reported by Fable, reproduced here on c383407)
-- **Repro:** `@derive(Eq) struct In` (`var s: str`) inside `@derive(Eq) struct Out` (`var x: int`,
-  `var i: In`), then `Out(1, In("a")) == Out(1, In("a"))` -> zig "operator == not allowed for type
-  '_zbr_ty_In'". Likewise a `@derive(Eq)` struct with a `var s: str?` field -> "operator == not
-  allowed for type '?[]const u8'". A UNION-typed field (`union Sh` with `circle: int` /
-  `square: int`, held as `var s: Sh`) fails the same way: "operator == not allowed for type
-  '_zbr_ty_Sh'" (Fable's eq_union probe). `-c` exits 0 on all three.
-- **Root:** `genDeriveEql` (selfhost/CodeGen.zbr) writes `(self.f == other.f)` for every field that
-  is not `str`; it does not route a struct, a union, an optional, a container, or a type with
-  `equals`.
-- **Fix shape:** one field comparison that matches `==` on that field's type -- the same helper
-  BUG-790 needs.
-- **Control when fixing:** all three repros print `[true] [false]`; a flat int/str/float struct
-  unchanged.
 
 ---
 

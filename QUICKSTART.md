@@ -744,6 +744,11 @@ def main()
   A user type's `x.hash()` calls its `cue hash` directly, the same spelling.
 - Structs get the same cues, by value. `@derive(Debug, Eq, Hash)` (§43) writes
   `toString` / `equals` / `hash` for you — a hand-written cue wins over the derived one.
+  A derived `equals` compares each field as `==` would (a nested struct or union, a `str?`,
+  a container, a type with its own cue -- BUG-787).
+- `==` with an OPTIONAL operand, on either side or both (`ko == k`, `k == ko`, `ko == ko2`):
+  both nil are equal, one nil is not, otherwise the two values compare as above -- through
+  the cue when the type has one, by identity for a class without (BUG-789).
 - There is **no `cue deinit`** in 1.0 (decided 2026-10-10, `docs/design/stability_policy.md`
   §6): every cue has a syntactic call site, and end-of-scope teardown would need a lifetime
   rule the memory model does not give. A resource with a release step uses `using` (§38).
@@ -1114,8 +1119,9 @@ shared. When you want an independent container, say so: `a.copy()` is a shallow 
 nested container inside it is still shared; `<<-` is the deep copy).
 
 `==` and `!=` on two collections (`List`, `HashMap`, `Set`) compare their CONTENTS: same
-size, and element-wise equal -- strings by content, nested collections recursively, class
-instances by identity (BUG-506).
+size, and element-wise equal -- each pair compared as `==` compares it: strings by content,
+nested collections recursively, a class or struct with `cue equals` through it, a class without
+one by identity (BUG-506, BUG-790). `contains` and `in` use the same rule.
 
 **A container's element type is part of its type.** A `List(int)` cannot go where a
 `List(str)` is declared, nor a `List(int?)` where a `List(int)` is -- an argument, a typed
@@ -6297,7 +6303,7 @@ def main()
 - `Eq` also rewires the `==` operator on the struct so `a == b` calls `a.equals(b)`.
 - `Hash` requires all fields to have a hash-able type.  Fields that are themselves
   structs must also carry `@derive(Hash)`.
-- `@derive` applies only to `struct` — not `class`, `enum`, or `union`.
+- `@derive` applies only to `struct` — not `class`, `enum`, or `union`; anywhere else it is refused at the `@derive` (BUG-791). On a class, write `cue equals` / `cue hash` / `cue toString` yourself.
 
 ---
 
