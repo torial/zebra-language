@@ -2,6 +2,7 @@
 # pins: BUG-777 `--target v` runs the type check: a program -c refuses is refused there in the compile's words with no .v written, its well-typed twin is written, partial files are merged and a `use` is found by its exact name (the typecheck row)
 # pins: BUG-773 x.hash() on a str, an integer, a bool and a char, and Hash.fnv64, answer the Zig route's FNV-1a 64 on the V route, held to values computed outside both; a derived or untyped hash() is refused by name (the hash row)
 # pins: BUG-795 a class value into an interface-typed field default (plain or optional, class or struct) or a declared plain interface local is cast to the interface on the V route: the field compiles, the local takes another implementing class, and the cast shares the object (the iface_slot row)
+# pins: BUG-797 the V route's nested emitter (a statement-bodied lambda's body, an `else if` condition) shares the outer one's printer helpers, own-toString / field / derived-hash tables and module-variable spellings: a container, a class and a colliding module variable inside print what they print outside (the nested_emit row)
 # pins: BUG-783 a declared optional local keeps its `?` on the V route whatever its initialiser; module-level and field optionals, a plain local and a nil-initialised optional unchanged (the optlocal row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
@@ -697,6 +698,138 @@ WANT
 done
 if [ -n "$is_bad" ]; then echo "iface_slot: FAILED --$is_bad"; fail=1
 else echo "iface_slot: ok -- a class value into an interface-typed field default (plain and optional, class and struct) and into a declared plain interface local is the interface on the V route: eight lines written by hand, the local taking another implementing class and sharing the object it was made from"; fi
+echo "── a lambda's body and an else-if condition share the outer emitter's tables (BUG-797) ──"
+# The V emitter writes a statement-bodied lambda's body, and probes an `else if` condition,
+# through a nested emitter (CodeGenV.cloneContext). It did not share the printer helpers
+# (BUG-723's zshow_hN, numbered by a table), the own-toString / field-list / derived-hash
+# tables or the module variables' deduplicated spellings. Inside, a helper was numbered from
+# 0 again and its text dropped: V refused the file ("unknown function: zshow_h0") -- or,
+# when the outer function had already made helper 0 for another type, ran THAT one, and a
+# list of strings printed as addresses; and a module variable whose snake-case spelling a
+# sibling's collides with read the sibling. All under "nothing refused".
+# nested_silent is the two SILENT shapes alone (it compiled before the fix and printed
+# `in [[[4822296], ...]] [1] [1]`): only a line written by hand catches those.
+# nested_emit: a list of lists of str and of int, a class with its own toString, a list of a
+# class without one, an optional, a map of lists and the two colliding module variables,
+# each inside a lambda; a nested list in an `else if` condition; the outer function's own
+# prints before and after. A derived hash() inside a lambda is refused by name, as outside
+# (BUG-782a), where V met a method that does not exist.
+cat > "$OUT/nested_silent.zbr" <<'ZBR'
+var myVal: int = 1
+var my_val: int = 2
+
+def main()
+    var xss = [[1, 2], [3]]
+    print("out [${xss}] [${myVal}] [${my_val}]")
+    var yss = [["a"], ["b", "c"]]
+    var f = def(): str
+        var s = "in [${yss}] [${myVal}] [${my_val}]"
+        return s
+    print(f())
+ZBR
+cat > "$OUT/nested_emit.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    cue toString(): str
+        return "Dog<${.nm}>"
+
+class Cat
+    var nm: str
+    var age: int
+    cue init(nm: str, age: int)
+        .nm = nm
+        .age = age
+
+var myVal: int = 1
+var my_val: int = 2
+
+def pick(xss: List(List(int)), n: int): str
+    if n < 0
+        return "neg"
+    else if "${xss}" == "[[1, 2]]"
+        return "pair"
+    return "other"
+
+def main()
+    var xss = [[1, 2], [3]]
+    print("outer [${xss}]")
+    var yss = [["a"], ["b", "c"]]
+    var f = def(): str
+        var s = "strs [${yss}]"
+        return s
+    print(f())
+    var g = def(): str
+        var s = "ints [${xss}]"
+        return s
+    print(g())
+    var d = Dog("rex")
+    var cs = [Cat("a", 1), Cat("b", 2)]
+    var h = def(): str
+        var s = "own [${d}] [${d.toString()}] [${cs}]"
+        return s
+    print(h())
+    var o: int? = 5
+    var m = HashMap(str, List(int))()
+    m.set("k", [1])
+    var j = def(): str
+        var s = "opt [${o}] [${m}]"
+        return s
+    print(j())
+    var q = def(): str
+        var s = "module [${myVal}] [${my_val}]"
+        return s
+    print(q())
+    print("elif [${pick([[1, 2]], 1)}] [${pick([[3]], 1)}]")
+    print("after [${yss}] [${xss}]")
+ZBR
+cat > "$OUT/nested_dhash.zbr" <<'ZBR'
+@derive(Hash)
+struct K
+    var a: int
+
+def main()
+    var k = K(3)
+    var f = def(): bool
+        var h = k.hash()
+        return h == h
+    print(f())
+ZBR
+compare nested_silent "$OUT" nested_silent.zbr "$OUT/control_nested_silent.txt" "$OUT/nested_silent.v"
+compare nested_emit "$OUT" nested_emit.zbr "$OUT/control_nested_emit.txt" "$OUT/nested_emit.v"
+rows=$((rows + 1))
+ne_bad=""
+for o in "$OUT/control_nested_silent.txt" "$OUT/nested_silent_v_out.txt"; do
+  [ -f "$o" ] || { ne_bad="$ne_bad no-$(basename "$o")"; continue; }
+  while IFS= read -r want; do
+    grep -qxF "$want" "$o" || ne_bad="$ne_bad $(basename "$o"):$(echo "$want" | cut -d'[' -f1 | tr ' ' '_')"
+  done <<'WANT'
+out [[[1, 2], [3]]] [1] [2]
+in [[["a"], ["b", "c"]]] [1] [2]
+WANT
+  [ "$(wc -l < "$o")" = 2 ] || ne_bad="$ne_bad $(basename "$o"):$(wc -l < "$o")-lines-not-2"
+done
+for o in "$OUT/control_nested_emit.txt" "$OUT/nested_emit_v_out.txt"; do
+  [ -f "$o" ] || { ne_bad="$ne_bad no-$(basename "$o")"; continue; }
+  while IFS= read -r want; do
+    grep -qxF "$want" "$o" || ne_bad="$ne_bad $(basename "$o"):$(echo "$want" | cut -d'[' -f1 | tr ' ' '_')"
+  done <<'WANT'
+outer [[[1, 2], [3]]]
+strs [[["a"], ["b", "c"]]]
+ints [[[1, 2], [3]]]
+own [Dog<rex>] [Dog<rex>] [[Cat{nm: "a", age: 1}, Cat{nm: "b", age: 2}]]
+opt [5] [{k: [1]}]
+module [1] [2]
+elif [pair] [other]
+after [[["a"], ["b", "c"]]] [[[1, 2], [3]]]
+WANT
+  [ "$(wc -l < "$o")" = 8 ] || ne_bad="$ne_bad $(basename "$o"):$(wc -l < "$o")-lines-not-8"
+done
+(cd "$OUT" && "$ZEBRA" --target v nested_dhash.zbr > "$OUT/nested_dhash_emit.txt" 2>&1)
+grep -qF 'the hash() that @derive(Hash) writes for K' "$OUT/nested_dhash_emit.txt" || ne_bad="$ne_bad derived-hash-in-a-lambda-not-refused"
+if [ -n "$ne_bad" ]; then echo "nested_emit: FAILED --$ne_bad"; fail=1
+else echo "nested_emit: ok -- inside a lambda's body and an else-if condition a container, a class, an optional and a colliding module variable print what they print outside: ten lines written by hand on both routes, and a derived hash() there is refused by name"; fi
 echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
 # BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
 # an integer or a bool as the eight little-endian bytes of its i64, a char as its

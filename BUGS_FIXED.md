@@ -73,6 +73,33 @@ Open bugs live in `BUGS.md`.
   walk finds the method. Covered: own and inherited defaults, a named argument, an interface
   declared in a used module.
 - **Fixture:** `test/bug798_iface_call_test.zbr` (+ `bug798_iface_call_lib.zbr`), line `798:`.
+### BUG-797: `--target v`'s nested emitter did not share the printer helpers, the toString / field / derived-hash tables or the module variables' spellings -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, probing BUG-796's
+  fix; the Zig route was right in every case)
+- **Where:** `CodeGenV.cloneContext`, the emitter a statement-bodied lambda's body is written
+  through and an `else if` condition is probed through. Its header said "every table shared
+  by reference"; seven were not.
+- **Repro, silent (1):** `var xss = [[1, 2], [3]]` / `print("out ${xss}")`, then
+  `var yss = [["a"], ["b", "c"]]` shown inside a lambda (`var s = "in ${yss}"` /
+  `return s`) printed `in [[4822296], [4822328, 4815072]]` on V: the lambda's printer helper
+  was numbered from 0 again, its text dropped, and the outer function's helper 0 (a list of
+  int's) ran over the strings.
+- **Repro, silent (2):** module variables `myVal` and `my_val` (one snake-case spelling,
+  deduplicated by a table): inside a lambda `${my_val}` read `myVal`.
+- **Repro, refused by V under "nothing refused":** a nested list, an optional, a map of
+  lists, a list of a class, or a class with `cue toString`, shown inside a lambda or in an
+  `else if` condition when the outer function made no helper (`unknown function: zshow_h0`);
+  a derived `hash()` inside a lambda (`unknown method or field: K.hash` where BUG-782a's
+  refusal by name belonged).
+- **Fix:** `cloneContext` shares `show_names`, `show_helpers`, `show_fields`, `own_tostring`,
+  `derived_hash`, `global_dedup` and `refused_once`; a new `absorb()` hands back what the
+  nested emitter found (its refusals and two counters, as before, and now `needs_math` and
+  `uses_gui`). The header lists what is left out on purpose and why.
+- **Pinned by:** `tools/v_check.sh`'s `nested_emit` row: ten lines written by hand on both
+  routes (the two silent shapes as their own program, which compiled before the fix), and the
+  derived hash() in a lambda refused by name. Watched red on the compiler before the change.
+
+---
 
 ### BUG-795: `--target v` writes a class value into an interface-typed field default or declared local as the class -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, running BUG-784's

@@ -1149,7 +1149,14 @@ class VGen
         return .global_modules.get(name) != nil
 
     # a nested emitter (a lambda's body) with this one's whole context: every
-    # table shared by reference, the scalars copied; its own text and depth
+    # table shared by reference, the scalars copied; its own text and depth.
+    # EVERY table: a field added to VGen that an expression or a statement reads
+    # or writes is added here too, or the nested emitter works from an empty one
+    # (BUG-797). What it sets and the outer one reports is handed back by
+    # absorb(). Left out on purpose: sb / depth / refused (its own), in_cond,
+    # in_ctor (a lambda's bare return is no constructor's), the one-expression
+    # flags (iface_target, narrowed_or_used), capturing / captured, and
+    # sig_shapes (the declaration pass's alone).
     def cloneContext(): VGen
         var g = VGen()
         g.class_names = .class_names
@@ -1205,7 +1212,32 @@ class VGen
         g.rt_types = .rt_types
         g.rt_methods = .rt_methods
         g.rt_receivers = .rt_receivers
+        # BUG-797: none of these was shared. A printer helper made inside a lambda or an
+        # `else if` condition was numbered from 0 again and its text dropped: V refused
+        # the file ("unknown function: zshow_h0") or, when the outer function had made
+        # helper 0 for another type, ran THAT one (a list of strings printed as
+        # addresses); a class's own toString, its field list and a derived hash() were
+        # unknown inside; and a module variable whose spelling a sibling's collides with
+        # read the sibling.
+        g.show_names = .show_names
+        g.show_helpers = .show_helpers
+        g.show_fields = .show_fields
+        g.own_tostring = .own_tostring
+        g.derived_hash = .derived_hash
+        g.global_dedup = .global_dedup
+        g.refused_once = .refused_once
         return g
+
+    # what a nested emitter found and set, handed back to this one
+    def absorb(g: VGen)
+        for r in g.refused
+            .refused.add(r)
+        .rt_unverified = .rt_unverified + g.rt_unverified
+        .arith_unchecked = .arith_unchecked + g.arith_unchecked
+        if g.needs_math
+            .needs_math = true
+        if g.uses_gui
+            .uses_gui = true
 
     def isFnName(vname: str): bool
         for n in .fn_names
@@ -3349,10 +3381,7 @@ class VGen
                 var probe = .cloneContext()
                 probe.depth = .depth
                 var cs: str = probe.exprStr(ni.cond)
-                for r in probe.refused
-                    .refused.add(r)
-                .rt_unverified = .rt_unverified + probe.rt_unverified
-                .arith_unchecked = .arith_unchecked + probe.arith_unchecked
+                .absorb(probe)
                 if probe.sb.build() != ""
                     return false
                 .line("} else if " + condStr(cs) + " {")
@@ -4153,10 +4182,7 @@ class VGen
                 var inner = .cloneContext()
                 inner.depth = 1
                 inner.genStmts(sts)
-                for r in inner.refused
-                    .refused.add(r)
-                .rt_unverified = .rt_unverified + inner.rt_unverified
-                .arith_unchecked = .arith_unchecked + inner.arith_unchecked
+                .absorb(inner)
                 body = "\n" + inner.sb.build()
         .local_names = saved_locals
         return head + " {" + body + "}"

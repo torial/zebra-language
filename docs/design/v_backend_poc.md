@@ -3634,6 +3634,19 @@ of an optional).
 **Witness.** `tools/v_check.sh`'s `iface_slot` row, both routes held to eight lines written
 by hand.
 
+## The nested emitter shares every table (BUG-797, 2026-11-18)
+
+A statement-bodied lambda's body is written, and an `else if` condition probed, through a
+second `VGen` made by `cloneContext`. It must see every table an expression or a statement
+reads or writes. Seven were not shared -- the printer helpers
+(`show_names` / `show_helpers`), `show_fields`, `own_tostring`, `derived_hash`,
+`global_dedup`, `refused_once` -- so inside a lambda a helper was renumbered from 0 and its
+text dropped (V refused the file, or ran the outer function's helper 0 over another type:
+strings printed as addresses), and a module variable with a deduplicated spelling read its
+sibling. **A table added to `VGen` goes into `cloneContext` in the same change**; a flag
+the outer emitter reports goes into `absorb()`. The row (`nested_emit`) holds both routes
+to lines written by hand, since two of the shapes compiled and printed wrong text.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since
