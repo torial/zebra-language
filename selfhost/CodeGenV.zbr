@@ -3184,7 +3184,28 @@ class VGen
                 tname = .vTypeOf(ie)   # the expression's type, when the emitter knows it
             if tname != ""
                 .local_types.set(v.name, tname)
-            if tname.startsWith("?") and isNilLit(ie)
+            # BUG-783: `var o: str? = "a"` -- V types `mut o := 'a'` by the value, a string, so the
+            # local lost its `?` (`if o as s` and `o = nil` did not compile). A DECLARED optional
+            # with a value that is not nil is made its type. A value the emitter knows is not
+            # an option is first written as the inner type (the arms below) and cast:
+            # `?string('a')`, `?i64(i64(5))`. One it has no type for may be plain or an option
+            # already, and V refuses the cast of an option of a sum type to itself (`cannot
+            # cast ?Type_ to ?Type_`: the compiler's own `var te: Type_? = tupt.at(i)`), so
+            # it goes through the runtime's zopt_id[T], whose `?T` parameter takes both. An
+            # option the emitter knows is left alone.
+            var opt_decl: str = ""
+            var opt_untyped: bool = false
+            if v.type_ != nil and tname.startsWith("?") and not isNilLit(ie)
+                var iet: str = .vTypeOf(ie)
+                if not iet.startsWith("?")
+                    opt_decl = tname
+                    if iet != "" or isIntLit(ie)
+                        tname = tname.substring(1, tname.len)
+                    else
+                        opt_untyped = true
+            if tname.startsWith("?") and opt_decl != ""
+                pass   # (untyped value: no inner arm applies)
+            else if tname.startsWith("?") and isNilLit(ie)
                 rhs = tname + "(none)"   # `var x: T? = nil`: V types `none` alone as none
             else if .vTypeOf(ie) == "&ZJson" and (tname == "i64" or tname == "f64" or tname == "bool" or tname == "string" or tname == "&ZList[&ZJson]")
                 rhs = coerceRendered(rhs, tname)   # (rhs is rendered already: never render twice)
@@ -3203,6 +3224,10 @@ class VGen
                 # closure capturing the name with [mut], a bare assignment
                 # copies the struct (vlang/v#30348)
                 rhs = tname + "(" + rhs + ")"
+            if opt_untyped
+                rhs = "zopt_id[" + opt_decl.substring(1, opt_decl.len) + "](" + rhs + ")"
+            else if opt_decl != ""
+                rhs = opt_decl + "(" + rhs + ")"
             .line("mut " + name + " := " + rhs)
         else
             if v.type_ as t

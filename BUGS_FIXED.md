@@ -193,6 +193,35 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-783: `--target v` drops the `?` of an optional local with a non-nil initialiser -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-17; reported and fixed by Fable on the V route)
+- **Repro:** `var o: str? = "a"` is emitted `mut o := 'a'`, so `if o as s` fails inside V
+  ("expression should either return an Option or a Result"). Same for `int?`. The Zig route
+  is correct.
+- **Cause:** V types a `:=` by its value. `CodeGenV.genLocal` wrote the initialiser as it
+  stood, so the V local was the value's type while the emitter's own table (`local_types`)
+  said `?T`: every later read was written for an option V did not have.
+- **Fix:** a local DECLARED optional whose initialiser is not `nil` and is not already an
+  option is cast to its declared type (`?string('a')`). A value the emitter can type, and an
+  integer literal, are first written as the inner type by the arms that were there
+  (`?i64(i64(5))`, `?u8(u8(200))`); a value it has no type for (a lambda's result, a map's
+  value by index, a method's result on a receiver bound by `on ... as`) may be plain or an
+  option already, so it goes through the runtime's `zopt_id[T]`, whose `?T` parameter takes
+  both. Module-level optionals and fields were never affected: V declares those by type.
+- **The first draft cast the untyped value too** (`?T(x)`), and V refuses the cast of an
+  option of a sum type to itself (`cannot cast ?Type_ to ?Type_`): the compiler's own
+  `var te: Type_? = tupt.at(tidx)` stopped building as V, which `tools/v_check.sh`'s dump
+  and route rows caught before the commit. That shape is in the row now.
+- **Pinned by:** `tools/v_check.sh`'s `optlocal` row: thirty-two initialisers on both
+  routes, held to lines written by hand; module-level and field optionals, a plain local and
+  a nil-initialised optional unchanged. Watched red on the compiler before the change (V
+  refuses the emitted file: 21 and 17 lines missing).
+- **Found beside it (the Zig route's, BUG-784):** `var i: Namer? = Dog("x")` -- an
+  interface-typed optional local initialised with an implementing class -- passes `-c` and
+  fails inside zig (`expected type '?Namer', found '*Dog'`); through a `Namer` local it works.
+
+---
+
 ### BUG-781: a tuple indexed with brackets (`t[1]`) passes `-c` and fails inside zig -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (filed 2026-11-17; reported by Fable; reproduced here on 76b6095)
 - **Repro:** `var t = (1, "a")` / `print(t[1])`. `-c` exits 0; the build fails in std/meta.zig,

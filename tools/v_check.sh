@@ -1,6 +1,7 @@
 #!/bin/bash
 # pins: BUG-777 `--target v` runs the type check: a program -c refuses is refused there in the compile's words with no .v written, its well-typed twin is written, partial files are merged and a `use` is found by its exact name (the typecheck row)
 # pins: BUG-773 x.hash() on a str, an integer, a bool and a char, and Hash.fnv64, answer the Zig route's FNV-1a 64 on the V route, held to values computed outside both; a derived or untyped hash() is refused by name (the hash row)
+# pins: BUG-783 a declared optional local keeps its `?` on the V route whatever its initialiser; module-level and field optionals, a plain local and a nil-initialised optional unchanged (the optlocal row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
 # pins: BUG-712 a char on the V route is a codepoint, and chars() yields the Zig route's items (examples/v_poc_utf8.zbr; the fmt_c row's text line)
@@ -303,6 +304,290 @@ if ! grep -qxF 'idx  2 nil 4 1 nil 42' "$OUT/control_v_optchain_bool_test.txt" |
 elif ! grep -qF '.len == 0)' "$WT/test/v_optchain_bool_test_prog.v" || ! grep -qF 'zlist_contains(' "$WT/test/v_optchain_bool_test_prog.v"; then echo "optchain: FAILED -- the emitted V reaches neither the string's length test nor the list's contains: the comparison ran something else"; fail=1
 elif grep -qF 'Option(' "$OUT/v_optchain_bool_test_v_out.txt" "$OUT/bug765_optchain_builtin_method_test_v_out.txt"; then echo "optchain: FAILED -- an option printed as V's own text"; fail=1
 else echo "optchain: ok -- an optional predicate, an optional index and a string's isEmpty print alike on both backends, beside a class whose methods share the names"; fi
+echo "── a declared optional local keeps its ? whatever its initialiser (BUG-783) ──"
+# `var o: str? = "a"` was emitted `mut o := 'a'`: V types a `:=` by its value, so the local
+# was a plain string, and `if o as s`, `o = nil` and `o orelse d` did not compile as V under
+# "nothing refused". A declared optional local with a value that is not nil is cast to its
+# declared type now (`?string('a')`, `?i64(i64(5))`). optlocal_shapes: the value as a
+# literal of each scalar type, a sized int, a typed call, a value that is an option already
+# (some and nil), two values the emitter has no type for (a lambda's result, a map's value
+# by index), a class reference, an interface, a list, another optional local; then the
+# local read by `as`, `orelse` and `!`, set to nil and set again. optlocal_more: a negative
+# literal, a sum, a char, a uint8, an interpolation, an enum, a struct, a union's variant,
+# a parsed JsonValue, a `catch`, an int literal for a float, a comparison, a toString(),
+# a local declared inside a loop, a string's `.len` and a list's count(). optlocal_sum: a
+# value the emitter has no type for that IS an option already, of a sum type (a class's own
+# `at(): Tree?` on a receiver bound by `on ... as`, the compiler's `var te: Type_? =
+# tupt.at(i)`): V refuses the cast of such an option to itself, and the first draft of the
+# fix wrote that cast (the compiler's own four route files stopped building; this program
+# was written right before the fix and must stay so). optlocal_mod is the
+# control of what was right before and must stay so: a module-level optional and a field
+# with a default, each with a value and with nil. Both routes' printouts are held to the
+# lines written here by hand, and the emitted V is asked that a local declared without `?`
+# and a nil-initialised optional are written as they were.
+cat > "$OUT/optlocal_shapes.zbr" <<'ZBR'
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var n: str
+    cue init(n: str)
+        .n = n
+    def name(): str
+        return .n
+
+def mk(s: str): str
+    return s + "!"
+
+def maybe(s: str): str?
+    if s == ""
+        return nil
+    return s
+
+def show(o: str?): str
+    if o as s
+        return "some " + s
+    return "none"
+
+def main()
+    var o: str? = "a"
+    if o as s
+        print("str [${s}]")
+    var n: int? = 5
+    if n as k
+        print("int [${k + 1}]")
+    var fl: float? = 1.5
+    if fl as f
+        print("float [${f + 1.0}]")
+    var b: bool? = true
+    if b as bb
+        print("bool [${bb}]")
+    var s8: int8? = 3
+    if s8 as e8
+        print("int8 [${e8}]")
+    var c: str? = mk("x")
+    print("call [${show(c)}]")
+    var d: str? = maybe("y")
+    print("opt [${show(d)}]")
+    var e: str? = maybe("")
+    print("optnil [${show(e)}]")
+    var lam = def(x: str): str = x + "?"
+    var u: str? = lam("z")
+    print("lambda [${show(u)}]")
+    var m = HashMap(str, str)()
+    m["k"] = "v"
+    var w: str? = m["k"]
+    print("mapget [${show(w)}]")
+    var r: Dog? = Dog("rex")
+    if r as dog
+        print("class [${dog.name()}]")
+    var i0: Namer = Dog("ifc")
+    var i: Namer? = i0
+    if i as nm
+        print("iface [${nm.name()}]")
+    var xs: List(int)? = [1, 2]
+    if xs as l
+        print("list [${l.count()}]")
+    var q: int? = n
+    if q as qq
+        print("copy [${qq}]")
+    print("orelse [${o orelse "none"}] [${e orelse "none"}]")
+    print("unwrap [${o!}]")
+    o = nil
+    print("nil [${o == nil}] [${show(o)}]")
+    o = "again"
+    print("again [${show(o)}] [${o != nil}]")
+    var z: str? = nil
+    print("znil [${z == nil}]")
+    z = "set"
+    print("zset [${show(z)}]")
+    var p: str = "plain"
+    print("plain [${p}]")
+ZBR
+compare optlocal_shapes "$OUT" optlocal_shapes.zbr "$OUT/control_optlocal_shapes.txt" "$OUT/optlocal_shapes.v"
+cat > "$OUT/optlocal_mod.zbr" <<'ZBR'
+var g: str? = "g"
+var gn: int? = 4
+var gz: str? = nil
+
+class Holder
+    var f: str? = "f"
+    var k: int? = 2
+    var z: str? = nil
+    cue init()
+        pass
+
+def main()
+    if g as s
+        print("g [${s}]")
+    if gn as k
+        print("gn [${k + 1}]")
+    print("gz [${gz == nil}]")
+    g = nil
+    print("gnil [${g == nil}]")
+    gz = "set"
+    if gz as t
+        print("gzset [${t}]")
+    var h = Holder()
+    if h.f as hf
+        print("field [${hf}]")
+    if h.k as hk
+        print("fieldn [${hk + 1}]")
+    print("fieldz [${h.z == nil}]")
+    h.f = nil
+    print("fieldnil [${h.f == nil}]")
+ZBR
+compare optlocal_mod "$OUT" optlocal_mod.zbr "$OUT/control_optlocal_mod.txt" "$OUT/optlocal_mod.v"
+cat > "$OUT/optlocal_more.zbr" <<'ZBR'
+enum Color
+    red
+    green
+
+struct P
+    var x: int
+    var s: str
+
+union Shape
+    circle: int
+    label: str
+
+def risky(n: int): int throws
+    if n < 0
+        raise "neg"
+    return n * 2
+
+def main()
+    var neg: int? = -1
+    if neg as a
+        print("neg [${a}]")
+    var x = 3
+    var y = 4
+    var sum: int? = x + y
+    if sum as b
+        print("sum [${b}]")
+    var ch: char? = 'q'
+    if ch as c
+        print("char [${c}]")
+    var u8v: uint8? = 200
+    if u8v as d
+        print("u8 [${d}]")
+    var it: str? = "x${x}"
+    if it as e
+        print("interp [${e}]")
+    var col: Color? = Color.green
+    if col as f
+        print("enum [${f == Color.green}]")
+    var st: P? = P(1, "p")
+    if st as g
+        print("struct [${g.x}] [${g.s}]")
+    var sh: Shape? = Shape.circle(2)
+    if sh as h
+        branch h
+            on Shape.circle as r
+                print("union [${r}]")
+            on Shape.label as l
+                print("union label [${l}]")
+    var j: JsonValue? = Json.parse("{\"k\": 1}")
+    if j as jv
+        print("json [${jv.toString()}]")
+    var tr: int? = risky(2) catch 0
+    if tr as k
+        print("catch [${k}]")
+    var fn: float? = 2
+    if fn as m
+        print("floatlit [${m}]")
+    var cmp: bool? = x < y
+    if cmp as n
+        print("cmp [${n}]")
+    var txt: str? = x.toString()
+    if txt as o
+        print("tostr [${o}]")
+    for q in 0..2
+        var inl: int? = q
+        if inl as w
+            print("loop [${w}]")
+    var ln: int? = "abc".len
+    if ln as lk
+        print("len [${lk + 1}]")
+    var ys = [1, 2, 3]
+    var cnt: int? = ys.count()
+    if cnt as ck
+        print("count [${ck}]")
+ZBR
+compare optlocal_more "$OUT" optlocal_more.zbr "$OUT/control_optlocal_more.txt" "$OUT/optlocal_more.v"
+cat > "$OUT/optlocal_sum.zbr" <<'ZBR'
+class Kids
+    var items: List(Tree)
+    cue init(items: List(Tree))
+        .items = items
+    def at(i: int): Tree?
+        if i < 0 or i >= .items.count()
+            return nil
+        return .items[i]
+
+union Tree
+    leaf: int
+    kids: Kids
+
+def describe(t: Tree): str
+    branch t
+        on Tree.leaf as n
+            return "leaf ${n}"
+        on Tree.kids as ks
+            var k0: Tree? = ks.at(0)
+            var k9: Tree? = ks.at(9)
+            var tail: str = " ninth none"
+            if k9 as ninth
+                tail = " ninth (" + describe(ninth) + ")"
+            if k0 as first
+                return "first (" + describe(first) + ")" + tail
+            return "first none" + tail
+
+def main()
+    var xs = List(Tree)()
+    xs.add(Tree.leaf(7))
+    xs.add(Tree.leaf(8))
+    print("sumat [${describe(Tree.kids(Kids(xs)))}]")
+ZBR
+compare optlocal_sum "$OUT" optlocal_sum.zbr "$OUT/control_optlocal_sum.txt" "$OUT/optlocal_sum.v"
+rows=$((rows + 1))
+ol_bad=""
+for o in "$OUT/control_optlocal_shapes.txt" "$OUT/optlocal_shapes_v_out.txt"; do
+  [ -f "$o" ] || { ol_bad="$ol_bad no-$(basename "$o")"; continue; }
+  for want in 'str [a]' 'int [6]' 'float [2.5]' 'bool [true]' 'int8 [3]' 'call [some x!]' 'opt [some y]' 'optnil [none]' \
+              'lambda [some z?]' 'mapget [some v]' 'class [rex]' 'iface [ifc]' 'list [2]' 'copy [5]' 'orelse [a] [none]' \
+              'unwrap [a]' 'nil [true] [none]' 'again [some again] [true]' 'znil [true]' 'zset [some set]' 'plain [plain]'; do
+    grep -qxF "$want" "$o" || ol_bad="$ol_bad $(basename "$o"):$(echo "$want" | cut -d' ' -f1)"
+  done
+  [ "$(wc -l < "$o")" = 21 ] || ol_bad="$ol_bad $(basename "$o"):$(wc -l < "$o")-lines-not-21"
+done
+for o in "$OUT/control_optlocal_mod.txt" "$OUT/optlocal_mod_v_out.txt"; do
+  [ -f "$o" ] || { ol_bad="$ol_bad no-$(basename "$o")"; continue; }
+  for want in 'g [g]' 'gn [5]' 'gz [true]' 'gnil [true]' 'gzset [set]' 'field [f]' 'fieldn [3]' 'fieldz [true]' 'fieldnil [true]'; do
+    grep -qxF "$want" "$o" || ol_bad="$ol_bad $(basename "$o"):$(echo "$want" | cut -d' ' -f1)"
+  done
+done
+for o in "$OUT/control_optlocal_more.txt" "$OUT/optlocal_more_v_out.txt"; do
+  [ -f "$o" ] || { ol_bad="$ol_bad no-$(basename "$o")"; continue; }
+  for want in 'neg [-1]' 'sum [7]' 'char [q]' 'u8 [200]' 'interp [x3]' 'enum [true]' 'struct [1] [p]' 'union [2]' 'json [{"k":1}]' \
+              'catch [4]' 'floatlit [2.0]' 'cmp [true]' 'tostr [3]' 'loop [0]' 'loop [1]' 'len [4]' 'count [3]'; do
+    grep -qxF "$want" "$o" || ol_bad="$ol_bad $(basename "$o"):$(echo "$want" | cut -d' ' -f1)"
+  done
+done
+for o in "$OUT/control_optlocal_sum.txt" "$OUT/optlocal_sum_v_out.txt"; do
+  [ -f "$o" ] || { ol_bad="$ol_bad no-$(basename "$o")"; continue; }
+  grep -qxF 'sumat [first (leaf 7) ninth none]' "$o" || ol_bad="$ol_bad $(basename "$o"):sumat"
+done
+# the two controls of the entry, asked of the emitted V: a local declared without `?` is not
+# cast to an option, and a nil-initialised optional is written as it was
+if [ -f "$OUT/optlocal_shapes.v" ]; then
+  grep -qxF "	mut p := 'plain'" "$OUT/optlocal_shapes.v" || ol_bad="$ol_bad plain-local-not-written-as-before"
+  grep -qxF '	mut z := ?string(none)' "$OUT/optlocal_shapes.v" || ol_bad="$ol_bad nil-optional-not-written-as-before"
+  # and the witness that the row looks at the declarations at all: the first one carries its `?`
+  grep -qF 'mut o := ?string(' "$OUT/optlocal_shapes.v" || ol_bad="$ol_bad the-optional-local-is-not-declared-as-an-option"
+else ol_bad="$ol_bad no-optlocal_shapes.v"; fi
+if [ -n "$ol_bad" ]; then echo "optlocal: FAILED --$ol_bad"; fail=1
+else echo "optlocal: ok -- a declared optional local is an option on the V route for thirty-two initialisers (scalars and their edges, a call, an option, an untyped value, a class, an interface, a struct, an enum, a union, a list, a JsonValue, a catch, an untyped option of a sum type, another optional, inside a loop), read by as / orelse / !, set to nil and set again; module-level and field optionals, a plain local and a nil-initialised optional unchanged; both routes print the lines written by hand"; fi
 echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
 # BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
 # an integer or a bool as the eight little-endian bytes of its i64, a char as its

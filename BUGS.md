@@ -85,16 +85,6 @@
 
 ---
 
-### BUG-783: `--target v` drops the `?` of an optional local with a non-nil initialiser
-- **Status:** OPEN (filed 2026-11-17; reported by Fable, who is fixing it on the V route)
-- **Repro:** `var o: str? = "a"` is emitted `mut o := 'a'`, so `if o as s` fails inside V
-  ("expression should either return an Option or a Result"). Same for `int?`. The Zig route
-  is correct.
-- **Control when fixing:** the repro builds and binds on V; a nil-initialised optional local and
-  a non-optional local unchanged.
-
----
-
 ### BUG-782: `@derive` is not read on the V route
 - **Status:** OPEN, part (a) RESOLVED 2026-11-17 (filed 2026-11-17; reported by Fable, who is fixing it
   on the V route; parts are closed one commit each as BUG-782a..d; the entry closes when all four are)

@@ -3583,7 +3583,36 @@ wrong hash would read IDENTICAL.
   `P(x=1, s=a)`; a `HashMap` keyed by a derived struct with a `List` field finds an
   equal-content key built with another list, where the Zig route does not.
 - BUG-783: `var o: str? = "a"` is emitted `mut o := 'a'`: the local loses its `?`, and `if o as s`
-  does not compile as V.
+  does not compile as V. **Fixed 2026-11-18** (next section).
+
+## A declared optional local keeps its `?` (BUG-783, 2026-11-18)
+
+V types a `:=` by its value, so `mut o := 'a'` is a string whatever the Zebra source declared,
+while the emitter's own table said `?string` and wrote every later read for an option. A
+local declared optional is cast to its declared type now, in `genLocal`:
+
+| the initialiser | written |
+|---|---|
+| `nil` | `?T(none)` (as before) |
+| a value the emitter types as an option (a `T?` call, another optional local, `Json.parse`) | as it stands (as before) |
+| a value the emitter types as not an option, or an integer literal | the inner type's own form, then the cast: `?i64(i64(5))`, `?string('a')`, `?&Dog(new_dog(...))` |
+| a value the emitter has no type for (a lambda's result, a map's value by index, a method's result on a receiver bound by `on ... as`) | the runtime's `zopt_id[string](f('z'))`, whose `?T` parameter takes a plain value and an option alike |
+
+A local with no declared type is untouched (its type is its value's, and it is never an
+option unless the value is). Module-level optionals and fields were never affected: V
+declares those by type.
+
+The untyped case is not a cast because V refuses the cast of an option of a SUM type to
+itself (`cannot cast ?Type_ to ?Type_`), while it takes the same cast for a string, an
+integer, a struct, a reference and an interface. The first draft of the fix cast, and the
+compiler's own `var te: Type_? = tupt.at(tidx)` (a class's `at(): Type_?` on a receiver the
+emitter has no type for) stopped building as V; the dump and route rows said so.
+
+**Witness.** `tools/v_check.sh`'s `optlocal` row: four programs compared (thirty-two
+initialisers; the local read by `as`, `orelse` and `!`, set to nil and set again; the
+untyped option of a sum type; the module-level and field controls), both routes held to
+lines written by hand, and the emitted V asked that a plain local and a nil-initialised
+optional are written as before.
 
 ## If the branch ever merges to main
 
