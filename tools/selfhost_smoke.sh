@@ -2925,6 +2925,17 @@ smoke_run test/bug773_builtin_hash_test.zbr "char [-5808556873153909620] [true] 
 smoke_run test/bug773_builtin_hash_test.zbr "bool [-6284781860667377211] [true]"
 smoke_run test/bug773_builtin_hash_test.zbr "user [7]"
 smoke_run test/bug773_builtin_hash_test.zbr "bug773: OK"
+# BUG-711: inZone returns DateTime? (nil for a zone outside the table, never UTC); a literal
+# unknown zone and a missing argument are refused at -c; DateTime.local() reads the OS zone.
+smoke_run test/bug711_inzone_nil_test.zbr "phoenix [5]"
+smoke_run test/bug711_inzone_nil_test.zbr "denver [5:0]"
+smoke_run test/bug711_inzone_nil_test.zbr "computed known [false]"
+smoke_run test/bug711_inzone_nil_test.zbr "computed typo [true]"
+smoke_run test/bug711_inzone_nil_test.zbr "chain [5] [-1]"
+smoke_run test/bug711_inzone_nil_test.zbr "local [true] [true]"
+smoke_tc_fail test/bug711_inzone_literal_fail_test.zbr 'bug711_inzone_literal_fail_test.zbr:6:25: error: DateTime.inZone("America/Phonix"): not a zone the runtime knows -- did you mean "America/Phoenix"?'
+smoke_tc_fail test/bug711_inzone_literal_fail_test.zbr 'bug711_inzone_literal_fail_test.zbr:7:25: error: DateTime.inZone("America/Boise"): not a zone the runtime knows (docs/SURFACE.md lists the zones it knows)'
+smoke_tc_fail test/bug711_inzone_literal_fail_test.zbr 'bug711_inzone_literal_fail_test.zbr:8:18: error: DateTime.inZone takes one argument, the IANA zone name'
 smoke_run test/bug776_derive_hash_int_test.zbr "derived [-8694093745399089642] [true] [true]"
 smoke_run test/bug776_derive_hash_int_test.zbr "map [one] [two] [2]"
 smoke_run test/bug776_derive_hash_int_test.zbr "bug776: OK"

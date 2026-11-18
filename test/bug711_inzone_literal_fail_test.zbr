@@ -1,0 +1,9 @@
+# BUG-711: a LITERAL zone the runtime does not know is refused at -c, naming the nearest
+# real zone; inZone with no argument (which emitted "UTC") is refused too. A COMPUTED name
+# is not a refusal -- it is nil at run time (test/bug711_inzone_nil_test.zbr).
+def main()
+    var noon = DateTime.of(2026, 1, 15, 12, 0, 0)
+    var a = noon.inZone("America/Phonix")
+    var b = noon.inZone("America/Boise")
+    var c = noon.inZone()
+    print("${a == nil} ${b == nil} ${c == nil}")

@@ -2368,6 +2368,8 @@ pub const Calendar = struct {
 // DST rules: 0=none, 1=US (2nd Sun Mar → 1st Sun Nov), 2=EU (last Sun Mar → last Sun Oct),
 //            3=AU East (1st Sun Oct → 1st Sun Apr), 4=NZ (last Sun Sep → 1st Sun Apr).
 // Dead-stripped by the linker when DateTime.inZone() is never called — zero size if unused.
+// BUG-711: a name outside this table is NIL (`inZone` returns `DateTime?`), never UTC; a
+// literal one is refused at `-c` (TypeChecker's ianaZones, kept equal by surface_inventory).
 pub const _TzEntry = struct { name: []const u8, std: i16, dst: i16, rule: u8 };
 pub const _tz_table = [_]_TzEntry{
     .{ .name = "UTC",                         .std = 0,    .dst = 0,    .rule = 0 },
@@ -2545,7 +2547,7 @@ pub fn _tz_nz_dst_active(epoch_ms: i64, std_min: i16) bool {
     }
 }
 
-pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
+pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) ?_DateTime {
     for (&_tz_table) |*entry| {
         if (std.mem.eql(u8, entry.name, zone)) {
             const std_ms: i64 = @as(i64, entry.std) * 60000;
@@ -2563,7 +2565,61 @@ pub fn _dt_in_zone(dt: _DateTime, zone: []const u8) _DateTime {
             return .{ .epoch_ms = dt.epoch_ms + (if (in_dst) dst_ms else std_ms) };
         }
     }
-    return dt; // Unknown zone: return as-is (UTC)
+    return null; // BUG-711: an unknown zone has no answer; UTC would be a fabricated one
+}
+
+// BUG-711: DateTime.local() -- now, shifted by the machine's own UTC offset. The offset is
+// the OS's answer: GetTimeZoneInformation on Windows, libc's localtime_r elsewhere (which
+// reads TZ and the zone database, and answers UTC where the system has no zone configured).
+// A program calling it links libc and takes the LLVM path (CodeGen's _emitted_libc).
+pub fn _dt_local() _DateTime {
+    const now = _dt_now();
+    return .{ .epoch_ms = now.epoch_ms + _dt_local_offset_ms(now.epoch_ms) };
+}
+
+pub fn _dt_local_offset_ms(epoch_ms: i64) i64 {
+    if (comptime builtin.os.tag == .windows) {
+        const SYSTEMTIME = extern struct { y: u16, mo: u16, dow: u16, d: u16, h: u16, mi: u16, s: u16, ms: u16 };
+        const TZI = extern struct {
+            Bias: i32,
+            StandardName: [32]u16,
+            StandardDate: SYSTEMTIME,
+            StandardBias: i32,
+            DaylightName: [32]u16,
+            DaylightDate: SYSTEMTIME,
+            DaylightBias: i32,
+        };
+        const K = struct {
+            extern "kernel32" fn GetTimeZoneInformation(tzi: *TZI) callconv(.winapi) u32;
+        };
+        // The CURRENT bias, which is the one in force at `epoch_ms` because local() passes now.
+        var tzi: TZI = undefined;
+        const id = K.GetTimeZoneInformation(&tzi);
+        if (id == 0xFFFFFFFF) @panic("DateTime.local(): the machine's time zone could not be read (GetTimeZoneInformation failed)");
+        var bias: i64 = tzi.Bias;
+        if (id == 2) bias += tzi.DaylightBias else if (id == 1) bias += tzi.StandardBias;
+        return -bias * 60000;
+    } else if (comptime builtin.link_libc) {
+        const Tm = extern struct {
+            tm_sec: c_int, tm_min: c_int, tm_hour: c_int, tm_mday: c_int, tm_mon: c_int,
+            tm_year: c_int, tm_wday: c_int, tm_yday: c_int, tm_isdst: c_int,
+            tm_gmtoff: c_long, tm_zone: ?[*:0]const u8,
+        };
+        const C = struct {
+            extern "c" fn localtime_r(t: *const std.c.time_t, out: *Tm) ?*Tm;
+            extern "c" fn tzset() void;
+        };
+        C.tzset();
+        const t: std.c.time_t = @intCast(@divFloor(epoch_ms, 1000));
+        var tm: Tm = undefined;
+        if (C.localtime_r(&t, &tm) == null) @panic("DateTime.local(): localtime_r could not convert the current time");
+        return @as(i64, tm.tm_gmtoff) * 1000;
+    } else {
+        // Not a @compileError: cross-sema references every runtime declaration on a no-libc
+        // target. A program that calls local() always links libc (emittedNeedsLibc), so only a
+        // host that built the runtime by hand without -lc reaches this.
+        @panic("DateTime.local() reads the machine's zone through libc (localtime_r), and this program was built without it: link libc (-lc)");
+    }
 }
 // BUG-751 (Sean, 2026-11-15; rules agreed with Fable 2026-11-16, docs in BUGS_FIXED): a
 // JsonValue is a SHARED HANDLE -- a pointer to a node. Assignment and parameters share it;

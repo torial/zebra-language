@@ -6,6 +6,50 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so -- FIXED 2026-11-17
+- **Status:** FIXED 2026-11-17 (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
+- **Repro:** `DateTime.of(2026, 1, 15, 12, 0, 0).inZone("America/Phonix")` (a typo) and
+  `.inZone("America/Boise")` (a real IANA zone the runtime's table lacks) both format as `12:00`,
+  the UTC time; `"America/Phoenix"` correctly gives `05:00`. QUICKSTART says "Unknown zone names
+  fall back to UTC (no crash)". A program that labels the time with the zone it asked for prints
+  a wrong time with a right-looking label, and a one-letter typo is indistinguishable from UTC.
+- **Correction (2026-11-13, same day):** this entry first gave `America/Phoenix` as the repro and
+  said the table lists 10 zones. Both were wrong: QUICKSTART's 10 rows are "representative
+  (~75 total)", the runtime's table has Phoenix, and Phoenix formats correctly. Measured with
+  the probe above before correcting.
+- **Second half:** nothing reads the machine's own zone, so a program cannot print local time
+  without the user naming an IANA zone; `DateTime.now()` is documented as "current wall-clock
+  time", which reads as local.
+- **Fix shape (a decision):** refuse a literal zone outside the table at `-c` and panic or return
+  nil at run time for a computed one -- a default that reads as an answer is the UNGIT
+  "fabricated" case; and add a local-zone read (`DateTime.local()`, or `inZone("local")`) from
+  the OS. Say "UTC" in the `DateTime.now()` row.
+- **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
+  `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+
+- **Decision (Sean, 2026-11-17):** "Nil result/optional is fine. DateTime.local() is the better
+  option".
+- **Fix:** `dt.inZone(name)` returns `DateTime?`: `_dt_in_zone` answers null for a name outside
+  `_tz_table`. The checker refuses a LITERAL name outside the table at `-c`, naming the nearest
+  zone within three edits (`"America/Phonix"` -> did you mean "America/Phoenix"?), and a call with
+  no argument (which emitted `"UTC"`). Its list, `ianaZones`, is GENERATED from the preamble table
+  (`surface_inventory.py --print-zone-table`) and the surface-freeze gate fails when they differ;
+  SURFACE.md lists the 82 zones. `?.field` / `?.method()` on a `DateTime?` re-dispatch through the
+  BUG-765 binding (a DateTime's fields are computed). New static `DateTime.local()`: now plus the
+  OS's offset -- `GetTimeZoneInformation` on Windows, libc `localtime_r` elsewhere (honours `TZ`;
+  no zone configured answers UTC, the OS's own convention). A program calling it links libc and
+  skips the fast backend (`emittedNeedsLibc`, with DynLib.open; `emittedDynLib` retired); a runtime built by hand without libc on a non-Windows OS panics there naming `-lc` (a run-time panic, not a @compileError: cross-sema references every runtime declaration, and its first FULL run went red on exactly that). The
+  `DateTime.now()` row says UTC. Fixtures `test/bug711_inzone_nil_test.zbr` (Phoenix / Denver
+  05:00 at 12:00 UTC, a computed typo nil, `?.hour orelse -1`, `local()` a whole number of quarter
+  hours from UTC) and `test/bug711_inzone_literal_fail_test.zbr` (three refusals at their
+  columns). `test/datetime_inzone_test.zbr` unwraps with `!` and its unknown-zone leg says its
+  fallback (`orelse epoch`); its output is unchanged. Measured: on this machine `local()` was -420
+  minutes, what Windows reports. No zebra-ide or GameEngine source calls `inZone`. Not done: the
+  table still lacks zones such as America/Boise (refused by name now, not answered wrongly), and
+  the V route maps neither `inZone` nor `local`.
+
+---
+
 ### BUG-777: `zebra --target v` does not run the type checker -- FIXED 2026-11-17
 - **Status:** FIXED 2026-11-17 (was OPEN (filed 2026-11-17; reported by Fable on 227b5b5))
 - **Repro:** `def f(n: int): int` / `return n + 1` / `def main()` / `var x: int = "a"` /

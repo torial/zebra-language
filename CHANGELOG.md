@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`dt.inZone(name)` returns `DateTime?`; `DateTime.local()` is new** (BUG-711; surface:
+  `DateTime +local`, and the 82 IANA zones `inZone` knows are listed in SURFACE.md). A zone the
+  runtime does not know was answered in UTC, silently, so a typo printed the UTC time beside the
+  zone it asked for. Now a computed unknown name is nil, and a literal one is refused at `-c`
+  naming the nearest real zone, as is `inZone()` with no argument. **Breaking:** a caller unwraps
+  (`dt.inZone("America/Denver")!`, `if dt.inZone(z) as t`, `dt.inZone(z)?.hour orelse -1`).
+  `DateTime.local()` is the current time in the machine's own zone (the OS's offset); a program
+  calling it links libc. `DateTime.now()` is documented as UTC, which it always was.
 - **`x.hash()` on a builtin is `Hash.fnv64`** (surface: `str +hash`). A user type answers
   `x.hash()` with its `cue hash`; now `str`, every integer width, `char` and `bool` answer it too.
   On a `str` it is `Hash.fnv64(s)`; a `char` hashes as its one-character string

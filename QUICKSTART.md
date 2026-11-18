@@ -4546,7 +4546,8 @@ disagreements in `find` and `match`.
 
 | Call                              | Returns    | Notes                               |
 |-----------------------------------|------------|--------------------------------------|
-| `DateTime.now()`                  | `DateTime` | Current wall-clock time              |
+| `DateTime.now()`                  | `DateTime` | Current time, in UTC                 |
+| `DateTime.local()`                | `DateTime` | Current time in the machine's own zone |
 | `DateTime.fromEpoch(ms)`          | `DateTime` | From milliseconds since Unix epoch   |
 | `DateTime.of(y,m,d)`             | `DateTime` | Midnight UTC on that date            |
 | `DateTime.of(y,m,d,h,min,s)`     | `DateTime` | Full UTC date+time                   |
@@ -4570,7 +4571,7 @@ a return type, `List(DateTime)`, `DateTime?`. A member it does not have is refus
 
 | Call                              | Returns        | Notes                                        |
 |-----------------------------------|----------------|-----------------------------------------------|
-| `dt.inZone(zone)`                 | `DateTime`     | Shift to named IANA timezone (see below)      |
+| `dt.inZone(zone)`                 | `DateTime?`    | Shift to named IANA timezone (see below)      |
 | `dt.inCalendar(cal)`              | `CalendarView` | Calendar-specific lens (Gregorian, Hebrew, …) |
 | `dt.addDays(n)`                   | `DateTime`     |                                               |
 | `dt.addHours(n)`                  | `DateTime`     |                                               |
@@ -4587,20 +4588,32 @@ a return type, `List(DateTime)`, `DateTime?`. A member it does not have is refus
 **`dt.inZone(zone)` — IANA timezone support**
 
 Returns a new `DateTime` whose `epoch_ms` is shifted by the UTC offset of the
-named IANA zone, accounting for DST rules where applicable.  Unknown zone names
-fall back to UTC (no crash).  The zone table is dead-stripped by the linker when
-`inZone` is never called — **zero binary-size cost if unused**.
+named IANA zone, accounting for DST rules where applicable.  The result is a
+`DateTime?`: **nil for a zone the runtime's table does not hold**, never a silent
+UTC answer.  A literal name outside the table is refused at `-c`, naming the
+nearest real zone (`inZone("America/Phonix")` -> did you mean "America/Phoenix"?),
+and so is a call with no argument; a name computed at run time is nil instead.
+The table's zones are listed in `docs/SURFACE.md`.  It is dead-stripped by the
+linker when `inZone` is never called — **zero binary-size cost if unused**.
 
 ```zebra
 var epoch = DateTime.fromEpoch(0)
-var ny    = epoch.inZone("America/New_York")
+var ny    = epoch.inZone("America/New_York")!   # a literal known zone: unwrap
 print(ny.year)   # 1969
 print(ny.hour)   # 19   (UTC-5 winter)
 
 var summer = DateTime.of(2024, 7, 4, 12, 0, 0)
-var ny_edt = summer.inZone("America/New_York")
-print(ny_edt.hour)   # 8   (UTC-4 summer DST)
+if summer.inZone("America/New_York") as ny_edt
+    print(ny_edt.hour)   # 8   (UTC-4 summer DST)
+
+def hourIn(dt: DateTime, zone: str): int
+    return dt.inZone(zone)?.hour orelse -1   # a computed name may be unknown
 ```
+
+**`DateTime.local()`** is the current time in the machine's own zone, as the OS
+reports it (`GetTimeZoneInformation` on Windows, libc's `localtime_r` elsewhere,
+which honours `TZ`; a system with no zone configured answers UTC).  A program that
+calls it links libc.  `DateTime.now()` is UTC.
 
 Supported DST rules: US (post-2007 EESA), EU, AU Eastern, New Zealand.
 Representative zones (≈ 75 total):

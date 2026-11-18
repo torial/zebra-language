@@ -53,7 +53,8 @@ CHECKER = REPO / "selfhost" / "TypeChecker.zbr"
 MAIN = REPO / "selfhost" / "main.zbr"
 
 FLOORS = dict(keywords=60, cues=5, namespaces=25, members=150, receivers=20, receiver_methods=220,
-              cli_lines=30, flags=15)
+              cli_lines=30, flags=15, zones=40)
+PREAMBLE = REPO / "selfhost" / "stdlib_preamble.zig"
 PARSER = REPO / "selfhost" / "Parser.zbr"
 
 
@@ -296,6 +297,46 @@ def check_checker_table():
     return bad, len(have)
 
 
+# ---- the IANA zone table (BUG-711) -----------------------------------------------------------
+# `dt.inZone(name)` answers nil for a name outside the runtime's `_tz_table`, and the checker
+# refuses a LITERAL name outside it at `-c`, from `ianaZones` in TypeChecker.zbr. That function
+# is GENERATED from the preamble (`--print-zone-table`) and `--check` asserts the two agree, so
+# a zone added to the runtime and not the checker (refused although it works) or the reverse
+# (accepted at -c, nil at run time) fails this gate. The zone names are surface too: a program
+# naming one depends on it, so SURFACE.md lists them.
+ZONE_TABLE_FN = "ianaZones"
+
+
+def zones():
+    text = read(PREAMBLE)
+    m = re.search(r"pub const _tz_table = \[_\]_TzEntry\{(.*?)\n\};", "\n".join(text), re.S)
+    if not m:
+        refuse("_tz_table not found in %s" % PREAMBLE.relative_to(REPO))
+    names = re.findall(r'\.name = "([^"]+)"', m.group(1))
+    if len(names) < FLOORS["zones"]:
+        refuse("only %d zones derived from _tz_table (floor %d)" % (len(names), FLOORS["zones"]))
+    return names
+
+
+def zone_table_text():
+    return ["def %s(): str" % ZONE_TABLE_FN, '    return "|%s|"' % "|".join(zones())]
+
+
+def check_zone_table():
+    body = _body(read(CHECKER), ZONE_TABLE_FN)
+    if body is None:
+        refuse("%s not found in TypeChecker.zbr" % ZONE_TABLE_FN)
+    have = []
+    for l in body:
+        m = re.match(r'\s*return "\|(.*)\|"', l)
+        if m:
+            have = [x for x in m.group(1).split("|") if x]
+    want = zones()
+    bad = ["  zones:%s%s" % ("".join("  +%s" % x for x in sorted(set(want) - set(have))),
+                             "".join("  -%s" % x for x in sorted(set(have) - set(want))))] if set(have) != set(want) else []
+    return bad, len(have)
+
+
 # ---- render -----------------------------------------------------------------------------
 def render():
     kw = keywords()
@@ -358,6 +399,11 @@ def render():
             o.append("")
             o.append("*OPEN: an unlisted member is passed through as `%s` and judged by Zig, not by Zebra.*" % open_to)
         o.append("")
+    zs = zones()
+    o.append("## IANA zones for `dt.inZone` (%d)" % len(zs))
+    o.append("")
+    o.append(" ".join("`%s`" % z for z in zs))
+    o.append("")
     return "\n".join(o) + "\n"
 
 
@@ -371,6 +417,9 @@ def main():
     if mode == "--print-checker-table":
         print("\n".join(checker_table_text()))
         return
+    if mode == "--print-zone-table":
+        print("\n".join(zone_table_text()))
+        return
     if mode == "--check":
         bad, n = check_checker_table()
         if bad:
@@ -380,6 +429,14 @@ def main():
                   "Replace it with `python tools/surface_inventory.py --print-checker-table`." % CHECKER_TABLE_FN)
             sys.exit(1)
         print("surface-inventory: %s matches the derivation (%d closed namespaces)" % (CHECKER_TABLE_FN, n))
+        zbad, zn = check_zone_table()
+        if zbad:
+            print("\n".join(zbad))
+            print("surface-inventory: TypeChecker.zbr's %s DIFFERS from the runtime's _tz_table -- a zone "
+                  "refused at -c that works, or accepted at -c and nil at run time (BUG-711). Replace it "
+                  "with `python tools/surface_inventory.py --print-zone-table`." % ZONE_TABLE_FN)
+            sys.exit(1)
+        print("surface-inventory: %s matches _tz_table (%d zones)" % (ZONE_TABLE_FN, zn))
         if not OUT.exists():
             print("surface-inventory: %s missing -- run --write" % OUT.relative_to(REPO))
             sys.exit(1)

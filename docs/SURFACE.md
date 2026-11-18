@@ -207,7 +207,7 @@ named in the tool's header; what it cannot see is listed there too.
 
 `host` `path` `port` `query` `scheme`
 
-## Namespaces (33) and static members (185; 1 namespace(s) OPEN: Math)
+## Namespaces (33) and static members (186; 1 namespace(s) OPEN: Math)
 
 ### Arg (1) <!-- genArgCall -->
 
@@ -233,9 +233,9 @@ named in the tool's header; what it cannot see is listed there too.
 
 `parse` `parseFile`
 
-### DateTime (3) <!-- genDateTimeCall -->
+### DateTime (4) <!-- genDateTimeCall -->
 
-`fromEpoch` `now` `of`
+`fromEpoch` `local` `now` `of`
 
 ### Dir (8) <!-- genDirCall -->
 
@@ -342,4 +342,8 @@ named in the tool's header; what it cannot see is listed there too.
 ### Ws (2) <!-- genWsCall -->
 
 `connect` `serve`
+
+## IANA zones for `dt.inZone` (82)
+
+`UTC` `Etc/UTC` `Etc/GMT` `America/New_York` `America/Detroit` `America/Indiana/Indianapolis` `America/Kentucky/Louisville` `America/Toronto` `America/Chicago` `America/Winnipeg` `America/Mexico_City` `America/Denver` `America/Phoenix` `America/Los_Angeles` `America/Vancouver` `America/Anchorage` `America/Adak` `Pacific/Honolulu` `America/Bogota` `America/Lima` `America/Sao_Paulo` `America/Argentina/Buenos_Aires` `America/Santiago` `Europe/London` `Europe/Dublin` `Europe/Lisbon` `Europe/Paris` `Europe/Berlin` `Europe/Amsterdam` `Europe/Rome` `Europe/Madrid` `Europe/Brussels` `Europe/Vienna` `Europe/Warsaw` `Europe/Prague` `Europe/Stockholm` `Europe/Oslo` `Europe/Copenhagen` `Europe/Zurich` `Europe/Athens` `Europe/Helsinki` `Europe/Bucharest` `Europe/Kyiv` `Europe/Istanbul` `Europe/Moscow` `Europe/Minsk` `Asia/Dubai` `Asia/Tehran` `Asia/Kabul` `Asia/Karachi` `Asia/Kolkata` `Asia/Colombo` `Asia/Kathmandu` `Asia/Dhaka` `Asia/Almaty` `Asia/Yangon` `Asia/Bangkok` `Asia/Ho_Chi_Minh` `Asia/Jakarta` `Asia/Shanghai` `Asia/Hong_Kong` `Asia/Singapore` `Asia/Taipei` `Asia/Kuala_Lumpur` `Asia/Seoul` `Asia/Tokyo` `Australia/Darwin` `Australia/Adelaide` `Australia/Perth` `Australia/Brisbane` `Australia/Sydney` `Australia/Melbourne` `Australia/Hobart` `Pacific/Auckland` `Pacific/Fiji` `Pacific/Guam` `Africa/Cairo` `Africa/Nairobi` `Africa/Johannesburg` `Africa/Lagos` `Atlantic/Azores` `Atlantic/Cape_Verde`
 

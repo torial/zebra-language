@@ -42,7 +42,7 @@ use Parser exposing PNode, PUse, PModule, PClass, fileExistsExact, caseOnlyMatch
 use Resolver
 use AstBuilder exposing ASTBuilder
 use Ast exposing Module, Decl, DeclMethod, DeclClass, DeclStruct, DeclVar, Stmt, Param, TypeRef, Span, DeclInterface, DeclEnum, DeclUnion, DeclSig, DeclNamespace, DeclInit
-use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, optChainThrowLines, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, addNativeZigUse, cHeaderZigFile, emittedExtern, emittedDynLib, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, setCensusHost, censusOn, setSourceRoot
+use CodeGen exposing noteDepCodegenFacts, generateModule, generateFull, generateFullWith, generateFullWithDeps, generateFullWithDepsTest, generateEntryPoint, generateTestEntryPoint, generateDep, generateDepWith, generateNodeAddon, generateNodeDts, implicitTrySites, cannotFailSites, optChainThrowLines, threadSpawnSites, inferenceGuessSites, inferenceGuessMessages, setSingleFile, singleFile, generateSingleFileCombined, generateSingleFileDepStruct, setBuildMode, setListTargetsMode, setGuiBackend, setGuiSection, setRuntimeModule, runtimeModule, rtRuntimeText, rtPublicNames, addNativeCUse, addNativeLibUse, addNativeZigUse, cHeaderZigFile, emittedExtern, emittedNeedsLibc, rtReservedNames, setTestOnly, listTestEntries, setCoverage, setCensus, setCensusHost, censusOn, setSourceRoot
 use CodeGenV exposing generateV, VResult
 use CgHelpers exposing typeRefStr
 use TypeChecker exposing containerCopySites, ModuleTypes, populateModuleTypes, buildModuleTypes, InferCtx, Diagnostic, checkModule, TcResult, walkStmts, inferExpr, typeTag, typeFromRef, semverOrder
@@ -5630,13 +5630,14 @@ def main()
     # `zig build-exe a.zig` works, `zig build-exe a.zig -fno-llvm -fno-lld` segfaults,
     # on identical source. Any program declaring a foreign symbol therefore takes the
     # authoritative LLVM path; everything else keeps the ~6x faster backend.
-    # BUG-356: DynLib.open needs libc (dlopen); the fast path links none.
+    # BUG-356: DynLib.open needs libc (dlopen); the fast path links none. BUG-711: so does
+    # DateTime.local() (localtime_r; kernel32 on Windows) -- emittedNeedsLibc covers both.
     # selfHostedBackendUsable(): x86_64 only -- on Apple silicon the backend is killed after
     # ~60 s without reporting anything, so the fallback above never helps (see the function).
     # --census (2026-10-23) takes the LLVM path too: the census names each allocation's KIND
     # from the binary's debug info, and the self-hosted backend writes none (every kind came
     # back unresolved on the first run).
-    if not release and selfHostedBackendUsable() and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedDynLib() and not censusOn()
+    if not release and selfHostedBackendUsable() and mc.c_sources.len == 0 and mc.lib_sources.len == 0 and not mc.uses_sqlite and not emittedExtern() and not emittedNeedsLibc() and not censusOn()
         var fast_exe: str = zig_path + ".fast.exe"
         if emit_exe != ""
             fast_exe = emit_exe

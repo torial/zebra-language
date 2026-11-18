@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-780. Next new bug: BUG-781.**
+**Last bug number generated: BUG-783. Next new bug: BUG-784.**
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -58,26 +58,42 @@
 
 ---
 
-### BUG-711: `DateTime.inZone` answers in UTC for a zone it does not know, without saying so
-- **Status:** OPEN (filed 2026-11-13; found building the Pocket Lab manager's `watch`)
-- **Repro:** `DateTime.of(2026, 1, 15, 12, 0, 0).inZone("America/Phonix")` (a typo) and
-  `.inZone("America/Boise")` (a real IANA zone the runtime's table lacks) both format as `12:00`,
-  the UTC time; `"America/Phoenix"` correctly gives `05:00`. QUICKSTART says "Unknown zone names
-  fall back to UTC (no crash)". A program that labels the time with the zone it asked for prints
-  a wrong time with a right-looking label, and a one-letter typo is indistinguishable from UTC.
-- **Correction (2026-11-13, same day):** this entry first gave `America/Phoenix` as the repro and
-  said the table lists 10 zones. Both were wrong: QUICKSTART's 10 rows are "representative
-  (~75 total)", the runtime's table has Phoenix, and Phoenix formats correctly. Measured with
-  the probe above before correcting.
-- **Second half:** nothing reads the machine's own zone, so a program cannot print local time
-  without the user naming an IANA zone; `DateTime.now()` is documented as "current wall-clock
-  time", which reads as local.
-- **Fix shape (a decision):** refuse a literal zone outside the table at `-c` and panic or return
-  nil at run time for a computed one -- a default that reads as an answer is the UNGIT
-  "fabricated" case; and add a local-zone read (`DateTime.local()`, or `inZone("local")`) from
-  the OS. Say "UTC" in the `DateTime.now()` row.
-- **Control when fixing:** `inZone("America/Phonix")` no longer answers UTC silently;
-  `inZone("America/Phoenix")` (05:00 at 12:00 UTC) and `inZone("America/Denver")` unchanged.
+### BUG-783: `--target v` drops the `?` of an optional local with a non-nil initialiser
+- **Status:** OPEN (filed 2026-11-17; reported by Fable, who is fixing it on the V route)
+- **Repro:** `var o: str? = "a"` is emitted `mut o := 'a'`, so `if o as s` fails inside V
+  ("expression should either return an Option or a Result"). Same for `int?`. The Zig route
+  is correct.
+- **Control when fixing:** the repro builds and binds on V; a nil-initialised optional local and
+  a non-optional local unchanged.
+
+---
+
+### BUG-782: `@derive` is not read on the V route
+- **Status:** OPEN (filed 2026-11-17; reported by Fable, who is fixing it on the V route; parts may
+  be closed one commit each as BUG-782a..d)
+- **Repro:** (a) `@derive(Hash)`'s `hash()` is emitted as a call to a method the struct does not
+  have, and V refuses the file (test/bug776's and bug447_ok's fixtures); (b) `a.equals(b)` on a
+  `@derive(Eq)` struct, the same (`a == b` works); (c) `@derive(Debug)` prints `P{x: 1, s: "a"}`
+  on V and `P(x=1, s=a)` on Zig -- a silent difference; (d) a `HashMap(K, int)` keyed by a
+  `@derive(Eq, Hash)` struct with a List field: Zig does not find an equal-content key built with
+  a different list (as its `==` says), V does. All four are "nothing refused" on V today.
+- **Fix direction (Fable):** (a) refused on V by name -- Wyhash is not ported, so the derived hash
+  VALUE stays the Zig route's; (b)-(d) made to agree with the Zig route.
+- **Control when fixing:** each part's program agrees on both routes or is refused on V by name.
+
+---
+
+### BUG-781: a tuple indexed with brackets (`t[1]`) passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-17; reported by Fable; reproduced here on 76b6095)
+- **Repro:** `var t = (1, "a")` / `print(t[1])`. `-c` exits 0; the build fails in std/meta.zig,
+  "Expected pointer, slice, array or vector type, found 'struct { comptime comptime_int = 1, ...
+  }'", from zebra_rt.zig's `_zbr_at`. The same with an `(int, str)` returned from a def.
+  QUICKSTART documents `t.1`; `t[1]` is neither refused nor built.
+- **Fix shape:** refuse `[]` on a tuple-typed receiver in the checker, naming `t.1` (a literal
+  index could be rewritten to `.1`, but a computed one has no single type, so a refusal is the
+  honest answer for both).
+- **Control when fixing:** the repro refused at its line naming `t.1`; `t.1` and list indexing
+  unchanged.
 
 ---
 

@@ -4360,8 +4360,13 @@ def emittedExtern(): bool
 # programs the way it is for extern declarations.
 var _emitted_dynlib: bool = false
 
-def emittedDynLib(): bool
-    return _emitted_dynlib
+# BUG-711: DateTime.local() reads the machine's zone with libc's localtime_r (kernel32 on
+# Windows, a foreign symbol the fast backend links wrongly), so the fast path is refused
+# for it the way it is for DynLib.open.
+var _emitted_libc: bool = false
+
+def emittedNeedsLibc(): bool
+    return _emitted_dynlib or _emitted_libc
 
 # ── Writer ────────────────────────────────────────────────────────────────────
 # Reference-type output sink.  All Generator copies share the same Writer.
@@ -10141,9 +10146,10 @@ struct Generator
                 if m.object is Expr.ident as cid
                     if cid.name == "DateTime"
                         return true
-                # obj.inZone / obj.addDays / obj.addHours / obj.addMinutes /
-                # obj.addSeconds / obj.addMonths / obj.addYears → all return _DateTime
-                if m.member == "inZone" or m.member == "addDays" or m.member == "addHours"
+                # obj.addDays / obj.addHours / obj.addMinutes / obj.addSeconds /
+                # obj.addMonths / obj.addYears → all return _DateTime. (Not inZone: it
+                # returns ?_DateTime since BUG-711, and its unwrap is typed by the checker.)
+                if m.member == "addDays" or m.member == "addHours"
                     return true
                 if m.member == "addMinutes" or m.member == "addSeconds"
                     return true
@@ -16124,14 +16130,18 @@ struct Generator
                 # is not a Zig method of the payload (`xs.count()` is not ArrayList's), and the
                 # raw `.member(` below failed inside zig. The unwrapped payload is bound as a
                 # typed local and the call goes through the ordinary member-call dispatch.
-                if oc.has_args and .infer_ctx != nil
+                # BUG-711: a DateTime's FIELDS are computed (`dt.hour` is _dt_to_gregorian), so
+                # `dt?.hour` on a `DateTime?` (what inZone returns) re-dispatches the field too.
+                if .infer_ctx != nil
                     var ocb765: Type_ = inferExpr(oc.base, .infer_ctx!)
                     if ocb765 is Type_.optional as ocb765_in
-                        if optChainBuiltinRecv(ocb765_in)
+                        if (oc.has_args and optChainBuiltinRecv(ocb765_in)) or optChainDateTime(ocb765_in)
                             var ocv765: str = "_oc_v" + oc_u
                             .infer_ctx!.bind(ocv765, ocb765_in)
                             var oc_recv: Expr = Expr.ident(ExprIdent(oc.span, ocv765))
-                            var oc_call: Expr = Expr.call(ExprCall(oc.span, Expr.member(ExprMember(oc.span, oc_recv, oc.member)), oc.args))
+                            var oc_call: Expr = Expr.member(ExprMember(oc.span, oc_recv, oc.member))
+                            if oc.has_args
+                                oc_call = Expr.call(ExprCall(oc.span, oc_call, oc.args))
                             w.emit("(if (")
                             genExpr(oc.base)
                             w.emit(") |" + ocv765 + "| ")
@@ -17380,6 +17390,11 @@ struct Generator
 
     # BUG-765: a `?.` receiver whose methods are dispatched by the member-call machinery
     # rather than being Zig methods of the payload.
+    def optChainDateTime(t: Type_): bool
+        if t is Type_.named as odt
+            return odt == "DateTime" and not class_names.contains_("DateTime")
+        return false
+
     def optChainBuiltinRecv(t: Type_): bool
         branch t
             on Type_.list_ as _
@@ -23462,6 +23477,10 @@ struct Generator
     def genDateTimeCall(mname: str, args: List(Arg))
         if mname == "now"
             w.emit("_dt_now()")
+            return
+        if mname == "local"
+            _emitted_libc = true
+            w.emit("_dt_local()")
             return
         if mname == "fromEpoch"
             # BUG-683: parenthesised, because Zig allows no `.field` suffix on a bare struct

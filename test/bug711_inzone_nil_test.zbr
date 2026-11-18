@@ -1,0 +1,28 @@
+# BUG-711: `dt.inZone(name)` answered UTC for a zone it did not know -- a typo
+# ("America/Phonix") printed the UTC time beside the zone it asked for. It returns
+# `DateTime?` now: nil for a name outside the runtime's table (a literal one is refused
+# at -c, test/bug711_inzone_literal_fail_test.zbr), and `DateTime.local()` reads the
+# machine's own zone.
+
+def zoneOf(i: int): str
+    if i == 0
+        return "America/Phoenix"
+    return "America/Phonix"
+
+def main()
+    var noon = DateTime.of(2026, 1, 15, 12, 0, 0)
+    # Known zones, unchanged: Phoenix (no DST) and Denver (MST in January) are 05:00.
+    print("phoenix [${noon.inZone("America/Phoenix")!.hour}]")
+    if noon.inZone("America/Denver") as den
+        print("denver [${den.hour}:${den.minute}]")
+    # A computed name: known -> a value, unknown -> nil, never UTC.
+    print("computed known [${noon.inZone(zoneOf(0)) == nil}]")
+    print("computed typo [${noon.inZone(zoneOf(1)) == nil}]")
+    # A field through `?.` on the optional, with the program's own fallback.
+    print("chain [${noon.inZone(zoneOf(0))?.hour orelse -1}] [${noon.inZone(zoneOf(1))?.hour orelse -1}]")
+    # DateTime.local(): now, shifted by the OS's offset -- within a day of UTC, and a whole
+    # number of quarter hours (every real zone offset is).
+    var off = DateTime.local().toEpoch() - DateTime.now().toEpoch()
+    var r = off % 900000
+    var whole = (r > -5000 and r < 5000) or r > 895000 or r < -895000
+    print("local [${off > -86400000 and off < 86400000}] [${whole}]")
