@@ -69,8 +69,11 @@
 ---
 
 ### BUG-782: `@derive` is not read on the V route
-- **Status:** OPEN (filed 2026-11-17; reported by Fable, who is fixing it on the V route; parts may
-  be closed one commit each as BUG-782a..d)
+- **Status:** OPEN, part (a) RESOLVED 2026-11-17 (filed 2026-11-17; reported by Fable, who is fixing it
+  on the V route; parts are closed one commit each as BUG-782a..d; the entry closes when all four are)
+- **(a) RESOLVED 2026-11-17 (Fable, picked as 875253c):** the `hash()` that only `@derive(Hash)`
+  writes is refused on V by name, naming the struct and the way out (a `cue hash(): int`); a
+  struct with its own cue is written. Pinned by v-check's `hash` row.
 - **Repro:** (a) `@derive(Hash)`'s `hash()` is emitted as a call to a method the struct does not
   have, and V refuses the file (test/bug776's and bug447_ok's fixtures); (b) `a.equals(b)` on a
   `@derive(Eq)` struct, the same (`a == b` works); (c) `@derive(Debug)` prints `P{x: 1, s: "a"}`
