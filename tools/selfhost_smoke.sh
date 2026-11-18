@@ -1623,6 +1623,11 @@ smoke_run test/bug794_derive_debug_char_test.zbr "P(c=é, s=x, n=0)"
 smoke_run test/bug794_derive_debug_char_test.zbr "P(c=z, s=y, n=1)"
 # BUG-793: a constructor (struct, class) or a call in an interpolation hole -- zig refused the bare struct-literal receiver.
 smoke_run test/bug793_ctor_in_interp_hole_test.zbr "a One(x=4) b Named(s=hi) c Box<3> d Named(s=q) e One(x=7)"
+# BUG-798..803: calls through an interface receiver -- omitted default, class into an interface param, an inherited method's type, named order, a sig argument, a param named f.
+smoke_run test/bug798_iface_call_test.zbr "798: a meets dog a | a#7 | a#3 | hi x | HI y"
+smoke_run test/bug798_iface_call_test.zbr "799: a meets dog b | a sees dog b | c meets dog b"
+smoke_run test/bug798_iface_call_test.zbr "800: a#7! | 3 | 30 | -1"
+smoke_run test/bug798_iface_call_test.zbr "801: c:4 d:5 | 802: 2 2 | 803: 8 10"
 # BUG-791: @derive on a class is refused at the @derive, naming the cue spelling.
 smoke_tc_fail test/fail_fixtures/bug791_derive_on_class_test.zbr "bug791_derive_on_class_test.zbr:3:1: error: \`@derive\` applies only to a \`struct\`; on a class write the cue itself"
 smoke_tc_fail test/fail_fixtures/bug552_def_next_not_iterable_test.zbr "bug552_def_next_not_iterable_test.zbr:17:5: error: 'Ticker' is not iterable"

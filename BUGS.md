@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-797. Next new bug: BUG-798.** (BUG-795, BUG-796, BUG-797 reserved 2026-11-18 for Fable's V-route entries: interface field default / declared interface local; method on an interface-typed value that is not a name (a call's result, an element, a method's result); CodeGenV's nested emitter (cloneContext) not sharing the printer-helper tables, so a lambda body's or `else if` probe's show helper is renumbered from 0 -- V refuses `zshow_h0`, or prints the wrong helper's text.)
+**Last bug number generated: BUG-805. Next new bug: BUG-806.** (Reserved 2026-11-18 for Fable's V-route entries: BUG-795 interface field default / declared interface local; BUG-796 method on an interface-typed value that is not a name (a call's result, an element, a method's result); BUG-797 CodeGenV's nested emitter (cloneContext) not sharing the printer-helper tables, so a lambda body's or `else if` probe's show helper is renumbered from 0; BUG-804 an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-798..803 were filed and fixed the same day, Zig route. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -146,6 +146,10 @@
   `zebra -c` and `zebra file.zbr`; `--target v` writes the `.v` (after BUG-777 too), and
   `zebra diagnostics` -- the strict view the LSP shares -- answers `[]`, so the editor shows no
   error on a file that will not build.
+- **A ninth (2026-11-18, Fable, filed as BUG-805 and folded in here):** `run(def(x) = x + 3)` with
+  `def run(g: Fn): int` -- an untyped lambda parameter as an operand of `+`. `-c` refuses it ("cannot
+  infer the type of `x`, an operand of `+`", rc 1) and `--target v` writes `fn (x) {...}` under
+  "nothing refused". It is the `infer_guess_hatch` rule, at a lambda.
 - **Cause:** those rules are checked in CodeGen.zbr at emit time (`-c` runs the Zig emit to see
   them), not in the checker, so a consumer that runs only the front end never sees them. BUG-764
   and BUG-767 (2026-11-17) were added there, which grew the set.

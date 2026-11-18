@@ -1,0 +1,10 @@
+# Helper for bug798_iface_call_test: an interface with a defaulted parameter, declared
+# in a USED module (the call through it is emitted in the importing one).
+interface Greeter
+    def hi(name: str, loud: bool = false): str
+
+class Bot implements Greeter
+    def hi(name: str, loud: bool = false): str
+        if loud
+            return "HI " + name
+        return "hi " + name

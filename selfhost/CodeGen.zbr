@@ -8401,8 +8401,9 @@ struct Generator
             if vmem is Decl.method as vmth
                 vpm.writeIndent()
                 w.emit(".")
+                # BUG-803: the thunk is `_zbr_thunk`, not `f` -- a parameter named `f` shadowed it.
                 w.emit(vmth.name)
-                w.emit(" = struct { fn f(_zbr_ptr: *anyopaque")
+                w.emit(" = struct { fn _zbr_thunk(_zbr_ptr: *anyopaque")
                 for vp in vmth.params
                     w.emit(", ")
                     w.emit(zigSafeName(vp.name))
@@ -8427,7 +8428,7 @@ struct Generator
                         w.emit(", ")
                     w.emit(zigSafeName(vp2.name))
                     vpi = vpi + 1
-                w.emit("); } }.f,\n")
+                w.emit("); } }._zbr_thunk,\n")
         var vsi = 0
         while vsi < if_supers.len
             vpm.writeIndent()
@@ -19843,7 +19844,13 @@ struct Generator
                 if .infer_ctx!.methodReturnAny(um_cname, mname) != nil and um_is_call_temp
                     genCallOnTemp(m, mname, args)
                     return
-                if .infer_ctx!.methodReturnAny(um_cname, mname) != nil and not um_is_call_temp
+                # BUG-798: a method an interface INHERITS from one it implements is not
+                # in inference's table for the child, so it fell to the default dispatch,
+                # which fills no omitted default. The interface walk finds it.
+                var um_known: bool = .infer_ctx!.methodReturnAny(um_cname, mname) != nil
+                if not um_known and not um_is_call_temp
+                    um_known = lookupIfaceParams(um_cname, mname, 0) != nil
+                if um_known and not um_is_call_temp
                     if isClassMethodThrows(um_cname, mname) and try_block_label == nil and not in_try_expr
                         recordImplicitTry(source_file + ":" + w.cur_line.toString())
                         w.emit("try ")
@@ -22123,6 +22130,13 @@ struct Generator
                 genExpr(a.value)
 
     def lookupFnParams(key: str): List(Param)?
+        # BUG-798/799: an INTERFACE method's params, so a call through an interface
+        # receiver fills an omitted default and coerces a class argument to an interface
+        # parameter, the same as a class receiver does.
+        var if_parts: List(str) = key.split(".")
+        if if_parts.len == 2
+            if lookupIfaceParams(if_parts.at(0), if_parts.at(1), 0) as if_ps
+                return if_ps
         for decl in module_decls
             if decl is Decl.method as m
                 var mname: str = m.name
@@ -22175,6 +22189,25 @@ struct Generator
         if .dep_types.classOf(cm_class) as cm_ct
             if cm_ct.fnParamList(cm_method) as cm_ps
                 return cm_ps
+        return nil
+
+    # BUG-798/799: the params of method `mname` declared on interface `iname` of this
+    # module, or inherited from an interface it extends (depth-bounded: a cycle of
+    # interfaces must not recurse forever, whatever the checker says about it).
+    def lookupIfaceParams(iname: str, mname: str, depth: int): List(Param)?
+        if depth > 16
+            return nil
+        for decl in module_decls
+            if decl is Decl.interface_ as idl
+                if idl.name == iname
+                    for mem in idl.members
+                        if mem is Decl.method as im
+                            if im.name == mname
+                                return im.params
+                    for pref in idl.ifaces
+                        if pref is TypeRef.named as pn
+                            if lookupIfaceParams(pn.name, mname, depth + 1) as pps
+                                return pps
         return nil
 
     # Given a ctor name and an arg (possibly named), return the matching param's TypeRef.

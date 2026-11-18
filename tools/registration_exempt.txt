@@ -26,6 +26,7 @@ bug576_dep_class_is_lib  # helper module imported by bug576_dep_class_is_test; h
 bug577_dep_type_alias_lib  # helper module imported by bug577_dep_type_alias_test; has no main()
 bug579_dep_namespace_lib  # helper module imported by bug579_dep_namespace_test; has no main()
 bug580_dep_iface_is_lib  # helper module imported by bug580_dep_iface_is_test; has no main()
+bug798_iface_call_lib  # helper module imported by bug798_iface_call_test; has no main()
 bug581_dep_closure_factory_lib  # helper module imported by bug581_dep_closure_factory_test; has no main()
 bug584_dep_boxed_slot_lib  # helper module imported by bug584_dep_boxed_slot_test; has no main()
 bug585_dep_generic_empty_list_lib  # helper module imported by bug585_dep_generic_empty_list_test; has no main()

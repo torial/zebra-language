@@ -6,6 +6,74 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-803: an interface method with a parameter named `f` fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found by Fable probing BUG-796)
+- **Repro:** `interface Shape` / `def twice(f: int): int`, a class implementing it, any program
+  that builds the vtable: zig refuses "function parameter shadows declaration of 'f'". Any other
+  parameter name is fine.
+- **Cause:** each vtable thunk was emitted `struct { fn f(_zbr_ptr: *anyopaque, <params>) ... }.f`.
+- **Fix:** the thunk is named `_zbr_thunk`; a `_zbr_` name is the compiler's and cannot be a
+  user parameter.
+- **Fixture:** `test/bug798_iface_call_test.zbr`, `803:` on the last line.
+
+### BUG-802: a named def passed to an interface method's `sig` parameter through an INTERFACE receiver fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found by Fable probing BUG-796)
+- **Repro:** `sig Fn(x: int): int`, `interface Shape` / `def apply(g: Fn): int`, `s.apply(inc)`
+  through a `Shape` -> "expected type 'zebra_rt._ZbrFn(fn (i64) i64)', found 'fn (i64) i64'".
+  A class receiver was fine.
+- **Cause and fix:** BUG-799's: the sig-value wrap reads the callee's parameter list, which
+  `lookupFnParams` did not find for an interface method.
+- **Fixture:** `test/bug798_iface_call_test.zbr`, `802:` on the last line.
+
+### BUG-801: NAMED arguments through an INTERFACE receiver are passed in the order written -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found by Fable probing BUG-796)
+- **Repro:** `def scaled(k: int, label: str): str` on an interface, `s.scaled(label: "c", k: 4)`
+  through it -> zig refuses "expected type 'i64', found '*const [1:0]u8'"; with two params of one
+  type it would have bound them crossed, silently. A class receiver was fine.
+- **Cause and fix:** BUG-799's: name-to-parameter matching reads the parameter list.
+- **Fixture:** `test/bug798_iface_call_test.zbr`, `801:` on the last line.
+
+### BUG-800: a method an interface INHERITS has no type in the front end -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found here while writing BUG-798's fixture.
+  Present on 37154b3 too)
+- **Repro:** `interface Base` / `def tag(): int`, `interface Kid implements Base` / `def name(): str`,
+  `class K implements Kid`, `var k: Kid = K()`, then `print(k.tag() + 1)` is refused at `-c`:
+  "cannot infer the type of the result of `.tag(...)`". `var t: int = k.tag()` passes, and a
+  call to a `throws` method inherited the same way fails the same way inside `+`.
+- **Cause:** the checker registers each interface's OWN members under its name; a lookup on the
+  child never consulted the interfaces it implements, though `class_interfaces` records them.
+- **Fix:** `ModuleTypes.methodReturn` and `fnParamList` fall back, for an interface, to the
+  nearest parent that declares the method (`ifaceParentWith`, depth-bounded). A GENERIC parent
+  (`implements Comparable(Score)`) is skipped: its member types name `T` and would need
+  substituting first -- that shape still refuses as before.
+- **Fixture:** `test/bug798_iface_call_test.zbr`, line `800:`.
+
+### BUG-799: a class passed to an interface parameter through an INTERFACE receiver fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found by Fable writing BUG-796's V-route row;
+  the V route was right)
+- **Repro:** `interface Namer` with `def meet(other: Namer): str`, `class Dog implements Namer`,
+  `var n: Namer = Dog("a")`, `var d = Dog("b")`, then `n.meet(d)` passes `-c` and zig refuses
+  "expected type 'Namer', found '*Dog'". `c.meet(d)` with a class receiver is fine.
+- **Cause:** the BUG-388 wrap of a class argument into an interface parameter reads the callee's
+  parameter list from `lookupFnParams`, which searched classes and structs, never interfaces.
+- **Fix:** `lookupFnParams` consults the interface (and, depth-bounded, the interfaces it
+  implements) first -- `lookupIfaceParams`. One change closes this and BUG-798.
+- **Fixture:** `test/bug798_iface_call_test.zbr`, line `799:`.
+
+### BUG-798: an omitted default argument in a call through an INTERFACE receiver fails inside zig -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (filed 2026-11-18; found by Fable writing BUG-796's V-route row;
+  the V route was right)
+- **Repro:** `interface Namer` / `def greet(times: int = 1): str`, `class Dog implements Namer`,
+  `var n: Namer = d`, then `n.greet()` passes `-c` and zig refuses "member function expected 1
+  argument(s), found 0". `n.greet(2)` and `d.greet()` are fine.
+- **Cause:** the user-method dispatch fills an omitted default from `lookupFnParams`, which found
+  no interface method (BUG-799's cause); and a method the interface INHERITS was not known to
+  inference, so the call fell to the default dispatch, which fills nothing.
+- **Fix:** the `lookupFnParams` change, and the early dispatch also fires when the interface
+  walk finds the method. Covered: own and inherited defaults, a named argument, an interface
+  declared in a used module.
+- **Fixture:** `test/bug798_iface_call_test.zbr` (+ `bug798_iface_call_lib.zbr`), line `798:`.
+
 ### BUG-795: `--target v` writes a class value into an interface-typed field default or declared local as the class -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, running BUG-784's
   fixture there; the Zig route was right once BUG-784 landed)

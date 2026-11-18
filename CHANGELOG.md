@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **Calls through an interface receiver** fill an omitted default argument (BUG-798) and wrap a
+  class argument passed to an interface parameter (BUG-799); both passed `-c` and failed inside
+  zig. A method an interface inherits from one it implements now has a type in the front end
+  (BUG-800): `k.tag() + 1` was refused "cannot infer the type". A generic parent interface
+  (`implements Comparable(T)`) is not yet searched.
+  Named arguments through an interface bind by name (BUG-801), a named `def` into an interface
+  method's `sig` parameter is wrapped (BUG-802), and an interface method may name a parameter `f`
+  (BUG-803, which shadowed the vtable thunk).
 - **`@derive` on anything but a `struct` is refused** at the `@derive` (BUG-791). On a class it
   was accepted and half-applied: `==` stayed identity while the derived `equals` sat unused. The
   message names the cues to write instead.

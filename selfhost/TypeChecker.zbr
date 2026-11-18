@@ -712,7 +712,32 @@ class ModuleTypes
         if not .classes.contains(class_name)
             return nil
         var c: ClassTypes = .classes.fetch(class_name)
-        return c.methodReturn(method_name)
+        if c.methodReturn(method_name) as own_r
+            return own_r
+        if c.is_interface
+            if .ifaceParentWith(class_name, method_name, 16) as pi_r
+                return .methodReturn(pi_r, method_name)
+        return nil
+
+    # BUG-800: the nearest NON-generic interface `iname` implements (transitively) that
+    # declares `method_name` itself, or nil. A generic parent (`Comparable(Score)`) is
+    # skipped: its member types name T and would need substituting first.
+    def ifaceParentWith(iname: str, method_name: str, depth: int): str?
+        if depth <= 0
+            return nil
+        if not .class_interfaces.contains(iname)
+            return nil
+        var parents: str = .class_interfaces.fetch(iname)
+        for pk in parents.split("|")
+            if pk.contains("(")
+                continue
+            if .classes.contains(pk)
+                var pc: ClassTypes = .classes.fetch(pk)
+                if pc.methodReturn(method_name) != nil
+                    return pk
+            if .ifaceParentWith(pk, method_name, depth - 1) as deeper
+                return deeper
+        return nil
 
     def deprecatedMsg(class_name: str, method_name: str): str
         if not .classes.contains(class_name)
@@ -725,7 +750,12 @@ class ModuleTypes
         if not .classes.contains(class_name)
             return nil
         var c: ClassTypes = .classes.fetch(class_name)
-        return c.fnParamList(method_name)
+        if c.fnParamList(method_name) as own_ps
+            return own_ps
+        if c.is_interface                                  # BUG-800
+            if .ifaceParentWith(class_name, method_name, 16) as pi_p
+                return .fnParamList(pi_p, method_name)
+        return nil
 
     def methodParamsCsv(class_name: str, method_name: str): str?
         if not .classes.contains(class_name)

@@ -1,0 +1,69 @@
+# BUG-798 / BUG-799 / BUG-800: a call through an INTERFACE receiver.
+#   798 an omitted default argument was not filled ("expected 1 argument(s), found 0" in zig)
+#   799 a class passed to an interface parameter was not wrapped ("expected type 'Namer',
+#       found '*Dog'" in zig) -- the BUG-388 coercion never ran, because both paths found
+#       no parameter list for an interface method
+#   800 a method an interface INHERITS (`interface Kid implements Base`) had no type in the
+#       front end: `k.tag() + 1` was refused "cannot infer the type"
+#   BUG-801 NAMED arguments through an interface were passed in the order written
+#   BUG-802 a named def passed to an interface method's sig parameter was not wrapped as a sig value
+#   BUG-803 an interface method parameter named `f` shadowed the vtable thunk, then named `f`
+# 801/802 had 799's cause (no parameter list for an interface method).
+# All passed -c (798, 799, 801-803) or refused a valid program (800). The Zig route is fixed here;
+# a class receiver was always right and is the control on every line.
+use bug798_iface_call_lib exposing Greeter, Bot
+
+sig Fn(x: int): int
+
+interface Base
+    def tag(n: int = 7): str
+    def risky(n: int = 1): int throws
+
+interface Namer implements Base
+    def name(): str
+    def meet(other: Namer, sep: str = " meets "): str
+    def scaled(k: int, label: str): str
+    def apply(g: Fn): int
+    def twice(f: int): int
+
+class Dog implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def tag(n: int = 7): str
+        return "${.nm}#${n}"
+    def risky(n: int = 1): int throws
+        if n > 5
+            raise "too big"
+        return n * 10
+    def name(): str
+        return "dog " + .nm
+    def meet(other: Namer, sep: str = " meets "): str
+        return .nm + sep + other.name()
+    def scaled(k: int, label: str): str
+        return "${label}:${k}"
+    def apply(g: Fn): int
+        return g(.nm.len)
+    def twice(f: int): int
+        return f * 2
+
+def inc(x: int): int
+    return x + 1
+
+def twice(k: Namer): int throws
+    return k.risky()? + k.risky(2)?
+
+def main()
+    var d = Dog("b")
+    var c = Dog("c")
+    var n: Namer = Dog("a")
+    # 798: omitted default, own and inherited, through the interface; named; a used module
+    var g: Greeter = Bot()
+    print("798: ${n.meet(n)} | ${n.tag()} | ${n.tag(n: 3)} | ${g.hi("x")} | ${g.hi("y", loud: true)}")
+    # 799: a class argument into the interface parameter, interface receiver vs class receiver
+    print("799: ${n.meet(d)} | ${n.meet(d, sep: " sees ")} | ${c.meet(d)}")
+    # 800: an inherited method's type is known -- in `+`, a hole, a throws call
+    var t: str = n.tag()
+    print("800: ${n.tag() + "!"} | ${t.len} | ${twice(n) catch -1} | ${n.risky(9) catch -1}")
+    # 801 / 802 / 803, each beside the class-receiver control
+    print("801: ${n.scaled(label: "c", k: 4)} ${c.scaled(label: "d", k: 5)} | 802: ${n.apply(inc)} ${c.apply(inc)} | 803: ${n.twice(4)} ${c.twice(5)}")
