@@ -3528,6 +3528,63 @@ merged from disk as written, not renamed. Eight fixtures that use a native
 Zig or C dependency or a dotted `use a.b` are refused at collection ("no
 a.zbr beside it"), as before.
 
+## `x.hash()` on a builtin, and `Hash.fnv64` (BUG-773, 2026-11-17)
+
+BUG-773 gave `str`, every integer width, `char` and `bool` a `hash()`, sugar for
+`Hash.fnv64`. The V route refused all of them and `Hash.fnv64` itself. Now:
+
+| Zebra | V | the bytes hashed |
+|---|---|---|
+| `Hash.fnv64(s)`, `s.hash()` | `zhash_fnv64(s)` | the string's bytes |
+| `n.hash()`, any mapped width | `zhash_int(i64(n))` | the value as eight little-endian bytes of an i64 |
+| `b.hash()` | `zhash_bool(b)` | 0 or 1, as an integer |
+| `c.hash()` | `zhash_char(c)` | the char's text (`zchar_str`), so `'a'.hash() == "a".hash()` |
+
+FNV-1a 64 in `zebra_rt.v` by hand (unsigned arithmetic, which V wraps), the 64 bits
+returned as an `i64` as the Zig route returns them. A `u64` above an i64's range goes
+through V's `i64()` cast, which keeps the bits, as the Zig route's truncation does.
+
+**A class's or struct's own `cue hash` is the program's.** `methodCallStr` takes a call on a
+program type before the builtin table is consulted; the fixture's `Tag("x").hash()` prints 7
+on both routes.
+
+**Two refusals, by name.**
+
+- *The hash() that only `@derive(Hash)` writes (BUG-782a).* The checker passes the call (the Zig route
+  writes the method: Wyhash over the fields). This route reads no `@derive`, so it wrote a
+  call to a method the struct does not have under "nothing refused", and V refused the file
+  (`test/bug776_derive_hash_int_test.zbr`, `test/bug447_derive_hash_ok_test.zbr`). The call
+  is refused now, naming the struct and the way out (`cue hash(): int`). The derived VALUE is
+  not ported: it is Zig's Wyhash through `autoHashStrat`, and a second implementation of it
+  would be a thing to keep in step for a number no program should depend on. A struct with
+  `@derive(Hash)` and its own `cue hash` is the program's and is written.
+- *A receiver whose type the emitter does not know.* A V string has a `hash()` of its own
+  (an `int`, another function), so a call passed through to an untyped receiver could be
+  V's without a word. Twenty receiver shapes were tried; `vTypeOf` has no type for three: a
+  string's `.len` (the call written does not compile: a V int has no hash), and two
+  STRINGS, a lambda's result (`f("a").hash()`) and a map's value by index
+  (`m["k"].hash()`), where the call written compiles as V's own `string.hash` and prints
+  another number. The row holds each to the property, not to the gap: refused by name, or
+  the Zig route's answer. The other seventeen (a method's result, a field, an unwrap, an
+  `orelse`, a split's element, an interpolated string, a byte, a char, a tuple's element
+  among them) are typed and print the Zig route's hash.
+
+**Witness.** `tools/v_check.sh`'s `hash` row: the compiler's fixture compared; a second
+program over receiver shapes (a call's result, a list's element three ways, a map's key, a
+walked item, a comparison, a sum, a concatenation, a class's cue beside them); and BOTH
+routes' printouts held to values computed outside both (a Python FNV-1a 64 over the same
+bytes; `"a"` is the published vector `0xaf63dc4c8601ec8c`), since two routes agreeing on a
+wrong hash would read IDENTICAL.
+
+**Found beside it, not fixed here** (each "nothing refused" today):
+
+- BUG-782b, c, d: `@derive(Eq)`'s `a.equals(b)` is written as a call to a method the struct does not have
+  (`a == b` works); `@derive(Debug)` prints V's `P{x: 1, s: "a"}` where the Zig route prints
+  `P(x=1, s=a)`; a `HashMap` keyed by a derived struct with a `List` field finds an
+  equal-content key built with another list, where the Zig route does not.
+- BUG-783: `var o: str? = "a"` is emitted `mut o := 'a'`: the local loses its `?`, and `if o as s`
+  does not compile as V.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

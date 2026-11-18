@@ -1,4 +1,6 @@
 #!/bin/bash
+# pins: BUG-777 `--target v` runs the type check: a program -c refuses is refused there in the compile's words with no .v written, its well-typed twin is written, partial files are merged and a `use` is found by its exact name (the typecheck row)
+# pins: BUG-773 x.hash() on a str, an integer, a bool and a char, and Hash.fnv64, answer the Zig route's FNV-1a 64 on the V route, held to values computed outside both; a derived or untyped hash() is refused by name (the hash row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
 # pins: BUG-712 a char on the V route is a codepoint, and chars() yields the Zig route's items (examples/v_poc_utf8.zbr; the fmt_c row's text line)
@@ -301,6 +303,117 @@ if ! grep -qxF 'idx  2 nil 4 1 nil 42' "$OUT/control_v_optchain_bool_test.txt" |
 elif ! grep -qF '.len == 0)' "$WT/test/v_optchain_bool_test_prog.v" || ! grep -qF 'zlist_contains(' "$WT/test/v_optchain_bool_test_prog.v"; then echo "optchain: FAILED -- the emitted V reaches neither the string's length test nor the list's contains: the comparison ran something else"; fail=1
 elif grep -qF 'Option(' "$OUT/v_optchain_bool_test_v_out.txt" "$OUT/bug765_optchain_builtin_method_test_v_out.txt"; then echo "optchain: FAILED -- an option printed as V's own text"; fail=1
 else echo "optchain: ok -- an optional predicate, an optional index and a string's isEmpty print alike on both backends, beside a class whose methods share the names"; fi
+echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
+# BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
+# an integer or a bool as the eight little-endian bytes of its i64, a char as its
+# one-character string). The V route refused all of them and Hash.fnv64 itself; they are
+# zebra_rt.v's zhash_fnv64 / zhash_int / zhash_bool / zhash_char now. The compiler's own
+# fixture is compared, and both routes' printout is held to values computed OUTSIDE both
+# (a Python FNV-1a 64 over the same bytes; "a" is the published vector 0xaf63dc4c8601ec8c
+# read as an int): a matching pair of wrong hashes would otherwise be IDENTICAL.
+# hash_shapes: the receiver as a call's result, a list's element three ways, a map's key, a
+# walked item, a comparison, a sum and a concatenation, a class's own `cue hash` beside
+# them (its 7 is the program's, never FNV), and the widths' edges: a uint64 above an int's
+# range and an int8 of -1 hash as the int -1 does (the same 64 bits), a uint32 as its value.
+# Two refusals, each with its control. A struct's hash() that only @derive(Hash) writes: the
+# Zig route's is Wyhash over the fields and this route writes no method, so the emitted V
+# named a method the struct did not have under "nothing refused" (test/bug776's fixture); a
+# struct with @derive(Hash) AND its own `cue hash` is the program's and is written clean. A
+# receiver whose type the emitter does not know: a V string has a `hash()` of its own (an
+# int, not Zebra's), so the call passed through could be V's without a word. Those cases
+# are held to the property, not to today's gaps: refused by name OR what the Zig route
+# prints.
+compare bug773_builtin_hash_test "$WT" test/bug773_builtin_hash_test.zbr "$OUT/control_bug773_builtin_hash_test.txt" "$WT/test/bug773_builtin_hash_test_prog.v"
+cat > "$OUT/hash_shapes.zbr" <<'ZBR'
+class Tag
+    var name: str
+    cue init(name: str)
+        .name = name
+    cue equals(o: Tag): bool
+        return .name == o.name
+    cue hash(): int
+        return 7
+
+def pick(xs: List(str), i: int): str
+    return xs.at(i)
+
+def first(xs: List(Tag)): Tag
+    return xs.at(0)
+
+def main()
+    var xs = ["a", "b"]
+    var ts = List(Tag)()
+    ts.add(Tag("x"))
+    var m = HashMap(str, int)()
+    m["a"] = 1
+    print("call [${pick(xs, 0).hash()}] at [${xs.at(1).hash()}] idx [${xs[0].hash()}]")
+    print("tag [${first(ts).hash()}] [${ts.at(0).hash()}] [${ts[0].hash()}]")
+    for k in m.keys()
+        print("key [${k.hash()}]")
+    for x in xs
+        print("item [${x.hash()}]")
+    print("cmp [${(1 < 2).hash()}]")
+    print("sum [${(2 + 3).hash()}]")
+    print("cat [${("a" + "b").hash()}]")
+    print("fnv [${Hash.fnv64("ab")}]")
+    var big: uint64 = 18446744073709551615
+    var s8: int8 = -1
+    var neg: int = -1
+    var w: uint32 = 4000000000
+    print("wide [${big.hash() == neg.hash()}] [${s8.hash() == neg.hash()}] [${big.hash()}] [${w.hash() == 4000000000.hash()}]")
+ZBR
+compare hash_shapes "$OUT" hash_shapes.zbr "$OUT/control_hash_shapes.txt" "$OUT/hash_shapes.v"
+rows=$((rows + 1))
+hash_bad=""
+for o in "$OUT/control_bug773_builtin_hash_test.txt" "$OUT/bug773_builtin_hash_test_v_out.txt"; do
+  [ -f "$o" ] || { hash_bad="$hash_bad no-$(basename "$o")"; continue; }
+  grep -qxF 'str [-5808556873153909620] [-6615550055289275125] [-3750763034362895579] [true]' "$o" || hash_bad="$hash_bad $(basename "$o"):str"
+  grep -qxF 'int [1000385178204227360] [-8289690350564177859] [-8064062821143829734] [true] [true]' "$o" || hash_bad="$hash_bad $(basename "$o"):int"
+  grep -qxF 'char [-5808556873153909620] [true] [true] [true] [false]' "$o" || hash_bad="$hash_bad $(basename "$o"):char"
+  grep -qxF 'bool [-6284781860667377211] [true]' "$o" || hash_bad="$hash_bad $(basename "$o"):bool"
+  grep -qxF 'user [7]' "$o" || hash_bad="$hash_bad $(basename "$o"):user"
+done
+for o in "$OUT/control_hash_shapes.txt" "$OUT/hash_shapes_v_out.txt"; do
+  [ -f "$o" ] || { hash_bad="$hash_bad no-$(basename "$o")"; continue; }
+  grep -qxF 'tag [7] [7] [7]' "$o" || hash_bad="$hash_bad $(basename "$o"):tag"
+  grep -qxF 'cat [620445648566982762]' "$o" || hash_bad="$hash_bad $(basename "$o"):cat"
+  grep -qxF 'fnv [620445648566982762]' "$o" || hash_bad="$hash_bad $(basename "$o"):fnv"
+  grep -qxF 'wide [true] [true] [-8289690350564177859] [true]' "$o" || hash_bad="$hash_bad $(basename "$o"):wide"
+done
+# the derived hash(): refused by name; with the struct's own cue beside the derive, written and run
+(cd "$WT" && "$ZEBRA" --target v test/bug776_derive_hash_int_test.zbr > "$OUT/hash_derived_emit.txt" 2>&1)
+grep -qF 'the hash() that @derive(Hash) writes for P' "$OUT/hash_derived_emit.txt" || hash_bad="$hash_bad derived-hash-not-refused"
+rm -f "$WT/test/bug776_derive_hash_int_test_prog.v"
+printf '@derive(Eq, Hash)\nstruct Q\n    var x: int\n    cue hash(): int\n        return .x + 40\n\ndef main()\n    print("own [${Q(2).hash()}]")\n' > "$OUT/hash_own_cue.zbr"
+compare hash_own_cue "$OUT" hash_own_cue.zbr "$OUT/control_hash_own_cue.txt" "$OUT/hash_own_cue.v"
+grep -qxF 'own [42]' "$OUT/hash_own_cue_v_out.txt" 2>/dev/null || hash_bad="$hash_bad own-cue-not-42"
+# a receiver of unknown type: refused by name, or the Zig route's own answer. Three found
+# untyped on 2026-11-17: a string's .len (V refuses the call written: an int has no hash), and
+# two STRINGS -- a lambda's result and a map's value by index -- where the call written
+# compiles as V's own string.hash and prints another number without a word
+hash_unknown=""
+unk() {   # <name> <the Zig route's line> ; the program is $OUT/hash_unk_<name>.zbr
+  local n=$1 want=$2
+  (cd "$OUT" && "$ZEBRA" "hash_unk_$n.zbr" > "$OUT/control_hash_unk_$n.txt" 2> "$OUT/hash_unk_${n}_zig_err.txt")
+  (cd "$OUT" && rm -f "hash_unk_$n.v" && "$ZEBRA" --target v "hash_unk_$n.zbr" > "$OUT/hash_unk_${n}_emit.txt" 2>&1)
+  if ! grep -qxF "$want" "$OUT/control_hash_unk_$n.txt"; then hash_bad="$hash_bad unknown-$n:NO-CONTROL(the-Zig-run-did-not-print-the-value-computed-outside)"
+  elif grep -qF 'hash() on a receiver whose type the emitter does not know' "$OUT/hash_unk_${n}_emit.txt"; then hash_unknown="$hash_unknown $n=refused"
+  elif [ -n "$(refusal_lines "$OUT/hash_unk_${n}_emit.txt")" ]; then hash_bad="$hash_bad unknown-$n:refused-in-other-words"
+  else
+    (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/hash_unk_$n.v" > "$OUT/hash_unk_${n}_v_out.txt" 2> "$OUT/hash_unk_${n}_v_err.txt")
+    if diff -q "$OUT/hash_unk_${n}_v_out.txt" "$OUT/control_hash_unk_$n.txt" > /dev/null; then hash_unknown="$hash_unknown $n=typed-and-the-Zig-answer"
+    elif [ -s "$OUT/hash_unk_${n}_v_out.txt" ]; then hash_bad="$hash_bad unknown-$n:WRITTEN-RAN-AND-PRINTED-ANOTHER-HASH($(head -1 "$OUT/hash_unk_${n}_v_out.txt" | cut -c1-40))"
+    else hash_bad="$hash_bad unknown-$n:written-and-V-refused-it"; fi
+  fi
+}
+printf 'def main()\n    print("len [${"abc".len.hash()}]")\n' > "$OUT/hash_unk_len.zbr"
+printf 'def main()\n    var f = def(x: str): str = x + "!"\n    print("lambda [${f("a").hash()}]")\n' > "$OUT/hash_unk_lambda.zbr"
+printf 'def main()\n    var m = HashMap(str, str)()\n    m["k"] = "v"\n    print("mapget [${m["k"].hash()}]")\n' > "$OUT/hash_unk_mapget.zbr"
+unk len 'len [-4052466453699787802]'
+unk lambda 'lambda [620374180311149047]'
+unk mapget 'mapget [-5808540380479486455]'
+if [ -n "$hash_bad" ]; then echo "hash: FAILED --$hash_bad"; fail=1
+else echo "hash: ok -- both routes print the values computed outside them; a class's own cue hash is the program's; @derive(Hash)'s hash() is refused by name and a struct's own cue beside the derive answers 42; a receiver of unknown type:$hash_unknown"; fi
 echo "── the V target runs the type check (BUG-777, 2026-11-17) ──"
 # Until BUG-777 `--target v` ran the parser and the resolver and never checkModule: a program
 # `-c` refuses for a type mismatch was written out with "nothing refused" and could run (a

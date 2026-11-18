@@ -245,6 +245,7 @@ class VGen
     var show_fields: HashMap(str, List(str))   # BUG-746: a class's / struct's fields in declared order, for its printed text
     var own_tostring: HashMap(str, bool)       # the classes and structs that declare `cue toString()`
     var refused_once: HashMap(str, bool)       # a refusal said once however often its cause is met (a type is spelled many times)
+    var derived_hash: HashMap(str, bool)       # BUG-782a: the structs whose hash() only @derive(Hash) writes (none is written here)
     var rt_fns: HashMap(str, bool)       # the runtime's free functions, read from zebra_rt.v (noteRuntime)
     var rt_types: HashMap(str, bool)     # the runtime's struct / type / enum / interface names, the same
     var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
@@ -319,6 +320,7 @@ class VGen
         .show_fields = HashMap(str, List(str))()
         .own_tostring = HashMap(str, bool)()
         .refused_once = HashMap(str, bool)()
+        .derived_hash = HashMap(str, bool)()
         .ref_params = HashMap(str, List(bool))()
         .rt_fns = HashMap(str, bool)()
         .rt_types = HashMap(str, bool)()
@@ -1216,6 +1218,8 @@ class VGen
                     .noteRetsOf(di.name, di.members)
                 on Decl.struct_ as st
                     .noteRetsOf(st.name, st.members)
+                    if st.mods.is_derive_hash and not vHasCue(st.members, "hash")
+                        .derived_hash.set(st.name, true)   # BUG-782a: its hash() is the Zig route's alone (methodCallStr refuses the call)
                 else
                     pass
 
@@ -4915,6 +4919,11 @@ class VGen
                 if .isShownType(rtype)
                     return .showValue(rtype, obj)   # its own `cue toString` (V's str()), else the Zig route's `Name{...}` (BUG-746)
                 return obj + ".str()"   # an interface's: the implementer's str()
+            if name == "hash" and args.count() == 0 and .derived_hash.get(own) != nil
+                # BUG-782a: the checker passes the call (the Zig route's @derive(Hash) writes the
+                # method, Wyhash over the fields) and this route writes no such method: V
+                # refused the file this emitter had called whole
+                .refuse("the hash() that @derive(Hash) writes for " + own + " (the Zig route's is Wyhash over the fields, and the V route writes none: give " + own + " a `cue hash(): int`)", span)
             var okey: str = "." + vSafe(name)
             if .sigs.get(own + "." + vSafe(name)) != nil
                 okey = own + "." + vSafe(name)
@@ -5155,7 +5164,8 @@ class VGen
         if ns == "Hash"
             if name == "sha256": return "zhash_sha256(" + a + ")"
             if name == "hmac256": return "zhash_hmac256(" + a + ")"
-            .refuse("Hash." + name, span)
+            if name == "fnv64": return "zhash_fnv64(" + a + ")"   # BUG-773: what `s.hash()` is
+            .refuse("Hash." + name + " (sha256, hmac256 and fnv64 are mapped)", span)
             return "zhash_" + snakeCase(name) + "(" + a + ")"
         if ns == "Crypto"
             # the runtime's crypto section (inlined with its imports only when a
@@ -5192,6 +5202,20 @@ class VGen
             if rtype == "f64": return "zshow_f(" + obj + ")"   # a float's toString: the Zig backend's spelling
             if rtype == "f32": return "zshow_f32(" + obj + ")"
             return obj + ".str()"
+        # BUG-773: `x.hash()` on a builtin is Hash.fnv64 (zebra_rt.v's zhash_*): a str's bytes, an
+        # integer's or a bool's value as eight little-endian bytes of an i64, a char as its
+        # one-character string. A class's or struct's own `cue hash` is the program's (methodCallStr
+        # takes a program type's call before this def, and refuses the one hash() only
+        # @derive(Hash) writes). A receiver whose type is not known here is refused by name: a
+        # V string has a `hash` of its own, an int, which is not Zebra's, so the call passed
+        # through could be V's without a word.
+        if name == "hash" and args.count() == 0
+            if rtype == "string": return "zhash_fnv64(" + obj + ")"
+            if rtype == "rune": return "zhash_char(" + obj + ")"
+            if rtype == "bool": return "zhash_bool(" + obj + ")"
+            if vIntKind(rtype) != 0: return "zhash_int(i64(" + obj + "))"
+            if rtype == ""
+                .refuse("hash() on a receiver whose type the emitter does not know (a V string has a `hash` of its own, which is not Zebra's: the call written could be V's)", span)
         if name == "concat" and args.count() == 1: return "(" + obj + " + " + .argsStr(args) + ")"
         if name == "isNumeric" and args.count() == 0: return "zstr_is_numeric(" + obj + ")"
         if name == "toFloat" and args.count() == 0: return "f64(" + obj + ")"
@@ -5617,6 +5641,14 @@ def vSizedIntName(name: str): str
     if name == "int64": return "i64"
     if name == "int128" or name == "uint128": return "?"
     return ""
+
+# whether a struct declares the cue itself (a hand-written cue wins over @derive's)
+def vHasCue(members: List(Decl), cue_name: str): bool
+    for mem in members
+        if mem is Decl.method as dm
+            if dm.mods.is_cue and dm.name == cue_name
+                return true
+    return false
 
 # 1 signed, 2 unsigned, 0 not an integer the route maps
 def vIntKind(t: str): int

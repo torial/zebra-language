@@ -2969,6 +2969,40 @@ pub fn zhash_sha256(zr_s string) string {
 	return sha256.hexhash(zr_s)
 }
 
+// BUG-773: Hash.fnv64 and `x.hash()` on a builtin -- FNV-1a 64, the same 64 bits the Zig
+// route answers (_hash_fnv64 / _zbr_hash_int / _zbr_hash_char), read as an int. A str hashes
+// its bytes; an integer of any width and a bool hash the value as the eight little-endian
+// bytes of its i64, so equal values hash alike at every width; a char hashes as the
+// one-character string it stands for. Unsigned arithmetic: V wraps it, as FNV wants.
+pub fn zhash_fnv64(zr_s string) i64 {
+	mut zr_h := u64(0xcbf29ce484222325)
+	for zr_i in 0 .. zr_s.len {
+		zr_h = (zr_h ^ u64(zr_s[zr_i])) * u64(0x100000001b3)
+	}
+	return i64(zr_h)
+}
+
+pub fn zhash_int(zr_v i64) i64 {
+	mut zr_h := u64(0xcbf29ce484222325)
+	mut zr_w := u64(zr_v)
+	for _ in 0 .. 8 {
+		zr_h = (zr_h ^ (zr_w & u64(0xff))) * u64(0x100000001b3)
+		zr_w = zr_w >> 8
+	}
+	return i64(zr_h)
+}
+
+pub fn zhash_bool(zr_b bool) i64 {
+	if zr_b {
+		return zhash_int(1)
+	}
+	return zhash_int(0)
+}
+
+pub fn zhash_char(zr_c rune) i64 {
+	return zhash_fnv64(zchar_str(zr_c))
+}
+
 // == crypto begin ==
 // Hash.hmac256 and Crypto.randomToken / hashPassword / verifyPassword / equal, as the Zig
 // preamble has them (zebra-language 8ac485e). Inlined, with `import crypto.hmac`,
