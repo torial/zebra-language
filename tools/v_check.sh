@@ -4,6 +4,7 @@
 # pins: BUG-795 a class value into an interface-typed field default (plain or optional, class or struct) or a declared plain interface local is cast to the interface on the V route: the field compiles, the local takes another implementing class, and the cast shares the object (the iface_slot row)
 # pins: BUG-797 the V route's nested emitter (a statement-bodied lambda's body, an `else if` condition) shares the outer one's printer helpers, own-toString / field / derived-hash tables and module-variable spellings: a container, a class and a colliding module variable inside print what they print outside (the nested_emit row)
 # pins: BUG-796 on the V route a method called on an interface value that is not a name (a call's result, an element, a method's result) goes through a by-value helper: it compiles, shares the object, and keeps a short-circuit and a loop condition in order (the iface_recv row)
+# pins: BUG-804 on the V route an expression lambda with no declared return type returns its expression's type, and a lambda's parameters are typed inside its body (one that shadows an outer local is not that local) (the lam_ret row)
 # pins: BUG-783 a declared optional local keeps its `?` on the V route whatever its initialiser; module-level and field optionals, a plain local and a nil-initialised optional unchanged (the optlocal row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
@@ -988,6 +989,72 @@ grep -q "^fn zifc_" "$OUT/iface_recv.v" 2>/dev/null || ir_bad="$ir_bad no-helper
 grep -q "^fn zifc_" "$OUT/iface_slot.v" 2>/dev/null && ir_bad="$ir_bad a-helper-in-iface_slot.v-which-calls-none"
 if [ -n "$ir_bad" ]; then echo "iface_recv: FAILED --$ir_bad"; fail=1
 else echo "iface_recv: ok -- a method on an interface value that is not a name compiles and answers on the V route: sixteen lines written by hand, the short-circuit and the loop condition in order, the object shared, and no helper in a program that makes no such call"; fi
+echo "── an expression lambda with no declared return type; a lambda's parameters typed in its body (BUG-804) ──"
+# `run(def(x: int) = x + 1)` was written `Fn(fn (x i64) { return (x + 1) })`: no return type,
+# and V refuses it ("unexpected argument, current function does not return anything"), under
+# "nothing refused". The lambda takes its expression's type when it declares none. For that
+# the parameters had to be in the emitter's type table while the body is written -- they
+# were names only, so a parameter was typed as whatever outer local shared its name:
+# `var x = "outer"` / `def(x: int) = x + 10` wrote a string concatenation. lam_ret: such a
+# lambda returning an int, a bool and a str, passed to a sig-typed parameter of a function
+# and of a method, and bound to a local; the shadowing parameter; a captured local; a
+# declared return type (the control); a lambda inside a lambda whose parameter shadows the
+# outer lambda's under another type. Both routes are held to lines written by hand.
+cat > "$OUT/lam_ret.zbr" <<'ZBR'
+sig Fn(x: int): int
+sig Pred(s: str): bool
+sig Mk(n: int): str
+
+def run(g: Fn): int
+    return g(4)
+
+def check(p: Pred, s: str): bool
+    return p(s)
+
+def make(m: Mk): str
+    return m(3)
+
+class Sq
+    def apply(g: Fn): int
+        return g(5)
+
+def main()
+    print("fn [${run(def(x: int) = x + 1)}] [${Sq().apply(def(x: int) = x * 2)}]")
+    print("pred [${check(def(s: str) = s.len > 2, "abc")}] [${check(def(s: str) = s == "no", "abc")}]")
+    print("str [${make(def(n: int) = "n${n}")}]")
+    var x = "outer"
+    var f = def(x: int) = x + 10
+    print("shadow [${f(1)}] [${x}]")
+    var k = 7
+    var g = def(a: int) = a + k
+    print("capture [${g(1)}]")
+    var h = def(a: int): int = a - 1
+    print("declared [${h(1)}]")
+    var outerf = def(n: int): int
+        var innerf = def(n: str) = n + "!"
+        return n + innerf("a").len
+    print("nested [${outerf(2)}] [${f(2)}]")
+ZBR
+compare lam_ret "$OUT" lam_ret.zbr "$OUT/control_lam_ret.txt" "$OUT/lam_ret.v"
+rows=$((rows + 1))
+lr_bad=""
+for o in "$OUT/control_lam_ret.txt" "$OUT/lam_ret_v_out.txt"; do
+  [ -f "$o" ] || { lr_bad="$lr_bad no-$(basename "$o")"; continue; }
+  while IFS= read -r want; do
+    grep -qxF "$want" "$o" || lr_bad="$lr_bad $(basename "$o"):$(echo "$want" | cut -d'[' -f1 | tr ' ' '_')"
+  done <<'WANT'
+fn [5] [10]
+pred [true] [false]
+str [n3]
+shadow [11] [outer]
+capture [8]
+declared [0]
+nested [4] [12]
+WANT
+  [ "$(wc -l < "$o")" = 7 ] || lr_bad="$lr_bad $(basename "$o"):$(wc -l < "$o")-lines-not-7"
+done
+if [ -n "$lr_bad" ]; then echo "lam_ret: FAILED --$lr_bad"; fail=1
+else echo "lam_ret: ok -- an expression lambda with no declared return type returns its expression's type on the V route, and a parameter that shadows an outer local is its own: seven lines written by hand on both routes"; fi
 echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
 # BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
 # an integer or a bool as the eight little-endian bytes of its i64, a char as its

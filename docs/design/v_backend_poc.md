@@ -3674,6 +3674,18 @@ helper too.
 **Witness.** `tools/v_check.sh`'s `iface_recv` row, both routes held to sixteen lines
 written by hand.
 
+## A lambda's parameters and its undeclared return type (BUG-804, 2026-11-18)
+
+`lambdaStr` writes a lambda's body against a type table of the lambda's own: a copy of the
+outer one with the parameters set (an untyped one removed, so it is not the outer local of
+that name), put back after. Before, parameters were names only: `var x = "outer"` then
+`def(x: int) = x + 10` typed the parameter as the outer string. With the parameters typed,
+an expression lambda that declares no return type takes its expression's (`fn (x i64) i64
+{ return (x + 1) }`); V's `fn (x i64) {` returns nothing and refused the `return`.
+
+**Witness.** `tools/v_check.sh`'s `lam_ret` row, both routes held to seven lines written by
+hand.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

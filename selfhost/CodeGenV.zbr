@@ -4245,12 +4245,33 @@ class VGen
         if caps != ""
             capList = "[" + caps + "] "
         var ret = .vType(lam.return_type)
+        var saved_locals = .local_names.copy()   # (a container is a reference: the restore needs its own copy)
+        # BUG-804: the parameters are in the TYPE table too while the body is written, in
+        # a table of the lambda's own (the outer one is put back after: nothing declared
+        # inside reaches it). They were names only, so a parameter was typed as whatever
+        # outer local shared its name -- `var x = "outer"` / `def(x: int) = x + 10` wrote
+        # a string concatenation -- and as nothing otherwise.
+        var outer_types = .local_types
+        .local_types = outer_types.copy()
+        for p in lam.params
+            .local_names.add(p.name)
+            var lpt: str = .vType(p.type_)
+            if lpt != ""
+                .local_types.set(p.name, lpt)
+            else
+                .local_types.remove(p.name)   # untyped: not the outer local of that name
+        if ret == ""
+            # BUG-804: `def(x: int) = x + 1` declares no return type, and V's `fn (x i64) {`
+            # returns nothing ("unexpected argument, current function does not return
+            # anything"): the expression's own type, when the emitter knows it
+            branch lam.body_
+                on LambdaBody.expr_ as rex
+                    ret = .vTypeOf(rex)
+                else
+                    pass
         var head = "fn " + capList + "(" + .genParams(lam.params) + ")"
         if ret != ""
             head = head + " " + ret
-        var saved_locals = .local_names.copy()   # (a container is a reference: the restore needs its own copy)
-        for p in lam.params
-            .local_names.add(p.name)
         var body: str = ""
         branch lam.body_
             on LambdaBody.expr_ as e
@@ -4263,6 +4284,7 @@ class VGen
                 .absorb(inner)
                 body = "\n" + inner.sb.build()
         .local_names = saved_locals
+        .local_types = outer_types
         return head + " {" + body + "}"
 
     # "text" -> 'text' with V's escapes: a $ or a ' inside is escaped

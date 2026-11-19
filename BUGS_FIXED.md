@@ -6,6 +6,29 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-804: `--target v` writes an expression lambda with no declared return type as a function that returns nothing -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, probing BUG-796's
+  fix; the Zig route was right)
+- **Repro:** `sig Fn(x: int): int` / `def run(g: Fn): int` / `run(def(x: int) = x + 1)` is
+  emitted `run(Fn(fn (x i64) { return (x + 1) }))`; V refuses it ("unexpected argument,
+  current function does not return anything"), under "nothing refused". The same bound to a
+  local (`var f = def(x: int) = x + 10`).
+- **Beside it, silent in the emitter's own table:** a lambda's parameters were added to the
+  emitter's NAMES and not to its type table, so inside the body a parameter was typed as
+  whatever outer local shared its name: `var x = "outer"` then `def(x: int) = x + 10` wrote
+  `zr_s(x + 10)`, a string concatenation.
+- **Fix:** `CodeGenV.lambdaStr` writes the body against a type table of the lambda's own (a
+  copy of the outer one with the parameters set, an untyped parameter removed; the outer
+  table is put back after, so nothing declared inside reaches it), and a lambda that
+  declares no return type and whose body is an expression takes `vTypeOf` of it.
+- **Not changed:** an expression whose type the emitter does not know is written as before;
+  an UNTYPED parameter (`def(x) = x + 3`) is refused by the Zig route's CodeGen, which this
+  route does not run (BUG-778).
+- **Pinned by:** `tools/v_check.sh`'s `lam_ret` row: seven lines written by hand on both
+  routes. Watched red on the compiler before the change.
+
+---
+
 ### BUG-803: an interface method with a parameter named `f` fails inside zig -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (filed 2026-11-18; found by Fable probing BUG-796)
 - **Repro:** `interface Shape` / `def twice(f: int): int`, a class implementing it, any program
