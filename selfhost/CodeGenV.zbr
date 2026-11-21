@@ -202,6 +202,7 @@ class VGen
     var union_payloads: HashMap(str, str)   # `U_v` -> the V type of the variant's payload
     var boxed_variants: HashMap(str, bool)  # `U_v` -> whether its payload is boxed (`&ZBox[U_v's payload]`): decided once by isBoxed -- V master's sum is an inline tagged union (vlang/v#29578), a value cycle is refused
     var variant_union: HashMap(str, str)    # `U_v` -> `U`
+    var union_variants: HashMap(str, List(str))   # BUG-786: `U` -> its variants' names in order, the payload-less ones too
     var current_file: str             # the module being emitted (a refusal names it)
     var has_globals: bool             # a `__global` was emitted
     var global_dedup: HashMap(str, str)   # a module-level var's numbered spelling when a sibling snake-cases alike
@@ -249,6 +250,10 @@ class VGen
     var own_tostring: HashMap(str, bool)       # the classes and structs that declare `cue toString()`
     var refused_once: HashMap(str, bool)       # a refusal said once however often its cause is met (a type is spelled many times)
     var derived_hash: HashMap(str, bool)       # BUG-782a: the structs whose hash() only @derive(Hash) writes (none is written here)
+    var cue_equals: HashMap(str, bool)         # BUG-786: the classes and structs that declare `cue equals`: `==` on them is that
+    var derived_eq: HashMap(str, bool)         # BUG-782b: the structs whose equals() only @derive(Eq) writes (the rule, field by field)
+    var eq_names: HashMap(str, str)            # BUG-786: a V type -> its equality helper's name
+    var eq_helpers: List(str)                  # those helpers' V text, appended after the program
     var rt_fns: HashMap(str, bool)       # the runtime's free functions, read from zebra_rt.v (noteRuntime)
     var rt_types: HashMap(str, bool)     # the runtime's struct / type / enum / interface names, the same
     var rt_methods: HashMap(str, bool)   # `ZList.add`: the runtime's methods by receiver type, the same
@@ -282,6 +287,7 @@ class VGen
         .union_payloads = HashMap(str, str)()
         .boxed_variants = HashMap(str, bool)()
         .variant_union = HashMap(str, str)()
+        .union_variants = HashMap(str, List(str))()
         .current_file = ""
         .has_globals = false
         .sig_conflicts = List(str)()
@@ -327,6 +333,10 @@ class VGen
         .own_tostring = HashMap(str, bool)()
         .refused_once = HashMap(str, bool)()
         .derived_hash = HashMap(str, bool)()
+        .cue_equals = HashMap(str, bool)()
+        .derived_eq = HashMap(str, bool)()
+        .eq_names = HashMap(str, str)()
+        .eq_helpers = List(str)()
         .ref_params = HashMap(str, List(bool))()
         .rt_fns = HashMap(str, bool)()
         .rt_types = HashMap(str, bool)()
@@ -955,14 +965,24 @@ class VGen
             branch d
                 on Decl.class_ as c
                     .class_names.add(c.name)
+                    if vHasCue(c.members, "equals")
+                        .cue_equals.set(c.name, true)
                 on Decl.struct_ as st
                     .struct_names.add(st.name)
+                    if vHasCue(st.members, "equals")
+                        .cue_equals.set(st.name, true)
+                    else if st.mods.is_derive_eq
+                        .derived_eq.set(st.name, true)
                 on Decl.enum_ as en
                     .enum_names.add(en.name)
                     .member_counts.set(en.name, en.members.count())
                 on Decl.union_ as un
                     .union_names.add(un.name)
                     .member_counts.set(un.name, un.variants.count())
+                    var uvs = List(str)()
+                    for uv in un.variants
+                        uvs.add(uv.name)
+                    .union_variants.set(un.name, uvs)
                 on Decl.interface_ as di
                     .iface_names.add(di.name)
                     .iface_decls.set(di.name, di)
@@ -1255,6 +1275,7 @@ class VGen
         g.union_payloads = .union_payloads
         g.boxed_variants = .boxed_variants
         g.variant_union = .variant_union
+        g.union_variants = .union_variants
         g.current_file = .current_file
         g.sig_conflicts = .sig_conflicts
         g.rets = .rets
@@ -1302,6 +1323,10 @@ class VGen
         g.show_fields = .show_fields
         g.own_tostring = .own_tostring
         g.derived_hash = .derived_hash
+        g.cue_equals = .cue_equals
+        g.derived_eq = .derived_eq
+        g.eq_names = .eq_names
+        g.eq_helpers = .eq_helpers
         g.global_dedup = .global_dedup
         g.refused_once = .refused_once
         return g
@@ -3825,6 +3850,167 @@ class VGen
         .refused.add("printing a " + et + " (the V route prints str, char, int, byte, bool, float, an enum, a class, a struct, an optional or a container of those; V's own str() would print the runtime's internals)")
         return "zshow_raw_str"
 
+    # ── Zebra's `==` (BUG-786, BUG-782b) ───────────────────────────────────────
+    # The Zig route has one rule for `==`, whatever asks (BUG-787/789/790,
+    # _zbr_val_eql): an optional side -- both nil equal, one nil not, else the
+    # values; a str by content; a container structurally, each element by this
+    # rule; a class or struct that declares `cue equals` by it; a struct without
+    # one field by field by this rule (which is what @derive(Eq) writes); a class
+    # without one by IDENTITY. This route wrote V's own `==` everywhere, and V's
+    # is another rule: two references are dereferenced and compared field by
+    # field (two distinct objects with equal fields were `==`; a `cue equals` was
+    # never called), a list of lists compares its inner lists by address, an
+    # optional beside a value of a class was always false -- all under "nothing
+    # refused". The types V's `==` gets wrong go through a helper per type,
+    # made at first use and written after the program, as the printers are.
+
+    # a type whose `==` is not V's own: a class, a struct, a container, an
+    # interface value, a union that carries one of those
+    def eqRuled(vt: str): bool
+        return .eqRuledAt(vt, 0)
+
+    def eqRuledAt(vt: str, depth: int): bool
+        if .isContainerType(vt)
+            return true
+        var bare: str = vt
+        if bare.startsWith("?")
+            bare = bare.substring(1, bare.len)
+        if bare.startsWith("&")
+            bare = bare.substring(1, bare.len)
+        if bare == ""
+            return false
+        if .isClassName(bare) or .isStructName(bare) or .isIfaceName(bare)
+            return true
+        if .isUnionName(bare)
+            # (a union that reaches itself: its helper is right whatever it carries)
+            if depth > 6
+                return true
+            for uvn in .union_variants.get(bare) orelse List(str)()
+                if .union_payloads.get(bare + "_" + uvn) as upt
+                    if .eqRuledAt(upt, depth + 1)
+                        return true
+        return false
+
+    # `l == r` by the rule, as a call of the type's helper; "" when the rule does not
+    # apply (neither side is a ruled type the emitter knows, or the two sides are
+    # two different types): the comparison is then written as before
+    # a side's type for the rule: vTypeOf, and a union's constructor call (`Sh.many(xs)`),
+    # which vTypeOf has no type for, is the union
+    def eqTypeOf(e: Expr): str
+        var t: str = .vTypeOf(e)
+        if t != ""
+            return t
+        branch e
+            on Expr.call as c
+                branch c.callee
+                    on Expr.member as m
+                        var owner: str = .staticOwner(m.object)
+                        if .isUnionName(owner)
+                            return owner
+                    else
+                        pass
+            else
+                pass
+        return ""
+
+    def eqCall(le: Expr, re: Expr, l: str, r: str): str
+        var lt: str = .eqTypeOf(le)
+        var rt: str = .eqTypeOf(re)
+        var lb: str = lt
+        if lb.startsWith("?")
+            lb = lb.substring(1, lb.len)
+        var rb: str = rt
+        if rb.startsWith("?")
+            rb = rb.substring(1, rb.len)
+        var base: str = lb
+        if base == ""
+            base = rb
+        if base == "" or not .eqRuled(base)
+            return ""
+        if lb != "" and rb != "" and lb != rb
+            return ""
+        if .isIfaceName(base)
+            # the Zig route refuses `==` on two interface values ("operator == not
+            # allowed for type"), after its checker, where this route never heard it;
+            # V's own `==` compiled and compared the two objects' fields
+            .refuseOnce("`==` / `!=` on two values of interface " + base + ": the Zig route does not compile it either (BUG-788; compare what identifies the objects -- a List of them answers contains() by identity)")
+            return "false"
+        # an optional side, or a side the emitter has no type for (it may be one):
+        # the optional's helper, whose `?T` parameters take a plain value too
+        if lt.startsWith("?") or rt.startsWith("?") or lt == "" or rt == ""
+            return .eqFn("?" + base) + "(" + l + ", " + r + ")"
+        return .eqFn(base) + "(" + l + ", " + r + ")"
+
+    # the equality helper for V type `vt`: fn (vt, vt) bool, by the rule
+    def eqFn(vt: str): str
+        if .eq_names.get(vt) as known
+            return known
+        # (the name is taken BEFORE the body is built: a type that reaches itself
+        # -- a struct holding a list of its own kind -- finds it)
+        var at: int = .eq_helpers.count()
+        var hn: str = "zeq_h" + at.toString()
+        .eq_names.set(vt, hn)
+        .eq_helpers.add("")
+        var body: str = "\treturn zr_a == zr_b\n"   # V's own: a number, a bool, a str, a char, an enum
+        var bare: str = vt
+        if bare.startsWith("&")
+            bare = bare.substring(1, bare.len)
+        if vt.startsWith("?") and vt.len > 1
+            body = "\treturn zopt_eq_by(zr_a, zr_b, " + .eqFn(vt.substring(1, vt.len)) + ")\n"
+        else if vt.startsWith("&ZList[")
+            body = "\treturn zlist_eq_by(zr_a, zr_b, " + .eqFn(.elemOf(vt)) + ")\n"
+        else if vt.startsWith("&ZSet[")
+            body = "\treturn zset_eq(zr_a, zr_b)\n"
+        else if vt.startsWith("&ZMap[")
+            # (a map's key is a scalar on this route, so the first ", " ends it)
+            var inner: str = vt.substring(6, vt.len - 1)
+            var cut: int = inner.indexOf(", ")
+            if cut > 0
+                body = "\treturn zmap_eq_by(zr_a, zr_b, " + .eqFn(inner.substring(cut + 2, inner.len)) + ")\n"
+            else
+                .refused.add("`==` on a map whose V type is not understood (" + vt + ")")
+        else if .isIfaceName(bare)
+            body = "\treturn zif_same(zr_a, zr_b)\n"   # an interface value in a container or a field: identity
+        else if .isUnionName(bare)
+            # the same variant, then its payload by the rule (a payload-less one: the
+            # variant alone). `is` on each side, not a match: a one-variant union
+            # carries a pad member, and V refuses an `else` on an exhaustive match
+            body = ""
+            for uvn in .union_variants.get(bare) orelse List(str)()
+                var vk: str = bare + "_" + uvn
+                if .union_payloads.get(vk) as upt
+                    var pay: str = ".payload" + .unbox(vk)
+                    body = body + "\tif zr_a is " + vk + " {\n\t\tif zr_b is " + vk + " {\n\t\t\treturn " + .eqFn(upt) + "(zr_a" + pay + ", zr_b" + pay + ")\n\t\t}\n\t\treturn false\n\t}\n"
+                else
+                    body = body + "\tif zr_a is " + vk + " {\n\t\treturn zr_b is " + vk + "\n\t}\n"
+            body = body + "\treturn false\n"
+        else if .isClassName(bare) or .isStructName(bare)
+            if .cue_equals.get(bare) != nil
+                # its own `cue equals`. The method's receiver may be `mut self` and a
+                # reference parameter is `mut`: the helper calls it on its own handles
+                if vt.startsWith("&")
+                    body = "\tmut zr_x := unsafe { zr_a }\n\tmut zr_y := unsafe { zr_b }\n\treturn zr_x.equals(mut zr_y)\n"
+                else
+                    body = "\tmut zr_x := zr_a\n\treturn zr_x.equals(zr_b)\n"
+            else if .isClassName(bare)
+                body = "\treturn voidptr(zr_a) == voidptr(zr_b)\n"   # a class without one: identity
+            else
+                # a struct without one (@derive(Eq) writes exactly this): field by field
+                var conj: str = ""
+                for fname in .show_fields.get(bare) orelse List(str)()
+                    var ft: str = .all_field_types.get(bare + "." + fname) orelse ""
+                    var one: str = "zr_a." + vSafe(fname) + " == zr_b." + vSafe(fname)
+                    if ft != ""
+                        one = .eqFn(ft) + "(zr_a." + vSafe(fname) + ", zr_b." + vSafe(fname) + ")"
+                    if conj != ""
+                        conj = conj + " && "
+                    conj = conj + one
+                if conj == ""
+                    conj = "true"
+                body = "\treturn " + conj + "\n"
+        .eq_helpers.set(at, "fn " + hn + "(zr_a " + vt + ", zr_b " + vt + ") bool {\n" + body + "}\n")
+        return hn
+
     # the next helper's number, taken under `key` BEFORE its body is built: a
     # type that reaches itself (a node whose field is a node) finds its own name
     def reserveShow(key: str): int
@@ -5113,6 +5299,11 @@ class VGen
                 # method, Wyhash over the fields) and this route writes no such method: V
                 # refused the file this emitter had called whole
                 .refuse("the hash() that @derive(Hash) writes for " + own + " (the Zig route's is Wyhash over the fields, and the V route writes none: give " + own + " a `cue hash(): int`)", span)
+            if name == "equals" and args.count() == 1 and .derived_eq.get(own) != nil
+                # BUG-782b: the equals() that @derive(Eq) writes on the Zig route is the
+                # rule field by field; no method of that name is written on this route,
+                # and V refused the file this emitter had called whole
+                return .eqFn(rtype) + "(" + obj + ", " + .argsStr(args) + ")"
             var okey: str = "." + vSafe(name)
             if .sigs.get(own + "." + vSafe(name)) != nil
                 okey = own + "." + vSafe(name)
@@ -5195,6 +5386,14 @@ class VGen
                 return obj + "." + name + "(" + cargs + ")"
             # the list's own, where the string's would be taken by name (the
             # comparing ones are free functions: see zebra_rt.v)
+            if (name == "indexOf" or name == "contains") and args.count() == 1 and .eqRuled(.elemOf(rtype))
+                # BUG-786: the runtime's compare with V's `==`; these elements by the rule.
+                # The type argument is written: V would infer it from the needle, and a
+                # class parameter is `mut x C` here, which V reads as C where the list
+                # and the helper are &C
+                if name == "indexOf"
+                    return "zlist_index_by[" + .elemOf(rtype) + "](" + obj + ", " + .argsStr(args) + ", " + .eqFn(.elemOf(rtype)) + ")"
+                return "zlist_has_by[" + .elemOf(rtype) + "](" + obj + ", " + .argsStr(args) + ", " + .eqFn(.elemOf(rtype)) + ")"
             if name == "indexOf" and args.count() == 1: return "zlist_index_of(" + obj + ", " + .argsStr(args) + ")"
             if name == "contains" and args.count() == 1: return "zlist_contains(" + obj + ", " + .argsStr(args) + ")"
             if name == "toString" and args.count() == 0: return .showContainer(rtype, obj)
@@ -5521,6 +5720,13 @@ class VGen
             .needs_math = true
             return "math.pow(" + l + ", " + r + ")"
         if b.op == BinaryOp.in_
+            var in_ct: str = .vTypeOf(b.right)
+            if in_ct.startsWith("&ZList[")
+                # BUG-786: a list has no contains() on this route (the comparing ones are
+                # free functions), and its elements compare by the rule
+                if .eqRuled(.elemOf(in_ct))
+                    return "zlist_has_by[" + .elemOf(in_ct) + "](" + r + ", " + l + ", " + .eqFn(.elemOf(in_ct)) + ")"
+                return "zlist_contains(" + r + ", " + l + ")"
             return r + ".contains(" + l + ")"
         if b.op == BinaryOp.eq or b.op == BinaryOp.ne
             # `x == nil`: through a helper, so V never smart-casts x (the cast
@@ -5543,6 +5749,15 @@ class VGen
                 if b.op == BinaryOp.eq
                     return call
                 return "(!" + call + ")"   # (parenthesized: `.str()` on it binds to the call otherwise)
+            # BUG-786: a class, a struct or a container on either side -- by the rule
+            # (a payload-less variant on a side is `is`, below: it is no value of the union)
+            var eqc: str = ""
+            if .variantTypeName(b.right) == "" and .variantTypeName(b.left) == ""
+                eqc = .eqCall(b.left, b.right, l, r)
+            if eqc != ""
+                if b.op == BinaryOp.eq
+                    return eqc
+                return "(!" + eqc + ")"
             # `opt == value`: Zebra compares a nilable with a value; V does not
             var lt2: str = .vTypeOf(b.left)
             var rt2: str = .vTypeOf(b.right)
@@ -6604,4 +6819,10 @@ def generateV(ms: List(Module), runtime: str): VResult
         ifc_tail = ifc_tail + "\n" + ih
     if ifc_tail != ""
         show_tail = show_tail + "\n// -- interface methods called on a value that is no name: by-value helpers (BUG-796) --" + ifc_tail
+    # BUG-786: the equality helpers of the types whose `==` is not V's own
+    var eq_tail: str = ""
+    for eh in g.eq_helpers
+        eq_tail = eq_tail + "\n" + eh
+    if eq_tail != ""
+        show_tail = show_tail + "\n// -- Zebra's `==` for the classes, structs and containers this program compares (BUG-786) --" + eq_tail
     return VResult(source: head + body + show_tail, refused: g.refused, needs_math: g.needs_math, has_globals: g.has_globals, uses_gui: g.uses_gui, unverified: g.rt_unverified, unchecked_arith: g.arith_unchecked)

@@ -6,6 +6,61 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-786: `--target v` answers `==` by V's rule, not Zebra's -- FIXED 2026-11-18
+- **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route; the Zig route's rule
+  is BUG-787/789/790's `_zbr_val_eql`, which this mirrors. With it BUG-782's part (b))
+- **Repro (silent):** `class Dog` with one field, `var a = Dog("a")`, `var b = Dog("a")`:
+  `a == b` printed **true** on V (two references are dereferenced and compared field by
+  field) and false on Zig (identity). A class with `cue equals` comparing `.id`: the cue was
+  never called, so two objects with the same id and another note were unequal. `var o: Tag? =
+  t1` then `o == t2`: always false. `[[1], [2, 3]] == [[1], [2, 3]]`: false (the inner lists by
+  address). A program of fourteen such comparisons compiled and printed nine wrong, under
+  "nothing refused".
+- **Repro (refused by V, called whole here):** `x in xs` over a list was written
+  `xs.contains(x)`, a method the route's list does not have; `a.equals(b)` on a
+  `@derive(Eq)` struct called a method nothing writes (BUG-782b); `contains` / `indexOf` over
+  classes, structs and lists compared with V's `==`.
+- **Fix:** one rule, the Zig runtime's. `CodeGenV.eqFn(vtype)` makes one helper per type a
+  program compares (`fn zeq_hN(zr_a T, zr_b T) bool`, made at first use, written after the
+  program beside the printers, its name taken before its body so a type that reaches itself
+  finds it): an optional by `zopt_eq_by` (both nil equal, one nil not, else the values); a
+  List / HashMap / Set by `zlist_eq_by` / `zmap_eq_by` / `zset_eq`, each element or value by
+  its own helper; a class or struct that declares `cue equals` by the cue; a class without
+  one by identity (`voidptr`); a struct without one field by field, each field by its own
+  helper; a union by its variant, then the payload's helper; an interface value by identity
+  (`zif_same`). `==` / `!=` with a class, struct, container or such a union on a side, `in`
+  and `contains` / `indexOf` over such elements, and `.equals()` on a derived struct all go
+  through it. Numbers, bools, strs, chars and enums stay V's own `==`.
+- **Refused by name:** `==` / `!=` on two interface values. The Zig route does not compile it
+  (BUG-788, decision owed); V's `==` compiled and compared the objects' fields.
+- **Ahead of the Zig route in one place:** a direct `==` on two union values whose payload is
+  a container or has a `cue equals` is answered by the rule here and by address on the Zig
+  route today (BUG-806, found by this row's probe). The row holds those two lines on the V
+  route alone and says when the Zig route joins.
+- **Also ahead, for the pinned Zig only:** `contains()` over a List of interface values
+  answers by identity here; the Zig route runs it under Zig 0.16 with the same answer and
+  does not compile it under the pinned 0.17.1 (the runtime's struct branch of
+  `_zbr_val_eql` reads `info.fields`). Held on the V route alone, the same way.
+- **Found beside it:** a user type named `T` breaks the V build (BUG-807, open): the first
+  eq_struct program named a struct `T` and its emitted C was refused, on the compiler
+  before this change as well. The row's struct is `Tg`.
+- **Missed by the row, caught by the ladder:** the first build wrote `zlist_has_by(xs, x,
+  zeq_hN)` and let V infer the type. A class parameter is `mut x C` on this route, V read
+  the needle as `C` where the list and the helper are `&C`, and 52 of the engine's 367 roots
+  failed the V build on that one error while every program of the row passed: none had a
+  parameter for a needle. The calls the emitter makes for `contains` / `indexOf` / `in` now
+  carry their type argument (`zlist_has_by[&C](...)`), and the row has `eq_param`.
+- **Not changed:** a comparison whose two sides the emitter has no type for is written as
+  before (V's `==`); a generic class's instances (`Box(int)`) are not in the rule's tables.
+- **Pinned by:** `tools/v_check.sh`'s `eq_rule` row: fifty-six lines written by hand over
+  seven programs on both routes and three more on the V route alone, the compiler's own
+  `test/bug789_equality_paths_test.zbr` identical on both, the interface refusal, and no
+  helper in a program that compares no
+  class, struct or container. `eq_silent` compiled on the compiler before the change and
+  printed nine of fourteen answers wrong.
+
+---
+
 ### BUG-804: `--target v` writes an expression lambda with no declared return type as a function that returns nothing -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route, probing BUG-796's
   fix; the Zig route was right)

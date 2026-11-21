@@ -447,6 +447,87 @@ pub fn zopt_eq[T](zr_a ?T, zr_b T) bool {
 	return zr_x == zr_b
 }
 
+// BUG-786: Zebra's `==` where V's own is another rule (the Zig runtime's _zbr_val_eql).
+// The emitter writes one helper per class, struct and container type a program compares
+// and hands it to these. An optional side or two: both nil are equal, one nil is not,
+// else the values by the function given (a `?T` parameter takes a plain value too).
+pub fn zopt_eq_by[T](zr_a ?T, zr_b ?T, zr_f fn (T, T) bool) bool {
+	zr_x := zr_a or {
+		if _ := zr_b {
+			return false
+		}
+		return true
+	}
+	zr_y := zr_b or { return false }
+	return zr_f(zr_x, zr_y)
+}
+
+// two lists: the same length, and each pair of elements equal by the function given
+pub fn zlist_eq_by[T](zr_a &ZList[T], zr_b &ZList[T], zr_f fn (T, T) bool) bool {
+	if zr_a.items.len != zr_b.items.len {
+		return false
+	}
+	for zr_i in 0 .. zr_a.items.len {
+		if !zr_f(zr_a.items[zr_i], zr_b.items[zr_i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// contains / `in` and indexOf over elements V's `==` does not compare as Zebra does
+pub fn zlist_has_by[T](zr_l &ZList[T], zr_x T, zr_f fn (T, T) bool) bool {
+	for zr_e in zr_l.items {
+		if zr_f(zr_e, zr_x) {
+			return true
+		}
+	}
+	return false
+}
+
+pub fn zlist_index_by[T](zr_l &ZList[T], zr_x T, zr_f fn (T, T) bool) i64 {
+	for zr_i, zr_e in zr_l.items {
+		if zr_f(zr_e, zr_x) {
+			return i64(zr_i)
+		}
+	}
+	return -1
+}
+
+// two maps: the same count, and every key of one in the other with an equal value
+pub fn zmap_eq_by[K, V](zr_a &ZMap[K, V], zr_b &ZMap[K, V], zr_f fn (V, V) bool) bool {
+	if zr_a.m.len != zr_b.m.len {
+		return false
+	}
+	for zr_k, zr_v in zr_a.m {
+		zr_w := zr_b.m[zr_k] or { return false }
+		if !zr_f(zr_v, zr_w) {
+			return false
+		}
+	}
+	return true
+}
+
+// two interface values: the same object. (V's `==` on them compares the objects' fields,
+// and an interface value does not hand out its object: its first word is the pointer
+// on the pinned V -- v_check.sh's eq rows hold that by hand-written lines.)
+pub fn zif_same[T](zr_a T, zr_b T) bool {
+	return unsafe { *(&voidptr(&zr_a)) == *(&voidptr(&zr_b)) }
+}
+
+// two sets: the same count, and every item of one in the other
+pub fn zset_eq[T](zr_a &ZSet[T], zr_b &ZSet[T]) bool {
+	if zr_a.m.len != zr_b.m.len {
+		return false
+	}
+	for zr_k, _ in zr_a.m {
+		if zr_k !in zr_b.m {
+			return false
+		}
+	}
+	return true
+}
+
 // `x!`: the value, or a failure
 // an option held as itself: what `?T(x)` did on 0.5.2, which master refuses as
 // a cast of an option to its own type

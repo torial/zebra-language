@@ -86,11 +86,15 @@
 ---
 
 ### BUG-782: `@derive` is not read on the V route
-- **Status:** OPEN, part (a) RESOLVED 2026-11-17 (filed 2026-11-17; reported by Fable, who is fixing it
+- **Status:** OPEN, parts (a) and (b) RESOLVED (filed 2026-11-17; reported by Fable, who is fixing it
   on the V route; parts are closed one commit each as BUG-782a..d; the entry closes when all four are)
 - **(a) RESOLVED 2026-11-17 (Fable, picked as 875253c):** the `hash()` that only `@derive(Hash)`
   writes is refused on V by name, naming the struct and the way out (a `cue hash(): int`); a
   struct with its own cue is written. Pinned by v-check's `hash` row.
+- **(b) RESOLVED 2026-11-18 (Fable, with BUG-786):** `a.equals(b)` on a `@derive(Eq)` struct is
+  the route's equality helper for the struct, field by field by the Zig runtime's rule (a List
+  field by content, a class field by its `cue equals` or identity). Pinned by v-check's
+  `eq_rule` row (the eq_derive program, seventeen lines written by hand).
 - **Repro:** (a) `@derive(Hash)`'s `hash()` is emitted as a call to a method the struct does not
   have, and V refuses the file (test/bug776's and bug447_ok's fixtures); (b) `a.equals(b)` on a
   `@derive(Eq)` struct, the same (`a == b` works); (c) `@derive(Debug)` prints `P{x: 1, s: "a"}`

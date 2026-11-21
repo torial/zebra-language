@@ -3686,6 +3686,55 @@ an expression lambda that declares no return type takes its expression's (`fn (x
 **Witness.** `tools/v_check.sh`'s `lam_ret` row, both routes held to seven lines written by
 hand.
 
+## `==` is the Zig runtime's rule, through a helper per type (BUG-786, BUG-782b, 2026-11-18)
+
+V's `==` is not Zebra's. Two `&C` are dereferenced and compared field by field; a sum type,
+a struct and an option each have V's own structural compare; a `&ZList[&ZList[i64]]`
+compares its inner lists by address. Zebra's rule (the Zig runtime's `_zbr_val_eql`) is: an
+optional side -- both nil equal, one nil not, else the values; a container structurally; a
+class or struct with `cue equals` by the cue; a struct without one field by field; a class
+without one by identity; a union by its variant and then its payload.
+
+`eqFn(vtype)` returns the name of that type's helper, making it at first use:
+
+```v
+fn zeq_h0(zr_a &Tag, zr_b &Tag) bool {          // a class with `cue equals`
+	mut zr_x := unsafe { zr_a }
+	mut zr_y := unsafe { zr_b }
+	return zr_x.equals(mut zr_y)
+}
+fn zeq_h1(zr_a &Dog, zr_b &Dog) bool {          // a class without: identity
+	return voidptr(zr_a) == voidptr(zr_b)
+}
+fn zeq_h2(zr_a &ZList[&Tag], zr_b &ZList[&Tag]) bool {
+	return zlist_eq_by(zr_a, zr_b, zeq_h0)
+}
+fn zeq_h3(zr_a ?&Tag, zr_b ?&Tag) bool {        // a `?T` parameter takes a plain value too
+	return zopt_eq_by(zr_a, zr_b, zeq_h0)
+}
+```
+
+The name is entered in `eq_names` before the body is built, so a struct holding a list of
+its own kind finds its helper instead of recursing. The helpers are appended after the
+program (after the printers and BUG-796's interface helpers); the tables are shared with the
+nested emitter. The runtime's part is `zopt_eq_by`, `zlist_eq_by`, `zlist_has_by`,
+`zlist_index_by`, `zmap_eq_by`, `zset_eq` and `zif_same`.
+
+Where it is asked: `==` / `!=` (`eqCall`: a side that is a class, a struct, a container, or a
+union carrying one; an optional or untyped side takes the `?T` helper; a union's
+constructor call, which `vTypeOf` has no type for, is typed as its union by `eqTypeOf`);
+the `_by` calls the emitter makes carry their type argument (`zlist_has_by[&C](...)`), since V
+infers it from the needle and a class parameter, `mut x C`, reads as `C`; `x in xs` over a
+list; a list's `contains` / `indexOf`; `.equals()` on a struct whose equals only
+`@derive(Eq)` writes. A payload-less variant on a side stays V's `is`.
+
+Two things to know. An interface value's identity is read as the first word of V's interface
+struct (`zif_same`): V does not hand out the object, and the `eq_rule` row's hand lines are
+what holds that layout on the pinned V. And `==` on two interface values is refused by name:
+the Zig route does not compile it (BUG-788), so the routes agree until that is decided.
+
+**Witness.** `tools/v_check.sh`'s `eq_rule` row.
+
 ## If the branch ever merges to main
 
 - `tools/regen_selfhost.sh`'s FILES list names CodeGenV (this branch); since

@@ -5,6 +5,8 @@
 # pins: BUG-797 the V route's nested emitter (a statement-bodied lambda's body, an `else if` condition) shares the outer one's printer helpers, own-toString / field / derived-hash tables and module-variable spellings: a container, a class and a colliding module variable inside print what they print outside (the nested_emit row)
 # pins: BUG-796 on the V route a method called on an interface value that is not a name (a call's result, an element, a method's result) goes through a by-value helper: it compiles, shares the object, and keeps a short-circuit and a loop condition in order (the iface_recv row)
 # pins: BUG-804 on the V route an expression lambda with no declared return type returns its expression's type, and a lambda's parameters are typed inside its body (one that shadows an outer local is not that local) (the lam_ret row)
+# pins: BUG-786 `==` on the V route is the Zig runtime's rule (identity for a class, its `cue equals` when it has one, containers and structs by content, an optional side nil-aware, a union by variant and payload), in `==` / `!=` / `in` / contains / indexOf; `==` on two interface values is refused by name (the eq_rule row)
+# pins: BUG-782 part (b): `.equals()` on a @derive(Eq) struct answers the rule field by field on the V route (the eq_rule row's eq_derive program)
 # pins: BUG-783 a declared optional local keeps its `?` on the V route whatever its initialiser; module-level and field optionals, a plain local and a nil-initialised optional unchanged (the optlocal row)
 # pins: BUG-681 a V walk over a module list or field reassigned mid-walk ends over the old list (sweep_v row)
 # pins: BUG-690 `catch nil` / `catch |e| v` / `catch v` over a nilable-and-throws def (examples/v_poc5.zbr, diffed against a fresh Zig run)
@@ -1055,6 +1057,666 @@ WANT
 done
 if [ -n "$lr_bad" ]; then echo "lam_ret: FAILED --$lr_bad"; fail=1
 else echo "lam_ret: ok -- an expression lambda with no declared return type returns its expression's type on the V route, and a parameter that shadows an outer local is its own: seven lines written by hand on both routes"; fi
+echo "── == on the V route is the one rule the Zig runtime decides it by (BUG-786, BUG-782b) ──"
+# The Zig route decides `==` one way wherever it is asked (BUG-787/789/790, _zbr_val_eql):
+# an optional side -- both nil equal, one nil not, else the values; a str by content; a
+# container structurally, each element by the rule; a class or struct that declares
+# `cue equals` by it; a struct without one field by field (what @derive(Eq) writes); a
+# class without one by IDENTITY; a union by its variant, then the payload by the rule.
+# The V route wrote V's own `==`, which is another rule, and said "nothing refused":
+# two references were dereferenced and compared field by field (two distinct objects
+# with equal fields were equal, and a `cue equals` was never called), an optional beside
+# a class value was always false, a list of lists never equal; `x in xs` and a derived
+# struct's `.equals()` did not compile. A type V's `==` gets wrong now goes through a
+# helper per type (CodeGenV.eqFn), written after the program.
+# eq_silent is the SILENT shapes alone: it compiled before the fix and printed nine of
+# its fourteen answers wrong, so only lines written by hand catch it. eq_cls: identity,
+# a `cue equals`, contains / `in` over both, an optional side, an enum (V's own, the
+# control). eq_cont: lists, nested lists, maps, sets, a map of lists, a list of objects.
+# eq_struct: a derived struct with a list field, a reference field, a `cue equals` field
+# in a list and in an optional; contains, an optional side, `.equals()`, a struct's own
+# `cue equals`. eq_derive: `.equals()` on a derived struct from every position a call is
+# written in (BUG-782b). eq_union: a union's variant, a str and a reference payload, a
+# union in a derived struct's field and in a list. eq_param: the needle of contains / `in`
+# or a side of `==` is a PARAMETER -- a class one is `mut x C` on this route, and V infers
+# a generic helper's type from it as C where the list holds &C, so the helper calls carry
+# their type argument (the first build of the rule failed 52 of the engine's roots on this,
+# and no program of this row had a parameter for a needle). Every line is held on both routes to
+# lines written by hand. eq_union_rule is two shapes the ZIG route answers wrong today
+# (BUG-806: a direct `==` on two union values with a container or a `cue equals`
+# payload): the V route alone is held, and the row says when the Zig route joins it.
+# An interface value: a List of them answers contains() by identity (eq_iface_has) -- held
+# on the V route alone as well, since under the pinned Zig (0.17.1) the Zig route does not
+# compile it (the runtime's struct branch reads `info.fields`); it runs under Zig 0.16 and
+# prints the same line. `==` on two of them compiles on neither (BUG-788), refused by name.
+eq_bad=""
+eq_hold() {   # <name> <lines> [v]: the hand-written lines on stdin, held whole on both routes (v: the V route alone)
+  local name=$1 n=$2 only=${3:-} want="$OUT/eq_want_$1.txt" o
+  cat > "$want"
+  [ "$(wc -l < "$want")" = "$n" ] || eq_bad="$eq_bad $name:the-row-holds-$(wc -l < "$want")-lines-not-$n"
+  for o in "$OUT/control_$name.txt" "$OUT/${name}_v_out.txt"; do
+    [ "$only" = v ] && [ "$o" = "$OUT/control_$name.txt" ] && continue
+    [ -f "$o" ] || { eq_bad="$eq_bad no-$(basename "$o")"; continue; }
+    diff -q "$want" "$o" > /dev/null || eq_bad="$eq_bad $(basename "$o"):$(diff "$want" "$o" | grep -c '^<')-of-$n-lines-differ"
+  done
+}
+cat > "$OUT/eq_silent.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+def main()
+    var a = Dog("a")
+    var b = Dog("a")
+    var c = a
+    print("identity [${a == b}] [${a == c}] [${a != b}]")
+    var t1 = Tag(1, "x")
+    var t2 = Tag(1, "y")
+    var t3 = Tag(2, "x")
+    print("cue [${t1 == t2}] [${t1 == t3}] [${t1 != t2}] [${t1.equals(t2)}]")
+    var o: Tag? = t1
+    var n: Tag? = nil
+    print("opt [${o == t2}] [${o == t3}] [${n == t1}] [${t2 == o}]")
+    var xss = [[1], [2, 3]]
+    var yss = [[1], [2, 3]]
+    var zss = [[1], [2, 4]]
+    print("nested [${xss == yss}] [${xss == zss}] [${xss != yss}]")
+ZBR
+cat > "$OUT/eq_cls.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+enum Color
+    red
+    green
+
+def main()
+    var a = Dog("a")
+    var b = Dog("a")
+    var c = a
+    print("identity [${a == b}] [${a == c}] [${a != b}]")
+    var t1 = Tag(1, "x")
+    var t2 = Tag(1, "y")
+    var t3 = Tag(2, "x")
+    print("cue [${t1 == t2}] [${t1 == t3}] [${t1 != t2}] [${t1.equals(t2)}]")
+    var ds = [a]
+    print("has [${ds.contains(a)}] [${ds.contains(b)}] [${a in ds}] [${b in ds}]")
+    var ts = [t1]
+    print("hascue [${ts.contains(t2)}] [${ts.contains(t3)}] [${t2 in ts}]")
+    var o: Tag? = t1
+    var n: Tag? = nil
+    print("opt [${o == t2}] [${o == t3}] [${n == t1}] [${t2 == o}]")
+    print("enum [${Color.red == Color.red}] [${Color.red == Color.green}]")
+ZBR
+cat > "$OUT/eq_cont.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+def main()
+    var xs = [1, 2, 3]
+    var ys = [1, 2, 3]
+    var zs = [1, 2]
+    print("ints [${xs == ys}] [${xs == zs}] [${xs != ys}]")
+    var ss = ["a", "b"]
+    var st = ["a", "b"]
+    print("strs [${ss == st}]")
+    var xss = [[1], [2, 3]]
+    var yss = [[1], [2, 3]]
+    var zss = [[1], [2, 4]]
+    print("nested [${xss == yss}] [${xss == zss}]")
+    var m1 = HashMap(str, int)()
+    m1.set("a", 1)
+    var m2 = HashMap(str, int)()
+    m2.set("a", 1)
+    var m3 = HashMap(str, int)()
+    m3.set("a", 2)
+    print("maps [${m1 == m2}] [${m1 == m3}]")
+    var d = Dog("a")
+    var d1 = [d]
+    var d2 = [d]
+    var d3 = [Dog("a")]
+    print("objs [${d1 == d2}] [${d1 == d3}]")
+    print("in [${[1] in xss}] [${[9] in xss}] [${xss.contains([2, 3])}]")
+    var s1 = Set(int)()
+    s1.add(1)
+    s1.add(2)
+    var s2 = Set(int)()
+    s2.add(2)
+    s2.add(1)
+    var s3 = Set(int)()
+    s3.add(3)
+    print("sets [${s1 == s2}] [${s1 == s3}]")
+    var ml1 = HashMap(str, List(int))()
+    ml1.set("k", [1, 2])
+    var ml2 = HashMap(str, List(int))()
+    ml2.set("k", [1, 2])
+    var ml3 = HashMap(str, List(int))()
+    ml3.set("k", [1, 9])
+    print("maplists [${ml1 == ml2}] [${ml1 == ml3}] [${ml1 != ml2}]")
+ZBR
+cat > "$OUT/eq_struct.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+@derive(Eq)
+struct P
+    var x: int
+    var s: str
+
+@derive(Eq)
+struct L
+    var x: int
+    var xs: List(int)
+
+@derive(Eq)
+struct R
+    var d: Dog
+    var p: P
+
+@derive(Eq)
+struct Tg
+    var t: Tag
+    var ts: List(Tag)
+    var o: Tag?
+
+struct K
+    var id: int
+    var note: str
+    cue equals(other: K): bool
+        return .id == other.id
+
+def mk(x: int): P
+    return P(x, "a")
+
+def main()
+    print("plain [${P(1, "a") == P(1, "a")}] [${P(1, "a") == P(1, "b")}] [${P(1, "a") != P(1, "a")}]")
+    print("list field [${L(1, [1, 2]) == L(1, [1, 2])}] [${L(1, [1, 2]) == L(1, [1, 3])}]")
+    var d = Dog("a")
+    print("ref field [${R(d, P(1, "a")) == R(d, P(1, "a"))}] [${R(d, P(1, "a")) == R(Dog("a"), P(1, "a"))}] [${R(d, P(1, "a")) == R(d, P(2, "a"))}]")
+    var t1 = Tg(Tag(1, "x"), [Tag(2, "a")], Tag(3, "p"))
+    var t2 = Tg(Tag(1, "y"), [Tag(2, "b")], Tag(3, "q"))
+    var t3 = Tg(Tag(1, "x"), [Tag(9, "a")], Tag(3, "p"))
+    var t4 = Tg(Tag(1, "x"), [Tag(2, "a")], nil)
+    var t5 = Tg(Tag(1, "z"), [Tag(2, "c")], nil)
+    print("cue field [${t1 == t2}] [${t1 == t3}] [${t4 == t5}] [${t1 == t4}]")
+    var ps = [P(0, "z"), P(1, "a")]
+    print("has [${ps.contains(P(1, "a"))}] [${ps.contains(P(2, "a"))}] [${P(1, "a") in ps}]")
+    var o: P? = P(1, "a")
+    var n: P? = nil
+    print("opt [${o == P(1, "a")}] [${o == P(1, "b")}] [${n == P(1, "a")}] [${P(1, "a") == o}] [${o != P(1, "a")}]")
+    print("equals [${P(1, "a").equals(P(1, "a"))}] [${L(1, [1, 2]).equals(L(1, [1, 3]))}] [${mk(1).equals(mk(1))}]")
+    var k1 = K(1, "x")
+    var k2 = K(1, "y")
+    var ks = [k1]
+    print("struct cue [${k1 == k2}] [${k1 == K(2, "x")}] [${ks.contains(k2)}] [${[k1] == [k2]}]")
+    var pss = [[P(1, "a")], [P(2, "b")]]
+    print("nested [${pss == [[P(1, "a")], [P(2, "b")]]}] [${pss == [[P(1, "a")], [P(2, "c")]]}]")
+ZBR
+cat > "$OUT/eq_derive.zbr" <<'ZBR'
+enum Color
+    red
+    green
+
+class Dog
+    var name: str
+    cue init(name: str)
+        .name = name
+
+@derive(Eq)
+struct P
+    var x: int
+    var s: str
+    def twin(o: P): bool
+        return this.equals(o)
+    def twin2(o: P): bool
+        return .equals(o)
+
+@derive(Eq)
+struct F
+    var f: float
+    var b: bool
+    var c: char
+    var n: int8
+
+@derive(Eq)
+struct L
+    var x: int
+    var xs: List(int)
+    var m: HashMap(str, int)
+    var st: Set(int)
+
+@derive(Eq)
+struct R
+    var x: int
+    var d: Dog
+    var n: int?
+    var c: Color
+
+struct K
+    var id: int
+    var note: str
+    cue equals(other: K): bool
+        return .id == other.id
+
+class Holder
+    var p: P
+    cue init(p: P)
+        .p = p
+    def has(o: P): bool
+        return .p.equals(o)
+
+def mk(x: int): P
+    return P(x, "a")
+
+def both(a: P, b: P): bool
+    return a.equals(b)
+
+def main()
+    var a = P(1, "a")
+    var b = P(1, "a")
+    var c = P(2, "a")
+    var d = P(1, "b")
+    print("op [${a == b}] [${a == c}] [${a != d}] [${a != b}]")
+    print("eq [${a.equals(b)}] [${a.equals(c)}] [${a.equals(d)}] [${not a.equals(b)}]")
+    print("lit [${a.equals(P(1, "a"))}] [${P(1, "a").equals(a)}] [${P(1, "a").equals(P(1, "b"))}]")
+    if a.equals(b) and not a.equals(c)
+        print("cond ok")
+    print("method [${a.twin(b)}] [${a.twin(c)}] [${a.twin2(b)}] [${a.twin2(d)}]")
+    print("param [${both(a, b)}] [${both(a, c)}]")
+    print("call [${mk(1).equals(a)}] [${a.equals(mk(2))}]")
+    var h = Holder(a)
+    print("field [${h.has(b)}] [${h.has(c)}] [${h.p.equals(b)}] [${h.p.equals(d)}]")
+    var ps = [a, c]
+    print("elem [${ps[0].equals(b)}] [${ps[1].equals(b)}] [${b.equals(ps[0])}]")
+    for it in ps
+        print("loop [${it.equals(b)}]")
+    var po: P? = a
+    if po as pp
+        print("narrowed [${pp.equals(b)}] [${pp.equals(c)}]")
+    var f1 = F(1.5, true, 'q', 3)
+    var f2 = F(1.5, true, 'q', 3)
+    var f3 = F(1.5, false, 'q', 3)
+    var f4 = F(2.5, true, 'q', 3)
+    var f5 = F(1.5, true, 'r', 3)
+    var f6 = F(1.5, true, 'q', 4)
+    print("scalars [${f1.equals(f2)}] [${f1.equals(f3)}] [${f1.equals(f4)}] [${f1.equals(f5)}] [${f1.equals(f6)}]")
+    var one = [1, 2]
+    var two = [1, 2]
+    var m1 = HashMap(str, int)()
+    var m2 = HashMap(str, int)()
+    var s1 = Set(int)()
+    var s2 = Set(int)()
+    var l1 = L(1, one, m1, s1)
+    print("containers [${l1.equals(L(1, one, m1, s1))}] [${l1.equals(L(1, two, m1, s1))}] [${l1.equals(L(1, one, m2, s1))}] [${l1.equals(L(1, one, m1, s2))}]")
+    var d1 = Dog("rex")
+    var d2 = Dog("rex")
+    var r1 = R(1, d1, 2, Color.red)
+    print("refs [${r1.equals(R(1, d1, 2, Color.red))}] [${r1.equals(R(1, d2, 2, Color.red))}] [${r1.equals(R(1, d1, nil, Color.red))}] [${r1.equals(R(1, d1, 3, Color.red))}] [${r1.equals(R(1, d1, 2, Color.green))}]")
+    var rn = R(1, d1, nil, Color.red)
+    print("nils [${rn.equals(R(1, d1, nil, Color.red))}] [${rn.equals(r1)}]")
+    var k1 = K(1, "a")
+    var k2 = K(1, "zzz")
+    var k3 = K(2, "a")
+    print("own cue [${k1.equals(k2)}] [${k1.equals(k3)}]")
+ZBR
+cat > "$OUT/eq_union.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+union Sh
+    circle: int
+    square: int
+    named: str
+    many: List(int)
+    pet: Dog
+    tagged: Tag
+
+@derive(Eq)
+struct U
+    var x: int
+    var s: Sh
+
+def main()
+    print("tag [${Sh.circle(2) == Sh.circle(2)}] [${Sh.circle(2) == Sh.square(2)}] [${Sh.circle(2) == Sh.circle(3)}] [${Sh.circle(2) != Sh.circle(2)}]")
+    print("str [${Sh.named("a") == Sh.named("a")}] [${Sh.named("a") == Sh.named("b")}]")
+    var l12: List(int) = [1, 2]
+    var m12: List(int) = [1, 2]
+    var l13: List(int) = [1, 3]
+    var d = Dog("a")
+    print("ref [${Sh.pet(d) == Sh.pet(d)}] [${Sh.pet(d) == Sh.pet(Dog("a"))}]")
+    var a = U(1, Sh.many(l12))
+    var b = U(1, Sh.many(m12))
+    var c = U(1, Sh.circle(1))
+    var e = U(1, Sh.many(l13))
+    print("field [${a == b}] [${a == c}] [${a == e}]")
+    var us: List(Sh) = [Sh.circle(1), Sh.many(l12)]
+    print("has [${us.contains(Sh.many(m12))}] [${us.contains(Sh.many(l13))}] [${Sh.circle(1) in us}]")
+ZBR
+cat > "$OUT/eq_union_rule.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+union Sh
+    circle: int
+    square: int
+    named: str
+    many: List(int)
+    pet: Dog
+    tagged: Tag
+
+@derive(Eq)
+struct U
+    var x: int
+    var s: Sh
+
+def main()
+    var l12: List(int) = [1, 2]
+    var m12: List(int) = [1, 2]
+    var l13: List(int) = [1, 3]
+    print("list [${Sh.many(l12) == Sh.many(m12)}] [${Sh.many(l12) == Sh.many(l13)}] [${Sh.many(l12) == Sh.many(l12)}]")
+    print("cue [${Sh.tagged(Tag(1, "x")) == Sh.tagged(Tag(1, "y"))}] [${Sh.tagged(Tag(1, "x")) == Sh.tagged(Tag(2, "x"))}]")
+ZBR
+cat > "$OUT/eq_iface_has.zbr" <<'ZBR'
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return .nm
+
+class Cat implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return .nm
+
+def main()
+    var d = Dog("a")
+    var x: Namer = d
+    var y: Namer = d
+    var z: Namer = Dog("a")
+    var w: Namer = Cat("a")
+    var ns = List(Namer)()
+    ns.add(x)
+    print("has [${ns.contains(y)}] [${ns.contains(z)}]")
+ZBR
+cat > "$OUT/eq_iface.zbr" <<'ZBR'
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return .nm
+
+class Cat implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return .nm
+
+def main()
+    var d = Dog("a")
+    var x: Namer = d
+    var y: Namer = d
+    var z: Namer = Dog("a")
+    var w: Namer = Cat("a")
+    print("iface [${x == y}] [${x == z}] [${x == w}] [${x != y}]")
+    var ns = List(Namer)()
+    ns.add(x)
+    print("has [${ns.contains(y)}] [${ns.contains(z)}]")
+ZBR
+cat > "$OUT/eq_param.zbr" <<'ZBR'
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+@derive(Eq)
+struct P
+    var x: int
+    var s: str
+
+class Reg
+    var dogs: List(Dog)
+    var tags: List(Tag)
+    var ps: List(P)
+    var rows: List(List(int))
+    cue init()
+        .dogs = List(Dog)()
+        .tags = List(Tag)()
+        .ps = List(P)()
+        .rows = List(List(int))()
+    def hasDog(d: Dog): bool
+        return .dogs.contains(d)
+    def dogIn(d: Dog): bool
+        return d in .dogs
+    def hasTag(t: Tag): bool
+        return .tags.contains(t)
+    def tagIn(t: Tag): bool
+        return t in .tags
+    def hasP(p: P): bool
+        return .ps.contains(p)
+    def hasRow(r: List(int)): bool
+        return .rows.contains(r)
+    def sameDog(a: Dog, b: Dog): bool
+        return a == b
+    def sameTag(a: Tag, b: Tag): bool
+        return a == b
+    def otherDog(a: Dog, b: Dog): bool
+        return a != b
+
+def anyDog(ds: List(Dog), d: Dog): bool
+    return ds.contains(d) or d in ds
+
+def anyOpt(ts: List(Tag), t: Tag?): bool
+    if t == nil
+        return false
+    return ts.contains(t)
+
+def main()
+    var r = Reg()
+    var a = Dog("a")
+    var b = Dog("a")
+    r.dogs.add(a)
+    print("class [${r.hasDog(a)}] [${r.hasDog(b)}] [${r.dogIn(a)}] [${r.dogIn(b)}]")
+    var t1 = Tag(1, "x")
+    var t2 = Tag(1, "y")
+    var t3 = Tag(2, "x")
+    r.tags.add(t1)
+    print("cue [${r.hasTag(t2)}] [${r.hasTag(t3)}] [${r.tagIn(t2)}] [${r.tagIn(t3)}]")
+    r.ps.add(P(1, "a"))
+    print("struct [${r.hasP(P(1, "a"))}] [${r.hasP(P(1, "b"))}]")
+    r.rows.add([1, 2])
+    print("list [${r.hasRow([1, 2])}] [${r.hasRow([2, 1])}]")
+    print("eq [${r.sameDog(a, a)}] [${r.sameDog(a, b)}] [${r.otherDog(a, b)}] [${r.sameTag(t1, t2)}] [${r.sameTag(t1, t3)}]")
+    var ds = [a]
+    print("free [${anyDog(ds, a)}] [${anyDog(ds, b)}]")
+    var ts = [t1]
+    var none: Tag? = nil
+    print("opt [${anyOpt(ts, t2)}] [${anyOpt(ts, t3)}] [${anyOpt(ts, none)}]")
+ZBR
+for p in eq_silent eq_cls eq_cont eq_struct eq_derive eq_union eq_param; do
+  compare "$p" "$OUT" "$p.zbr" "$OUT/control_$p.txt" "$OUT/$p.v"
+done
+# the compiler's own fixture of the rule (BUG-787/789/790), which answered six of its
+# verdicts wrong on this route
+compare bug789_equality_paths_test "$WT" test/bug789_equality_paths_test.zbr "$OUT/control_bug789_equality_paths_test.txt" "$WT/test/bug789_equality_paths_test_prog.v"
+rows=$((rows + 1))
+eq_hold eq_silent 4 <<'WANT'
+identity [false] [true] [true]
+cue [true] [false] [false] [true]
+opt [true] [false] [false] [true]
+nested [true] [false] [false]
+WANT
+eq_hold eq_cls 6 <<'WANT'
+identity [false] [true] [true]
+cue [true] [false] [false] [true]
+has [true] [false] [true] [false]
+hascue [true] [false] [true]
+opt [true] [false] [false] [true]
+enum [true] [false]
+WANT
+eq_hold eq_cont 8 <<'WANT'
+ints [true] [false] [false]
+strs [true]
+nested [true] [false]
+maps [true] [false]
+objs [true] [false]
+in [true] [false] [true]
+sets [true] [false]
+maplists [true] [false] [false]
+WANT
+eq_hold eq_struct 9 <<'WANT'
+plain [true] [false] [false]
+list field [true] [false]
+ref field [true] [false] [false]
+cue field [true] [false] [true] [false]
+has [true] [false] [true]
+opt [true] [false] [false] [true] [false]
+equals [true] [false] [true]
+struct cue [true] [false] [true] [true]
+nested [true] [false]
+WANT
+eq_hold eq_derive 17 <<'WANT'
+op [true] [false] [true] [false]
+eq [true] [false] [false] [false]
+lit [true] [true] [false]
+cond ok
+method [true] [false] [true] [false]
+param [true] [false]
+call [true] [false]
+field [true] [false] [true] [false]
+elem [true] [false] [true]
+loop [true]
+loop [false]
+narrowed [true] [false]
+scalars [true] [false] [false] [false] [false]
+containers [true] [true] [true] [true]
+refs [true] [false] [false] [false] [false]
+nils [true] [false]
+own cue [true] [false]
+WANT
+eq_hold eq_union 5 <<'WANT'
+tag [true] [false] [false] [false]
+str [true] [false]
+ref [true] [false]
+field [true] [false] [false]
+has [true] [false] [true]
+WANT
+eq_hold eq_param 7 <<'WANT'
+class [true] [false] [true] [false]
+cue [true] [false] [true] [false]
+struct [true] [false]
+list [true] [false]
+eq [true] [false] [true] [true] [false]
+free [true] [false]
+opt [true] [false] [false]
+WANT
+# the programs the Zig route does not answer by the rule today: the V route alone is held
+# to it; the Zig run is only read, and the row says when it prints the same lines
+eq_vonly() {
+  local name=$1
+  (cd "$OUT" && "$ZEBRA" "$name.zbr" > "$OUT/control_$name.txt" 2> "$OUT/${name}_zig_err.txt")
+  (cd "$OUT" && "$ZEBRA" --target v "$name.zbr" > "$OUT/${name}_emit.txt" 2>&1)
+  if [ ! -f "$OUT/$name.v" ] || [ "$(refusal_lines "$OUT/${name}_emit.txt" | wc -l)" != 0 ]; then eq_bad="$eq_bad $name:not-emitted-whole"
+  else (cd "$OUT/scratch" && "$V" -gc none -enable-globals run "$OUT/$name.v" > "$OUT/${name}_v_out.txt" 2> "$OUT/${name}_v_err.txt") || eq_bad="$eq_bad $name:V-exit-$?"; fi
+}
+eq_vonly eq_union_rule
+eq_hold eq_union_rule 2 v <<'WANT'
+list [true] [false] [true]
+cue [true] [false]
+WANT
+eq_vonly eq_iface_has
+eq_hold eq_iface_has 1 v <<'WANT'
+has [true] [false]
+WANT
+eq_ifh="the Zig route does not compile contains() over interface values under the pinned Zig"
+diff -q "$OUT/eq_want_eq_iface_has.txt" "$OUT/control_eq_iface_has.txt" > /dev/null 2>&1 && eq_ifh="the Zig route answers contains() over interface values now: move eq_iface_has into the compared programs"
+eq_806="the Zig route does not answer the two BUG-806 shapes by the rule yet"
+diff -q "$OUT/eq_want_eq_union_rule.txt" "$OUT/control_eq_union_rule.txt" > /dev/null 2>&1 && eq_806="the Zig route answers the two BUG-806 shapes by the rule now: move eq_union_rule into the compared programs"
+# `==` on two interface values: refused by name here, and the Zig route does not run it either
+(cd "$OUT" && "$ZEBRA" --target v eq_iface.zbr > "$OUT/eq_iface_emit.txt" 2>&1)
+[ "$(refusal_lines "$OUT/eq_iface_emit.txt" | grep -c 'on two values of interface Namer: .*BUG-788')" = 1 ] || eq_bad="$eq_bad eq_iface:not-refused-by-name-once"
+(cd "$OUT" && "$ZEBRA" eq_iface.zbr > "$OUT/control_eq_iface.txt" 2> "$OUT/eq_iface_zig_err.txt") && eq_bad="$eq_bad eq_iface:the-Zig-route-runs-it-now-(BUG-788-decided?)-give-this-route-the-same-answer"
+# the mechanism: a program that compares a class carries a helper, one that compares only
+# numbers and strs carries none
+grep -q "^fn zeq_h" "$OUT/eq_cls.v" 2>/dev/null || eq_bad="$eq_bad no-helper-in-eq_cls.v"
+grep -q "^fn zeq_h" "$OUT/lam_ret.v" 2>/dev/null && eq_bad="$eq_bad a-helper-in-lam_ret.v-which-compares-no-ruled-type"
+if [ -n "$eq_bad" ]; then echo "eq_rule: FAILED --$eq_bad"; fail=1
+else echo "eq_rule: ok -- == on the V route answers by the Zig runtime's rule: fifty-six lines written by hand over seven programs on both routes, three more on the V route alone ($eq_806; $eq_ifh), == on two interface values refused by name where the Zig route does not compile it, and no helper in a program that compares no class, struct or container"; fi
 echo "── x.hash() on a builtin and Hash.fnv64 are FNV-1a 64 on both backends; a hash() the route cannot answer is refused by name (BUG-773) ──"
 # BUG-773 gave str, every integer width, char and bool a `hash()` (Hash.fnv64: a str's bytes,
 # an integer or a bool as the eight little-endian bytes of its i64, a char as its
