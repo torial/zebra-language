@@ -6,6 +6,26 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-811: a typed interface local initialised from a non-constructor call names the callee as the class -- FIXED 2026-11-25
+- **Status:** FIXED 2026-11-25 (filed and fixed the same day; found writing BUG-809's fixture). The var-init interface coercion took the callee's NAME as the class for every call, so `var n: Namer = mk()` with `def mk(): B` emitted `_vtable_mk_Namer` and zig reported an undeclared identifier. The argument, return and field paths already typed a non-constructor call through `ifaceCoercionClass`; the var-init path now asks `concreteClassOf` when the callee is not a class, and leaves a call typed as no concrete class (a def returning the interface itself) to the upcast path. Pinned by test/bug811_iface_var_init_call_test.zbr (plain and `^Namer` locals, an interface-returning def, a constructor), which fails inside zig on the N-1 anchor.
+- **Repro:** `interface Namer`, `class B implements Namer`, `def mk(): B`, then `var n: Namer = mk()`.
+  `-c` exits 0; zig: "use of undeclared identifier '_vtable_mk_Namer'".
+- **Control when fixing:** the repro builds and `n.name()` prints "b"; `var c: Namer = B()` is unchanged.
+
+---
+
+### BUG-809: a list literal of class values into a `List(Interface)` passes `-c` and fails inside zig -- FIXED 2026-11-25
+- **Status:** FIXED 2026-11-25 on the Zig route (filed 2026-11-18). A list literal whose declared element type is an interface coerces each element to the interface's fat pointer, in every position that knows the element type: a typed var initialiser, an assignment (the hint is rebuilt from the target's inferred element type), a call argument, a `return`, and a field default (BUG-632's typed-literal path, widened from primitive elements to interface ones). An element that is already an interface value passes as is. Pinned by test/bug809_list_lit_iface_test.zbr (eight smoke lines); each of the five positions fails inside zig on the N-1 anchor. In passing a field default `List(float) = [1, 2]` takes its declared element type too. Found while fixing it: BUG-811. Not covered: an assignment into an element target (`m[k] = [..]`) or into a `List(Namer?)` local.
+- **Repro:** `interface Namer` with two implementing classes, `var a = A()`, then
+  `var xs: List(Namer) = [a]`. `-c` exits 0; the build fails `error: expected type 'Namer', found
+  '*A'` at that line. `xs.add(a)` through a declared `Namer` local works.
+- **Fix shape:** an element of a list literal whose declared element type is an interface is
+  coerced to the interface, the way a declared local and a field default are (BUG-784/795).
+- **Control when fixing:** the repro builds, `xs.len()` is 1 and `xs[0].name()` prints "a"; a
+  `List(A)` literal keeps its class elements.
+
+---
+
 ### BUG-788: `==` on two interface-typed values fails inside zig -- FIXED 2026-11-25
 - **Status:** FIXED 2026-11-25 on the Zig route (filed 2026-11-18, reported by Fable). Decided by Sean: `==` on interface values compares CONCRETELY -- the same concrete type, then that type's own rule (`cue equals`; identity for a class without one; fields for a struct); different concrete types are unequal. Each vtable carries `_eq` (the concrete type's name and an eql thunk), and `_zbr_val_eql` handles interface/interface and interface/class pairs, so `contains`/`in` over a `List(Interface)` follow the same rule. Pinned by test/bug788_iface_eq_test.zbr (seven smoke lines, both runtime shapes), which fails inside zig on the previous compiler. The V half is BUG-810 (Fable's). Not covered: a generic interface instance as an operand.
 - **Repro:** `interface Namer`, `class Dog implements Namer`, `var d1: Namer = Dog("a")`,

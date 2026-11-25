@@ -1,0 +1,25 @@
+# BUG-811: a typed interface local initialised from a call that is not a
+# constructor -- a def returning a concrete class -- takes that class's fat
+# pointer. The callee's name went out as the class (`_vtable_mk_Namer`).
+# Also: the heap-boxed `^Namer`, a def returning the interface itself (left to
+# the upcast path), and the plain constructor case.
+
+interface Namer
+    def name(): str
+
+class B implements Namer
+    def name(): str
+        return "b"
+
+def mk(): B
+    return B()
+
+def getN(): Namer
+    return B()
+
+def main()
+    var n: Namer = mk()
+    var r: ^Namer = mk()
+    var g: Namer = getN()
+    var c: Namer = B()
+    print("811: " + n.name() + r.name() + g.name() + c.name())

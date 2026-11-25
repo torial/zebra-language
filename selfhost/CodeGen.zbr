@@ -5820,6 +5820,11 @@ struct Generator
         if tr != nil
             if emitEmptyListForParam(fexpr, tr!)
                 return
+        # BUG-809: a non-empty `[A()]` on a `List(Namer)` field -- typed by the declaration,
+        # as a parameter's literal is (BUG-632).
+        if tr != nil
+            if emitListLitForParam(fexpr, tr!)
+                return
         # BUG-784: `var k: Namer = Dog(..)` (or `Namer?`) as a field default -- the fat
         # pointer every other interface slot takes; the bare `*Dog` reached zig.
         if tr != nil
@@ -9373,35 +9378,47 @@ struct Generator
                 if iinit is Expr.call as ic
                     if ic.callee is Expr.ident as iid
                         var iclass_name = iid.name
-                        var itr = n.type_!
-                        if ifaceRef(itr) as itn_ir
-                            var ikw: str = "const"
-                            if is_mut
-                                ikw = "var"
-                            writeIndent()
-                            var zn_ifc: str = zigSafeName(n.name)
-                            # `.ptr` = the ctor call WITH its args (genExpr emits
-                            # `Class.init(args)`); a non-default ctor needs the args.
-                            w.emit(ikw + " " + zn_ifc + ": " + itn_ir.zig + " = ")
-                            genFatPtr(iinit, iclass_name, itn_ir)
-                            w.emit(";\n")
-                            return
-                        if itr is TypeRef.ref_to as irto
-                            if ifaceRef(irto) as irtn_ir
-                                var iuid = w.nextUid()
-                                var ikw2: str = "const"
+                        # BUG-811: `var n: Namer = mk()` -- a call that is not a constructor
+                        # (a def returning a concrete class) is typed, not named; the callee's
+                        # name went out as the class (`_vtable_mk_Namer`). The argument,
+                        # return and field paths already asked ifaceCoercionClass this.
+                        # A call typed as no concrete class (a def returning the interface
+                        # itself) is left to the upcast path below.
+                        var ok811: bool = class_names.contains_(iclass_name)
+                        if not ok811
+                            if concreteClassOf(iinit) as icc811
+                                iclass_name = icc811
+                                ok811 = true
+                        if ok811
+                            var itr = n.type_!
+                            if ifaceRef(itr) as itn_ir
+                                var ikw: str = "const"
                                 if is_mut
-                                    ikw2 = "var"
+                                    ikw = "var"
                                 writeIndent()
-                                w.emit("const _iface_" + iuid.toString() + " = _allocator.create(" + irtn_ir.zig + ") catch @panic(\"OOM\");\n")
-                                writeIndent()
-                                w.emit("_iface_" + iuid.toString() + ".* = ")
-                                genFatPtr(iinit, iclass_name, irtn_ir)
+                                var zn_ifc: str = zigSafeName(n.name)
+                                # `.ptr` = the ctor call WITH its args (genExpr emits
+                                # `Class.init(args)`); a non-default ctor needs the args.
+                                w.emit(ikw + " " + zn_ifc + ": " + itn_ir.zig + " = ")
+                                genFatPtr(iinit, iclass_name, itn_ir)
                                 w.emit(";\n")
-                                writeIndent()
-                                var zn_ifc2: str = zigSafeName(n.name)
-                                w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn_ir.zig + " = _iface_" + iuid.toString() + ";\n")
                                 return
+                            if itr is TypeRef.ref_to as irto
+                                if ifaceRef(irto) as irtn_ir
+                                    var iuid = w.nextUid()
+                                    var ikw2: str = "const"
+                                    if is_mut
+                                        ikw2 = "var"
+                                    writeIndent()
+                                    w.emit("const _iface_" + iuid.toString() + " = _allocator.create(" + irtn_ir.zig + ") catch @panic(\"OOM\");\n")
+                                    writeIndent()
+                                    w.emit("_iface_" + iuid.toString() + ".* = ")
+                                    genFatPtr(iinit, iclass_name, irtn_ir)
+                                    w.emit(";\n")
+                                    writeIndent()
+                                    var zn_ifc2: str = zigSafeName(n.name)
+                                    w.emit(ikw2 + " " + zn_ifc2 + ": *" + irtn_ir.zig + " = _iface_" + iuid.toString() + ";\n")
+                                    return
                 # BUG-574: the interface is declared in ANOTHER module -- no vtable
                 # constant here; BUG-490's `.from(value)` builds it in the declared type.
                 # ...and the heap-boxed spelling `var x: ^Named = Dog(..)`.
@@ -9665,6 +9682,10 @@ struct Generator
                                 w.emit(lname230 + ".append(_allocator, ")
                                 if ll_sig
                                     genSigValue(ll_init.elems.at(lli))
+                                else if gtll.args.len == 1 and genInterfaceArgCoercion(ll_init.elems.at(lli), gtll.args.at(0))
+                                    # BUG-809: a class value into a `List(Interface)` slot
+                                    # takes the fat pointer, as `xs.add(a)` does.
+                                    pass
                                 else
                                     genExpr(ll_init.elems.at(lli))
                                 w.emit(") catch @panic(\"OOM\"); ")
@@ -10574,6 +10595,24 @@ struct Generator
         # handles the string chain.  (Mirrors the var-init and return paths.)
         # BUG-692: `xs = s.split(sep)` / `obj.field = s.lines()` into a List(str) target --
         # the assignment position, typed by inference (the target has no TypeRef here).
+        # BUG-809: `xs = [B()]` into a `List(Namer)` -- the target has no TypeRef here, so
+        # the hint is rebuilt from the target's inferred element type when that names an
+        # interface. An element target (`m["k"] = ...`) keeps its own store forms below.
+        if a.op == AssignOp.assign and .infer_ctx != nil and a.value is Expr.list_lit and not (a.target is Expr.index)
+            if inferExpr(a.target, .infer_ctx!) is Type_.list_ as al809
+                if al809 is Type_.named as an809
+                    if findInterfaceDecl(an809) != nil or isIfaceName(an809)
+                        var sp809: Span = Span(0, 0, 0, 0)
+                        var targs809 = List(TypeRef)()
+                        targs809.add(TypeRef.named(NamedTypeRef(sp809, an809)))
+                        var h809: TypeRef = TypeRef.generic(GenericTypeRef(sp809, "List", targs809))
+                        if listLitTakesHint(a.value, h809)
+                            writeIndent()
+                            genExpr(a.target)
+                            w.emit(" = ")
+                            emitListLitForParam(a.value, h809)
+                            w.emit(";\n")
+                            return
         if a.op == AssignOp.assign and .infer_ctx != nil
             if isSplitIter(a.value) and not isNamedRecvCall(a.value)
                 if inferExpr(a.target, .infer_ctx!) is Type_.list_ as asl_elem
@@ -11554,6 +11593,15 @@ struct Generator
                     genSplitCollect(r.value!, method_return_type!)
                     w.emit(";\n")
                     return
+        # BUG-809: `return [a, B()]` from a `List(Namer)` function -- the declared return
+        # type types the literal, as a parameter's does (BUG-632).
+        if r.value != nil and method_return_type != nil
+            if listLitTakesHint(r.value!, method_return_type!)
+                writeIndent()
+                w.emit("return ")
+                emitListLitForParam(r.value!, method_return_type!)
+                w.emit(";\n")
+                return
         # BUG-079: auto-hoist method chain on struct temporary in return position.
         # Only applies to named class types — string/list/hashmap stdlib chains must
         # go through genMemberCall (which dispatches to std.mem.replaceOwned etc.).
@@ -21915,26 +21963,46 @@ struct Generator
     # List(i64) and zig refused it. Only a primitive element (or an optional one): a generic
     # parameter's `T` means nothing at the call site, and a class element is already
     # spelled correctly by the general path.
+    #
+    # BUG-809: an INTERFACE element type too -- `[a, B()]` into a `List(Namer)` built a
+    # List(*A) from element 0 and zig refused it ("expected type 'Namer', found '*A'").
+    # Each element is coerced to the interface the way a single value is (BUG-784).
     def emitListLitForParam(e: Expr, hint: TypeRef): bool
+        if not listLitTakesHint(e, hint)
+            return false
+        if e is Expr.list_lit as ll
+            if hint is TypeRef.generic as gt
+                var et: TypeRef = gt.args.at(0)
+                var uid: int = w.nextUid()
+                var lbl: str = "blk632_" + uid.toString()
+                var nm: str = "_ll632_" + uid.toString()
+                w.emit("(" + lbl + ": { var " + nm + ": ")
+                genType(hint)
+                w.emit(" = _zbr_new(")
+                genType(hint)
+                w.emit("); ")
+                for el in ll.elems
+                    w.emit(nm + ".append(_allocator, ")
+                    if not genInterfaceArgCoercion(el, et)
+                        genExpr(el)
+                    w.emit(") catch @panic(\"OOM\"); ")
+                w.emit("break :" + lbl + " " + nm + "; })")
+                return true
+        return false
+
+    # The decision behind emitListLitForParam, so a statement position (a `return`, an
+    # assignment) can choose its shape before writing anything.
+    def listLitTakesHint(e: Expr, hint: TypeRef): bool
         if e is Expr.list_lit as ll
             if ll.elems.len == 0 or ll.elem_type != nil
                 return false
             if hint is TypeRef.generic as gt
-                if gt.name == "List" and gt.args.len == 1 and isPrimitiveElemRef(gt.args.at(0))
-                    var uid: int = w.nextUid()
-                    var lbl: str = "blk632_" + uid.toString()
-                    var nm: str = "_ll632_" + uid.toString()
-                    w.emit("(" + lbl + ": { var " + nm + ": ")
-                    genType(hint)
-                    w.emit(" = _zbr_new(")
-                    genType(hint)
-                    w.emit("); ")
+                if gt.name == "List" and gt.args.len == 1
+                    if isPrimitiveElemRef(gt.args.at(0))
+                        return true
                     for el in ll.elems
-                        w.emit(nm + ".append(_allocator, ")
-                        genExpr(el)
-                        w.emit(") catch @panic(\"OOM\"); ")
-                    w.emit("break :" + lbl + " " + nm + "; })")
-                    return true
+                        if ifaceCoerces(el, gt.args.at(0))
+                            return true
         return false
 
     # BUG-565: the right operand of `in` is a non-empty, untyped list literal whose elements

@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-810. Next new bug: BUG-811.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-811. Next new bug: BUG-812.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -55,18 +55,6 @@
   interface against a class value, and an optional interface on either side follow the same rule.
 - **Control when fixing:** test/bug788_iface_eq_test.zbr built with `--target v` prints the seven
   lines the Zig route prints (`788 dog: TFT` ... `788 opt: TTTFF`).
-
----
-
-### BUG-809: a list literal of class values into a `List(Interface)` passes `-c` and fails inside zig
-- **Status:** OPEN (filed 2026-11-18; found while probing BUG-808). Zig route only: Fable ran the shape on the V route, which coerces the elements (`zlist_of[Namer]([a, new_b()])`) and prints the right values.
-- **Repro:** `interface Namer` with two implementing classes, `var a = A()`, then
-  `var xs: List(Namer) = [a]`. `-c` exits 0; the build fails `error: expected type 'Namer', found
-  '*A'` at that line. `xs.add(a)` through a declared `Namer` local works.
-- **Fix shape:** an element of a list literal whose declared element type is an interface is
-  coerced to the interface, the way a declared local and a field default are (BUG-784/795).
-- **Control when fixing:** the repro builds, `xs.len()` is 1 and `xs[0].name()` prints "a"; a
-  `List(A)` literal keeps its class elements.
 
 ---
 

@@ -23,6 +23,14 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A list literal of class values fills a `List(Interface)`** (BUG-809): `var xs: List(Namer) =
+  [a, B()]`, and the same literal assigned to a `List(Namer)`, passed to one, returned as one, or
+  given as a field default. Each element becomes the interface value. It used to pass `-c` and fail
+  inside zig ("expected type 'Namer', found '*A'"). A field default such as `List(float) = [1, 2]`
+  now takes its declared element type too.
+- **`var n: Namer = mk()` with `def mk(): B` builds** (BUG-811): a typed interface local
+  initialised from a function that returns a concrete class. The function's name had been taken
+  for the class (zig: "undeclared identifier '_vtable_mk_Namer'").
 - **`==` on interface values compares concretely** (BUG-788): the same concrete type, then that
   type's own rule -- its `cue equals`, identity for a class without one, fields for a struct.
   Different concrete types are unequal. The same rule applies between an interface value and a

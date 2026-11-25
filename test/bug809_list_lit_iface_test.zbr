@@ -1,0 +1,53 @@
+# BUG-809: a list literal of class values flowing into a `List(Interface)` slot
+# takes each element as the interface's fat pointer -- in every position that
+# knows the element type: a typed var initialiser, an assignment, a call
+# argument, a `return`, and a field default. A `List(A)` literal keeps its class
+# elements. Before the fix each of these passed `-c` and failed inside zig.
+
+interface Namer
+    def name(): str
+
+class A implements Namer
+    var tag: str = "a"
+    def name(): str
+        return this.tag
+
+class B implements Namer
+    def name(): str
+        return "b"
+
+def mk(): B
+    return B()
+
+def ret(a: A): List(Namer)
+    return [a, mk()]
+
+def take(xs: List(Namer)): str
+    var out = ""
+    for x in xs
+        out = out + x.name()
+    return out
+
+class Holder
+    var xs: List(Namer) = [A(), B()]
+    var ws: List(float) = [1, 2]
+
+def main()
+    var a = A()
+    var xs: List(Namer) = [a, mk()]
+    print("809 init: ${xs.len()} ${xs[0].name()}${xs[1].name()}")
+    xs = [mk()]
+    print("809 assign: ${xs.len()} ${xs[0].name()}")
+    print("809 arg: ${take([a, B()])}")
+    var r = ret(a)
+    print("809 ret: ${r.len()} ${r[0].name()}${r[1].name()}")
+    var h = Holder()
+    print("809 field: ${h.xs.len()} ${h.xs[1].name()} ${h.ws[1] / 4}")
+    # an element that is already an interface value sits beside a class value
+    var n: Namer = mk()
+    var mixed: List(Namer) = [n, a]
+    print("809 mixed: ${mixed[0].name()}${mixed[1].name()}")
+    # the BUG-788 rule finds the class value through the interface list
+    print("809 contains: ${mixed.contains(a)}")
+    var plain: List(A) = [a]
+    print("809 plain: ${plain[0].tag}")
