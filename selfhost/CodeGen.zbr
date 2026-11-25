@@ -16883,11 +16883,22 @@ struct Generator
                 genExpr(b.right)
                 w.emit(")")
                 return
-            # Union variant comparison: X == UnionType.variant() → std.meta.eql
-            if not either_nil and (isUnionCtorExpr(b.left) or isUnionCtorExpr(b.right))
+            # BUG-806: a union value on either side -- a constructor, or both sides typed as
+            # a union -- compares by the equality rule: same tag, then the payload as `==`
+            # compares it (a container by contents, a `cue equals`, a str by bytes).
+            # `std.meta.eql` compared a container by handle and skipped the cue, and two
+            # union VARIABLES emitted a bare `==`, which zig refuses. A bare no-payload
+            # variant (`x == Sh.none`) stays Zig's tag compare, which is legal and right.
+            var union_eq: bool = false
+            if not either_nil and not isNoPayloadUnionValue(b.left) and not isNoPayloadUnionValue(b.right)
+                if isUnionCtorExpr(b.left) or isUnionCtorExpr(b.right)
+                    union_eq = true
+                else if .isUnionValueExpr(b.left) and .isUnionValueExpr(b.right)
+                    union_eq = true
+            if union_eq
                 if b.op == BinaryOp.ne
                     w.emit("!")
-                w.emit("std.meta.eql(")
+                w.emit("_zbr_val_eql(")
                 genExpr(b.left)
                 w.emit(", ")
                 genExpr(b.right)
@@ -17081,6 +17092,15 @@ struct Generator
                 w.emit("{ .")
                 w.emit(um2.member)
                 w.emit(" = {} }")
+
+    # BUG-806: true iff `e` infers as a union of this module or a dep.
+    def isUnionValueExpr(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.ref_to as rt
+            t = rt
+        return .isUnionType(t)
 
     # True iff `e` infers as an OPTIONAL of a named type (a struct, union, class or enum),
     # the operands BUG-789 routes through `_zbr_val_eql`.

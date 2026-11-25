@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-805. Next new bug: BUG-806.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-809. Next new bug: BUG-810.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,34 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-809: a list literal of class values into a `List(Interface)` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-18; found while probing BUG-808). Zig route only: Fable ran the shape on the V route, which coerces the elements (`zlist_of[Namer]([a, new_b()])`) and prints the right values.
+- **Repro:** `interface Namer` with two implementing classes, `var a = A()`, then
+  `var xs: List(Namer) = [a]`. `-c` exits 0; the build fails `error: expected type 'Namer', found
+  '*A'` at that line. `xs.add(a)` through a declared `Namer` local works.
+- **Fix shape:** an element of a list literal whose declared element type is an interface is
+  coerced to the interface, the way a declared local and a field default are (BUG-784/795).
+- **Control when fixing:** the repro builds, `xs.len()` is 1 and `xs[0].name()` prints "a"; a
+  `List(A)` literal keeps its class elements.
+
+---
+
+### BUG-807: a user type named `T` breaks the V build
+- **Status:** OPEN (filed 2026-11-18; found by Fable on the V route, reproduced by him on the
+  compiler before his current change; V route, his to fix)
+- **Repro:** `struct T` with a `Tag?` field and a `List(Tag)` field, built with `--target v`. The
+  front end refuses nothing; the C that V generates is refused by tcc at
+  `typedef struct __v_option_ptrTag { bool ok; ptrTag value; }`.
+- **Suspected cause (not yet narrowed):** the user name `T` meets the runtime's generic
+  parameter `T` in `zebra_rt.v`. Not yet reduced to a hand-written V file, so it may be V's own.
+- **Fix shape:** if it is the name collision, the V emit prefixes or mangles a user type whose
+  name a runtime generic parameter uses (as the Zig route's `_zbr_ty_` prefix does); if it is V's,
+  refuse the name on the V route by name rather than handing tcc a broken file.
+- **Control when fixing:** the same program with the type renamed (`U`) builds and runs; the
+  repro then prints the same as the Zig route.
 
 ---
 

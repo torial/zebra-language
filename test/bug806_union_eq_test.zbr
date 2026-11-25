@@ -1,0 +1,59 @@
+# BUG-806: `==` on union values compares by the equality rule -- same tag, then the
+# payload as `==` compares it (a List by contents, a `cue equals`, a str by bytes, a
+# class without a cue by identity). With a constructor on either side it used
+# `std.meta.eql` (handle compare, no cue); between two union VARIABLES it emitted a
+# bare `==`, which zig refused. `x == Sh.none` stays the tag compare.
+
+class Dog
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+
+class Tag
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+
+union Sh
+    circle: int
+    named: str
+    many: List(int)
+    pet: Dog
+    tagged: Tag
+    none
+
+def tf(b: bool): str
+    if b
+        return "T"
+    return "F"
+
+def same(a: Sh, b: Sh): bool
+    return a == b
+
+def main()
+    var l12: List(int) = [1, 2]
+    var m12: List(int) = [1, 2]
+    var l13: List(int) = [1, 3]
+    # A: a constructor on either side
+    var a1 = tf(Sh.many(l12) == Sh.many(m12)) + tf(Sh.many(l12) == Sh.many(l13)) + tf(Sh.many(l12) != Sh.many(m12))
+    var a2 = tf(Sh.tagged(Tag(1, "x")) == Sh.tagged(Tag(1, "y"))) + tf(Sh.tagged(Tag(1, "x")) == Sh.tagged(Tag(2, "x")))
+    var s1 = "ab"
+    var s2 = "a" + "b"
+    var a3 = tf(Sh.named(s1) == Sh.named(s2)) + tf(Sh.circle(2) == Sh.circle(2)) + tf(Sh.circle(2) == Sh.named("2"))
+    var d = Dog("a")
+    var a4 = tf(Sh.pet(d) == Sh.pet(d)) + tf(Sh.pet(d) == Sh.pet(Dog("a")))
+    print("806 ctor: ${a1} ${a2} ${a3} ${a4}")
+    # B: two union variables, and two union parameters
+    var x = Sh.many(l12)
+    var y = Sh.many(m12)
+    var z = Sh.many(l13)
+    var b1 = tf(x == y) + tf(x == z) + tf(x != y) + tf(x == Sh.many(m12))
+    var b2 = tf(same(x, y)) + tf(same(Sh.tagged(Tag(1, "a")), Sh.tagged(Tag(1, "b")))) + tf(same(x, Sh.circle(1)))
+    print("806 vars: ${b1} ${b2}")
+    # the tag compare is unchanged
+    var n = Sh.none
+    print("806 tag: ${tf(n == Sh.none)}${tf(x == Sh.none)}${tf(Sh.none == n)}")

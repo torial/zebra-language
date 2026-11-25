@@ -623,14 +623,18 @@ pub fn _zbr_val_eql(x: anytype, y: anytype) bool {
     switch (comptime @typeInfo(T)) {
         .@"union" => |info| {
             if (comptime info.tag_type == null) return std.meta.eql(x, y);
+            // BUG-806: a bare no-payload variant is the union's TAG in Zig (`x == Sh.none`).
+            if (comptime U == info.tag_type.?) return x == y;
             if (std.meta.activeTag(x) != std.meta.activeTag(y)) return false;
             switch (x) {
                 inline else => |xv, tag| return _zbr_val_eql(xv, @field(y, @tagName(tag))),
             }
         },
-        .@"struct" => |info| {
-            inline for (info.fields) |f| {
-                if (!_zbr_val_eql(@field(x, f.name), @field(y, f.name))) return false;
+        .@"struct" => {
+            // BUG-808: Zig 0.17's Type.Struct has no `fields`; go through the
+            // dual-version helper, as _zbr_enum_ord and _zbr_field_types do.
+            inline for (comptime _zbr_field_names(T)) |fname| {
+                if (!_zbr_val_eql(@field(x, fname), @field(y, fname))) return false;
             }
             return true;
         },

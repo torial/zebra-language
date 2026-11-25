@@ -6,6 +6,42 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-806: `==` on union values ignores the equality rule, and between two union variables fails inside zig -- FIXED 2026-11-25
+- **Status:** FIXED 2026-11-25 (filed 2026-11-18 from Fable's V-route probe). A union-valued `==`/`!=` -- a union constructor on either side, or two union values -- goes through `_zbr_val_eql`: same tag, then the payload by the equality rule. `x == Sh.none` stays Zig's tag compare. Pinned by test/bug806_union_eq_test.zbr (three smoke lines: constructors, variables, tag-only), red on the previous compiler.
+- **Repro A (wrong answer):** `union Sh` with payloads `many: List(int)` and `tagged: Tag`, where
+  `class Tag` has `cue equals` comparing `id` only. `Sh.many(l12) == Sh.many(m12)` with two
+  distinct `[1, 2]` lists prints `false`, and so does `Sh.tagged(Tag(1, "x")) == Sh.tagged(Tag(1, "y"))`.
+  The same values compare correctly as a @derive(Eq) struct's field and through `contains`/`in`.
+  Cause: when either side is a union CONSTRUCTOR, codegen emits `std.meta.eql`, which compares a
+  container by handle and never calls a cue (a `str` payload compares by pointer too).
+- **Repro B (leak):** `var x = Sh.many(l12)`, `var y = Sh.many(m12)`, `x == y`, or `a == b` on
+  two `Sh` parameters. `-c` exits 0; zig: "operator == not allowed for type 'Sh'".
+- **Fix shape:** route a union-valued `==`/`!=` through `_zbr_val_eql` (same tag, then the payload
+  by the rule, which it already does for fields and `contains`). Leave `x == Sh.none` alone: a
+  bare no-payload variant is Zig's tag compare, which is legal and right.
+- **Control when fixing:** both repros print true where the values are equal by the rule; a
+  different tag, a different payload and a `cue equals` saying no all print false; `x == Sh.none`
+  unchanged; BUG-789's fixture unchanged.
+
+---
+
+### BUG-808: the runtime's struct equality does not compile under Zig 0.17 (`List(P).contains`) -- FIXED 2026-11-25
+- **Status:** FIXED 2026-11-25 (filed 2026-11-18, found by Fable under the pinned 0.17). `_zbr_val_eql`'s struct branch walks `_zbr_field_names(T)` instead of `info.fields`. Pinned by test/bug808_struct_field_eql_test.zbr under the pinned toolchain.
+- **Repro:** `struct P` with two ints, `var ps: List(P) = [P(1, 2)]`, `ps.contains(P(1, 2))`; or
+  `List(Namer).contains(y)` over interface values. Both fail inside zig:
+  `zebra_rt.zig:634:30: error: no field named 'fields' in struct 'lang.Type.Struct'` --
+  `_zbr_val_eql`'s struct branch walked `info.fields`, which 0.17 does not have.
+- **Why no gate saw it:** that branch is reached only through a container (contains, indexOf, a
+  container compare) over a struct with neither a cue nor @derive(Eq), or over interface values;
+  `==` on such a struct is refused by the front end. No fixture did that, and the runtime
+  helper is generic, so cross-sema's declaration leg never instantiates it.
+- **Fix shape:** go through `_zbr_field_names(T)`, the dual-version helper `_zbr_field_types`
+  already uses.
+- **Control when fixing:** test/bug808_struct_field_eql_test.zbr prints `808 struct: [true]
+  [false]` and `808 iface: [true] [false]` under 0.17.1.
+
+---
+
 ### BUG-786: `--target v` answers `==` by V's rule, not Zebra's -- FIXED 2026-11-18
 - **Status:** FIXED 2026-11-18 (found and fixed by Fable on the V route; the Zig route's rule
   is BUG-787/789/790's `_zbr_val_eql`, which this mirrors. With it BUG-782's part (b))

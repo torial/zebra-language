@@ -1,0 +1,31 @@
+# BUG-808: the runtime's equality rule over a struct with neither a cue nor @derive(Eq)
+# walked `@typeInfo(T).@"struct".fields`, which Zig 0.17 does not have, so
+# `List(P).contains` and `List(Namer).contains` failed inside zig under the pinned
+# toolchain (0.16 compiled them). Nothing else reaches that branch: `==` on such a
+# struct is refused by the front end, and a cue or @derive(Eq) gives `equals`.
+
+interface Namer
+    def name(): str
+
+class A implements Namer
+    def name(): str
+        return "a"
+
+class B implements Namer
+    def name(): str
+        return "b"
+
+struct P
+    var x: int
+    var y: int
+
+def main()
+    var ps: List(P) = [P(1, 2)]
+    print("808 struct: [${ps.contains(P(1, 2))}] [${ps.contains(P(1, 3))}]")
+    var a = A()
+    var x: Namer = a
+    var y: Namer = a
+    var z: Namer = B()
+    var xs = List(Namer)()
+    xs.add(x)
+    print("808 iface: [${xs.contains(y)}] [${xs.contains(z)}]")

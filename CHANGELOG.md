@@ -23,6 +23,13 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`==` on union values follows the equality rule** (BUG-806): same variant, then the payload
+  compared the way a field or `contains` compares it, so a `List` payload compares by elements and
+  a class payload with `cue equals` by its cue. Between two union variables or parameters it
+  built nothing before (zig: "operator == not allowed"); with a constructor on one side it
+  compared container payloads by handle. `x == Sh.none` is unchanged.
+- **`contains` / `indexOf` over a `List` of a plain struct builds under Zig 0.17** (BUG-808): the
+  runtime's field-by-field comparison used a type-info field 0.17 removed.
 - **Calls through an interface receiver** fill an omitted default argument (BUG-798) and wrap a
   class argument passed to an interface parameter (BUG-799); both passed `-c` and failed inside
   zig. A method an interface inherits from one it implements now has a type in the front end
