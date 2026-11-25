@@ -34,6 +34,8 @@ stopped discriminating). A refusal is never a pass.
 """
 import os
 import re
+import shutil
+import stat
 import subprocess
 import sys
 
@@ -82,37 +84,86 @@ def pins():
     return out
 
 
+def _norm(p):
+    return os.path.normcase(os.path.abspath(p))
+
+
+def own_git_dir(path):
+    """The absolute git dir of the repository AT `path`, or None.
+
+    `git -C path ...` does not require `path` to be a repository: it walks UP until it
+    finds one. On 2026-11-25 the cache dir had been emptied to a bare `objects/` -- no
+    HEAD, no refs -- so git walked up to THIS repo, and the fetch below ran against
+    zebra-language itself ("refusing to fetch into branch 'refs/heads/main'"). It
+    refused only because main was checked out. MEASURED in a scratch repo with a
+    detached HEAD: the same fetch went to the PARENT's own `origin` and force-reset
+    every local branch to it -- an unpushed commit on main vanished -- and the gate
+    then reported a false "UNPUSHED" verdict. So a path counts only if git's answer IS
+    that path (a bare repo) or `path/.git` (a clone), and every later call names the
+    git dir explicitly (`gx`)."""
+    if not os.path.isdir(path):
+        return None
+    r = git("rev-parse", "--absolute-git-dir", cwd=path)
+    if r.returncode != 0:
+        return None
+    gd = r.stdout.strip()
+    if _norm(gd) in (_norm(path), _norm(os.path.join(path, ".git"))):
+        return gd
+    return None
+
+
+def gx(gitdir, *args, check=False):
+    """git against exactly `gitdir` -- never a search from a working directory."""
+    return git(f"--git-dir={gitdir}", *args, check=check)
+
+
 def oracle():
     """(git_dir, main_ref, description). Fetches the public repo into a cached blobless
     bare clone unless LIBUI_REPO names an existing clone."""
     override = os.environ.get("LIBUI_REPO")
     if override:
-        if git("rev-parse", "--git-dir", cwd=override).returncode != 0:
-            refuse(f"LIBUI_REPO={override} is not a git repository")
-        return override, "refs/remotes/origin/main", (
+        gd = own_git_dir(override)
+        if gd is None:
+            refuse(f"LIBUI_REPO={override} is not itself a git repository (a directory INSIDE "
+                   "some other repository does not count)")
+        return gd, "refs/remotes/origin/main", (
             f"LOCAL clone {override} (published = its origin/main, which may lag GitHub)")
     cache = os.path.join(REPO, ".zig-cache", "libui-pin-check", "repo.git")
-    if not os.path.isdir(cache):
+    gd = own_git_dir(cache)
+    if gd is None and os.path.exists(cache):
+        print(f"libui-pin: note -- cache {cache} is not a git repository of its own "
+              "(damaged or partly deleted); removing it and cloning again")
+        def _writable_then_retry(fn, p, _exc):
+            os.chmod(p, stat.S_IWRITE)      # git writes objects read-only (Windows: WinError 5)
+            fn(p)
+        try:
+            shutil.rmtree(cache, onerror=_writable_then_retry)
+        except OSError as e:
+            refuse(f"cannot remove the damaged cache {cache}: {e}. Delete it by hand.")
+    if gd is None:
         os.makedirs(os.path.dirname(cache), exist_ok=True)
         r = git("clone", "--bare", "--filter=blob:none", "--quiet", URL, cache)
         if r.returncode != 0:
             refuse(f"cannot clone {URL} (offline?). Set LIBUI_REPO=<a zig-libui-ng clone> "
                    f"to check against it instead.\n  git: {r.stderr.strip()[:200]}")
-    r = git("fetch", "--quiet", "--filter=blob:none", "origin",
-            "+refs/heads/*:refs/heads/*", cwd=cache)
+        gd = own_git_dir(cache)
+        if gd is None:
+            refuse(f"cloned into {cache} but it is still not a repository of its own")
+    r = gx(gd, "fetch", "--quiet", "--filter=blob:none", "origin",
+           "+refs/heads/*:refs/heads/*")
     if r.returncode != 0:
         refuse(f"cannot fetch {URL} (offline?). Set LIBUI_REPO=<a zig-libui-ng clone>.\n"
                f"  git: {r.stderr.strip()[:200]}")
-    return cache, "refs/heads/main", f"PUBLIC {URL} (fetched now)"
+    return gd, "refs/heads/main", f"PUBLIC {URL} (fetched now)"
 
 
 def bindings_text(gitdir, sha):
     """Every .zig file under src/ at `sha`, concatenated. Blobs are fetched lazily."""
-    r = git("ls-tree", "-r", "--name-only", sha, "--", "src", cwd=gitdir)
+    r = gx(gitdir, "ls-tree", "-r", "--name-only", sha, "--", "src")
     files = [f for f in r.stdout.split() if f.endswith(".zig")]
     if not files:
         refuse(f"no src/*.zig at {sha[:8]} -- not a zig-libui-ng tree?")
-    return "\n".join(git("show", f"{sha}:{f}", cwd=gitdir, check=True).stdout for f in files)
+    return "\n".join(gx(gitdir, "show", f"{sha}:{f}", check=True).stdout for f in files)
 
 
 def declared(name, text):
@@ -188,7 +239,7 @@ def main():
     gitdir, main_ref, desc = oracle()
     print(f"libui-pin: oracle = {desc}")
 
-    if git("cat-file", "-e", f"{sha}^{{commit}}", cwd=gitdir).returncode != 0:
+    if gx(gitdir, "cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
         print(f"libui-pin: FAIL -- pinned commit {sha[:10]} does not exist in the oracle. If it "
               "exists in your local zig-libui-ng, it is UNPUSHED: push zig-libui-ng, then "
               "re-run. Strangers' builds cannot fetch it.")
@@ -208,7 +259,7 @@ def main():
                "accepts everything")
 
     gone = missing(refs, text)
-    published = git("merge-base", "--is-ancestor", sha, main_ref, cwd=gitdir).returncode == 0
+    published = gx(gitdir, "merge-base", "--is-ancestor", sha, main_ref).returncode == 0
 
     ok = True
     if not published:

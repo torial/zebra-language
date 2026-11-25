@@ -600,6 +600,14 @@ python tools/libui_pin_check.py   # THE LIBUI PIN GATE, registered as `libui-pin
                                 #   unpushed bae5809e it fails "not published"; at the pushed pin
                                 #   it passes. Runtime controls: `_ui.Window.New` must be found and
                                 #   a nonexistent name reported, or it refuses.
+                                #   A DAMAGED CACHE IS RE-CLONED, NEVER WALKED PAST (2026-11-25):
+                                #   the cache had been emptied to its read-only packs, and
+                                #   `git -C` on a non-repo walks UP -- the fetch ran against THIS
+                                #   repo (red only because main was checked out; in a scratch
+                                #   repo on a detached HEAD it force-reset every local branch to
+                                #   origin, losing an unpushed commit). The cache must answer
+                                #   `--absolute-git-dir` as itself, and every read names it with
+                                #   `--git-dir`. Red-checked with that cache in a scratch parent.
                                 #   CANNOT SEE: signatures, field types, anything a real build
                                 #   would -- that is `libui-pin-build` (DAILY) below.
 bash tools/libui_pin_build_check.sh  # THE STRANGER'S LIBUI BUILD, registered as
