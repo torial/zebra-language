@@ -749,6 +749,11 @@ def main()
 - `==` with an OPTIONAL operand, on either side or both (`ko == k`, `k == ko`, `ko == ko2`):
   both nil are equal, one nil is not, otherwise the two values compare as above -- through
   the cue when the type has one, by identity for a class without (BUG-789).
+- `==` on INTERFACE values compares what they hold: the same concrete class, then that
+  class's rule (its `cue equals`, identity without one); different concrete classes are
+  unequal. An interface value against a class value works the same way, so widening a
+  value's type to an interface never changes the answer. `contains` / `in` on a
+  `List(Namer)` use the same rule (BUG-788).
 - There is **no `cue deinit`** in 1.0 (decided 2026-10-10, `docs/design/stability_policy.md`
   §6): every cue has a syntactic call site, and end-of-scope teardown would need a lifetime
   rule the memory model does not give. A resource with a release step uses `using` (§38).

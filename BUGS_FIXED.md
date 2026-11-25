@@ -6,6 +6,19 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-788: `==` on two interface-typed values fails inside zig -- FIXED 2026-11-25
+- **Status:** FIXED 2026-11-25 on the Zig route (filed 2026-11-18, reported by Fable). Decided by Sean: `==` on interface values compares CONCRETELY -- the same concrete type, then that type's own rule (`cue equals`; identity for a class without one; fields for a struct); different concrete types are unequal. Each vtable carries `_eq` (the concrete type's name and an eql thunk), and `_zbr_val_eql` handles interface/interface and interface/class pairs, so `contains`/`in` over a `List(Interface)` follow the same rule. Pinned by test/bug788_iface_eq_test.zbr (seven smoke lines, both runtime shapes), which fails inside zig on the previous compiler. The V half is BUG-810 (Fable's). Not covered: a generic interface instance as an operand.
+- **Repro:** `interface Namer`, `class Dog implements Namer`, `var d1: Namer = Dog("a")`,
+  `var d2: Namer = Dog("a")`, `var d3: Namer = d1`, then `d1 == d2`. `-c` exits 0; zig: "operator ==
+  not allowed for type 'Namer'" (the fat-pointer struct has no `==`).
+- **Decision owed:** what `==` means on an interface. Identity (same object: compare `.ptr`) is the
+  class rule and the cheap answer; refusing at `-c`, naming the choice, is the UNGIT-safe one if
+  identity is not wanted.
+- **Control when fixing:** whichever rule, `d1 == d3` and `d1 == d2` print what the rule says and
+  `-c` agrees with the build.
+
+---
+
 ### BUG-806: `==` on union values ignores the equality rule, and between two union variables fails inside zig -- FIXED 2026-11-25
 - **Status:** FIXED 2026-11-25 (filed 2026-11-18 from Fable's V-route probe). A union-valued `==`/`!=` -- a union constructor on either side, or two union values -- goes through `_zbr_val_eql`: same tag, then the payload by the equality rule. `x == Sh.none` stays Zig's tag compare. Pinned by test/bug806_union_eq_test.zbr (three smoke lines: constructors, variables, tag-only), red on the previous compiler.
 - **Repro A (wrong answer):** `union Sh` with payloads `many: List(int)` and `tagged: Tag`, where

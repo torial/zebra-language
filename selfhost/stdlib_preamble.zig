@@ -596,6 +596,33 @@ fn _zbr_has_equals(comptime T: type) bool {
 //   - a slice or array -> same length, element-wise;
 //   - everything else (numbers, bools, enums, a class with no `equals`) -> `==`, which
 //     for a class is identity.
+// BUG-788: every interface VTable carries one of these for the concrete type it was
+// built for: the type's name (concrete identity) and `==` on two of it, unboxed.
+pub const _ZbrIfaceEq = struct {
+    tname: []const u8,
+    eql: *const fn (a: *anyopaque, b: *anyopaque) bool,
+};
+pub fn _zbr_iface_eq_of(comptime T: type) _ZbrIfaceEq {
+    return .{ .tname = @typeName(T), .eql = struct {
+        fn _zbr_eq(a: *anyopaque, b: *anyopaque) bool {
+            const x: *T = @ptrCast(@alignCast(a));
+            const y: *T = @ptrCast(@alignCast(b));
+            // A class is a pointer (its cue, else identity); a struct is a value (its
+            // cue, else its fields).
+            if (comptime @typeInfo(T) == .@"struct" and @hasField(T, "_type_tag")) return _zbr_val_eql(x, y);
+            return _zbr_val_eql(x.*, y.*);
+        }
+    }._zbr_eq };
+}
+fn _zbr_is_iface(comptime T: type) bool {
+    return @typeInfo(T) == .@"struct" and @hasDecl(T, "VTable") and @hasField(T.VTable, "_eq");
+}
+fn _zbr_is_class_ptr(comptime T: type) bool {
+    const ti = @typeInfo(T);
+    if (ti != .pointer or ti.pointer.size != .one) return false;
+    const C = ti.pointer.child;
+    return @typeInfo(C) == .@"struct" and @hasField(C, "_type_tag");
+}
 pub fn _zbr_val_eql(x: anytype, y: anytype) bool {
     const T = @TypeOf(x);
     const U = @TypeOf(y);
@@ -617,6 +644,20 @@ pub fn _zbr_val_eql(x: anytype, y: anytype) bool {
         return false;
     }
     if (comptime T == void) return true;
+    // BUG-788: two interface values compare CONCRETELY -- the same concrete type, then
+    // that type's own rule (its cue, identity for a class without one, a struct's
+    // fields); different concrete types are unequal. Widening a value's static type to
+    // an interface must not change what `==` answers.
+    if (comptime _zbr_is_iface(T) and _zbr_is_iface(U)) {
+        if (!std.mem.eql(u8, x.vtable._eq.tname, y.vtable._eq.tname)) return false;
+        return x.vtable._eq.eql(x.ptr, y.ptr);
+    }
+    // ...and an interface value against a class value: the class is the concrete type.
+    if (comptime _zbr_is_iface(T) and _zbr_is_class_ptr(U)) {
+        if (!std.mem.eql(u8, x.vtable._eq.tname, @typeName(@typeInfo(U).pointer.child))) return false;
+        return x.vtable._eq.eql(x.ptr, @ptrCast(@constCast(y)));
+    }
+    if (comptime _zbr_is_class_ptr(T) and _zbr_is_iface(U)) return _zbr_val_eql(y, x);
     if (comptime _zbr_is_bytes(T)) return std.mem.eql(u8, x, y);
     if (comptime _zbr_is_container(T) or _zbr_cont_ptr(T)) return _zbr_cont_eql(x, y);
     if (comptime _zbr_has_equals(T)) return x.equals(y);

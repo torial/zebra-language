@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`==` on interface values compares concretely** (BUG-788): the same concrete type, then that
+  type's own rule -- its `cue equals`, identity for a class without one, fields for a struct.
+  Different concrete types are unequal. The same rule applies between an interface value and a
+  class value, through an optional interface, and in `contains` / `in` over a `List(Interface)`.
+  It used to pass `-c` and fail inside zig ("operator == not allowed for type"). Zig route; the V
+  route is BUG-810.
 - **`==` on union values follows the equality rule** (BUG-806): same variant, then the payload
   compared the way a field or `contains` compares it, so a `List` payload compares by elements and
   a class payload with `cue equals` by its cue. Between two union variables or parameters it

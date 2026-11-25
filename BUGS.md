@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-809. Next new bug: BUG-810.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-810. Next new bug: BUG-811.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,18 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-810: `==` on interface values on the V route (BUG-788's V half)
+- **Status:** OPEN (filed 2026-11-25; the Zig route landed as BUG-788; V route, Fable's to fix after
+  his holiday, agreed in writing the same day)
+- **Rule (Sean's decision, recorded with BUG-788):** `==` on two interface values compares concretely: the same concrete
+  type, then that type's own rule (`cue equals`; identity for a class without one; fields for a
+  struct); different concrete types are unequal. `contains` / `in` over a `List(Interface)`, an
+  interface against a class value, and an optional interface on either side follow the same rule.
+- **Control when fixing:** test/bug788_iface_eq_test.zbr built with `--target v` prints the seven
+  lines the Zig route prints (`788 dog: TFT` ... `788 opt: TTTFF`).
 
 ---
 
@@ -97,19 +109,6 @@
   (`.from`).
 - **Control when fixing:** the repro prints found; a nil `md` gives a nil `i`; BUG-784's
   fixtures unchanged.
-
----
-
-### BUG-788: `==` on two interface-typed values fails inside zig
-- **Status:** OPEN (filed 2026-11-18; reported by Fable, reproduced here on c383407)
-- **Repro:** `interface Namer`, `class Dog implements Namer`, `var d1: Namer = Dog("a")`,
-  `var d2: Namer = Dog("a")`, `var d3: Namer = d1`, then `d1 == d2`. `-c` exits 0; zig: "operator ==
-  not allowed for type 'Namer'" (the fat-pointer struct has no `==`).
-- **Decision owed:** what `==` means on an interface. Identity (same object: compare `.ptr`) is the
-  class rule and the cheap answer; refusing at `-c`, naming the choice, is the UNGIT-safe one if
-  identity is not wanted.
-- **Control when fixing:** whichever rule, `d1 == d3` and `d1 == d2` print what the rule says and
-  `-c` agrees with the build.
 
 ---
 

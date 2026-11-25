@@ -1,0 +1,67 @@
+# BUG-788: `==` on two interface values compares CONCRETELY: the same concrete type,
+# then that type's own rule (a `cue equals`; identity for a class without one);
+# different concrete types are unequal. Widening a value's static type to an interface
+# must not change the answer. It failed inside zig ("operator == not allowed for type
+# 'Namer'") until the vtable carried the concrete type's `==`.
+
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var nm: str
+    cue init(nm: str)
+        .nm = nm
+    def name(): str
+        return .nm
+
+class Tag implements Namer
+    var id: int
+    var note: str
+    cue init(id: int, note: str)
+        .id = id
+        .note = note
+    cue equals(other: Tag): bool
+        return .id == other.id
+    def name(): str
+        return .note
+
+def tf(b: bool): str
+    if b
+        return "T"
+    return "F"
+
+def same(a: Namer, b: Namer): bool
+    return a == b
+
+def main()
+    var d = Dog("a")
+    var d1: Namer = d
+    var d2: Namer = Dog("a")
+    var d3: Namer = d1
+    # a class without a cue: identity
+    print("788 dog: ${tf(d1 == d3)}${tf(d1 == d2)}${tf(d1 != d2)}")
+    var t1: Namer = Tag(1, "x")
+    var t2: Namer = Tag(1, "y")
+    var t3: Namer = Tag(2, "x")
+    # a class with a cue: the cue
+    print("788 cue: ${tf(t1 == t2)}${tf(t1 == t3)}${tf(t1 != t2)}")
+    # different concrete types are unequal, whatever the method answers
+    var dx: Namer = Dog("x")
+    print("788 mixed: ${tf(dx == t1)}${tf(same(t1, t2))}${tf(same(d1, t2))}")
+    # the same rule inside a container
+    var xs = List(Namer)()
+    xs.add(t1)
+    xs.add(d1)
+    print("788 list: ${tf(xs.contains(t2))}${tf(xs.contains(t3))}${tf(xs.contains(d3))}${tf(xs.contains(d2))}")
+    # widening does not change the answer
+    var a: Tag = Tag(5, "p")
+    var b: Tag = Tag(5, "q")
+    var an: Namer = a
+    var bn: Namer = b
+    print("788 widen: ${tf(a == b)}${tf(an == bn)}")
+    # an interface value against a class value: the class is the concrete type
+    print("788 class: ${tf(an == b)}${tf(b == an)}${tf(an == Tag(6, "p"))}${tf(d1 == d)}")
+    # an optional interface on either side
+    var o: Namer? = Tag(5, "r")
+    var z: Namer? = nil
+    print("788 opt: ${tf(an == o)}${tf(o == an)}${tf(z == nil)}${tf(o == nil)}${tf(an == z)}")

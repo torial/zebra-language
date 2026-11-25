@@ -6840,6 +6840,7 @@ struct Generator
                 w.emit("); }\n")
         w.emit("const _vtable_${class_name}_${iname} = ${ir.zig}.VTable{")
         w.emit(" ._ifaces = " + zbrTypeSymbol(class_name) + "._zbr_ifaces,")   # BUG-590
+        w.emit(" ._eq = _zbr_iface_eq_of(" + zbrTypeSymbol(class_name) + "),")   # BUG-788
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${class_name}_${iname}_${meth.name},")
@@ -6919,6 +6920,7 @@ struct Generator
         writeIndent()
         w.emit("const _vtable_${iname} = ${ir.zig}.VTable{")
         w.emit(" ._ifaces = @This()._zbr_ifaces,")         # BUG-590: this instantiation
+        w.emit(" ._eq = _zbr_iface_eq_of(@This()),")       # BUG-788
         for m in ifc.members
             if m is Decl.method as meth
                 w.emit(" .${meth.name} = &_shim_${iname}_${meth.name},")
@@ -8314,6 +8316,10 @@ struct Generator
         # default on purpose: a vtable built without it does not compile.
         vtig.writeIndent()
         w.emit("_ifaces: []const u64,\n")
+        # BUG-788: the concrete type's name and its `==`, so two interface values compare
+        # by the rule of what they hold. No default: a vtable built without it does not compile.
+        vtig.writeIndent()
+        w.emit("_eq: _ZbrIfaceEq,\n")
         for mem in ifc.members
             if mem is Decl.method as mth
                 vtig.writeIndent()
@@ -8397,6 +8403,8 @@ struct Generator
         # Zebra class implements no Zebra interface, so its set is empty.
         vpm.writeIndent()
         w.emit("._ifaces = if (@hasDecl(_T, \"_zbr_ifaces\")) _T._zbr_ifaces else &.{},\n")
+        vpm.writeIndent()
+        w.emit("._eq = _zbr_iface_eq_of(_T),\n")   # BUG-788
         for vmem in ifc.members
             if vmem is Decl.method as vmth
                 vpm.writeIndent()
@@ -16895,6 +16903,11 @@ struct Generator
                     union_eq = true
                 else if .isUnionValueExpr(b.left) and .isUnionValueExpr(b.right)
                     union_eq = true
+            # BUG-788: an interface value on either side compares concretely (the runtime's
+            # rule: same concrete type, then that type's `==`; a class value on the other
+            # side is its own concrete type). A bare `==` on the fat pointer is refused by zig.
+            if not either_nil and (.isIfaceValueExpr(b.left) or .isIfaceValueExpr(b.right))
+                union_eq = true
             if union_eq
                 if b.op == BinaryOp.ne
                     w.emit("!")
@@ -17092,6 +17105,17 @@ struct Generator
                 w.emit("{ .")
                 w.emit(um2.member)
                 w.emit(" = {} }")
+
+    # BUG-788: true iff `e` infers as an interface of this module or a dep.
+    def isIfaceValueExpr(e: Expr): bool
+        if .infer_ctx == nil
+            return false
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.ref_to as rt
+            t = rt
+        if t is Type_.named as tn
+            return isIfaceName(tn)
+        return false
 
     # BUG-806: true iff `e` infers as a union of this module or a dep.
     def isUnionValueExpr(e: Expr): bool
