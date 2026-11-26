@@ -3056,6 +3056,8 @@ smoke_run test/bug765_optchain_builtin_method_test.zbr "8 nil"
 smoke_run test/bug765_optchain_builtin_method_test.zbr "bug765: OK"
 # BUG-767: a `?` that would propagate out of a lambda is refused; a handled one runs.
 smoke_tc_fail test/bug767_lambda_question_test.zbr "bug767_lambda_question_test.zbr:15:18: error: this \`?\` would propagate the error out of a lambda"
+smoke_tc_fail test/bug778_lambda_question_decl_test.zbr "bug778_lambda_question_decl_test.zbr:12:13: error: this \`?\` would propagate the error out of a lambda"
+smoke_tc_fail test/bug778_lambda_question_decl_test.zbr "bug778_lambda_question_decl_test.zbr:17:17: error: this \`?\` would propagate the error out of a lambda"
 smoke_run test/bug767_lambda_handled_test.zbr "handled 20"
 smoke_run test/bug767_lambda_handled_test.zbr "handled -1"
 smoke_run test/bug767_lambda_handled_test.zbr "safe 3"

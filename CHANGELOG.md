@@ -23,6 +23,12 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **A `?` inside a lambda is refused by the editor and the V route too** (BUG-778, first
+  rule): the refusal ("this `?` would propagate the error out of a lambda") moved from code
+  generation into the type checker, so `zebra diagnostics` (the LSP) and `--target v` report it
+  at the same line and column as `-c`. It is now also found in a lambda that initialises a
+  module variable or a field default. A new gate, `refusal-parity`, checks every must-reject
+  test against all three; 21 known gaps remain, baselined.
 - **An optional class fills an optional interface** (BUG-792): `var i: Namer? = md` with
   `md: Dog?`, and the same value passed, returned, assigned, added to a `List(Namer?)` or used
   as a field default. A nil stays nil. It used to pass `-c` and fail inside zig ("expected type

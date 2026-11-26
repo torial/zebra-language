@@ -16124,11 +16124,12 @@ struct Generator
                     w.emit(")")
                 else
                     # BUG-767: a `?` in a lambda body propagates out of the LAMBDA, and a
-                    # function type cannot raise (BUG-730), so zig refused the `try` ("expected
-                    # type 'str', found 'anyerror'"). Refused here, naming the fixes.
+                    # function type cannot raise (BUG-730). BUG-778 moved the refusal to the
+                    # checker (shadowExpr), which every consumer runs; reaching this point means
+                    # the checker let one through, so it is reported as the checker's miss.
                     if in_lambda_body
                         recordCannotFail(source_file + ":" + tr.span.line.toString() + ":" + tr.span.col.toString() +
-                            ": error: this `?` would propagate the error out of a lambda, and a function type cannot raise -- handle it inside the lambda (`catch |e| ...` on the call, or `orelse` / `catch` with a fallback)")
+                            ": error: internal: the checker missed a `?` that would propagate out of a lambda (BUG-778) -- handle the error inside the lambda")
                     # BUG-163: self-parenthesize (`1 + try f()` is invalid Zig).
                     w.emit("(try ")
                     in_try_expr = true

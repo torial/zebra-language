@@ -163,6 +163,25 @@
   examples/, selfhost/, zebra-ide and the GameEngine.
 - **Control when fixing:** each of the eight refused by `--target v` and listed by
   `zebra diagnostics` at the same line and column as `-c`; a clean file unchanged on all three.
+- **The whole inventory, measured (2026-11-25):** `tools/refusal_parity_check.sh` (gate
+  `refusal-parity`, QUICK) runs every must-reject fixture through all three consumers. Its
+  run with the pre-change compiler found **23** gaps among 288 fixtures, not 8. After
+  BUG-767's rule moved, **21** remain among the same 288 (the two lambda-`?` fixtures are refused by all three),
+  baselined in `tools/refusal_parity_baseline.txt` (which only shrinks). Red-checked with
+  the pre-change compiler as the attacker: both lambda-`?` fixtures NEW, a planted line for
+  a fixture all three refuse reported CLOSED, rc 1:
+  - **the throw rules** (implicit try, BUG-467/480/545/628/728/729, BUG-546/764's cannot-fail,
+    BUG-730): all rest on CodeGen's "does this call throw" -- move that ONE predicate into the
+    checker, not each rule;
+  - **the inference-guess rules** (`infer_guess_*`, BUG-017's `len` names, BUG-758);
+  - **module resolution, diagnostics only** (BUG-428, BUG-450, `subdir_stem_clash`): `-c`
+    refuses an unresolved or case-wrong `use` and `--target v` does too, but `zebra
+    diagnostics` (sideDepTypes) says nothing.
+- **Done so far:** BUG-767's lambda `?` -- refused in the checker's shadowing walk, which now
+  also visits a module var's initializer and a field default (the tripwire found both
+  unwalked). CodeGen keeps its detection as a TRIPWIRE: reaching it prints "internal: the
+  checker missed ... (BUG-778)", never a silent pass. Fixture
+  `test/bug778_lambda_question_decl_test.zbr`.
 
 ---
 

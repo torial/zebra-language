@@ -1622,6 +1622,12 @@ class InferCtx
     # 'from'" / "must be const or comptime"; a nameable one becomes a sig value in
     # codegen, these are refused at the assignment. Same shape as params_here.
     var opaque_lambdas: str
+    # BUG-778 (BUG-767's rule, moved from CodeGen): while the shadowing walk is inside a
+    # lambda body, and whether it is inside a `try` block within that lambda. A `?` there
+    # with no enclosing `try` would propagate out of the lambda, and a function type cannot
+    # raise. Set and restored by shadowExpr / shadowStmts.
+    var walk_in_lambda: bool
+    var walk_in_try: bool
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1645,6 +1651,8 @@ class InferCtx
         .loop_consts = " "
         .var_locals = " "
         .opaque_lambdas = " "
+        .walk_in_lambda = false
+        .walk_in_try = false
 
     def setParamsHere(names: str)
         .params_here = names
@@ -11309,11 +11317,19 @@ def shadowExpr(e: Expr, names: List(str), lines: List(int), file: str, ctx: Infe
             for lp in lam.params
                 names.add(lp.name)
                 lines.add(0)
+            # BUG-778: a `try` around the LAMBDA does not cover the lambda's body -- the
+            # body is its own function -- so the walk starts unprotected inside it.
+            var saved_wl: bool = ctx.walk_in_lambda
+            var saved_wt: bool = ctx.walk_in_try
+            ctx.walk_in_lambda = true
+            ctx.walk_in_try = false
             branch lam.body_
                 on LambdaBody.expr_ as lbe
                     shadowExpr(lbe, names, lines, file, ctx)
                 on LambdaBody.stmts as lbs
                     shadowStmts(lbs, names, lines, file, ctx)
+            ctx.walk_in_lambda = saved_wl
+            ctx.walk_in_try = saved_wt
             shadowPop(names, lines, m_lam)
         on Expr.catch_ as ec
             shadowExpr(ec.expr, names, lines, file, ctx)
@@ -11356,6 +11372,11 @@ def shadowExpr(e: Expr, names: List(str), lines: List(int), file: str, ctx: Infe
             shadowExpr(ie.then_expr, names, lines, file, ctx)
             shadowExpr(ie.else_expr, names, lines, file, ctx)
         on Expr.try_ as tr
+            # BUG-767, moved here from CodeGen by BUG-778 so `--target v` and
+            # `zebra diagnostics` see it too: zig refused the `try` ("expected type
+            # 'str', found 'anyerror'").
+            if ctx.walk_in_lambda and not ctx.walk_in_try
+                ctx.addErr(file, tr.span.line, tr.span.col, "this `?` would propagate the error out of a lambda, and a function type cannot raise -- handle it inside the lambda (`catch |e| ...` on the call, or `orelse` / `catch` with a fallback)")
             shadowExpr(tr.expr, names, lines, file, ctx)
         on Expr.list_lit as ll
             for le in ll.elems
@@ -11470,7 +11491,10 @@ def shadowStmts(stmts: List(Stmt), names: List(str), lines: List(int), file: str
                 shadowExpr(sis.expr, names, lines, file, ctx)
                 shadowStmts(sis.stmts, names, lines, file, ctx)
             on Stmt.try_catch as stc
+                var saved_wt: bool = ctx.walk_in_try
+                ctx.walk_in_try = true
                 shadowStmts(stc.stmts, names, lines, file, ctx)
+                ctx.walk_in_try = saved_wt
                 for cc in stc.clauses
                     var m_cc: int = names.len
                     if cc.binding as cb
@@ -11539,6 +11563,14 @@ def checkShadowing(decls: List(Decl), file: str, ctx: InferCtx)
                 checkShadowing(ns.decls, file, ctx)
             on Decl.init as ini
                 shadowFn(ini.params, ini.stmts, file, ctx)
+            on Decl.var_ as dv
+                # BUG-778: a module var's initializer and a field default hold expressions
+                # too -- a lambda there has a body the walk must see (CodeGen's BUG-767
+                # tripwire found both unvisited).
+                if dv.init_expr as dvi
+                    var v_names: List(str) = List(str)()
+                    var v_lines: List(int) = List(int)()
+                    shadowExpr(dvi, v_names, v_lines, file, ctx)
             else
                 pass
 

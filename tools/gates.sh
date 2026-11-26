@@ -710,6 +710,10 @@ run_fast "library-mode"  "PASS"     bash tools/library_mode_check.sh
 # went red on a line no Windows gate analyses; this names it locally. QUICK, not FAST:
 # five targets incl. macOS cost ~50-80 s, and it matters exactly when the runtime changed.
 run_quick "cross-sema"    "cross-sema: PASS" bash tools/cross_sema_check.sh
+# BUG-778: a refusal `-c` makes must reach `zebra diagnostics` (the LSP's view) and
+# `--target v` too -- a rule checked only in CodeGen reaches neither. Every must-reject
+# fixture through all three; known gaps baselined, a new one or a closed one fails.
+run_quick "refusal-parity" "refusal-parity: PASS" bash tools/refusal_parity_check.sh
 
 # THE ONLY GATE THAT BUILDS WITH --release. Every other gate here is Debug, which is
 # how BUG-228 survived 19 green gates: `--release` switched backend but never passed

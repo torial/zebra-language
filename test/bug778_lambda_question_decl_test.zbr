@@ -1,0 +1,21 @@
+# BUG-778: BUG-767's refusal (a `?` in a lambda would propagate out of the lambda, and a
+# function type cannot raise) moved from CodeGen to the checker, so `zebra diagnostics`
+# and `--target v` refuse it too. A module var's initializer and a class field default were
+# never walked by the checker; CodeGen's tripwire found both. Each is refused at its `?`.
+
+def risky(n: int): int throws
+    if n < 0
+        raise "neg"
+    return n
+
+var hv: def(int): int = def(n: int): int
+    var x = risky(n)?
+    return x
+
+class Holder
+    var h: def(int): int = def(n: int): int
+        var y = risky(n)?
+        return y
+
+def main()
+    print(hv(1))

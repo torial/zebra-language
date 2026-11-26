@@ -268,9 +268,9 @@ per-tier counts, computed from the registrations rather than written down.
 |---|---|---|---|
 | `--static` | 17 <!-- doc-gen: 17 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) )) --> | **108-121 s** (was 14 s) | you edited docs, ledgers, or `tools/` |
 | `--fast` | 38 <!-- doc-gen: 38 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) )) --> | **~2.5 min** | mid-change, before you believe anything |
-| (default) | 41 <!-- doc-gen: 41 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
-| `--full` | 49 <!-- doc-gen: 49 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
-| `--daily` | 60 <!-- doc-gen: 60 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
+| (default) | 42 <!-- doc-gen: 42 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) )) --> | **7–20 min** | after any `.zbr` edit |
+| `--full` | 50 <!-- doc-gen: 50 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) )) --> | **36–83 min** | before committing a codegen change |
+| `--daily` | 61 <!-- doc-gen: 61 = echo $(( $(grep -cE '^[[:space:]]*(run|pin)_static "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_fast "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_quick "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_full "' tools/gates.sh) + $(grep -cE '^[[:space:]]*(run|pin)_daily "' tools/gates.sh) )) --> | **37–130 min** | once a day |
 
 **`--v` IS A FOCUS SET, NOT A RUNG (2026-10-30, Sean: "a tier with a V-specific focus").**
 It runs only the gates registered `run_v` -- today one, `v-check`
@@ -1424,6 +1424,24 @@ bash tools/stdin_read_check.sh  # THE STDIN-READER GATE, registered as `stdin-re
                                 #   3 4 MB in under 1.5 s, min of two -- 3.84 s on the old
                                 #   runtime (red-checked with it), 0.42 s fixed. CANNOT SEE:
                                 #   File reads, or stdin from a console rather than a pipe.
+bash tools/refusal_parity_check.sh  # THE REFUSAL-PARITY GATE, registered as `refusal-parity`
+                                #   (QUICK, ~8 min, 2026-11-25, BUG-778). Three consumers run the
+                                #   front end: `-c` (and every build), `zebra diagnostics` -- the
+                                #   strict view the LSP shares -- and `--target v`. A rule checked
+                                #   in CodeGen at Zig-emit time reaches only the first, so the
+                                #   editor shows no error on a file that will not build and the V
+                                #   route writes a .v the Zig route refuses. Every gate asked ONE
+                                #   consumer. This runs every must-reject fixture
+                                #   (must_reject_set.sh) through all three, on a copy of test/:
+                                #   diagnostics must list an error at each line:col `-c` names,
+                                #   `--target v` must exit non-zero with no .v. Gaps baselined in
+                                #   tools/refusal_parity_baseline.txt; a NEW gap fails and a
+                                #   baselined gap that CLOSED fails, naming the line to delete.
+                                #   PRE-CHANGE COMPILER: 23 gaps among 288 fixtures where 8 had been filed.
+                                #   CONTROLS first, both directions per consumer (a clean probe
+                                #   accepted by all three, a checker error refused by all three),
+                                #   or it REFUSES (exit 2). CANNOT SEE: a refusal not registered as
+                                #   must-reject, or whether the three MESSAGES agree.
 python tools/runtime_safety_check.py --gate  # THE RELEASE-SAFETY SITE MAP, registered as
                                 #   `runtime-safety` (FAST, 2026-10-31, BUG-667/668). Every
                                 #   function emitted into a user module must open with
@@ -2717,7 +2735,7 @@ than "what do we know":
 | **a bug number resolves to exactly one bug** | `lint_bug_numbers` (+ allocator line) | 199 slots, 2 ledgers |
 | **the gates can still fail** | `gate_selfcheck.sh` | one leg per falsifiable gate (the script prints its own inventory) |
 | **the TIER SELECTOR can still fail** | `tier_selfcheck.sh` | 6 mutations, incl. a control |
-| **our own tools are not lying** | `hazard_lint` (+ its controls) | 124 scripts | <!-- doc-gen: 124 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
+| **our own tools are not lying** | `hazard_lint` (+ its controls) | 125 scripts | <!-- doc-gen: 125 = ls tools/*.sh tools/*.py fuzz/*.py *.py 2>/dev/null | wc -l | tr -d ' ' -->
 | docs' checkable claims still resolve | `doc_lint` | 47 tracked documents <!-- doc-gen: 47 = git ls-files | grep -cE '^[^/]+\.md$|^docs/[^/]+\.md$|^docs/design/[^/]+\.md$' --> |
 | **a reserved word is used, or justified** | `reserved-words` (table: `selfhost/Token.zbr`) | 65 keywords, 1 baselined |
 | **a diagnostic can say WHERE** | `diag-columns` (derived candidates, baselined) | 49 must-fail fixtures, 18 baselined |
@@ -3787,7 +3805,7 @@ the table below stands unchanged.
 
 **What a fully green board here does NOT mean.** `full_sweep` passes against a baseline of
 **485** <!-- doc-gen: 485 = wc -l < tools/full_sweep_baseline.txt | tr -d ' ' -->
-while the tracked corpus is **1078** <!-- doc-gen: 1078 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
+while the tracked corpus is **1079** <!-- doc-gen: 1079 = bash tools/corpus_ls.sh test | wc -l | tr -d ' ' -->.
 A baseline defines the pass set, so files outside it cannot make the gate red no matter how
 broken they are. BUG-241 and BUG-242 were both found sitting in exactly that gap. Green
 and unexamined are not in tension; see `docs/archive/INSTRUMENT_PASS_PLAN.md` §2.
