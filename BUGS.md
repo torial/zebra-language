@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-812. Next new bug: BUG-813.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-815. Next new bug: BUG-816.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -46,6 +46,53 @@
 
 ---
 
+### BUG-814: a throwing method reached through a type alias or an `extend` is not resolved
+- **Status:** OPEN (filed 2026-11-26; found red-checking BUG-778 step 2b)
+- **Repro (alias):** `class R` with `def risky(k: int): int throws`; `type RA = R`;
+  `def viaAlias(r: RA, k: int): int` / `return r.risky(k)`. `-c` exits 0; zig: `expected
+  type 'i64', found 'anyerror!i64'`, line only. With a method-level `catch` added, `-c`
+  refuses it as "nothing in the body before this `catch` can fail ... drop the `catch`" --
+  false, and following it gives the zig error.
+- **Repro (extend):** `extend str` / `def firstLen(): int throws` (raises on empty), then
+  `return s.firstLen()` in a plain function: the same zig error; under a method-level `catch`
+  the same false refusal. `s.firstLen()?` works.
+- **Cause:** neither codegen (genMemberCall's `isClassMethodThrows` on the receiver's class)
+  nor the checker (TypeChecker resolveCallFail) resolves the callee: the receiver's type is
+  the alias's name, or `str`. The two agree, so the BUG-778 tripwire stays quiet and the
+  implicit-try refusal never fires.
+- **Fix shape:** resolve an alias to its target and an `extend` method to its extension (the
+  checker knows both) in ONE place both sides read -- resolveCallFail is the checker half --
+  and route the call; then the alias / extend shapes join `test/bug778_cannot_fail_ok_test.zbr`,
+  where they also become the attacker for its "unresolved never reads as cannot-fail" guard
+  (today that guard is observable only in `zebra diagnostics`: mutated out, diagnostics
+  printed the false "nothing can fail" on the alias repro; in place, nothing).
+- **Control when fixing:** both repros refused unmarked by `-c`, `diagnostics` and
+  `--target v` at the call with a column; with `?` or a method-level `catch` they build and
+  the catch runs.
+
+---
+
+### BUG-813: a throwing method called through `?.` passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-26; found writing BUG-778 step 2b's BUG-764 counter)
+- **Repro:** `class R` with `def risky(k: int): int throws`, then in a plain function
+  `var v = r?.risky(k)` (`r: R?`). `-c` exits 0; zig: `expected type '?i64', found
+  'anyerror!i64'` at the line, no column. Under a method-level `catch` the same call is not
+  routed either, so that catch is refused as "nothing in the body before this `catch` can
+  fail" (codegen counts label uses; the `?.` arm never takes the catch-break wrapper).
+- **Not BUG-729:** that is a throwing call as the BASE of `?.` (`f()?.m()`); here the method
+  reached through `?.` is the one that throws.
+- **Open question (semantics):** what `x?.m()` means when `m` can fail. Proposal: as with any
+  call that can fail, it needs handling -- `x?.m()` unmarked is refused ("throws call needs
+  '?'"), the error propagates with `(x?.m())?`... except that form is already BUG-729's
+  spelling for a throwing BASE. A simpler rule: refuse `?.` on a throwing method outright and
+  ask for `if x != nil` + an ordinary call, which every consumer can check today.
+- **Control when fixing:** the repro refused (or routed) by `-c`, `diagnostics` and
+  `--target v` alike; a method-level `catch` around it either routes it or the refusal names
+  the `?.` call, not "nothing can fail". The BUG-778 checker counts every `?.` call as "might
+  fail" (TypeChecker checkCallsInExpr), so it never claims that catch on its own.
+
+---
+
 ### BUG-812: a throwing call in a lambda inside a handled context passes `-c` and fails inside zig
 - **Status:** OPEN (filed 2026-11-25; found writing BUG-778's accept fixture)
 - **Repro:** a lambda built inside a method-level `catch` body, or inside the operand of a
@@ -65,6 +112,10 @@
   zig today.
 - **Control when fixing:** both repros refused at the call by `-c`, `diagnostics` and `--target v`;
   `def(x: int): int = risky(x) catch 0` in the same positions builds and runs.
+- **Exposure (Fable, 2026-11-26):** not met in the GameEngine as far as Fable recalls. No search
+  was run. But the engine's emitted tree compiles under zig at its pin (37154b3), so the engine
+  holds no live instance; a workaround written without a filing is possible and not recalled.
+  The V route's output for the shape is untested (Fable will try it in zebra-vdev).
 
 ---
 
@@ -231,6 +282,31 @@
     a local named like the function, an interface without `throws`, `catch` / method-level
     `catch` routing, a `throws` interface method under a `catch`; red-checked with the
     local-shadow guard mutated out -> refused at 43:12), `test/bug778_iface_unmarked_test.zbr`.
+- **Done, step 2b (2026-11-26): the cannot-fail family** (BUG-546's `catch` / `?` on a call
+  that cannot fail; BUG-764's method-level `catch` over a body that cannot fail).
+  `callMayFail` became ONE resolver, `resolveCallFail` -> `CallFail{known, fails, name}`, read
+  by all three rules, so they cannot disagree about which function a call reaches. A
+  "cannot fail" claim needs `name` (a resolved class/struct method, this module's def but not
+  a `test_*`, an `exposing` or `mod.f()` def, `File.*`); owner dispatch, interfaces and
+  anything unresolved make no claim. BUG-764: `checkCallsInExpr` counts every call short of
+  "certainly cannot fail" (and every `x?.m(...)`, the one call that is not an `Expr.call`); a
+  catch whose body leaves the count unchanged and has no `raise` / `?` is refused. Codegen's
+  BUG-546 site is a tripwire; its BUG-764 site still refuses what the checker leaves to it.
+  - **Measured:** `-c` over 3300 files, 90773c2 vs the change: 1915 accepted in both; ONE row
+    differs -- bug628's fixture regains its `26:21` cannot-fail line (lost in step 2a); 0
+    tripwire hits. Refusal parity 14 -> **12** (bug546, bug764 close on both consumers).
+    A `catch` on a MIXIN method that cannot fail is now refused in Zebra's words (codegen
+    scanned only the class's own members; it reached zig) -- no corpus file had one.
+  - **Red-check, and its limit:** with the "unresolved counts as might-fail" guard mutated
+    out, `-c` changed for nothing -- today every callee the checker cannot resolve is one
+    codegen does not route either (BUG-813 `?.`, BUG-814 alias / `extend`), so both refuse
+    the catch. The difference shows in `zebra diagnostics`: mutated, it printed the false
+    "nothing can fail" on BUG-814's alias repro; in place, nothing. BUG-814's fix makes it an
+    `-c` attacker.
+  - Fixtures: `test/bug778_cannot_fail_ok_test.zbr` (bodies that must NOT be refused: owner
+    dispatch, only a `raise`, List.pop, a generic class's method, a `throws` interface method,
+    a body mixing safe and failing calls), `test/fail_fixtures/bug778_cannot_fail_fail.zbr`
+    (mixin method, static method, a catch over a body of safe CALLS).
 
 ---
 

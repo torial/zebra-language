@@ -1643,6 +1643,11 @@ class InferCtx
     # `in_try_expr` / `try_block_label`, which a lambda body INHERITS (it is not reset
     # there, unlike walk_in_try). Set and restored by checkCallsInExpr / checkStmt1.
     var call_handled: bool
+    # BUG-764 / BUG-778: calls checkCallsInExpr has visited that might fail -- every call
+    # NOT resolved as certainly unable to (resolveCallFail). A method-level `catch` whose
+    # body leaves this unchanged, with no `raise` or `?` in it, can never run. Only ever
+    # compared before/after a body, never read as a total.
+    var maybe_fail_calls: int
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1669,6 +1674,7 @@ class InferCtx
         .walk_in_lambda = false
         .walk_in_try = false
         .call_handled = false
+        .maybe_fail_calls = 0
 
     def setParamsHere(names: str)
         .params_here = names
@@ -8749,44 +8755,86 @@ def refuseOptionalReceiver(m: ExprMember, is_call: bool, file: str, ctx: InferCt
             ro_last = "give a default (x orelse \"\")"
         ctx.addErr(file, ro_line, ro_col, ro_nm + " may be nil here, so " + ro_what + " -- check it first (if x != nil ...), unwrap it (x!), or " + ro_last)
 
-# BUG-778: can the method `m` of the type `cn` fail? This module's class, struct or
-# interface by its own table (an interface method by its `throws`: it has no body); a type
-# from another module by its module's table, the name taken after the last `.` (BUG-484).
-def classMethodFails(cn: str, m: str, ctx: InferCtx): bool
+# BUG-778: the table for the type `cn`: this module's class, struct or interface, else a
+# type from another module, the name taken after the last `.` (BUG-484).
+def classTypesFor(cn: str, ctx: InferCtx): ClassTypes?
     if ctx.module_types.classOf(cn) as own_ct
-        return own_ct.methodFails(m)
+        return own_ct
     var bare: str = cn
     var dot: int = bare.lastIndexOf(".")
     if dot >= 0
         bare = bare[dot + 1 .. bare.len]
     if ctx.dep_types.classOf(bare) as dep_ct
-        return dep_ct.methodFails(m)
-    return false
+        return dep_ct
+    return nil
 
-# BUG-778: does this call reach a function that can fail? Resolved the way codegen
-# resolves the callee when it decides to emit `try` (CodeGen.zbr genCall /
-# genMemberCall / genCallOnTemp), so the two agree on which calls need routing:
-#   f()          a method of the enclosing class (owner dispatch), else a top-level def of
-#                this module, else one `use ... exposing` brings in -- a local or parameter
-#                of that name is a value, not this function
+# BUG-778: what the checker knows about whether a call can fail. ONE resolver answers both
+# refusals, so they cannot disagree about which function a call reaches:
+#   known   the callee resolved to a function the checker has a table for
+#   fails   ...and a call to it can produce an error (ClassTypes.methodFails)
+#   name    ...and it is safe to say it CANNOT fail (BUG-546): the name the refusal shows,
+#           "" where a "cannot fail" claim is not made even though the callee resolved
+# "Unknown" (known false) is never a verdict: neither refusal fires on it.
+struct CallFail
+    var known: bool
+    var fails: bool
+    var name: str
+
+    cue init(known: bool, fails: bool, name: str)
+        .known = known
+        .fails = fails
+        .name = name
+
+def callFailUnknown(): CallFail
+    return CallFail(false, false, "")
+
+# A method `m` of the type `cn`. A "cannot fail" claim needs a class or struct (an
+# interface dispatches through its vtable, and the other table kinds -- unions, sigs, the
+# free-function tables -- are not a receiver's methods).
+def classCallFail(cn: str, m: str, ctx: InferCtx): CallFail
+    if classTypesFor(cn, ctx) as ct
+        if ct.fnParamList(m) != nil
+            var cl_fails: bool = ct.methodFails(m)
+            var cl_name: str = ""
+            if not cl_fails and (ct.is_class or ct.is_struct) and not ct.is_interface
+                cl_name = cn + "." + m
+            return CallFail(true, cl_fails, cl_name)
+    return callFailUnknown()
+
+# Resolved the way codegen resolves the callee when it decides to emit `try` (CodeGen.zbr
+# genCall / genMemberCall / genCallOnTemp):
+#   f()          a method of the enclosing class (owner dispatch -- no "cannot fail" claim,
+#                as codegen makes none), else a top-level def of this module (a `test_*`
+#                one runs under the test harness: no claim), else one `use ... exposing`
+#                brings in -- a local or parameter of that name is a value, unknown here
 #   mod.f()      a def of the module `mod` (a `use`d module not shadowed by a local)
-#   xs.pop()     on a List: throws on an empty list (BUG-545)
+#   File.m()     the File namespace: every member panics on failure rather than return an
+#                error (genFileCall), so none can fail
+#   xs.pop()     on a List: throws on an empty list (BUG-545); other List methods unknown
 #   x.m()        a method of x's class, inferred; `Cls.m()` names the class directly
-def callMayFail(c: ExprCall, ctx: InferCtx): bool
+def resolveCallFail(c: ExprCall, ctx: InferCtx): CallFail
     branch c.callee
         on Expr.ident as id
             if ctx.current_class != ""
                 if ctx.module_types.classOf(ctx.current_class) as own_cls
                     if own_cls.fnParamList(id.name) != nil
-                        return own_cls.methodFails(id.name)
+                        return CallFail(true, own_cls.methodFails(id.name), "")
             if ctx.hasLocal(id.name)
-                return false
+                return callFailUnknown()
             if ctx.module_types.classOf("") as own_fns
                 if own_fns.fnParamList(id.name) != nil
-                    return own_fns.methodFails(id.name)
+                    var of_fails: bool = own_fns.methodFails(id.name)
+                    var of_name: str = ""
+                    if not of_fails and not id.name.startsWith("test_")
+                        of_name = id.name
+                    return CallFail(true, of_fails, of_name)
             if ctx.freeFnTypes(id.name) as xf
-                return xf.methodFails(id.name)
-            return false
+                var xf_fails: bool = xf.methodFails(id.name)
+                var xf_name: str = ""
+                if not xf_fails
+                    xf_name = id.name
+                return CallFail(true, xf_fails, xf_name)
+            return callFailUnknown()
         on Expr.member as mm
             if mm.object is Expr.ident as mod_id
                 if ctx.isUsedModule(mod_id.name) and not ctx.hasLocal(mod_id.name)
@@ -8795,21 +8843,49 @@ def callMayFail(c: ExprCall, ctx: InferCtx): bool
                         dep_fns_opt = ctx.dep_types.classOf("")
                     if dep_fns_opt as dep_fns
                         if dep_fns.fnParamList(mm.member) != nil
-                            return dep_fns.methodFails(mm.member)
-                    return false
+                            var dm_fails: bool = dep_fns.methodFails(mm.member)
+                            var dm_name: str = ""
+                            if not dm_fails
+                                dm_name = mod_id.name + "." + mm.member
+                            return CallFail(true, dm_fails, dm_name)
+                    return callFailUnknown()
                 if not ctx.hasLocal(mod_id.name)
+                    if mod_id.name == "File" and ctx.module_types.classOf("File") == nil
+                        return CallFail(true, false, "File." + mm.member)
                     if ctx.module_types.classOf(mod_id.name) != nil
-                        return classMethodFails(mod_id.name, mm.member, ctx)
+                        return classCallFail(mod_id.name, mm.member, ctx)
             var recv_t: Type_ = inferExpr(mm.object, ctx)
+            if recv_t is Type_.ref_to as recv_inner
+                recv_t = recv_inner
             branch recv_t
                 on Type_.list_
-                    return mm.member == "pop" and c.args.len == 0
+                    if mm.member == "pop" and c.args.len == 0
+                        return CallFail(true, true, "")
+                    return callFailUnknown()
                 on Type_.named as recv_cn
-                    return classMethodFails(recv_cn, mm.member, ctx)
+                    return classCallFail(recv_cn, mm.member, ctx)
                 else
-                    return false
+                    return callFailUnknown()
         else
-            return false
+            return callFailUnknown()
+
+# BUG-546 / BUG-778: the name of the callee when `e` is a call that certainly cannot fail,
+# so a `catch` or `?` on it has nothing to handle -- it reached zig as "expected error union
+# type", a message about code the user never wrote. Refused in the checker so the editor and
+# `--target v` see it; codegen's refusal (CodeGen.zbr noteCannotFail) is the tripwire.
+def cannotFailCallee(e: Expr, ctx: InferCtx): str?
+    if e is Expr.call as cf_call
+        var r: CallFail = resolveCallFail(cf_call, ctx)
+        if r.known and not r.fails and r.name != ""
+            return r.name
+    return nil
+
+def checkCannotFail(e: Expr, op: str, sp: Span, file: str, ctx: InferCtx)
+    if cannotFailCallee(e, ctx) as cf_name
+        var cf_fix: str = "drop the `catch` and its fallback"
+        if op == "?"
+            cf_fix = "drop the `?`"
+        ctx.addErr(file, sp.line, sp.col, "`" + cf_name + "` cannot fail (it does not throw), so this `" + op + "` has nothing to handle: " + cf_fix)
 
 # expr-walker: exhaustive
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
@@ -8830,8 +8906,13 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             # BUG-778: an unmarked call to a function that can fail. It was refused only at
             # Zig emit time (BUG-467 and its family), so `zebra diagnostics` and `--target v`
             # accepted it.
-            if not ctx.call_handled and callMayFail(c, ctx)
+            var cf_r: CallFail = resolveCallFail(c, ctx)
+            if not ctx.call_handled and cf_r.known and cf_r.fails
                 ctx.addErr(file, c.span.line, c.span.col, "throws call needs '?' (auto error-propagation was removed; add '?')")
+            # BUG-764: anything short of "certainly cannot fail" might reach a method-level
+            # `catch` (an unresolved callee included), so that catch is not refused.
+            if not (cf_r.known and not cf_r.fails and cf_r.name != "")
+                ctx.maybe_fail_calls += 1
             if c.callee is Expr.member as cm
                 checkCallsInExpr(cm.object, file, line, ctx)
                 # BUG-557: a str METHOD on a `str?` reached zig as "expected type 'str',
@@ -8993,6 +9074,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 else
                     pass
             if not tr_json
+                checkCannotFail(tr.expr, "?", tr.span, file, ctx)    # BUG-546 / BUG-778
                 var tr_saved_h: bool = ctx.call_handled
                 ctx.call_handled = true        # BUG-778: the `?` routes the error
                 checkCallsInExpr(tr.expr, file, line, ctx)
@@ -9048,6 +9130,7 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             checkCallsInExpr(oe.expr, file, line, ctx)
             checkCallsInExpr(oe.fallback, file, line, ctx)
         on Expr.catch_ as ce
+            checkCannotFail(ce.expr, "catch", ce.span, file, ctx)    # BUG-546 / BUG-778
             var ce_saved_h: bool = ctx.call_handled
             ctx.call_handled = true            # BUG-778: the operand only, as codegen
             checkCallsInExpr(ce.expr, file, line, ctx)
@@ -9077,6 +9160,11 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
             ctx.call_handled = oc_saved_h
             for a in oc.args
                 checkCallsInExpr(a.value, file, line, ctx)
+            # BUG-764 / BUG-778: `x?.m(...)` calls a method without being an `Expr.call` (the
+            # only such expression: Zebra has no operators or getters that call), and a
+            # method-level `catch` routes it if it throws -- so it might fail.
+            if oc.has_args
+                ctx.maybe_fail_calls += 1
             # BUG-331: `x?.tryInt(k)` on a JsonValue takes one str/int key, as the plain call does.
             if oc.has_args and jsonReadReturn(oc.member) != nil
                 var ocb: Type_ = inferExpr(oc.base, ctx)
@@ -10102,8 +10190,17 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
             on Stmt.try_catch as stc
                 var stc_saved_h: bool = ctx.call_handled
                 ctx.call_handled = true        # BUG-778: the method-level `catch` routes it
+                var stc_mf_before: int = ctx.maybe_fail_calls
                 checkStmts(stc.stmts, file, ctx)
                 ctx.call_handled = stc_saved_h
+                # BUG-764 / BUG-778: a catch over a body in which nothing can fail never runs
+                # (and zig refused the unused label when the body ended in `return`). Claimed
+                # only when the body has no `raise` / `?` and every call in it -- lambda
+                # bodies included -- is certainly unable to fail; anything unresolved leaves
+                # it to codegen, which still refuses from what it emits (CodeGen genTryCatch).
+                if stc.clauses.len > 0 and ctx.maybe_fail_calls == stc_mf_before and not bodyHasRaise(stc.stmts)
+                    var stc_csp: Span = stc.clauses.at(0).span
+                    ctx.addErr(file, stc_csp.line, stc_csp.col, "nothing in the body before this `catch` can fail, so it never runs -- drop the `catch`")
                 for cc in stc.clauses
                     # BUG-381 control: a `catch |e|` binding whose name collides with a
                     # stale str binding from another scope made `e.message` read as a

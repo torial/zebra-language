@@ -1637,6 +1637,12 @@ def runtimeFilePath(name: str): str
     var beside: str = exe_dir + "/" + name
     if File.exists(beside)
         return beside
+    # BUG-815: nowhere. Returning the last path unchecked made the caller's File.read panic
+    # "File.read error", naming nothing -- for `-c` too, which reads the preamble.
+    if not File.exists("selfhost/" + name)
+        sys.errln("zebra: cannot find the runtime file " + name + ". Looked in the checkout this binary was built in (<checkout>/zig-out/bin -> <checkout>/selfhost/), beside the binary (" +
+                  exe_dir + "/" + name + ") and ./selfhost/" + name + ". Run the zebra in its checkout's zig-out/bin, or put the runtime files beside it as an install does.")
+        sys.exit(1)
     return "selfhost/" + name
 
 # --target v: parse -> resolve -> build, then the V emitter (CodeGenV.zbr); the
@@ -5397,7 +5403,7 @@ def main()
     var itry_refused: bool = false
     for itry_site in itry_sites
         if not oc_throw_lines.contains(itry_site)
-            # BUG-778: the checker refuses this now (callMayFail), so `zebra diagnostics`
+            # BUG-778: the checker refuses this now (resolveCallFail), so `zebra diagnostics`
             # and `--target v` see it too and a checker error stops the build before
             # codegen. Reaching here means the two resolved a callee differently: a
             # tripwire, still a refusal.

@@ -23,6 +23,16 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **"cannot fail, so this `catch` has nothing to handle" is reported by the editor and the V
+  route** (BUG-778, third rule; BUG-546 / BUG-764): a `catch` or `?` on a call that cannot
+  fail, and a method-level `catch` whose body cannot fail, are refused by the type checker, so
+  `zebra diagnostics` (the LSP) and `--target v` report them at the same line and column as
+  `-c`. A `catch` on a MIXIN method that cannot fail is now refused in Zebra's words (it
+  passed `-c` and zig refused it, "expected error union type"). 12 refusal-parity gaps remain.
+- **A `zebra` that cannot find its runtime says which file and where it looked** (BUG-815):
+  a copied binary with no `stdlib_preamble.zig` beside it, outside a checkout, panicked
+  "File.read error" on every command that compiles, `-c` included. It now exits 1 naming the
+  file, the three places tried, and the fix.
 - **"throws call needs '?'" is reported by the editor and the V route, with a column**
   (BUG-778, second rule): an unmarked call to a function that can fail is refused by the type
   checker, so `zebra diagnostics` (the LSP) and `--target v` report it too, at the call's

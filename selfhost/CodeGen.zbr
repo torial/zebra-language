@@ -10077,13 +10077,13 @@ struct Generator
         return nil
 
     # BUG-546: record a `catch` / `?` on a call that cannot fail (see cannotFailCallName).
+    # BUG-778 moved the refusal to the checker (TypeChecker checkCannotFail, one resolver
+    # with the implicit-try rule), which every consumer runs and which claims every case
+    # this one does; reaching this point means the checker let one through.
     def noteCannotFail(e: Expr, op: str, span: Span)
         if cannotFailCallName(e) as cf_name
-            var cf_fix: str = "drop the `catch` and its fallback"
-            if op == "?"
-                cf_fix = "drop the `?`"
             recordCannotFail(source_file + ":" + span.line.toString() + ":" + span.col.toString() +
-                ": error: `" + cf_name + "` cannot fail (it does not throw), so this `" + op + "` has nothing to handle: " + cf_fix)
+                ": error: internal: the checker missed a `" + op + "` on `" + cf_name + "`, which cannot fail (BUG-778) -- drop the `" + op + "`")
 
     # BUG-729: the name of a THROWING callee when `e` is a call to one -- the receiver of
     # `f()?.m()` -- or nil. The callees the implicit-try refusal knows: a free function of

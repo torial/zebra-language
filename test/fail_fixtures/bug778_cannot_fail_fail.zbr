@@ -1,0 +1,35 @@
+# BUG-778 (step 2b): the cannot-fail refusals (BUG-546, BUG-764) moved into the checker, so
+# `zebra diagnostics` and `--target v` see them (codegen refused these only at Zig emit):
+#   a mixin method      `c.get() catch 0` -- NEW: codegen scanned only the class's own
+#                       members, so this passed `-c` and zig refused it ("expected error
+#                       union type", about code the user never wrote)
+#   a static method     `Calc.twice(2) catch 0`
+#   a catch over calls  a method-level `catch` whose body CALLS things, none of which can
+#                       fail (bug764_catch_cannot_fail_test's body calls nothing)
+
+mixin Getter
+    def get(): int
+        return 4
+
+class C adds Getter
+    var n: int = 0
+
+class Calc
+    static
+        def twice(x: int): int
+            return x * 2
+
+def three(): int
+    return 3
+
+def callsOnly(): int
+    var a = three()
+    return a + Calc.twice(a)
+catch |e|
+    return -1
+
+def main()
+    var c = C()
+    var a = c.get() catch 0
+    var b = Calc.twice(2) catch 0
+    print(a + b + callsOnly())

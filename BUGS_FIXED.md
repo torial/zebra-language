@@ -29,6 +29,28 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-815: a zebra.exe that cannot find its runtime panics "File.read error", naming nothing -- FIXED 2026-11-26
+- **Status:** FIXED 2026-11-26 (filed the same day; found when a sweep ran a COPIED compiler outside the repo). `runtimeFilePath` checks the last place too and refuses naming the file, the three places and the fix; cli-surface's BUG-815 leg runs a bare copy where no runtime exists (the old binary's stderr says `panic`, which the leg fails).
+- **Repro:** copy `zig-out/bin/zebra.exe` alone to a scratch directory, then from any
+  directory without a `selfhost/` subdirectory run `<copy> -c hello.zbr`: `thread N panic:
+  File.read error`, exit non-zero. Every mode reads the preamble (`-c` for BUG-359's
+  reserved names), so nothing works, and the message names neither the file nor where it
+  was looked for.
+- **Cause:** `runtimeFilePath` (main.zbr) tries the checkout the binary was built in, then
+  beside the binary, and then returns `selfhost/NAME` relative to the cwd WITHOUT checking
+  it; the caller's `File.read` panics on it.
+- **Cost, 2026-11-26:** BUG-778 step 2b's `-c` sweep over 3300 files ran a copy of the new
+  compiler and scored EVERY file refused (rc0=0 against 1915) -- in this case the sweep's own
+  count gave it away, but a refusal per file is exactly what a gate would score as a result.
+- **Fix shape:** when the last place does not exist either, refuse once: name the file, the
+  three places tried (with the binary's directory spelled out), and the fix (run the binary
+  from its checkout's `zig-out/bin`, or put the runtime files beside it as an install does).
+- **Control when fixing:** cli-surface: the bare copy run where no `selfhost/` exists exits
+  non-zero, its stderr names `stdlib_preamble.zig` and does not say `panic`; the existing
+  BUG-543 legs (checkout, installed, bare-in-a-clone) unchanged.
+
+---
+
 ### BUG-811: a typed interface local initialised from a non-constructor call names the callee as the class -- FIXED 2026-11-25
 - **Status:** FIXED 2026-11-25 (filed and fixed the same day; found writing BUG-809's fixture). The var-init interface coercion took the callee's NAME as the class for every call, so `var n: Namer = mk()` with `def mk(): B` emitted `_vtable_mk_Namer` and zig reported an undeclared identifier. The argument, return and field paths already typed a non-constructor call through `ifaceCoercionClass`; the var-init path now asks `concreteClassOf` when the callee is not a class, and leaves a call typed as no concrete class (a def returning the interface itself) to the upcast path. Pinned by test/bug811_iface_var_init_call_test.zbr (plain and `^Namer` locals, an interface-returning def, a constructor), which fails inside zig on the N-1 anchor.
 - **Repro:** `interface Namer`, `class B implements Namer`, `def mk(): B`, then `var n: Namer = mk()`.

@@ -1,0 +1,99 @@
+# BUG-778 (step 2b): the checker now refuses a `catch` / `?` on a call that cannot fail
+# (BUG-546) and a method-level `catch` whose body cannot fail (BUG-764). These must NOT be
+# refused: each body or call can fail in a way the checker either resolves as failing or
+# cannot resolve at all -- and an unresolved call must never read as "cannot fail".
+
+class Stack(T)
+    var items: List(T)
+    cue init()
+        .items = List(T)()
+    def push(x: T)
+        .items.add(x)
+    def take(): T throws
+        if .items.len == 0
+            raise "empty stack"
+        return .items.pop()?
+
+interface IRisky
+    def pick(): int throws
+
+class Pick implements IRisky
+    var v: int
+    cue init(v: int)
+        .v = v
+    def pick(): int throws
+        if .v < 0
+            raise "bad pick ${.v}"
+        return .v
+
+class Owner
+    var n: int
+    cue init(n: int)
+        .n = n
+    def risky(): int throws
+        if .n < 0
+            raise "owner neg"
+        return .n
+    # a bare owner call: owner dispatch, routed by the catch
+    def viaOwner(): int
+        return risky()
+    catch |e|
+        print("owner caught ${e}")
+        return -1
+
+# the only failing thing is a `raise`
+def onlyRaise(n: int): int
+    if n < 0
+        raise "only raise ${n}"
+    return n
+catch |e|
+    print("raise caught ${e}")
+    return -1
+
+# List.pop throws on an empty list (BUG-545)
+def viaPop(xs: List(int)): int
+    return xs.pop()
+catch |e|
+    print("pop caught ${e}")
+    return -1
+
+# a method of a GENERIC class: its table is keyed by the generic name, so the receiver does
+# not resolve -- unknown, never "cannot fail"
+def viaGeneric(s: Stack(int)): int
+    return s.take()
+catch |e|
+    print("generic caught ${e}")
+    return -1
+
+# an interface method declared `throws`
+def viaIface(r: IRisky): int
+    return r.pick()
+catch |e|
+    print("iface caught ${e}")
+    return -1
+
+def safeAdd(a: int, b: int): int
+    return a + b
+
+# a body mixing calls that cannot fail with one that can
+def mixed(xs: List(int)): int
+    var a = safeAdd(1, 2)
+    return a + xs.pop()
+catch |e|
+    print("mixed caught ${e}")
+    return -1
+
+def main()
+    var full = List(int)()
+    full.add(5)
+    var st = Stack(int)()
+    st.push(9)
+    print("owner ${Owner(3).viaOwner()} ${Owner(-1).viaOwner()}")
+    print("raise ${onlyRaise(4)} ${onlyRaise(-4)}")
+    print("pop ${viaPop(full)} ${viaPop(List(int)())}")
+    print("generic ${viaGeneric(st)} ${viaGeneric(Stack(int)())}")
+    print("iface ${viaIface(Pick(7))} ${viaIface(Pick(-2))}")
+    var full2 = List(int)()
+    full2.add(10)
+    print("mixed ${mixed(full2)} ${mixed(List(int)())}")
+    print("bug778 cannot-fail ok: OK")

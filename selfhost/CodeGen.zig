@@ -18485,21 +18485,14 @@ pub const _zbr_ty_Generator = struct {
         return null;
     }
 
-    // zbr:selfhost/CodeGen.zbr:10080
+    // zbr:selfhost/CodeGen.zbr:10083
     pub fn noteCannotFail(self: *_zbr_ty_Generator, e: _zbr_ty_Expr, op: []const u8, span: _zbr_ty_Span) void {
         @setRuntimeSafety(true);
         defer self._check_invariant();
-// zbr:selfhost/CodeGen.zbr:10081
-        if (self.cannotFailCallName(e)) |cf_name| {
-// zbr:selfhost/CodeGen.zbr:10082
-            var cf_fix: []const u8 = "drop the `catch` and its fallback";
-// zbr:selfhost/CodeGen.zbr:10083
-            if (std.mem.eql(u8, op, "?")) {
 // zbr:selfhost/CodeGen.zbr:10084
-                cf_fix = "drop the `?`";
-            }
+        if (self.cannotFailCallName(e)) |cf_name| {
 // zbr:selfhost/CodeGen.zbr:10085
-            _zbr_fn_recordCannotFail(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.source_file, ":", _zbr_rt._allocator), _zbr_show(span.line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(span.col), _zbr_rt._allocator), ": error: `", _zbr_rt._allocator), cf_name, _zbr_rt._allocator), "` cannot fail (it does not throw), so this `", _zbr_rt._allocator), op, _zbr_rt._allocator), "` has nothing to handle: ", _zbr_rt._allocator), cf_fix, _zbr_rt._allocator));
+            _zbr_fn_recordCannotFail(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(_str_concat(self.source_file, ":", _zbr_rt._allocator), _zbr_show(span.line), _zbr_rt._allocator), ":", _zbr_rt._allocator), _zbr_show(span.col), _zbr_rt._allocator), ": error: internal: the checker missed a `", _zbr_rt._allocator), op, _zbr_rt._allocator), "` on `", _zbr_rt._allocator), cf_name, _zbr_rt._allocator), "`, which cannot fail (BUG-778) -- drop the `", _zbr_rt._allocator), op, _zbr_rt._allocator), "`", _zbr_rt._allocator));
         }
     }
 

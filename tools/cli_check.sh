@@ -5,6 +5,7 @@
 # pins: BUG-671 a front-end refusal (post-emit, or raised by a later dep) leaves no .zig in --output-dir; a zig failure keeps its .zig
 # pins: BUG-653 `zebra diagnostics` (the LSP's view) knows a `use`d module's types; a real mismatch through one is still reported
 # pins: BUG-543 the runtime is found from the binary (its checkout, then beside it), not from the cwd
+# pins: BUG-815 a zebra with no runtime anywhere refuses naming the file and where it looked, never a panic
 # pins: BUG-547 --source-root makes emitted source paths machine-independent (two cwds, one output)
 # pins: BUG-516 a --module-path dep that is not emitted is named in a note, silent under --library-mode
 # pins: BUG-321 --help/-h/--version stream and exit code are asserted here, plus the
@@ -899,6 +900,13 @@ chk "...this checkout's zebra run inside a clone takes ITS OWN runtime, not the 
     "$(case "$R_DEV" in "") echo 0;; *) echo 1;; esac)" "markers=[$R_DEV]"
 chk "...an installed zebra run inside a clone takes the runtime BESIDE it" \
     "$(case "$R_INST" in "ZZ543_INSTALLED ") echo 0;; *) echo 1;; esac)" "markers=[$R_INST]"
+# BUG-815: the same bare copy where NO runtime exists (its own dir has no selfhost/ and
+# nothing beside it) panicked "File.read error", naming nothing -- even for `-c`.
+cp "$W/hello.zbr" "$W/rt543/bare/hello.zbr"
+R815_ERR=$( cd "$W/rt543/bare" && timeout "$TMO" "./$ZB" -c hello.zbr 2>&1 >/dev/null </dev/null ); R815_RC=$?
+chk "a zebra that finds no runtime refuses NAMING the file and where it looked, never a panic (BUG-815)" \
+    "$([ "$R815_RC" != 0 ] && case "$R815_ERR" in *panic*) echo 1;; *stdlib_preamble.zig*) echo 0;; *) echo 1;; esac || echo 1)" \
+    "exit=$R815_RC stderr=[$(echo "$R815_ERR" | tail -2 | tr '\n' ' ')]"
 
 # ---- ZEBRA_ZIG that names nothing (BUG-724, 2026-11-16) -----------------------------
 # A ZEBRA_ZIG that did not exist surfaced as a bare "spawn failed" from the first zig

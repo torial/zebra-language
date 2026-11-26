@@ -1719,6 +1719,7 @@ smoke_run test/bug631_zero_pad_sign_test.zbr "bug631: [-005] [0005] [-005] [00-5
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:12:16: error: throws call needs '?'"
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23:15: error: throws call needs '?'"
 smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25:15: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:26:21: error: \`Box.caller\` cannot fail"
 # BUG-680: DateTime is a checked type -- an unknown member is refused naming the real one, and
 # the type can be named as a field, parameter, return, List element and optional.
 smoke_tc_fail test/fail_fixtures/bug680_datetime_unknown_member_test.zbr "bug680_datetime_unknown_member_test.zbr:7:13: error: 'DateTime' has no field 'epochMs'; the milliseconds since the epoch are toEpoch()"
@@ -3062,6 +3063,15 @@ smoke_run test/bug778_throws_resolution_ok_test.zbr "bug778 resolution: OK"
 smoke_run test/bug778_throws_resolution_ok_test.zbr "local 101"
 smoke_run test/bug778_throws_resolution_ok_test.zbr "risky iface 7 -1"
 smoke_tc_fail test/bug778_iface_unmarked_test.zbr "bug778_iface_unmarked_test.zbr:16:15: error: throws call needs '?'"
+# step 2b: the cannot-fail refusals (BUG-546 / BUG-764) in the checker. The accept fixture
+# is the dangerous direction -- an UNRESOLVED call (a generic class's method) must never
+# read as "cannot fail" -- and the mixin row is the one codegen never claimed.
+smoke_run test/bug778_cannot_fail_ok_test.zbr "bug778 cannot-fail ok: OK"
+smoke_run test/bug778_cannot_fail_ok_test.zbr "generic 9 -1"
+smoke_run test/bug778_cannot_fail_ok_test.zbr "mixed 13 -1"
+smoke_tc_fail test/fail_fixtures/bug778_cannot_fail_fail.zbr "bug778_cannot_fail_fail.zbr:28:1: error: nothing in the body before this \`catch\` can fail"
+smoke_tc_fail test/fail_fixtures/bug778_cannot_fail_fail.zbr "bug778_cannot_fail_fail.zbr:33:15: error: \`C.get\` cannot fail"
+smoke_tc_fail test/fail_fixtures/bug778_cannot_fail_fail.zbr "bug778_cannot_fail_fail.zbr:34:18: error: \`Calc.twice\` cannot fail"
 smoke_run test/bug767_lambda_handled_test.zbr "handled 20"
 smoke_run test/bug767_lambda_handled_test.zbr "handled -1"
 smoke_run test/bug767_lambda_handled_test.zbr "safe 3"

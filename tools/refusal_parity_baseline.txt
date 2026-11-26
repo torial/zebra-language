@@ -4,11 +4,9 @@ bug017_len_ast_name_fail diag-miss,v-miss
 bug017_len_field_name_fail diag-miss,v-miss
 bug428_unresolved_use_fail diag-miss
 bug450_use_case_fail diag-miss
-bug546_catch_cannot_fail_fail diag-miss,v-miss
 bug729_optchain_throws_test diag-miss,v-miss
 bug730_throwing_fn_value_test diag-miss,v-miss
 bug758_index_unknown_fail diag-miss,v-miss
-bug764_catch_cannot_fail_test diag-miss,v-miss
 infer_guess_add_fail diag-miss,v-miss
 infer_guess_hatch_test diag-miss,v-miss
 infer_guess_len_fail diag-miss,v-miss
