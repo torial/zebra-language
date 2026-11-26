@@ -1,0 +1,29 @@
+# BUG-792, the dep-module half: an optional class into an optional interface declared
+# in ANOTHER module takes `.from` (BUG-490) per element -- `if (v) |p| .from(p) else null`.
+use bug792_opt_iface_dep_lib exposing Show, Pig
+use bug792_opt_iface_dep_lib
+
+class Cat implements Show
+    def show(): str
+        return "cat"
+
+def findCat(ok: bool): Cat?
+    if ok
+        return Cat()
+    return nil
+
+def take(x: Show?): str
+    if x as v
+        return v.show()
+    return "nil"
+
+def give(ok: bool): Show?
+    var c: Cat? = findCat(ok)
+    return c
+
+def main()
+    var mp: Pig? = bug792_opt_iface_dep_lib.findPig(true)
+    var s: Show? = mp
+    var t: Show? = findCat(true)
+    t = findCat(false)
+    print("792 dep: " + take(s) + " " + take(t) + " " + take(mp) + " " + take(findCat(true)) + " " + take(give(true)) + " " + take(give(false)))

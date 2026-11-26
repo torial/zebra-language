@@ -21,6 +21,7 @@ bug568_dep_missing_return_lib  # helper module imported by bug568_dep_missing_re
 bug570_dep_opt_chain_lib  # helper module imported by bug570_dep_opt_chain_test; has no main()
 bug574_dep_iface_coerce_lib  # helper module imported by bug574_dep_iface_coerce_test; has no main()
 bug784_optional_dep_iface_lib  # helper module imported by bug784_optional_dep_iface_test; has no main()
+bug792_opt_iface_dep_lib  # helper module imported by bug792_opt_iface_dep_test; has no main()
 bug575_dep_generic_class_lib  # helper module imported by bug575_dep_generic_class_type_test; has no main()
 bug576_dep_class_is_lib  # helper module imported by bug576_dep_class_is_test; has no main()
 bug577_dep_type_alias_lib  # helper module imported by bug577_dep_type_alias_test; has no main()

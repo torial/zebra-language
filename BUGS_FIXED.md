@@ -6,6 +6,29 @@ Open bugs live in `BUGS.md`.
 
 ---
 
+### BUG-792: a `Dog?` value into an interface-OPTIONAL slot (`Namer?`) fails inside zig -- FIXED 2026-11-25
+- **Status:** FIXED 2026-11-25 (filed 2026-11-18; found widening BUG-784's probes). An OPTIONAL
+  concrete class reaching an optional interface is unwrapped, boxed and rewrapped:
+  `(if (v) |p| <fat pointer of p> else null)`, or `.from(p)` for a dep module's interface. One
+  helper decides it (`genInterfaceArgCoercion`, with `optionalClassOf` and the predicate
+  `ifaceCoerces`), and every position reaches it: var init, call argument, return (which had its
+  own copy of the coercion and now uses the shared one), assignment to a local or a field (this
+  object's or another's), `List(Namer?).add` (both dispatch paths), a `List(Namer?)` literal, a
+  field default, and a generic class (`Box(int)?`). The assignment and `add` paths had dropped
+  the target's `?` before asking; they keep it now. Pinned by
+  test/bug792_opt_class_iface_test.zbr and, for a dep's interface (with a dep class and a local
+  one), test/bug792_opt_iface_dep_test.zbr; both fail inside zig on the N-1 anchor, and each
+  position went green one at a time while the fix was built.
+- **Repro:** `def find(ok: bool): Dog?` returning `Dog("found")` or nil, then `var md: Dog? =
+  find(true)` / `var i: Namer? = md` / `if i as v` / `print(v.name())`. `-c` exits 0; zig:
+  "expected type '?Namer', found '?*Dog'".
+- **Control when fixing:** the repro prints found; a nil `md` gives a nil `i`; BUG-784's
+  fixtures unchanged.
+- **Not covered:** an element target (`m[k] = md` into a `HashMap(str, Namer?)`), the same gap
+  BUG-809 left.
+
+---
+
 ### BUG-811: a typed interface local initialised from a non-constructor call names the callee as the class -- FIXED 2026-11-25
 - **Status:** FIXED 2026-11-25 (filed and fixed the same day; found writing BUG-809's fixture). The var-init interface coercion took the callee's NAME as the class for every call, so `var n: Namer = mk()` with `def mk(): B` emitted `_vtable_mk_Namer` and zig reported an undeclared identifier. The argument, return and field paths already typed a non-constructor call through `ifaceCoercionClass`; the var-init path now asks `concreteClassOf` when the callee is not a class, and leaves a call typed as no concrete class (a def returning the interface itself) to the upcast path. Pinned by test/bug811_iface_var_init_call_test.zbr (plain and `^Namer` locals, an interface-returning def, a constructor), which fails inside zig on the N-1 anchor.
 - **Repro:** `interface Namer`, `class B implements Namer`, `def mk(): B`, then `var n: Namer = mk()`.

@@ -23,6 +23,10 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **An optional class fills an optional interface** (BUG-792): `var i: Namer? = md` with
+  `md: Dog?`, and the same value passed, returned, assigned, added to a `List(Namer?)` or used
+  as a field default. A nil stays nil. It used to pass `-c` and fail inside zig ("expected type
+  '?Namer', found '?*Dog'"). Interfaces declared in another module too.
 - **A list literal of class values fills a `List(Interface)`** (BUG-809): `var xs: List(Namer) =
   [a, B()]`, and the same literal assigned to a `List(Namer)`, passed to one, returned as one, or
   given as a field default. Each element becomes the interface value. It used to pass `-c` and fail

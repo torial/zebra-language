@@ -1,0 +1,78 @@
+# BUG-792: a `Dog?` value (an OPTIONAL concrete class) into an interface-OPTIONAL slot
+# (`Namer?`) is unwrapped, boxed and rewrapped -- a nil stays nil. Before the fix every
+# position below failed inside zig: "expected type '?Namer', found '?*Dog'".
+
+interface Namer
+    def name(): str
+
+class Dog implements Namer
+    var n: str
+    cue init(n: str)
+        this.n = n
+    def name(): str
+        return this.n
+
+class Box(T) implements Namer
+    var v: T
+    cue init(v: T)
+        this.v = v
+    def name(): str
+        return "box"
+
+class Holder
+    var f: Namer? = nil
+    var g: Namer? = find(true)
+    def set(d: Dog?)
+        this.f = d
+
+def find(ok: bool): Dog?
+    if ok
+        return Dog("found")
+    return nil
+
+def findBox(ok: bool): Box(int)?
+    if ok
+        return Box(int)(3)
+    return nil
+
+def take(x: Namer?): str
+    if x as v
+        return v.name()
+    return "none"
+
+def give(ok: bool): Namer?
+    var d: Dog? = find(ok)
+    return d
+
+def show(x: Namer?): str
+    if x as v
+        return v.name()
+    return "nil"
+
+def main()
+    var md: Dog? = find(true)
+    var mn: Dog? = find(false)
+    var i: Namer? = md
+    var j: Namer? = mn
+    print("792 init: " + show(i) + " " + show(j))
+    print("792 arg: " + take(md) + " " + take(mn))
+    print("792 ret: " + show(give(true)) + " " + show(give(false)))
+    var k: Namer? = nil
+    k = md
+    var k2: Namer? = md
+    k2 = mn
+    print("792 assign: " + show(k) + " " + show(k2))
+    var h = Holder()
+    h.set(md)
+    var h2 = Holder()
+    h2.f = md
+    h2.g = mn
+    print("792 field: " + show(h.f) + " " + show(h2.f) + " " + show(h2.g) + " " + show(h.g))
+    var xs = List(Namer?)()
+    xs.add(md)
+    xs.add(mn)
+    var ys: List(Namer?) = [mn, md]
+    print("792 list: " + show(xs.at(0)) + " " + show(xs.at(1)) + " " + show(ys.at(0)) + " " + show(ys.at(1)))
+    var bx: Namer? = findBox(true)
+    var bn: Namer? = findBox(false)
+    print("792 generic: " + show(bx) + " " + show(bn))

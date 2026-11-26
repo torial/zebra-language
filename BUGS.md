@@ -86,20 +86,6 @@
 
 ---
 
-### BUG-792: a `Dog?` value into an interface-OPTIONAL slot (`Namer?`) fails inside zig
-- **Status:** OPEN (filed 2026-11-18; found widening BUG-784's probes)
-- **Repro:** `def find(ok: bool): Dog?` returning `Dog("found")` or nil, then `var md: Dog? =
-  find(true)` / `var i: Namer? = md` / `if i as v` / `print(v.name())`. `-c` exits 0; zig:
-  "expected type '?Namer', found '?*Dog'". BUG-784's coercion boxes a value the checker types as
-  a concrete CLASS; an optional class is a different type and passes through unconverted.
-- **Fix shape:** unwrap, box, rewrap: `if (md) |p| <fat pointer of p> else null`, in one helper
-  every coercion site shares (genInterfaceArgCoercion), for this module's interfaces and a dep's
-  (`.from`).
-- **Control when fixing:** the repro prints found; a nil `md` gives a nil `i`; BUG-784's
-  fixtures unchanged.
-
----
-
 ### BUG-782: `@derive` is not read on the V route
 - **Status:** OPEN, parts (a) and (b) RESOLVED (filed 2026-11-17; reported by Fable, who is fixing it
   on the V route; parts are closed one commit each as BUG-782a..d; the entry closes when all four are)

@@ -6666,8 +6666,15 @@ struct Generator
                     cn = ccn
                 else
                     return nil
-        if not class_names.contains_(cn)
+        if not classConformsForIface(cn, iface_name)
             return nil
+        return cn
+
+    # Whether class `cn` (of this module) conforms to `iface_name`, which this module
+    # declares. Shared by the value path above and BUG-792's optional path.
+    def classConformsForIface(cn: str, iface_name: str): bool
+        if not class_names.contains_(cn)
+            return false
         if not module_types.classConformsTo(cn, iface_name)
             if not dep_types.classConformsTo(cn, iface_name)
                 # A generic class registers its key with its OWN parameter
@@ -6678,8 +6685,8 @@ struct Generator
                 if ip >= 0
                     ib = iface_name.substring(0, ip)
                 if not (isGenericClassName(cn) and (module_types.classConformsTo(cn, ib) or dep_types.classConformsTo(cn, ib)))
-                    return nil
-        return cn
+                    return false
+        return true
 
     # True iff `name` declares a generic class in this module (`class Box(T)`).
     def isGenericClassName(name: str): bool
@@ -6709,12 +6716,24 @@ struct Generator
             genExpr(value)
             w.emit(", .vtable = &_vtable_" + cn + "_" + ir.vt + " }")
 
+    # BUG-792: the fat pointer for a value already bound to a Zig name (the payload of
+    # an unwrapped optional), so no block-local is needed for the generic case.
+    def genFatPtrNamed(nm: str, cn: str, ir: IfaceRef)
+        if isGenericClassName(cn)
+            w.emit(".{ .ptr = " + nm + ", .vtable = &@TypeOf(" + nm + ".*)._vtable_" + ir.base + " }")
+        else
+            w.emit(".{ .ptr = " + nm + ", .vtable = &_vtable_" + cn + "_" + ir.vt + " }")
+
     # BUG-784: whether genInterfaceArgCoercion would coerce `value` into `tr` -- the
     # decision alone, so a caller can pick a statement shape before writing anything.
     def ifaceCoerces(value: Expr, tr: TypeRef): bool
         var t: TypeRef = tr
         if t is TypeRef.nilable as tn
             t = tn
+            if optionalClassOf(value) as ocn
+                if ifaceRef(t) as oir
+                    return findInterfaceDecl(oir.name) != nil and classConformsForIface(ocn, oir.name)
+                return isDepIfaceRef(t)
         if ifaceRef(t) as cir
             if ifaceCoercionClass(value, cir.name) != nil
                 return true
@@ -6726,6 +6745,29 @@ struct Generator
         var param_type: TypeRef = param_type_in
         if param_type is TypeRef.nilable as ptn
             param_type = ptn
+            # BUG-792: an OPTIONAL class (`Dog?`) into an optional interface: unwrap,
+            # box, rewrap. The class value path below sees `?*Dog` as no class at all.
+            if optionalClassOf(arg) as ocn
+                # The uid is taken only on a path that emits: an optional struct or union
+                # reaching a non-interface slot must not renumber every later label.
+                var onm: str = ""
+                if ifaceRef(param_type) as opir
+                    if findInterfaceDecl(opir.name) != nil and classConformsForIface(ocn, opir.name)
+                        onm = "_zbr_o" + w.nextUid().toString()
+                        w.emit("(if (")
+                        genExpr(arg)
+                        w.emit(") |" + onm + "| ")
+                        genFatPtrNamed(onm, ocn, opir)
+                        w.emit(" else null)")
+                        return true
+                    return false
+                if isDepIfaceRef(param_type)
+                    onm = "_zbr_o" + w.nextUid().toString()
+                    w.emit("(if (")
+                    genExpr(arg)
+                    w.emit(") |" + onm + "| .from(" + onm + ") else null)")
+                    return true
+                return false
         if ifaceRef(param_type) as pir
             if ifaceCoercionClass(arg, pir.name) as cn
                 genFatPtr(arg, cn, pir)
@@ -6766,6 +6808,24 @@ struct Generator
         if dat is Type_.named as dcn
             return not isIfaceName(dcn)
         return false
+
+    # BUG-792: the class name when the checker types `e` as an OPTIONAL concrete class
+    # (`Dog?`); nil for anything else, an optional interface included. As
+    # isConcreteForDepIface, a dep module's class counts: a local interface still
+    # requires a class of THIS module (classConformsForIface checks), a dep interface's
+    # `.from` takes any concrete value.
+    def optionalClassOf(e: Expr): str?
+        if .infer_ctx == nil
+            return nil
+        var t: Type_ = inferExpr(e, .infer_ctx!)
+        if t is Type_.optional as ot
+            var inner: Type_ = ot
+            if inner is Type_.ref_to as irt
+                inner = irt
+            if inner is Type_.named as nm
+                if findInterfaceDecl(nm) == nil and not isIfaceName(nm)
+                    return nm
+        return nil
 
     def concreteClassOf(e: Expr): str?
         if .infer_ctx == nil
@@ -10754,11 +10814,13 @@ struct Generator
         # concrete class -- the same fat pointer the annotated-var path emits.
         if a.op == AssignOp.assign and not (a.value is Expr.nil_)
             var ift_name: str = ""
+            var ift_opt: bool = false     # BUG-792: the target is `Namer?`
             var ift = getAssignFieldType(a)
             if ift as iftr
                 var ift_tr: TypeRef = iftr
                 if ift_tr is TypeRef.nilable as ift_inner
                     ift_tr = ift_inner
+                    ift_opt = true
                 if ift_tr is TypeRef.named as ift_n
                     ift_name = ift_n.name
             # `other.field = v`: the field belongs to the RECEIVER's class, which
@@ -10773,6 +10835,7 @@ struct Generator
                             var ift_ft2: Type_ = ift_ft
                             if ift_ft2 is Type_.optional as ift_fo
                                 ift_ft2 = ift_fo
+                                ift_opt = true
                             if ift_ft2 is Type_.named as ift_fn
                                 ift_name = ift_fn
             # BUG-784: a LOCAL target (`i = Dog(..)` with `var i: Namer` or `Namer?`) --
@@ -10782,6 +10845,7 @@ struct Generator
                     var ift_lt: Type_ = inferExpr(a.target, .infer_ctx!)
                     if ift_lt is Type_.optional as ift_lo
                         ift_lt = ift_lo
+                        ift_opt = true
                     if ift_lt is Type_.named as ift_ln
                         ift_name = ift_ln
             # BUG-515 (Fable, GameEngine): an interface declared in ANOTHER module is a
@@ -10790,9 +10854,12 @@ struct Generator
             if ift_name != ""
                 if findInterfaceDecl(ift_name) != nil or isIfaceName(ift_name)
                     var ift_sp: Span = Span(0, 0, 0, 0)
+                    var ift_ref: TypeRef = TypeRef.named(NamedTypeRef(ift_sp, ift_name))
+                    if ift_opt
+                        ift_ref = TypeRef.nilable(ift_ref)
                     genExpr(a.target)
                     w.emit(" = ")
-                    if not genInterfaceArgCoercion(a.value, TypeRef.named(NamedTypeRef(ift_sp, ift_name)))
+                    if not genInterfaceArgCoercion(a.value, ift_ref)
                         genExpr(a.value)
                     w.emit(";\n")
                     return
@@ -11564,23 +11631,14 @@ struct Generator
         # BUG-388: `return Circle(2.0)` from a `def f(): Shape` -- a plain interface
         # return type takes the fat pointer for a concrete value (the `^Shape` case
         # below heap-allocates; a plain one is a value).
+        # BUG-574: a dep module's interface (`.from`); BUG-792: an optional class into
+        # an optional interface. All through the shared coercion.
         if r.value != nil and method_return_type != nil
-            var iret: TypeRef = method_return_type!
-            if iret is TypeRef.nilable as iret_inner
-                iret = iret_inner
-            if ifaceRef(iret) as iret_ir
-                if ifaceCoercionClass(r.value!, iret_ir.name) as iret_cn
-                    writeIndent()
-                    w.emit("return ")
-                    genFatPtr(r.value!, iret_cn, iret_ir)
-                    w.emit(";\n")
-                    return
-            # BUG-574: a dep module's interface as the return type.
-            if isDepIfaceRef(iret) and isConcreteForDepIface(r.value!)
+            if ifaceCoerces(r.value!, method_return_type!)
                 writeIndent()
-                w.emit("return .from(")
-                genExpr(r.value!)
-                w.emit(");\n")
+                w.emit("return ")
+                genInterfaceArgCoercion(r.value!, method_return_type!)
+                w.emit(";\n")
                 return
         # BUG-350: `return s.split(sep)` from a `List(str)` function emitted the raw
         # SplitIterator ("expected 'array_list...', found 'mem.SplitIterator'"); only
@@ -19291,12 +19349,17 @@ struct Generator
                                 # pointer, as every other interface-typed slot does.
                                 var t_iface_done = false
                                 var t_elem: Type_ = list_elem_t
+                                var t_opt: bool = false
                                 if t_elem is Type_.optional as t_eo
                                     t_elem = t_eo           # BUG-784: List(Namer?)
+                                    t_opt = true
                                 if t_elem is Type_.named as t_en
                                     if findInterfaceDecl(t_en) != nil or isIfaceName(t_en)   # BUG-574: a dep's interface too
                                         var t_sp: Span = Span(0, 0, 0, 0)
-                                        t_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(t_sp, t_en)))
+                                        var t_ref: TypeRef = TypeRef.named(NamedTypeRef(t_sp, t_en))
+                                        if t_opt
+                                            t_ref = TypeRef.nilable(t_ref)   # BUG-792: a `Dog?` element
+                                        t_iface_done = genInterfaceArgCoercion(args.at(0).value, t_ref)
                                 # List(Sig).add(closure / fn): converted, like any sig slot.
                                 if not t_iface_done and isSigType(list_elem_t)
                                     genSigValue(args.at(0).value)
@@ -20159,14 +20222,19 @@ struct Generator
                                 add_lt = add_lrt
                             if add_lt is Type_.list_ as add_elem0
                                 var add_elem: Type_ = add_elem0
+                                var add_opt: bool = false
                                 # BUG-784: a `List(Namer?)` takes the same fat pointer.
                                 if add_elem is Type_.optional as add_eo
                                     add_elem = add_eo
+                                    add_opt = true
                                 if add_elem is Type_.named as add_en
                                     # BUG-574: a dep module's interface too.
                                     if findInterfaceDecl(add_en) != nil or isIfaceName(add_en)
                                         var add_sp: Span = Span(0, 0, 0, 0)
-                                        add_iface_done = genInterfaceArgCoercion(args.at(0).value, TypeRef.named(NamedTypeRef(add_sp, add_en)))
+                                        var add_ref: TypeRef = TypeRef.named(NamedTypeRef(add_sp, add_en))
+                                        if add_opt
+                                            add_ref = TypeRef.nilable(add_ref)   # BUG-792: a `Dog?` element
+                                        add_iface_done = genInterfaceArgCoercion(args.at(0).value, add_ref)
                         if not add_iface_done
                             genExpr(args.at(0).value)
                 w.emit(") catch @panic(\"OOM\")")

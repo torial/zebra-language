@@ -1,0 +1,17 @@
+# Helper module for bug792_opt_iface_dep_test: an interface and a class that
+# implements it, both declared here.
+
+interface Show
+    def show(): str
+
+class Pig implements Show
+    var s: str
+    cue init(s: str)
+        this.s = s
+    def show(): str
+        return this.s
+
+def findPig(ok: bool): Pig?
+    if ok
+        return Pig("pig")
+    return nil
