@@ -1716,9 +1716,9 @@ smoke_run test/float_round_rule_test.zbr "float_round_pad: [    2.67] [2.67    ]
 smoke_run test/bug631_zero_pad_sign_test.zbr "bug631: [-005] [0005] [-005] [00-5] [-002.5] [-002.5] [-123456] [000.50]"
 # BUG-628: a method that throws by inference (a `raise`, no `throws`) is a throws callee --
 # a class method, a bare owner call and a struct method, each refused at its line.
-smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:12: error: throws call needs '?'"
-smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23: error: throws call needs '?'"
-smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:12:16: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:23:15: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug628_inferred_throws_call_test.zbr "bug628_inferred_throws_call_test.zbr:25:15: error: throws call needs '?'"
 # BUG-680: DateTime is a checked type -- an unknown member is refused naming the real one, and
 # the type can be named as a field, parameter, return, List element and optional.
 smoke_tc_fail test/fail_fixtures/bug680_datetime_unknown_member_test.zbr "bug680_datetime_unknown_member_test.zbr:7:13: error: 'DateTime' has no field 'epochMs'; the milliseconds since the epoch are toEpoch()"
@@ -2876,7 +2876,7 @@ smoke_run test/bug466_raise_positions_test.zbr "bug466: OK"
 # BUG-467: a throwing free function's error reaches a method-level catch in every position;
 # an unmarked call outside one is refused in Zebra's words.
 smoke_run test/bug467_method_catch_bare_call_test.zbr "bug467: OK"
-smoke_tc_fail test/bug467_unmarked_call_fail.zbr "bug467_unmarked_call_fail.zbr:9: error: throws call needs '?'"
+smoke_tc_fail test/bug467_unmarked_call_fail.zbr "bug467_unmarked_call_fail.zbr:9:5: error: throws call needs '?'"
 # BUG-469: a runtime object type called like a constructor it does not have is refused,
 # naming its factory.
 smoke_tc_fail test/bug469_runtime_ctor_fail.zbr "bug469_runtime_ctor_fail.zbr:6:13: error: \`Timer()\` is not a constructor -- start one with \`Timer.start()\`"
@@ -2944,13 +2944,13 @@ smoke_run test/bug483_module_alias_shadow_test.zbr "bug483: OK"
 # BUG-484: a cross-module throws method under a method-level catch.
 smoke_run test/bug484_crossmod_throws_catch_test.zbr "bug484: OK"
 smoke_run test/bug728_xmod_throws_test.zbr "bug728: OK"
-smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:7: error: throws call needs '?'"
-smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:8: error: throws call needs '?'"
-smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:9: error: throws call needs '?'"
+smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:7:14: error: throws call needs '?'"
+smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:8:5: error: throws call needs '?'"
+smoke_tc_fail test/bug728_xmod_unmarked_test.zbr "bug728_xmod_unmarked_test.zbr:9:13: error: throws call needs '?'"
 smoke_run test/bug729_nested_throws_catch_test.zbr "bug729: OK"
 smoke_run test/bug729_nested_throws_catch_test.zbr "marked caught: refused -2"
-smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:13: error: throws call needs '?'"
-smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:17: error: throws call needs '?'"
+smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:13:20: error: throws call needs '?'"
+smoke_tc_fail test/bug729_nested_throws_unmarked_test.zbr "bug729_nested_throws_unmarked_test.zbr:17:14: error: throws call needs '?'"
 smoke_tc_fail test/bug729_optchain_throws_test.zbr "bug729_optchain_throws_test.zbr:13:12: error: \`risky\` throws"
 smoke_tc_fail test/bug729_optchain_throws_test.zbr "bug729_optchain_throws_test.zbr:16:14: error: \`risky\` throws"
 # BUG-730: a throwing function handed over as a `def(...)` value -- an argument, a var init,
@@ -3058,6 +3058,10 @@ smoke_run test/bug765_optchain_builtin_method_test.zbr "bug765: OK"
 smoke_tc_fail test/bug767_lambda_question_test.zbr "bug767_lambda_question_test.zbr:15:18: error: this \`?\` would propagate the error out of a lambda"
 smoke_tc_fail test/bug778_lambda_question_decl_test.zbr "bug778_lambda_question_decl_test.zbr:12:13: error: this \`?\` would propagate the error out of a lambda"
 smoke_tc_fail test/bug778_lambda_question_decl_test.zbr "bug778_lambda_question_decl_test.zbr:17:17: error: this \`?\` would propagate the error out of a lambda"
+smoke_run test/bug778_throws_resolution_ok_test.zbr "bug778 resolution: OK"
+smoke_run test/bug778_throws_resolution_ok_test.zbr "local 101"
+smoke_run test/bug778_throws_resolution_ok_test.zbr "risky iface 7 -1"
+smoke_tc_fail test/bug778_iface_unmarked_test.zbr "bug778_iface_unmarked_test.zbr:16:15: error: throws call needs '?'"
 smoke_run test/bug767_lambda_handled_test.zbr "handled 20"
 smoke_run test/bug767_lambda_handled_test.zbr "handled -1"
 smoke_run test/bug767_lambda_handled_test.zbr "safe 3"
@@ -3188,7 +3192,7 @@ smoke_tc_fail test/fail_fixtures/bug535_extern_int_position_fail.zbr "bug535_ext
 smoke_run test/bug541_csvwriter_reference_test.zbr "bug541: true 10"
 smoke_run test/bug544_str_len_call_test.zbr "bug544: 3 3 6"
 smoke_run test/bug545_list_pop_test.zbr "bug545: 3 3 -1 22 0"
-smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmarked_fail.zbr:4: error: throws call needs '?'"
+smoke_tc_fail test/fail_fixtures/bug545_pop_unmarked_fail.zbr "bug545_pop_unmarked_fail.zbr:4:21: error: throws call needs '?'"
 # BUG-549: an unknown method inside ${...} is refused like the same call outside one --
 # one line per refusing receiver kind (str, List, a BUG-369 type), each at its column.
 smoke_tc_fail test/fail_fixtures/bug549_interp_unknown_method_fail.zbr "bug549_interp_unknown_method_fail.zbr:7:16: error: 'str' has no method 'trimm'"

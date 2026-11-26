@@ -1,0 +1,19 @@
+# BUG-778: an unmarked call to a `throws` method of THIS module's interface passed `-c` and
+# failed inside zig ("expected type 'i64', found 'anyerror!i64'). Refused at the call now.
+interface IShape
+    def area(): int throws
+
+class Sq implements IShape
+    var s: int
+    cue init(s: int)
+        .s = s
+    def area(): int throws
+        if .s < 0
+            raise "neg"
+        return .s * .s
+
+def un(sh: IShape): int
+    return sh.area()
+
+def main()
+    print("${un(Sq(3))}")

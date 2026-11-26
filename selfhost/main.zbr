@@ -5397,7 +5397,11 @@ def main()
     var itry_refused: bool = false
     for itry_site in itry_sites
         if not oc_throw_lines.contains(itry_site)
-            sys.errln(itry_site + ": error: throws call needs '?' (auto error-propagation was removed; add '?')")
+            # BUG-778: the checker refuses this now (callMayFail), so `zebra diagnostics`
+            # and `--target v` see it too and a checker error stops the build before
+            # codegen. Reaching here means the two resolved a callee differently: a
+            # tripwire, still a refusal.
+            sys.errln(itry_site + ": error: internal: the checker missed a throws call that needs '?' (BUG-778) -- add '?'")
             itry_refused = true
     # BUG-546: the mirror image -- a `catch` / `?` on a call that cannot fail. zig would
     # refuse it as "expected error union type". A dep compiled twice records twice.

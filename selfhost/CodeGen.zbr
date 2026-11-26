@@ -23,8 +23,8 @@
 #   genTypeFromExpr — type-as-expr → Zig type name
 
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
-use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasRaise, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
-use AstWalk exposing collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, nilElseNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
+use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
+use AstWalk exposing bodyHasRaise, collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, nilElseNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
 use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex, serveRestartArgIndex
 
 
@@ -2037,6 +2037,16 @@ def generateModuleWith(m: Module, file: str, extra_class_names: List(str), deps_
                             g.throws_methods.add(makeDottedKey(s.name, dm.name))
                         if dm.name == "toString"
                             g.toString_types.add(s.name)
+            on Decl.interface_ as pifc
+                # BUG-778: an interface method declared `throws` returns an error union
+                # through the vtable. Unregistered, a method-level `catch` did not route a
+                # call to it on THIS module's interface (an interface from another module is
+                # read from dep_types and was) and zig refused the bare call ("expected type
+                # 'i64', found 'anyerror!i64").
+                for imem in pifc.members
+                    if imem is Decl.method as idm
+                        if idm.throws_
+                            g.throws_methods.add(makeDottedKey(pifc.name, idm.name))
             on Decl.extend_ as ext
                 # Register `extend TypeName` methods so a call `obj.m()` on a value
                 # of TypeName rewrites to the emitted free function `_ext_TypeName_m(obj)`.

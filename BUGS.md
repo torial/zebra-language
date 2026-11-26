@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-811. Next new bug: BUG-812.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-812. Next new bug: BUG-813.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,28 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-812: a throwing call in a lambda inside a handled context passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-25; found writing BUG-778's accept fixture)
+- **Repro:** a lambda built inside a method-level `catch` body, or inside the operand of a
+  postfix `catch` / `?`, whose body calls a throwing function unmarked:
+  `var r = apply(def(x: int): int = risky(x), 3) catch -1` with `risky(...): int throws`.
+  `-c` exits 0 and `zebra diagnostics` answers `[]`; zig refuses: "expected type 'i64', found
+  'anyerror!i64'" (the `catch` operand), "mutable '_try_err' not accessible from here" (a
+  method-level `catch`, `var f = def(x: int): int = x + .bump()`).
+- **Cause:** the lambda is emitted as its own function, but codegen's handled state
+  (`try_block_label`, `in_try_expr`) is INHERITED into its body (`withLambdaReturnType` keeps
+  both), so the call is neither routed nor refused. BUG-778's checker rule mirrors that
+  inheritance on purpose (`call_handled` is not reset in a lambda) so the step changed no answer.
+- **Fix shape:** reset `call_handled` on entering a lambda body (checker) and the two flags in
+  `withLambdaReturnType` (codegen). The refusal there must not say "add '?'": a `?` in a lambda
+  is refused too (BUG-767), so it reads "handle it inside the lambda (`catch` on the call)".
+  Measure `-c` before and after over the five corpora: every newly refused file fails inside
+  zig today.
+- **Control when fixing:** both repros refused at the call by `-c`, `diagnostics` and `--target v`;
+  `def(x: int): int = risky(x) catch 0` in the same positions builds and runs.
 
 ---
 
@@ -182,6 +204,33 @@
   unwalked). CodeGen keeps its detection as a TRIPWIRE: reaching it prints "internal: the
   checker missed ... (BUG-778)", never a silent pass. Fixture
   `test/bug778_lambda_question_decl_test.zbr`.
+- **Done, step 2a (2026-11-25): the unmarked throwing call** (BUG-467/480/545/628/728/729's
+  nested half, `implicit_try_rejected`). The checker's call walk (`checkCallsInExpr`) asks
+  `callMayFail`, which resolves the callee in codegen's order -- owner method, then (unless a
+  local shadows it) this module's def, then an `exposing` import; `mod.f()`; `xs.pop()` on a
+  List; a method of the receiver's inferred class or `Cls.m()` -- and answers through ONE
+  predicate, `ClassTypes.methodFails` (declared `throws`, or `raise` / `?` in the body), with
+  `bodyHasRaise` / `exprHasTry` moved from CgHelpers to AstWalk so both sides read one
+  definition. "Handled" (`call_handled`) is set where codegen's `in_try_expr` /
+  `try_block_label` are: the operand of `?`, the operand of a postfix `catch`, a method-level
+  `catch` body, and the base of a `?.` (BUG-729's own refusal still answers there). A lambda
+  INHERITS it, as codegen does -- that inheritance is BUG-812. The nine codegen sites are a
+  tripwire now (main.zbr: "internal: the checker missed a throws call ... (BUG-778)").
+  - **Measured:** `-c` over 3298 files (test/examples/selfhost, zebra-ide, the GameEngine),
+    HEAD vs the change: only the seven fixtures' lines differ, each gaining a column (`9:` ->
+    `9:5:`); 1910 accepted in both; 0 tripwire hits. Refusal parity 21 -> **14**: all seven
+    close on BOTH consumers, BUG-728 included (diagnostics resolves the `exposing` import).
+  - **Found on the way:** a `throws` method on THIS module's interface was never registered
+    (`throws_methods` was filled from classes and structs; another module's interface was read
+    from dep_types and worked). An unmarked call passed `-c` and failed inside zig, and the same
+    call under a method-level `catch` was refused as "nothing can fail". Both fixed (codegen
+    registers interface methods declared `throws`; the checker reads the interface's table).
+  - BUG-628's fixture no longer prints its `26:21` cannot-fail line under `-c`: the checker's
+    errors stop the build before codegen. The cannot-fail rule is step 2b (BUG-546/764).
+  - Fixtures: `test/bug778_throws_resolution_ok_test.zbr` (the calls that must NOT be refused:
+    a local named like the function, an interface without `throws`, `catch` / method-level
+    `catch` routing, a `throws` interface method under a `catch`; red-checked with the
+    local-shadow guard mutated out -> refused at 43:12), `test/bug778_iface_unmarked_test.zbr`.
 
 ---
 

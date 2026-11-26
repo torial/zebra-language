@@ -23,6 +23,15 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **"throws call needs '?'" is reported by the editor and the V route, with a column**
+  (BUG-778, second rule): an unmarked call to a function that can fail is refused by the type
+  checker, so `zebra diagnostics` (the LSP) and `--target v` report it too, at the call's
+  line AND column (it was `file:9:`, now `file:9:5:`). No program that built before is refused.
+  14 refusal-parity gaps remain.
+- **A `throws` method on an interface declared in the same module works** (BUG-778): a call
+  to it under a method-level `catch` is routed to the catch (it was refused as "nothing in the
+  body before this `catch` can fail"), and an unmarked call is refused in Zebra's words (it
+  passed `-c` and failed inside zig, "expected type 'i64', found 'anyerror!i64'").
 - **A `?` inside a lambda is refused by the editor and the V route too** (BUG-778, first
   rule): the refusal ("this `?` would propagate the error out of a lambda") moved from code
   generation into the type checker, so `zebra diagnostics` (the LSP) and `--target v` report it

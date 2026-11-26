@@ -1,0 +1,81 @@
+# BUG-778: the checker now refuses an unmarked call to a function that can fail (it was
+# refused only at Zig emit time). These are the calls it must NOT refuse -- each resolves
+# to something that cannot fail, or its error is already handled -- written to attack the
+# checker's lookup order, which has to agree with codegen's.
+
+def risky(n: int): int throws
+    if n < 0
+        raise "neg ${n}"
+    return n * 2
+
+interface IShape
+    def area(): int
+
+class Sq implements IShape
+    var s: int
+    cue init(s: int)
+        .s = s
+    def area(): int
+        return .s * .s
+
+# an interface method DECLARED `throws` returns an error union through the vtable; a
+# method-level `catch` routes it like a class method's (it was refused as "nothing can
+# fail" while an interface from another module was routed)
+interface IRisky
+    def pick(): int throws
+
+class Pick implements IRisky
+    var v: int
+    cue init(v: int)
+        .v = v
+    def pick(): int throws
+        if .v < 0
+            raise "bad pick ${.v}"
+        return .v
+
+def viaRiskyIface(r: IRisky): int
+    return r.pick()
+catch |e|
+    print("iface caught ${e}")
+    return -1
+
+class Holder
+    var n: int
+    cue init(n: int)
+        .n = n
+
+    def bump(): int throws
+        if .n < 0
+            raise "neg"
+        return .n + 1
+
+    # a method-level `catch` routes every throwing call in the body, bare (owner dispatch)
+    # and through `this`. (A call inside a LAMBDA the body builds is not routed -- BUG-812.)
+    def routed(): int
+        var t = .bump() + bump()
+        return t
+    catch |e|
+        print("routed caught ${e}")
+        return -1
+
+def viaLocal(): int
+    # a LOCAL named like the throwing function is a value, not that function
+    var risky = def(x: int): int = x + 100
+    return risky(1)
+
+def viaInterface(sh: IShape): int
+    # an interface method dispatches through the vtable: not routed
+    return sh.area()
+
+def viaHandled(n: int): int
+    var a = risky(n) catch 0
+    var b = (risky(n) catch -1) + 1
+    return a + b
+
+def main()
+    print("local ${viaLocal()}")
+    print("iface ${viaInterface(Sq(3))}")
+    print("handled ${viaHandled(2)} ${viaHandled(-1)}")
+    print("routed ${Holder(1).routed()} ${Holder(-5).routed()}")
+    print("risky iface ${viaRiskyIface(Pick(7))} ${viaRiskyIface(Pick(-2))}")
+    print("bug778 resolution: OK")
