@@ -1,7 +1,7 @@
 <!-- doc-status: historical -->
 # Zebra Compiler — Bug Tracker (Open)
 
-**Last bug number generated: BUG-815. Next new bug: BUG-816.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
+**Last bug number generated: BUG-816. Next new bug: BUG-817.** (BUG-804 reserved 2026-11-18 for Fable's V-route entry: an expression lambda with no declared return type passed to a `sig` parameter is emitted with no return type. BUG-805 WITHDRAWN as a duplicate of BUG-778: its shape is added there.)
 
 > **Numbering correction 2026-08-05.** Two different bugs were both filed as
 > BUG-260 by sessions working in parallel. The query-param one below was filed
@@ -43,6 +43,26 @@
 > `--release`; BUG-228 shipped Debug binaries from `--release` for four days under 19
 > green gates. If an entry claims a safety property, it must say which mode it was
 > measured in.
+
+---
+
+### BUG-816: a type from a `use`d module that is not exposed, named bare, passes `-c` and fails inside zig
+- **Status:** OPEN (filed 2026-11-26; found writing BUG-778 step 3 -- the compiler's own
+  TypeChecker.zbr named `ExprOptChain`, which its `use Ast exposing ...` list does not hold, and the
+  front end let it through to zig)
+- **Repro:** `zzmod.zbr` declares `struct Pt` and `struct Other`; `use zzmod exposing Pt, mk` (or a
+  plain `use zzmod`), then `def show(o: Other): int`. `-c` exits 0 and `zebra diagnostics` answers
+  `[]`; a build fails inside zig, "use of undeclared identifier 'Other'", with a line and no column.
+  A name declared NOWHERE is refused at the annotation ("unknown type 'Nope': not declared here, in a
+  `use`d module, or as a type parameter in scope") -- the check counts any type a used module
+  declares, exposed or not.
+- **Fix shape:** at the annotation, refuse a bare type name that only a used module declares and
+  this file does not take with `exposing`, naming the module and both fixes (add it to the
+  `exposing` list, or qualify it if qualified type names are accepted there). Measure `-c` over the
+  corpus first: a file that relies on the leniency today does not build, so nothing should move but
+  fixtures -- but a GUI or generated-code path may name runtime types bare.
+- **Control when fixing:** the repro refused at 3:13 by `-c` and `zebra diagnostics`; the same file
+  with `exposing Pt, Other, mk` builds and runs; an undeclared name keeps its message.
 
 ---
 
@@ -307,6 +327,26 @@
     dispatch, only a `raise`, List.pop, a generic class's method, a `throws` interface method,
     a body mixing safe and failing calls), `test/fail_fixtures/bug778_cannot_fail_fail.zbr`
     (mixin method, static method, a catch over a body of safe CALLS).
+- **Done, step 3 (2026-11-26): throwing calls in value positions** (BUG-729's `f()?.m()` on a
+  throwing `f`; BUG-730's throwing function passed as a value). `checkOptChainThrows` reads
+  the same `resolveCallFail` as step 2; `checkFnValueThrows` refuses a throwing function in
+  every function-typed slot codegen's `genSigValue` covered -- argument, var init,
+  assignment, a list-literal element in a `List(Sig)` var, `List(Sig).add`, a method
+  argument. A slot is function-typed when it is a `def(...)` type or a `sig`, optional or
+  not; a name that resolves to a local or an owner-class method is a value, not the function.
+  Both codegen sites are tripwires.
+  - **Measured:** `-c` over 3302 files (this repo, zebra-ide, GameEngine), bed0466 vs the
+    change: 1916 accepted in both, **0 rows differ**, 0 tripwire hits. Refusal parity 12 ->
+    **10** (bug729, bug730 close). The new fixture's five refusals are at the same
+    coordinates under HEAD's `-c`; HEAD's `zebra diagnostics` showed none of them.
+  - **Red-check:** with both call sites mutated to `pass`, diagnostics on the fixture is `[]`
+    and `-c` reaches codegen, where the tripwires print "internal: the checker missed".
+  - **Found on the way:** BUG-816 (an unexposed type from a `use`d module, named bare, fails
+    inside zig) -- the first draft named `ExprOptChain` in TypeChecker without it.
+  - Fixtures: `test/bug778_throw_values_test.zbr` (method `?.`, cross-module `?.`, a list
+    element, `List.add`, an assignment), `test/bug778_throw_values_ok_test.zbr` (safe
+    functions in every slot, a parameter named like a throwing function, `?.` with `orelse`,
+    `(f(...)?).m()`).
 
 ---
 

@@ -4167,8 +4167,9 @@ def cannotFailSites(): List(str)
     return _cannot_fail_sites
 
 # BUG-729: `f()?.m()` on a throwing `f` reads as OPTIONAL CHAINING on an error union, which
-# zig refuses ("expected optional type"). It is refused through the cannot-fail list (a
-# full message naming `(f(...)?).m()`), and its statement's "file:line" is kept here so the
+# zig refuses ("expected optional type"). The checker refuses it (BUG-778,
+# checkOptChainThrows); the site here is a tripwire through the cannot-fail list, and its
+# statement's "file:line" is kept here so the
 # driver does not ALSO print the generic "add '?'" for the same call -- the user wrote one.
 var _oc_throw_lines: List(str) = List(str)()
 
@@ -11428,12 +11429,12 @@ struct Generator
             genExpr(e)
             return
         # BUG-730: a `def(...)` type cannot raise, so a throwing function handed over as a
-        # value had nowhere to send its error. `-c` passed and zig refused inside
-        # zebra_rt.zig, with no .zbr line. Refused here, at the value, naming the function.
+        # value had nowhere to send its error. BUG-778 moved the refusal to the checker
+        # (TypeChecker checkFnValueThrows), which every consumer runs; reaching this point
+        # means the checker let one through -- a tripwire, still a refusal.
         if sigValueThrowingFn(e) as tv_name
             recordCannotFail(source_file + ":" + exprSpanLine(e).toString() + ":" + exprSpanCol(e).toString() +
-                ": error: `" + tv_name + "` throws, so it cannot be passed as a function value: a `def(...)` type cannot raise. Handle the error inside `" +
-                tv_name + "` (a method-level `catch`), or call it and pass the result")
+                ": error: internal: the checker missed `" + tv_name + "`, which throws, passed as a function value (BUG-778) -- a `def(...)` type cannot raise")
         if .infer_ctx != nil
             if inferExpr(e, .infer_ctx!) is Type_.optional
                 genExpr(e)
@@ -16309,9 +16310,10 @@ struct Generator
                     var oct_m: str = oc.member
                     if oc.has_args
                         oct_m = oct_m + "()"
+                    # BUG-778: the checker refuses this (checkOptChainThrows); a tripwire.
                     recordCannotFail(source_file + ":" + w.cur_line.toString() + ":" + oc.span.col.toString() +
-                        ": error: `" + oct_name + "` throws, so `" + oct_name + "(...)?." + oct_m + "` is not `?` then `." +
-                        oct_m + "`: `?.` is optional chaining. Write `(" + oct_name + "(...)?)." + oct_m + "` to propagate the error")
+                        ": error: internal: the checker missed `" + oct_name + "(...)?." + oct_m + "` on a throwing `" + oct_name +
+                        "` (BUG-778) -- write `(" + oct_name + "(...)?)." + oct_m + "`")
                 # BUG-331: a JsonValue's reads are runtime functions, not Zig methods --
                 # `j.tryObj("a")?.tryInt("b")` emitted `.tryInt(` on a std.json.Value.
                 var oc_json_fn: str = ""

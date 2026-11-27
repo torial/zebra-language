@@ -1,0 +1,57 @@
+# BUG-778 step 3: what the checker's BUG-729 / BUG-730 rules must NOT refuse. A function that
+# cannot fail goes into every function-typed slot; a parameter or local named like a throwing
+# function is a value already; `?.` on an optional result of a call that cannot fail is
+# optional chaining; `(f(...)?).m()` is the spelling the refusal recommends, and it works.
+sig Step(n: int): int
+
+class Item
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    def size(): int
+        return .n
+
+def boom(n: int): int throws
+    if n < 0
+        raise "neg ${n}"
+    return n
+
+def safe(n: int): int
+    return n + 1
+
+def maybe(n: int): Item?
+    if n > 0
+        return Item(n)
+    return nil
+
+def risky(n: int): List(int) throws
+    if n < 0
+        raise "refused ${n}"
+    var xs: List(int) = []
+    xs.add(n)
+    return xs
+
+def apply(f: def(int): int, n: int): int
+    return f(n)
+
+def run(boom: Step, n: int): int
+    return boom(n)                    # a PARAMETER named like a throwing function
+
+def counted(n: int): int throws
+    return (risky(n)?).count()        # the spelling BUG-729's refusal recommends
+
+def main()
+    var fs: List(Step) = [safe]
+    fs.add(safe)
+    var one: Step = safe
+    one = safe
+    print(apply(safe, 1) + fs.count() + one(2))
+    print(run(safe, 4))
+    var boom2 = 7
+    print(boom2)
+    print(maybe(3)?.size() orelse -1)
+    print(maybe(0)?.size() orelse -1)
+    print(counted(5)?)
+    print("bug778 throw values ok: OK")

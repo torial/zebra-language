@@ -3072,6 +3072,16 @@ smoke_run test/bug778_cannot_fail_ok_test.zbr "mixed 13 -1"
 smoke_tc_fail test/fail_fixtures/bug778_cannot_fail_fail.zbr "bug778_cannot_fail_fail.zbr:28:1: error: nothing in the body before this \`catch\` can fail"
 smoke_tc_fail test/fail_fixtures/bug778_cannot_fail_fail.zbr "bug778_cannot_fail_fail.zbr:33:15: error: \`C.get\` cannot fail"
 smoke_tc_fail test/fail_fixtures/bug778_cannot_fail_fail.zbr "bug778_cannot_fail_fail.zbr:34:18: error: \`Calc.twice\` cannot fail"
+# step 3: BUG-729's `f()?.m()` and BUG-730's throwing function value, in the checker, in
+# the positions their own fixtures do not reach (a method, `mod.f()`, a list element,
+# List(Sig).add, an assignment); the accept fixture holds what must stay legal.
+smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:30:14: error: \`risky\` throws, so \`risky(...)?.count()\`"
+smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:33:35: error: \`bug728_xmod_throws_lib.riskyInferred\` throws"
+smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:36:33: error: \`boom\` throws, so it cannot be passed as a function value"
+smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:37:12: error: \`boom\` throws, so it cannot be passed"
+smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:39:11: error: \`boom\` throws, so it cannot be passed"
+smoke_run test/bug778_throw_values_ok_test.zbr "bug778 throw values ok: OK"
+smoke_run test/bug778_throw_values_ok_test.zbr "-1"
 smoke_run test/bug767_lambda_handled_test.zbr "handled 20"
 smoke_run test/bug767_lambda_handled_test.zbr "handled -1"
 smoke_run test/bug767_lambda_handled_test.zbr "safe 3"

@@ -1,0 +1,42 @@
+# BUG-778 step 3: the BUG-729 / BUG-730 refusals, moved from Zig emit time into the checker,
+# in the positions their own fixtures do not reach. Each line marked REFUSED must be refused
+# by `-c`, `zebra diagnostics` and `--target v` at the same line and column.
+use bug728_xmod_throws_lib
+
+sig Step(n: int): int
+
+class Box
+    var n: int
+
+    cue init(n: int)
+        .n = n
+
+    def risky(): List(int) throws
+        if .n < 0
+            raise "neg"
+        var xs: List(int) = []
+        xs.add(.n)
+        return xs
+
+def boom(n: int): int throws
+    if n < 0
+        raise "neg ${n}"
+    return n
+
+def safe(n: int): int
+    return n + 1
+
+def viaMethod(b: Box): int throws
+    return b.risky()?.count()                         # REFUSED: a method that throws, then `?.`
+
+def viaModule(): int throws
+    return bug728_xmod_throws_lib.riskyInferred(1)?.count()   # REFUSED: `mod.f()` then `?.`
+
+def main()
+    var fs: List(Step) = [safe, boom]                 # REFUSED: a list element into a sig slot
+    fs.add(boom)                                      # REFUSED: List(Sig).add
+    var one: Step = safe
+    one = boom                                        # REFUSED: an assignment into a sig slot
+    print(fs.count() + one(1))
+    print(viaMethod(Box(1))?)
+    print(viaModule()?)

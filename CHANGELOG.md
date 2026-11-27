@@ -23,6 +23,11 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **`f()?.m()` on a throwing `f`, and a throwing function passed as a value, are reported by the
+  editor and the V route** (BUG-778, fourth rule; BUG-729 / BUG-730): both are refused by the
+  type checker, so `zebra diagnostics` (the LSP) and `--target v` report them at the same line,
+  column and message as `-c`. The function-value rule covers an argument, a var init, an
+  assignment, a list-literal element and `List(Sig).add`. 10 refusal-parity gaps remain.
 - **"cannot fail, so this `catch` has nothing to handle" is reported by the editor and the V
   route** (BUG-778, third rule; BUG-546 / BUG-764): a `catch` or `?` on a call that cannot
   fail, and a method-level `catch` whose body cannot fail, are refused by the type checker, so

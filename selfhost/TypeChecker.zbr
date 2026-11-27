@@ -8887,6 +8887,94 @@ def checkCannotFail(e: Expr, op: str, sp: Span, file: str, ctx: InferCtx)
             cf_fix = "drop the `?`"
         ctx.addErr(file, sp.line, sp.col, "`" + cf_name + "` cannot fail (it does not throw), so this `" + op + "` has nothing to handle: " + cf_fix)
 
+# BUG-729 / BUG-778: the name a refusal shows for the callee of `c` -- `f`, `mod.f`, or the
+# method name of `obj.m()` / `this.m()` (codegen's optChainThrowingCallee spelled it so).
+def callDisplayName(c: ExprCall, ctx: InferCtx): str
+    if c.callee is Expr.ident as id
+        return id.name
+    if c.callee is Expr.member as mm
+        if mm.object is Expr.ident as mo
+            if ctx.isUsedModule(mo.name) and not ctx.hasLocal(mo.name)
+                return mo.name + "." + mm.member
+        return mm.member
+    return "this call"
+
+# BUG-729 / BUG-778: `f(...)?.m` on a throwing `f` is OPTIONAL CHAINING on an error union,
+# not `?` then `.m` -- zig refused it ("expected optional type"). Refused by name with the
+# spelling that works, `(f(...)?).m`. Was refused at Zig emit time only (CodeGen.zbr
+# opt_chain), so `zebra diagnostics` and `--target v` accepted it; codegen keeps a tripwire.
+def checkOptChainThrows(e: Expr, file: str, ctx: InferCtx)
+    if e is Expr.opt_chain as oc
+        if oc.base is Expr.call as ocb_call
+            var ocf: CallFail = resolveCallFail(ocb_call, ctx)
+            if ocf.known and ocf.fails
+                var oct_name: str = callDisplayName(ocb_call, ctx)
+                var oct_m: str = oc.member
+                if oc.has_args
+                    oct_m = oct_m + "()"
+                ctx.addErr(file, oc.span.line, oc.span.col,
+                           "`" + oct_name + "` throws, so `" + oct_name + "(...)?." + oct_m + "` is not `?` then `." +
+                           oct_m + "`: `?.` is optional chaining. Write `(" + oct_name + "(...)?)." + oct_m + "` to propagate the error")
+
+# BUG-730 / BUG-778: is `t` a function-typed slot -- an inline `def(P): R` or a `sig`,
+# optional or not? Only such a slot is asked about a throwing function value.
+def isFnSlot(t: Type_, ctx: InferCtx): bool
+    var st: Type_ = t
+    if st is Type_.optional as so
+        st = so
+    if st is Type_.fn_type_
+        return true
+    if st is Type_.named as sn
+        return ctx.fnParamListAny("$sig:" + sn, "call") != nil
+    return false
+
+# BUG-730 / BUG-778: the name of a function that can fail, when `e` names one as a VALUE --
+# a top-level def of this module, one `use ... exposing` brings in, or `mod.f` on a used
+# module. A local or parameter of that name is a value already, and a bare owner-method
+# name inside a class is not resolved (codegen's sigValueThrowingFn made no claim on it).
+def fnValueThrowingName(e: Expr, ctx: InferCtx): str?
+    if e is Expr.ident as id
+        if ctx.hasLocal(id.name)
+            return nil
+        if ctx.current_class != ""
+            if ctx.module_types.classOf(ctx.current_class) as fv_own
+                if fv_own.fnParamList(id.name) != nil
+                    return nil
+        if ctx.module_types.classOf("") as fv_fns
+            if fv_fns.fnParamList(id.name) != nil
+                if fv_fns.methodFails(id.name)
+                    return id.name
+                return nil
+        if ctx.freeFnTypes(id.name) as fv_x
+            if fv_x.methodFails(id.name)
+                return id.name
+        return nil
+    if e is Expr.member as mm
+        if mm.object is Expr.ident as mo
+            if ctx.isUsedModule(mo.name) and not ctx.hasLocal(mo.name)
+                var fv_dep_opt: ClassTypes? = ctx.dep_types.classOf("$fns:" + mo.name)
+                if fv_dep_opt == nil
+                    fv_dep_opt = ctx.dep_types.classOf("")
+                if fv_dep_opt as fv_dep
+                    if fv_dep.fnParamList(mm.member) != nil and fv_dep.methodFails(mm.member)
+                        return mo.name + "." + mm.member
+    return nil
+
+# BUG-730 / BUG-778: a `def(...)` type cannot raise (neither an inline fn type nor a `sig`
+# carries a throws flag), so a function that can fail, handed over as a value, has nowhere
+# to send its error: `-c` passed and zig refused inside zebra_rt.zig with no .zbr line.
+# Refused at the value. Returns true when it refused, so a caller skips BUG-630's
+# shape comparison for the same value.
+def checkFnValueThrows(slot: Type_, e: Expr, file: str, line: int, col: int, ctx: InferCtx): bool
+    if not isFnSlot(slot, ctx)
+        return false
+    if fnValueThrowingName(e, ctx) as tv_name
+        ctx.addErr(file, anchorLine(e, line), anchorCol(e, col),
+                   "`" + tv_name + "` throws, so it cannot be passed as a function value: a `def(...)` type cannot raise. Handle the error inside `" +
+                   tv_name + "` (a method-level `catch`), or call it and pass the result")
+        return true
+    return false
+
 # expr-walker: exhaustive
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
 # expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
@@ -8920,6 +9008,13 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 # (below); inside `if x != nil` the checker has already narrowed x, so the
                 # guarded form is not refused. `x?.trim()` is a different expression.
                 refuseOptionalReceiver(cm, true, file, ctx)    # BUG-557, BUG-670
+                # BUG-730 / BUG-778: `fns.add(f)` on a List(Sig) puts `f` into a sig slot.
+                if cm.member == "add" and c.args.len == 1
+                    var ad730: Type_ = inferExpr(cm.object, ctx)
+                    if ad730 is Type_.ref_to as ad730r
+                        ad730 = ad730r
+                    if ad730 is Type_.list_ as ad730e
+                        checkFnValueThrows(ad730e, c.args.at(0).value, file, c.span.line, c.span.col, ctx)
                 # BUG-551: a bare `list.sort()` orders the elements with `cue compare`; on a
                 # user type without one it reached zig as "operator < not allowed".
                 if cm.member == "sort" and c.args.len == 0
@@ -9152,7 +9247,8 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 checkCallsInExpr(sx.stop_!, file, line, ctx)
         on Expr.opt_chain as oc
             # BUG-729 / BUG-778: a throwing call as the base of `?.` gets its own refusal
-            # (`(f(...)?).m()`, still at emit time), not "add '?'" -- the user wrote one.
+            # (`(f(...)?).m()`), not "add '?'" -- the user wrote one.
+            checkOptChainThrows(e, file, ctx)
             var oc_saved_h: bool = ctx.call_handled
             if oc.base is Expr.call
                 ctx.call_handled = true
@@ -9513,7 +9609,9 @@ def checkCallExpr(call: ExprCall, file: str, line: int, ctx: InferCtx)
             if fps as fpl
                 if idx < fpl.len and arg.name == nil
                     if fpl.at(idx).type_ as fpt
-                        var fa_why: str = fnValueMismatch(typeFromRef(fpt), inferExpr(arg.value, ctx), ctx)
+                        var fa_why: str = ""
+                        if not checkFnValueThrows(typeFromRef(fpt), arg.value, file, cline, ccol, ctx)   # BUG-730
+                            fa_why = fnValueMismatch(typeFromRef(fpt), inferExpr(arg.value, ctx), ctx)
                         if fa_why != ""
                             ctx.addErr(file, anchorLine(arg.value, cline), anchorCol(arg.value, ccol), "a function cannot go into parameter '" + fpl.at(idx).name + "': " + fa_why)
         idx += 1
@@ -9601,6 +9699,13 @@ def checkVarDecl(dv: DeclVar, file: str, ctx: InferCtx)
         if checkJsonInto(declared, dv.init_expr!, file, varDiagLine(dv), varDiagCol(dv), true, ctx)
             return
     if dv.init_expr != nil
+        if checkFnValueThrows(declared, dv.init_expr!, file, varDiagLine(dv), varDiagCol(dv), ctx)   # BUG-730
+            return
+        # BUG-730: `var fns: List(Step) = [f, g]` -- each element goes into a sig slot.
+        if declared is Type_.list_ as dl_elem
+            if dv.init_expr! is Expr.list_lit as dl_lit
+                for dl_e in dl_lit.elems
+                    checkFnValueThrows(dl_elem, dl_e, file, varDiagLine(dv), varDiagCol(dv), ctx)
         var fvd_why: str = fnValueMismatch(declared, inferExpr(dv.init_expr!, ctx), ctx)   # BUG-630
         if fvd_why != ""
             ctx.addErr(file, anchorLine(dv.init_expr!, varDiagLine(dv)), anchorCol(dv.init_expr!, varDiagCol(dv)), "a function cannot go into '" + dv.name + "': " + fvd_why)
@@ -10280,6 +10385,8 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     if sa_hint != ""
                         ctx.addErr(file, sasn.span.line, sasn.span.col,
                                    "type mismatch: expected " + numTypeName(sa_slot) + ", found " + numTypeName(sa_val_t) + " " + sa_hint)
+                    else if sasn.op == AssignOp.assign and checkFnValueThrows(sa_slot, sasn.value, file, sasn.span.line, sasn.span.col, ctx)   # BUG-730
+                        pass
                     else if sasn.op == AssignOp.assign and fnValueMismatch(sa_slot, sa_val_t, ctx) != ""   # BUG-630
                         ctx.addErr(file, anchorLine(sasn.value, sasn.span.line), anchorCol(sasn.value, sasn.span.col),
                                    "a function cannot go into this function-typed slot: " + fnValueMismatch(sa_slot, sa_val_t, ctx))
