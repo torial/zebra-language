@@ -23,6 +23,17 @@ confirmed via `tools/bootstrap_check.sh`.
 
 ## Unreleased
 
+- **"cannot infer the type of `x`" is reported by the editor and the V route** (BUG-778, fifth
+  rule; BUG-017 / BUG-758 / BUG-805): an untyped name used as an operand of `+`, with `.len`,
+  indexed, or as the receiver of a list method is refused by the type checker, so
+  `zebra diagnostics` (the LSP) and `--target v` report it at the same line, column and message
+  as `-c`. `--allow-inference-guess` still lets the Zig build guess (with a warning); the editor
+  and `--target v` refuse either way, since neither has a guess to fall back on. A lambda passed
+  to a List's `.map` / `.filter` / `.reduce` takes its parameter types from the list, as the Zig
+  build always did; an untyped lambda parameter anywhere else (`run(def(x) = x + 3)`, BUG-805) is
+  now reported by the editor too. `+` on a class or struct value said "cannot infer the type"
+  of a value whose type is known; it now says `+` has no meaning for that type. 3
+  refusal-parity gaps remain, all module resolution in `zebra diagnostics`.
 - **`f()?.m()` on a throwing `f`, and a throwing function passed as a value, are reported by the
   editor and the V route** (BUG-778, fourth rule; BUG-729 / BUG-730): both are refused by the
   type checker, so `zebra diagnostics` (the LSP) and `--target v` report them at the same line,

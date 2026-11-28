@@ -270,7 +270,12 @@ var opt: int? = nil            # optional int, initially nil
   Annotate the variable (`var x: int = ...`) and the error goes away. In practice this is
   rare -- the standard library, your classes and closures are all typed -- and the usual
   cause is a value from a `zig"..."` expression. `--allow-inference-guess` restores the
-  old guess, with a warning, for ONE release while code is migrated.
+  old guess, with a warning, for ONE release while code is migrated. It applies to the
+  Zig build only: `zebra diagnostics` (the editor) and `--target v` still report the
+  error, because neither has a guess to fall back on. A lambda passed to a List's
+  `.map` / `.filter` / `.reduce` takes its parameter types from the list (and `reduce`'s
+  initial value), so `xs.reduce(0, def(acc, x) = acc + x)` needs no annotation; anywhere
+  else, give the parameter a type (`def(x: int) = x + 3`).
 
 ### §2.1 Module-level `var` / `const`
 

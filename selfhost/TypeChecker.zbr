@@ -1580,6 +1580,19 @@ class InferCtx
     # When true, checkStmts emits a warning for branch...else arms that do not
     # explicitly name every variant of a same-module union type.
     var warn_non_exhaustive: bool
+    # BUG-778: `--allow-inference-guess` (the §28a migration hatch). When set, a name
+    # whose type cannot be inferred is not refused here, so the Zig emit can guess it and
+    # warn, as it did before the refusal moved. Set only by the Zig compile path: the V
+    # route cannot guess, and `zebra diagnostics` has no such flag.
+    var allow_guess: bool
+    # BUG-778 / §28a group A: types for the NEXT lambda's untyped parameters, set where
+    # codegen sets its `lam_hint` (genTrioLambdaArg: the lambda passed to List `.map` /
+    # `.filter`, and the second argument of `.reduce`, whose first hint is the initial
+    # value's type). `def(acc, x) = acc + x` is then typed as the emit types it, so the
+    # untyped-name refusals below agree with codegen; a lambda passed anywhere else (a
+    # `sig` parameter: BUG-805's shape) keeps unknown parameters, as it does there.
+    # Consumed by checkLambdaBody: a nested lambda gets none.
+    var lam_hint: List(Type_)
     # BUG-285. Statements are walked TWICE — walkStmt binds and infers, checkStmts
     # checks — and BOTH call inferExpr on an un-annotated `var`'s init purely to work
     # out what type to bind. Every diagnostic inferExpr raises therefore landed twice
@@ -1648,6 +1661,17 @@ class InferCtx
     # body leaves this unchanged, with no `raise` or `?` in it, can never run. Only ever
     # compared before/after a body, never read as a total.
     var maybe_fail_calls: int
+    # BUG-778 step 4: errors addErr dropped because quiet_errors was set. Only ever compared
+    # before/after one quiet inference, never read as a total.
+    var quiet_dropped: int
+    # BUG-778 step 4: locals an un-annotated `var` bound to an initializer that is ITSELF
+    # refused (checking or inferring the declaration produced an error, errorMark) and whose
+    # type is therefore unknown.
+    # The inference-guess rules (untypedLocal) say nothing about them: "cannot infer the type
+    # of `xs` ... annotate it" at every use is a cascade of the initializer's own error, and
+    # it printed BEFORE that error (`var xs = List(int).new()`, BUG-377's fixture). Same
+    # shape as var_locals; reset per function.
+    var guess_poisoned: str
 
     cue init(module_types: ModuleTypes, current_class: str)
         .module_types = module_types
@@ -1659,6 +1683,8 @@ class InferCtx
         errors = List(Diagnostic)()
         warnings = List(Diagnostic)()
         .strict = false
+        .allow_guess = false
+        .lam_hint = List(Type_)()
         .warn_non_exhaustive = false
         .quiet_errors = false
         .file = ""
@@ -1675,6 +1701,8 @@ class InferCtx
         .walk_in_try = false
         .call_handled = false
         .maybe_fail_calls = 0
+        .quiet_dropped = 0
+        .guess_poisoned = " "
 
     def setParamsHere(names: str)
         .params_here = names
@@ -1710,6 +1738,21 @@ class InferCtx
         .copy_locals = " "
         .opaque_lambdas = " "
         .var_locals = " "
+        .guess_poisoned = " "
+
+    def markGuessPoisoned(name: str)
+        if not ((" " + name + " ") in .guess_poisoned)
+            .guess_poisoned = .guess_poisoned + name + " "
+
+    def unmarkGuessPoisoned(name: str)
+        .guess_poisoned = .guess_poisoned.replace(" " + name + " ", " ")
+
+    def isGuessPoisoned(name: str): bool
+        return (" " + name + " ") in .guess_poisoned
+
+    # Moves whenever an error is reported or dropped by quiet mode; compare two readings.
+    def errorMark(): int
+        return errors.len + .quiet_dropped
 
     def markVarLocal(name: str)
         if not ((" " + name + " ") in .var_locals)
@@ -1788,12 +1831,16 @@ class InferCtx
     def enableStrict()
         .strict = true
 
+    def enableAllowGuess()
+        .allow_guess = true
+
     def enableWarnNonExhaustive()
         .warn_non_exhaustive = true
 
     def addErr(file: str, line: int, col: int, message: str)
         # BUG-285: the second, redundant inference of a var-init is silenced here.
         if quiet_errors
+            .quiet_dropped = .quiet_dropped + 1
             return
         # BUG-319. An EXACT duplicate -- same file, line, column AND message -- is never
         # information; it is the same defect reached twice by a checker that visits some
@@ -8703,12 +8750,18 @@ def checkLambdaBody(lam: ExprLambda, file: str, line: int, ctx: InferCtx)
         ctx.bind(cv2.name, cap_types.at(ci))
         ci = ci + 1
     var lp_names: str = " "
+    var lp_hints: List(Type_) = ctx.lam_hint
+    ctx.lam_hint = List(Type_)()                  # consumed: a nested lambda gets none
+    var lp_i: int = 0
     for lp in lam.params
         if lp.type_ != nil
             ctx.bind(lp.name, typeFromRef(lp.type_!))
+        else if lp_i < lp_hints.len
+            ctx.bind(lp.name, lp_hints.at(lp_i))     # §28a group A, as codegen binds it
         else
             ctx.bind(lp.name, Type_.unknown_)
         lp_names = lp_names + lp.name + " "
+        lp_i = lp_i + 1
     ctx.setParamsHere(lp_names)
     var saved_vlocals: str = ctx.varLocals()                 # BUG-596: a param shadows a var
     for lpv in lam.params
@@ -8975,6 +9028,94 @@ def checkFnValueThrows(slot: Type_, e: Expr, file: str, line: int, col: int, ctx
         return true
     return false
 
+# BUG-778 (step 4): the §28a inference-guess refusals, moved from the Zig emit so that
+# `zebra diagnostics` and `--target v` see them. Measured first (2026-11-28, 3,302 files):
+# the emit guessed at 8 places, every one a NAME whose type could not be inferred (a
+# zig"..." local, a map over a lambda building a struct). The checker's own "unknown" is
+# far wider -- ~70 places in programs that build, all an expression the emit resolves by
+# other means (`err.message`, an HttpResponse field, `Path.join`, `Op.add()`) -- so the
+# rule is the NAME case only, and the emit keeps its refusal for any other shape.
+def untypedLocal(e: Expr, ctx: InferCtx): str?
+    if ctx.allow_guess
+        return nil
+    if e is Expr.ident as ul
+        if ctx.hasLocal(ul.name) and not ctx.isGuessPoisoned(ul.name)
+            var ul_t: Type_ = ctx.localType(ul.name)
+            if ul_t is Type_.unknown_ or ul_t is Type_.unresolved
+                return ul.name
+    return nil
+
+# The §28a list_dispatch names, shared with CodeGen (its `isListShapedMethodName` calls this).
+def listShapedMethodName(nm: str): bool
+    return nm == "add" or nm == "at" or nm == "remove" or nm == "clear" or nm == "contains" or nm == "count" or nm == "sort" or nm == "sortBy" or nm == "any" or nm == "all" or nm == "find" or nm == "join"
+
+def tcPrimOperand(t: Type_): bool
+    branch t
+        on Type_.int_   return true
+        on Type_.uint_  return true
+        on Type_.float_ return true
+        on Type_.bool_  return true
+        on Type_.char_  return true
+        on Type_.void_  return true
+        on Type_.int_n as _
+            return true
+        on Type_.uint_n as _
+            return true
+        on Type_.float_n as _
+            return true
+        else
+            return false
+
+# A class or struct operand of `+` (Fable's report, 2026-11-28): the emit called it
+# "cannot infer the type of `a`" when the type was known and `+` had no meaning for it.
+def userClassOperand(t: Type_, ctx: InferCtx): str?
+    var uc_t: Type_ = t
+    if uc_t is Type_.ref_to as uc_rt
+        uc_t = uc_rt
+    if uc_t is Type_.named as uc_n
+        if ctx.hasClassAny(uc_n) and not ctx.module_types.isInterface(uc_n) and not ctx.dep_types.isInterface(uc_n)
+            return uc_n
+    return nil
+
+def checkAddOperands(b: ExprBinary, file: str, ctx: InferCtx)
+    var ao_l: Type_ = inferExpr(b.left, ctx)
+    var ao_r: Type_ = inferExpr(b.right, ctx)
+    if ao_l is Type_.string_ or ao_r is Type_.string_ or ao_l is Type_.str_slice or ao_r is Type_.str_slice
+        return     # string concatenation
+    if tcPrimOperand(ao_l) and tcPrimOperand(ao_r)
+        return
+    var ao_e: Expr = b.right
+    if not tcPrimOperand(ao_l)
+        ao_e = b.left
+    if untypedLocal(ao_e, ctx) as ao_nm
+        ctx.addErr(file, exprSpanLine(ao_e), exprSpanCol(ao_e), "cannot infer the type of `" + ao_nm + "`, an operand of `+` -- `+` joins strings and adds numbers, so the type must be known; annotate it (`var x: int = ...`) or convert it (`.toString()`, `.toInt()`)")
+        return
+    var ao_side: Expr = b.left
+    var ao_cn: str? = userClassOperand(ao_l, ctx)
+    if ao_cn == nil
+        ao_side = b.right
+        ao_cn = userClassOperand(ao_r, ctx)
+    if ao_cn as ao_c
+        ctx.addErr(file, exprSpanLine(ao_side), exprSpanCol(ao_side), "`+` has no meaning for `" + ao_c + "`: it joins strings and adds numbers, and a class or struct has no `+` operator -- give it a method and call that")
+
+# The hints codegen's genTrioLambdaArg gives a lambda argument (§28a group A): for argument
+# 0 of `.map` / `.filter` the receiver's element type, for argument 1 of a two-argument
+# `.reduce` the initial value's type and then the element type. An element type is known
+# only when the receiver infers to a List, exactly as there. Anything else: no hints.
+def trioLambdaHints(c: ExprCall, arg_i: int, ctx: InferCtx): List(Type_)
+    var th = List(Type_)()
+    if c.callee is Expr.member as tcm
+        var is_ml: bool = (tcm.member == "map" or tcm.member == "filter") and arg_i == 0
+        var is_red: bool = tcm.member == "reduce" and arg_i == 1 and c.args.len > 1
+        if is_ml or is_red
+            var tel: Type_ = Type_.unknown_
+            if inferExpr(tcm.object, ctx) is Type_.list_ as tlel
+                tel = tlel
+            if is_red
+                th.add(inferExpr(c.args.at(0).value, ctx))
+            th.add(tel)
+    return th
+
 # expr-walker: exhaustive
 # expr-walker-ok: ident a leaf here -- this walker checks CALLS, not name uses
 # expr-walker-ok: zig_lit raw Zig text; nothing in it is a Zebra call
@@ -9003,6 +9144,11 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                 ctx.maybe_fail_calls += 1
             if c.callee is Expr.member as cm
                 checkCallsInExpr(cm.object, file, line, ctx)
+                # BUG-778 / §28a: a List-shaped method on a name of unknown type was routed
+                # to List by its NAME alone; refused (the names are the emit's own list).
+                if listShapedMethodName(cm.member)
+                    if untypedLocal(cm.object, ctx) as ul_ls
+                        ctx.addErr(file, exprSpanLine(cm.object), exprSpanCol(cm.object), "cannot infer the type of `" + ul_ls + "`, so `." + cm.member + "()` cannot be resolved (it is not assumed to be a List) -- annotate it (`var x: List(T) = ...`)")
                 # BUG-557: a str METHOD on a `str?` reached zig as "expected type 'str',
                 # found '?str'". Refused at the receiver, as an operator on an optional is
                 # (below); inside `if x != nil` the checker has already narrowed x, so the
@@ -9059,10 +9205,18 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                             ctx.addErr(file, cm.span.line, cm.span.col, jsonArityMsg(cm.member))
                         else if c.args.len == 1
                             checkJsonKey(c.args.at(0).value, file, cm.span.line, cm.span.col, ctx)
+            var ca_i: int = 0
             for a in c.args
+                if a.value is Expr.lambda
+                    ctx.lam_hint = trioLambdaHints(c, ca_i, ctx)
                 checkCallsInExpr(a.value, file, line, ctx)
+                ctx.lam_hint = List(Type_)()
+                ca_i = ca_i + 1
         on Expr.member as m
             checkCallsInExpr(m.object, file, line, ctx)
+            if m.member == "len"
+                if untypedLocal(m.object, ctx) as ul_len    # BUG-778 / §28a
+                    ctx.addErr(file, exprSpanLine(m.object), exprSpanCol(m.object), "cannot infer the type of `" + ul_len + "`, so `.len` cannot be resolved -- annotate it (`var x: List(int) = ...`, `x: str`)")
             checkStructBind(m, file, ctx)                   # BUG-596
             refuseOptionalReceiver(m, false, file, ctx)     # BUG-670: `f.n` on a `Foo?`
         on Expr.index as ix
@@ -9088,11 +9242,15 @@ def checkCallsInExpr(e: Expr, file: str, line: int, ctx: InferCtx)
                         ctx.addErr(file, ix.span.line, ix.span.col, "a tuple's elements are read with a dot, not `[...]` -- write `.${ix_il.text}` instead of `[${ix_il.text}]`")
                     else
                         ctx.addErr(file, ix.span.line, ix.span.col, "a tuple cannot be indexed with `[...]`: its elements are read with a dot and a literal position (`t.0`, `t.1`), because each element has its own type and a computed index has no single one")
+            if untypedLocal(ix.object, ctx) as ul_ix    # BUG-778 / BUG-758
+                ctx.addErr(file, exprSpanLine(ix.object), exprSpanCol(ix.object), "cannot infer the type of `" + ul_ix + "`, so `[...]` cannot be resolved (a List is indexed through `.items`, a str is not) -- annotate it (`var x: List(int) = ...`, `x: str`)")
             checkCallsInExpr(ix.object, file, line, ctx)
             checkCallsInExpr(ix.index, file, line, ctx)
         on Expr.binary as b
             checkCallsInExpr(b.left, file, line, ctx)
             checkCallsInExpr(b.right, file, line, ctx)
+            if b.op == BinaryOp.add
+                checkAddOperands(b, file, ctx)             # BUG-778 / §28a
             # An arithmetic or ordering operator on an OPTIONAL value reached Zig as
             # "invalid operands to binary expression: 'optional'" (found 2026-09-29 in
             # the book: `var a = s.tryInt()` ... `return a + b`). Refused, naming the
@@ -10122,6 +10280,9 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         if dv_tr is TypeRef.generic as dv_gen
                             if dv_gen.name == "List" or dv_gen.name == "HashMap"
                                 ctx.addErr(file, varDiagLine(dv), varDiagCol(dv), "'" + dv_gen.name + "(...)' requires explicit initialization; use 'var " + dv.name + " = " + dv_gen.name + "()()'")
+                # BUG-778 step 4: every error the declaration and its initializer produce,
+                # reported here or dropped by the quiet inference below (guess_poisoned).
+                var em0: int = ctx.errorMark()
                 checkVarDecl(dv, file, ctx)
                 # Check arg counts + arg types over the whole init expression
                 # (checkCallsInExpr reaches nested calls; audit #3).
@@ -10129,6 +10290,7 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                     checkCallsInExpr(dv.init_expr!, file, dv.span.line, ctx)
                 # Bind the local so later stmts in the same block can infer it.
                 var bt: Type_ = Type_.unknown_
+                var bt_poisoned: bool = false              # BUG-778 step 4: see guess_poisoned
                 if dv.type_ != nil
                     bt = typeFromRef(dv.type_!)
                 else
@@ -10142,6 +10304,12 @@ def checkStmt1(s: Stmt, stmts: List(Stmt), file: str, ctx: InferCtx)
                         ctx.quiet_errors = true
                         bt = inferExpr(dv.init_expr!, ctx)
                         ctx.quiet_errors = saved_q
+                        if bt is Type_.unknown_ or bt is Type_.unresolved
+                            bt_poisoned = ctx.errorMark() > em0
+                if bt_poisoned
+                    ctx.markGuessPoisoned(dv.name)
+                else
+                    ctx.unmarkGuessPoisoned(dv.name)
                 ctx.bind(dv.name, bt)
                 ctx.markVarLocal(dv.name)                    # BUG-596
             on Stmt.if_ as si

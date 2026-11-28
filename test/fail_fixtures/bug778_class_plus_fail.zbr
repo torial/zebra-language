@@ -1,0 +1,17 @@
+# BUG-778 step 4 (Fable's report, 2026-11-28): `+` on a class or struct operand. The type is
+# KNOWN; the Zig emit said "cannot infer the type of `a`", and `zebra diagnostics` and
+# `--target v` said nothing. The checker now names the type `+` has no meaning for.
+class Vec
+    var x: int
+    cue init(x: int)
+        this.x = x
+
+struct Pt
+    var y: int
+
+def main()
+    var a = Vec(1)
+    var b = Vec(2)
+    var p = Pt(3)
+    print(a + b)
+    print(1 + p)

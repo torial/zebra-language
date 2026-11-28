@@ -347,6 +347,54 @@
     element, `List.add`, an assignment), `test/bug778_throw_values_ok_test.zbr` (safe
     functions in every slot, a parameter named like a throwing function, `?.` with `orelse`,
     `(f(...)?).m()`).
+- **Done, step 4 (2026-11-28): the §28a inference-guess rules** (`infer_guess_*`, BUG-017's
+  `len` names, BUG-758's index, and BUG-805's untyped lambda parameter). The checker refuses an
+  untyped NAME -- a local whose type is `unknown_` / `unresolved` -- as an operand of `+`, as
+  the receiver of `.len`, of `[...]`, and of a list-shaped method (`listShapedMethodName`,
+  which CodeGen's `isListShapedMethodName` now calls, so the two cannot drift), with codegen's
+  messages and coordinates. `+` on a class or struct operand says "`+` has no meaning for
+  `Vec`" -- it said "cannot infer the type of `a`" about a value whose type is known (Fable's
+  report). `--allow-inference-guess` sets `allow_guess` on the Zig compile path only; the
+  editor and `--target v` refuse either way. CodeGen's four `recordInferenceGuess` sites stay
+  as the backstop for what the rule does not name (a non-name operand, "this expression").
+  - **Probed first:** codegen's guesses and the checker's view at the same coordinates, over
+    the 3302-file corpus. Every one of codegen's 8 guesses had an unknown checker type there -- the rule cannot miss one of those -- but the checker's
+    unknowns were a much larger set (inference it does not do), so the rule is narrowed to
+    untyped names. **The probe missed a class:** untyped LAMBDA parameters in `.reduce` /
+    `.map` lambdas, which codegen types from the list (`genTrioLambdaArg`'s `lam_hint`). The
+    first sweep refused six accepted files for it. A blanket lambda-parameter exemption
+    reopened BUG-805 in diagnostics, so the checker now mirrors `lam_hint`
+    (`trioLambdaHints`: `.map` / `.filter` arg 0, `.reduce` arg 1 with the initial value's
+    type; consumed by the next lambda, so a nested one gets none, as in codegen).
+  - **A cascade, found by the measurement:** a local whose initializer is itself refused
+    (`var xs = List(int).new()`, BUG-377's fixture) was then reported at every use, BEFORE the
+    real error, saying "annotate it". `guess_poisoned` marks a local whose declaration produced
+    an error (`errorMark`: reported errors plus those quiet mode dropped) and left its type
+    unknown; the rule skips it. Pinned by `smoke_tc_fail_without` on BUG-377/389/398/694's
+    fixtures (the forbidden cascade is the absence; the real error is required first).
+  - **Measured:** `-c` over 3304 files (this repo, zebra-ide, GameEngine), 506e2c7 vs the
+    change: **0 rc changes**. 12 already-refused GameEngine `ported_scripts/` files list more
+    errors (+1 to +6: untyped names, e.g. a def parameter `currentTime` used with `+`, that
+    the Zig emit would have refused once the checker's errors before them were fixed), and
+    one lists fewer: 0544 had two errors at one coordinate, codegen's "this expression" and
+    `origin`; it keeps the second. (`subdir_stem_clash`'s path spelling differs from the
+    step-3 binary's, not from HEAD's.) `-c` on CodeGen.zbr: 10.5 s before and after,
+    alternated.
+  - Refusal parity 10 -> **3** (both infer_guess fixtures, the hatch, both BUG-017 names,
+    BUG-758); the three left are module resolution in `zebra diagnostics`. `zebra
+    diagnostics` is clean on all 28 `selfhost/*.zbr`.
+  - Fixtures: `test/fail_fixtures/bug778_class_plus_fail.zbr`,
+    `test/fail_fixtures/bug805_lambda_param_fail.zbr` (the `sig` lambda refused; the `.reduce`
+    / `.map` lambdas beside it not).
+  - **Still codegen-only, and invisible to the parity gate:** an operand that is not a NAME.
+    `var o = zig"_zbr_rt"` then `print(o.f + 1)` is refused by `-c` after emission and `zebra
+    diagnostics` answers `[]`. No must-reject fixture has this shape, so an empty
+    refusal-parity baseline will not mean codegen has stopped refusing. cli-surface's BUG-671
+    leg uses this shape now: its `.len`-on-a-name fixture became a pre-emit refusal with
+    this step, and the leg went red in the FULL tier.
+  - The FULL tier also caught a stranded `# expr-walker: exhaustive` marker. The new helpers
+    had gone in between `checkCallsInExpr`'s marker and its `def`, which is the 2026-10-21
+    shape again.
 
 ---
 

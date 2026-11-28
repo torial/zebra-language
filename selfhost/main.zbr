@@ -106,6 +106,7 @@ class MultiCompiler
     var warn_non_exhaustive: bool  # --warn-non-exhaustive: warn branch...else missing variants
     var warnings_as_errors: bool   # --warnings-as-errors: a warning fails the compile (2026-09-24)
     var strict_check: bool         # --strict: the editor's strict view on every module checked (2026-10-28)
+    var allow_inference_guess: bool  # --allow-inference-guess: the checker leaves an untyped name to the emit (BUG-778)
     var uses_sqlite: bool      # true when root generated code calls Sqlite.open/query
     var module_path: str       # --module-path DIR: extra search dir for `use` deps
     var type_scanned: List(str)  # deps scanned for types only (not emitted)
@@ -152,6 +153,7 @@ class MultiCompiler
         .warn_non_exhaustive = false
         .warnings_as_errors = false
         .strict_check = false
+        .allow_inference_guess = false
         .uses_sqlite = false
         .module_path = ""
         .type_scanned = List(str)()
@@ -513,6 +515,8 @@ class MultiCompiler
                 # of a whole program. Off by default, so a plain `-c` costs nothing extra.
                 if strict_check
                     tc_ctx.enableStrict()
+                if allow_inference_guess
+                    tc_ctx.enableAllowGuess()
                 tc_ctx.withReservedRuntimeNames(rtReservedNames(.preamble_path))   # BUG-359
                 tc_ctx.withRuntimePublicNames(rtPublicNames(.preamble_path))       # BUG-446
                 var tc_result: TcResult = checkModule(module, zbr_path, tc_ctx)
@@ -5383,6 +5387,7 @@ def main()
     mc.warn_non_exhaustive = warn_ne
     mc.warnings_as_errors = werror
     mc.strict_check = strict_ck
+    mc.allow_inference_guess = args.contains("--allow-inference-guess")
     mc.module_path = module_path
     mc.node_addon = mode_node
     mc.keep_temp = keep_temp

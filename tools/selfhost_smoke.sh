@@ -285,6 +285,34 @@ smoke_tc_fail() {
     rm -f "$TMPDIR_OUT"/*.zig
 }
 
+# smoke_tc_fail, plus a substring that must NOT appear: a CASCADE pin. The expected message
+# is required first, so an absence is only evidence once the run is known to have reported
+# (two empty logs satisfy every absence test).
+smoke_tc_fail_without() {
+    local zbr="$1"
+    local expected_msg="$2"
+    local forbidden_msg="$3"
+    local label
+    label="$(basename "$zbr" .zbr)_without"
+    if zbr_run_retrying "$ZEBRA" --emit-zig "$zbr" --output-dir "$TMPDIR_OUT" >/dev/null 2>"$TMPDIR_OUT/smoke-err"; then
+        echo "  FAIL: $label (expected TC failure, got exit 0)" >&2
+        FAIL=$((FAIL + 1))
+    elif ! grep -qF -- "$expected_msg" "$TMPDIR_OUT/smoke-err"; then
+        echo "  FAIL: $label (wrong/missing diagnostic)" >&2
+        echo "    expected substring: $expected_msg" >&2
+        FAIL=$((FAIL + 1))
+    elif grep -qF -- "$forbidden_msg" "$TMPDIR_OUT/smoke-err"; then
+        echo "  FAIL: $label (a cascade it must not print)" >&2
+        echo "    forbidden substring: $forbidden_msg" >&2
+        grep -F -- "$forbidden_msg" "$TMPDIR_OUT/smoke-err" >&2 || true
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $label"
+        PASS=$((PASS + 1))
+    fi
+    rm -f "$TMPDIR_OUT"/*.zig
+}
+
 # Verify that a file with multiple parse errors reports ALL of them (not just the first).
 # Takes two expected error substrings; both must appear in the compiler's stderr.
 smoke_multi_parse_fail() {
@@ -3082,6 +3110,21 @@ smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:37
 smoke_tc_fail test/bug778_throw_values_test.zbr "bug778_throw_values_test.zbr:39:11: error: \`boom\` throws, so it cannot be passed"
 smoke_run test/bug778_throw_values_ok_test.zbr "bug778 throw values ok: OK"
 smoke_run test/bug778_throw_values_ok_test.zbr "-1"
+# step 4: the §28a inference-guess refusals (an untyped NAME as a `+` operand, a `.len` /
+# `[...]` / List-method receiver) move to the checker; the infer_guess_* and bug017 / bug758
+# fixtures above keep their coordinates. A class or struct operand of `+` names the type.
+smoke_tc_fail test/fail_fixtures/bug778_class_plus_fail.zbr "bug778_class_plus_fail.zbr:16:11: error: \`+\` has no meaning for \`Vec\`"
+smoke_tc_fail test/fail_fixtures/bug778_class_plus_fail.zbr "bug778_class_plus_fail.zbr:17:15: error: \`+\` has no meaning for \`Pt\`"
+# BUG-805: an untyped lambda parameter passed to a `sig` is refused; the `.reduce` / `.map`
+# lambdas beside it take their parameter types from the list and are NOT.
+smoke_tc_fail_without test/fail_fixtures/bug805_lambda_param_fail.zbr "bug805_lambda_param_fail.zbr:13:24: error: cannot infer the type of \`x\`" "bug805_lambda_param_fail.zbr:15:"
+smoke_tc_fail_without test/fail_fixtures/bug805_lambda_param_fail.zbr "bug805_lambda_param_fail.zbr:13:24: error: cannot infer the type of \`x\`" "bug805_lambda_param_fail.zbr:16:"
+# A local whose initializer is itself refused is not reported again at every use (the
+# cascade printed BEFORE the real error, and said "annotate it" where the fix is the ctor).
+smoke_tc_fail_without test/bug377_generic_ctor_new_fail.zbr "bug377_generic_ctor_new_fail.zbr:6:24: error: 'List(...)' has no method 'new'" "cannot infer the type of \`xs\`"
+smoke_tc_fail_without test/bug389_bare_list_ctor_fail.zbr "bug389_bare_list_ctor_fail.zbr:4:14: error: 'List()' needs its type argument" "cannot infer the type of \`xs\`"
+smoke_tc_fail_without test/bug398_datetime_static_fail.zbr "bug398_datetime_static_fail.zbr:4:23: error: 'DateTime' has no static function 'listZones'" "cannot infer the type of \`zs\`"
+smoke_tc_fail_without test/fail_fixtures/bug694_hashmap_one_arg_test.zbr "bug694_hashmap_one_arg_test.zbr:4:13: error: HashMap(...)() takes two type arguments" "cannot infer the type of \`m\`"
 smoke_run test/bug767_lambda_handled_test.zbr "handled 20"
 smoke_run test/bug767_lambda_handled_test.zbr "handled -1"
 smoke_run test/bug767_lambda_handled_test.zbr "safe 3"

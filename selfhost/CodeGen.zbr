@@ -25,7 +25,7 @@
 use Ast exposing StmtYield, Decl, DeclUse, TypeParam, DeclEnum, DeclUnion, DeclStruct, DeclClass, DeclVar, DeclMethod, DeclInit, DeclSig, DeclTypeAlias, EnumMember, UnionVariant, TypeRef, NamedTypeRef, GenericTypeRef, TupleTypeRef, AliasAppliedTypeRef, Module, Param, Modifiers, Span, Stmt, StmtAssign, StmtReturn, StmtIf, ElseIf, StmtWhile, StmtForIn, StmtForNum, StmtBranch, BranchOn, StructPat, StructFieldPat, StmtPrint, StmtRaise, StmtTryCatch, CatchClause, StmtAssert, StmtWith, StmtIn, StmtAllocate, StmtCopyOut, StmtDestruct, StmtContract, ContractKind, AssignOp, Expr, ExprIdent, ExprMember, ExprCall, ExprBinary, ExprUnary, ExprIndex, ExprStringLit, ExprStringInterp, Arg, StringPart, StringKind, BinaryOp, UnaryOp, LambdaBody, ExprLambda, DeclNamespace, DeclInterface, DeclExtend, ExprOld, ExprOptChain
 use CgHelpers exposing intLitZig, setStructReceivers, setExtReceivers, StrSet, scanMutations, scanMutationsInto, scanMutationsInExpr, analyzeEscapes, assignOpStr, binaryOpStr, receiverNeedsVar, isStructValueType, nameUsedInStmts, isZigPrimitiveName, isStdlibNs, zigSafeName, nameEscapes, bodyHasAssert, isContainerTypeRef, methodMutatesSelf, isBuiltinTypeName
 use AstWalk exposing bodyHasRaise, collectOldNodes, mightUseName, mightUseNameInExpr, stmtsContainYield, stmtContainsYield, stmtNeedsLowering, nilCheckedNames, nilElseNames, earlyExitNilNames, nameReassignedIn, nameReassignedAfter, zigStmtNeedsSemicolon
-use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex, serveRestartArgIndex
+use TypeChecker exposing isBuiltinObjectTypeName, exprSpanLine, exprSpanCol, ModuleTypes, ifaceKeyBase, buildModuleTypes, Type_, HashMapType_, InferCtx, TcResult, inferExpr, walkStmts, typeFromRef, bindDestructNames, jsonWantMode, jsonIdxTry, isString, numericJoin, numKind, numWidth, isNumLit, isWrapSatOp, intConvTarget, numTypeName, lambdaSigNameable, moduleStemOf, numLitZig, intLitSuffix, intLitDigits, floatLitSuffix, floatLitDigits, suffixZigType, sqliteOpenParamName, serveHostArgIndex, serveRestartArgIndex, listShapedMethodName
 
 
 # ── getMemberFieldName ────────────────────────────────────────────────────────
@@ -5167,7 +5167,7 @@ struct Generator
     # type is unproven and the method name is one of these, the name-based
     # heuristic below routes to List codegen purely by name (the Mode-2 guess).
     def isListShapedMethodName(nm: str): bool
-        return nm == "add" or nm == "at" or nm == "remove" or nm == "clear" or nm == "contains" or nm == "count" or nm == "sort" or nm == "sortBy" or nm == "any" or nm == "all" or nm == "find" or nm == "join"
+        return listShapedMethodName(nm)    # one list, in TypeChecker (BUG-778)
 
     # §28a step 1: true when inference cannot supply a concrete type for `e`
     # (no infer_ctx, or the inferred type is `unknown_`).  A guess at a

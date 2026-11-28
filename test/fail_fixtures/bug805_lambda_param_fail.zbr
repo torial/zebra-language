@@ -1,0 +1,16 @@
+# BUG-805 (Fable, 2026-11-18; folded into BUG-778 step 4): an untyped lambda parameter used
+# as an operand of `+`, in a lambda passed to a `sig` parameter. `-c` refused it at the Zig
+# emit; `zebra diagnostics` answered [] and `--target v` wrote `fn (x) {...}`. The checker
+# refuses it now. The `reduce` line beside it must NOT be refused: a lambda passed to a List's
+# `.map` / `.filter` / `.reduce` takes its parameter types from the list, as codegen's
+# `lam_hint` always gave them.
+sig Fn(a: int): int
+
+def run(g: Fn): int
+    return g(4)
+
+def main()
+    print(run(def(x) = x + 3))
+    var xs: List(int) = [1, 2, 3]
+    print(xs.reduce(0, def(acc, x) = acc + x))
+    print(xs.map(def(x) = x + 1).len)

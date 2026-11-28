@@ -1,12 +1,5 @@
 # refusal_parity_check.sh baseline: must-reject fixtures one consumer does not refuse.
 # BUG-778. Shrink it; never grow it. Regenerate with --update-baseline.
-bug017_len_ast_name_fail diag-miss,v-miss
-bug017_len_field_name_fail diag-miss,v-miss
 bug428_unresolved_use_fail diag-miss
 bug450_use_case_fail diag-miss
-bug758_index_unknown_fail diag-miss,v-miss
-infer_guess_add_fail diag-miss,v-miss
-infer_guess_hatch_test diag-miss,v-miss
-infer_guess_len_fail diag-miss,v-miss
-infer_guess_list_fail diag-miss,v-miss
 subdir_stem_clash_fail diag-miss

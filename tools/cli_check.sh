@@ -181,16 +181,19 @@ chk "...a ZIG failure KEEPS its .zig as evidence, and the good compile has its .
 # a zig failure keeps its .zig, a good compile keeps everything.
 # THE FIXTURE MUST BE A REFUSAL CODEGEN STILL MAKES. It was a throws call without `?`
 # until BUG-778 moved that rule into the checker (pre-emit, nothing written) and this leg
-# went red. Re-point it when its rule moves; retire it the day codegen makes no refusals
-# (tools/refusal_parity_baseline.txt empty -- every refusal is then pre-emit).
-printf 'def main()\n    var xs = zig"_zbr_rt"\n    print(xs.len)\n' > "$W/noq.zbr"
+# went red; then `.len` on an untyped NAME, until step 4 moved that rule too. It is now `+`
+# on an untyped MEMBER (`o.f`): the checker refuses untyped names only, and codegen's
+# backstop refuses the rest after emission. Re-point it when its rule moves; retire it the
+# day codegen makes no refusals. An empty tools/refusal_parity_baseline.txt does NOT mean
+# that day has come: that gate runs registered must-reject fixtures, and this shape has none.
+printf 'def main()\n    var o = zig"_zbr_rt"\n    print(o.f + 1)\n' > "$W/noq.zbr"
 mkdir -p "$W/m671"
 printf 'def one(): int\n    return 1\n' > "$W/m671/a.zbr"
 printf 'def two(): int\n    return (2\n' > "$W/m671/b.zbr"
 printf 'use a\nuse b\ndef main()\n    print(a.one())\n' > "$W/m671/main.zbr"
 rm -rf "$W/od_noq" "$W/od_raised"
 run --emit-zig --output-dir od_noq noq.zbr
-chk "a refusal AFTER emission (codegen cannot type a .len receiver) leaves no .zig in --output-dir, and says so (BUG-671)" \
+chk "a refusal AFTER emission (codegen cannot type an operand of +) leaves no .zig in --output-dir, and says so (BUG-671)" \
     "$([ "$RC" = 1 ] && [ "$(ls "$W/od_noq" 2>/dev/null | grep -c '\.zig$')" = 0 ] && case "$ERR" in *"were removed: noq.zig"*) echo 0;; *) echo 1;; esac || echo 1)" \
     "exit=$RC files=[$(ls "$W/od_noq" 2>/dev/null | tr '\n' ' ')] stderr=[$(echo "$ERR" | tail -1)]"
 run --emit-zig --output-dir od_raised m671/main.zbr

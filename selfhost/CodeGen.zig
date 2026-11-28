@@ -170,6 +170,7 @@ const _zbr_fn_suffixZigType = _zbr_mod_TypeChecker._zbr_fn_suffixZigType;
 const _zbr_fn_sqliteOpenParamName = _zbr_mod_TypeChecker._zbr_fn_sqliteOpenParamName;
 const _zbr_fn_serveHostArgIndex = _zbr_mod_TypeChecker._zbr_fn_serveHostArgIndex;
 const _zbr_fn_serveRestartArgIndex = _zbr_mod_TypeChecker._zbr_fn_serveRestartArgIndex;
+const _zbr_fn_listShapedMethodName = _zbr_mod_TypeChecker._zbr_fn_listShapedMethodName;
 // zbr:selfhost/CodeGen.zbr:35
 pub fn _zbr_fn_getMemberFieldName(e: _zbr_ty_Expr) ?[]const u8 {
     @setRuntimeSafety(true);
@@ -9438,7 +9439,7 @@ pub const _zbr_ty_Generator = struct {
         @setRuntimeSafety(true);
         defer self._check_invariant();
 // zbr:selfhost/CodeGen.zbr:5170
-        return (((((((((((std.mem.eql(u8, nm, "add") or std.mem.eql(u8, nm, "at")) or std.mem.eql(u8, nm, "remove")) or std.mem.eql(u8, nm, "clear")) or std.mem.eql(u8, nm, "contains")) or std.mem.eql(u8, nm, "count")) or std.mem.eql(u8, nm, "sort")) or std.mem.eql(u8, nm, "sortBy")) or std.mem.eql(u8, nm, "any")) or std.mem.eql(u8, nm, "all")) or std.mem.eql(u8, nm, "find")) or std.mem.eql(u8, nm, "join"));
+        return _zbr_fn_listShapedMethodName(nm);
     }
 
     // zbr:selfhost/CodeGen.zbr:5175
